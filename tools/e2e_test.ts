@@ -304,14 +304,16 @@ Deno.test("[REL-040] the launcher's process binaries are declared once", async (
 
 Deno.test("production-like E2E serializes shared state unless explicitly overridden", () => {
   assert(
-    e2ePlaywrightArgs(["tests/e2e/app-008a.spec.ts"]).join(" ") ===
-      "exec playwright test tests/e2e/app-008a.spec.ts --workers=1",
+    e2ePlaywrightArgs(["tests/e2e/journal.JOURNAL-001.spec.ts"]).join(" ") ===
+      "exec playwright test tests/e2e/journal.JOURNAL-001.spec.ts --workers=1",
     "the shared Compose database is serialized by default",
   );
   assert(
-    e2ePlaywrightArgs(["--workers=2", "tests/e2e/app-008a.spec.ts"]).join(
-          " ",
-        ) === "exec playwright test --workers=2 tests/e2e/app-008a.spec.ts" &&
+    e2ePlaywrightArgs(["--workers=2", "tests/e2e/journal.JOURNAL-001.spec.ts"])
+          .join(
+            " ",
+          ) ===
+        "exec playwright test --workers=2 tests/e2e/journal.JOURNAL-001.spec.ts" &&
       e2ePlaywrightArgs(["-j", "2"]).join(" ") ===
         "exec playwright test -j 2",
     "an explicit Playwright worker choice remains authoritative",

@@ -33,7 +33,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [registration.create]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/auth-001.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/registration.AUTH-001.spec.ts] }
 
   - id: AUTH-002
     title: Invite and add a workspace member
@@ -59,7 +59,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [workspace.members.invite]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/auth-002.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/invitations.AUTH-002.spec.ts] }
 
   - id: AUTH-003
     title: Sign in through password and MFA challenges
@@ -92,7 +92,13 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [session.create]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/auth-003.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [
+        tests/e2e/sign-in.AUTH-003.spec.ts,
+        tests/e2e/shell.TODAY-001.spec.ts,
+      ],
+    }
 
   - id: AUTH-004
     title: Manage preferences and sessions
@@ -121,7 +127,7 @@ flows:
     moduleIds: [identity, workspaces]
     permissions: [member.self.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-002e.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/settings.AUTH-004.spec.ts] }
 
   - id: AUTH-005
     title: Leave a workspace or delete the personal identity safely
@@ -149,7 +155,10 @@ flows:
     moduleIds: [governance, identity, workspaces]
     permissions: [member.self.delete]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-009c.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/personal-lifecycle.AUTH-005.spec.ts],
+    }
 
   - id: WORKSPACE-001
     title: Manage workspace settings and members
@@ -173,7 +182,7 @@ flows:
     moduleIds: [workspaces]
     permissions: [workspace.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-002e.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/settings.AUTH-004.spec.ts] }
 
   - id: WORKSPACE-002
     title: Reset or delete a workspace safely
@@ -214,7 +223,10 @@ flows:
     ]
     permissions: [workspace.reset, workspace.delete]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-009d.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/workspace-lifecycle.WORKSPACE-002.spec.ts],
+    }
 
   - id: WORKSPACE-003
     title: Configure profile modules and controlled vocabularies
@@ -242,7 +254,10 @@ flows:
     moduleIds: [people, planning, workspaces]
     permissions: [workspace.personalization.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-004e.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/personalization.WORKSPACE-003.spec.ts],
+    }
 
   - id: TODAY-001
     title: Review and act on today's relationship priorities
@@ -269,7 +284,13 @@ flows:
     moduleIds: [people, interactions, planning, workspaces]
     permissions: [people.read, tasks.write]
     testLayers: [unit, integration, contract, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-006c.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [
+        tests/e2e/today.TODAY-001.spec.ts,
+        tests/e2e/shell.TODAY-001.spec.ts,
+      ],
+    }
 
   - id: PEOPLE-001
     title: Create a person
@@ -294,7 +315,10 @@ flows:
     moduleIds: [people]
     permissions: [people.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-003a.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/people-create.PEOPLE-001.spec.ts],
+    }
 
   - id: PEOPLE-002
     title: Find a person
@@ -316,7 +340,10 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,
-      testRefs: [tests/e2e/app-003b.spec.ts, tests/e2e/prf-002.spec.ts],
+      testRefs: [
+        tests/e2e/people-directory.PEOPLE-002.spec.ts,
+        tests/e2e/focus.PRF-002.spec.ts,
+      ],
     }
 
   - id: PEOPLE-003
@@ -351,7 +378,13 @@ flows:
     ]
     permissions: [people.read]
     testLayers: [integration, contract, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-008c.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [
+        tests/e2e/person-workspace.PEOPLE-003.spec.ts,
+        tests/e2e/person-shell.PEOPLE-003.spec.ts,
+      ],
+    }
 
   - id: PEOPLE-004
     title: Edit, archive, restore, or delete a person
@@ -375,7 +408,10 @@ flows:
     moduleIds: [people]
     permissions: [people.write, people.delete]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-004a.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/person-lifecycle.PEOPLE-004.spec.ts],
+    }
 
   - id: PEOPLE-005
     title: Record important and partial dates
@@ -401,7 +437,10 @@ flows:
     moduleIds: [people, planning, journal]
     permissions: [people.write]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-004b.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/important-dates.PEOPLE-005.spec.ts],
+    }
 
   - id: PEOPLE-006
     title: Maintain person profile facts within enabled sections
@@ -435,7 +474,10 @@ flows:
     moduleIds: [people, workspaces]
     permissions: [people.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-004c.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/profile-facts.PEOPLE-006.spec.ts],
+    }
 
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people
@@ -461,7 +503,10 @@ flows:
     moduleIds: [people, relationships, workspaces]
     permissions: [relationships.write]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-004d.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/relationships.RELATIONSHIP-001.spec.ts],
+    }
 
   - id: INTERACTION-001
     title: Log and review an activity or note
@@ -486,7 +531,10 @@ flows:
     moduleIds: [people, interactions]
     permissions: [interactions.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-005a.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/activities.INTERACTION-001.spec.ts],
+    }
 
   - id: INTERACTION-002
     title: Log a call or conversation
@@ -511,7 +559,10 @@ flows:
     moduleIds: [people, interactions]
     permissions: [interactions.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-005b.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/communications.INTERACTION-002.spec.ts],
+    }
 
   - id: PLANNING-001
     title: Create and complete a task
@@ -535,7 +586,7 @@ flows:
     moduleIds: [people, planning]
     permissions: [tasks.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-006a.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/tasks.PLANNING-001.spec.ts] }
 
   - id: PLANNING-002
     title: Schedule and deliver a reminder
@@ -562,7 +613,10 @@ flows:
     moduleIds: [people, planning, operations]
     permissions: [reminders.write, reminder-delivery.execute]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-006b.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/reminders.PLANNING-002.spec.ts],
+    }
 
   - id: FILES-001
     title: Attach and retrieve a person file
@@ -591,7 +645,10 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,
-      testRefs: [tests/e2e/app-007a.spec.ts, tests/e2e/app-007c.spec.ts],
+      testRefs: [
+        tests/e2e/person-files.FILES-001.spec.ts,
+        tests/e2e/storage-diagnostics.FILES-001.spec.ts,
+      ],
     }
 
   - id: GIFTS-001
@@ -618,7 +675,7 @@ flows:
     moduleIds: [people, gifts, files]
     permissions: [gifts.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-007b.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/gifts.GIFTS-001.spec.ts] }
 
   - id: JOURNAL-001
     title: Maintain the personal journal
@@ -642,7 +699,7 @@ flows:
     moduleIds: [journal, interactions, people]
     permissions: [journal.write]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-008a.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/journal.JOURNAL-001.spec.ts] }
 
   - id: IMPORT-001
     title: Import Monica data safely and idempotently
@@ -682,7 +739,10 @@ flows:
     ]
     permissions: [data.import]
     testLayers: [unit, integration, schema, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-009a.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/monica-import.IMPORT-001.spec.ts],
+    }
 
   - id: EXPORT-001
     title: Export workspace or person data
@@ -708,7 +768,7 @@ flows:
     moduleIds: [import-export, people, files]
     permissions: [data.export, people.vcard.export]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-009b.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/export.EXPORT-001.spec.ts] }
 
   - id: API-001
     title: Create and revoke an API token
@@ -729,7 +789,7 @@ flows:
     moduleIds: [api-access, workspaces]
     permissions: [api-tokens.manage]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-010a.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/api-tokens.API-001.spec.ts] }
 
   - id: INTEGRATION-001
     title: Configure and synchronize DAV
@@ -755,7 +815,7 @@ flows:
     moduleIds: [integrations, people, planning]
     permissions: [integrations.manage]
     testLayers: [unit, adapter-contract, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-010b.spec.ts] }
+    e2e: { required: true, testRefs: [tests/e2e/dav.INTEGRATION-001.spec.ts] }
 
   - id: GOVERNANCE-001
     title: Review and accept a legal document
@@ -779,7 +839,10 @@ flows:
     moduleIds: [governance, identity]
     permissions: [legal.accept]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-008b.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/legal-acceptance.GOVERNANCE-001.spec.ts],
+    }
 
   - id: GOVERNANCE-002
     title: Review authorized audit history
@@ -805,7 +868,10 @@ flows:
     moduleIds: [governance, people, workspaces]
     permissions: [audit.read]
     testLayers: [unit, integration, e2e]
-    e2e: { required: true, testRefs: [tests/e2e/app-005c.spec.ts] }
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/audit-history.GOVERNANCE-002.spec.ts],
+    }
 
   - id: BILLING-001
     title: Manage optional workspace billing

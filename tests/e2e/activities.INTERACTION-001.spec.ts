@@ -1,0 +1,226 @@
+import { expect, test } from "@playwright/test";
+import { waitForIsland } from "./support/islands.ts";
+import { registerVerified } from "./support/api.ts";
+import { createPersonThroughUi } from "./support/directory.ts";
+import { origin } from "./support/env.ts";
+import { bareToken } from "./support/mail.ts";
+import { expectAccessible } from "./support/page-checks.ts";
+import { submitSignIn } from "./support/sign-in.ts";
+
+test(
+  "[INTERACTION-001] logs and reviews a multi-person activity and favorite note",
+  { annotation: { type: "flow", description: "INTERACTION-001" } },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(300_000);
+    const email = `interactions-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Interaction",
+      lastName: "Writer",
+      workspaceName: "Shared history",
+    }, bareToken);
+
+    await submitSignIn(page, email);
+    expect(
+      (await page.request.post(
+        `${origin}/api/v1/settings/personalization/activity-types`,
+        {
+          data: { name: "Collaboration", sortOrder: 0 },
+          headers: { origin },
+        },
+      )).status(),
+    ).toBe(200);
+
+    const adaPath = await createPersonThroughUi(page, "Ada", "Lovelace");
+    const gracePath = await createPersonThroughUi(page, "Grace", "Hopper");
+    const beyondName = "Beyond First Page";
+    for (let index = 0; index < 25; index += 1) {
+      const created = await page.request.post(`${origin}/api/v1/people`, {
+        data: {
+          givenName: index === 24 ? beyondName : `Paged ${index}`,
+          isPartial: false,
+        },
+        headers: { origin },
+      });
+      expect(created.status()).toBe(201);
+    }
+
+    await page.goto("/app");
+    await page.getByRole("button", { name: "Quick capture" }).click();
+    const capture = page.getByRole("dialog", {
+      name: "Record an activity or note",
+    });
+    await expect(capture).toBeVisible();
+    const quickCapture = page.getByRole("button", { name: "Quick capture" });
+    const escapeSummary = capture.getByLabel("Summary");
+    await escapeSummary.fill("Draft retained after Escape");
+    page.once("dialog", async (confirmation) => await confirmation.dismiss());
+    await page.keyboard.press("Escape");
+    await expect(capture).toBeVisible();
+    await expect(escapeSummary).toHaveValue("Draft retained after Escape");
+    page.once("dialog", async (confirmation) => await confirmation.accept());
+    await page.keyboard.press("Escape");
+    await expect(capture).toBeHidden();
+    await expect(quickCapture).toBeFocused();
+    await quickCapture.click();
+    await expect(capture).toBeVisible();
+    await expect(capture.getByLabel("Summary")).toHaveValue("");
+    const participantSearch = capture.getByLabel("Search participants");
+    const participantSelect = capture.getByLabel("Participants", {
+      exact: true,
+    });
+    const activityType = capture.getByLabel("Activity type", { exact: true });
+    const activityTypeOption = activityType.locator("option:not([value=''])")
+      .first();
+    await expect(activityTypeOption).toHaveCount(1);
+    const activityTypeLabel = (await activityTypeOption.textContent())!.trim();
+    await activityType.selectOption(
+      (await activityTypeOption.getAttribute(
+        "value",
+      ))!,
+    );
+    const emotions = capture.getByLabel("Emotions (optional)");
+    await expect(emotions).toBeEnabled();
+    for (const name of ["Ada Lovelace", "Grace Hopper", beyondName]) {
+      await participantSearch.fill(name);
+      await participantSearch.press("Tab");
+      await expect(participantSelect.locator("option", { hasText: name }))
+        .toHaveCount(1);
+      await participantSelect.selectOption([
+        ...await participantSelect.locator("option:checked").evaluateAll((
+          options,
+        ) =>
+          options.map((entry) => ({
+            value: (entry as HTMLOptionElement).value,
+          }))
+        ),
+        { label: name },
+      ]);
+    }
+    await capture.getByLabel("Summary").fill("Designed a compiler together");
+    await capture.getByLabel("Details (optional)").fill(
+      "Compared notes and planned the next experiment.",
+    );
+    await capture.getByRole("button", { name: "Save interaction" }).click();
+    await expect(capture.getByText("Activity saved.")).toBeVisible();
+    await expect(page.locator("#today-recent-activity")).toContainText(
+      "Designed a compiler together",
+    );
+    for (const name of ["Ada Lovelace", "Grace Hopper", beyondName]) {
+      await expect(page.locator("#today-recent-activity")).toContainText(name);
+    }
+    await expect(page.locator("#today-recent-activity")).toContainText(
+      `Category: ${activityTypeLabel}`,
+    );
+    await expect(page.locator("#today-recent-activity")).not.toContainText(
+      "Emotions:",
+    );
+    await capture.getByLabel("Summary").fill("Second sequential capture");
+    await capture.getByRole("button", { name: "Save interaction" }).click();
+    await expect(page.locator("#today-recent-activity")).toContainText(
+      "Second sequential capture",
+    );
+    await capture.getByRole("button", { name: "Cancel" }).click();
+    await expect(capture).toBeHidden();
+
+    const adaId = adaPath.split("/").at(-1)!;
+    for (let index = 0; index < 21; index += 1) {
+      const created = await page.request.post(`${origin}/api/v1/interactions`, {
+        data: {
+          body: `Paged note ${String(index).padStart(2, "0")}`,
+          kind: "note",
+          personId: adaId,
+          requestId: crypto.randomUUID(),
+        },
+        headers: { origin },
+      });
+      expect(created.status()).toBe(201);
+    }
+
+    await page.goto(`${adaPath}?section=activities`);
+    await page.reload();
+    const adaActivities = page.locator("#profile-section-activities");
+    const timeline = page.locator("#person-timeline");
+    const activityFilter = timeline.getByRole("button", {
+      name: "Activities",
+      exact: true,
+    });
+    // The timeline island replaces the shell's disabled chips (GAP-028).
+    await waitForIsland(page, "person-timeline");
+    await activityFilter.scrollIntoViewIfNeeded();
+    await activityFilter.click();
+    const compilerTimelineRow = timeline.locator("[data-timeline-id]", {
+      hasText: "Designed a compiler together",
+    });
+    await expect(compilerTimelineRow).toHaveCount(1);
+    await compilerTimelineRow.locator("summary").click();
+    await expect(
+      compilerTimelineRow.getByText(`Category: ${activityTypeLabel}`, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(compilerTimelineRow).not.toContainText("Emotions:");
+    const reportPath = `${adaPath}/activity-report`;
+    const reportLink = adaActivities.getByRole("link", {
+      name: "Open activity report",
+    });
+    await expect(reportLink).toHaveAttribute("href", reportPath);
+    await Promise.all([
+      page.waitForURL(new RegExp(`${reportPath}$`), { timeout: 15_000 }),
+      reportLink.click(),
+    ]);
+    await expect(page.getByRole("heading", { name: "Ada Lovelace activity" }))
+      .toBeVisible();
+    await expect(page.getByRole("button", { name: "Load more", exact: true }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Load more", exact: true }).click();
+    await expect(page.locator("#activity-report-list")).toContainText(
+      "Paged note 00",
+    );
+    await expect(page.locator("#activity-report-list")).toContainText(
+      "Designed a compiler together",
+    );
+    await expect(page.locator("#activity-report-list")).toContainText(
+      `Category: ${activityTypeLabel}`,
+    );
+    await expect(page.locator("#activity-report-list")).not.toContainText(
+      "Emotions:",
+    );
+
+    await page.goto(`${gracePath}?section=activities`);
+    await expect(page.locator("#person-timeline")).toContainText(
+      "Designed a compiler together",
+    );
+
+    await page.goto(`${adaPath}?section=notes`);
+    const adaNotes = page.locator("#profile-section-notes");
+    const addNote = adaNotes.getByRole("button", { name: "Add note" });
+    await addNote.focus();
+    await addNote.press("Enter");
+    await expect(capture).toBeVisible();
+    await expect(capture.getByLabel("What are you recording?")).toHaveValue(
+      "note",
+    );
+    await expect(capture.getByLabel("When it happened")).toBeDisabled();
+    await expect(capture.getByLabel("Participants", { exact: true }))
+      .toHaveValue(
+        adaPath.split("/").at(-1)!,
+      );
+    await capture.getByRole("textbox", { name: "Note", exact: true }).fill(
+      "Remember the analytical engine sketch.",
+    );
+    await capture.getByLabel("Keep this note in Today favorites").check();
+    await capture.getByRole("button", { name: "Save interaction" }).click();
+    await expect(capture.getByText("Note saved.")).toBeVisible();
+    await capture.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator("#person-timeline")).toContainText(
+      "Remember the analytical engine sketch.",
+    );
+
+    await page.goto("/app");
+    await expect(page.locator("#today-favorite-notes")).toContainText(
+      "Remember the analytical engine sketch.",
+    );
+    await expectAccessible(page);
+  },
+);

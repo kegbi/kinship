@@ -1430,7 +1430,7 @@ project once. Full three-browser E2E and image builds run at the end of Phases
       measures integration suites has the same totals.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check.
 
-- [ ] **GAP-036 — E2E support, feature-named specs, flow-ID consistency check.**
+- [x] **GAP-036 — E2E support, feature-named specs, flow-ID consistency check.**
       M-L. Depends: 003.
   - Scope: `tests/e2e/support/` (API fixtures, mail capture, sign-in, page
     objects for shell, directory, profile, settings; `runAxe`). Rename specs to
@@ -1440,6 +1440,33 @@ project once. Full three-browser E2E and image builds run at the end of Phases
     `tools/product/flow_traceability_test.ts` proving every required flow's
     `testRefs` exist and carry the matching annotation and vice versa.
   - Verify: Chromium E2E green; traceability test green.
+  - Delivered 2026-09-27: the 33 flow specs are renamed
+    `<feature>.<FLOW-ID>.spec.ts` after their primary flow (for example
+    `reminders.PLANNING-002`, `sign-in.AUTH-003`, `perf.PERF-001`,
+    `focus.PRF-002`); `public-home` proves no catalogue flow and keeps its name.
+    - Support: `tests/e2e/support/` now holds `env`, `database` (one psql retry
+      helper instead of 16), `mail` (one Mailpit poll with a reader per token
+      rule), `api` (register, verify, create person), `sign-in` (with and
+      without the REL-042 settle), `page-checks` (the axe loader and CSP-report
+      guard), and `shell`, `profile`, and `directory` page objects. Each keeps
+      the exact waits, token rules, and query flags of the copies it replaced,
+      and every test title is unchanged. The specs shrank from 12,428 to 9,738
+      lines.
+    - Annotations: of the four specs without a `flow` annotation, `perf-001` and
+      `public-home` prove no catalogue flow; the app-shell spec now carries
+      TODAY-001 and AUTH-003 on the test that walks them, and the person-shell
+      spec carries PEOPLE-003, with `user-flows.yaml` `testRefs` updated.
+    - Traceability: `tools/product/flow_traceability_test.ts` fails when a
+      required flow's reference is missing or unannotated, when a delivered flow
+      has no reference, or when a spec's annotation names a flow whose
+      references omit it. Its synthetic case covers every rule.
+    - Gateway guard: the gateway contract's sole-origin guard now reads every
+      support module.
+    - Evidence: 55 files changed (+1,665/-3,412). Chromium E2E 57 passed, WebKit
+      56 with `perf-001`'s own skip.
+    - Gates: root test:unit (the gateway log-capture fixture passed in a copy
+      that trusts this environment's proxy), fmt:check, lint, check,
+      check:architecture (14), contracts:check.
 
 - [ ] **GAP-037 — Coverage gaps: read models, worker, storage faults,
       migrations.** M. Depends: 035.

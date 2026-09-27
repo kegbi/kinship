@@ -1,42 +1,10 @@
-import { expect, type Page, test } from "@playwright/test";
-import axe from "axe-core";
-import { recordPolicyViolations } from "./support/content-security-policy.ts";
+import { expect, test } from "@playwright/test";
+import {
+  expectAccessible,
+  recordPolicyViolations,
+} from "./support/page-checks.ts";
 
-interface AxeViolation {
-  readonly help: string;
-  readonly id: string;
-  readonly impact: string | null;
-  readonly nodes: readonly { readonly target: readonly string[] }[];
-}
-
-async function expectAccessible(page: Page): Promise<void> {
-  await page.waitForLoadState("networkidle");
-  await page.evaluate(axe.source);
-  const violations = await page.evaluate(async () => {
-    const scanner = (
-      window as typeof window & {
-        axe: {
-          run: (
-            context: Document,
-            options: { runOnly: readonly string[] },
-          ) => Promise<{ violations: AxeViolation[] }>;
-        };
-      }
-    ).axe;
-
-    const result = await scanner.run(document, {
-      runOnly: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
-    });
-    return result.violations.map(({ help, id, impact, nodes }) => ({
-      help,
-      id,
-      impact,
-      targets: nodes.map((node) => node.target),
-    }));
-  });
-
-  expect(violations).toEqual([]);
-}
+const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 test("public home reports live API readiness and degrades safely", async ({ page }) => {
   const policyViolations = recordPolicyViolations(page);
@@ -211,7 +179,7 @@ test("public pages remain usable at a representative mobile viewport", async ({ 
 
 test("ready and not-found public states pass representative accessibility scans", async ({ page }) => {
   await page.goto("/features");
-  await expectAccessible(page);
+  await expectAccessible(page, { networkIdle: true, runOnly: wcagTags });
 
   const response = await page.goto("/a-route-that-does-not-exist");
   expect(response?.status()).toBe(404);
@@ -229,5 +197,5 @@ test("ready and not-found public states pass representative accessibility scans"
       "href",
       "/features",
     );
-  await expectAccessible(page);
+  await expectAccessible(page, { networkIdle: true, runOnly: wcagTags });
 });

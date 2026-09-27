@@ -536,7 +536,7 @@ request timeout. The machine-readable authority and blocking regression tasks
 are [`mvp-capacity-profile.json`](mvp-capacity-profile.json) and
 `deno task test:unit --module=performance`, plus the narrow production-built
 Chromium boundary
-`deno task test:e2e tests/e2e/perf-001.spec.ts --project=chromium`. These
+`deno task test:e2e tests/e2e/perf.PERF-001.spec.ts --project=chromium`. These
 budgets are MVP regression thresholds, not production SLOs or a claim about a
 named deployment.
 

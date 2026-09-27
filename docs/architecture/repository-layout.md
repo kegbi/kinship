@@ -222,7 +222,19 @@ the target module's `public.ts`; paths into `domain`, `application`, `ports`,
 Unit and adapter contract tests may be colocated with the production code they
 exercise. Cross-module integration tests live at the narrowest shared boundary.
 Browser workflows live under `tests/e2e` and carry IDs from
-[`docs/product/user-flows.yaml`](../product/user-flows.yaml).
+[`docs/product/user-flows.yaml`](../product/user-flows.yaml). A spec is named
+`<feature>.<FLOW-ID>.spec.ts` for the primary flow it proves (for example
+`reminders.PLANNING-002.spec.ts`); a spec without a flow keeps its feature name
+and any other catalog ID it carries (`perf.PERF-001.spec.ts`). Each test that
+proves a flow carries a `flow` annotation with its ID, and
+`tools/product/flow_traceability_test.ts` fails unless every required flow's
+`testRefs` name specs that carry its annotation and every annotation's spec is
+among that flow's `testRefs`. Shared E2E setup lives in `tests/e2e/support/`:
+the origins (`env.ts`), API fixtures (`api.ts`), Mailpit capture (`mail.ts`),
+direct database access (`database.ts`), UI sign-in (`sign-in.ts`), axe scans and
+the CSP report guard (`page-checks.ts`), navigation settles (`navigation.ts`,
+`islands.ts`), and thin page objects for locators several specs repeat
+(`shell.ts`, `directory.ts`, `profile.ts`).
 
 No test-only barrel may expose private production internals across modules.
 

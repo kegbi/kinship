@@ -216,7 +216,8 @@ export const API_CONFIGURATION_READS = [
   "tools/e2e.ts",
   "tools/tasks/manifest.ts",
   "tools/tasks/run.ts",
-  "tests/e2e/auth-003.spec.ts",
+  "tests/e2e/sign-in.AUTH-003.spec.ts",
+  "tests/e2e/support",
   "docs/architecture/backend-architecture.md",
   "docs/architecture/compose-contract.md",
   "docs/architecture/configuration-and-secrets.md",
@@ -1675,6 +1676,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/pipeline_contract_test.ts",
         "tools/source_hygiene_test.ts",
         "tools/architecture/check_boundaries_test.ts",
+        "tools/product/flow_traceability_test.ts",
       ],
       permissions: {
         read: [
@@ -1689,6 +1691,7 @@ export const MODULES: readonly TaskModule[] = [
           "compose.yaml",
           "docs/architecture",
           "docs/planning/private-production-profile.json",
+          "docs/product/user-flows.yaml",
           "personal-crm-schema/v7",
           "apps",
           "packages",
@@ -1706,7 +1709,7 @@ export const MODULES: readonly TaskModule[] = [
         read: [
           "docs/planning/mvp-capacity-profile.json",
           "playwright.config.ts",
-          "tests/e2e/perf-001.spec.ts",
+          "tests/e2e/perf.PERF-001.spec.ts",
           "tests/integration/planning_delivery_postgres_test.ts",
           "packages/backend/modules/people/transport/http/directory_test.ts",
           "packages/backend/read-models/people-directory/application/list_people_test.ts",

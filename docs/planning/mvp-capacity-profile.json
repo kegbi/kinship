@@ -66,7 +66,7 @@
         ]
       },
       {
-        "path": "tests/e2e/perf-001.spec.ts",
+        "path": "tests/e2e/perf.PERF-001.spec.ts",
         "markers": [
           "profile.functionalCeilingsMs.interactivePage",
           "profile.clients.responsiveSmoke"

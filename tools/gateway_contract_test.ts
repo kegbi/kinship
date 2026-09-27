@@ -820,7 +820,7 @@ Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", a
   const [launcher, flow] = await Promise.all([
     Deno.readTextFile(new URL("./e2e.ts", import.meta.url)),
     Deno.readTextFile(
-      new URL("../tests/e2e/auth-003.spec.ts", import.meta.url),
+      new URL("../tests/e2e/sign-in.AUTH-003.spec.ts", import.meta.url),
     ),
   ]);
   assert(
@@ -830,6 +830,34 @@ Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", a
   assert(
     !launcher.includes("TEST_API_ORIGIN") && !flow.includes("TEST_API_ORIGIN"),
     "product actions use the sole gateway origin",
+  );
+  // GAP-036: the specs take their origins from the shared E2E support, so the
+  // same guard covers every support module.
+  const supportDirectory = new URL("../tests/e2e/support/", import.meta.url);
+  const support = new Map<string, string>();
+  for await (const entry of Deno.readDir(supportDirectory)) {
+    if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
+    support.set(
+      entry.name,
+      await Deno.readTextFile(new URL(entry.name, supportDirectory)),
+    );
+  }
+  assert(support.has("env.ts"), "E2E support declares its origins");
+  for (const [name, source] of support) {
+    assert(
+      !source.includes("TEST_API_ORIGIN"),
+      `E2E support ${name} uses the sole gateway origin`,
+    );
+    assert(
+      name === "env.ts" || !source.includes("TEST_WEB_ORIGIN"),
+      `E2E support ${name} takes the gateway origin from env.ts`,
+    );
+  }
+  assert(
+    /export const origin = process\.env\.TEST_WEB_ORIGIN \?\?/.test(
+      support.get("env.ts")!,
+    ),
+    "E2E support's one origin is the gateway origin",
   );
 });
 

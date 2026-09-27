@@ -207,6 +207,14 @@ function catalogList(block: string, key: string): string[] {
     .map((match) => capture(match, 1, `${key} item`).trim());
 }
 
+/** The `e2e.testRefs` list of a flow, on one line or wrapped over several. */
+function e2eTestRefs(block: string): string[] {
+  const match = block.match(/testRefs: \[([^\]]*)\]/);
+  assert(match !== null, "missing testRefs");
+  return capture(match, 1, "testRefs").split(",").map((item) => item.trim())
+    .filter((item) => item !== "");
+}
+
 function markdownSection(source: string, heading: string): string {
   const marker = `## ${heading}`;
   const start = source.indexOf(marker);
@@ -317,53 +325,77 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     "defaultDeliveryStatus: planned",
     "page delivery default",
   );
-  const deliveredFlows = new Map([
-    ["AUTH-001", "tests/e2e/auth-001.spec.ts"],
-    ["AUTH-002", "tests/e2e/auth-002.spec.ts"],
-    ["AUTH-003", "tests/e2e/auth-003.spec.ts"],
-    ["AUTH-004", "tests/e2e/app-002e.spec.ts"],
-    ["AUTH-005", "tests/e2e/app-009c.spec.ts"],
-    ["WORKSPACE-001", "tests/e2e/app-002e.spec.ts"],
-    ["WORKSPACE-002", "tests/e2e/app-009d.spec.ts"],
-    ["WORKSPACE-003", "tests/e2e/app-004e.spec.ts"],
-    ["PEOPLE-001", "tests/e2e/app-003a.spec.ts"],
+  const deliveredFlows = new Map<string, readonly string[]>([
+    ["AUTH-001", ["tests/e2e/registration.AUTH-001.spec.ts"]],
+    ["AUTH-002", ["tests/e2e/invitations.AUTH-002.spec.ts"]],
+    [
+      "AUTH-003",
+      [
+        "tests/e2e/sign-in.AUTH-003.spec.ts",
+        "tests/e2e/shell.TODAY-001.spec.ts",
+      ],
+    ],
+    ["AUTH-004", ["tests/e2e/settings.AUTH-004.spec.ts"]],
+    ["AUTH-005", ["tests/e2e/personal-lifecycle.AUTH-005.spec.ts"]],
+    ["WORKSPACE-001", ["tests/e2e/settings.AUTH-004.spec.ts"]],
+    ["WORKSPACE-002", ["tests/e2e/workspace-lifecycle.WORKSPACE-002.spec.ts"]],
+    ["WORKSPACE-003", ["tests/e2e/personalization.WORKSPACE-003.spec.ts"]],
+    ["PEOPLE-001", ["tests/e2e/people-create.PEOPLE-001.spec.ts"]],
     [
       "PEOPLE-002",
-      "tests/e2e/app-003b.spec.ts, tests/e2e/prf-002.spec.ts",
+      [
+        "tests/e2e/people-directory.PEOPLE-002.spec.ts",
+        "tests/e2e/focus.PRF-002.spec.ts",
+      ],
     ],
-    ["PEOPLE-003", "tests/e2e/app-008c.spec.ts"],
-    ["PEOPLE-004", "tests/e2e/app-004a.spec.ts"],
-    ["PEOPLE-005", "tests/e2e/app-004b.spec.ts"],
-    ["PEOPLE-006", "tests/e2e/app-004c.spec.ts"],
-    ["RELATIONSHIP-001", "tests/e2e/app-004d.spec.ts"],
-    ["INTERACTION-001", "tests/e2e/app-005a.spec.ts"],
-    ["INTERACTION-002", "tests/e2e/app-005b.spec.ts"],
-    ["GOVERNANCE-002", "tests/e2e/app-005c.spec.ts"],
-    ["PLANNING-001", "tests/e2e/app-006a.spec.ts"],
-    ["PLANNING-002", "tests/e2e/app-006b.spec.ts"],
-    ["TODAY-001", "tests/e2e/app-006c.spec.ts"],
+    [
+      "PEOPLE-003",
+      [
+        "tests/e2e/person-workspace.PEOPLE-003.spec.ts",
+        "tests/e2e/person-shell.PEOPLE-003.spec.ts",
+      ],
+    ],
+    ["PEOPLE-004", ["tests/e2e/person-lifecycle.PEOPLE-004.spec.ts"]],
+    ["PEOPLE-005", ["tests/e2e/important-dates.PEOPLE-005.spec.ts"]],
+    ["PEOPLE-006", ["tests/e2e/profile-facts.PEOPLE-006.spec.ts"]],
+    ["RELATIONSHIP-001", ["tests/e2e/relationships.RELATIONSHIP-001.spec.ts"]],
+    ["INTERACTION-001", ["tests/e2e/activities.INTERACTION-001.spec.ts"]],
+    ["INTERACTION-002", ["tests/e2e/communications.INTERACTION-002.spec.ts"]],
+    ["GOVERNANCE-002", ["tests/e2e/audit-history.GOVERNANCE-002.spec.ts"]],
+    ["PLANNING-001", ["tests/e2e/tasks.PLANNING-001.spec.ts"]],
+    ["PLANNING-002", ["tests/e2e/reminders.PLANNING-002.spec.ts"]],
+    [
+      "TODAY-001",
+      [
+        "tests/e2e/today.TODAY-001.spec.ts",
+        "tests/e2e/shell.TODAY-001.spec.ts",
+      ],
+    ],
     [
       "FILES-001",
-      "tests/e2e/app-007a.spec.ts, tests/e2e/app-007c.spec.ts",
+      [
+        "tests/e2e/person-files.FILES-001.spec.ts",
+        "tests/e2e/storage-diagnostics.FILES-001.spec.ts",
+      ],
     ],
-    ["GIFTS-001", "tests/e2e/app-007b.spec.ts"],
-    ["JOURNAL-001", "tests/e2e/app-008a.spec.ts"],
-    ["GOVERNANCE-001", "tests/e2e/app-008b.spec.ts"],
-    ["IMPORT-001", "tests/e2e/app-009a.spec.ts"],
-    ["EXPORT-001", "tests/e2e/app-009b.spec.ts"],
-    ["API-001", "tests/e2e/app-010a.spec.ts"],
-    ["INTEGRATION-001", "tests/e2e/app-010b.spec.ts"],
+    ["GIFTS-001", ["tests/e2e/gifts.GIFTS-001.spec.ts"]],
+    ["JOURNAL-001", ["tests/e2e/journal.JOURNAL-001.spec.ts"]],
+    ["GOVERNANCE-001", ["tests/e2e/legal-acceptance.GOVERNANCE-001.spec.ts"]],
+    ["IMPORT-001", ["tests/e2e/monica-import.IMPORT-001.spec.ts"]],
+    ["EXPORT-001", ["tests/e2e/export.EXPORT-001.spec.ts"]],
+    ["API-001", ["tests/e2e/api-tokens.API-001.spec.ts"]],
+    ["INTEGRATION-001", ["tests/e2e/dav.INTEGRATION-001.spec.ts"]],
   ]);
   for (const flow of flows) {
-    const deliveredTestRef = deliveredFlows.get(flow.id);
+    const deliveredTestRefs = deliveredFlows.get(flow.id);
     assertEquals(
       scalar(flow.block, "deliveryStatus") ?? "planned",
-      deliveredTestRef ? "delivered" : "planned",
+      deliveredTestRefs ? "delivered" : "planned",
       `${flow.id} effective delivery status`,
     );
-    assertIncludes(
-      flow.block,
-      deliveredTestRef ? `testRefs: [${deliveredTestRef}]` : "testRefs: []",
+    assertEquals(
+      e2eTestRefs(flow.block).join(", "),
+      (deliveredTestRefs ?? []).join(", "),
       `${flow.id} E2E state`,
     );
     assertIncludes(flow.block, "required: true", `${flow.id} E2E requirement`);
