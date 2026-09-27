@@ -48,6 +48,8 @@ export interface ReminderAudit {
 export interface ReminderDeliveryAudit {
   record(command: {
     readonly action: "delivered" | "failed";
+    /** How many occurrences the digest email carried, for a digest. */
+    readonly digestSize?: number;
     readonly occurrence: ClaimedReminderOccurrence;
     readonly occurredAt: Date;
     /** The job run that delivered it, when the worker correlates its runs. */

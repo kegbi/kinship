@@ -13,9 +13,11 @@ interface PreferenceRow {
   readonly contactNameOrder: string;
   readonly contactSortOrder: string;
   readonly currencyCode: string | null;
+  readonly digestTime: string | null;
   readonly fluidLayout: boolean;
   readonly locale: string;
   readonly measurementSystem: "imperial" | "metric";
+  readonly reminderDelivery: ResolvedMemberPreferences["reminderDelivery"];
   readonly temperatureScale: "celsius" | "fahrenheit";
   readonly timezone: string | null;
 }
@@ -29,15 +31,25 @@ interface WorkspaceRow {
   readonly slug: string | null;
 }
 
+/** The member's reminder delivery, read the way the contract spells it. */
+const reminderColumns = sql`
+  mp.reminder_delivery as "reminderDelivery",
+  to_char(mp.digest_time, 'HH24:MI') as "digestTime"
+`;
+
 function preferences(row: PreferenceRow): ResolvedMemberPreferences {
   return {
     effectiveTimezone: row.effectiveTimezone,
     contactNameOrder: row.contactNameOrder,
     contactSortOrder: row.contactSortOrder,
-    ...pickDefined({ currencyCode: row.currencyCode }),
+    ...pickDefined({
+      currencyCode: row.currencyCode,
+      digestTime: row.digestTime,
+    }),
     fluidLayout: row.fluidLayout,
     locale: row.locale,
     measurementSystem: row.measurementSystem,
+    reminderDelivery: row.reminderDelivery,
     temperatureScale: row.temperatureScale,
     ...pickDefined({ timezone: row.timezone }),
   };
@@ -66,7 +78,8 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         mp.currency_code::text as "currencyCode",
         mp.contact_sort_order as "contactSortOrder",
         mp.contact_name_order as "contactNameOrder",
-        mp.fluid_layout as "fluidLayout"
+        mp.fluid_layout as "fluidLayout",
+        ${reminderColumns}
       from crm.workspace_members wm
       join crm.member_preferences mp on mp.member_id = wm.id
       join crm.workspaces w on w.id = wm.workspace_id
@@ -100,7 +113,13 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         currency_code = ${command.currencyCode ?? null},
         contact_sort_order = ${command.contactSortOrder},
         contact_name_order = ${command.contactNameOrder},
-        fluid_layout = ${command.fluidLayout}, updated_at = now()
+        fluid_layout = ${command.fluidLayout},
+        reminder_delivery = coalesce(
+          ${command.reminderDelivery ?? null}, mp.reminder_delivery
+        ),
+        digest_time = case when ${command.digestTime === undefined}
+          then mp.digest_time else ${command.digestTime ?? null}::time end,
+        updated_at = now()
       from crm.workspace_members wm, crm.workspaces w
       where mp.member_id = wm.id and w.id = wm.workspace_id
         and wm.id = ${command.memberId}::uuid
@@ -116,7 +135,8 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         mp.currency_code::text as "currencyCode",
         mp.contact_sort_order as "contactSortOrder",
         mp.contact_name_order as "contactNameOrder",
-        mp.fluid_layout as "fluidLayout"
+        mp.fluid_layout as "fluidLayout",
+        ${reminderColumns}
     `.execute(database);
     return result.rows[0] ? preferences(result.rows[0]) : undefined;
   }

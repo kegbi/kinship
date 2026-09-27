@@ -163,6 +163,7 @@ const mount = (archived = false, hidden: readonly string[] = []) =>
         contactSortOrder: "given_name_asc",
         fluidLayout: false,
         measurementSystem: "metric",
+        reminderDelivery: "in_app",
         temperatureScale: "celsius",
         ...utc,
       },

@@ -38,15 +38,42 @@ export interface ReminderRecipients {
   listEligible(command: {
     readonly transaction: PlanningTransaction;
     readonly workspaceId: string;
-  }): Promise<
-    readonly { readonly memberId: string; readonly workspaceId: string }[]
-  >;
+  }): Promise<readonly ReminderRecipient[]>;
   filterEligible(command: {
     readonly memberIds: readonly string[];
     readonly transaction: PlanningTransaction;
-  }): Promise<
-    readonly { readonly memberId: string; readonly workspaceId: string }[]
-  >;
+  }): Promise<readonly ReminderRecipient[]>;
+}
+
+/**
+ * One member a scan may deliver to. The address is present only once it is
+ * verified, and email reminders are generated and sent only when it is.
+ */
+export interface ReminderRecipient {
+  readonly memberId: string;
+  readonly verifiedEmail?: string;
+  readonly workspaceId: string;
+}
+
+/** One member's reminder-delivery choice, as `workspaces` answers it. */
+export interface MemberDeliveryChoice {
+  readonly digestTime?: string;
+  readonly memberId: string;
+  readonly reminderDelivery: "both" | "email" | "in_app";
+  readonly timezone?: string;
+}
+
+/**
+ * What members chose about reminder delivery (PLANNING-003). `workspaces`
+ * owns the preferences, so planning asks for them through this port, filled
+ * at the composition root, rather than reading the table itself. A member
+ * with no answer chose nothing, which is in-app delivery with no digest.
+ */
+export interface ReminderDeliveryPreferences {
+  listDeliveryPreferences(command: {
+    readonly memberIds: readonly string[];
+    readonly transaction: PlanningTransaction;
+  }): Promise<readonly MemberDeliveryChoice[]>;
 }
 
 /** The zone a member's local send times are read in. */

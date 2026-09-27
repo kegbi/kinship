@@ -109,9 +109,11 @@ describe("AUTH-004 personal preferences", () => {
       contactNameOrder: "family_given_nickname",
       contactSortOrder: "family_name_asc",
       currencyCode: "RSD",
+      digestTime: null,
       fluidLayout: true,
       locale: "sr-Latn",
       measurementSystem: "imperial",
+      reminderDelivery: "in_app",
       temperatureScale: "fahrenheit",
     }]);
     expect(saved).toEqual([{ fluidLayout: true, workspaceId: ids.workspace }]);
@@ -273,5 +275,87 @@ describe("AUTH-004 personal preferences", () => {
       expect(status().textContent).toBe("Preferences saved.")
     );
     expect(saved).toEqual([{ fluidLayout: true, workspaceId: ids.workspace }]);
+  });
+
+  it("[PLANNING-003] saves reminder delivery and a digest time for reminders scheduled from now on", async () => {
+    shell();
+    const api = stubApi({
+      [PREFERENCES]: loaded({ digestTime: "08:15", reminderDelivery: "both" }),
+      [SAVE]: [
+        jsonResponse({
+          preferences: preferences({ reminderDelivery: "email" }),
+          status: "ready",
+        }),
+        jsonResponse({
+          preferences: preferences({
+            digestTime: "07:30",
+            reminderDelivery: "email",
+          }),
+          status: "ready",
+        }),
+      ],
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    const delivery = screen.getByLabelText<HTMLSelectElement>(
+      "Reminder delivery",
+    );
+    const digest = field("Daily email digest");
+    expect(delivery.value).toBe("both");
+    expect(digest.value).toBe("08:15");
+    const hint = element("#reminder-delivery-hint").textContent ?? "";
+    expect(hint).toMatch(/verified email address/);
+    expect(hint).toMatch(/stay in the app/);
+    expect(hint).toMatch(/scheduled from now on/);
+    expect(hint).toMatch(
+      /digest time applies to every email reminder still waiting/,
+    );
+    expect(delivery.getAttribute("aria-describedby")).toContain(
+      "reminder-delivery-hint",
+    );
+    await expectNoAxeViolations(document.body);
+    act(() => {
+      fireEvent.change(delivery, { target: { value: "email" } });
+    });
+    type(digest, "");
+    submit();
+    await waitFor(() =>
+      expect(status().textContent).toBe("Preferences saved.")
+    );
+    type(digest, "07:30");
+    submit();
+    await waitFor(() => expect(api.bodies()).toHaveLength(2));
+    expect(
+      api.bodies().map((body) => {
+        const { digestTime, reminderDelivery } = body as Record<
+          string,
+          unknown
+        >;
+        return [reminderDelivery, digestTime];
+      }),
+    ).toEqual([["email", null], ["email", "07:30"]]);
+  });
+
+  it("[PLANNING-003] focuses the digest time when the server refuses it", async () => {
+    shell();
+    stubApi({
+      [PREFERENCES]: loaded(),
+      [SAVE]: problemResponse(400, {
+        detail: "Review the preference values.",
+        errors: { digestTime: "Enter a time as HH:MM." },
+      }),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    const digest = field("Daily email digest");
+    type(digest, "07:30");
+    submit();
+    await waitFor(() =>
+      expect(digest.getAttribute("aria-invalid")).toBe("true")
+    );
+    expect(element("#digest-time-error").textContent).toBe(
+      "Enter a time as HH:MM.",
+    );
+    expect(document.activeElement).toBe(digest);
   });
 });

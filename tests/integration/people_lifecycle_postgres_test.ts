@@ -7,6 +7,7 @@
  * `people.test-helper.ts`.
  */
 
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import {
   createImportantDateManagement,
   createPersonLifecycle,
@@ -568,7 +569,10 @@ Deno.test({
       audit: importantDateAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       ids: { create: () => crypto.randomUUID() },
-      publisher: new PostgresPersonDateReminderPublisher(actors),
+      publisher: new PostgresPersonDateReminderPublisher(
+        actors,
+        new PostgresReminderDeliveryPreferences(),
+      ),
       repository: new PostgresImportantDateRepository(),
       transaction: new PostgresPeopleTransaction(peopleConnection.db),
     });

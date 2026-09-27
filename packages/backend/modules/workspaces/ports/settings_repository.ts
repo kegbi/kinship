@@ -18,7 +18,7 @@
 
 import type {
   ManagedMemberIdentity,
-  MemberPreferences,
+  MemberPreferencesUpdate,
   ResolvedMemberPreferences,
   WorkspaceConfiguration,
   WorkspaceMemberRecord,
@@ -33,7 +33,7 @@ export interface WorkspaceSettingsRepository {
     },
   ): Promise<ResolvedMemberPreferences | undefined>;
   updatePreferences(
-    command: SettingsActor & MemberPreferences & {
+    command: SettingsActor & MemberPreferencesUpdate & {
       readonly transaction: SettingsTransaction;
     },
   ): Promise<ResolvedMemberPreferences | "invalid-currency" | undefined>;

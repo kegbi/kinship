@@ -33,6 +33,10 @@ const v7SchemaPath = new URL(
   "../../personal-crm-schema/v7/personal_crm_schema_v7.sql",
   import.meta.url,
 );
+const v8SchemaPath = new URL(
+  "../../personal-crm-schema/v8/personal_crm_schema_v8.sql",
+  import.meta.url,
+);
 const migrationPath = new URL(
   "../../personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
   import.meta.url,
@@ -57,6 +61,10 @@ const migrationV6ToV7Path = new URL(
   "../../personal-crm-schema/v7/migrations/0007_add_workspace_deletion_records.sql",
   import.meta.url,
 );
+const migrationV7ToV8Path = new URL(
+  "../../personal-crm-schema/v8/migrations/0008_add_member_reminder_delivery.sql",
+  import.meta.url,
+);
 
 /** Reads every immutable schema artifact the runner verifies and applies. */
 export async function readCanonicalArtifacts(): Promise<
@@ -69,6 +77,7 @@ export async function readCanonicalArtifacts(): Promise<
     migrationV4ToV5: await Deno.readTextFile(migrationV4ToV5Path),
     migrationV5ToV6: await Deno.readTextFile(migrationV5ToV6Path),
     migrationV6ToV7: await Deno.readTextFile(migrationV6ToV7Path),
+    migrationV7ToV8: await Deno.readTextFile(migrationV7ToV8Path),
     v1Sql: await Deno.readTextFile(v1SchemaPath),
     v2Sql: await Deno.readTextFile(v2SchemaPath),
     v3Sql: await Deno.readTextFile(v3SchemaPath),
@@ -76,10 +85,11 @@ export async function readCanonicalArtifacts(): Promise<
     v5Sql: await Deno.readTextFile(v5SchemaPath),
     v6Sql: await Deno.readTextFile(v6SchemaPath),
     v7Sql: await Deno.readTextFile(v7SchemaPath),
+    v8Sql: await Deno.readTextFile(v8SchemaPath),
   };
 }
 
-/** Brings the configured database to canonical schema v7, or refuses. */
+/** Brings the configured database to canonical schema v8, or refuses. */
 export async function runMigration(
   environment: { get(name: string): string | undefined },
 ): Promise<Exclude<SchemaAction, "reject">> {
@@ -96,5 +106,5 @@ export async function runMigration(
 }
 
 if (import.meta.main) {
-  console.log(`Canonical schema v7: ${await runMigration(Deno.env)}`);
+  console.log(`Canonical schema v8: ${await runMigration(Deno.env)}`);
 }

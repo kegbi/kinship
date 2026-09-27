@@ -43,13 +43,16 @@ export function settings(
         fluidLayout: false,
         locale: "en",
         measurementSystem: "metric",
+        reminderDelivery: "in_app",
         temperatureScale: "celsius",
       }),
-    updatePreferences: (_actor, input) =>
+    updatePreferences: (_actor, { digestTime, ...input }) =>
       Promise.resolve({
         preferences: {
           ...input,
+          ...(digestTime ? { digestTime } : {}),
           effectiveTimezone: input.timezone ?? "Europe/Belgrade",
+          reminderDelivery: input.reminderDelivery ?? "in_app",
         },
         status: "ready",
       }),

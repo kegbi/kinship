@@ -74,6 +74,7 @@ const PREFERENCES: ResolvedMemberPreferences = {
   fluidLayout: false,
   locale: "en",
   measurementSystem: "metric",
+  reminderDelivery: "in_app",
   temperatureScale: "celsius",
   timezone: "Europe/Berlin",
 };

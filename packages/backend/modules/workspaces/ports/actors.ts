@@ -53,6 +53,11 @@ export interface ActorRevalidation {
 export interface EligibleRecipient {
   readonly memberId: string;
   readonly userId: string;
+  /**
+   * The member's email address, present only once it is verified: reminder
+   * email is sent nowhere else (PLANNING-003).
+   */
+  readonly verifiedEmail?: string;
   readonly workspaceId: string;
 }
 

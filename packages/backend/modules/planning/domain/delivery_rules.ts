@@ -14,6 +14,12 @@
  * rejected so an operator cannot ask the worker for something unsafe.
  */
 
+/** Where a reminder occurrence is delivered. */
+export type DeliveryChannel = "email" | "in_app";
+
+/** What a member chose for the occurrences generated for them from now on. */
+export type ReminderDeliveryPreference = "both" | "email" | "in_app";
+
 /** Whether the provider is known to have had an effect for an occurrence. */
 export type ProviderResultState =
   | "ambiguous"
@@ -23,15 +29,28 @@ export type ProviderResultState =
 
 /** One occurrence the worker has leased and is responsible for. */
 export interface ClaimedReminderOccurrence {
+  /**
+   * The key an earlier email attempt was actually sent under, when it was a
+   * digest's rather than the occurrence's own. A reconciliation asks with it.
+   */
+  readonly attemptKey?: string;
   readonly attemptCount: number;
   readonly body: string;
+  readonly channel: DeliveryChannel;
   readonly claimToken: string;
+  /**
+   * The local date of the digest an email occurrence is delivered in, present
+   * only when its member has a digest time.
+   */
+  readonly digestDate?: string;
   readonly id: string;
   readonly memberId: string;
   /** The reminder's person, when the reminder names one. */
   readonly personId?: string;
   readonly providerIdempotencyKey: string;
   readonly providerResultState: ProviderResultState;
+  /** The member's verified address, absent when they have none. */
+  readonly recipientEmail?: string;
   readonly title: string;
   readonly workspaceId: string;
 }
@@ -193,4 +212,139 @@ export function deliveryAuditAction(
   if (status === "sent") return "delivered";
   if (status === "failed" || status === "manual_attention") return "failed";
   return undefined;
+}
+
+/**
+ * The channels a member's newly generated occurrences use.
+ *
+ * Email needs somewhere to go: a member without a verified address keeps
+ * in-app reminders whatever they chose, so no reminder is lost. Occurrences
+ * that already exist keep the channel they were generated with.
+ */
+export function deliveryChannels(input: {
+  readonly hasVerifiedEmail: boolean;
+  readonly preference: ReminderDeliveryPreference;
+}): readonly DeliveryChannel[] {
+  if (!input.hasVerifiedEmail || input.preference === "in_app") {
+    return ["in_app"];
+  }
+  return input.preference === "email" ? ["email"] : ["in_app", "email"];
+}
+
+/**
+ * The latest daily digest instant at or before `now`, and its local date.
+ *
+ * A digest member's email occurrences are due once this cutoff has passed
+ * their own delivery time, so everything due since the previous digest goes
+ * out together. The time is read in the member's own zone, or UTC when they
+ * chose none, or when theirs is a zone the runtime cannot resolve; a local
+ * time a clock change skips moves forward to the next instant that exists.
+ */
+export function digestWindow(input: {
+  readonly digestTime: string;
+  readonly now: Date;
+  readonly timezone?: string;
+}): { readonly cutoff: Date; readonly localDate: string } {
+  const timeZone = input.timezone && schedulableZone(input.timezone)
+    ? input.timezone
+    : "UTC";
+  const local = Temporal.Instant.fromEpochMilliseconds(input.now.getTime())
+    .toZonedDateTimeISO(timeZone);
+  const plainTime = Temporal.PlainTime.from(input.digestTime);
+  let date = local.toPlainDate();
+  let candidate = date.toZonedDateTime({ plainTime, timeZone });
+  if (Temporal.ZonedDateTime.compare(candidate, local) > 0) {
+    date = date.subtract({ days: 1 });
+    candidate = date.toZonedDateTime({ plainTime, timeZone });
+  }
+  return {
+    cutoff: new Date(candidate.epochMilliseconds),
+    localDate: date.toString(),
+  };
+}
+
+function schedulableZone(timeZone: string): boolean {
+  try {
+    Temporal.Now.zonedDateTimeISO(timeZone);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What one delivery attempt covers: one occurrence, or one member's digest. */
+export type DeliveryUnit =
+  | {
+    readonly kind: "single";
+    readonly occurrence: ClaimedReminderOccurrence;
+  }
+  | {
+    readonly kind: "digest";
+    readonly localDate: string;
+    readonly memberId: string;
+    readonly occurrences: readonly ClaimedReminderOccurrence[];
+  };
+
+/**
+ * How a leased batch is delivered.
+ *
+ * A member's fresh digest claims share one email, placed where the first of
+ * them was claimed. Everything else is delivered on its own, including a
+ * digest claim being reconciled: an earlier attempt may already have sent it,
+ * so it is only ever asked about, never folded into a new email.
+ */
+export function planDeliveryUnits(
+  claims: readonly ClaimedReminderOccurrence[],
+): readonly DeliveryUnit[] {
+  const units: DeliveryUnit[] = [];
+  const digests = new Map<string, ClaimedReminderOccurrence[]>();
+  for (const occurrence of claims) {
+    if (
+      occurrence.channel !== "email" || occurrence.digestDate === undefined ||
+      occurrence.providerResultState !== "unattempted"
+    ) {
+      units.push({ kind: "single", occurrence });
+      continue;
+    }
+    const key = `${occurrence.memberId}|${occurrence.digestDate}`;
+    const members = digests.get(key);
+    if (members) {
+      members.push(occurrence);
+      continue;
+    }
+    const occurrences = [occurrence];
+    digests.set(key, occurrences);
+    units.push({
+      kind: "digest",
+      localDate: occurrence.digestDate,
+      memberId: occurrence.memberId,
+      occurrences,
+    });
+  }
+  return units;
+}
+
+/**
+ * A digest's idempotency key: the member, the local digest date, and the
+ * included occurrences in a stable order, hashed to a bounded token. The
+ * same digest always carries the same key whatever order it was claimed in.
+ */
+export async function digestIdempotencyKey(input: {
+  readonly localDate: string;
+  readonly memberId: string;
+  readonly occurrenceIds: readonly string[];
+}): Promise<string> {
+  const ids = [...input.occurrenceIds].sort();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      [input.memberId, input.localDate, ...ids].join("\n"),
+    ),
+  );
+  return `digest:${
+    Array.from(
+      new Uint8Array(digest),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("")
+  }`;
 }

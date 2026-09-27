@@ -386,8 +386,8 @@ Deno.test("[REL-004] aggregate integration has object-store configuration author
   const reads = INTEGRATION_PERMISSIONS.read;
   assert(
     reads !== undefined && reads !== "all" &&
-      reads.includes("personal-crm-schema/v7"),
-    "aggregate integration must read the canonical v7 schema",
+      reads.includes("personal-crm-schema/v8"),
+    "aggregate integration must read the canonical v8 schema",
   );
   const granted = INTEGRATION_PERMISSIONS.env;
   assert(
@@ -437,15 +437,22 @@ Deno.test("[REL-008] worker receives exact production runtime authority", async 
       "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
       "OBJECT_STORAGE_SECRET_KEY",
       "OBJECT_STORAGE_USE_SSL",
+      "PUBLIC_WEB_ORIGIN",
+      "SMTP_FROM",
+      "SMTP_HOST",
+      "SMTP_PASSWORD",
+      "SMTP_PORT",
+      "SMTP_SECURITY",
+      "SMTP_USERNAME",
     ]
   ) {
     assert(worker.includes(name), `worker command/env omits ${name}`);
   }
   assert(
     worker.includes(
-      "--allow-net=postgres:5432,${OBJECT_STORAGE_HOST:-object-store}:${OBJECT_STORAGE_PORT:-9000}",
+      '"--allow-net=postgres:5432,${OBJECT_STORAGE_HOST:-object-store}:${OBJECT_STORAGE_PORT:-9000},${SMTP_HOST:-mailpit}:${SMTP_PORT:-1025}",',
     ),
-    "worker network authority must be limited to PostgreSQL and configured object storage",
+    "worker network authority must be limited to PostgreSQL, configured object storage, and SMTP",
   );
   for (const overlay of [development, test]) {
     const overlayWorker = overlay.slice(

@@ -1,7 +1,7 @@
 /**
  * The migration runner against real PostgreSQL (GAP-037): the path
  * `deno task migration:apply` takes, driven through its exported entry so the
- * refusals and the v6 upgrade are observed on a live catalog rather than on
+ * refusals and the v1-v7 upgrades are observed on a live catalog rather than on
  * the classification alone (`tools/migrations/baseline_test.ts`).
  *
  * Each case owns a scratch database on the disposable server, so the shared
@@ -66,53 +66,113 @@ async function crmTables(sql: Sql): Promise<readonly string[]> {
   return rows.map((row) => row.name);
 }
 
-Deno.test("[GAP-037] the migration runner upgrades an exact v6 database to the v7 catalog", async () => {
+const priorBaselines = [
+  ["v1", artifacts.v1Sql],
+  ["v2", artifacts.v2Sql],
+  ["v3", artifacts.v3Sql],
+  ["v4", artifacts.v4Sql],
+  ["v5", artifacts.v5Sql],
+  ["v6", artifacts.v6Sql],
+  ["v7", artifacts.v7Sql],
+] as const;
+
+for (const [version, baselineSql] of priorBaselines) {
+  Deno.test(`[GAP-044] the migration runner upgrades an exact ${version} database to the v8 catalog`, async () => {
+    await withScratchDatabase(async ({ sql, url }) => {
+      await sql.unsafe(baselineSql);
+      const userId = crypto.randomUUID();
+      await sql`
+        insert into crm.users (id, email)
+        values (${userId}, ${`${version}-runner@example.test`})
+      `;
+
+      assert(
+        await runMigration(environment(url)) === `upgrade-${version}-to-v8`,
+        `an exact ${version} database was not classified for the upgrade`,
+      );
+
+      const upgraded = await crmTables(sql);
+      const expected = canonicalTableNames(artifacts.v8Sql);
+      assert(
+        JSON.stringify(upgraded) === JSON.stringify(expected) &&
+          upgraded.length === 89,
+        `the upgraded catalog is not v8: ${
+          expected.filter((name) => !upgraded.includes(name)).join(", ")
+        }`,
+      );
+      const [preserved] = await sql<{ readonly email: string }[]>`
+        select email::text from crm.users where id = ${userId}
+      `;
+      assert(
+        preserved?.email === `${version}-runner@example.test`,
+        `the upgrade lost a ${version} row`,
+      );
+      // The runner verified the structure against a freshly built v8 catalog
+      // before it committed; a second run finds exactly that catalog.
+      assert(
+        await runMigration(environment(url)) === "verify-v8",
+        `an upgraded ${version} database is not recognised as exact v8`,
+      );
+    });
+  });
+}
+
+Deno.test("[GAP-044] the v7-to-v8 upgrade keeps every member on in-app delivery with no digest", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
-    await sql.unsafe(artifacts.v6Sql);
-    const userId = crypto.randomUUID();
+    await sql.unsafe(artifacts.v7Sql);
+    const [userId, workspaceId, memberId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await sql`insert into crm.users (id, email) values (${userId}, 'v7-member@example.test')`;
     await sql`
-      insert into crm.users (id, email, first_name, status)
-      values (${userId}, 'v6-runner@example.test', 'Upgrade', 'active')
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${workspaceId}, 'V7 upgrade', ${userId})
     `;
-    const v6Tables = await crmTables(sql);
-    assert(
-      !v6Tables.includes("workspace_lifecycle_records"),
-      "the v6 fixture already carried a v7 table",
-    );
+    await sql`
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status)
+      values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active')
+    `;
+    await sql`
+      insert into crm.member_preferences (member_id, timezone)
+      values (${memberId}, 'Europe/Belgrade')
+    `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v6-to-v7",
-      "an exact v6 database was not classified for the v6-to-v7 upgrade",
+      await runMigration(environment(url)) === "upgrade-v7-to-v8",
+      "an exact v7 database was not classified for the v7-to-v8 upgrade",
     );
-
-    const upgraded = await crmTables(sql);
-    const expected = canonicalTableNames(artifacts.v7Sql);
-    assert(
-      JSON.stringify(upgraded) === JSON.stringify(expected) &&
-        upgraded.length === 89,
-      `the upgraded catalog is not v7: ${
-        expected.filter((name) => !upgraded.includes(name)).join(", ")
-      }`,
-    );
-    const [preserved] = await sql<{ readonly email: string }[]>`
-      select email::text from crm.users where id = ${userId}
+    const [preference] = await sql<{
+      readonly digest_time: string | null;
+      readonly reminder_delivery: string;
+      readonly timezone: string;
+    }[]>`
+      select reminder_delivery, digest_time::text, timezone
+      from crm.member_preferences where member_id = ${memberId}
     `;
     assert(
-      preserved?.email === "v6-runner@example.test",
-      "the upgrade lost a v6 row",
+      preference?.reminder_delivery === "in_app" &&
+        preference.digest_time === null &&
+        preference.timezone === "Europe/Belgrade",
+      `the upgrade changed a member's delivery: ${JSON.stringify(preference)}`,
     );
-    // The runner verified the structure against a freshly built v7 catalog
-    // before it committed; a second run finds exactly that catalog.
+    const refused = await refusal(() =>
+      sql`
+        update crm.member_preferences set reminder_delivery = 'sms'
+        where member_id = ${memberId}
+      `
+    );
     assert(
-      await runMigration(environment(url)) === "verify-v7",
-      "an upgraded database is not recognised as exact v7",
+      refused.includes("member_preferences_reminder_delivery_ck"),
+      `an unknown delivery channel was stored: ${refused}`,
     );
   });
 });
 
 Deno.test("[GAP-037] the migration runner refuses a drifted catalog and leaves it untouched", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
-    await sql.unsafe(artifacts.v7Sql);
+    await sql.unsafe(artifacts.v8Sql);
     await sql`alter table crm.users add column drifted_note text`;
 
     const message = await refusal(() => runMigration(environment(url)));
@@ -148,19 +208,24 @@ Deno.test("[GAP-037] the migration runner refuses a crm schema that matches no b
 
 Deno.test("[GAP-037] the migration runner refuses a changed immutable artifact before connecting", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
-    await sql.unsafe(artifacts.v6Sql);
+    await sql.unsafe(artifacts.v7Sql);
     const message = await refusal(() =>
       applyCanonicalSchema(url, {
         ...artifacts,
-        migrationV6ToV7: `${artifacts.migrationV6ToV7}\n-- drifted`,
+        migrationV7ToV8: `${artifacts.migrationV7ToV8}\n-- drifted`,
       })
     );
     assert(
-      message.startsWith("Schema v6-to-v7 migration checksum mismatch"),
+      message.startsWith("Schema v7-to-v8 migration checksum mismatch"),
       `a changed migration was not refused by checksum: ${message}`,
     );
+    const [column] = await sql<{ readonly present: boolean }[]>`
+      select exists (select 1 from information_schema.columns
+        where table_schema = 'crm' and table_name = 'member_preferences'
+          and column_name = 'reminder_delivery') as present
+    `;
     assert(
-      !(await crmTables(sql)).includes("workspace_lifecycle_records"),
+      column?.present === false,
       "a refused migration still changed the database",
     );
   });

@@ -3329,10 +3329,13 @@ export interface components {
             /** @enum {string} */
             readonly contactSortOrder: "given_name_asc" | "family_name_asc";
             readonly currencyCode?: string;
+            readonly digestTime?: string | null;
             readonly fluidLayout: boolean;
             readonly locale: string;
             /** @enum {string} */
             readonly measurementSystem: "metric" | "imperial";
+            /** @enum {string} */
+            readonly reminderDelivery?: "in_app" | "email" | "both";
             /** @enum {string} */
             readonly temperatureScale: "celsius" | "fahrenheit";
             readonly timezone?: string;
@@ -3608,10 +3611,13 @@ export interface components {
             /** @enum {string} */
             readonly contactSortOrder: "given_name_asc" | "family_name_asc";
             readonly currencyCode?: string;
+            readonly digestTime?: string;
             readonly fluidLayout: boolean;
             readonly locale: string;
             /** @enum {string} */
             readonly measurementSystem: "metric" | "imperial";
+            /** @enum {string} */
+            readonly reminderDelivery: "in_app" | "email" | "both";
             /** @enum {string} */
             readonly temperatureScale: "celsius" | "fahrenheit";
             readonly timezone?: string;

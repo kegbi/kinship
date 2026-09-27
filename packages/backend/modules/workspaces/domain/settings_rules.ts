@@ -14,16 +14,33 @@
 
 import type { WorkspaceRole } from "./roles.ts";
 
+/** Where a member's newly generated reminders are delivered (PLANNING-003). */
+export type ReminderDelivery = "both" | "email" | "in_app";
+
 /** What one member has chosen for themselves. */
 export interface MemberPreferences {
   readonly contactNameOrder: string;
   readonly contactSortOrder: string;
   readonly currencyCode?: string;
+  /** The local `HH:MM` of the daily email digest, absent when there is none. */
+  readonly digestTime?: string;
   readonly fluidLayout: boolean;
   readonly locale: string;
   readonly measurementSystem: "imperial" | "metric";
+  readonly reminderDelivery: ReminderDelivery;
   readonly temperatureScale: "celsius" | "fahrenheit";
   readonly timezone?: string;
+}
+
+/**
+ * What a preferences save may change. The reminder delivery and digest time
+ * are kept when a save leaves them out, so a client that predates them cannot
+ * turn a member's email reminders off; a `null` digest time stops the digest.
+ */
+export interface MemberPreferencesUpdate
+  extends Omit<MemberPreferences, "digestTime" | "reminderDelivery"> {
+  readonly digestTime?: string | null;
+  readonly reminderDelivery?: ReminderDelivery;
 }
 
 /** The same, with the workspace's default filled in where they chose none. */

@@ -10,6 +10,7 @@
  * instance in its final test, most of them through `closeResources()`.
  */
 
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -42,6 +43,7 @@ export const deliveryConnection = connectDatabase(databaseUrl);
 export const deliveryRepository = new PostgresReminderDeliveryRepository(
   deliveryConnection.db,
   new PostgresActorRevalidation(),
+  new PostgresReminderDeliveryPreferences(),
 );
 export const deliveryTransaction = new PostgresPeopleTransaction(
   deliveryConnection.db,

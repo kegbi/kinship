@@ -15,13 +15,13 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 32 required flows: 17 P0, 12 P1, and 3 P2;
-- 31 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 33 required flows: 17 P0, 13 P1, and 3 P2;
+- 32 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 36 Playwright specs under `tests/e2e/`. Flow specs are named
+- 37 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 34 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 35 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -114,6 +114,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
 | `PLANNING-001`     | P0       |              4 | profile, tasks, Today                            | Person/global tasks, completion/reopen, permissions and projections                                     |
 | `PLANNING-002`     | P0       |              4 | profile, Today                                   | Generate, claim, deliver, retry, and de-duplicate reminders across time zones                           |
+| `PLANNING-003`     | P1       |              4 | preferences settings, person profile             | Email and daily-digest delivery with person links, unverified fallback, retry, and reconciliation       |
 | `FILES-001`        | P0       |              5 | profile, storage settings                        | Upload/link/download/remove with limits, authorization, missing/quarantined objects                     |
 | `GIFTS-001`        | P1       |              5 | person profile                                   | Gifts, debts, amounts/currencies, and attachment coordination                                           |
 | `JOURNAL-001`      | P1       |              6 | journal index/item, person profile               | Post/rating/ordered items and person-linked display                                                     |
@@ -126,7 +127,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 32-flow snapshot, this assignment places all 17 P0 and all 12 P1
+For the current 33-flow snapshot, this assignment places all 17 P0 and all 13 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

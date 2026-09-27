@@ -1686,7 +1686,7 @@ section state to `page-catalog.yaml` where a surface changes, plus a Playwright
 spec per the E2E policy. Mutations go through owning-module facades; new tables
 require a synchronized schema v8 and are called out explicitly.
 
-- [ ] **GAP-044 — Reminder email delivery and daily digest.** L. Depends: 016,
+- [x] **GAP-044 — Reminder email delivery and daily digest.** L. Depends: 016,
       019, 039. Flow `PLANNING-003`.
   - Scope: `planning` gains a `ReminderDeliveryChannel` port; `workspaces`
     provides a mail adapter reusing the SMTP transport; member preference
@@ -1697,6 +1697,41 @@ require a synchronized schema v8 and are called out explicitly.
     stores attempt/outcome (verify against v7).
   - Verify: unit tests for channel selection and idempotent delivery;
     Mailpit-backed integration test; E2E `PLANNING-003`.
+  - Delivered 2026-09-27: flow `PLANNING-003` on schema v8, approved by the
+    product owner.
+    - `personal-crm-schema/v8` is one synchronized unit: v7 plus
+      `member_preferences.reminder_delivery` (`in_app`, `email`, or `both`,
+      default `in_app`) and a nullable `digest_time`, with additive migration
+      `0008`. v1 through v7 are byte-identical. The migration baseline,
+      validator, recovery tool, generated database types, and every live pointer
+      (including `AGENTS.md`) move to v8.
+    - `planning` picks channels per member, falling back to in-app without a
+      verified email address. It reads delivery preferences through a
+      `ReminderDeliveryPreferences` port that `workspaces` fills. The worker
+      sends single emails, or one digest per member at the member's
+      `digest_time` in their time zone, through a `ReminderDeliveryChannel` over
+      the `workspaces` SMTP transport. Emails link to the person.
+    - Each attempt is recorded by a guarded compare-and-set on the claim token
+      and lease before the send. Leases are renewed during a batch, so a lost
+      claim is never sent. An unclear answer is reconciled with the key that was
+      actually sent, and SMTP's always-unclear reconcile ends in
+      `manual_attention`. Audit `planning.reminder-delivered` records the
+      channel and a digest's occurrence count.
+    - The personal preferences page adds "Reminder delivery" and "Daily email
+      digest".
+    - Evidence: Mailpit-backed integration suites covering immediate delivery,
+      the digest, retry, unclear-answer reconcile, crash, a stale claim, `both`,
+      the unverified fallback, and important-date channels, plus the
+      `reminder-email.PLANNING-003` spec with PLANNING-002 and AUTH-004 on
+      Chromium and WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      `test:schema` on PostgreSQL 18.4, unit, integration, and build.
+    - Not yet run: the PostgreSQL 17.10 half of `test:schema:matrix`, because
+      the local Docker daemon could not pull the image. It stays owed at the
+      Phase 7 schema checkpoint.
+    - The replay onto GAP-045 re-ran the static gates, unit (except the
+      image-building gateway log test), integration (194 passed), and build. The
+      E2E specs ran on the candidate before the replay.
 
 - [x] **GAP-045 — Avatar upload and display.** M-L. Depends: 017, 028. Flow
       `PEOPLE-007`.

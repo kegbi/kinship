@@ -7,6 +7,7 @@
  * `planning.test-helper.ts`.
  */
 
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import {
   createReminderDeliveryWorker,
   reminderDeliveryAuditFrom,
@@ -385,6 +386,7 @@ Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across tim
   };
   const managementRepository = new PostgresReminderRepository(
     new PostgresActorRevalidation(),
+    new PostgresReminderDeliveryPreferences(),
   );
   const worker = createReminderDeliveryWorker({
     audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),

@@ -130,6 +130,11 @@ export type {
   CurrencyBoundaryTransaction,
   WorkspaceCurrencyBoundary,
 } from "./ports/currency_boundary.ts";
+export type {
+  MemberReminderDelivery,
+  ReminderDeliveryPreferences,
+  ReminderDeliveryPreferencesTransaction,
+} from "./ports/reminder_delivery_preferences.ts";
 export { createPersonalizationManagement } from "./application/personalization.ts";
 export type {
   PersonalizationDependencies,

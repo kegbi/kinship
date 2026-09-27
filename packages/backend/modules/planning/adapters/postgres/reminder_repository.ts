@@ -5,9 +5,13 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type { Clock } from "../../../../shared-kernel/clock.ts";
 import type { StayInTouchCadenceRecord } from "../../domain/cadence.ts";
-import type {
-  ClaimedReminderOccurrence,
-  ProviderDeliveryResult,
+import {
+  type ClaimedReminderOccurrence,
+  type DeliveryChannel,
+  deliveryChannels,
+  digestIdempotencyKey,
+  digestWindow,
+  type ProviderDeliveryResult,
 } from "../../domain/delivery_rules.ts";
 import {
   type CalendarOccurrence,
@@ -20,13 +24,18 @@ import type {
 } from "../../domain/reminder_rules.ts";
 import type {
   InAppReminderEffectStore,
+  ReminderAttemptLedger,
   ReminderDeliveryRepository,
 } from "../../ports/reminder_delivery.ts";
 import type {
+  MemberDeliveryChoice,
+  ReminderDeliveryPreferences,
+  ReminderRecipient,
   ReminderRecipients,
   ReminderRepository,
   ReminderWorkspaceBoundary,
 } from "../../ports/reminder_repository.ts";
+import type { PlanningTransaction } from "../../ports/context.ts";
 
 interface ReminderRow {
   readonly anchor_on: string;
@@ -152,6 +161,44 @@ function cadence(row: CadenceRow): StayInTouchCadenceRecord {
   };
 }
 
+/** What each member chose about delivery, keyed by member. */
+async function choicesOf(
+  preferences: ReminderDeliveryPreferences,
+  transaction: PlanningTransaction,
+  memberIds: readonly string[],
+): Promise<ReadonlyMap<string, MemberDeliveryChoice>> {
+  if (memberIds.length === 0) return new Map();
+  const choices = await preferences.listDeliveryPreferences({
+    memberIds,
+    transaction,
+  });
+  return new Map(choices.map((choice) => [choice.memberId, choice]));
+}
+
+/**
+ * The channels each recipient's newly generated occurrences use: their
+ * choice from `workspaces`, and in-app alone without a verified address.
+ */
+export async function recipientChannels(
+  preferences: ReminderDeliveryPreferences,
+  transaction: PlanningTransaction,
+  recipients: readonly ReminderRecipient[],
+): Promise<ReadonlyMap<string, readonly DeliveryChannel[]>> {
+  const choices = await choicesOf(
+    preferences,
+    transaction,
+    recipients.map((recipient) => recipient.memberId),
+  );
+  return new Map(recipients.map((recipient) => [
+    recipient.memberId,
+    deliveryChannels({
+      hasVerifiedEmail: recipient.verifiedEmail !== undefined,
+      preference: choices.get(recipient.memberId)?.reminderDelivery ??
+        "in_app",
+    }),
+  ]));
+}
+
 /**
  * The reminder use case revalidates the actor under lock before it asks for a
  * delivery time zone (see the `ActorRevalidation` port), so this boundary only
@@ -185,7 +232,10 @@ export class PostgresReminderWorkspaceBoundary
 }
 
 export class PostgresReminderRepository implements ReminderRepository {
-  constructor(private readonly recipients: ReminderRecipients) {}
+  constructor(
+    private readonly recipients: ReminderRecipients,
+    private readonly preferences: ReminderDeliveryPreferences,
+  ) {}
 
   async lockRequest(
     command: Parameters<ReminderRepository["lockRequest"]>[0],
@@ -231,17 +281,38 @@ export class PostgresReminderRepository implements ReminderRepository {
     command: Parameters<ReminderRepository["upsertOccurrences"]>[0],
   ): Promise<readonly ReminderOccurrenceRecord[]> {
     const database = databaseFromSession(command.transaction);
+    const eligible = await this.recipients.filterEligible({
+      memberIds: [command.memberId],
+      transaction: command.transaction,
+    });
+    const channels = (await recipientChannels(
+      this.preferences,
+      command.transaction,
+      eligible,
+    )).get(command.memberId) ?? ["in_app"];
+    // A date that still has a live occurrence on a channel the member no
+    // longer chose keeps it: already generated occurrences keep their channel.
     for (const item of command.occurrences) {
-      await sql`
+      for (const channel of channels) {
+        await sql`
         insert into crm.reminder_occurrences (
           reminder_id, member_id, occurs_on, deliver_at, channel, status,
           title_snapshot, body_snapshot, created_at, updated_at
-        ) values (
+        ) select
           ${command.reminder.id}::uuid, ${command.memberId}::uuid,
           ${item.occursOn}::date, ${item.deliverAt}::timestamptz,
-          'in_app', 'pending', ${command.reminder.title},
+          ${channel}, 'pending', ${command.reminder.title},
           ${`Reminder for ${command.reminder.title}`}, now(), now()
-        ) on conflict (
+        where not exists (
+          select 1 from crm.reminder_occurrences existing
+          where existing.reminder_id = ${command.reminder.id}::uuid
+            and existing.member_id = ${command.memberId}::uuid
+            and existing.occurs_on = ${item.occursOn}::date
+            and existing.lead_time_days is null
+            and existing.channel <> all(${channels}::text[])
+            and existing.status <> 'cancelled'
+        )
+        on conflict (
           reminder_id, member_id, occurs_on, channel,
           (coalesce(lead_time_days, -1))
         ) do update set
@@ -256,6 +327,7 @@ export class PostgresReminderRepository implements ReminderRepository {
           and reminder_occurrences.provider_effect_at is null
           and reminder_occurrences.visible_at is null
       `.execute(database);
+      }
     }
     if (command.occurrences.length === 0) return [];
     const occurrenceDates = command.occurrences.map((item) => item.occursOn);
@@ -266,6 +338,7 @@ export class PostgresReminderRepository implements ReminderRepository {
         and occurrence.occurs_on in (${
       sql.join(occurrenceDates.map((value) => sql`${value}::date`))
     })
+        and occurrence.channel = any(${channels}::text[])
       order by occurrence.deliver_at, occurrence.id
     `.execute(database);
     return result.rows.map(occurrence);
@@ -608,7 +681,9 @@ export class PostgresReminderRepository implements ReminderRepository {
 
 interface ClaimRow {
   readonly attempt_count: number;
+  readonly attempt_key: string | null;
   readonly body: string | null;
+  readonly channel: DeliveryChannel;
   readonly claim_token: string;
   readonly id: string;
   readonly member_id: string;
@@ -635,11 +710,15 @@ interface ReplenishmentRow {
   readonly title: string;
 }
 
+/** How many of one member's due digest occurrences one claim may carry. */
+const DIGEST_CLAIM_LIMIT = 100;
+
 export class PostgresReminderDeliveryRepository
-  implements ReminderDeliveryRepository {
+  implements ReminderAttemptLedger, ReminderDeliveryRepository {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly recipients: ReminderRecipients,
+    private readonly preferences: ReminderDeliveryPreferences,
   ) {}
 
   async replenish(
@@ -688,6 +767,11 @@ export class PostgresReminderDeliveryRepository
       if (eligible.length === 0) return;
       const eligibleMemberIds = eligible.map((row) => row.memberId);
       const eligibleWorkspaceIds = eligible.map((row) => row.workspaceId);
+      const channels = await recipientChannels(
+        this.preferences,
+        { opaque: transaction },
+        eligible,
+      );
       const candidates = await sql<ReplenishmentRow>`
         select distinct reminder.id::text as reminder_id,
           occurrence.member_id::text, reminder.anchor_on::text,
@@ -729,6 +813,8 @@ export class PostgresReminderDeliveryRepository
         } catch {
           continue;
         }
+        const candidateChannels = channels.get(candidate.member_id) ??
+          ["in_app"];
         for (const occurrence of occurrences) {
           const deliverAt = leadDeliveryAt(
             occurrence.occursOn,
@@ -736,19 +822,30 @@ export class PostgresReminderDeliveryRepository
             candidate.send_time,
             candidate.timezone,
           );
+          // One statement per date, so `both` mints both channels while a
+          // date generated earlier on any channel keeps what it has.
           await sql`
             insert into crm.reminder_occurrences (
               reminder_id, member_id, occurs_on, deliver_at, lead_time_days,
               channel, status, title_snapshot, body_snapshot, created_at,
               updated_at
-            ) values (
+            ) select
               ${candidate.reminder_id}::uuid, ${candidate.member_id}::uuid,
               ${occurrence.occursOn}::date,
-              ${deliverAt}::timestamptz, ${candidate.lead_time_days},
-              'in_app', 'pending', ${candidate.title},
+              ${deliverAt}::timestamptz, ${candidate.lead_time_days}::int,
+              channel, 'pending', ${candidate.title},
               ${`Reminder for ${candidate.title}`}, ${command.now},
               ${command.now}
-            ) on conflict do nothing
+            from unnest(${candidateChannels}::text[]) as channel
+            where not exists (
+              select 1 from crm.reminder_occurrences existing
+              where existing.reminder_id = ${candidate.reminder_id}::uuid
+                and existing.member_id = ${candidate.member_id}::uuid
+                and existing.occurs_on = ${occurrence.occursOn}::date
+                and coalesce(existing.lead_time_days, -1) =
+                  coalesce(${candidate.lead_time_days}::int, -1)
+            )
+            on conflict do nothing
           `.execute(transaction);
         }
       }
@@ -758,12 +855,13 @@ export class PostgresReminderDeliveryRepository
   async claimDue(
     command: Parameters<ReminderDeliveryRepository["claimDue"]>[0],
   ): Promise<readonly ClaimedReminderOccurrence[]> {
+    const channels = command.channels ?? ["in_app"];
     // The same set-based question: which members may still be delivered to.
     const candidateMembers = await sql<{ readonly member_id: string }>`
       select distinct occurrence.member_id::text as member_id
       from crm.reminder_occurrences occurrence
       join crm.reminders reminder on reminder.id = occurrence.reminder_id
-      where occurrence.channel = 'in_app'
+      where occurrence.channel = any(${channels}::text[])
         and (
           occurrence.status in ('pending','retry','claimed')
           or occurrence.provider_result_state in ('ambiguous','confirmed')
@@ -775,6 +873,35 @@ export class PostgresReminderDeliveryRepository
     });
     const eligibleMemberIds = eligible.map((row) => row.memberId);
     const eligibleWorkspaceIds = eligible.map((row) => row.workspaceId);
+    const recipients = new Map(eligible.map((row) => [row.memberId, row]));
+    // A member with a digest time receives their pending email occurrences
+    // once the latest local digest time has passed their delivery time.
+    const digests = new Map<
+      string,
+      { readonly cutoff: Date; readonly localDate: string }
+    >();
+    if (channels.includes("email")) {
+      const choices = await choicesOf(
+        this.preferences,
+        { opaque: this.database },
+        eligibleMemberIds,
+      );
+      for (const [memberId, choice] of choices) {
+        if (!choice.digestTime) continue;
+        digests.set(
+          memberId,
+          digestWindow({
+            digestTime: choice.digestTime,
+            now: command.now,
+            ...(choice.timezone ? { timezone: choice.timezone } : {}),
+          }),
+        );
+      }
+    }
+    const digestMemberIds = [...digests.keys()];
+    const digestCutoffs = [...digests.values()].map((digest) =>
+      digest.cutoff.toISOString()
+    );
     const result = await sql<ClaimRow>`
       with inactive_expired_unattempted as (
         update crm.reminder_occurrences occurrence set
@@ -793,7 +920,7 @@ export class PostgresReminderDeliveryRepository
           and occurrence.visible_at is null
         returning occurrence.id
       ), due as (
-        select occurrence.id
+        select occurrence.id, occurrence.member_id
         from crm.reminder_occurrences occurrence
         join crm.reminders reminder on reminder.id = occurrence.reminder_id
         join crm.people person on person.id = reminder.person_id
@@ -801,13 +928,22 @@ export class PostgresReminderDeliveryRepository
           as eligible(member_id, workspace_id)
           on eligible.member_id = occurrence.member_id
           and eligible.workspace_id = reminder.workspace_id
-        where occurrence.channel = 'in_app'
+        left join unnest(${digestMemberIds}::uuid[], ${digestCutoffs}::timestamptz[])
+          as digest(member_id, cutoff)
+          on digest.member_id = occurrence.member_id
+          and occurrence.channel = 'email'
+        where occurrence.channel = any(${channels}::text[])
           and (
             (
               reminder.is_active and reminder.deleted_at is null
               and person.archived_at is null and person.deleted_at is null
               and (
-                (occurrence.status in ('pending','retry') and coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now})
+                (occurrence.status in ('pending','retry') and case
+                  when occurrence.next_attempt_at is null
+                    and digest.cutoff is not null
+                  then occurrence.deliver_at <= digest.cutoff
+                  else coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now}
+                end)
                 or (occurrence.status = 'claimed' and occurrence.lease_expires_at <= ${command.now})
               )
             )
@@ -822,6 +958,33 @@ export class PostgresReminderDeliveryRepository
         order by coalesce(occurrence.next_attempt_at, occurrence.deliver_at), occurrence.id
         for update of occurrence skip locked
         limit ${command.limit}
+      ), digest_rest as (
+        -- The rest of a digest member's due email, so one digest carries all
+        -- of it rather than whatever fitted in the batch.
+        select occurrence.id
+        from crm.reminder_occurrences occurrence
+        join crm.reminders reminder on reminder.id = occurrence.reminder_id
+        join crm.people person on person.id = reminder.person_id
+        join unnest(${eligibleMemberIds}::uuid[], ${eligibleWorkspaceIds}::uuid[])
+          as eligible(member_id, workspace_id)
+          on eligible.member_id = occurrence.member_id
+          and eligible.workspace_id = reminder.workspace_id
+        join unnest(${digestMemberIds}::uuid[], ${digestCutoffs}::timestamptz[])
+          as digest(member_id, cutoff)
+          on digest.member_id = occurrence.member_id
+        where occurrence.channel = 'email'
+          and occurrence.member_id in (select member_id from due)
+          and occurrence.id not in (select id from due)
+          and reminder.is_active and reminder.deleted_at is null
+          and person.archived_at is null and person.deleted_at is null
+          and occurrence.status = 'pending'
+          and occurrence.next_attempt_at is null
+          and occurrence.deliver_at <= digest.cutoff
+        order by occurrence.deliver_at, occurrence.id
+        for update of occurrence skip locked
+        limit ${DIGEST_CLAIM_LIMIT}
+      ), claimable as (
+        select id from due union select id from digest_rest
       )
       update crm.reminder_occurrences occurrence set
         status = 'claimed', claim_token = gen_random_uuid(),
@@ -829,27 +992,110 @@ export class PostgresReminderDeliveryRepository
         attempt_count = occurrence.attempt_count + 1,
         last_attempt_at = ${command.now}, next_attempt_at = null,
         updated_at = ${command.now}
-      from due, crm.reminders reminder
-      where occurrence.id = due.id and reminder.id = occurrence.reminder_id
+      from claimable, crm.reminders reminder
+      where occurrence.id = claimable.id and reminder.id = occurrence.reminder_id
       returning occurrence.id::text, occurrence.member_id::text,
         reminder.person_id::text, reminder.workspace_id::text,
-        occurrence.claim_token::text, occurrence.attempt_count,
-        occurrence.provider_idempotency_key,
+        occurrence.channel, occurrence.claim_token::text,
+        occurrence.attempt_count, occurrence.provider_idempotency_key,
         occurrence.provider_result_state, occurrence.title_snapshot as title,
-        occurrence.body_snapshot as body
+        occurrence.body_snapshot as body,
+        case when occurrence.channel = 'email'
+            and occurrence.provider_result_state = 'ambiguous'
+            and occurrence.provider_receipt like 'digest:%'
+          then occurrence.provider_receipt end as attempt_key
     `.execute(this.database);
-    return result.rows.map((row) => ({
-      attemptCount: row.attempt_count,
-      body: row.body ?? "",
-      claimToken: row.claim_token,
-      id: row.id,
-      memberId: row.member_id,
-      ...(row.person_id ? { personId: row.person_id } : {}),
-      providerIdempotencyKey: row.provider_idempotency_key,
-      providerResultState: row.provider_result_state,
-      title: row.title ?? "Reminder",
-      workspaceId: row.workspace_id,
-    }));
+    return result.rows.map((row) => {
+      const email = row.channel === "email";
+      const recipientEmail = email
+        ? recipients.get(row.member_id)?.verifiedEmail
+        : undefined;
+      const digestDate = email
+        ? digests.get(row.member_id)?.localDate
+        : undefined;
+      return {
+        ...(row.attempt_key ? { attemptKey: row.attempt_key } : {}),
+        attemptCount: row.attempt_count,
+        body: row.body ?? "",
+        channel: row.channel,
+        claimToken: row.claim_token,
+        ...(digestDate ? { digestDate } : {}),
+        id: row.id,
+        memberId: row.member_id,
+        ...(row.person_id ? { personId: row.person_id } : {}),
+        providerIdempotencyKey: row.provider_idempotency_key,
+        providerResultState: row.provider_result_state,
+        ...(recipientEmail ? { recipientEmail } : {}),
+        title: row.title ?? "Reminder",
+        workspaceId: row.workspace_id,
+      };
+    });
+  }
+
+  async renewLeases(
+    command: Parameters<ReminderAttemptLedger["renewLeases"]>[0],
+  ): Promise<readonly string[]> {
+    const renewed = await sql<{ readonly id: string }>`
+      update crm.reminder_occurrences occurrence set
+        lease_expires_at = greatest(
+          occurrence.lease_expires_at, ${command.leaseExpiresAt}::timestamptz
+        ),
+        updated_at = ${command.now}
+      from unnest(
+        ${command.claims.map((claim) => claim.id)}::uuid[],
+        ${command.claims.map((claim) => claim.claimToken)}::uuid[]
+      ) as held(id, claim_token)
+      where occurrence.id = held.id
+        and occurrence.claim_token = held.claim_token
+        and occurrence.status = 'claimed'
+        and occurrence.lease_expires_at > ${command.now}
+      returning occurrence.id::text
+    `.execute(this.database);
+    return renewed.rows.map((row) => row.id);
+  }
+
+  async markAttempted(
+    command: Parameters<ReminderAttemptLedger["markAttempted"]>[0],
+  ): ReturnType<ReminderAttemptLedger["markAttempted"]> {
+    return await this.database.transaction().execute(async (transaction) => {
+      // Only claims this worker still holds: same token, still claimed, and
+      // a lease that has not run out. Anything else belongs to someone else.
+      const held = await sql<{ readonly id: string }>`
+        select occurrence.id::text
+        from crm.reminder_occurrences occurrence
+        join unnest(
+          ${command.claims.map((claim) => claim.id)}::uuid[],
+          ${command.claims.map((claim) => claim.claimToken)}::uuid[]
+        ) as attempt(id, claim_token)
+          on occurrence.id = attempt.id
+          and occurrence.claim_token = attempt.claim_token
+        where occurrence.status = 'claimed'
+          and occurrence.lease_expires_at > ${command.now}
+          and occurrence.channel = 'email'
+          and occurrence.provider_result_state = 'unattempted'
+        order by occurrence.id
+        for update of occurrence
+      `.execute(transaction);
+      const recordedIds = held.rows.map((row) => row.id);
+      if (recordedIds.length === 0) return { recordedIds };
+      // A digest's key covers exactly what is recorded, and is stored on each
+      // occurrence as its attempt reference until a receipt replaces it.
+      const attemptKey = command.digest
+        ? await digestIdempotencyKey({
+          ...command.digest,
+          occurrenceIds: recordedIds,
+        })
+        : undefined;
+      await sql`
+        update crm.reminder_occurrences set
+          provider_result_state = 'ambiguous',
+          lease_expires_at = ${command.leaseExpiresAt},
+          provider_receipt = ${attemptKey ?? null},
+          updated_at = ${command.now}
+        where id = any(${recordedIds}::uuid[])
+      `.execute(transaction);
+      return { ...(attemptKey ? { attemptKey } : {}), recordedIds };
+    });
   }
 
   async finalize(
@@ -859,12 +1105,20 @@ export class PostgresReminderDeliveryRepository
       update crm.reminder_occurrences occurrence set
         status = ${command.status},
         sent_at = case when ${command.status} = 'sent' then ${command.now} else occurrence.sent_at end,
+        provider_effect_at = case when ${command.status} = 'sent'
+          then coalesce(occurrence.provider_effect_at, ${command.now})
+          else occurrence.provider_effect_at end,
+        visible_at = case when ${command.status} = 'sent'
+          then coalesce(occurrence.visible_at, ${command.now})
+          else occurrence.visible_at end,
         claim_token = null, claim_owner = null, lease_expires_at = null,
         next_attempt_at = ${command.nextAttemptAt ?? null},
         provider_result_state = ${command.providerResultState},
-        provider_receipt = coalesce(${
+        provider_receipt = case
+          when ${command.providerResultState} = 'unattempted' then null
+          else coalesce(${
       command.receipt ?? null
-    }, occurrence.provider_receipt),
+    }, occurrence.provider_receipt) end,
         error = ${command.error ?? null}, updated_at = ${command.now}
       where occurrence.id = ${command.id}::uuid
         and occurrence.status = 'claimed'

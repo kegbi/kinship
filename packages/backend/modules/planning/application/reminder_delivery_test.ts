@@ -1,4 +1,5 @@
 import * as planning from "../public.ts";
+import { assert, assertEquals } from "../../../testing/assert.ts";
 import {
   fixedClock,
   recordingLogger,
@@ -50,6 +51,7 @@ Deno.test("PLANNING-002 reconciles an external effect before commit without dupl
     id: crypto.randomUUID(),
     memberId: crypto.randomUUID(),
     providerIdempotencyKey: "stable-key",
+    channel: "in_app" as const,
     providerResultState: "unattempted" as const,
     title: "Reminder",
     workspaceId: crypto.randomUUID(),
@@ -118,6 +120,7 @@ Deno.test("PLANNING-002 delivery exhausts bounded failures and ignores stale cla
   const base = {
     body: "body",
     memberId: crypto.randomUUID(),
+    channel: "in_app" as const,
     providerResultState: "unattempted" as const,
     title: "title",
     workspaceId: crypto.randomUUID(),
@@ -249,6 +252,7 @@ Deno.test("PLANNING-002 ambiguous reconciliation never redelivers and exhausts t
           id: crypto.randomUUID(),
           memberId: crypto.randomUUID(),
           providerIdempotencyKey: "stable-key",
+          channel: "in_app" as const,
           providerResultState: "ambiguous" as const,
           title: "Reminder",
           workspaceId: crypto.randomUUID(),
@@ -274,6 +278,7 @@ Deno.test("APP-006D worker isolates a failed claimed item from the rest of its b
     attemptCount: 1,
     body: "body",
     memberId: crypto.randomUUID(),
+    channel: "in_app" as const,
     providerResultState: "unattempted" as const,
     title: "title",
     workspaceId: crypto.randomUUID(),
@@ -336,6 +341,7 @@ Deno.test("[GAP-039] each delivery run is logged with its attempt and outcome an
     body: "Call Ada",
     memberId: "00000000-0000-4000-8000-000000000702",
     personId: "00000000-0000-4000-8000-000000000703",
+    channel: "in_app" as const,
     providerResultState: "unattempted" as const,
     title: "Reminder",
     workspaceId: "00000000-0000-4000-8000-000000000704",
@@ -472,6 +478,7 @@ Deno.test("[GAP-039] a delivery worker without telemetry logs nothing and correl
           id: "plain",
           memberId: "member",
           providerIdempotencyKey: "plain",
+          channel: "in_app" as const,
           providerResultState: "unattempted" as const,
           title: "Reminder",
           workspaceId: "workspace",
@@ -486,4 +493,408 @@ Deno.test("[GAP-039] a delivery worker without telemetry logs nothing and correl
   if (audited.length !== 1 || Object.hasOwn(audited[0]!, "requestId")) {
     throw new Error(`an uncorrelated run grew a member: ${audited.length}`);
   }
+});
+
+interface EmailHarness {
+  /** Claims whose lease the ledger finds already lost. */
+  readonly lost: Set<string>;
+  readonly marks: Array<
+    Parameters<planning.ReminderAttemptLedger["markAttempted"]>[0]
+  >;
+  readonly audits: Array<
+    Parameters<planning.ReminderDeliveryAudit["record"]>[0]
+  >;
+  readonly claimedChannels: Array<readonly string[] | undefined>;
+  readonly events: string[];
+  readonly finalized: Array<
+    Parameters<planning.ReminderDeliveryRepository["finalize"]>[0]
+  >;
+  readonly sent: Array<
+    Parameters<planning.ReminderDeliveryChannel["send"]>[0]
+  >;
+  claims: planning.ClaimedReminderOccurrence[];
+  send: planning.ReminderDeliveryChannel["send"];
+}
+
+function emailWorker(harness: EmailHarness, withEmail = true) {
+  return planning.createReminderDeliveryWorker({
+    audit: {
+      record: (command) => {
+        harness.audits.push(command);
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-10-20T08:00:00Z"),
+    ...(withEmail
+      ? {
+        email: {
+          channel: {
+            reconcile: ({ idempotencyKey }) => {
+              harness.events.push(`reconcile:${idempotencyKey}`);
+              return Promise.resolve({
+                code: "smtp-unreconcilable",
+                status: "ambiguous" as const,
+              });
+            },
+            send: (message) => {
+              harness.events.push(`send:${message.items.length}`);
+              harness.sent.push(message);
+              return harness.send(message);
+            },
+          },
+          ledger: {
+            renewLeases: (command) => {
+              harness.events.push(
+                `renew:${command.claims.map((claim) => claim.id).join("+")}`,
+              );
+              return Promise.resolve(
+                command.claims.map((claim) => claim.id).filter((id) =>
+                  !harness.lost.has(id)
+                ),
+              );
+            },
+            markAttempted: async (command) => {
+              harness.events.push(
+                `mark:${command.claims.map((claim) => claim.id).join("+")}`,
+              );
+              harness.marks.push(command);
+              const recordedIds = command.claims.map((claim) => claim.id)
+                .filter((id) => !harness.lost.has(id));
+              return {
+                recordedIds,
+                ...(command.digest && recordedIds.length > 0
+                  ? {
+                    attemptKey: await planning.digestIdempotencyKey({
+                      ...command.digest,
+                      occurrenceIds: recordedIds,
+                    }),
+                  }
+                  : {}),
+              };
+            },
+          },
+        },
+      }
+      : {}),
+    provider: {
+      deliver: ({ occurrenceId }) => {
+        harness.events.push(`in_app:${occurrenceId}`);
+        return Promise.resolve({
+          receipt: `in_app:${occurrenceId}`,
+          status: "confirmed" as const,
+        });
+      },
+      reconcile: () =>
+        Promise.resolve({ code: "unused", status: "transient" as const }),
+    },
+    repository: {
+      replenish: () => Promise.resolve(),
+      claimDue: ({ channels }) => {
+        harness.claimedChannels.push(channels);
+        return Promise.resolve(harness.claims);
+      },
+      finalize: (command) => {
+        harness.finalized.push(command);
+        return Promise.resolve(true);
+      },
+    },
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+}
+
+function emailHarness(
+  claims: planning.ClaimedReminderOccurrence[],
+): EmailHarness {
+  return {
+    audits: [],
+    claimedChannels: [],
+    claims,
+    events: [],
+    finalized: [],
+    lost: new Set(),
+    marks: [],
+    send: ({ idempotencyKey }) =>
+      Promise.resolve({
+        receipt: `smtp:${idempotencyKey}`,
+        status: "confirmed" as const,
+      }),
+    sent: [],
+  };
+}
+
+function emailClaim(
+  id: string,
+  overrides: Partial<planning.ClaimedReminderOccurrence> = {},
+): planning.ClaimedReminderOccurrence {
+  return {
+    attemptCount: 1,
+    body: `Reminder for ${id}`,
+    channel: "email",
+    claimToken: `token-${id}`,
+    id,
+    memberId: "member-a",
+    personId: `person-${id}`,
+    providerIdempotencyKey: `key-${id}`,
+    providerResultState: "unattempted",
+    recipientEmail: "owner@example.test",
+    title: `Call ${id}`,
+    workspaceId: "workspace-a",
+    ...overrides,
+  };
+}
+
+Deno.test("[PLANNING-003] a worker without an email channel claims in-app occurrences only", async () => {
+  const withEmail = emailHarness([]);
+  await emailWorker(withEmail).tick({ owner: "email" });
+  const withoutEmail = emailHarness([]);
+  await emailWorker(withoutEmail, false).tick({ owner: "in-app" });
+  assertEquals(withEmail.claimedChannels, [["in_app", "email"]]);
+  assertEquals(withoutEmail.claimedChannels, [["in_app"]]);
+});
+
+Deno.test("[PLANNING-003] an immediate email is recorded as attempted, sent once, and audited with its channel", async () => {
+  const harness = emailHarness([emailClaim("ada")]);
+  const result = await emailWorker(harness).tick({ owner: "email" });
+  assertEquals(harness.events, ["mark:ada", "send:1"]);
+  assertEquals(harness.sent, [{
+    idempotencyKey: "key-ada",
+    items: [{
+      body: "Reminder for ada",
+      personId: "person-ada",
+      title: "Call ada",
+    }],
+    to: "owner@example.test",
+  }]);
+  assertEquals(result.results, [{ id: "ada", status: "sent" }]);
+  assertEquals(harness.finalized[0]?.receipt, "smtp:key-ada");
+  assertEquals(
+    harness.audits.map((audit) => [audit.action, audit.digestSize]),
+    [
+      ["delivered", undefined],
+    ],
+  );
+});
+
+Deno.test("[PLANNING-003] a member's due digest goes out as one email and finalizes every occurrence with its receipt", async () => {
+  const first = emailClaim("ada", { digestDate: "2026-10-20" });
+  const second = emailClaim("grace", { digestDate: "2026-10-20" });
+  const harness = emailHarness([second, first]);
+  const result = await emailWorker(harness).tick({ owner: "digest" });
+  assertEquals(harness.events, ["mark:grace+ada", "send:2"]);
+  const key = harness.sent[0]?.idempotencyKey ?? "";
+  assert(/^digest:[0-9a-f]{64}$/.test(key), `digest key was ${key}`);
+  assertEquals(harness.sent[0]?.digestDate, "2026-10-20");
+  assertEquals(result.results, [
+    { id: "grace", status: "sent" },
+    { id: "ada", status: "sent" },
+  ]);
+  assertEquals(
+    harness.finalized.map((command) => command.receipt),
+    [`smtp:${key}`, `smtp:${key}`],
+  );
+  assertEquals(harness.audits.map((audit) => audit.digestSize), [2, 2]);
+
+  // The key is the member, the local digest date, and the included
+  // occurrences, whatever order they were claimed in.
+  const replay = emailHarness([first, second]);
+  await emailWorker(replay).tick({ owner: "digest" });
+  assertEquals(replay.sent[0]?.idempotencyKey, key);
+  const other = emailHarness([first]);
+  await emailWorker(other).tick({ owner: "digest" });
+  assert(other.sent[0]?.idempotencyKey !== key, "a different set shares a key");
+});
+
+Deno.test("[PLANNING-003] an ambiguous digest is reconciled on the next claim and never sent again", async () => {
+  const claims = [
+    emailClaim("ada", { digestDate: "2026-10-20" }),
+    emailClaim("grace", { digestDate: "2026-10-20" }),
+  ];
+  const harness = emailHarness(claims);
+  harness.send = () => Promise.reject(new Error("connection lost after DATA"));
+  const first = await emailWorker(harness).tick({ owner: "digest" });
+  assertEquals(first.results.map((item) => item.status), ["retry", "retry"]);
+  assertEquals(
+    harness.finalized.map((command) => command.providerResultState),
+    ["ambiguous", "ambiguous"],
+  );
+
+  harness.claims = claims.map((claim) => ({
+    ...claim,
+    attemptCount: 2,
+    providerResultState: "ambiguous" as const,
+  }));
+  harness.events.length = 0;
+  await emailWorker(harness).tick({ owner: "digest" });
+  assertEquals(harness.events, ["reconcile:key-ada", "reconcile:key-grace"]);
+  assertEquals(harness.sent.length, 1, "the digest was sent a second time");
+});
+
+Deno.test("[PLANNING-003] an email claim without a verified address fails without sending", async () => {
+  const { recipientEmail: _, ...unverified } = emailClaim("ada");
+  const harness = emailHarness([unverified]);
+  const result = await emailWorker(harness).tick({ owner: "email" });
+  assertEquals(harness.events, []);
+  assertEquals(result.results, [{ id: "ada", status: "failed" }]);
+  assertEquals(harness.finalized[0]?.error, "recipient-unverified");
+});
+
+Deno.test("[PLANNING-003] a provider refusal before any effect retries the email as unattempted", async () => {
+  const harness = emailHarness([emailClaim("ada")]);
+  harness.send = () =>
+    Promise.resolve({ code: "smtp-unavailable", status: "transient" as const });
+  const result = await emailWorker(harness).tick({ owner: "email" });
+  assertEquals(result.results, [{ id: "ada", status: "retry" }]);
+  assertEquals(harness.finalized[0]?.providerResultState, "unattempted");
+});
+
+Deno.test("[PLANNING-003] an email claim reaching a worker without email is retried, not lost", async () => {
+  const harness = emailHarness([
+    emailClaim("ada"),
+    emailClaim("grace", { digestDate: "2026-10-20" }),
+  ]);
+  const result = await emailWorker(harness, false).tick({ owner: "in-app" });
+  assertEquals(result.results, [
+    { id: "ada", status: "retry" },
+    { id: "grace", status: "retry" },
+  ]);
+  assertEquals(
+    harness.finalized.map((command) => command.error),
+    ["email-channel-unavailable", "email-channel-unavailable"],
+  );
+});
+
+Deno.test("[PLANNING-003] an attempt that cannot be recorded is never sent", async () => {
+  const harness = emailHarness([emailClaim("ada")]);
+  const worker = planning.createReminderDeliveryWorker({
+    audit: { record: () => Promise.resolve() },
+    clock: fixedClock("2026-10-20T08:00:00Z"),
+    email: {
+      channel: {
+        reconcile: () =>
+          Promise.resolve({ code: "unused", status: "ambiguous" as const }),
+        send: (message) => {
+          harness.sent.push(message);
+          return Promise.resolve({
+            receipt: "unexpected",
+            status: "confirmed",
+          });
+        },
+      },
+      ledger: {
+        markAttempted: () => Promise.reject(new Error("down")),
+        renewLeases: () => Promise.resolve([]),
+      },
+    },
+    provider: {
+      deliver: () => Promise.resolve({ code: "unused", status: "transient" }),
+      reconcile: () => Promise.resolve({ code: "unused", status: "transient" }),
+    },
+    repository: {
+      replenish: () => Promise.resolve(),
+      claimDue: () => Promise.resolve(harness.claims),
+      finalize: () => Promise.resolve(true),
+    },
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+  const result = await worker.tick({ owner: "ledger-down" });
+  assertEquals(result.results, [{ id: "ada", status: "processing-error" }]);
+  assertEquals(harness.sent.length, 0);
+});
+
+Deno.test("[PLANNING-003] an email whose claim was lost before it was recorded is never sent", async () => {
+  const harness = emailHarness([emailClaim("ada")]);
+  harness.lost.add("ada");
+  const result = await emailWorker(harness).tick({ owner: "late" });
+  assertEquals(harness.events, ["mark:ada"]);
+  assertEquals(harness.sent.length, 0);
+  assertEquals(harness.finalized.length, 0, "a lost claim is not finalized");
+  assertEquals(result.results, [{ id: "ada", status: "stale-claim" }]);
+});
+
+Deno.test("[PLANNING-003] a digest sends only the occurrences whose claims were recorded", async () => {
+  const claims = [
+    emailClaim("ada", { digestDate: "2026-10-20" }),
+    emailClaim("grace", { digestDate: "2026-10-20" }),
+  ];
+  const harness = emailHarness(claims);
+  harness.lost.add("grace");
+  const result = await emailWorker(harness).tick({ owner: "partial" });
+  assertEquals(harness.sent.length, 1);
+  assertEquals(harness.sent[0]?.items.map((item) => item.title), ["Call ada"]);
+  assertEquals(
+    harness.sent[0]?.idempotencyKey,
+    await planning.digestIdempotencyKey({
+      localDate: "2026-10-20",
+      memberId: "member-a",
+      occurrenceIds: ["ada"],
+    }),
+    "the key covers exactly what was sent",
+  );
+  assertEquals(result.results, [
+    { id: "ada", status: "sent" },
+    { id: "grace", status: "stale-claim" },
+  ]);
+  assertEquals(harness.finalized.map((command) => command.id), ["ada"]);
+
+  const none = emailHarness(claims.map((claim) => ({ ...claim })));
+  none.lost.add("ada");
+  none.lost.add("grace");
+  await emailWorker(none).tick({ owner: "all-lost" });
+  assertEquals(none.sent.length, 0, "an empty digest is never sent");
+});
+
+Deno.test("[PLANNING-003] an email attempt renews its lease for the whole send", async () => {
+  const harness = emailHarness([emailClaim("ada")]);
+  await emailWorker(harness).tick({ owner: "lease" });
+  const lease = harness.marks[0]?.leaseExpiresAt.getTime() ?? 0;
+  assert(
+    lease - new Date("2026-10-20T08:00:00Z").getTime() >=
+      planning.EMAIL_ATTEMPT_LEASE_MILLISECONDS,
+    `the email lease was ${lease}`,
+  );
+});
+
+Deno.test("[PLANNING-003] a digest is reconciled under the key it was sent with", async () => {
+  const harness = emailHarness([
+    emailClaim("ada", {
+      attemptCount: 2,
+      attemptKey: "digest:sent-key",
+      digestDate: "2026-10-20",
+      providerResultState: "ambiguous",
+    }),
+    emailClaim("grace", { attemptCount: 2, providerResultState: "ambiguous" }),
+  ]);
+  await emailWorker(harness).tick({ owner: "reconcile" });
+  assertEquals(harness.events, [
+    "reconcile:digest:sent-key",
+    "reconcile:key-grace",
+  ]);
+});
+
+Deno.test("[PLANNING-003] after each email the rest of the batch keeps its leases", async () => {
+  const harness = emailHarness([
+    emailClaim("ada"),
+    emailClaim("grace"),
+    { ...emailClaim("in-app"), channel: "in_app" },
+  ]);
+  harness.send = (message) => {
+    // Grace's claim is lost while Ada's slow send is in flight.
+    if (message.items[0]?.title === "Call ada") harness.lost.add("grace");
+    return Promise.resolve({
+      receipt: `smtp:${message.idempotencyKey}`,
+      status: "confirmed" as const,
+    });
+  };
+  const result = await emailWorker(harness).tick({ owner: "slow-batch" });
+  assertEquals(harness.events, [
+    "mark:ada",
+    "send:1",
+    "renew:grace+in-app",
+    "in_app:in-app",
+  ]);
+  assertEquals(result.results, [
+    { id: "ada", status: "sent" },
+    { id: "grace", status: "stale-claim" },
+    { id: "in-app", status: "sent" },
+  ]);
 });

@@ -79,7 +79,7 @@ interface SmtpConnection {
   write(buffer: Uint8Array): Promise<number>;
 }
 
-type SmtpConnector = (
+export type SmtpConnector = (
   security: "plain" | "tls",
   host: string,
   port: number,
@@ -132,7 +132,7 @@ function withTimeout<T>(
   });
 }
 
-function safeHeader(value: string): string {
+export function safeHeader(value: string): string {
   if (value.includes("\r") || value.includes("\n")) {
     throw new Error("Invalid mail header.");
   }
@@ -239,6 +239,27 @@ async function readReply(
   }
 }
 
+/**
+ * How far a delivery got when it stopped. `refused` means the server never
+ * took the message, `unconfirmed` that the message was written but its answer
+ * never arrived, and `accepted` that the server took it and only the goodbye
+ * failed.
+ */
+export type SmtpStage = "accepted" | "refused" | "unconfirmed";
+
+/** A delivery that stopped, and how far it got. */
+export class SmtpDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly stage: SmtpStage,
+    /** A refusal the server gave as permanent (a 5xx reply). */
+    readonly permanent = false,
+  ) {
+    super(message);
+    this.name = "SmtpDeliveryError";
+  }
+}
+
 async function command(
   connection: SmtpConnection,
   value: string,
@@ -251,10 +272,22 @@ async function command(
     "SMTP write",
   );
   const code = await readReply(connection, timeouts.readTimeoutMs);
-  if (!acceptedCodes.includes(code)) throw new Error("SMTP delivery rejected.");
+  if (!acceptedCodes.includes(code)) {
+    throw new SmtpDeliveryError(
+      "SMTP delivery rejected.",
+      "refused",
+      code >= 500,
+    );
+  }
 }
 
-export class SmtpVerificationMail implements VerificationMail {
+/**
+ * The deployment's SMTP transport: validated once, then one connection per
+ * message. A failure is raised as an `SmtpDeliveryError` naming how far the
+ * delivery got, which is what lets reminder email tell a message that never
+ * left from one that may have.
+ */
+export class SmtpMailTransport {
   readonly #timeouts: SmtpTimeouts;
 
   constructor(
@@ -280,6 +313,96 @@ export class SmtpVerificationMail implements VerificationMail {
     }
     safeSender(options.from);
     this.#timeouts = smtpTimeouts(options);
+  }
+
+  /** Delivers one complete message to one recipient. */
+  async send(email: string, content: string): Promise<void> {
+    const pendingConnection = this.connect(
+      this.options.security ?? "plain",
+      this.options.host,
+      this.options.port,
+    );
+    let connection: SmtpConnection;
+    try {
+      connection = await withTimeout(
+        pendingConnection,
+        this.#timeouts.connectTimeoutMs,
+        "SMTP connect",
+      );
+    } catch (error) {
+      pendingConnection.then((late) => late.close(), () => undefined);
+      throw stopped(error, "refused");
+    }
+    let stage: SmtpStage = "refused";
+    try {
+      const greeting = await readReply(
+        connection,
+        this.#timeouts.readTimeoutMs,
+      );
+      if (greeting !== 220) {
+        throw new SmtpDeliveryError("SMTP service unavailable.", "refused");
+      }
+      await command(connection, "EHLO kinship.local", [250], this.#timeouts);
+      if (this.options.username !== undefined) {
+        await command(connection, "AUTH LOGIN", [334], this.#timeouts);
+        await command(
+          connection,
+          encoder.encode(this.options.username).toBase64(),
+          [334],
+          this.#timeouts,
+        );
+        await command(
+          connection,
+          encoder.encode(this.options.password ?? "").toBase64(),
+          [235],
+          this.#timeouts,
+        );
+      }
+      await command(
+        connection,
+        `MAIL FROM:<${safeHeader(this.options.from)}>`,
+        [250],
+        this.#timeouts,
+      );
+      await command(
+        connection,
+        `RCPT TO:<${safeHeader(email)}>`,
+        [250, 251],
+        this.#timeouts,
+      );
+      await command(connection, "DATA", [354], this.#timeouts);
+      const body = content.replaceAll("\r\n.", "\r\n..");
+      stage = "unconfirmed";
+      await command(connection, `${body}\r\n.`, [250], this.#timeouts);
+      stage = "accepted";
+      await command(connection, "QUIT", [221], this.#timeouts);
+    } catch (error) {
+      // A reply refusing the message is the server saying it did not take
+      // it; anything else stopped the delivery wherever it had got to.
+      throw error instanceof SmtpDeliveryError && stage !== "accepted"
+        ? error
+        : stopped(error, stage);
+    } finally {
+      connection.close();
+    }
+  }
+}
+
+function stopped(error: unknown, stage: SmtpStage): SmtpDeliveryError {
+  return new SmtpDeliveryError(
+    error instanceof Error ? error.message : "SMTP delivery failed.",
+    stage,
+  );
+}
+
+export class SmtpVerificationMail implements VerificationMail {
+  readonly #transport: SmtpMailTransport;
+
+  constructor(
+    private readonly options: SmtpVerificationMailOptions,
+    connect: SmtpConnector = connectSmtp,
+  ) {
+    this.#transport = new SmtpMailTransport(options, connect);
   }
 
   async sendVerification(message: {
@@ -317,62 +440,6 @@ export class SmtpVerificationMail implements VerificationMail {
   }
 
   async #send(email: string, content: string): Promise<void> {
-    const pendingConnection = this.connect(
-      this.options.security ?? "plain",
-      this.options.host,
-      this.options.port,
-    );
-    let connection: SmtpConnection;
-    try {
-      connection = await withTimeout(
-        pendingConnection,
-        this.#timeouts.connectTimeoutMs,
-        "SMTP connect",
-      );
-    } catch (error) {
-      pendingConnection.then((late) => late.close(), () => undefined);
-      throw error;
-    }
-    try {
-      const greeting = await readReply(
-        connection,
-        this.#timeouts.readTimeoutMs,
-      );
-      if (greeting !== 220) throw new Error("SMTP service unavailable.");
-      await command(connection, "EHLO kinship.local", [250], this.#timeouts);
-      if (this.options.username !== undefined) {
-        await command(connection, "AUTH LOGIN", [334], this.#timeouts);
-        await command(
-          connection,
-          encoder.encode(this.options.username).toBase64(),
-          [334],
-          this.#timeouts,
-        );
-        await command(
-          connection,
-          encoder.encode(this.options.password ?? "").toBase64(),
-          [235],
-          this.#timeouts,
-        );
-      }
-      await command(
-        connection,
-        `MAIL FROM:<${safeHeader(this.options.from)}>`,
-        [250],
-        this.#timeouts,
-      );
-      await command(
-        connection,
-        `RCPT TO:<${safeHeader(email)}>`,
-        [250, 251],
-        this.#timeouts,
-      );
-      await command(connection, "DATA", [354], this.#timeouts);
-      const body = content.replaceAll("\r\n.", "\r\n..");
-      await command(connection, `${body}\r\n.`, [250], this.#timeouts);
-      await command(connection, "QUIT", [221], this.#timeouts);
-    } finally {
-      connection.close();
-    }
+    await this.#transport.send(email, content);
   }
 }

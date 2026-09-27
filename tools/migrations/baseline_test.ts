@@ -9,46 +9,51 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v7 migration classifies only exact empty and v1-v7 states", () => {
+Deno.test("schema v8 migration classifies only exact empty and v1-v8 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v7",
-    "empty target applies the full v7 schema",
+      "apply-v8",
+    "empty target applies the full v8 schema",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v1" }) ===
-      "upgrade-v1-to-v7",
+      "upgrade-v1-to-v8",
     "exact v1 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v2" }) ===
-      "upgrade-v2-to-v7",
+      "upgrade-v2-to-v8",
     "exact v2 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v3" }) ===
-      "upgrade-v3-to-v7",
+      "upgrade-v3-to-v8",
     "exact v3 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v4" }) ===
-      "upgrade-v4-to-v7",
+      "upgrade-v4-to-v8",
     "exact v4 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v5" }) ===
-      "upgrade-v5-to-v7",
+      "upgrade-v5-to-v8",
     "exact v5 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v6" }) ===
-      "upgrade-v6-to-v7",
+      "upgrade-v6-to-v8",
     "exact v6 target upgrades",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "v7" }) ===
-      "verify-v7",
-    "exact v7 target verifies idempotently",
+      "upgrade-v7-to-v8",
+    "exact v7 target upgrades",
+  );
+  assert(
+    decideSchemaAction({ crmSchemaExists: true, state: "v8" }) ===
+      "verify-v8",
+    "exact v8 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -96,21 +101,32 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v7 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v8 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v7/personal_crm_schema_spec_v7.md",
+    "personal-crm-schema/v8/personal_crm_schema_spec_v8.md",
   );
   assert(
     specification.includes("SQL tables parsed: **89**") &&
+      specification.includes("SQL columns parsed: **845**") &&
       specification.includes("Explicit indexes: **149**"),
-    "v7 specification metrics drifted from canonical SQL and validation JSON",
+    "v8 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v7/personal_crm_schema_v7.sql",
+    "personal-crm-schema/v8/personal_crm_schema_v8.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
       specification.includes("`transactional-failure`"),
-    "v7 omits the redacted post-rollback lifecycle outcome",
+    "v8 omits the redacted post-rollback lifecycle outcome",
+  );
+  assert(
+    sql.includes("reminder_delivery text NOT NULL DEFAULT 'in_app'") &&
+      sql.includes(
+        "CHECK (reminder_delivery IN ('in_app', 'email', 'both'))",
+      ) &&
+      sql.includes("  digest_time time,\n") &&
+      specification.includes("`reminder_delivery`") &&
+      specification.includes("`digest_time`"),
+    "v8 omits the member reminder-delivery preferences",
   );
 });

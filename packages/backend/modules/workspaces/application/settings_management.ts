@@ -26,7 +26,7 @@ import {
   isSchedulableTimezone,
   type ManagedMember,
   managedMembers,
-  type MemberPreferences,
+  type MemberPreferencesUpdate,
   memberTimezoneChanged,
   type WorkspaceConfiguration,
   type WorkspaceMemberRecord,
@@ -148,7 +148,10 @@ export function createSettingsManagement(
       dependencies.transaction.run((transaction) =>
         dependencies.workspace.getPreferences({ ...actor, transaction })
       ),
-    updatePreferences: (actor: SettingsActor, input: MemberPreferences) => {
+    updatePreferences: (
+      actor: SettingsActor,
+      input: MemberPreferencesUpdate,
+    ) => {
       if (
         input.timezone !== undefined && !isSchedulableTimezone(input.timezone)
       ) {

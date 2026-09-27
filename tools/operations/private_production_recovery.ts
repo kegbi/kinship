@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { Client as S3Client } from "minio";
 import { Buffer } from "node:buffer";
 import { applyCanonicalSchema } from "../migrations/baseline.ts";
+import { readCanonicalArtifacts } from "../migrations/main.ts";
 import {
   loadPrivateProductionProfile,
   type PrivateProductionProfile,
@@ -20,7 +21,7 @@ export interface DatabaseRecoveryPort {
   readonly dump: () => Promise<Uint8Array>;
   readonly objectKeys: () => Promise<readonly string[]>;
   readonly restore: (dump: Uint8Array) => Promise<void>;
-  readonly verifyCanonicalV7: () => Promise<void>;
+  readonly verifyCanonicalV8: () => Promise<void>;
 }
 
 export interface ObjectRecoveryPort {
@@ -157,7 +158,7 @@ export async function createBackup(command: BackupCommand): Promise<void> {
   try {
     ownedDirectory = await claimNewDirectory(command.archiveId);
     await Deno.mkdir(path(ownedDirectory, "objects"));
-    await command.database.verifyCanonicalV7();
+    await command.database.verifyCanonicalV8();
     const [dump, databaseKeys, listedObjects] = await Promise.all([
       command.database.dump(),
       command.database.objectKeys(),
@@ -341,7 +342,7 @@ export async function restoreBackup(
       throw new Error("Object restore failed.");
     });
   }
-  await command.database.verifyCanonicalV7();
+  await command.database.verifyCanonicalV8();
   const [databaseKeys, objectMetadata] = await Promise.all([
     command.database.objectKeys(),
     command.objects.list().catch(() => {
@@ -456,63 +457,6 @@ async function runPostgresTool(
   return output.stdout;
 }
 
-async function canonicalArtifacts() {
-  const root = new URL("../../", import.meta.url);
-  const read = (relative: string) => Deno.readTextFile(new URL(relative, root));
-  const [
-    v1Sql,
-    v2Sql,
-    v3Sql,
-    v4Sql,
-    v5Sql,
-    v6Sql,
-    v7Sql,
-    migrationV1ToV2,
-    migrationV2ToV3,
-    migrationV3ToV4,
-    migrationV4ToV5,
-    migrationV5ToV6,
-    migrationV6ToV7,
-  ] = await Promise.all([
-    read("personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql"),
-    read("personal-crm-schema/v2/personal_crm_schema_v2.sql"),
-    read("personal-crm-schema/v3/personal_crm_schema_v3.sql"),
-    read("personal-crm-schema/v4/personal_crm_schema_v4.sql"),
-    read("personal-crm-schema/v5/personal_crm_schema_v5.sql"),
-    read("personal-crm-schema/v6/personal_crm_schema_v6.sql"),
-    read("personal-crm-schema/v7/personal_crm_schema_v7.sql"),
-    read(
-      "personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
-    ),
-    read("personal-crm-schema/v3/migrations/0003_add_user_session_purpose.sql"),
-    read("personal-crm-schema/v4/migrations/0004_seed_iso_4217_currencies.sql"),
-    read(
-      "personal-crm-schema/v5/migrations/0005_add_person_date_year_approximation.sql",
-    ),
-    read(
-      "personal-crm-schema/v6/migrations/0006_add_durable_reminder_delivery.sql",
-    ),
-    read(
-      "personal-crm-schema/v7/migrations/0007_add_workspace_deletion_records.sql",
-    ),
-  ]);
-  return {
-    migrationV1ToV2,
-    migrationV2ToV3,
-    migrationV3ToV4,
-    migrationV4ToV5,
-    migrationV5ToV6,
-    migrationV6ToV7,
-    v1Sql,
-    v2Sql,
-    v3Sql,
-    v4Sql,
-    v5Sql,
-    v6Sql,
-    v7Sql,
-  };
-}
-
 export class PostgresRecovery implements DatabaseRecoveryPort {
   constructor(
     private readonly databaseUrl: string,
@@ -588,24 +532,26 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
     );
   }
 
-  async verifyCanonicalV7(): Promise<void> {
+  async verifyCanonicalV8(): Promise<void> {
     const sql = postgres(this.databaseUrl, { max: 1 });
     try {
       const [row] = await sql<{ readonly present: boolean }[]>`
-        select to_regclass('crm.workspace_lifecycle_records') is not null as present
+        select exists (select 1 from information_schema.columns
+          where table_schema = 'crm' and table_name = 'member_preferences'
+            and column_name = 'reminder_delivery') as present
       `;
       if (!row?.present) {
-        throw new Error("Database is not the canonical schema v7.");
+        throw new Error("Database is not the canonical schema v8.");
       }
     } finally {
       await sql.end();
     }
     const action = await applyCanonicalSchema(
       this.databaseUrl,
-      await canonicalArtifacts(),
+      await readCanonicalArtifacts(),
     );
-    if (action !== "verify-v7") {
-      throw new Error("Database is not the canonical schema v7.");
+    if (action !== "verify-v8") {
+      throw new Error("Database is not the canonical schema v8.");
     }
   }
 }

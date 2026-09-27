@@ -39,7 +39,10 @@ services:
       OBJECT_STORAGE_REQUEST_TIMEOUT_MS: ${OBJECT_STORAGE_REQUEST_TIMEOUT_MS:-30000}
       OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-kinship-local-secret}
       OBJECT_STORAGE_USE_SSL: "false"
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN}
     depends_on:
+      mailpit:
+        condition: service_healthy
       object-store:
         condition: service_healthy
   gateway:

@@ -8,10 +8,13 @@ export type {
 } from "./domain/cadence.ts";
 export type {
   ClaimedReminderOccurrence,
+  DeliveryChannel,
   ProviderDeliveryResult,
+  ReminderDeliveryPreference,
   ReminderWorkerOptions,
 } from "./domain/delivery_rules.ts";
 export type { ReminderPageAnchor, TaskCursorKeyset } from "./domain/cursors.ts";
+export { digestIdempotencyKey } from "./domain/delivery_rules.ts";
 export { generateCalendarOccurrences } from "./domain/recurrence.ts";
 export type {
   CalendarOccurrence,
@@ -39,10 +42,15 @@ export type {
 export type { PlanningActor, PlanningTransaction } from "./ports/context.ts";
 export type {
   InAppReminderEffectStore,
+  ReminderAttemptLedger,
+  ReminderDeliveryChannel,
   ReminderDeliveryProvider,
   ReminderDeliveryRepository,
+  ReminderEmailItem,
 } from "./ports/reminder_delivery.ts";
 export type {
+  MemberDeliveryChoice,
+  ReminderDeliveryPreferences,
   ReminderRecipients,
   ReminderRepository,
   ReminderWorkspaceBoundary,
@@ -66,7 +74,10 @@ export type {
   ReminderManagementDependencies,
   ReminderMutationResult,
 } from "./application/reminder_context.ts";
-export { createReminderDeliveryWorker } from "./application/reminder_delivery.ts";
+export {
+  createReminderDeliveryWorker,
+  EMAIL_ATTEMPT_LEASE_MILLISECONDS,
+} from "./application/reminder_delivery.ts";
 export type {
   ReminderDeliveryDependencies,
   ReminderDeliveryWorker,

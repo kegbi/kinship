@@ -783,6 +783,87 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "[PLANNING-003] PostgreSQL stores reminder delivery and digest time, keeping them when a save leaves them out",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await register(
+      `delivery-${crypto.randomUUID()}@example.test`,
+      "Delivery circle",
+    );
+    const base = {
+      contactNameOrder: "given_family_nickname",
+      contactSortOrder: "given_name_asc",
+      fluidLayout: false,
+      locale: "en",
+      measurementSystem: "metric",
+      temperatureScale: "celsius",
+    };
+    const save = async (body: Record<string, unknown>) => {
+      const response = await settingsRequest(
+        owner.cookie,
+        "/api/v1/settings/preferences",
+        { body: { ...base, ...body }, method: "PUT" },
+      );
+      assert(response.status === 200, `saved ${JSON.stringify(body)}`);
+      return (await response.json() as {
+        readonly preferences: Record<string, unknown>;
+      }).preferences;
+    };
+    const stored = async () =>
+      (await sql<{
+        readonly digest_time: string | null;
+        readonly reminder_delivery: string;
+      }[]>`
+        select reminder_delivery, digest_time::text
+        from crm.member_preferences where member_id = ${owner.memberId}
+      `)[0];
+
+    const read = await settingsRequest(
+      owner.cookie,
+      "/api/v1/settings/preferences",
+    );
+    const initial = (await read.json() as {
+      readonly preferences: Record<string, unknown>;
+    }).preferences;
+    assert(
+      initial.reminderDelivery === "in_app" && !("digestTime" in initial),
+      `a new member starts in the app with no digest: ${
+        JSON.stringify(initial)
+      }`,
+    );
+    const chosen = await save({
+      digestTime: "07:30",
+      reminderDelivery: "both",
+    });
+    assert(
+      chosen.reminderDelivery === "both" && chosen.digestTime === "07:30",
+      JSON.stringify(chosen),
+    );
+    assert(
+      JSON.stringify(await stored()) ===
+        JSON.stringify({ reminder_delivery: "both", digest_time: "07:30:00" }),
+      "the choice is stored",
+    );
+    const kept = await save({ locale: "sr-Latn" });
+    assert(
+      kept.reminderDelivery === "both" && kept.digestTime === "07:30",
+      `an older client keeps the choice: ${JSON.stringify(kept)}`,
+    );
+    const cleared = await save({ digestTime: null, reminderDelivery: "email" });
+    assert(
+      cleared.reminderDelivery === "email" && !("digestTime" in cleared),
+      JSON.stringify(cleared),
+    );
+    assert(
+      (await stored())?.digest_time === null,
+      "a null digest time clears the digest",
+    );
+  },
+});
+
+Deno.test({
   name: "APP-002E PostgreSQL preferences resources close",
   sanitizeOps: false,
   sanitizeResources: false,

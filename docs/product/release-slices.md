@@ -97,12 +97,13 @@ Prove that the read composition does not permit cross-module writes.
 
 ## Slice 4: Today, Planning, And Worker Reliability
 
-Flows: `TODAY-001`, `PLANNING-001`, and `PLANNING-002`.
+Flows: `TODAY-001`, `PLANNING-001`, `PLANNING-002`, and `PLANNING-003`.
 
 Deliver global tasks, person tasks, reminders, stay-in-touch cadence, Today
 projections, occurrence generation, worker claiming, retries, time-zone and
 daylight-saving behavior, secondary-region failure isolation, and
-duplicate-delivery tests.
+duplicate-delivery tests. `PLANNING-003` adds email reminder delivery and a
+daily digest per member time zone over the same durable occurrences.
 
 ## Slice 5: Files, Gifts, And Debts
 

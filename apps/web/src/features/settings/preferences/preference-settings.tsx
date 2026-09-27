@@ -1,8 +1,8 @@
 /**
  * The member's preferences form (GAP-033): locale, regional formats, contact
- * naming, and the fluid layout, for this membership only. A saved layout
- * tells the application shell through `MEMBER_LAYOUT_SAVED_EVENT`, so the
- * page frame follows at once.
+ * naming, the fluid layout, and where reminders are delivered (PLANNING-003),
+ * for this membership only. A saved layout tells the application shell
+ * through `MEMBER_LAYOUT_SAVED_EVENT`, so the page frame follows at once.
  */
 
 import {
@@ -31,6 +31,7 @@ export function preferencesInput(form: HTMLFormElement): PreferencesInput {
   const text = (name: string) => (data.get(name) as string).trim();
   const timezone = text("timezone");
   const currencyCode = text("currencyCode").toUpperCase();
+  const digestTime = text("digestTime");
   return {
     contactNameOrder: text("contactNameOrder") as Preferences[
       "contactNameOrder"
@@ -39,10 +40,15 @@ export function preferencesInput(form: HTMLFormElement): PreferencesInput {
       "contactSortOrder"
     ],
     ...(currencyCode ? { currencyCode } : {}),
+    // An empty digest time stops the digest rather than keeping the old one.
+    digestTime: digestTime ? digestTime.slice(0, 5) : null,
     fluidLayout: data.get("fluidLayout") !== null,
     locale: text("locale"),
     measurementSystem: text("measurementSystem") as Preferences[
       "measurementSystem"
+    ],
+    reminderDelivery: text("reminderDelivery") as Preferences[
+      "reminderDelivery"
     ],
     temperatureScale: text("temperatureScale") as Preferences[
       "temperatureScale"
@@ -149,6 +155,40 @@ export function PreferenceSettingsForm(
             />{" "}
             Use fluid layout
           </label>
+          <label>
+            Reminder delivery<select
+              aria-describedby="reminder-delivery-hint"
+              defaultValue={values?.reminderDelivery ?? "in_app"}
+              disabled={disabled}
+              name="reminderDelivery"
+              required
+            >
+              <option value="in_app">In the app</option>
+              <option value="email">Email</option>
+              <option value="both">In the app and by email</option>
+            </select>
+          </label>
+          <label>
+            Daily email digest<input
+              aria-describedby="reminder-delivery-hint digest-time-error"
+              defaultValue={values?.digestTime ?? ""}
+              disabled={disabled}
+              name="digestTime"
+              type="time"
+            />
+            <FieldError
+              errors={errors}
+              id="digest-time-error"
+              name="digestTime"
+            />
+          </label>
+          <p id="reminder-delivery-hint">
+            Email reminders go to your verified email address; without one,
+            reminders stay in the app. A delivery change applies to reminders
+            scheduled from now on. A digest time applies to every email reminder
+            still waiting: they arrive together at that time in your time zone.
+            Leave it empty to get each one when it is due.
+          </p>
         </>
       )}
       id="preferences-form"

@@ -7,6 +7,7 @@
  * `planning.test-helper.ts`.
  */
 
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import {
   createReminderManagement,
   createTaskManagement,
@@ -821,7 +822,10 @@ Deno.test({
       audit: reminderAuditFrom(new PostgresAuditEventRecorder()),
       clock: { now: () => new Date() },
       people: new PostgresRelationshipPersonBoundary(),
-      repository: new PostgresReminderRepository(actors),
+      repository: new PostgresReminderRepository(
+        actors,
+        new PostgresReminderDeliveryPreferences(),
+      ),
       transaction,
       workspace: new PostgresReminderWorkspaceBoundary(),
     });

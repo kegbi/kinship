@@ -101,6 +101,7 @@ export function preferences(
     fluidLayout: false,
     locale: "en",
     measurementSystem: "metric",
+    reminderDelivery: "in_app",
     temperatureScale: "celsius",
     ...overrides,
   };

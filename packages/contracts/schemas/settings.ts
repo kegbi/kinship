@@ -47,6 +47,15 @@ const workspaceSlug = z.string().trim().toLowerCase().refine(
   (value) => value.length <= 100 && WORKSPACE_SLUG.test(value),
 );
 
+/** A local time of day as the digest is set: `HH:MM` on a 24-hour clock. */
+const digestTime = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+
+/**
+ * Where a member's newly generated reminders are delivered (PLANNING-003).
+ * Email needs a verified address; without one, reminders stay in the app.
+ */
+const reminderDelivery = z.enum(["in_app", "email", "both"]);
+
 /** A currency as a form sends it: upper-cased before it is recognised. */
 const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
 
@@ -303,9 +312,12 @@ export const resolvedMemberPreferences = z.strictObject({
   contactNameOrder: z.enum(["given_family_nickname", "family_given_nickname"]),
   contactSortOrder: z.enum(["given_name_asc", "family_name_asc"]),
   currencyCode: z.string().regex(/^[A-Z]{3}$/).optional(),
+  /** Absent when each email reminder is sent as it comes due. */
+  digestTime: digestTime.optional(),
   fluidLayout: z.boolean(),
   locale: z.string(),
   measurementSystem: z.enum(["metric", "imperial"]),
+  reminderDelivery,
   temperatureScale: z.enum(["celsius", "fahrenheit"]),
   timezone: z.string().optional(),
 }).meta({ id: "ResolvedMemberPreferences" });
@@ -319,9 +331,13 @@ export const preferencesInput = z.strictObject({
   contactNameOrder: z.enum(["given_family_nickname", "family_given_nickname"]),
   contactSortOrder: z.enum(["given_name_asc", "family_name_asc"]),
   currencyCode: currencyCode.optional(),
+  /** `null` stops the digest; absent keeps what the member chose. */
+  digestTime: digestTime.nullable().optional(),
   fluidLayout: z.boolean(),
   locale: locale,
   measurementSystem: z.enum(["metric", "imperial"]),
+  /** Absent keeps what the member chose. */
+  reminderDelivery: reminderDelivery.optional(),
   temperatureScale: z.enum(["celsius", "fahrenheit"]),
   timezone: timezone.optional(),
 }).meta({ id: "PreferencesInput" });

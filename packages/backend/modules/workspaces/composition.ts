@@ -15,6 +15,7 @@
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { SmtpReminderMail } from "./adapters/mail/smtp_reminder_mail.ts";
 import {
   resolveSmtpVerificationMailOptions,
   SmtpVerificationMail,
@@ -36,6 +37,7 @@ import {
   PostgresWorkspaceRegistration,
 } from "./adapters/postgres/registration_repository.ts";
 import { PostgresRelationshipWorkspaceBoundary } from "./adapters/postgres/relationship_workspace_boundary.ts";
+import { PostgresReminderDeliveryPreferences } from "./adapters/postgres/reminder_delivery_preferences.ts";
 import { PostgresWorkspaceSettings } from "./adapters/postgres/settings_management.ts";
 import {
   PostgresWorkspaceLifecycleRepository,
@@ -90,6 +92,16 @@ export function composeVerificationMail(
   return new SmtpVerificationMail(
     resolveSmtpVerificationMailOptions(environment),
   );
+}
+
+/**
+ * Reminder email over the same SMTP transport and configuration (PLANNING-003).
+ * Only the worker sends it; planning's email channel port is its shape.
+ */
+export function composeReminderMail(
+  environment: MailEnvironment,
+): SmtpReminderMail {
+  return new SmtpReminderMail(resolveSmtpVerificationMailOptions(environment));
 }
 
 /**
@@ -149,7 +161,16 @@ export function composeWorkspaceBoundaries() {
     personalization: new PostgresWorkspacePersonalization(),
     profileFacts: new PostgresProfileFactConfiguration(),
     relationships: new PostgresRelationshipWorkspaceBoundary(),
+    reminderDelivery: reminderDeliveryPreferences(),
   };
+}
+
+/**
+ * What members chose about reminder delivery (PLANNING-003). Planning reads
+ * it through this boundary; the worker root builds it on its own.
+ */
+export function reminderDeliveryPreferences(): PostgresReminderDeliveryPreferences {
+  return new PostgresReminderDeliveryPreferences();
 }
 
 /** The identity facades workspaces composes its account use cases over. */

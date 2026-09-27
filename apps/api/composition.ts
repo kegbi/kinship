@@ -826,11 +826,15 @@ export function createConfiguredApiApp(
   });
   const people = composePeople(shared, {
     avatarImages: avatarImages(files.files),
-    importantDatePublisher: personDateReminderPublisher(shared),
+    importantDatePublisher: personDateReminderPublisher(
+      shared,
+      configuration.reminderDelivery,
+    ),
     profileFactWorkspace: configuration.profileFacts,
   });
   const planning = composePlanning(shared, {
     cursorKeyset: subjectKeyset,
+    deliveryPreferences: configuration.reminderDelivery,
     people: persons,
   });
   const relationships = composeRelationships(shared, {

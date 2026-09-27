@@ -19700,6 +19700,17 @@
             "type": "string",
             "pattern": "^[A-Z]{3}$"
           },
+          "digestTime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fluidLayout": {
             "type": "boolean"
           },
@@ -19711,6 +19722,14 @@
             "enum": [
               "metric",
               "imperial"
+            ]
+          },
+          "reminderDelivery": {
+            "type": "string",
+            "enum": [
+              "in_app",
+              "email",
+              "both"
             ]
           },
           "temperatureScale": {
@@ -20801,6 +20820,10 @@
             "type": "string",
             "pattern": "^[A-Z]{3}$"
           },
+          "digestTime": {
+            "type": "string",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+          },
           "fluidLayout": {
             "type": "boolean"
           },
@@ -20812,6 +20835,14 @@
             "enum": [
               "metric",
               "imperial"
+            ]
+          },
+          "reminderDelivery": {
+            "type": "string",
+            "enum": [
+              "in_app",
+              "email",
+              "both"
             ]
           },
           "temperatureScale": {
@@ -20832,6 +20863,7 @@
           "fluidLayout",
           "locale",
           "measurementSystem",
+          "reminderDelivery",
           "temperatureScale"
         ],
         "additionalProperties": false

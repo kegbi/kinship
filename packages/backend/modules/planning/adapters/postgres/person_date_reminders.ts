@@ -1,7 +1,11 @@
 import { sql } from "kysely";
 import type { ImportantDatePublisher } from "../../../people/public.ts";
-import type { ReminderRecipients } from "../../ports/reminder_repository.ts";
+import type {
+  ReminderDeliveryPreferences,
+  ReminderRecipients,
+} from "../../ports/reminder_repository.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { recipientChannels } from "./reminder_repository.ts";
 
 interface ReminderRow {
   readonly id: string;
@@ -18,7 +22,10 @@ function title(command: Parameters<ImportantDatePublisher["regenerate"]>[0]) {
 
 export class PostgresPersonDateReminderPublisher
   implements ImportantDatePublisher {
-  constructor(private readonly recipients: ReminderRecipients) {}
+  constructor(
+    private readonly recipients: ReminderRecipients,
+    private readonly preferences: ReminderDeliveryPreferences,
+  ) {}
 
   async regenerate(
     command: Parameters<ImportantDatePublisher["regenerate"]>[0],
@@ -151,6 +158,18 @@ export class PostgresPersonDateReminderPublisher
     });
     if (recipients.length === 0) return;
     const recipientIds = recipients.map((recipient) => recipient.memberId);
+    // Each member's occurrences go out on the channels they chose.
+    const channels = await recipientChannels(
+      this.preferences,
+      command.transaction,
+      recipients,
+    );
+    const deliveries = recipients.flatMap((recipient) =>
+      (channels.get(recipient.memberId) ?? ["in_app"]).map((channel) => ({
+        channel,
+        memberId: recipient.memberId,
+      }))
+    );
     await sql`
       with member_schedule as (
         select recipient.member_id, lead.days_before,
@@ -211,10 +230,15 @@ export class PostgresPersonDateReminderPublisher
       )
       select ${activeReminderId}::uuid, next_delivery.member_id,
         next_delivery.occurs_on, next_delivery.deliver_at,
-        next_delivery.days_before, 'in_app', 'pending', ${title(command)},
-        ${command.occurredAt}::timestamptz,
+        next_delivery.days_before, delivery.channel, 'pending',
+        ${title(command)}, ${command.occurredAt}::timestamptz,
         ${command.occurredAt}::timestamptz
       from next_delivery
+      join unnest(
+        ${deliveries.map((delivery) => delivery.memberId)}::uuid[],
+        ${deliveries.map((delivery) => delivery.channel)}::text[]
+      ) as delivery(member_id, channel)
+        on delivery.member_id = next_delivery.member_id
       on conflict do nothing
     `.execute(database);
     await sql`

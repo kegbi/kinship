@@ -348,6 +348,24 @@ BEGIN
     provider_effect_at = now(), visible_at = now()
   WHERE reminder_id = created_reminder_id;
 
+  INSERT INTO member_preferences (member_id) VALUES (member_a);
+  SELECT reminder_delivery || '|' || coalesce(digest_time::text, 'none')
+  INTO stored_value FROM member_preferences WHERE member_id = member_a;
+  IF stored_value <> 'in_app|none' THEN
+    RAISE EXCEPTION 'member reminder delivery default was %', stored_value;
+  END IF;
+  UPDATE member_preferences SET reminder_delivery = 'both',
+    digest_time = '07:30'
+  WHERE member_id = member_a;
+
+  BEGIN
+    UPDATE member_preferences SET reminder_delivery = 'sms'
+    WHERE member_id = member_a;
+    RAISE EXCEPTION 'member reminder delivery vocabulary was not enforced';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   IF member_b IS NULL OR workspace_b IS NULL THEN
     RAISE EXCEPTION 'secondary workspace fixture was not created';
   END IF;

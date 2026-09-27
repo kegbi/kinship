@@ -303,12 +303,24 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: workspaces
-    flowIds: [AUTH-004]
+    flowIds: [AUTH-004, PLANNING-003]
     sections:
       - locale-and-time-zone
       - regional-formats
       - reminder-delivery-time
       - display-and-density
+    # PLANNING-003: the reminder-delivery controls share the preferences
+    # form's states. `unverified-fallback` is the always-visible note that a
+    # member without a verified address keeps in-app reminders.
+    sectionStates:
+      reminder-delivery-time:
+        - loading
+        - ready
+        - error
+        - saving
+        - saved
+        - validation-error
+        - unverified-fallback
 
   - id: settings.security
     path: /app/settings/security

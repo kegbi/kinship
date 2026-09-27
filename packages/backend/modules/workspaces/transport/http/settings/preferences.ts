@@ -94,9 +94,15 @@ export function createPreferencesRoutes(
         ...(parsed.data.currencyCode
           ? { currencyCode: parsed.data.currencyCode }
           : {}),
+        ...(parsed.data.digestTime !== undefined
+          ? { digestTime: parsed.data.digestTime }
+          : {}),
         fluidLayout: parsed.data.fluidLayout,
         locale: parsed.data.locale,
         measurementSystem: parsed.data.measurementSystem,
+        ...(parsed.data.reminderDelivery
+          ? { reminderDelivery: parsed.data.reminderDelivery }
+          : {}),
         temperatureScale: parsed.data.temperatureScale,
         ...(parsed.data.timezone ? { timezone: parsed.data.timezone } : {}),
       }).catch(() => undefined);

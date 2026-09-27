@@ -138,6 +138,17 @@ export const AUTH_ENV = [
   "AUTH_THROTTLE_SUBJECT_KEYSET",
 ] as const;
 
+/** Reminder email (PLANNING-003) uses the SMTP transport the API does. */
+export const REMINDER_MAIL_ENV = [
+  "PUBLIC_WEB_ORIGIN",
+  "SMTP_FROM",
+  "SMTP_HOST",
+  "SMTP_PASSWORD",
+  "SMTP_PORT",
+  "SMTP_SECURITY",
+  "SMTP_USERNAME",
+] as const;
+
 /**
  * The runtime environment authority the `worker` service declares in
  * `compose.yaml`. A test set that loads an `apps/worker` module evaluates the
@@ -150,6 +161,7 @@ export const WORKER_RUNTIME_ENV = [
   ...POSTGRES_ENV,
   "WORKER_INSTANCE_ID",
   ...OBJECT_STORAGE_ENV,
+  ...REMINDER_MAIL_ENV,
 ] as const;
 
 /** Every canonical schema baseline the migration and schema harnesses read. */
@@ -161,6 +173,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v5",
   "personal-crm-schema/v6",
   "personal-crm-schema/v7",
+  "personal-crm-schema/v8",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -256,7 +269,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "apps",
     "docs/architecture",
     "packages",
-    "personal-crm-schema/v7",
+    "personal-crm-schema/v8",
     "tools",
   ],
 };
@@ -564,8 +577,8 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v7/personal_crm_schema_spec_v7.md",
-          "personal-crm-schema/v7/personal_crm_schema_v7.sql",
+          "personal-crm-schema/v8/personal_crm_schema_spec_v8.md",
+          "personal-crm-schema/v8/personal_crm_schema_v8.sql",
           "packages/contracts",
           ...OWNERSHIP_BOUNDARY_READS,
         ],
@@ -665,7 +678,8 @@ export const MODULES: readonly TaskModule[] = [
         ],
         // As in the unit set: `tools/e2e_test.ts` runs here too (REL-040).
         run: E2E_PROCESS_BINARIES,
-        env: ["CI", ...APPLICATION_DATABASE_ENV],
+        // The worker composition suite configures reminder email.
+        env: ["CI", ...APPLICATION_DATABASE_ENV, ...REMINDER_MAIL_ENV],
         net: "all",
       },
       tests: [
@@ -841,6 +855,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/workspaces/application/personal_lifecycle_test.ts",
         "packages/backend/modules/workspaces/application/workspace_lifecycle_test.ts",
         "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
+        "packages/backend/modules/workspaces/adapters/mail/smtp_reminder_mail_test.ts",
         "packages/contracts/client_test.ts",
         "packages/contracts/registry_test.ts",
         "packages/contracts/today_test.ts",
@@ -890,6 +905,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/planning_reminders_postgres_test.ts",
         "tests/integration/planning_cadences_postgres_test.ts",
         "tests/integration/planning_delivery_postgres_test.ts",
+        "tests/integration/planning_email_delivery_postgres_test.ts",
         "tests/integration/settings_preferences_postgres_test.ts",
         "tests/integration/settings_personalization_postgres_test.ts",
         "tests/integration/time_preferences_postgres_test.ts",
@@ -1059,6 +1075,7 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/planning_reminders_postgres_test.ts",
       "tests/integration/planning_cadences_postgres_test.ts",
       "tests/integration/planning_delivery_postgres_test.ts",
+      "tests/integration/planning_email_delivery_postgres_test.ts",
     ],
     coverage: {
       directory: "planning",
@@ -1067,6 +1084,8 @@ export const MODULES: readonly TaskModule[] = [
         read: [...SCHEMA_READS],
         env: [...APPLICATION_DATABASE_ENV],
         net: "all",
+        // The reminder email suite starts, and removes, its own Mailpit.
+        run: ["docker"],
       },
       tests: [
         "packages/backend/modules/planning/transport/http/routes_test.ts",
@@ -1090,6 +1109,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/planning_reminders_postgres_test.ts",
         "tests/integration/planning_cadences_postgres_test.ts",
         "tests/integration/planning_delivery_postgres_test.ts",
+        "tests/integration/planning_email_delivery_postgres_test.ts",
         "tests/integration/read_models_today_postgres_test.ts",
       ],
       include: [
@@ -1642,6 +1662,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
+        "packages/backend/modules/workspaces/adapters/mail/smtp_reminder_mail_test.ts",
         "packages/backend/modules/workspaces/application/member_ui_state_test.ts",
         "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
@@ -1740,7 +1761,7 @@ export const MODULES: readonly TaskModule[] = [
           "docs/architecture",
           "docs/planning/private-production-profile.json",
           "docs/product/user-flows.yaml",
-          "personal-crm-schema/v7",
+          "personal-crm-schema/v8",
           "apps",
           "packages",
           "tools",

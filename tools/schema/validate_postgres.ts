@@ -51,6 +51,7 @@ const V3_UPGRADE_DATABASE = "crm_v3_upgrade_test";
 const V4_UPGRADE_DATABASE = "crm_v4_upgrade_test";
 const V5_UPGRADE_DATABASE = "crm_v5_upgrade_test";
 const V6_UPGRADE_DATABASE = "crm_v6_upgrade_test";
+const V7_UPGRADE_DATABASE = "crm_v7_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -58,36 +59,25 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v7");
-const v1SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v1");
-const v2SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v2");
-const v3SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v3");
-const v4SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v4");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v8");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v7_validation.json",
+  "personal_crm_schema_v8_validation.json",
 );
-const v1ValidationPath = resolve(
-  v1SchemaDirectory,
-  "personal_crm_schema_v3_validation.json",
-);
-const v2ValidationPath = resolve(
-  v2SchemaDirectory,
-  "personal_crm_schema_v2_validation.json",
-);
-const v3ValidationPath = resolve(
-  v3SchemaDirectory,
-  "personal_crm_schema_v3_validation.json",
-);
-const v4ValidationPath = resolve(
-  v4SchemaDirectory,
-  "personal_crm_schema_v4_validation.json",
-);
-const v5SchemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v5");
-const v5ValidationPath = resolve(
-  v5SchemaDirectory,
-  "personal_crm_schema_v5_validation.json",
-);
+
+/**
+ * Every immutable prior baseline and the validation file that records its
+ * exact hashes. Repository v1 keeps the audited bundle's v3-named file.
+ */
+const IMMUTABLE_BASELINES = [
+  ["v1", "personal_crm_schema_v3_validation.json"],
+  ["v2", "personal_crm_schema_v2_validation.json"],
+  ["v3", "personal_crm_schema_v3_validation.json"],
+  ["v4", "personal_crm_schema_v4_validation.json"],
+  ["v5", "personal_crm_schema_v5_validation.json"],
+  ["v6", "personal_crm_schema_v6_validation.json"],
+  ["v7", "personal_crm_schema_v7_validation.json"],
+] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
   let image = DEFAULT_POSTGRES_IMAGE;
@@ -159,20 +149,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v7 validation status is ${validation.status}`);
+    throw new Error(`Schema v8 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v7 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v8 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v7.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v8.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -184,6 +174,12 @@ async function verifyArtifacts(
     resolve(
       schemaDirectory,
       "migrations/0007_add_workspace_deletion_records.sql",
+    ),
+  );
+  const v8Migration = await Deno.readTextFile(
+    resolve(
+      schemaDirectory,
+      "migrations/0008_add_member_reminder_delivery.sql",
     ),
   );
   const tableColumns = (table: string): readonly string[] => {
@@ -226,6 +222,7 @@ async function verifyArtifacts(
   const occurrenceColumns = tableColumns("reminder_occurrences");
   const cadenceColumns = tableColumns("stay_in_touch_cadences");
   const deletionColumns = tableColumns("workspace_lifecycle_records");
+  const preferenceColumns = tableColumns("member_preferences");
   const contractErrors: string[] = [];
   if (occurrenceColumns.join(",") !== expectedOccurrenceColumns.join(",")) {
     contractErrors.push(
@@ -270,74 +267,41 @@ async function verifyArtifacts(
       "surviving deletion record migration is missing or cascades",
     );
   }
+  if (
+    preferenceColumns.slice(-2).join(",") !== "reminder_delivery,digest_time"
+  ) {
+    contractErrors.push("member reminder-delivery preferences are missing");
+  }
+  if (
+    !v8Migration.includes("ADD COLUMN reminder_delivery") ||
+    !v8Migration.includes("ADD COLUMN digest_time") ||
+    !v8Migration.includes("member_preferences_reminder_delivery_ck")
+  ) {
+    contractErrors.push("member reminder-delivery migration is missing");
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v7 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v8 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
 
-async function verifyImmutableV1Artifacts(): Promise<void> {
-  const parsed = JSON.parse(await Deno.readTextFile(v1ValidationPath)) as {
-    readonly sha256?: Readonly<Record<string, string>>;
-  };
-  if (!parsed.sha256) throw new Error("Invalid immutable v1 validation JSON.");
-  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
-    const actualHash = await sha256(resolve(v1SchemaDirectory, filename));
-    if (actualHash !== expectedHash) {
-      throw new Error(`Immutable schema v1 artifact drifted: ${filename}.`);
+async function verifyImmutableArtifacts(): Promise<void> {
+  for (const [version, validationFile] of IMMUTABLE_BASELINES) {
+    const directory = resolve(repositoryRoot, `personal-crm-schema/${version}`);
+    const parsed = JSON.parse(
+      await Deno.readTextFile(resolve(directory, validationFile)),
+    ) as { readonly sha256?: Readonly<Record<string, string>> };
+    if (!parsed.sha256) {
+      throw new Error(`Invalid immutable ${version} validation JSON.`);
     }
-  }
-}
-
-async function verifyImmutableV2Artifacts(): Promise<void> {
-  const parsed = JSON.parse(await Deno.readTextFile(v2ValidationPath)) as {
-    readonly sha256?: Readonly<Record<string, string>>;
-  };
-  if (!parsed.sha256) throw new Error("Invalid immutable v2 validation JSON.");
-  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
-    const actualHash = await sha256(resolve(v2SchemaDirectory, filename));
-    if (actualHash !== expectedHash) {
-      throw new Error(`Immutable schema v2 artifact drifted: ${filename}.`);
-    }
-  }
-}
-
-async function verifyImmutableV3Artifacts(): Promise<void> {
-  const parsed = JSON.parse(await Deno.readTextFile(v3ValidationPath)) as {
-    readonly sha256?: Readonly<Record<string, string>>;
-  };
-  if (!parsed.sha256) throw new Error("Invalid immutable v3 validation JSON.");
-  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
-    const actualHash = await sha256(resolve(v3SchemaDirectory, filename));
-    if (actualHash !== expectedHash) {
-      throw new Error(`Immutable schema v3 artifact drifted: ${filename}.`);
-    }
-  }
-}
-
-async function verifyImmutableV4Artifacts(): Promise<void> {
-  const parsed = JSON.parse(await Deno.readTextFile(v4ValidationPath)) as {
-    readonly sha256?: Readonly<Record<string, string>>;
-  };
-  if (!parsed.sha256) throw new Error("Invalid immutable v4 validation JSON.");
-  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
-    const actualHash = await sha256(resolve(v4SchemaDirectory, filename));
-    if (actualHash !== expectedHash) {
-      throw new Error(`Immutable schema v4 artifact drifted: ${filename}.`);
-    }
-  }
-}
-
-async function verifyImmutableV5Artifacts(): Promise<void> {
-  const parsed = JSON.parse(await Deno.readTextFile(v5ValidationPath)) as {
-    readonly sha256?: Readonly<Record<string, string>>;
-  };
-  if (!parsed.sha256) throw new Error("Invalid immutable v5 validation JSON.");
-  for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
-    const actualHash = await sha256(resolve(v5SchemaDirectory, filename));
-    if (actualHash !== expectedHash) {
-      throw new Error(`Immutable schema v5 artifact drifted: ${filename}.`);
+    for (const [filename, expectedHash] of Object.entries(parsed.sha256)) {
+      const actualHash = await sha256(resolve(directory, filename));
+      if (actualHash !== expectedHash) {
+        throw new Error(
+          `Immutable schema ${version} artifact drifted: ${filename}.`,
+        );
+      }
     }
   }
 }
@@ -440,7 +404,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v7 validation JSON");
+    throw new Error("Invalid schema v8 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -489,20 +453,20 @@ async function assertArtifactCounts(
 ): Promise<void> {
   assertEqual(
     "table mapping rows",
-    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v7.csv")),
+    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v8.csv")),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v7.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v8.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v7.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v8.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -512,7 +476,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v7.sql",
+    "/tmp/personal_crm_schema_v8.sql",
   ], { quiet: true });
 }
 
@@ -527,7 +491,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v7.sql",
+      "/tmp/personal_crm_schema_v8.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -560,6 +524,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V4_UPGRADE_DATABASE,
       V5_UPGRADE_DATABASE,
       V6_UPGRADE_DATABASE,
+      V7_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -589,6 +554,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -609,7 +576,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE path='/upgrade-preserved');`,
     ], { quiet: true });
     if (upgraded !== "t") {
-      throw new Error("v1-to-v6 migration did not preserve the exact fixture.");
+      throw new Error("v1-to-v8 migration did not preserve the exact fixture.");
     }
 
     await runPsql(V2_UPGRADE_DATABASE, [
@@ -634,6 +601,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -645,7 +614,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        WHERE id = '00000000-0000-4000-8000-000000000004';`,
     ], { quiet: true });
     if (v2Upgraded !== "t") {
-      throw new Error("v2-to-v6 migration did not revoke ambiguous authority.");
+      throw new Error("v2-to-v8 migration did not revoke ambiguous authority.");
     }
 
     await runPsql(V3_UPGRADE_DATABASE, [
@@ -660,6 +629,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -671,7 +642,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        FROM crm.currencies;`,
     ], { quiet: true });
     if (v3Upgraded !== "t") {
-      throw new Error("v3-to-v6 migration did not seed the exact catalog.");
+      throw new Error("v3-to-v8 migration did not seed the exact catalog.");
     }
 
     await runPsql(V4_UPGRADE_DATABASE, [
@@ -684,6 +655,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -698,7 +671,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        AND (SELECT count(*) = 165 FROM crm.currencies);`,
     ], { quiet: true });
     if (v4Upgraded !== "t") {
-      throw new Error("v4-to-v6 migration did not preserve the exact fixture.");
+      throw new Error("v4-to-v8 migration did not preserve the exact fixture.");
     }
 
     await runPsql(V5_UPGRADE_DATABASE, [
@@ -727,6 +700,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0006_add_durable_reminder_delivery.sql",
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -759,7 +734,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
     ], { quiet: true });
     if (v5Upgraded !== "t") {
       throw new Error(
-        "v5-to-v6 migration did not install durable delivery state.",
+        "v5-to-v8 migration did not install durable delivery state.",
       );
     }
 
@@ -772,6 +747,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
          ('00000000-0000-4000-8000-000000000601', 'v7-upgrade@example.test');`,
       "-f",
       "/tmp/0007_add_workspace_deletion_records.sql",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -786,7 +763,42 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE id='00000000-0000-4000-8000-000000000601');`,
     ], { quiet: true });
     if (v6Upgraded !== "t") {
-      throw new Error("v6-to-v7 migration did not preserve the exact fixture.");
+      throw new Error("v6-to-v8 migration did not preserve the exact fixture.");
+    }
+
+    await runPsql(V7_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v7.sql",
+      "-c",
+      `INSERT INTO crm.users (id, email) VALUES
+         ('00000000-0000-4000-8000-000000000701', 'v8-upgrade@example.test');
+       INSERT INTO crm.workspaces (id, name, created_by_user_id) VALUES
+         ('00000000-0000-4000-8000-000000000702', 'V8 upgrade', '00000000-0000-4000-8000-000000000701');
+       INSERT INTO crm.workspace_members (id, workspace_id, user_id, role, status) VALUES
+         ('00000000-0000-4000-8000-000000000703', '00000000-0000-4000-8000-000000000702', '00000000-0000-4000-8000-000000000701', 'owner', 'active');
+       INSERT INTO crm.member_preferences (member_id, timezone) VALUES
+         ('00000000-0000-4000-8000-000000000703', 'Europe/Belgrade');`,
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
+    ], { quiet: true });
+    const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT (SELECT reminder_delivery = 'in_app' AND digest_time IS NULL
+            AND timezone = 'Europe/Belgrade'
+          FROM crm.member_preferences
+          WHERE member_id = '00000000-0000-4000-8000-000000000703')
+       AND (SELECT array_agg(attname ORDER BY attnum)::text =
+          '{member_id,timezone,locale,temperature_scale,measurement_system,currency_code,contact_sort_order,contact_name_order,fluid_layout,ui_state,updated_at,reminder_delivery,digest_time}'
+          FROM pg_attribute WHERE attrelid = 'crm.member_preferences'::regclass
+            AND attnum > 0 AND NOT attisdropped)
+       AND EXISTS(SELECT 1 FROM pg_constraint
+          WHERE conname = 'member_preferences_reminder_delivery_ck');`,
+    ], { quiet: true });
+    if (v7Upgraded !== "t") {
+      throw new Error("v7-to-v8 migration did not preserve the exact fixture.");
     }
 
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
@@ -840,6 +852,32 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         "failed v6-to-v7 migration did not roll back atomically.",
       );
     }
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0007_add_workspace_deletion_records.sql",
+    ], { quiet: true });
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/0008_add_member_reminder_delivery.sql",
+      "-c",
+      "SELECT 1 / 0",
+    ], { allowFailure: true, quiet: true });
+    const v8RolledBack = await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns
+        WHERE table_schema='crm' AND table_name='member_preferences'
+          AND column_name IN ('reminder_delivery', 'digest_time'));`,
+    ], { quiet: true });
+    if (v8RolledBack !== "t") {
+      throw new Error(
+        "failed v7-to-v8 migration did not roll back atomically.",
+      );
+    }
   } finally {
     for (
       const database of [
@@ -849,6 +887,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V4_UPGRADE_DATABASE,
         V5_UPGRADE_DATABASE,
         V6_UPGRADE_DATABASE,
+        V7_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -863,11 +902,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
 async function main(): Promise<void> {
   const validation = await readValidation();
   await verifyArtifacts(validation);
-  await verifyImmutableV1Artifacts();
-  await verifyImmutableV2Artifacts();
-  await verifyImmutableV3Artifacts();
-  await verifyImmutableV4Artifacts();
-  await verifyImmutableV5Artifacts();
+  await verifyImmutableArtifacts();
   await assertArtifactCounts(validation);
 
   const dockerVersion = await runDocker(
@@ -882,6 +917,10 @@ async function main(): Promise<void> {
     await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
     started = true;
 
+    await copyFixture(
+      "personal-crm-schema/v8/personal_crm_schema_v8.sql",
+      "/tmp/personal_crm_schema_v8.sql",
+    );
     await copyFixture(
       "personal-crm-schema/v7/personal_crm_schema_v7.sql",
       "/tmp/personal_crm_schema_v7.sql",
@@ -907,8 +946,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v7/personal_crm_field_catalog_v7.csv",
-      "/tmp/personal_crm_field_catalog_v7.csv",
+      "personal-crm-schema/v8/personal_crm_field_catalog_v8.csv",
+      "/tmp/personal_crm_field_catalog_v8.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -939,6 +978,10 @@ async function main(): Promise<void> {
       "/tmp/0007_add_workspace_deletion_records.sql",
     );
     await copyFixture(
+      "personal-crm-schema/v8/migrations/0008_add_member_reminder_delivery.sql",
+      "/tmp/0008_add_member_reminder_delivery.sql",
+    );
+    await copyFixture(
       "tools/schema/assert_schema.sql",
       "/tmp/assert_schema.sql",
     );
@@ -959,7 +1002,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

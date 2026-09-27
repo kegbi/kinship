@@ -651,6 +651,44 @@ flows:
       testRefs: [tests/e2e/reminders.PLANNING-002.spec.ts],
     }
 
+  - id: PLANNING-003
+    title: Receive reminders by email
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member chooses email reminder delivery, with or without a daily digest time, in personal preferences.
+    preconditions: [active-membership, verified-email, valid-member-timezone]
+    steps:
+      - Choose in-app, email, or both reminder delivery and an optional daily digest time in personal preferences.
+      - A reminder generated after the change comes due, and the worker claims its email occurrence.
+      - The email arrives once with the reminder's title and body and an absolute link to the person workspace.
+    # A delivery-channel change applies to occurrences generated afterwards;
+    # already generated occurrences keep their channel. Editing a reminder's
+    # schedule (disabling and re-enabling it, or changing an important date)
+    # regenerates its future occurrences with the member's current channels,
+    # while the rolling-window refill never backfills a new channel for a date
+    # already generated. A digest-time change also applies to email
+    # occurrences already pending, because the digest window is computed when
+    # the worker claims. The audit event `planning.reminder-delivered` records
+    # the channel, and a digest's occurrence count.
+    alternateOutcomes: [
+      digest-batches-due-reminders-at-local-digest-time,
+      unverified-email-falls-back-to-in-app,
+      both-generates-in-app-and-email,
+      provider-failure-then-retry,
+      ambiguous-result-reconciled-never-resent,
+    ]
+    result: Each due email reminder, or each member's daily digest, is delivered exactly once and links to the person.
+    auditEffect: reminder-delivered-with-channel
+    pageIds: [settings.preferences, people.profile]
+    moduleIds: [workspaces, planning]
+    permissions: [reminders.write, reminder-delivery.execute]
+    testLayers: [unit, integration, schema, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/reminder-email.PLANNING-003.spec.ts],
+    }
+
   - id: FILES-001
     title: Attach and retrieve a person file
     deliveryStatus: delivered

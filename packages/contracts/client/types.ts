@@ -58,9 +58,13 @@ export interface MemberPreferences {
   readonly contactNameOrder: "given_family_nickname" | "family_given_nickname";
   readonly contactSortOrder: "given_name_asc" | "family_name_asc";
   readonly currencyCode?: string;
+  /** `null` stops the daily digest; absent keeps the member's choice. */
+  readonly digestTime?: string | null;
   readonly fluidLayout: boolean;
   readonly locale: string;
   readonly measurementSystem: "metric" | "imperial";
+  /** Absent keeps the member's choice. */
+  readonly reminderDelivery?: "in_app" | "email" | "both";
   readonly temperatureScale: "celsius" | "fahrenheit";
   readonly timezone?: string;
 }

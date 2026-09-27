@@ -5,6 +5,8 @@
  * does, through the same per-module `compose*` functions: planning's delivery
  * loop and the workspace cleanup reconciler, over one shared context. Each
  * delivery run is logged as one redacted `worker.job` JSON line on stdout.
+ * Reminder email (PLANNING-003) goes through the workspaces SMTP transport,
+ * configured from the same `SMTP_*` settings the API sends verification with.
  */
 
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
@@ -17,7 +19,9 @@ import { peopleTransactionRunner } from "../../packages/backend/modules/people/c
 import { composeReminderDelivery } from "../../packages/backend/modules/planning/composition.ts";
 import {
   activeWorkspaceResolver,
+  composeReminderMail,
   composeWorkspaceCleanup,
+  reminderDeliveryPreferences,
   workspaceActors,
   workspaceTransactionRunner,
 } from "../../packages/backend/modules/workspaces/composition.ts";
@@ -49,6 +53,7 @@ export function createConfiguredReminderWorker(
   const storage = composeObjectStorage(
     resolveObjectStorageConfiguration(Deno.env),
   );
+  const email = composeReminderMail(Deno.env);
   const connection = connectDatabase(databaseUrl);
   const shared: SharedComposition = {
     actors: workspaceActors(),
@@ -63,7 +68,11 @@ export function createConfiguredReminderWorker(
   return {
     close: connection.destroy,
     worker: createApplicationWorker(
-      composeReminderDelivery(shared, { logger }),
+      composeReminderDelivery(shared, {
+        deliveryPreferences: reminderDeliveryPreferences(),
+        email,
+        logger,
+      }),
       composeWorkspaceCleanup(shared, { storage }),
     ),
   };

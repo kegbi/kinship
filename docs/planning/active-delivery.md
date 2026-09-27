@@ -647,6 +647,21 @@ Playwright test carrying its stable flow ID.
       particular member wins. The `lifecycle` coverage set moves between runs
       (functions 93.8% or 91.7%). Cover both orders deterministically.
 
+- [ ] **REL-059 — Failed email reminders never reach Today's attention queue.**
+      Found reviewing GAP-044: `today_attention_repository.ts` filters
+      `channel = 'in_app'`, so an email-only member's `failed` and
+      `manual_attention` email occurrences are missing there. They still show in
+      the Today reminders list and on the profile. Include email delivery
+      failures in the attention queue, or record the product decision not to.
+
+- [ ] **REL-060 — A digest's attempt key outlives a failed attempt.** Found
+      reviewing GAP-044: `markAttempted` stores the digest key in
+      `reminder_occurrences.provider_receipt`, and `finalize` keeps it on
+      `rejected` and `manual_attention` rows. The column comment describes a
+      receipt after confirmed delivery or reconciliation. Nothing misreads it
+      today. Clear it on those outcomes, or document the attempt-reference
+      convention in the flow.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

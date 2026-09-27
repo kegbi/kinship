@@ -26,6 +26,8 @@ import {
   createTaskManagement,
   reminderAuditFrom,
   reminderDeliveryAuditFrom,
+  type ReminderDeliveryChannel,
+  type ReminderDeliveryPreferences,
   taskAuditFrom,
   type TaskCursorKeyset,
 } from "./public.ts";
@@ -36,13 +38,19 @@ import {
  */
 export function personDateReminderPublisher(
   shared: SharedComposition,
+  deliveryPreferences: ReminderDeliveryPreferences,
 ): PostgresPersonDateReminderPublisher {
-  return new PostgresPersonDateReminderPublisher(shared.actors);
+  return new PostgresPersonDateReminderPublisher(
+    shared.actors,
+    deliveryPreferences,
+  );
 }
 
 export interface PlanningPorts {
   /** The keyset the task list's opaque cursors are sealed with. */
   readonly cursorKeyset: TaskCursorKeyset;
+  /** What members chose about reminder delivery, read from `workspaces`. */
+  readonly deliveryPreferences: ReminderDeliveryPreferences;
   readonly people: RelationshipPersonBoundary;
 }
 
@@ -58,7 +66,10 @@ export function composePlanning(
       audit: reminderAuditFrom(shared.audit),
       clock: shared.clock,
       people: ports.people,
-      repository: new PostgresReminderRepository(shared.actors),
+      repository: new PostgresReminderRepository(
+        shared.actors,
+        ports.deliveryPreferences,
+      ),
       transaction: shared.peopleTransaction,
       workspace: new PostgresReminderWorkspaceBoundary(),
     }),
@@ -77,22 +88,33 @@ export function composePlanning(
 /**
  * The worker half: the loop that claims due occurrences and delivers them.
  * Given a logger, each run is logged as `worker.job` and correlated by an
- * identifier minted from the shared identifier source.
+ * identifier minted from the shared identifier source. Given an email channel
+ * (PLANNING-003), email occurrences are delivered too, and the repository that
+ * leases them is the ledger each email attempt is recorded in.
  */
 export function composeReminderDelivery(
   shared: SharedComposition,
-  options: { readonly logger?: Logger } = {},
+  options: {
+    readonly deliveryPreferences: ReminderDeliveryPreferences;
+    readonly email?: ReminderDeliveryChannel;
+    readonly logger?: Logger;
+  },
 ) {
+  const repository = new PostgresReminderDeliveryRepository(
+    shared.database,
+    shared.actors,
+    options.deliveryPreferences,
+  );
   return createReminderDeliveryWorker({
     audit: reminderDeliveryAuditFrom(shared.audit),
     clock: shared.clock,
+    ...(options.email
+      ? { email: { channel: options.email, ledger: repository } }
+      : {}),
     provider: new InAppReminderDelivery(
       new PostgresInAppReminderEffectStore(shared.database, shared.clock),
     ),
-    repository: new PostgresReminderDeliveryRepository(
-      shared.database,
-      shared.actors,
-    ),
+    repository,
     ...(options.logger
       ? { telemetry: { correlation: shared.ids, logger: options.logger } }
       : {}),

@@ -11,6 +11,12 @@ import type {
 import type { ActiveWorkspaceContext } from "../../ports/context.ts";
 import type { ActiveWorkspaceResolver } from "../../ports/session.ts";
 
+/** The account's address, only when it has been verified. */
+const verifiedEmail = sql<string | null>`
+  case when account.email_verified_at is not null
+    then account.email::text end
+`;
+
 /**
  * The single approved actor-context read, declared in
  * `docs/architecture/module-boundaries.yaml`. It is the only adapter outside
@@ -32,8 +38,10 @@ export class PostgresActorRevalidation
     const result = await sql<{
       readonly member_id: string;
       readonly user_id: string;
+      readonly verified_email: string | null;
     }>`
-      select member.id::text as member_id, account.id::text as user_id
+      select member.id::text as member_id, account.id::text as user_id,
+        ${verifiedEmail} as verified_email
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -46,6 +54,7 @@ export class PostgresActorRevalidation
     return result.rows.map((row) => ({
       memberId: row.member_id,
       userId: row.user_id,
+      ...(row.verified_email ? { verifiedEmail: row.verified_email } : {}),
       workspaceId: command.workspaceId,
     }));
   }
@@ -57,10 +66,11 @@ export class PostgresActorRevalidation
     const result = await sql<{
       readonly member_id: string;
       readonly user_id: string;
+      readonly verified_email: string | null;
       readonly workspace_id: string;
     }>`
       select member.id::text as member_id, account.id::text as user_id,
-        workspace.id::text as workspace_id
+        workspace.id::text as workspace_id, ${verifiedEmail} as verified_email
       from crm.users account
       join crm.workspace_members member on member.user_id = account.id
       join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -73,6 +83,7 @@ export class PostgresActorRevalidation
     return result.rows.map((row) => ({
       memberId: row.member_id,
       userId: row.user_id,
+      ...(row.verified_email ? { verifiedEmail: row.verified_email } : {}),
       workspaceId: row.workspace_id,
     }));
   }
