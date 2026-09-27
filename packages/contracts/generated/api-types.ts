@@ -976,6 +976,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/search": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. */
+        readonly get: operations["searchWorkspace"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/session": {
         readonly parameters: {
             readonly query?: never;
@@ -3637,6 +3654,52 @@ export interface components {
             /** @enum {string} */
             readonly temperatureScale: "celsius" | "fahrenheit";
             readonly timezone?: string;
+        };
+        readonly SearchEntityGroup: {
+            /** @enum {string} */
+            readonly kind: "notes" | "activities" | "journal-posts" | "tasks";
+            readonly results: readonly components["schemas"]["SearchEntityResult"][];
+            /** @constant */
+            readonly unavailable?: true;
+        };
+        readonly SearchEntityResult: {
+            readonly href: string;
+            /** Format: uuid */
+            readonly id: string;
+            /** @enum {string} */
+            readonly kind: "note" | "activity" | "journal-post" | "task";
+            readonly person?: components["schemas"]["SearchPersonReference"];
+            readonly snippet: string;
+            readonly title?: string;
+        };
+        readonly SearchPeopleGroup: {
+            /** @constant */
+            readonly kind: "people";
+            readonly results: readonly components["schemas"]["SearchPersonResult"][];
+        };
+        readonly SearchPersonReference: {
+            readonly archived: boolean;
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+        };
+        readonly SearchPersonResult: {
+            readonly avatar?: components["schemas"]["PersonAvatar"];
+            readonly familyName?: string;
+            readonly givenName: string;
+            readonly href: string;
+            /** Format: uuid */
+            readonly id: string;
+            /** @constant */
+            readonly kind: "person";
+            readonly middleName?: string;
+            readonly nickname?: string;
+        };
+        readonly SearchResults: {
+            readonly groups: readonly (components["schemas"]["SearchPeopleGroup"] | components["schemas"]["SearchEntityGroup"])[];
+            readonly query: string;
+            /** @constant */
+            readonly status: "ready";
         };
         readonly SessionContext: {
             /** @constant */
@@ -9966,6 +10029,69 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly searchWorkspace: {
+        readonly parameters: {
+            readonly query: {
+                readonly q: string;
+                readonly limit?: number;
+                readonly sort?: "given-name" | "family-name";
+            };
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Grouped workspace search results */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

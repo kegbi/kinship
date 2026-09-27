@@ -732,6 +732,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/people/transport/http/routes_test.ts",
         "packages/backend/modules/people/transport/http/tag_options_test.ts",
         "packages/backend/modules/people/transport/http/timeline_test.ts",
+        "packages/backend/modules/people/transport/http/search_test.ts",
         "packages/backend/modules/workspaces/transport/http/personal_lifecycle_test.ts",
         "packages/backend/modules/planning/transport/http/routes_test.ts",
         "apps/api/registration_test.ts",
@@ -837,6 +838,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/today/application/get_today_recent_people_test.ts",
         "packages/backend/read-models/today/application/get_today_reminders_test.ts",
         "packages/backend/read-models/today/application/get_today_tasks_test.ts",
+        "packages/backend/read-models/search/application/search_workspace_test.ts",
         "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",
@@ -912,6 +914,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/migrations_postgres_test.ts",
         "tests/integration/read_models_reports_postgres_test.ts",
         "tests/integration/read_models_today_postgres_test.ts",
+        "tests/integration/search_postgres_test.ts",
       ],
     },
   },
@@ -1431,6 +1434,43 @@ export const MODULES: readonly TaskModule[] = [
     },
   },
   {
+    // Workspace search (GAP-048, `SEARCH-001`): the `search` read model over
+    // people, notes, activities, journal posts, and tasks, and the route the
+    // people surface serves it on. Its visibility rules exist only in SQL, so
+    // the set measures the PostgreSQL suite beside the unit ones.
+    id: "search",
+    unit: {
+      tests: [
+        "packages/backend/read-models/search/application/search_workspace_test.ts",
+        "packages/backend/modules/people/transport/http/search_test.ts",
+      ],
+      permissions: { read: ["packages/contracts"] },
+    },
+    contract: [
+      "packages/backend/modules/people/transport/http/search_test.ts",
+    ],
+    integration: ["tests/integration/search_postgres_test.ts"],
+    coverage: {
+      directory: "search",
+      postgres: true,
+      permissions: {
+        read: [...SCHEMA_READS, "packages/contracts"],
+        env: [...APPLICATION_DATABASE_ENV],
+        net: "all",
+      },
+      tests: [
+        "packages/backend/read-models/search/application/search_workspace_test.ts",
+        "packages/backend/modules/people/transport/http/search_test.ts",
+        "tests/integration/search_postgres_test.ts",
+      ],
+      include: [
+        "packages/backend/read-models/search/application",
+        "packages/backend/read-models/search/adapters",
+        "packages/backend/modules/people/transport/http/search.ts",
+      ],
+    },
+  },
+  {
     id: "imports",
     unit: {
       tests: [
@@ -1888,6 +1928,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "governance",
   "gifts",
   "journal",
+  "search",
   "imports",
   "exports",
   "import-export",
@@ -1928,6 +1969,7 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "storage",
   "journal",
   "journal-domain",
+  "search",
   "imports",
   "exports",
   "import-export",

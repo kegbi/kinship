@@ -32,6 +32,7 @@ import {
 } from "../../public.ts";
 import type { PersonProfile } from "../../../../read-models/person-profile/public.ts";
 import type { TodayRecentPeople } from "../../../../read-models/today/public.ts";
+import type { WorkspaceSearch } from "../../../../read-models/search/public.ts";
 import type {
   PeopleDirectory,
   PeopleTagOptions,
@@ -67,6 +68,8 @@ export interface PeopleHttpServices {
   readonly profile: PersonProfile;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly recentPeople?: RecentPeopleManagement;
+  /** Workspace search (GAP-048); without it the search route answers 503. */
+  readonly search?: WorkspaceSearch;
   readonly tagOptions: PeopleTagOptions;
   readonly todayRecentPeople?: TodayRecentPeople;
 }

@@ -40,6 +40,7 @@ export const CLIENT_MODULES = [
   "imports",
   "exports",
   "people",
+  "search",
   "relationships",
   "interactions",
   "governance",

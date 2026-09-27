@@ -8839,6 +8839,115 @@
         }
       }
     },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "searchWorkspace",
+        "description": "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 5,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "default": "given-name",
+              "type": "string",
+              "enum": [
+                "given-name",
+                "family-name"
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grouped workspace search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/session": {
       "get": {
         "operationId": "getSession",
@@ -20926,6 +21035,185 @@
           "measurementSystem",
           "reminderDelivery",
           "temperatureScale"
+        ],
+        "additionalProperties": false
+      },
+      "SearchEntityGroup": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "notes",
+              "activities",
+              "journal-posts",
+              "tasks"
+            ]
+          },
+          "results": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchEntityResult"
+            }
+          },
+          "unavailable": {
+            "const": true
+          }
+        },
+        "required": [
+          "kind",
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "SearchEntityResult": {
+        "type": "object",
+        "properties": {
+          "href": {
+            "type": "string",
+            "pattern": "^\\/app\\/(?:people\\/[0-9a-f-]{36}\\?section=(?:notes|activities|tasks)|journal\\/[0-9a-f-]{36}|tasks)$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "note",
+              "activity",
+              "journal-post",
+              "task"
+            ]
+          },
+          "person": {
+            "$ref": "#/components/schemas/SearchPersonReference"
+          },
+          "snippet": {
+            "type": "string",
+            "maxLength": 322
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "href",
+          "id",
+          "kind",
+          "snippet"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPeopleGroup": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "people"
+          },
+          "results": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchPersonResult"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPersonReference": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPersonResult": {
+        "type": "object",
+        "properties": {
+          "avatar": {
+            "$ref": "#/components/schemas/PersonAvatar"
+          },
+          "familyName": {
+            "type": "string"
+          },
+          "givenName": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string",
+            "pattern": "^\\/app\\/people\\/[0-9a-f-]{36}$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "person"
+          },
+          "middleName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "givenName",
+          "href",
+          "id",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "minItems": 5,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SearchPeopleGroup"
+                },
+                {
+                  "$ref": "#/components/schemas/SearchEntityGroup"
+                }
+              ]
+            }
+          },
+          "query": {
+            "type": "string"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "groups",
+          "query",
+          "status"
         ],
         "additionalProperties": false
       },

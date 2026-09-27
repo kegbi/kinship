@@ -464,3 +464,14 @@ readModels:
     sourceModules: [governance, people, workspaces]
     consumers: [apps/api]
     writeAccess: false
+
+  - id: search
+    path: packages/backend/read-models/search
+    # GAP-048 (`SEARCH-001`): one query over people, notes and activities
+    # (interactions), journal posts (journal), and tasks (planning). workspaces
+    # answers the actor revalidation and which person sections the workspace
+    # shows; files, as for people-directory, offers a person's avatar image
+    # only while its file is available.
+    sourceModules: [files, interactions, journal, people, planning, workspaces]
+    consumers: [apps/api]
+    writeAccess: false

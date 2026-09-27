@@ -190,6 +190,14 @@ Authenticated pages may expose a common command surface for:
 Quick capture invokes the same application use cases and permission checks as
 the full person workspace. It does not introduce a second write path.
 
+The header search palette is the search half of that surface (`SEARCH-001`). It
+finds people, notes, activities, journal posts, and tasks in the active
+workspace, under one heading each, and opens each result where it lives: a
+person workspace section through its `?section=` deep link, a journal item, or
+the tasks page. It has no route of its own, so `page-catalog.yaml` lists it
+under a separate top-level `sharedSurfaces` key, beside `pages`, with its owner,
+read model, flows, states, and groups.
+
 ## Rendering Contract
 
 | Page class                                               | Default strategy                  | Reason                                                             |

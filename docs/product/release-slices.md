@@ -117,7 +117,8 @@ members.
 
 ## Slice 6: Journal And Governance
 
-Flows: `JOURNAL-001`, `JOURNAL-002`, `GOVERNANCE-001`, and `PEOPLE-003`.
+Flows: `JOURNAL-001`, `JOURNAL-002`, `GOVERNANCE-001`, `PEOPLE-003`, and
+`SEARCH-001`.
 
 Deliver journal posts, day ratings, ordered journal items, legal-document
 acceptance, and the necessary global navigation. Keep person-linked history
@@ -125,6 +126,9 @@ visible in the person workspace without making Journal a people submodule.
 Complete `PEOPLE-003` here only after every enabled core person section exists
 and its read contract passes. `JOURNAL-002` adds, edits, and removes a person's
 life events from the Life events section through the journal module.
+`SEARCH-001` finds people, notes, activities, journal posts, and tasks from the
+header palette once every one of them exists, opening each in the person
+workspace section, journal item, or tasks page it lives on.
 
 ## Slice 7: Data Lifecycle, Import, And Export
 

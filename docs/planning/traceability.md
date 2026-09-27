@@ -9,19 +9,19 @@ contract.
 
 The current baseline contains:
 
-- 15 backend modules and 6 read models in `module-boundaries.yaml`; 14 modules
-  and all 6 read models exist under `packages/backend`, the optional `billing`
+- 15 backend modules and 7 read models in `module-boundaries.yaml`; 14 modules
+  and all 7 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 33 required flows: 17 P0, 13 P1, and 3 P2;
-- 32 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 34 required flows: 17 P0, 14 P1, and 3 P2;
+- 33 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 38 Playwright specs under `tests/e2e/`. Flow specs are named
+- 39 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 36 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 37 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -84,6 +84,7 @@ still invokes the owning module's public use case.
 | `audit-history`    |      3 |        3 | Person/workspace audit query composition arrives in Slice 3; governance audit writes begin with Slice 1 mutations                                                     |
 | `today`            |      1 |        4 | Starts as onboarding/empty shell; complete semantic queue and inline owning-module actions arrive in Slice 4                                                          |
 | `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering determines Slice 6 completion; `JOURNAL-002` life-event edits refresh it                                |
+| `search`           |      6 |        6 | `SEARCH-001` palette groups over people, notes, activities, journal posts, and tasks; tenancy, visibility, soft-delete, snippet, and bound tests                      |
 
 ## Flow-To-Slice Matrix
 
@@ -119,6 +120,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GIFTS-001`        | P1       |              5 | person profile                                   | Gifts, debts, amounts/currencies, and attachment coordination                                           |
 | `JOURNAL-001`      | P1       |              6 | journal index/item, person profile               | Post/rating/ordered items and person-linked display                                                     |
 | `JOURNAL-002`      | P1       |              6 | person profile                                   | Add/edit/remove life events: precision, revision, archived read-only, and cross-workspace rejection     |
+| `SEARCH-001`       | P1       |              6 | header palette, profile, journal item, tasks     | Grouped cross-entity results, keyboard navigation, deep links, tenancy, hidden and deleted rows         |
 | `IMPORT-001`       | P0       |              7 | import index/new/report                          | Detect, stage, dry-run, validate, commit atomically, rerun idempotently, handle attachments safely      |
 | `EXPORT-001`       | P0       |              7 | export settings, person profile                  | Authorized workspace/person exports, manifests, vCard and portable round-trip checks                    |
 | `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                      |
@@ -127,7 +129,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 33-flow snapshot, this assignment places all 17 P0 and all 13 P1
+For the current 34-flow snapshot, this assignment places all 17 P0 and all 14 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

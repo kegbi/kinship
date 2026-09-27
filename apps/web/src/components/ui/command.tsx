@@ -1,14 +1,15 @@
 /**
  * shadcn/ui `command` (base-nova, cmdk), restyled over the Kinship tokens.
  *
- * Only the parts a surface renders are vendored: the root, the list, and its
- * items. `CommandInput` and `CommandDialog` are left out: the people palette owns its input (it moves
+ * Only the parts a surface renders are vendored: the root, the list, its
+ * groups, and its items. `CommandInput` and `CommandDialog` are left out: the people palette owns its input (it moves
  * between the header and the dialog and keeps the id the flows address), and
  * it composes `Command` inside the Base UI `Dialog` itself.
  */
 
 import * as React from "react";
 import {
+  CommandGroup as CommandGroupPrimitive,
   CommandItem as CommandItemPrimitive,
   CommandList as CommandListPrimitive,
   CommandRoot as CommandPrimitive,
@@ -45,6 +46,26 @@ function CommandList({
   );
 }
 
+/**
+ * A titled run of items. cmdk names the group by its heading, which it
+ * draws hidden from the accessibility tree and points `aria-labelledby` at.
+ */
+function CommandGroup({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandGroupPrimitive>) {
+  return (
+    <CommandGroupPrimitive
+      data-slot="command-group"
+      className={cn(
+        "min-w-0 **:[[cmdk-group-heading]]:px-(--space-3) **:[[cmdk-group-heading]]:pt-(--space-2) **:[[cmdk-group-heading]]:pb-(--space-1) **:[[cmdk-group-heading]]:text-[.7rem] **:[[cmdk-group-heading]]:font-bold **:[[cmdk-group-heading]]:tracking-[.12em] **:[[cmdk-group-heading]]:text-muted-foreground **:[[cmdk-group-heading]]:uppercase **:[[cmdk-group-items]]:grid **:[[cmdk-group-items]]:gap-(--space-1)",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 function CommandItem({
   className,
   ...props
@@ -61,4 +82,4 @@ function CommandItem({
   );
 }
 
-export { Command, CommandItem, CommandList, useCommandState };
+export { Command, CommandGroup, CommandItem, CommandList, useCommandState };

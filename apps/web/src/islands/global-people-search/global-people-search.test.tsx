@@ -84,7 +84,7 @@ function directoryPerson(
 function markup(): void {
   drawShell(`
     <div class="global-search" data-global-people-search>
-      <input id="global-people-search-input" type="search" role="combobox" aria-label="Find a person" aria-expanded="false" placeholder="Search people…" autocomplete="off">
+      <input id="global-people-search-input" type="search" role="combobox" aria-label="Find a person" aria-expanded="false" placeholder="Search people, notes, tasks…" autocomplete="off">
       <button data-global-people-search-open type="button" aria-label="Find a person" aria-expanded="false"><span>Search</span></button>
     </div>
     <header><button data-quick-capture type="button">Quick capture</button></header>
@@ -95,14 +95,64 @@ function markup(): void {
 }
 
 const SESSION = "GET /api/v1/session";
+const NOTHING_MATCHES = "Nothing in this workspace matches";
 
-/** The API behind the palette: a session, recent people, and a directory. */
+type Person = ReturnType<typeof directoryPerson> & {
+  readonly avatar?: { readonly color: string };
+};
+
+/** A directory person as the search route answers it. */
+function searchPerson({ avatar, familyName, givenName, id, nickname }: Person) {
+  return {
+    ...(avatar ? { avatar } : {}),
+    familyName,
+    givenName,
+    href: `/app/people/${id}`,
+    id,
+    kind: "person",
+    ...(nickname ? { nickname } : {}),
+  };
+}
+
+interface EntityGroups {
+  readonly activities?: readonly unknown[];
+  readonly journalPosts?: readonly unknown[];
+  readonly notes?: readonly unknown[];
+  readonly tasks?: readonly unknown[];
+  /** The text groups the search could not answer in time. */
+  readonly unavailable?: boolean;
+}
+
+/** The search route's answer: people first, then the four other groups. */
+function searchBody(
+  query: string,
+  people: readonly Person[],
+  groups: EntityGroups = {},
+) {
+  const marked = groups.unavailable ? { unavailable: true } : {};
+  return {
+    groups: [
+      { kind: "people", results: people.map(searchPerson) },
+      { kind: "notes", results: groups.notes ?? [], ...marked },
+      { kind: "activities", results: groups.activities ?? [], ...marked },
+      {
+        kind: "journal-posts",
+        results: groups.journalPosts ?? [],
+        ...marked,
+      },
+      { kind: "tasks", results: groups.tasks ?? [], ...marked },
+    ],
+    query,
+    status: "ready",
+  };
+}
+
+/** The API behind the palette: a session, recent people, and a search. */
 function stubPeople(
-  people: readonly (ReturnType<typeof directoryPerson> & {
-    readonly avatar?: { readonly color: string };
-  })[] = [],
+  people: readonly Person[] = [],
   recent: readonly { archived: boolean; id: string; name: string }[] = [],
   sessionAnswer: Response | Promise<Response> = jsonResponse(session),
+  groups: EntityGroups = {},
 ): StubbedApi {
   return stubApi({
     [SESSION]: sessionAnswer,
@@ -121,16 +171,13 @@ function stubPeople(
         ),
       });
     },
-    "GET /api/v1/people": jsonResponse({
-      lifecycle: "active",
-      people,
-      status: "ready",
-    }),
+    "GET /api/v1/search": ({ url }) =>
+      jsonResponse(searchBody(url.searchParams.get("q") ?? "", people, groups)),
   });
 }
 
 const peopleRequests = (api: StubbedApi) =>
-  api.requests().filter(({ url }) => url.pathname === "/api/v1/people");
+  api.requests().filter(({ url }) => url.pathname === "/api/v1/search");
 
 /** Mounts the island and lets its session and preference reads settle. */
 const mount = (navigate: (path: string) => void = vi.fn()) =>
@@ -316,7 +363,7 @@ describe("UXD-004 global people search", () => {
     expect(statusLine()).toBe("11 commands found");
     expect(
       api.calls().filter((call) =>
-        call.startsWith("GET /api/v1/people?") ||
+        call.startsWith("GET /api/v1/search?") ||
         call === "GET /api/v1/today/recent-people"
       ),
     ).toHaveLength(0);
@@ -328,14 +375,12 @@ describe("UXD-004 global people search", () => {
     await mount();
     type("> zzz");
     expect(screen.getByText("No commands match")).toBeTruthy();
-    expect(screen.queryByText("No people match")).toBeNull();
+    expect(screen.queryByText(NOTHING_MATCHES)).toBeNull();
     type("zzz");
-    await waitFor(() =>
-      expect(screen.getByText("No people match")).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByText(NOTHING_MATCHES)).toBeTruthy());
     expect(screen.queryByText("No commands match")).toBeNull();
     // Empty copy is not an alert.
-    expect(screen.getByText("No people match").getAttribute("role")).toBeNull();
+    expect(screen.getByText(NOTHING_MATCHES).getAttribute("role")).toBeNull();
   });
 
   it("filters commands case-insensitively and gates settings by role", async () => {
@@ -482,7 +527,7 @@ describe("UXD-004 global people search", () => {
     await mount();
     vi.useFakeTimers();
     type("A");
-    expect(statusLine()).toBe("Searching people");
+    expect(statusLine()).toBe("Searching");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(199);
     });
@@ -499,7 +544,7 @@ describe("UXD-004 global people search", () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     expect(peopleRequests(api)).toHaveLength(2);
-    expect(peopleRequests(api).at(-1)?.url.searchParams.get("search")).toBe(
+    expect(peopleRequests(api).at(-1)?.url.searchParams.get("q")).toBe(
       "Ada",
     );
     vi.useRealTimers();
@@ -521,7 +566,7 @@ describe("UXD-004 global people search", () => {
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
     const options = screen.getAllByRole("option");
     const listbox = screen.getByRole("listbox", {
-      name: "People search results",
+      name: "Search results",
     });
     await waitFor(() =>
       expect(field().getAttribute("aria-activedescendant")).toBe(options[0]?.id)
@@ -556,7 +601,7 @@ describe("UXD-004 global people search", () => {
     const add = await screen.findByRole("option", {
       name: 'Add "Marie Dupont" as a new person',
     });
-    expect(screen.getByText("No people match")).toBeTruthy();
+    expect(screen.getByText(NOTHING_MATCHES)).toBeTruthy();
     fireEvent.click(add);
     const destination = new URL(
       String(navigate.mock.calls[0]?.[0]),
@@ -628,17 +673,17 @@ describe("UXD-004 global people search", () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     const problem = await screen.findByText(
-      "People search is temporarily unavailable. Try again.",
+      "Search is temporarily unavailable. Try again.",
     );
     expect(problem.getAttribute("role")).toBeNull();
-    expect(statusLine()).toBe("People search is temporarily unavailable");
+    expect(statusLine()).toBe("Search is temporarily unavailable");
     type("A");
     await waitFor(() =>
       expect(screen.getByText(
-        "People search is temporarily unavailable. Try again.",
+        "Search is temporarily unavailable. Try again.",
       )).toBeTruthy()
     );
-    expect(statusLine()).toBe("People search is temporarily unavailable");
+    expect(statusLine()).toBe("Search is temporarily unavailable");
     expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 
@@ -758,5 +803,203 @@ describe("REL-039 global people search before its startup reads", () => {
     quickCapture.dataset.interactionCaptureReady = "true";
     quickCapture.disabled = false;
     await waitFor(() => expect(openQuickCapture).toHaveBeenCalledOnce());
+  });
+});
+
+describe("SEARCH-001 workspace search groups", () => {
+  const noteId = "00000000-0000-4000-8000-000000000201";
+  const activityId = "00000000-0000-4000-8000-000000000202";
+  const postId = "00000000-0000-4000-8000-000000000203";
+  const itemId = "00000000-0000-4000-8000-000000000204";
+  const taskId = "00000000-0000-4000-8000-000000000205";
+  const ada = { archived: false, id: adaId, name: "Ada Lovelace" };
+  const grace = { archived: true, id: graceId, name: "Grace Hopper" };
+  const groups: EntityGroups = {
+    activities: [{
+      href: `/app/people/${adaId}?section=activities`,
+      id: activityId,
+      kind: "activity",
+      person: ada,
+      snippet: "Rowed down the river",
+      title: "River walk",
+    }],
+    journalPosts: [{
+      href: `/app/journal/${itemId}`,
+      id: postId,
+      kind: "journal-post",
+      snippet: "A quiet river evening",
+    }],
+    notes: [{
+      href: `/app/people/${adaId}?section=notes`,
+      id: noteId,
+      kind: "note",
+      person: ada,
+      snippet: "Loves the <b>river</b> & boats",
+    }],
+    tasks: [{
+      href: `/app/people/${graceId}?section=tasks`,
+      id: taskId,
+      kind: "task",
+      person: grace,
+      snippet: "Book the river cruise",
+      title: "Cruise",
+    }],
+  };
+
+  const groupNames = () =>
+    screen.getAllByRole("group").map((group) =>
+      group.getAttribute("aria-labelledby")
+        ? document.getElementById(group.getAttribute("aria-labelledby")!)
+          ?.textContent
+        : group.getAttribute("aria-label")
+    );
+
+  it("draws each group under its heading with an icon per kind and plain-text snippets", async () => {
+    markup();
+    stubPeople(
+      [directoryPerson(adaId, "Ada", "Lovelace")],
+      [],
+      undefined,
+      groups,
+    );
+    await mount();
+    type("river");
+    await waitFor(() =>
+      expect(statusLine()).toBe(
+        "1 person, 1 note, 1 activity, 1 journal post, and 1 task found",
+      )
+    );
+    expect(groupNames()).toEqual([
+      "People",
+      "Notes",
+      "Activities",
+      "Journal posts",
+      "Tasks",
+    ]);
+    expect(optionNames()).toEqual([
+      "Ada Lovelace",
+      'Add "river" as a new person',
+      "Ada Lovelace",
+      "River walk",
+      "Journal post",
+      "Cruise",
+    ]);
+    const options = screen.getAllByRole("option");
+    for (const option of options.slice(2)) {
+      const icon = option.querySelector("svg");
+      expect(icon).not.toBeNull();
+      expect(icon?.closest("[aria-hidden=true]")).not.toBeNull();
+    }
+    const note = options[2]!;
+    expect(note.textContent).toContain("Loves the <b>river</b> & boats");
+    expect(note.querySelector("b")).toBeNull();
+    expect(options[3]?.textContent).toContain("Ada Lovelace");
+    expect(options[5]?.textContent).toContain("Grace Hopper");
+    expect(options[5]?.textContent).toContain("Archived");
+    expect(screen.queryByText(NOTHING_MATCHES)).toBeNull();
+  });
+
+  it("moves across groups with the arrow keys and opens the deep link with Enter", async () => {
+    markup();
+    stubPeople([], [], undefined, groups);
+    const navigate = vi.fn();
+    await mount(navigate);
+    type("river");
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(5));
+    const options = screen.getAllByRole("option");
+    await waitFor(() =>
+      expect(field().getAttribute("aria-activedescendant")).toBe(options[0]?.id)
+    );
+    key(field(), { key: "ArrowDown" });
+    key(field(), { key: "ArrowDown" });
+    key(field(), { key: "ArrowDown" });
+    await waitFor(() =>
+      expect(field().getAttribute("aria-activedescendant")).toBe(options[3]?.id)
+    );
+    key(field(), { key: "Enter" });
+    expect(navigate).toHaveBeenCalledWith(`/app/journal/${itemId}`);
+    await waitFor(() => expect(palette()).toBeNull());
+
+    type("river");
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Loves the/ }),
+    );
+    expect(navigate).toHaveBeenLastCalledWith(
+      `/app/people/${adaId}?section=notes`,
+    );
+  });
+
+  it("never lets a stale answer overwrite a newer query", async () => {
+    markup();
+    const late = deferred<Response>();
+    const api = stubPeople([], [], undefined, groups);
+    api.route("GET /api/v1/search?q=Ada", late.promise);
+    await mount();
+    type("Ada");
+    await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));
+    type("river");
+    await waitFor(() => expect(optionNames()).toContain("River walk"));
+    await act(async () => {
+      late.resolve(jsonResponse(searchBody("Ada", [
+        directoryPerson(adaId, "Ada", "Lovelace"),
+      ])));
+      await Promise.resolve();
+    });
+    expect(optionNames()).toEqual([
+      'Add "river" as a new person',
+      "Ada Lovelace",
+      "River walk",
+      "Journal post",
+      "Cruise",
+    ]);
+    expect(peopleRequests(api).at(-1)?.url.searchParams.get("limit")).toBe(
+      "8",
+    );
+  });
+
+  it("shows people with a quiet note when the other groups are unavailable", async () => {
+    markup();
+    stubPeople([directoryPerson(adaId, "Ada", "Lovelace")], [], undefined, {
+      unavailable: true,
+    });
+    await mount();
+    type("Ada");
+    await waitFor(() =>
+      expect(screen.getByText("Other results are temporarily unavailable."))
+        .toBeTruthy()
+    );
+    const note = screen.getByText(
+      "Other results are temporarily unavailable.",
+    );
+    expect(note.getAttribute("role")).toBeNull();
+    expect(optionNames()).toEqual([
+      "Ada Lovelace",
+      'Add "Ada" as a new person',
+    ]);
+    expect(statusLine()).toBe(
+      "1 person found; other results are temporarily unavailable",
+    );
+    expect(screen.queryByText(NOTHING_MATCHES)).toBeNull();
+    expect(
+      screen.queryByText("Search is temporarily unavailable. Try again."),
+    ).toBeNull();
+  });
+
+  it("asks for people in the member's contact sort order", async () => {
+    markup();
+    vi.mocked(getMemberPreferences).mockResolvedValue({
+      ok: true,
+      value: {
+        preferences: preferences({ contactSortOrder: "family_name_asc" }),
+        status: "ready",
+      },
+    });
+    const api = stubPeople();
+    await mount();
+    type("Ada");
+    await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));
+    expect(peopleRequests(api)[0]?.url.searchParams.get("sort")).toBe(
+      "family-name",
+    );
   });
 });

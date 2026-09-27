@@ -501,6 +501,20 @@ export interface PeopleDirectoryInput {
 
 export type PeopleDirectoryPage = components["schemas"]["PeopleDirectoryPage"];
 
+/** What `searchWorkspace` asks for: the query, and how many per group. */
+export interface SearchWorkspaceInput {
+  readonly limit?: number;
+  readonly query: string;
+  /** How people are ordered: the member's contact sort preference. */
+  readonly sort?: "family-name" | "given-name";
+}
+
+export type SearchResults = components["schemas"]["SearchResults"];
+export type SearchPersonResult = components["schemas"]["SearchPersonResult"];
+export type SearchEntityResult = components["schemas"]["SearchEntityResult"];
+export type SearchPersonReference =
+  components["schemas"]["SearchPersonReference"];
+
 export interface PeopleTagOptionsInput {
   readonly cursor?: string;
   readonly search?: string;

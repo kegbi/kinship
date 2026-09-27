@@ -1839,11 +1839,40 @@ require a synchronized schema v8 and are called out explicitly.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
       unit, integration, and build.
 
-- [ ] **GAP-048 — Cross-entity search.** M-L. Depends: 022. Flow `SEARCH-001`.
+- [x] **GAP-048 — Cross-entity search.** M-L. Depends: 022. Flow `SEARCH-001`.
   - Scope: `search` read model over people, notes, activities, journal posts,
     tasks (workspace-scoped, permission-filtered, Postgres full-text on existing
     columns); palette groups with entity icons; keyboard navigation.
   - Verify: read-model Postgres tests (tenancy negatives), E2E.
+  - Delivered 2026-09-27: flow `SEARCH-001`.
+    - A new `search` read model covers people, notes, activities, journal posts,
+      and tasks.
+      - It reads exactly its declared `sourceModules`: people, interactions,
+        journal, planning, files, and workspaces.
+      - It is served by `GET /api/v1/search` through the people transport, as
+        the other read models are.
+      - It revalidates the member, scopes every join to the workspace, and
+        excludes deleted and archived people.
+      - Notes and activities respect the person-section visibility.
+      - Snippets are plain text, cut by code point around the first match.
+    - People search runs first on the directory's indexed substring match, at
+      about 7 ms with 50,000 notes. The text groups use query-time full text on
+      existing columns, because v8 has no full-text index.
+    - Each statement is read-only and bounded by a transaction-local 1.5 s
+      timeout. When the text groups time out, people still answer and the
+      palette says the other results are temporarily unavailable.
+    - The product owner accepted this bounded design and deferred indexes to a
+      later schema v9 (`REL-061`).
+    - The command palette shows grouped results with icons, keyboard navigation,
+      and deep links into the person workspace, the journal, or tasks. The page
+      catalog gains a validated `sharedSurfaces` block for it.
+    - Evidence: search integration suites with cross-workspace, deleted,
+      archived, hidden-section, revoked-member, snippet, negated-query, and
+      timeout cases; `search.SEARCH-001` with PEOPLE-002, PEOPLE-007, AUTH-003,
+      AUTH-004, and TODAY-001 on Chromium and WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check
+      (129 documented, 132 mounted), unit, integration, coverage (search
+      100/100/100), and build.
 
 - [ ] **GAP-049 — Person merge and duplicate review.** L. Depends: 015, 017.
       Flow `PEOPLE-008`.

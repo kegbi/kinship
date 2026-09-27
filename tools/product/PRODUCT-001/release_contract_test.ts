@@ -4,6 +4,7 @@ const RELEASE_PATH = "docs/product/release-slices.md";
 const PLANNING_README_PATH = "docs/planning/README.md";
 const ROADMAP_PATH = "docs/planning/roadmap.md";
 const TRACEABILITY_PATH = "docs/planning/traceability.md";
+const MODULE_BOUNDARIES_PATH = "docs/architecture/module-boundaries.yaml";
 
 const EXPECTED_FLOW_IDS = [
   "AUTH-001",
@@ -32,6 +33,7 @@ const EXPECTED_FLOW_IDS = [
   "GIFTS-001",
   "JOURNAL-001",
   "JOURNAL-002",
+  "SEARCH-001",
   "IMPORT-001",
   "EXPORT-001",
   "API-001",
@@ -405,6 +407,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["GIFTS-001", ["tests/e2e/gifts.GIFTS-001.spec.ts"]],
     ["JOURNAL-001", ["tests/e2e/journal.JOURNAL-001.spec.ts"]],
     ["JOURNAL-002", ["tests/e2e/life-events.JOURNAL-002.spec.ts"]],
+    ["SEARCH-001", ["tests/e2e/search.SEARCH-001.spec.ts"]],
     ["GOVERNANCE-001", ["tests/e2e/legal-acceptance.GOVERNANCE-001.spec.ts"]],
     ["IMPORT-001", ["tests/e2e/monica-import.IMPORT-001.spec.ts"]],
     ["EXPORT-001", ["tests/e2e/export.EXPORT-001.spec.ts"]],
@@ -436,7 +439,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
   }
   assertEquals(
     JSON.stringify(priorityTotals),
-    JSON.stringify({ P0: 17, P1: 13, P2: 3 }),
+    JSON.stringify({ P0: 17, P1: 14, P2: 3 }),
     "priority totals",
   );
 
@@ -688,7 +691,7 @@ Deno.test("PRODUCT-001 AC-02 accepts catalog-derived milestone meanings", () => 
   );
   assertNotMatches(
     milestones,
-    /\b(?:17 P0|13 P1|33 flows?)\b/i,
+    /\b(?:17 P0|14 P1|34 flows?)\b/i,
     "milestone authority is not a fixed count",
   );
 
@@ -759,7 +762,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   assertIncludes(
     planningReadme,
-    "33 total: 17 P0, 13 P1, and 3 P2",
+    "34 total: 17 P0, 14 P1, and 3 P2",
     "planning catalog totals",
   );
   assertIncludes(
@@ -785,7 +788,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
 
   assertIncludes(
     traceIntro,
-    "33 required flows: 17 P0, 13 P1, and 3 P2",
+    "34 required flows: 17 P0, 14 P1, and 3 P2",
     "traceability catalog totals",
   );
   assertNotMatches(
@@ -852,4 +855,36 @@ Deno.test("PRODUCT-001 AC-04 keeps deferred product gates explicit and undecided
     /`ready`[^\n]*`not-found`[^\n]*state inheritance[^\n]*(?:deferred|undecided|later)/i,
     "public states do not decide inheritance",
   );
+});
+
+Deno.test("GAP-048 every shared surface names flows and a read model that exist", async () => {
+  const boundaries = await Deno.readTextFile(MODULE_BOUNDARIES_PATH);
+  const readModels = new Set(
+    [
+      ...boundaries.slice(boundaries.indexOf("\nreadModels:\n"))
+        .matchAll(/^ {2}- id: (\S+)$/gm),
+    ].map((match) => capture(match, 1, "read model ID")),
+  );
+  const start = pageCatalog.indexOf("\nsharedSurfaces:\n");
+  const end = pageCatalog.indexOf("\npages:\n");
+  assert(start >= 0 && end > start, "sharedSurfaces precedes pages");
+  const block = pageCatalog.slice(start, end);
+  const surfaces = [...block.matchAll(/^ {2}- id: (\S+)$/gm)];
+  assert(surfaces.length > 0, "the catalog declares a shared surface");
+  const flowIds = new Set(flows.map((flow) => flow.id));
+  for (const [index, surface] of surfaces.entries()) {
+    const entry = block.slice(surface.index, surfaces[index + 1]?.index);
+    const id = capture(surface, 1, "shared surface ID");
+    const readModel = scalar(entry, "readModel");
+    assert(
+      readModel !== undefined && readModels.has(readModel),
+      `${id} reads unknown read model ${readModel}`,
+    );
+    assert(scalar(entry, "owner") !== undefined, `${id} names its owner`);
+    const named = catalogList(entry, "flowIds");
+    assert(named.length > 0, `${id} names its flows`);
+    for (const flow of named) {
+      assert(flowIds.has(flow), `${id} names unknown flow ${flow}`);
+    }
+  }
 });

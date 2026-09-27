@@ -829,6 +829,47 @@ flows:
       testRefs: [tests/e2e/life-events.JOURNAL-002.spec.ts],
     }
 
+  - id: SEARCH-001
+    title: Find anything in the workspace
+    deliveryStatus: delivered
+    priority: P1
+    actor: active-member
+    trigger: The member opens the header search palette from any protected page and types.
+    preconditions: [active-membership]
+    steps:
+      - Open the palette from the header field, the Search button, Ctrl/Cmd+K, or `/`.
+      - Type a query of one to two hundred characters.
+      - See people, notes, activities, journal posts, and tasks grouped under their own headings, each with its kind's icon and a plain-text snippet.
+      - Move through every group with the arrow keys and open one result with Enter or a click, landing on its person workspace section, its journal item, or the tasks page.
+    alternateOutcomes: [
+      no-results,
+      query-too-long-rejected,
+      cross-workspace-rows-never-shown,
+      # v8 has no per-entity private flag; the unauthorized rows are a revoked
+      # membership's whole answer and a section the workspace has hidden.
+      unauthorized-or-hidden-rows-never-shown,
+      soft-deleted-rows-never-shown,
+      # People follow the active directory; an archived person's notes,
+      # activities, and tasks stay findable and are marked archived.
+      archived-person-left-out-of-people-results,
+      # A query with only negated terms (`-fox`) matches no text.
+      no-positive-term-matches-no-text,
+      # Each statement is bounded; when the text groups time out, the people
+      # still answer with a quiet note that the other results are unavailable.
+      other-groups-unavailable-people-still-shown,
+      search-unavailable,
+    ]
+    result: The member reaches the record they were thinking of without knowing which person or page holds it, and never sees a row their workspace membership does not permit.
+    auditEffect: none
+    pageIds: [app.today, people.profile, journal.item, tasks.index]
+    moduleIds: [people, interactions, journal, planning, workspaces, files]
+    permissions: [people.read]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/search.SEARCH-001.spec.ts],
+    }
+
   - id: IMPORT-001
     title: Import Monica data safely and idempotently
     deliveryStatus: delivered

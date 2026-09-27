@@ -1,15 +1,18 @@
 /**
- * What the people palette shows, without the DOM (GAP-027).
+ * What the palette shows, without the DOM (GAP-027, GAP-048).
  *
  * The palette answers three kinds of query: nothing typed shows the people
  * the member viewed recently, `>` lists the commands the member may run, and
- * anything else searches the workspace's people. These functions turn each
- * answer into the rows the list renders; the island only fetches and draws.
+ * anything else searches the workspace: its people, notes, activities,
+ * journal posts, and tasks, each under its own heading. These functions turn
+ * each answer into the groups of rows the list renders; the island only
+ * fetches and draws.
  */
 
 import type {
-  PeopleDirectoryPerson,
   PersonAvatar,
+  SearchEntityResult,
+  SearchResults,
   SessionContext,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
@@ -36,8 +39,24 @@ export interface SearchPerson {
   readonly nickname?: string;
 }
 
+/** The kinds of record a search finds beside people. */
+export type EntityKind = SearchEntityResult["kind"];
+
 /** One option of the list, keyed uniquely within its answer. */
 export type PaletteRow =
+  | {
+    /** Whether the person the record belongs to is archived. */
+    readonly archived: boolean;
+    readonly entity: EntityKind;
+    readonly key: string;
+    readonly kind: "entity";
+    /** The record's own name: its title, or the person a note is about. */
+    readonly label: string;
+    readonly path: string;
+    /** The person a titled record belongs to, beside its title. */
+    readonly person?: string;
+    readonly snippet: string;
+  }
   | {
     readonly archived: boolean;
     readonly avatar?: PersonAvatar | undefined;
@@ -60,13 +79,33 @@ export type PaletteRow =
     readonly path?: string;
   };
 
+/**
+ * A run of rows. A search's groups carry the heading that names them; the
+ * recent people and the commands are one group without a heading.
+ */
+export interface PaletteGroup {
+  readonly heading?: string;
+  readonly id: string;
+  readonly rows: readonly PaletteRow[];
+}
+
 /** What the palette shows for one query once its answer is known. */
 export interface PaletteAnswer {
   /** The copy under the input when nothing matched, or nothing to show. */
   readonly empty?: string;
+  readonly groups: readonly PaletteGroup[];
+  /**
+   * The people answered but the other groups could not in time: the list
+   * shows the people with a quiet note that the rest is unavailable.
+   */
+  readonly partial?: true;
   readonly problem: boolean;
-  readonly rows: readonly PaletteRow[];
   readonly status: string;
+}
+
+/** Every row of an answer, in the order the list draws them. */
+export function answerRows(answer: PaletteAnswer): readonly PaletteRow[] {
+  return answer.groups.flatMap((group) => group.rows);
 }
 
 const primaryCommands: readonly PaletteCommand[] = [
@@ -123,8 +162,12 @@ function commandRows(
   }));
 }
 
+function counted(amount: number, one: string, many: string): string {
+  return `${amount} ${amount === 1 ? one : many}`;
+}
+
 function count(amount: number, one: string, many: string): string {
-  return `${amount} ${amount === 1 ? one : many} found`;
+  return `${counted(amount, one, many)} found`;
 }
 
 /** The answer to a `>` query: `filter` is what follows the `>`. */
@@ -135,8 +178,8 @@ export function commandAnswer(
   const matches = matchingCommands(commands, filter);
   return {
     ...(matches.length === 0 ? { empty: "No commands match" } : {}),
+    groups: [{ id: "commands", rows: commandRows(matches) }],
     problem: false,
-    rows: commandRows(matches),
     status: count(matches.length, "command", "commands"),
   };
 }
@@ -144,13 +187,21 @@ export function commandAnswer(
 /** The initials a person's avatar shows, from the name the row reads. */
 export { nameInitials as initials } from "../../lib/person-name.ts";
 
-/** A directory answer's person, named in the member's order. */
-export function directorySearchPerson(
-  person: PeopleDirectoryPerson,
+/** A person the search found, named in the member's order. */
+export function resultPerson(
+  person: {
+    readonly avatar?: PersonAvatar;
+    readonly familyName?: string;
+    readonly givenName: string;
+    readonly id: string;
+    readonly middleName?: string;
+    readonly nickname?: string;
+  },
   nameOrder: PersonNameOrder,
 ): SearchPerson {
   return {
-    archived: person.lifecycle === "archived",
+    // The search lists people as the active directory does.
+    archived: false,
     ...(person.avatar ? { avatar: person.avatar } : {}),
     formalNames: [
       displayPersonName({ ...person, nickname: "" }, "given_family_nickname"),
@@ -186,15 +237,15 @@ function matchesExactly(person: SearchPerson, query: string): boolean {
 }
 
 /**
- * The answer to a people query, or to the recent people when `query` is
- * absent. A query nobody matches exactly offers to add that person, and one
- * nobody matches at all also offers the commands it names.
+ * The people rows for a people query, or for the recent people when `query`
+ * is absent. A query nobody matches exactly offers to add that person, and
+ * one no person matches at all also offers the commands it names.
  */
-export function peopleAnswer(
+function peopleRows(
   people: readonly SearchPerson[],
   commands: readonly PaletteCommand[],
   query?: string,
-): PaletteAnswer {
+): readonly PaletteRow[] {
   const rows: PaletteRow[] = people.map((person) => ({
     archived: person.archived,
     ...(person.avatar ? { avatar: person.avatar } : {}),
@@ -217,17 +268,112 @@ export function peopleAnswer(
       rows.push(...commandRows(matchingCommands(commands, query)));
     }
   }
+  return rows;
+}
+
+/** The answer for the people the member viewed recently. */
+export function peopleAnswer(
+  people: readonly SearchPerson[],
+  commands: readonly PaletteCommand[],
+): PaletteAnswer {
   return {
-    ...(query && people.length === 0 ? { empty: "No people match" } : {}),
+    groups: [{ id: "people", rows: peopleRows(people, commands) }],
     problem: false,
-    rows,
     status: count(people.length, "person", "people"),
   };
 }
 
-/** The answer when people search could not be reached. */
+/** The groups a search answers beside people, with how each is named. */
+const ENTITY_GROUPS: Readonly<
+  Record<
+    Exclude<SearchResults["groups"][number]["kind"], "people">,
+    { readonly heading: string; readonly one: string; readonly many: string }
+  >
+> = {
+  activities: { heading: "Activities", many: "activities", one: "activity" },
+  "journal-posts": {
+    heading: "Journal posts",
+    many: "journal posts",
+    one: "journal post",
+  },
+  notes: { heading: "Notes", many: "notes", one: "note" },
+  tasks: { heading: "Tasks", many: "tasks", one: "task" },
+};
+
+function entityRow(result: SearchEntityResult): PaletteRow {
+  const own = result.title ??
+    (result.kind === "journal-post"
+      ? "Journal post"
+      : result.person?.name ?? "Untitled");
+  return {
+    archived: result.person?.archived ?? false,
+    entity: result.kind,
+    key: `${result.kind}:${result.id}`,
+    kind: "entity",
+    label: own,
+    path: result.href,
+    ...(result.person && result.title ? { person: result.person.name } : {}),
+    snippet: result.snippet,
+  };
+}
+
+/** "a", "a and b", or "a, b, and c". */
+function listed(parts: readonly string[]): string {
+  if (parts.length < 3) return parts.join(" and ");
+  return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
+}
+
+/**
+ * The answer to a workspace search: the people rows under "People", then
+ * each other group that found something under its own heading. The status
+ * counts people always and every other group that found something.
+ */
+export function searchAnswer(
+  results: SearchResults,
+  commands: readonly PaletteCommand[],
+  nameOrder: PersonNameOrder,
+  query: string,
+): PaletteAnswer {
+  const people = results.groups.flatMap((group) =>
+    group.kind === "people"
+      ? group.results.map((person) => resultPerson(person, nameOrder))
+      : []
+  );
+  const groups: PaletteGroup[] = [{
+    heading: "People",
+    id: "people",
+    rows: peopleRows(people, commands, query),
+  }];
+  const counts = [counted(people.length, "person", "people")];
+  const partial = results.groups.some((group) =>
+    group.kind !== "people" && group.unavailable === true
+  );
+  for (const group of results.groups) {
+    if (group.kind === "people" || group.results.length === 0) continue;
+    const named = ENTITY_GROUPS[group.kind];
+    groups.push({
+      heading: named.heading,
+      id: group.kind,
+      rows: group.results.map(entityRow),
+    });
+    counts.push(counted(group.results.length, named.one, named.many));
+  }
+  return {
+    ...(counts.length === 1 && people.length === 0 && !partial
+      ? { empty: "Nothing in this workspace matches" }
+      : {}),
+    groups,
+    ...(partial ? { partial: true as const } : {}),
+    problem: false,
+    status: `${listed(counts)} found${
+      partial ? "; other results are temporarily unavailable" : ""
+    }`,
+  };
+}
+
+/** The answer when search could not be reached. */
 export const UNAVAILABLE_ANSWER: PaletteAnswer = {
+  groups: [],
   problem: true,
-  rows: [],
-  status: "People search is temporarily unavailable",
+  status: "Search is temporarily unavailable",
 };

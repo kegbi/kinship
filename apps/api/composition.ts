@@ -138,6 +138,8 @@ import type {
 } from "../../packages/backend/read-models/people-directory/public.ts";
 import { composePersonProfile } from "../../packages/backend/read-models/person-profile/composition.ts";
 import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
+import { composeSearch } from "../../packages/backend/read-models/search/composition.ts";
+import type { WorkspaceSearch } from "../../packages/backend/read-models/search/public.ts";
 import { composeToday } from "../../packages/backend/read-models/today/composition.ts";
 import type {
   TodayAttention,
@@ -239,6 +241,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly profile?: PersonProfile;
   readonly relationships?: RelationshipManagement;
   readonly reminders?: ReminderManagement;
+  readonly search?: WorkspaceSearch;
   readonly tagOptions?: PeopleTagOptions;
   readonly tasks?: TaskManagement;
   readonly dav?: DavSyncManagement;
@@ -525,6 +528,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           ...(services.recentPeople
             ? { recentPeople: services.recentPeople }
             : {}),
+          ...(services.search ? { search: services.search } : {}),
           tagOptions: services.tagOptions,
           ...(services.todayRecentPeople
             ? { todayRecentPeople: services.todayRecentPeople }
@@ -965,6 +969,7 @@ export function createConfiguredApiApp(
     relationships: relationships.relationships,
     reminders: planning.reminders,
     retryVerificationDelivery: workspaces.retryVerificationDelivery,
+    search: composeSearch(shared),
     settings: workspaces.settings,
     storageSettings: files.storageSettings,
     tagOptions: directory.tagOptions,

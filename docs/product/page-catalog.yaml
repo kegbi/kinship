@@ -24,6 +24,36 @@ defaultStates:
     - forbidden
     - not-found
 
+# `sharedSurfaces` (GAP-048): surfaces the protected application shell draws
+# on every protected page. They have no route of their own, so they carry no
+# path and no page ID; each result they offer opens one of the cataloged
+# `pages` below. Each names the module that owns it, the read model it reads
+# (one declared in `module-boundaries.yaml`), the flows that prove it, its
+# `states`, and, for a grouped surface, its `groups` in display order.
+sharedSurfaces:
+  # GAP-048 (`SEARCH-001`): the header search palette. `recent` is the empty
+  # query's recently viewed people, `commands` a `>` query, `searching` a
+  # query awaiting its debounced answer, `results` the grouped people, notes,
+  # activities, journal posts, and tasks, `empty` a query nothing matches, and
+  # `partial` the people answered while the other groups could not in time,
+  # and `error` search unavailable. The field accepts at most two hundred
+  # characters, and the API refuses a longer query.
+  - id: shell.search-palette
+    owner: people
+    readModel: search
+    flowIds: [SEARCH-001, PEOPLE-002]
+    states: [
+      closed,
+      recent,
+      commands,
+      searching,
+      results,
+      partial,
+      empty,
+      error,
+    ]
+    groups: [people, notes, activities, journal-posts, tasks]
+
 pages:
   - id: public.home
     path: /

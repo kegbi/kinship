@@ -680,6 +680,23 @@ Playwright test carrying its stable flow ID.
       today. Clear it on those outcomes, or document the attempt-reference
       convention in the flow.
 
+- [ ] **REL-061 — Search needs full-text indexes at scale (schema v9).** At
+      50,000 notes and 50,000 activities per workspace, the text groups of
+      `GET /api/v1/search` scan every row and reach GAP-048's 1.5 s statement
+      bound, so they answer "temporarily unavailable". A client abort does not
+      cancel the query on the server. The product owner deferred the fix to a
+      synchronized schema v9 that adds GIN expression indexes on
+      `to_tsvector('simple', …)` for `notes`, `activities`, `journal_posts`, and
+      `tasks`, with the search SQL using the same expressions. Schedule it after
+      Phase 7 or when real data volumes demand it.
+
+- [ ] **REL-062 — A search test checks the wrong pool for timeout leaks.**
+      `tests/integration/search_postgres_test.ts:531-537` runs
+      `show statement_timeout` on eight connections of the helper's separate
+      client, not `connection.db`, the pool that ran the transaction-local
+      bound. There is no leak today, because the bound is transaction-scoped.
+      Run the parallel check through `connection.db`.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

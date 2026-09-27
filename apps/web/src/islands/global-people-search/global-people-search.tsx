@@ -1,5 +1,5 @@
 /**
- * The global people search and command palette (GAP-027).
+ * The global search and command palette (GAP-027, GAP-048).
  *
  * The header draws a search field and, on a narrow screen, a Search button.
  * Typing, an arrow key or Enter in the field, the button, Ctrl/Cmd+K, or `/`
@@ -10,12 +10,17 @@
  * reader gave it.
  *
  * What the list shows is `search.ts`'s work: recent people for an empty
- * query, the member's commands after `>`, and a workspace people search
- * otherwise. The field is bound before the session and preferences load
- * (REL-039): the palette opens at once and fills in when they arrive.
+ * query, the member's commands after `>`, and otherwise a workspace search
+ * whose people, notes, activities, journal posts, and tasks each sit under
+ * their own heading. cmdk's one list moves the active option across every
+ * group. One request slot answers the latest query: a newer one aborts the
+ * one before, so a late answer never replaces a newer one. The field is bound
+ * before the session and preferences load (REL-039): the palette opens at
+ * once and fills in when they arrive.
  */
 
 import {
+  Fragment,
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
@@ -25,14 +30,26 @@ import {
   useState,
 } from "react";
 import {
+  BookOpen,
+  CalendarCheck,
+  type LucideIcon,
+  SquareCheck,
+  StickyNote,
+} from "lucide-react";
+import {
   getMemberPreferences,
   getPerson,
   getTodayRecentPeople,
-  listPeople,
+  searchWorkspace,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
-import { Command, CommandItem, CommandList } from "@/components/ui/command.tsx";
+import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command.tsx";
 import {
   Dialog,
   DialogClose,
@@ -47,19 +64,23 @@ import {
 import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import { settle, useDocumentEvent } from "../core/index.ts";
 import {
+  answerRows,
   commandAnswer,
   commandIndex,
-  directorySearchPerson,
+  type EntityKind,
   initials,
   type PaletteAnswer,
   type PaletteCommand,
   type PaletteRow,
   peopleAnswer,
+  searchAnswer,
   type SearchPerson,
   UNAVAILABLE_ANSWER,
 } from "./search.ts";
 
 export const SEARCH_DEBOUNCE_MS = 200;
+/** The results each group of a search answers. */
+export const SEARCH_GROUP_LIMIT = 8;
 const DIALOG_ID = "global-people-search-dialog";
 const INPUT_ID = "global-people-search-input";
 const RESULTS_ID = "global-people-search-results";
@@ -68,6 +89,8 @@ const LABEL = "Find a person";
 interface SearchContext {
   readonly commands: readonly PaletteCommand[];
   readonly nameOrder: PersonNameOrder;
+  /** The member's contact sort preference, as the directory reads it. */
+  readonly peopleSort: "family-name" | "given-name";
   readonly workspaceId: string;
 }
 
@@ -129,23 +152,21 @@ async function recentAnswer(
     : answer;
 }
 
-async function searchAnswer(
-  { commands, nameOrder, workspaceId }: SearchContext,
+async function workspaceAnswer(
+  { commands, nameOrder, peopleSort, workspaceId }: SearchContext,
   query: string,
   signal: AbortSignal,
 ): Promise<PaletteAnswer> {
   const result = await settle(
-    () => listPeople({ limit: 8, search: query }, workspaceId),
+    () =>
+      searchWorkspace(
+        { limit: SEARCH_GROUP_LIMIT, query, sort: peopleSort },
+        workspaceId,
+      ),
     signal,
   );
   if (result.status !== "ready") return UNAVAILABLE_ANSWER;
-  return peopleAnswer(
-    result.data!.people.map((person) =>
-      directorySearchPerson(person, nameOrder)
-    ),
-    commands,
-    query,
-  );
+  return searchAnswer(result.data!, commands, nameOrder, query);
 }
 
 function isEditable(element: Element | null): boolean {
@@ -186,6 +207,17 @@ function openQuickCapture(): () => void {
 const AVATAR =
   "grid aspect-square w-10 place-items-center rounded-full bg-(--positive) text-[.75rem] font-bold text-(--ink-inverse)";
 
+/** The glyph a found record shows: its kind, drawn from lucide. */
+const ENTITY_GLYPH =
+  "grid aspect-square w-10 place-items-center rounded-(--radius-md) bg-muted text-(--accent-hover)";
+
+const ENTITY_ICONS: Readonly<Record<EntityKind, LucideIcon>> = {
+  activity: CalendarCheck,
+  "journal-post": BookOpen,
+  note: StickyNote,
+  task: SquareCheck,
+};
+
 function PaletteOption(
   props: {
     readonly onSelect: (row: PaletteRow) => void;
@@ -193,6 +225,26 @@ function PaletteOption(
   },
 ) {
   const { row } = props;
+  if (row.kind === "entity") {
+    const Icon = ENTITY_ICONS[row.entity];
+    return (
+      <CommandItem onSelect={() => props.onSelect(row)} value={row.key}>
+        <span aria-hidden="true" className={ENTITY_GLYPH}>
+          <Icon className="size-5" />
+        </span>
+        <span className="grid min-w-0 wrap-anywhere">
+          <strong>{row.label}</strong>
+          {row.person
+            ? <span className="text-muted-foreground">{row.person}</span>
+            : null}
+          <span className="line-clamp-2 text-[.875rem] text-muted-foreground">
+            {row.snippet}
+          </span>
+        </span>
+        {row.archived ? <Badge variant="secondary">Archived</Badge> : null}
+      </CommandItem>
+    );
+  }
   return (
     <CommandItem
       className={row.kind === "person"
@@ -272,6 +324,11 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
           nameOrder: preferences?.ok
             ? preferences.value.preferences.contactNameOrder
             : "given_family_nickname",
+          peopleSort: preferences?.ok &&
+              preferences.value.preferences.contactSortOrder ===
+                "family_name_asc"
+            ? "family-name"
+            : "given-name",
           workspaceId,
         },
         status: "ready",
@@ -342,7 +399,11 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
     const controller = new AbortController();
     const load = async () => {
       const answer = request.query
-        ? await searchAnswer(request.context, request.query, controller.signal)
+        ? await workspaceAnswer(
+          request.context,
+          request.query,
+          controller.signal,
+        )
         : await recentAnswer(request.context, controller.signal);
       if (!controller.signal.aborted) setRemote({ answer, request });
     };
@@ -355,20 +416,25 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
       clearTimeout(timer);
     };
   }, [request]);
-  const answer: PaletteAnswer = commandsAnswer ??
-    (remote && remote.request === request ? remote.answer : {
-      problem: false,
-      rows: [],
-      status: request?.query ? "Searching people" : "",
-    });
+  const answer = useMemo<PaletteAnswer>(
+    () =>
+      commandsAnswer ??
+        (remote && remote.request === request ? remote.answer : {
+          groups: [],
+          problem: false,
+          status: request?.query ? "Searching" : "",
+        }),
+    [commandsAnswer, remote, request],
+  );
+  const rows = useMemo(() => answerRows(answer), [answer]);
 
   // The first option is active whenever the options change.
   const [picked, setPicked] = useState<
     { readonly rows: readonly PaletteRow[]; readonly value: string }
   >();
-  const active = picked && picked.rows === answer.rows
+  const active = picked && picked.rows === rows
     ? picked.value
-    : answer.rows[0]?.key ?? "";
+    : rows[0]?.key ?? "";
 
   // The field names the listbox and its active option; cmdk generates both
   // ids, so they are read once the list has drawn.
@@ -419,7 +485,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
         if (!inPalette) openPalette("field");
       }}
       onKeyDown={inPalette ? undefined : onFieldKeyDown}
-      placeholder="Search people…"
+      placeholder="Search people, notes, tasks…"
       ref={inPalette ? paletteFieldRef : fieldRef}
       role="combobox"
       type="search"
@@ -476,7 +542,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
                   <div>
                     {/* The section kicker's look, without the page margin it carries. */}
                     <p className="m-0 text-[.7rem] font-bold tracking-[.12em] text-(--accent-hover) uppercase">
-                      People
+                      Search
                     </p>
                     <DialogTitle className="text-[1.5rem] leading-[normal]">
                       {LABEL}
@@ -491,8 +557,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
                 </header>
                 <Command
                   loop
-                  onValueChange={(value) =>
-                    setPicked({ rows: answer.rows, value })}
+                  onValueChange={(value) => setPicked({ rows, value })}
                   shouldFilter={false}
                   value={active}
                   vimBindings={false}
@@ -508,25 +573,47 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
                       </p>
                     )
                     : null}
+                  {answer.partial
+                    ? (
+                      <p
+                        className="m-0 p-(--space-3) text-muted-foreground"
+                        id="global-people-search-partial"
+                      >
+                        Other results are temporarily unavailable.
+                      </p>
+                    )
+                    : null}
                   {answer.problem
                     ? (
                       <p
                         className="m-0 p-(--space-3) text-muted-foreground"
                         id="global-people-search-problem"
                       >
-                        People search is temporarily unavailable. Try again.
+                        Search is temporarily unavailable. Try again.
                       </p>
                     )
                     : null}
                   <div id={RESULTS_ID}>
-                    <CommandList label="People search results" ref={listRef}>
-                      {answer.rows.map((row) => (
-                        <PaletteOption
-                          key={row.key}
-                          onSelect={activate}
-                          row={row}
-                        />
-                      ))}
+                    <CommandList label="Search results" ref={listRef}>
+                      {answer.groups.map((group) => {
+                        const options = group.rows.map((row) => (
+                          <PaletteOption
+                            key={row.key}
+                            onSelect={activate}
+                            row={row}
+                          />
+                        ));
+                        return group.heading
+                          ? (
+                            <CommandGroup
+                              heading={group.heading}
+                              key={group.id}
+                            >
+                              {options}
+                            </CommandGroup>
+                          )
+                          : <Fragment key={group.id}>{options}</Fragment>;
+                      })}
                     </CommandList>
                   </div>
                 </Command>

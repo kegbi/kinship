@@ -60,6 +60,7 @@ packages/
     read-models/
       <read-model-id>/
         application/
+        ports/            optional: the repository port, as `search` keeps it
         adapters/
           postgres/
         composition.ts

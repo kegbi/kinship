@@ -122,8 +122,12 @@ describe("people form layout regressions", () => {
     expect(paletteIsland).toMatch(
       /<DialogTitle[^>]*>\s*\{LABEL\}\s*<\/DialogTitle>/,
     );
-    expect(applicationLayout).toContain('placeholder="Search people…"');
-    expect(paletteIsland).toContain('placeholder="Search people…"');
+    expect(applicationLayout).toContain(
+      'placeholder="Search people, notes, tasks…"',
+    );
+    expect(paletteIsland).toContain(
+      'placeholder="Search people, notes, tasks…"',
+    );
   });
 
   it("aligns directory controls to their first field row and styles retry actions", () => {

@@ -29,6 +29,7 @@ import { JOURNAL_ROUTES } from "./journal.ts";
 import { IMPORTS_ROUTES } from "./imports.ts";
 import { EXPORTS_ROUTES } from "./exports.ts";
 import { PEOPLE_ROUTES } from "./people.ts";
+import { SEARCH_ROUTES } from "./search.ts";
 import { RELATIONSHIPS_ROUTES } from "./relationships.ts";
 import { INTERACTIONS_ROUTES } from "./interactions.ts";
 import { GOVERNANCE_ROUTES } from "./governance.ts";
@@ -51,6 +52,7 @@ export const API_ROUTES: readonly RouteDescriptor[] = collectRoutes([
   IMPORTS_ROUTES,
   EXPORTS_ROUTES,
   PEOPLE_ROUTES,
+  SEARCH_ROUTES,
   RELATIONSHIPS_ROUTES,
   INTERACTIONS_ROUTES,
   GOVERNANCE_ROUTES,
