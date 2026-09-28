@@ -71,6 +71,36 @@ Deno.test("[GAP-039] the worker.job line carries attempt, outcome, and duration"
   );
 });
 
+Deno.test("[REL-083] the file.cleanup line names why and how, never which file", () => {
+  const sink = captured();
+  jsonLogger(sink.write).log(smuggled({
+    event: "file.cleanup",
+    reason: "avatar-replaced",
+    outcome: "unavailable",
+    request_id: "3f2a9c0d8e7b6a5f4e3d2c1b0a9f8e7d",
+  }, {
+    fileId: PERSON_ID,
+    filename: "ada lovelace.png",
+    workspaceId: WORKSPACE_ID,
+  }));
+  jsonLogger(sink.write).log({
+    event: "file.cleanup",
+    reason: PERSON_ID,
+    outcome: FREE_FORM,
+  });
+
+  assertEquals(
+    sink.lines,
+    [
+      '{"event":"file.cleanup","reason":"avatar-replaced",' +
+      '"outcome":"unavailable",' +
+      '"request_id":"3f2a9c0d8e7b6a5f4e3d2c1b0a9f8e7d"}\n',
+      '{"event":"file.cleanup"}\n',
+    ],
+    "an identifier, a filename, or free text never reaches the stream",
+  );
+});
+
 Deno.test("[GAP-039] forbidden values in undeclared fields never reach the stream", () => {
   const sink = captured();
   const logger = jsonLogger(sink.write);

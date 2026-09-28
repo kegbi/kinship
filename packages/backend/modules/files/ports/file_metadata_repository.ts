@@ -16,6 +16,12 @@
  * (REL-056, REL-063): an image that is no longer, or never became, anybody's
  * avatar is cleaned up whatever has happened to the person since, so these
  * are scoped by workspace and person alone, never by the person's state.
+ *
+ * `lockReservedUpload` and `discardReservedUpload` take away an upload whose
+ * finalise was refused (REL-082): the row was reserved and the bytes put, and
+ * the person was archived or the member removed before it could be filed.
+ * The same use case minted the file's identifier moments before, so they are
+ * scoped by workspace and that identifier, never by anybody's standing.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
@@ -146,6 +152,22 @@ export interface FileMetadataRepository {
     readonly transaction: PersonFileTransaction;
     readonly workspaceId: string;
   }): Promise<readonly StoredPersonFile[]>;
+  /**
+   * Locks the named upload while it is still being processed in the
+   * workspace, or answers nothing once it has been filed or taken away.
+   */
+  lockReservedUpload(command: {
+    readonly fileId: string;
+    readonly transaction: PersonFileTransaction;
+    readonly workspaceId: string;
+  }): Promise<StoredPersonFile | undefined>;
+  /** Unlinks the locked upload and records it deleted, without its key. */
+  discardReservedUpload(command: {
+    readonly fileId: string;
+    readonly occurredAt: Date;
+    readonly transaction: PersonFileTransaction;
+    readonly workspaceId: string;
+  }): Promise<void>;
   /** Unlinks the locked images and records them deleted, without their key. */
   discardAvatarImages(command: {
     readonly fileIds: readonly string[];

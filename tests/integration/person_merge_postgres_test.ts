@@ -46,6 +46,7 @@ import {
   type SignedInFixture,
 } from "../support/api.ts";
 import { createPerson, importantDateRequest } from "../support/fixtures.ts";
+import { silentLogger } from "../../packages/backend/shared-kernel/telemetry.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
@@ -1034,7 +1035,10 @@ Deno.test("[PEOPLE-008] a failing participant rolls the whole merge back", async
       audit: personMergeAuditFrom(governanceAuditRecorder()),
       clock: { now: () => new Date() },
       // The merge rolls back, so no image is ever discarded.
-      images: { discard: () => Promise.resolve() },
+      images: {
+        discard: () => Promise.resolve({ status: "discarded" as const }),
+      },
+      logger: silentLogger(),
       participants: [...personMergeParticipants(), failing],
       publisher: personDateReminderPublisher(
         shared,

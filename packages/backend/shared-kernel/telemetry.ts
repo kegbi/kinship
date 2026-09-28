@@ -54,8 +54,26 @@ export interface WorkerJobEvent {
   readonly duration_ms: number;
 }
 
+/**
+ * A stored file that was due to go and did not (REL-082, REL-083).
+ *
+ * Removing an image nobody draws, or the upload a refusal left reserved, is
+ * best effort after the member's answer is settled, so a failure is not the
+ * member's to see. This line is what makes the leftover visible outside the
+ * database: why the file was due to go, how the attempt ended, and the
+ * request that caused it, never the file, the person, or the workspace.
+ */
+export interface FileCleanupEvent {
+  readonly event: "file.cleanup";
+  /** Why the file was due to go, such as `avatar-replaced`. */
+  readonly reason: string;
+  /** How the attempt ended: `unavailable` whenever it did not complete. */
+  readonly outcome: string;
+  readonly request_id?: string;
+}
+
 /** Every event a process may log. */
-export type LogEvent = ApiRequestEvent | WorkerJobEvent;
+export type LogEvent = ApiRequestEvent | WorkerJobEvent | FileCleanupEvent;
 
 /** The event names the catalogue declares. */
 export type LogEventName = LogEvent["event"];
@@ -105,7 +123,28 @@ export const LOG_EVENT_SHAPES: LogEventShapes = {
     outcome: "code",
     duration_ms: "milliseconds",
   },
+  "file.cleanup": {
+    reason: "code",
+    outcome: "code",
+    request_id: "request-id",
+  },
 };
+
+/**
+ * The line for a cleanup that did not complete, correlated with the request
+ * that caused it when there is one.
+ */
+export function fileCleanupFailed(
+  reason: string,
+  source: Correlation,
+): FileCleanupEvent {
+  return {
+    event: "file.cleanup",
+    reason,
+    outcome: "unavailable",
+    ...(source.requestId ? { request_id: source.requestId } : {}),
+  };
+}
 
 /** Where a structured event goes. */
 export interface Logger {

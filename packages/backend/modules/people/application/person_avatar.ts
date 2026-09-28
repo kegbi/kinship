@@ -17,17 +17,23 @@
  * then discards the old image, whatever its file status, and every image
  * held in quarantine for the person, which nothing else lists (REL-056).
  * Discarding is best effort: an image that cannot be removed right now is
- * still no longer anybody's avatar. It is also the files module's cleanup,
+ * still no longer anybody's avatar, and is recorded as a `file.cleanup` log
+ * line rather than a failure (REL-083). It is also the files module's cleanup,
  * not the member's request, so it succeeds for a person archived or a member
  * removed after the image was stored.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import {
+  fileCleanupFailed,
+  type Logger,
+} from "../../../shared-kernel/telemetry.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import type { PersonAvatarRecord } from "../domain/avatar.ts";
 import type { PersonAvatarAudit } from "../ports/audit.ts";
 import type {
+  AvatarDiscardResult,
   AvatarImageInput,
   PersonAvatarImages,
   PersonAvatarRepository,
@@ -45,6 +51,8 @@ export interface PersonAvatarDependencies {
   readonly audit: PersonAvatarAudit;
   readonly clock: Clock;
   readonly images: PersonAvatarImages;
+  /** Where a discard that could not complete is recorded (REL-083). */
+  readonly logger: Logger;
   readonly repository: PersonAvatarRepository;
   readonly transaction: PeopleTransactionRunner;
 }
@@ -105,23 +113,35 @@ export function createPersonAvatarManagement(
     return { avatar: locked.avatar, status: "ready" };
   };
 
+  /**
+   * Best effort: an image that cannot be removed now is still nobody's
+   * avatar, so the member's answer stands and the leftover is recorded under
+   * why it was due to go (REL-083).
+   */
+  const cleanedUp = async (
+    actor: PeopleActor,
+    reason: string,
+    attempt: () => Promise<AvatarDiscardResult>,
+  ): Promise<void> => {
+    const result = await attempt().catch(() => ({
+      status: "unavailable" as const,
+    }));
+    if (result.status !== "discarded") {
+      dependencies.logger.log(fileCleanupFailed(reason, actor));
+    }
+  };
+
   const discard = async (
     actor: PeopleActor,
     personId: string,
     fileId: string | undefined,
+    reason: "avatar-removed" | "avatar-replaced" | "avatar-unlinked",
   ): Promise<void> => {
     if (!fileId) return;
-    await dependencies.images.discard({ actor, fileId, personId }).catch(
-      () => undefined,
-    );
-  };
-
-  const discardHeld = async (
-    actor: PeopleActor,
-    personId: string,
-  ): Promise<void> => {
-    await dependencies.images.discardHeld({ actor, personId }).catch(
-      () => undefined,
+    await cleanedUp(
+      actor,
+      reason,
+      () => dependencies.images.discard({ actor, fileId, personId }),
     );
   };
 
@@ -175,11 +195,11 @@ export function createPersonAvatarManagement(
         },
       );
       if (linked.status !== "updated") {
-        await discard(actor, personId, stored.fileId);
+        await discard(actor, personId, stored.fileId, "avatar-unlinked");
         return linked;
       }
       if (linked.previous !== stored.fileId) {
-        await discard(actor, personId, linked.previous);
+        await discard(actor, personId, linked.previous, "avatar-replaced");
       }
       return { avatar: record(linked.avatar), status: "updated" };
     },
@@ -222,8 +242,12 @@ export function createPersonAvatarManagement(
         },
       );
       if (reset.status !== "removed") return reset;
-      await discard(actor, personId, reset.previous);
-      await discardHeld(actor, personId);
+      await discard(actor, personId, reset.previous, "avatar-removed");
+      await cleanedUp(
+        actor,
+        "avatar-held",
+        () => dependencies.images.discardHeld({ actor, personId }),
+      );
       return { avatar: record(reset.avatar), status: "removed" };
     },
   };

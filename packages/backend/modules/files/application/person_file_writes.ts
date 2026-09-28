@@ -5,7 +5,10 @@
  * unit of work, and the staging is the whole of the orchestration. An upload
  * authorises, scans, reserves the row, puts the object, and finalises, and a
  * put that fails marks the row missing rather than leaving one that claims
- * bytes that are not there. A removal reserves, deletes the object, and
+ * bytes that are not there, and a finalise that does not file the upload
+ * (the person archived or the member removed while the bytes moved) takes
+ * the reserved row and its bytes away again, best effort, recording one it
+ * could not (REL-082). A removal reserves, deletes the object, and
  * finalises inside one transaction, so a delete that fails takes the row
  * change with it.
  *
@@ -14,6 +17,7 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { fileCleanupFailed } from "../../../shared-kernel/telemetry.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import {
   checksum,
@@ -44,6 +48,39 @@ export type RemovePersonFileResult =
 export function createPersonFileWrites(
   dependencies: PersonFileManagementDependencies,
 ) {
+  /**
+   * Takes away an upload that was reserved and stored but never filed. It is
+   * cleanup, not the member's request, so it asks for nobody's standing, and
+   * like a removal it deletes the object before the row in one transaction:
+   * a store that fails leaves the reservation as it was, and says so.
+   */
+  const discardReserved = async (
+    actor: PersonFileActor,
+    fileId: string,
+  ): Promise<void> => {
+    const scope = { fileId, workspaceId: actor.workspaceId };
+    const discarded = await runOrUnavailable(
+      dependencies.transaction,
+      async (transaction) => {
+        const reserved = await dependencies.repository.lockReservedUpload({
+          ...scope,
+          transaction,
+        });
+        if (!reserved) return { status: "discarded" as const };
+        await dependencies.storage.remove({ key: reserved.storageKey });
+        await dependencies.repository.discardReservedUpload({
+          ...scope,
+          occurredAt: dependencies.clock.now(),
+          transaction,
+        });
+        return { status: "discarded" as const };
+      },
+    );
+    if (discarded.status !== "discarded") {
+      dependencies.logger.log(fileCleanupFailed("upload-refused", actor));
+    }
+  };
+
   return {
     upload: async (
       actor: PersonFileActor,
@@ -158,9 +195,11 @@ export function createPersonFileWrites(
           return finalized;
         },
       );
-      return result.status === "created"
-        ? { file: publicFile(result.file), status: "created" }
-        : result;
+      if (result.status === "created") {
+        return { file: publicFile(result.file), status: "created" };
+      }
+      await discardReserved(actor, fileId);
+      return result;
     },
 
     remove: async (

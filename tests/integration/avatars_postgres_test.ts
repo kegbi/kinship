@@ -8,7 +8,8 @@
  * the avatar route removes one, an image held for review goes with the
  * avatar, a replacement that could not be linked is discarded whatever
  * happened to the person or the member meanwhile, and a merge discards the
- * duplicate's image when the primary keeps its own.
+ * duplicate's image when the primary keeps its own. An upload refused after
+ * its bytes were stored takes its reservation away again (REL-082).
  */
 
 import {
@@ -42,6 +43,7 @@ import {
 } from "../support/database.ts";
 import { apiSupport, ORIGIN, type SignedInFixture } from "../support/api.ts";
 import { createPerson } from "../support/fixtures.ts";
+import { silentLogger } from "../../packages/backend/shared-kernel/telemetry.ts";
 
 class CapturedObjectStorage implements ObjectStorage {
   readonly bucket = "captured-avatars";
@@ -541,6 +543,7 @@ Deno.test("[PEOPLE-007] a replacement that cannot be linked is discarded whateve
             return result;
           },
         },
+        logger: silentLogger(),
         repository: new PostgresPersonAvatarRepository(),
         transaction: shared.peopleTransaction,
       });
@@ -599,6 +602,97 @@ Deno.test("[PEOPLE-007] a replacement that cannot be linked is discarded whateve
     assert(
       objects.every((row) => row.storage_key === null),
       "neither keeps a stored object",
+    );
+  } finally {
+    await connection.destroy();
+  }
+});
+
+Deno.test("[REL-082] an upload refused once its bytes are stored leaves no processing row and no object", async () => {
+  const owner = await api.register(
+    `avatar-reserved-${crypto.randomUUID()}@example.test`,
+    "Reserved",
+  );
+  const ada = await createPerson(api, owner, "Ada");
+  const connection = connectDatabase(databaseUrl);
+  try {
+    const shared: SharedComposition = {
+      actors: workspaceActors(),
+      audit: governanceAuditRecorder(),
+      clock: { now: () => new Date() },
+      database: connection.db,
+      ids: { create: () => crypto.randomUUID() },
+      peopleTransaction: peopleTransactionRunner(connection.db),
+      transaction: workspaceTransactionRunner(connection.db),
+      workspaceEntry: activeWorkspaceResolver(),
+    };
+    /** Runs between the reservation and the finalise, once the bytes are put. */
+    let meanwhile = () => Promise.resolve();
+    const keys: string[] = [];
+    const files = composeFiles(shared, {
+      giftTarget: giftAttachmentTarget(),
+      objectStore: {
+        bucket: storage.bucket,
+        get: (command) => storage.get(command),
+        health: () => storage.health(),
+        provider: storage.provider,
+        put: async (command) => {
+          await storage.put(command);
+          keys.push(command.key);
+          await meanwhile();
+        },
+        remove: (command) => storage.remove(command),
+      },
+    }).files;
+    const actor = {
+      memberId: owner.memberId,
+      role: owner.role,
+      userId: owner.userId,
+      workspaceId: owner.workspaceId,
+    };
+    const image = { bytes: PNG, filename: "ada.png", mimeType: "image/png" };
+    const processing = async () => {
+      const [row] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count from crm.files
+        where workspace_id = ${owner.workspaceId}::uuid
+          and status = 'processing'
+      `;
+      return row?.count;
+    };
+
+    meanwhile = async () => {
+      await sql`update crm.people set archived_at = now() where id = ${ada}::uuid`;
+    };
+    const archived = await files.uploadAvatar(actor, ada, image);
+    assertEquals(archived.status, "not-found", "an archived person is refused");
+    assertEquals(await processing(), 0, "no reservation is left processing");
+    assertEquals(storage.objects.has(keys[0]!), false, "nor its object");
+
+    await sql`update crm.people set archived_at = null where id = ${ada}::uuid`;
+    meanwhile = () => revokeMembership(sql, owner.memberId);
+    const revoked = await files.upload(actor, ada, {
+      bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]),
+      filename: "letter.pdf",
+      kind: "document",
+      mimeType: "application/pdf",
+      title: "Letter",
+    });
+    assertEquals(revoked.status, "forbidden", "a removed member is refused");
+    assertEquals(await processing(), 0, "a document's reservation goes too");
+    assertEquals(storage.objects.has(keys[1]!), false, "with its object");
+    const rows = await sql<
+      { readonly linked: boolean; readonly storage_key: string | null }[]
+    >`
+      select storage_key, exists (
+        select 1 from crm.person_file_links link where link.file_id = stored.id
+      ) as linked
+      from crm.files stored
+      where workspace_id = ${owner.workspaceId}::uuid
+    `;
+    assertEquals(
+      rows.map((row) => `${row.linked}:${row.storage_key}`),
+      ["false:null", "false:null"],
+      "both are recorded deleted, unlinked and without a key",
     );
   } finally {
     await connection.destroy();

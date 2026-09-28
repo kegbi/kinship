@@ -1,6 +1,6 @@
 import { assertEquals } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
-import { fixedClock } from "../../../testing/fakes.ts";
+import { fixedClock, recordingLogger } from "../../../testing/fakes.ts";
 import type {
   PersonAvatarImages,
   PersonAvatarRepository,
@@ -27,6 +27,8 @@ function context(
     /** Archive the person while the image is being stored. */
     readonly archiveWhileStoring?: boolean;
     readonly avatar?: PersonAvatarState;
+    /** How the files module fails to discard an image, when it does. */
+    readonly discard?: "throws" | "unavailable";
     readonly exists?: boolean;
     readonly revalidation?: "active" | "revoked";
     readonly store?: StoreAnswer | "throws";
@@ -43,6 +45,11 @@ function context(
   const audited: string[] = [];
   const events: string[] = [];
   let next = 0;
+  const discardAnswer = () =>
+    options.discard === "throws"
+      ? Promise.reject(new Error("object store down"))
+      : Promise.resolve({ status: options.discard ?? "discarded" as const });
+  const logger = recordingLogger();
   const images: PersonAvatarImages = {
     store: () => {
       events.push("store");
@@ -57,11 +64,11 @@ function context(
     },
     discard: (command) => {
       discarded.push(command.fileId);
-      return Promise.resolve();
+      return discardAnswer();
     },
     discardHeld: (command) => {
       discardedHeld.push(command.personId);
-      return Promise.resolve();
+      return discardAnswer();
     },
   };
   const repository: PersonAvatarRepository = {
@@ -99,6 +106,7 @@ function context(
     audit,
     clock: fixedClock("2026-09-27T10:00:00.000Z"),
     images,
+    logger,
     repository,
     transaction: {
       run: async <T>(work: (transaction: PeopleTransaction) => Promise<T>) => {
@@ -118,6 +126,7 @@ function context(
     discarded,
     discardedHeld,
     events,
+    logger,
     management,
     stored,
   };
@@ -292,5 +301,71 @@ Deno.test("[REL-056] removing the avatar also discards the images held for revie
     archived.discardedHeld,
     [],
     "a refused removal discards nothing",
+  );
+});
+
+Deno.test("[REL-083] an avatar image that cannot be discarded leaves a redacted trace", async () => {
+  const correlated = { ...actor, requestId: "avatar-request" };
+  const line = (reason: string) => ({
+    event: "file.cleanup",
+    reason,
+    outcome: "unavailable",
+    request_id: "avatar-request",
+  });
+  for (const discard of ["throws", "unavailable"] as const) {
+    const replaced = context({
+      avatar: { fileId: fixtures.uuid(400), source: "file" },
+      discard,
+    });
+    assertEquals(
+      (await replaced.management.replace(correlated, personId, png)).status,
+      "updated",
+      "a replacement stands",
+    );
+    assertEquals(replaced.logger.events, [line("avatar-replaced")]);
+
+    const unlinked = context({ archiveWhileStoring: true, discard });
+    assertEquals(
+      (await unlinked.management.replace(correlated, personId, png)).status,
+      "archived-write-rejected",
+    );
+    assertEquals(unlinked.logger.events, [line("avatar-unlinked")]);
+
+    const removed = context({
+      avatar: { fileId: fixtures.uuid(400), source: "file" },
+      discard,
+    });
+    assertEquals(
+      (await removed.management.remove(correlated, personId)).status,
+      "removed",
+      "a removal stands",
+    );
+    assertEquals(
+      removed.logger.events,
+      [line("avatar-removed"), line("avatar-held")],
+      `a discard that ${discard} is recorded for the image and the held ones`,
+    );
+  }
+
+  const quiet = context({
+    avatar: { fileId: fixtures.uuid(400), source: "file" },
+  });
+  await quiet.management.replace(actor, personId, png);
+  await quiet.management.remove(actor, personId);
+  assertEquals(quiet.logger.events, [], "a discard that worked is quiet");
+
+  const uncorrelated = context({
+    avatar: { fileId: fixtures.uuid(400), source: "file" },
+    discard: "unavailable",
+  });
+  await uncorrelated.management.replace(actor, personId, png);
+  assertEquals(
+    uncorrelated.logger.events,
+    [{
+      event: "file.cleanup",
+      reason: "avatar-replaced",
+      outcome: "unavailable",
+    }],
+    "without a request there is no request identifier",
   );
 });

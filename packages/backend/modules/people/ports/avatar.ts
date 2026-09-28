@@ -15,6 +15,8 @@
  * linked is discarded again. A discard is cleanup rather than the member's
  * request (REL-056): it goes ahead whether or not the person has been
  * archived or the member removed since, within the actor's own workspace.
+ * A discard that cannot complete answers so (REL-083), and people records the
+ * leftover rather than failing the member's request.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
@@ -34,6 +36,11 @@ export interface AvatarImageInput {
   readonly filename: string;
   readonly mimeType: string;
 }
+
+/** Whether a discard took the image away, or left it to a later attempt. */
+export type AvatarDiscardResult =
+  | { readonly status: "discarded" }
+  | Failure<"unavailable">;
 
 export interface PersonAvatarImages {
   /**
@@ -63,7 +70,7 @@ export interface PersonAvatarImages {
     readonly actor: PeopleActor;
     readonly fileId: string;
     readonly personId: string;
-  }): Promise<void>;
+  }): Promise<AvatarDiscardResult>;
   /**
    * Removes every image of the person's held in quarantine for review. None
    * of them was ever linked, so none is the avatar.
@@ -71,7 +78,7 @@ export interface PersonAvatarImages {
   discardHeld(command: {
     readonly actor: PeopleActor;
     readonly personId: string;
-  }): Promise<void>;
+  }): Promise<AvatarDiscardResult>;
 }
 
 export interface PersonAvatarRepository {

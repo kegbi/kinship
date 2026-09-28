@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
-import { fixedClock } from "../../../testing/fakes.ts";
+import { fixedClock, recordingLogger } from "../../../testing/fakes.ts";
 import type { ImportantDateRecord } from "../domain/important_dates/rules.ts";
 import {
   conflictsDigest,
@@ -84,8 +84,8 @@ function context(
       readonly duplicate?: PersonMergeFacts["avatar"];
       readonly primary?: PersonMergeFacts["avatar"];
     };
-    /** The files module fails to discard an image. */
-    readonly discardFails?: boolean;
+    /** How the files module fails to discard an image. */
+    readonly discardFails?: "throws" | "unavailable";
     readonly duplicate?: MergeCandidate | undefined;
     readonly duplicateDates?: readonly ImportantDateRecord[];
     readonly blocked?: boolean;
@@ -207,6 +207,7 @@ function context(
       return Promise.resolve();
     },
   };
+  const logger = recordingLogger();
   const merge = createPersonMerge({
     actors: {
       revalidate: () => Promise.resolve(options.revalidation ?? "active"),
@@ -224,11 +225,15 @@ function context(
         events.push(
           `discard:${command.fileId}@${command.personId}:${command.actor.memberId}`,
         );
-        return options.discardFails
-          ? Promise.reject(new Error("object store down"))
-          : Promise.resolve();
+        if (options.discardFails === "throws") {
+          return Promise.reject(new Error("object store down"));
+        }
+        return Promise.resolve({
+          status: options.discardFails ?? "discarded" as const,
+        });
       },
     },
+    logger,
     participants: [
       participant("interactions", "crm.notes.person_id"),
       {
@@ -261,6 +266,7 @@ function context(
   return {
     audits,
     events,
+    logger,
     merge,
     removed: () => removed,
     rows,
@@ -515,25 +521,42 @@ Deno.test("[REL-063] the duplicate's image the primary does not use is discarded
     ["remove", `discard:${fixtures.uuid(302)}@${primaryId}:${actor.memberId}`],
     "after the merge, from the primary the image now belongs to",
   );
+  assertEquals(subject.logger.events, [], "a discard that worked is quiet");
 });
 
-Deno.test("[REL-063] a merge stands when its unused image cannot be discarded", async () => {
-  const subject = context({
-    avatars: {
-      duplicate: { fileId: fixtures.uuid(302), source: "file" },
-      primary: { fileId: fixtures.uuid(301), source: "file" },
-    },
-    discardFails: true,
-  });
-  const preview = await subject.merge.preview(actor, primaryId, duplicateId);
-  assert(preview.status === "ready", preview.status);
-  const result = await subject.merge.merge(actor, primaryId, {
-    duplicateId,
-    ...REVISIONS,
-    conflictsDigest: preview.conflictsDigest,
-  });
-  assertEquals(result.status, "merged", "the discard is best effort");
-  assertEquals(subject.removed(), true);
+Deno.test("[REL-063, REL-083] a merge stands when its unused image cannot be discarded, and says so", async () => {
+  for (const discardFails of ["throws", "unavailable"] as const) {
+    const subject = context({
+      avatars: {
+        duplicate: { fileId: fixtures.uuid(302), source: "file" },
+        primary: { fileId: fixtures.uuid(301), source: "file" },
+      },
+      discardFails,
+    });
+    const preview = await subject.merge.preview(actor, primaryId, duplicateId);
+    assert(preview.status === "ready", preview.status);
+    const result = await subject.merge.merge(
+      { ...actor, requestId: "merge-request" },
+      primaryId,
+      {
+        duplicateId,
+        ...REVISIONS,
+        conflictsDigest: preview.conflictsDigest,
+      },
+    );
+    assertEquals(result.status, "merged", "the discard is best effort");
+    assertEquals(subject.removed(), true);
+    assertEquals(
+      subject.logger.events,
+      [{
+        event: "file.cleanup",
+        reason: "merge-duplicate-avatar",
+        outcome: "unavailable",
+        request_id: "merge-request",
+      }],
+      `a discard that ${discardFails} leaves a trace without an identifier`,
+    );
+  }
 });
 
 Deno.test("[REL-063] nothing is discarded when the duplicate's image is used or the merge fails", async () => {

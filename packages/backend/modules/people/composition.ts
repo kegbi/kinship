@@ -16,6 +16,7 @@
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { type Logger, silentLogger } from "../../shared-kernel/telemetry.ts";
 import { PostgresBulkTagLookup } from "./adapters/postgres/bulk_tag_lookup.ts";
 import { PostgresPeopleExportBoundary } from "./adapters/postgres/export_people_boundary.ts";
 import { PostgresPeopleImportBoundary } from "./adapters/postgres/import_people_boundary.ts";
@@ -88,11 +89,17 @@ export interface PeoplePorts {
    * two people are merged (GAP-049).
    */
   readonly mergeParticipants: readonly PersonMergeParticipant[];
+  /**
+   * Where an avatar image that could not be discarded is recorded (REL-083).
+   * A composition that passes none records nothing.
+   */
+  readonly logger?: Logger;
   /** The workspace vocabulary a profile fact is validated against. */
   readonly profileFactWorkspace: ProfileFactWorkspaceBoundary;
 }
 
 export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
+  const logger = ports.logger ?? silentLogger();
   const people = createPeopleManagement({
     actors: shared.actors,
     audit: personCreatedAuditFrom(shared.audit),
@@ -125,6 +132,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       audit: personAvatarAuditFrom(shared.audit),
       clock: shared.clock,
       images: ports.avatarImages,
+      logger,
       repository: new PostgresPersonAvatarRepository(),
       transaction: shared.peopleTransaction,
     }),
@@ -165,6 +173,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       audit: personMergeAuditFrom(shared.audit),
       clock: shared.clock,
       images: ports.avatarImages,
+      logger,
       participants: ports.mergeParticipants,
       publisher: ports.importantDatePublisher,
       repository: new PostgresPersonMergeRepository(),

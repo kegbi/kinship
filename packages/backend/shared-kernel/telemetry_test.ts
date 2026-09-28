@@ -1,5 +1,10 @@
 import { assertEquals } from "../testing/assert.ts";
-import { correlationOf, LOG_EVENT_SHAPES, silentLogger } from "./telemetry.ts";
+import {
+  correlationOf,
+  fileCleanupFailed,
+  LOG_EVENT_SHAPES,
+  silentLogger,
+} from "./telemetry.ts";
 
 Deno.test("[GAP-039] a correlation is carried only when there is one", () => {
   assertEquals(
@@ -22,8 +27,8 @@ Deno.test("[GAP-039] a correlation is carried only when there is one", () => {
 Deno.test("[GAP-039] the catalogue declares every loggable field and its class", () => {
   assertEquals(
     Object.keys(LOG_EVENT_SHAPES),
-    ["api.request", "worker.job"],
-    "two events exist, and nothing else is loggable",
+    ["api.request", "worker.job", "file.cleanup"],
+    "three events exist, and nothing else is loggable",
   );
   assertEquals(
     LOG_EVENT_SHAPES["api.request"],
@@ -46,6 +51,28 @@ Deno.test("[GAP-039] the catalogue declares every loggable field and its class",
       duration_ms: "milliseconds",
     },
     "the job line names the run and how it ended, never what it worked on",
+  );
+  assertEquals(
+    LOG_EVENT_SHAPES["file.cleanup"],
+    { reason: "code", outcome: "code", request_id: "request-id" },
+    "the cleanup line names why and how, never the file, person, or workspace",
+  );
+});
+
+Deno.test("[REL-083] a cleanup that did not complete is correlated when it can be", () => {
+  assertEquals(
+    fileCleanupFailed("avatar-replaced", { requestId: "3f2a9c0d" }),
+    {
+      event: "file.cleanup",
+      reason: "avatar-replaced",
+      outcome: "unavailable",
+      request_id: "3f2a9c0d",
+    },
+  );
+  assertEquals(
+    Object.keys(fileCleanupFailed("upload-refused", {})),
+    ["event", "reason", "outcome"],
+    "no request is no request identifier",
   );
 });
 

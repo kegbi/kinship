@@ -10,6 +10,7 @@
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { Logger } from "../../../shared-kernel/telemetry.ts";
 import type { FileAudit } from "../ports/audit.ts";
 import type {
   PersonFileActor,
@@ -26,6 +27,8 @@ export interface PersonFileManagementDependencies {
   readonly clock: Clock;
   readonly ids: { next(): string };
   readonly keys: { next(): string };
+  /** Where a file that could not be taken away is recorded (REL-082). */
+  readonly logger: Logger;
   readonly repository: FileMetadataRepository;
   readonly scanner: FileScanner;
   readonly storage: ObjectStorage;

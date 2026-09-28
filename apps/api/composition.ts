@@ -764,8 +764,9 @@ function davPeople(
  * people may not depend on files, so people names the port it needs and the
  * root fills it with the files facade: the `avatar` upload kind to store, and
  * the avatar discards (REL-056) to remove an image nobody draws, which the
- * generic person-file removal refuses. Both discards are best effort, so an
- * answer that they are unavailable is not raised as a failure.
+ * generic person-file removal refuses. Both discards are best effort: an
+ * answer that one is unavailable is passed on for people to record (REL-083)
+ * rather than raised as a failure.
  */
 export function avatarImages(files: PersonFileManagement): PersonAvatarImages {
   return {
@@ -781,10 +782,12 @@ export function avatarImages(files: PersonFileManagement): PersonAvatarImages {
         : result;
     },
     discard: async ({ actor, fileId, personId }) => {
-      await files.discardAvatar(actor, personId, fileId);
+      const result = await files.discardAvatar(actor, personId, fileId);
+      return { status: result.status };
     },
     discardHeld: async ({ actor, personId }) => {
-      await files.discardHeldAvatars(actor, personId);
+      const result = await files.discardHeldAvatars(actor, personId);
+      return { status: result.status };
     },
   };
 }
@@ -926,10 +929,12 @@ export function createConfiguredApiApp(
   const persons = personBoundary();
   const files = composeFiles(shared, {
     giftTarget: giftAttachmentTarget(),
+    ...(logger ? { logger } : {}),
     objectStore,
   });
   const people = composePeople(shared, {
     avatarImages: avatarImages(files.files),
+    ...(logger ? { logger } : {}),
     genderOptions: configuration.genders,
     importantDatePublisher: personDateReminderPublisher(
       shared,

@@ -123,7 +123,8 @@ repository implements now (GAP-039), so the two are never confused.
 ### Event Catalogue
 
 Only these events exist. The two gateway events are Nginx log formats; the
-adapter accepts only `api.request` and `worker.job` and refuses any other name.
+adapter accepts only `api.request`, `worker.job`, and `file.cleanup` and refuses
+any other name.
 
 | Event               | Emitted by                                    | Fields                                                                                       |
 | ------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -131,10 +132,19 @@ adapter accepts only `api.request` and `worker.job` and refuses any other name.
 | `gateway.readiness` | Nginx readiness probe                         | `boundary`, `state`, `status`, `dependency_status`                                           |
 | `api.request`       | HTTP kit, one per API request                 | `method`, `route` (registered pattern or `unmatched`), `status`, `duration_ms`, `request_id` |
 | `worker.job`        | reminder delivery, one per claimed occurrence | `job`, `request_id`, `attempt`, `outcome`, `duration_ms`                                     |
+| `file.cleanup`      | files and people, one per unfinished cleanup  | `reason`, `outcome`, `request_id`                                                            |
 
 `worker.job` outcomes are the stable delivery codes `sent`, `retry`, `failed`,
 `manual_attention`, `stale-claim`, and `processing-error`. A failure is
 described by that code or by an HTTP status, never by `error.message`.
+
+`file.cleanup` records a stored file that was due to go and is still there
+(REL-082, REL-083): an avatar image a replacement (`avatar-replaced`), a failed
+link (`avatar-unlinked`), a removal (`avatar-removed`, `avatar-held`), or a
+merge (`merge-duplicate-avatar`) no longer draws, or an upload whose finalise
+was refused (`upload-refused`). Its only outcome is `unavailable`. The line
+carries the request identifier, which leads to the request's audit rows, and
+never the file, the person, the workspace, or the filename.
 
 ### Redaction
 

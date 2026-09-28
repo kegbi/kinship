@@ -499,6 +499,9 @@ export const MODULES: readonly TaskModule[] = [
         // Every module's audit description forwards the actor's request
         // identifier (GAP-039).
         "apps/api/audit_correlation_test.ts",
+        // The avatar bridge passes on a discard it could not complete
+        // (REL-083).
+        "apps/api/avatar_bridge_test.ts",
         "packages/backend/modules/workspaces/transport/http/authentication_test.ts",
         "packages/backend/modules/files/transport/http/routes_test.ts",
         "packages/http-kit/body_limit_test.ts",
@@ -719,6 +722,9 @@ export const MODULES: readonly TaskModule[] = [
         // Every module's audit description forwards the actor's request
         // identifier (GAP-039).
         "apps/api/audit_correlation_test.ts",
+        // The avatar bridge passes on a discard it could not complete
+        // (REL-083).
+        "apps/api/avatar_bridge_test.ts",
         "packages/backend/modules/workspaces/transport/http/authentication_test.ts",
         "packages/backend/modules/import-export/transport/http/exports_test.ts",
         "packages/backend/modules/files/transport/http/routes_test.ts",

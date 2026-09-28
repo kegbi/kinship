@@ -9,6 +9,7 @@
 
 import { Client as MinioClient } from "minio";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { type Logger, silentLogger } from "../../shared-kernel/telemetry.ts";
 import { PostgresFilePersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import {
   WebCryptoFileIdentifiers,
@@ -67,6 +68,11 @@ export function composeObjectStorage(
 export interface FilePorts {
   /** The gift a file may be attached to, composed by gifts. */
   readonly giftTarget: GiftAttachmentTarget;
+  /**
+   * Where a file that could not be taken away is recorded (REL-082). A
+   * composition that passes none records nothing.
+   */
+  readonly logger?: Logger;
   readonly objectStore: ObjectStorage;
 }
 
@@ -83,6 +89,7 @@ export function composeFiles(shared: SharedComposition, ports: FilePorts) {
       audit: fileAuditFrom(shared.audit),
       clock: shared.clock,
       ...objects,
+      logger: ports.logger ?? silentLogger(),
       repository: new PostgresFileMetadataRepository(),
       scanner: new DeclaredMediaScanner(),
       transaction: shared.peopleTransaction,

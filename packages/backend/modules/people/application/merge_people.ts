@@ -22,7 +22,8 @@
  * not use is discarded through the files facade, as an avatar replacement
  * discards the image it replaced (REL-063). The object store is outside the
  * transaction, so this is best effort: a discard that fails leaves the image
- * as it was and never undoes the merge.
+ * as it was, is recorded as a `file.cleanup` log line (REL-083), and never
+ * undoes the merge.
  *
  * There is no undo. The duplicate's rows now belong to the primary and cannot
  * be told apart from the primary's own, which is why the flow and the
@@ -70,6 +71,10 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
+  fileCleanupFailed,
+  type Logger,
+} from "../../../shared-kernel/telemetry.ts";
+import {
   conflictsDigest,
   datePlan,
   type MergeCandidate,
@@ -105,6 +110,8 @@ export interface PersonMergeDependencies {
   readonly clock: Clock;
   /** The files facade's discard, for the duplicate's image nobody draws. */
   readonly images: Pick<PersonAvatarImages, "discard">;
+  /** Where a discard that could not complete is recorded (REL-083). */
+  readonly logger: Logger;
   /** Every other module's rows that name a person, in relink order. */
   readonly participants: readonly PersonMergeParticipant[];
   /** Planning's side of a date that moves or is dropped. */
@@ -403,11 +410,16 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
       );
       if (result.status !== "committing") return result;
       if (result.unusedAvatar) {
-        await dependencies.images.discard({
+        const discarded = await dependencies.images.discard({
           actor,
           fileId: result.unusedAvatar,
           personId: primaryId,
-        }).catch(() => undefined);
+        }).catch(() => ({ status: "unavailable" as const }));
+        if (discarded.status !== "discarded") {
+          dependencies.logger.log(
+            fileCleanupFailed("merge-duplicate-avatar", actor),
+          );
+        }
       }
       return result.merged;
     },

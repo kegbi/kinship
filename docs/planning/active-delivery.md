@@ -1163,19 +1163,48 @@ Playwright test carrying its stable flow ID.
       the gift POST and a direct `attachToGift`, leaves no gift link, and that a
       person's PDF document still attaches.
 
-- [ ] **REL-082 — An archive during an avatar upload's store step leaves an
+- [x] **REL-082 — An archive during an avatar upload's store step leaves an
       orphan.** Found reviewing REL-056: if the person is archived or the member
       revoked between `reserveUpload` and `finalizeUpload` in `uploadAvatar`
       (`person_file_writes.ts`), the upload answers forbidden or not-found and
       leaves a `processing` row with stored bytes that nothing cleans up.
       Documents share the path. Discard the reserved upload on that refusal, or
-      sweep stale `processing` rows.
+      sweep stale `processing` rows. Delivered 2026-09-28: an upload whose
+      finalise did not file it (the person archived or the member removed after
+      the bytes were stored) returned forbidden or not-found and left the
+      `processing` row and its object behind, because nothing took a reservation
+      away once the refusal was known. `person_file_writes.ts` now discards the
+      reserved upload whenever finalise does not create it: it locks the row
+      that is still `processing` by workspace and the file id it minted, deletes
+      the object, then unlinks the row and records it deleted without its key,
+      all in one transaction. A store that fails leaves the reservation as it
+      was and logs a `file.cleanup` line with reason `upload-refused` (REL-083).
+      Avatars and documents share the path. `person_files_test.ts` proves the
+      discard for a revoked member and an archived person, and the logged line
+      when the discard itself fails; `avatars_postgres_test.ts` proves against
+      PostgreSQL that no `processing` row, link or object survives an archive or
+      a revocation between reserve and finalise.
 
-- [ ] **REL-083 — Failed avatar cleanups leave no trace.** Found reviewing
+- [x] **REL-083 — Failed avatar cleanups leave no trace.** Found reviewing
       REL-056: avatar replacement, avatar removal, and merge swallow a failed
       discard (`.catch(() => undefined)`), and the composition bridge ignores an
       `unavailable` answer, so a leftover image is visible only in the database.
-      Emit a redacted structured log or counter through a logger port.
+      Emit a redacted structured log or counter through a logger port. Delivered
+      2026-09-28: avatar replacement, removal and merge swallowed a failed
+      discard (`.catch(() => undefined)`) and the API bridge dropped files'
+      `unavailable` answer, so a leftover image was visible only in the
+      database. The kernel's closed log catalogue gains a `file.cleanup` event
+      with only `reason`, `outcome` and `request_id`, which the JSON logger
+      enforces, so no file, person or workspace id and no filename can reach the
+      line. People's images port now answers `discarded` or `unavailable`, the
+      bridge passes that on, and people logs the leftover under
+      `avatar-replaced`, `avatar-unlinked`, `avatar-removed`, `avatar-held` or
+      `merge-duplicate-avatar` through a `Logger` the API root fills with its
+      JSON logger. `person_avatar_test.ts` and `merge_people_test.ts` prove the
+      redacted line for both a thrown and an `unavailable` discard and that a
+      successful discard logs nothing; `avatar_bridge_test.ts` proves the bridge
+      passes `unavailable` on, and `json_logger_test.ts` proves smuggled ids and
+      filenames are stripped.
 
 - [ ] **REL-084 — The search pool-leak check can hang instead of failing.**
       Found reviewing REL-062: the check in `search_postgres_test.ts` holds a

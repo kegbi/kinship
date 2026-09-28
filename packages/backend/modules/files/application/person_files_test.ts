@@ -11,7 +11,7 @@ import {
 import type { PeopleTransaction } from "../../people/public.ts";
 import { assert } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
-import { fixedClock } from "../../../testing/fakes.ts";
+import { fixedClock, recordingLogger } from "../../../testing/fakes.ts";
 
 const actor: PersonFileActor = fixtures.actor();
 const personId = "00000000-0000-4000-8000-000000000004";
@@ -194,6 +194,26 @@ class MemoryFiles implements FileMetadataRepository {
     );
   }
 
+  lockReservedUpload(
+    command: Parameters<FileMetadataRepository["lockReservedUpload"]>[0],
+  ) {
+    const record = this.records.get(command.fileId);
+    return Promise.resolve(
+      command.workspaceId === actor.workspaceId &&
+        record?.status === "processing"
+        ? record
+        : undefined,
+    );
+  }
+
+  discardReservedUpload(
+    command: Parameters<FileMetadataRepository["discardReservedUpload"]>[0],
+  ) {
+    const record = this.records.get(command.fileId)!;
+    this.records.set(command.fileId, { ...record, status: "deleted" });
+    return Promise.resolve();
+  }
+
   discardAvatarImages(
     command: Parameters<FileMetadataRepository["discardAvatarImages"]>[0],
   ) {
@@ -216,7 +236,8 @@ class MemoryAudit implements FileAudit {
 function management(
   options: {
     ids?: () => string;
-    revalidation?: "active" | "revoked";
+    /** The member's standing, or how it changes from one step to the next. */
+    revalidation?: "active" | "revoked" | (() => "active" | "revoked");
     scan?: "clean" | "quarantined";
     storage?: MemoryStorage;
     repository?: MemoryFiles;
@@ -225,11 +246,16 @@ function management(
   const audit = new MemoryAudit();
   const repository = options.repository ?? new MemoryFiles();
   const storage = options.storage ?? new MemoryStorage();
+  const logger = recordingLogger();
+  const revalidation = options.revalidation ?? "active";
   return {
     audit,
     files: createPersonFileManagement({
       actors: {
-        revalidate: () => Promise.resolve(options.revalidation ?? "active"),
+        revalidate: () =>
+          Promise.resolve(
+            typeof revalidation === "function" ? revalidation() : revalidation,
+          ),
       },
       audit,
       clock: fixedClock("2026-08-23T08:00:00.000Z"),
@@ -239,6 +265,7 @@ function management(
           ? () => `objects/${crypto.randomUUID()}`
           : () => "objects/opaque-generated-key",
       },
+      logger,
       repository,
       scanner: {
         inspect: () => Promise.resolve(options.scan ?? "clean"),
@@ -261,6 +288,7 @@ function management(
         },
       },
     }),
+    logger,
     repository,
     storage,
   };
@@ -723,5 +751,91 @@ Deno.test("[REL-056] the images held for review are discarded, and nothing else"
   assert(
     repository.records.get(again.file.fileId)?.status === "quarantined",
     "and rolls the discard back",
+  );
+});
+
+Deno.test("[REL-082] an upload refused at finalise takes its reserved row and bytes away", async () => {
+  const document = {
+    bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+    filename: "letter.pdf",
+    kind: "document" as const,
+    mimeType: "application/pdf",
+    title: "Letter",
+  };
+  // The member is removed once the bytes are stored: authorize, reserve, and
+  // then the finalise's own standing check.
+  let checks = 0;
+  const revoked = management({
+    revalidation: () => ++checks > 2 ? "revoked" : "active",
+  });
+  assert(
+    (await revoked.files.upload(actor, personId, document)).status ===
+      "forbidden",
+    "a member removed meanwhile is refused",
+  );
+  assert(
+    revoked.repository.records.get(fileId)?.status === "deleted",
+    "the reserved row is taken away",
+  );
+  assert(revoked.storage.objects.size === 0, "and so are its bytes");
+  assert(revoked.audit.actions.length === 0, "nothing was ever filed");
+  assert(revoked.logger.events.length === 0, "a cleanup that worked is quiet");
+
+  // The person is archived once the bytes are stored, for an avatar too.
+  const repository = new MemoryFiles();
+  const archived = management({ repository });
+  const finalize = repository.finalizeUpload.bind(repository);
+  repository.finalizeUpload = () =>
+    Promise.resolve({ status: "not-found" } as const);
+  const avatar = await archived.files.uploadAvatar(actor, personId, {
+    bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    filename: "ada.png",
+    mimeType: "image/png",
+  });
+  repository.finalizeUpload = finalize;
+  assert(avatar.status === "not-found", "an archived person is refused");
+  assert(
+    repository.records.get(fileId)?.status === "deleted",
+    "the reserved avatar row is taken away",
+  );
+  assert(archived.storage.objects.size === 0, "and so are its bytes");
+});
+
+Deno.test("[REL-082, REL-083] a refused upload that cannot be taken away leaves a redacted trace", async () => {
+  const repository = new MemoryFiles();
+  const storage = new MemoryStorage();
+  const context = management({ repository, storage });
+  repository.finalizeUpload = () =>
+    Promise.resolve({ status: "not-found" } as const);
+  const originalRemove = storage.remove.bind(storage);
+  storage.remove = () => Promise.reject(new Error("store unavailable"));
+  const result = await context.files.upload(
+    { ...actor, requestId: "upload-request" },
+    personId,
+    {
+      bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      filename: "letter.pdf",
+      kind: "document",
+      mimeType: "application/pdf",
+      title: "Letter",
+    },
+  );
+  storage.remove = originalRemove;
+  assert(result.status === "not-found", "the refusal is still the answer");
+  assert(
+    repository.records.get(fileId)?.status === "processing",
+    "the reservation is left as it was, to be found again",
+  );
+  assert(
+    JSON.stringify(context.logger.events) ===
+      JSON.stringify([{
+        event: "file.cleanup",
+        reason: "upload-refused",
+        outcome: "unavailable",
+        request_id: "upload-request",
+      }]),
+    `the leftover is recorded without an identifier: ${
+      JSON.stringify(context.logger.events)
+    }`,
   );
 });

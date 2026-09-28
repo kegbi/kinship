@@ -44,6 +44,7 @@ import {
 } from "../support/database.ts";
 import { apiSupport, type SignedInFixture } from "../support/api.ts";
 import { createPerson } from "../support/fixtures.ts";
+import { silentLogger } from "../../packages/backend/shared-kernel/telemetry.ts";
 
 class CapturedObjectStorage implements ObjectStorage {
   readonly bucket = "captured-files";
@@ -555,6 +556,7 @@ Deno.test({
         clock: { now: () => new Date() },
         ids: new WebCryptoFileIdentifiers(),
         keys: new WebCryptoObjectKeys(),
+        logger: silentLogger(),
         repository: new PostgresFileMetadataRepository(),
         scanner: new DeclaredMediaScanner(),
         storage: new CapturedObjectStorage(),
