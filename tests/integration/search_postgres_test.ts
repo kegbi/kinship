@@ -20,7 +20,11 @@ import {
 } from "../../packages/backend/read-models/search/public.ts";
 import { type KyselyPlugin, RawNode, sql as sqlQuery } from "kysely";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
-import { revokeMembership } from "../support/database.ts";
+import { openSql, revokeMembership, type Sql } from "../support/database.ts";
+import {
+  connectDatabase,
+  type DatabaseConnection,
+} from "../../packages/backend/platform/postgres/database.ts";
 import {
   actors,
   addActivity,
@@ -28,6 +32,7 @@ import {
   addPerson,
   closeResources,
   connection,
+  databaseUrl,
   memberOf,
   type SeededActor,
   sql,
@@ -646,6 +651,7 @@ function scannedIndexes(plan: unknown): readonly string[] {
  * captured by explaining that exact statement instead of running it.
  */
 async function textStatementPlan(
+  database: DatabaseConnection["db"],
   command: Parameters<PostgresSearchRepository["searchText"]>[0],
 ): Promise<unknown> {
   const explained = new Set<unknown>();
@@ -673,75 +679,129 @@ async function textStatementPlan(
       });
     },
   };
-  const explainer = new PostgresSearchRepository(
-    connection.db.withPlugin(explain),
-  );
+  const explainer = new PostgresSearchRepository(database.withPlugin(explain));
   assertEquals((await explainer.searchText(command)).status, "ready");
   return plan;
 }
 
-Deno.test("[REL-061] each text group of a large workspace matches through its full-text index", async () => {
-  const { reader } = await twoWorkspaces("search-indexes");
-  // Enough rows in every group that reading the workspace's rows and parsing
-  // each would cost more than the index; the planner chooses by statistics.
-  const rows = 1000;
-  await sql`
-    insert into crm.notes (workspace_id, person_id, body)
-    select ${reader.workspaceId}, ${reader.personId}, 'note ' || md5(n::text)
-    from generate_series(1, ${rows}) n
-  `;
-  await sql`
-    with created as (
-      insert into crm.activities (workspace_id, summary, happened_at)
-      select ${reader.workspaceId}, 'walk ' || md5(n::text), now()
-      from generate_series(1, ${rows}) n
-      returning id
-    )
-    insert into crm.activity_participants (activity_id, person_id)
-    select id, ${reader.personId} from created
-  `;
-  await sql`
-    with created as (
-      insert into crm.journal_posts (workspace_id, body)
-      select ${reader.workspaceId}, 'day ' || md5(n::text)
-      from generate_series(1, ${rows}) n
-      returning id, occurred_at
-    )
-    insert into crm.journal_items (workspace_id, occurred_at, journal_post_id)
-    select ${reader.workspaceId}, occurred_at, id from created
-  `;
-  await sql`
-    insert into crm.tasks (workspace_id, title)
-    select ${reader.workspaceId}, 'call ' || md5(n::text)
-    from generate_series(1, ${rows}) n
-  `;
-  await sql`
-    analyze crm.notes, crm.activities, crm.activity_participants,
-      crm.journal_posts, crm.journal_items, crm.tasks
-  `;
-  const shared = word();
-  const indexes = scannedIndexes(
-    await textStatementPlan({
-      ...actorOf(reader),
-      limit: 5,
-      query: shared,
-      sort: "given-name",
-      terms: [shared],
-    }),
-  );
-  for (
-    const index of [
-      "notes_search_idx",
-      "activities_search_idx",
-      "journal_posts_search_idx",
-      "tasks_search_idx",
-    ]
-  ) {
-    assert(
-      indexes.includes(index),
-      `the text statement does not scan ${index}: ${indexes.join(", ")}`,
+/**
+ * Runs `work` on a scratch database holding the canonical v9 DDL and nothing
+ * else, dropped afterwards. The statistics a plan is costed from are then this
+ * suite's own rows, never whatever the other suites left in the shared one.
+ */
+async function withScratchCrm(
+  work: (scratch: { readonly sql: Sql; readonly url: string }) => Promise<void>,
+): Promise<void> {
+  const name = `kinship_search_${crypto.randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(`create database ${name}`);
+  const url = new URL(databaseUrl);
+  url.pathname = `/${name}`;
+  const scratch = openSql(url.toString(), { max: 1, prepare: false });
+  try {
+    await scratch.unsafe(
+      await Deno.readTextFile(
+        "personal-crm-schema/v9/personal_crm_schema_v9.sql",
+      ),
     );
+    await work({ sql: scratch, url: url.toString() });
+  } finally {
+    await scratch.end();
+    await sql.unsafe(`drop database if exists ${name} with (force)`);
   }
+}
+
+Deno.test("[REL-061] each text group of a large workspace matches through its full-text index", async () => {
+  await withScratchCrm(async ({ sql: scratch, url }) => {
+    // REL-061's shape at a smaller scale: one workspace whose text is spread
+    // over many people, beside a small one. Every row is written here and
+    // each table is below ANALYZE's sample size, so the statistics, and so
+    // the plan, are the same on every run.
+    const [owner, large, small] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    const [people, rows] = [200, 4000];
+    await scratch`insert into crm.users (id, email) values (${owner}, 'owner@example.test')`;
+    await scratch`
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${large}, 'Large', ${owner}), (${small}, 'Small', ${owner})
+    `;
+    await scratch`
+      insert into crm.people (workspace_id, given_name)
+      select case when n <= ${people} then ${large}::uuid else ${small}::uuid end,
+        'Person ' || n
+      from generate_series(1, ${people} + 5) n
+    `;
+    await scratch`
+      insert into crm.notes (workspace_id, person_id, body)
+      select person.workspace_id, person.id, 'note ' || md5(n::text || person.id::text)
+      from crm.people person
+      cross join generate_series(1, ${rows / people}) n
+    `;
+    await scratch`
+      with created as (
+        insert into crm.activities (workspace_id, summary, happened_at)
+        select person.workspace_id,
+          person.id::text || ' walk ' || md5(n::text), now()
+        from crm.people person
+        cross join generate_series(1, ${rows / people}) n
+        returning id, workspace_id, split_part(summary, ' ', 1) as person_id
+      )
+      insert into crm.activity_participants (activity_id, person_id)
+      select id, person_id::uuid from created
+    `;
+    await scratch`
+      with created as (
+        insert into crm.journal_posts (workspace_id, body)
+        select workspace.id, 'day ' || md5(n::text)
+        from crm.workspaces workspace
+        cross join generate_series(1,
+          case when workspace.id = ${large}::uuid then ${rows} else 20 end) n
+        returning id, workspace_id, occurred_at
+      )
+      insert into crm.journal_items (workspace_id, occurred_at, journal_post_id)
+      select workspace_id, occurred_at, id from created
+    `;
+    await scratch`
+      insert into crm.tasks (workspace_id, person_id, title)
+      select person.workspace_id, person.id, 'call ' || md5(n::text)
+      from crm.people person
+      cross join generate_series(1, ${rows / people}) n
+    `;
+    await scratch`analyze`;
+    const explaining = connectDatabase(url);
+    try {
+      const shared = word();
+      const indexes = scannedIndexes(
+        await textStatementPlan(explaining.db, {
+          limit: 5,
+          memberId: crypto.randomUUID(),
+          query: shared,
+          role: "owner",
+          sort: "given-name",
+          terms: [shared],
+          userId: owner,
+          workspaceId: large,
+        }),
+      );
+      for (
+        const index of [
+          "notes_search_idx",
+          "activities_search_idx",
+          "journal_posts_search_idx",
+          "tasks_search_idx",
+        ]
+      ) {
+        assert(
+          indexes.includes(index),
+          `the text statement does not scan ${index}: ${indexes.join(", ")}`,
+        );
+      }
+    } finally {
+      await explaining.destroy();
+    }
+  });
 });
 
 Deno.test("[SEARCH-001] closes its connections", async () => {
