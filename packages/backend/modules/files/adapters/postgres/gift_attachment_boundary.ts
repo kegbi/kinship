@@ -6,6 +6,24 @@ import type {
 } from "../../ports/gift_attachment.ts";
 
 /**
+ * The file a gift may link: an available one in the workspace that is not a
+ * person's avatar image (REL-081). An avatar is drawn, not kept, and its
+ * discard deletes the file without asking which gifts point at it, so a gift
+ * that could link one would keep a link to a file that is gone.
+ */
+function attachableFile(
+  command: { readonly fileId: string; readonly workspaceId: string },
+) {
+  return sql`stored.id = ${command.fileId}::uuid
+    and stored.workspace_id = ${command.workspaceId}::uuid
+    and stored.status = 'available'
+    and not exists (
+      select 1 from crm.person_file_links avatar
+      where avatar.file_id = stored.id and avatar.kind = 'avatar'
+    )`;
+}
+
+/**
  * `files` owns the gift-to-file links, not the gift rows themselves. Which
  * gifts a workspace owns is the `gifts` module's question, so it arrives
  * through `GiftAttachmentTarget` rather than a join this module is not allowed
@@ -52,9 +70,7 @@ export class PostgresGiftAttachmentBoundary implements GiftAttachmentBoundary {
     const result = await sql<{ readonly id: string }>`
       select stored.id::text
       from crm.files stored
-      where stored.id = ${command.fileId}::uuid
-        and stored.workspace_id = ${command.workspaceId}::uuid
-        and stored.status = 'available'
+      where ${attachableFile(command)}
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? { status: "ready" } : { status: "not-found" };
   }
@@ -72,9 +88,7 @@ export class PostgresGiftAttachmentBoundary implements GiftAttachmentBoundary {
       insert into crm.gift_file_links (gift_id, file_id, role, sort_order)
       select ${command.giftId}::uuid, stored.id, 'photo', 0
       from crm.files stored
-      where stored.id = ${command.fileId}::uuid
-        and stored.workspace_id = ${command.workspaceId}::uuid
-        and stored.status = 'available'
+      where ${attachableFile(command)}
       returning gift_id::text
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0] ? { status: "attached" } : { status: "not-found" };

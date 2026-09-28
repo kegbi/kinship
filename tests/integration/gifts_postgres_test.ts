@@ -492,6 +492,112 @@ Deno.test("[GAP-023] PostgreSQL pages gifts and debts independently behind bound
   }
 });
 
+// --- REL-081 -------------------------------------------------------------
+
+Deno.test({
+  name:
+    "[GIFTS-001] REL-081 an avatar image is refused as a gift attachment and a document still attaches",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const owner = await register(
+        `gift-avatar-${crypto.randomUUID()}@example.test`,
+        "Gift avatar",
+      );
+      const ada = await createPerson(owner, "Ada");
+      const avatarFileId = crypto.randomUUID();
+      const documentFileId = crypto.randomUUID();
+      await sql`
+        insert into crm.files (
+          id, workspace_id, uploaded_by_member_id, original_filename,
+          storage_provider, storage_bucket, storage_key, byte_size, mime_type,
+          status, visibility
+        ) values
+          (${avatarFileId}::uuid, ${owner.workspaceId}::uuid,
+           ${owner.memberId}::uuid, 'avatar.png', 'test', 'test',
+           ${avatarFileId}, 4, 'image/png', 'available', 'private'),
+          (${documentFileId}::uuid, ${owner.workspaceId}::uuid,
+           ${owner.memberId}::uuid, 'receipt.pdf', 'test', 'test',
+           ${documentFileId}, 4, 'application/pdf', 'available', 'private')
+      `;
+      await sql`
+        insert into crm.person_file_links (person_id, file_id, kind)
+        values
+          (${ada}::uuid, ${avatarFileId}::uuid, 'avatar'),
+          (${ada}::uuid, ${documentFileId}::uuid, 'document')
+      `;
+
+      const refused = await request(
+        owner,
+        `/api/v1/people/${ada}/gifts`,
+        "POST",
+        { attachmentFileId: avatarFileId, name: "Avatar gift", status: "idea" },
+      );
+      await refused.body?.cancel();
+      assert(
+        refused.status === 404,
+        `an avatar image was accepted as a gift attachment: ${refused.status}`,
+      );
+
+      const plain = await request(
+        owner,
+        `/api/v1/people/${ada}/gifts`,
+        "POST",
+        { name: "Plain gift", status: "idea" },
+      );
+      const plainBody = await plain.json() as { gift: { id: string } };
+      assert(plain.status === 201, "a gift without an attachment is created");
+      const boundary = new PostgresGiftAttachmentBoundary(
+        new PostgresGiftAttachmentTarget(),
+      );
+      const actor = {
+        memberId: owner.memberId,
+        role: owner.role,
+        userId: owner.userId,
+        workspaceId: owner.workspaceId,
+      };
+      const direct = await boundary.attachToGift({
+        ...actor,
+        fileId: avatarFileId,
+        giftId: plainBody.gift.id,
+        transaction: { opaque: connection.db },
+      });
+      assert(
+        direct.status === "not-found",
+        `the boundary linked an avatar image to a gift: ${direct.status}`,
+      );
+      const [avatarLinks] = await sql<[{ readonly count: number }]>`
+        select count(*)::int as count from crm.gift_file_links
+        where file_id = ${avatarFileId}::uuid
+      `;
+      assert(avatarLinks?.count === 0, "an avatar image is linked to a gift");
+
+      const attached = await request(
+        owner,
+        `/api/v1/people/${ada}/gifts`,
+        "POST",
+        {
+          attachmentFileId: documentFileId,
+          name: "Documented gift",
+          status: "given",
+        },
+      );
+      const attachedBody = await attached.json() as {
+        gift: { attachmentFileId?: string };
+      };
+      assert(
+        attached.status === 201 &&
+          attachedBody.gift.attachmentFileId === documentFileId,
+        `a person's document no longer attaches to a gift: ${attached.status}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
 Deno.test({
   name: "GIFTS-001 PostgreSQL resources close",
   sanitizeOps: false,

@@ -1145,13 +1145,23 @@ Playwright test carrying its stable flow ID.
       `DELETE` clears them. Give the avatar descriptor a "has a stored image"
       flag and show Remove when it is set (a contract change).
 
-- [ ] **REL-081 — A gift can attach an avatar image and keep a link to it after
+- [x] **REL-081 — A gift can attach an avatar image and keep a link to it after
       the image is removed.** Found reviewing REL-056:
       `gift_attachment_boundary.ts` (`validateForGift`, `attachToGift`) accepts
       any available file in the workspace, avatar images included. The avatar
       discard, like the old generic remove, soft-deletes the file and leaves the
       `crm.gift_file_links` row. Refuse avatar-kind files as gift attachments,
-      or skip files a gift still links.
+      or skip files a gift still links. Delivered 2026-09-28: the gift
+      attachment boundary checked only that a file was available in the
+      workspace. A person's avatar image passed that check, and its later
+      discard deletes the file while leaving the gift's `crm.gift_file_links`
+      row pointing at it. `validateForGift` and `attachToGift` now share one
+      condition, `attachableFile`, which also rejects any file with an
+      avatar-kind `crm.person_file_links` row. An avatar is refused with the
+      same not-found an unusable file already gets, so the API is unchanged. A
+      PostgreSQL integration test proves an avatar file id is refused by both
+      the gift POST and a direct `attachToGift`, leaves no gift link, and that a
+      person's PDF document still attaches.
 
 - [ ] **REL-082 — An archive during an avatar upload's store step leaves an
       orphan.** Found reviewing REL-056: if the person is archived or the member
