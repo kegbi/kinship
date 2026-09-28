@@ -124,6 +124,10 @@ prerequisite queues.
     owed. The product owner accepted local gates as the checkpoint evidence.
   - `REL-055` through `REL-068` and `REL-071` were found on the way and stay
     parked; `REL-069` and `REL-070` are fixed.
+- Remaining-queue decisions (product owner, 2026-09-28): the optional GAP-038
+  visual regression baseline stays unscheduled, and `OPS-001E` and Phase 11 stay
+  parked until a named deployment environment exists. The `REL-059`, `REL-061`,
+  `REL-064`, and `REL-065` decisions are recorded on their items.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
@@ -784,6 +788,8 @@ Playwright test carrying its stable flow ID.
       `manual_attention` email occurrences are missing there. They still show in
       the Today reminders list and on the profile. Include email delivery
       failures in the attention queue, or record the product decision not to.
+      Product-owner decision 2026-09-28: include failed and `manual_attention`
+      email deliveries in the attention queue.
 
 - [x] **REL-060 — A digest's attempt key outlives a failed attempt.** Found
       reviewing GAP-044: `markAttempted` stores the digest key in
@@ -808,7 +814,9 @@ Playwright test carrying its stable flow ID.
       synchronized schema v9 that adds GIN expression indexes on
       `to_tsvector('simple', …)` for `notes`, `activities`, `journal_posts`, and
       `tasks`, with the search SQL using the same expressions. Schedule it after
-      Phase 7 or when real data volumes demand it.
+      Phase 7 or when real data volumes demand it. Product-owner decision
+      2026-09-28: do it now, in one synchronized schema v9 batched with
+      `REL-064`'s table.
 
 - [x] **REL-062 — A search test checks the wrong pool for timeout leaks.**
       `tests/integration/search_postgres_test.ts:531-537` runs
@@ -837,7 +845,9 @@ Playwright test carrying its stable flow ID.
       reviewing GAP-049: two genuinely different people with the same name, or
       sharing a phone number, stay in the directory's duplicates review forever.
       Let a member mark a pair "not duplicates". Where that decision would be
-      stored needs a product and schema decision first.
+      stored needs a product and schema decision first. Product-owner decision
+      2026-09-28: store the decision in a workspace-scoped table in the same
+      schema v9 as `REL-061`, so every member shares it.
 
 - [ ] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
       GAP-050: the Monica, vCard, and CSV commits reuse an earlier import's
@@ -846,7 +856,9 @@ Playwright test carrying its stable flow ID.
       imports the same file again does not get them back; the import reports
       them as reused. GAP-050 kept the Monica behaviour and documents it in
       `IMPORT-002`. Decide whether `exists` should ignore deleted people
-      (recreating them) and change all three formats together.
+      (recreating them) and change all three formats together. Product-owner
+      decision 2026-09-28: keep deleted people deleted in all three formats, and
+      report them as skipped because they were deleted rather than as reused.
 
 - [x] **REL-066 — The bulk tag picker only lists the tag options already
       loaded.** Found reviewing GAP-051: in a workspace with more than 20 tags,
@@ -1052,6 +1064,16 @@ Playwright test carrying its stable flow ID.
       unaffected, and the collision predates REL-057. Make the launcher reject
       `--workers` above 1 when several browsers are selected, or have the spec
       hold a database advisory lock around its insert-and-accept window.
+
+- [ ] **REL-086 — The personalization section links can be clicked before they
+      navigate on Firefox.** Found in the REL-052/REL-056 batch E2E run:
+      `personalization.WORKSPACE-003.spec.ts:195` on Firefox clicked the "Tags"
+      section link and stayed on `?section=profile-modules` for the whole
+      5-second window; the rerun passed and Chromium and WebKit passed. No
+      change in that batch touched the settings page. It is the REL-039 and
+      REL-045 class (a control visible and enabled before its handler is wired);
+      audit the personalization page's section navigation and keep each link
+      inert until its handler attaches.
 
 ## Just-In-Time Technical Capabilities
 
