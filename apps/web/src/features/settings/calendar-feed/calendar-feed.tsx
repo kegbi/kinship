@@ -9,10 +9,17 @@
  * one at a time: while one runs, every feed control is disabled, and the
  * answer is the new state, so nothing is read again. The link a change mints
  * lives only in this island's memory. Focus moves to the link once it is
- * shown, and to "Create calendar feed" once the feed is revoked.
+ * shown, and to "Create calendar feed" once the feed is revoked, in the commit
+ * that shows the change.
  */
 
-import { useEffect, useEffectEvent, useReducer, useRef } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+} from "react";
 import { flushSync } from "react-dom";
 import {
   type ApiResult,
@@ -82,7 +89,11 @@ export function CalendarFeedSettings(
     });
   }, []);
 
-  useEffect(() => {
+  // The one focus owner (REL-070): a layout effect moves focus in the same
+  // commit that shows a change's outcome, so the new status and the new focus
+  // arrive together. A passive effect ran later, whenever the scheduler got
+  // to it, and under load the status was read before focus had moved.
+  useLayoutEffect(() => {
     if (!state.focus) return;
     ({ create: createButton, rotate: rotateButton, url: linkField })[
       state.focus
@@ -224,10 +235,10 @@ export function CalendarFeedSettings(
             <button
               className={buttonVariants({ variant: "outline" })}
               onClick={() => {
-                // The dismissed panel held the focus: hand it to "Rotate link"
-                // inside this click, as REL-051 asks of every island.
+                // The dismissed panel held the focus: committing inside this
+                // click runs the focus owner, which hands it to "Rotate link"
+                // before the click returns, as REL-051 asks of every island.
                 flushSync(() => dispatch({ type: "dismissed" }));
-                rotateButton.current?.focus();
               }}
               type="button"
             >

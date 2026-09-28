@@ -738,6 +738,43 @@ Playwright test carrying its stable flow ID.
       Anyone holding a leaked URL can drive about 50 feed statements per second,
       each allowed up to 1.5 s. Put the path in a stricter per-credential zone.
 
+- [x] **REL-069 — Firefox reports CSP `eval` violations from the Zod chunk.**
+      Found at the Phase 7 checkpoint: `favorites.PEOPLE-010`,
+      `notifications.TODAY-002`, and `people-bulk.PEOPLE-009` failed their CSP
+      guard on Firefox only. Zod 4's object schema reads its cached `allowsEval`
+      probe, a caught `new Function("")`, when the schema is built, not when it
+      first parses, so the probe ran as soon as a page loaded the shared schemas
+      chunk; `/app/people` now loads it statically, and Firefox reports the
+      caught probe as a violation. The web build and the web unit suite now
+      resolve every bare `zod` import, the contract schemas' included, to
+      `apps/web/src/lib/zod-jitless.ts`, which calls
+      `z.config({ jitless: true })` before any importer can build a schema. The
+      API keeps the JIT; it has no CSP. The CSP is unchanged. Jitless parses
+      give the same results: a 50-person directory page, a palette answer, and a
+      50-item notification page each parse in about 0.05 to 0.12 ms.
+      `zod-jitless.test.ts` proves the contract schemas build and parse without
+      one `new Function`.
+
+- [x] **REL-070 — The calendar-feed focus test fails under full-suite load.**
+      Found at the Phase 7 checkpoint: `calendar-feed.test.tsx` saw the "changed
+      in another window" status with focus still on the body. Focus moved in a
+      passive effect, which React schedules as a separate task after the commit
+      that shows the status; under load the scheduler yields between them, so
+      the status was observable before focus moved. The "I have saved it" click
+      also focused "Rotate link" itself, a second owner. A layout effect is now
+      the one focus owner: focus moves in the same commit as the change's
+      status, and the dismiss click commits with `flushSync` so the focus still
+      moves inside the click (REL-051). The suite asserts the focus at the
+      moment the status first reads the new text, which failed every time before
+      the fix.
+
+- [ ] **REL-071 — Some web unit tests depend on their written order.** Found
+      while proving REL-070. Under `vitest --sequence.shuffle`, which also
+      reorders tests inside a file, `theme.test.ts` fails 3 tests and
+      `features/person/workspace.test.ts` throws "window is not defined". The
+      suite runs in written order, so these tests pass today. Make each test set
+      up and reset its own DOM and module state, so any order passes.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

@@ -47,6 +47,26 @@ const button = (name: string) =>
 const link = () =>
   screen.queryByLabelText<HTMLInputElement>("Calendar feed link");
 
+/**
+ * What holds the focus when the status line first reads `text`: the commit
+ * that shows a change's outcome is the one that moves the focus, so a reader
+ * never meets the new status with the focus still on the old control.
+ */
+function focusWhenStatus(text: string): Promise<Element | null> {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (state().textContent !== text) return;
+      observer.disconnect();
+      resolve(document.activeElement);
+    });
+    observer.observe(state(), {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
 function click(name: string): void {
   act(() => {
     fireEvent.click(button(name));
@@ -143,14 +163,12 @@ describe("INTEGRATION-002 calendar feed settings", () => {
     expect(state().textContent).toBe(
       "Calendar feed link rotated. The old link no longer works; copy the new one now.",
     );
-    click("Revoke feed");
-    await waitFor(() =>
-      expect(state().textContent).toBe(
-        "Calendar feed revoked. Its link no longer works.",
-      )
+    const revoked = focusWhenStatus(
+      "Calendar feed revoked. Its link no longer works.",
     );
+    click("Revoke feed");
+    expect(await revoked).toBe(button("Create calendar feed"));
     expect(link()).toBeNull();
-    expect(document.activeElement).toBe(button("Create calendar feed"));
     expect(api.calls().slice(-2)).toEqual([
       "POST /api/v1/settings/calendar-feed/rotation",
       "DELETE /api/v1/settings/calendar-feed",
@@ -223,13 +241,11 @@ describe("INTEGRATION-002 calendar feed settings", () => {
       [ROTATE]: problemResponse(404, { code: "calendar_feed_not_found" }),
     });
     await mount();
-    click("Create calendar feed");
-    await waitFor(() =>
-      expect(state().textContent).toBe(
-        "Your calendar feed changed in another window.",
-      )
+    const changed = focusWhenStatus(
+      "Your calendar feed changed in another window.",
     );
-    expect(document.activeElement).toBe(button("Rotate link"));
+    click("Create calendar feed");
+    expect(await changed).toBe(button("Rotate link"));
     click("Rotate link");
     await waitFor(() =>
       expect(button("Create calendar feed").disabled).toBe(false)

@@ -53,11 +53,17 @@ export default defineConfig({
     },
     resolve: {
       // cmdk's unused Radix Command.Dialog stays out of the bundle; see
-      // cmdk-radix-dialog.mjs.
+      // cmdk-radix-dialog.mjs. Every `zod` import resolves to the JIT-less
+      // Zod the gateway's CSP needs (REL-069); see src/lib/zod-jitless.ts.
       alias: [{
         find: /^@radix-ui\/react-dialog$/,
         replacement: fileURLToPath(
           new URL("./cmdk-radix-dialog.mjs", import.meta.url),
+        ),
+      }, {
+        find: /^zod$/,
+        replacement: fileURLToPath(
+          new URL("./src/lib/zod-jitless.ts", import.meta.url),
         ),
       }],
     },

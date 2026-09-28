@@ -3,11 +3,18 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   // The vendored shadcn/ui components import through the `@/` alias that
-  // `apps/web/tsconfig.json` and `apps/web/components.json` declare.
+  // `apps/web/tsconfig.json` and `apps/web/components.json` declare. Zod
+  // resolves to the web build's JIT-less module (REL-069), as in the browser.
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)),
-    },
+    alias: [{
+      find: "@",
+      replacement: fileURLToPath(new URL("./apps/web/src", import.meta.url)),
+    }, {
+      find: /^zod$/,
+      replacement: fileURLToPath(
+        new URL("./apps/web/src/lib/zod-jitless.ts", import.meta.url),
+      ),
+    }],
   },
   oxc: {
     jsx: { runtime: "automatic", importSource: "react" },
