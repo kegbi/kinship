@@ -90,7 +90,11 @@ function register(label: string): Promise<SignedInFixture> {
   );
 }
 
-/** Every column that references `crm.people`, as `crm.<table>.<column>`. */
+/**
+ * Every column that references `crm.people.id`, as `crm.<table>.<column>`. A
+ * composite key that also matches `people.workspace_id` names only its person
+ * column: the workspace column holds no person.
+ */
 async function peopleForeignKeys(): Promise<readonly string[]> {
   const rows = await sql<{ readonly reference: string }[]>`
     select namespace.nspname || '.' || source.relname || '.' ||
@@ -98,9 +102,15 @@ async function peopleForeignKeys(): Promise<readonly string[]> {
     from pg_constraint constraint_row
     join pg_class source on source.oid = constraint_row.conrelid
     join pg_namespace namespace on namespace.oid = source.relnamespace
+    cross join lateral unnest(constraint_row.conkey, constraint_row.confkey)
+      as pair(source_column, target_column)
+    join pg_attribute target
+      on target.attrelid = constraint_row.confrelid
+      and target.attnum = pair.target_column
+      and target.attname = 'id'
     join pg_attribute attribute
       on attribute.attrelid = constraint_row.conrelid
-      and attribute.attnum = any(constraint_row.conkey)
+      and attribute.attnum = pair.source_column
     where constraint_row.contype = 'f'
       and constraint_row.confrelid = 'crm.people'::regclass
     order by 1
@@ -394,6 +404,24 @@ async function seedEveryReference(
       insert into crm.data_import_entities (
         import_id, source_table, source_primary_key, target_table, target_key
       ) values (${importId}, 'contacts', 'c-1', 'people', ${personId})
+    `;
+    // Two dismissals, one on each side of the pair: ids below and above any
+    // random person's, so the duplicate is the higher of one pair and the
+    // lower of the other, and so is the primary once both are rewritten.
+    const [lowest, highest] = [
+      `00000000${crypto.randomUUID().slice(8)}`,
+      `ffffffff${crypto.randomUUID().slice(8)}`,
+    ];
+    await transaction`
+      insert into crm.people (id, workspace_id, given_name) values
+        (${lowest}, ${workspaceId}, 'Mary'), (${highest}, ${workspaceId}, 'Annabella')
+    `;
+    await transaction`
+      insert into crm.person_duplicate_dismissals (
+        workspace_id, person_low_id, person_high_id
+      ) values
+        (${workspaceId}, ${lowest}, ${personId}),
+        (${workspaceId}, ${personId}, ${highest})
     `;
   });
 }
@@ -855,6 +883,81 @@ Deno.test("[PEOPLE-008] colliding rows keep the primary's and drop the duplicate
   assertEquals(audit?.discarded[1]?.introducedByName, "Howard Aiken");
   assertEquals(audit?.discarded[2]?.source, "external");
   assertEquals(audit?.discarded[3]?.intervalCount, 30);
+});
+
+Deno.test("[PEOPLE-008] a merge keeps the duplicate's not-duplicate decisions on the primary", async () => {
+  const owner = await register("dismissals");
+  const workspaceId = owner.workspaceId;
+  const primary = await addPerson(owner, "Mary Somerville");
+  const duplicate = await addPerson(owner, "Mary Somerville");
+  const [other, both] = [
+    await addPerson(owner, "Mary Shelley"),
+    await addPerson(owner, "Mary Anning"),
+  ];
+  const pair = (a: string, b: string): readonly [string, string] =>
+    a < b ? [a, b] : [b, a];
+  for (
+    const [low, high] of [
+      pair(primary, duplicate),
+      pair(duplicate, other),
+      pair(duplicate, both),
+      pair(primary, both),
+    ]
+  ) {
+    await sql`
+      insert into crm.person_duplicate_dismissals (
+        workspace_id, person_low_id, person_high_id, dismissed_by_member_id
+      ) values (${workspaceId}, ${low}, ${high}, ${owner.memberId})
+    `;
+  }
+
+  const response = await merge(owner, primary, { duplicateId: duplicate });
+  assertEquals(response.status, 200, await response.clone().text());
+
+  const rows = await sql<{
+    readonly high: string;
+    readonly low: string;
+    readonly member: string | null;
+  }[]>`
+    select person_low_id::text as low, person_high_id::text as high,
+      dismissed_by_member_id::text as member
+    from crm.person_duplicate_dismissals
+    where workspace_id = ${workspaceId}
+  `;
+  // The merged pair is gone, the duplicate's decision about `other` is now
+  // the primary's, and `both` is dismissed once.
+  const byPair = (a: { readonly low: string; readonly high: string }, b: {
+    readonly low: string;
+    readonly high: string;
+  }) => `${a.low}${a.high}` < `${b.low}${b.high}` ? -1 : 1;
+  assertEquals(
+    [...rows].sort(byPair),
+    [pair(primary, other), pair(primary, both)]
+      .map(([low, high]) => ({ low, high, member: owner.memberId }))
+      .sort(byPair),
+  );
+  const [audit] = await sql<
+    { readonly high: unknown; readonly low: unknown }[]
+  >`
+    select payload->'tables'->'crm.person_duplicate_dismissals.person_low_id'
+        as low,
+      payload->'tables'->'crm.person_duplicate_dismissals.person_high_id'
+        as high
+    from crm.audit_events
+    where action = 'people.person-merged' and workspace_id = ${workspaceId}
+  `;
+  const moved = [audit?.low, audit?.high] as {
+    readonly relinked: number;
+    readonly removed: number;
+  }[];
+  assertEquals(
+    [
+      moved.reduce((sum, count) => sum + (count?.relinked ?? 0), 0),
+      moved.reduce((sum, count) => sum + (count?.removed ?? 0), 0),
+    ],
+    [1, 2],
+    "one decision rewritten, the merged pair and the repeat dropped",
+  );
 });
 
 Deno.test("[PEOPLE-008] two people who both represent a member are not merged", async () => {

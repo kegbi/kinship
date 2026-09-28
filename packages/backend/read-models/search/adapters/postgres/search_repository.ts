@@ -1,13 +1,23 @@
 /**
  * Workspace search in PostgreSQL (GAP-048).
  *
- * Schema v8 has no full-text or trigram index, and adding one is a schema
- * change, so the text groups run at query time over the existing columns:
- * `to_tsvector('simple', …) @@ websearch_to_tsquery('simple', $query)`. That
- * scans every row of a group in the workspace, so it is its own statement,
- * after people: people search is the directory's own case-insensitive
- * substring match on the workspace-indexed people rows, and a slow text scan
- * can never hold it up. Each statement runs in a read-only transaction under
+ * The text groups match `to_tsvector('simple', …) @@
+ * websearch_to_tsquery('simple', $query)`, and schema v9 indexes each group's
+ * `to_tsvector` expression with GIN (REL-061): `notes_search_idx`,
+ * `activities_search_idx`, `journal_posts_search_idx`, and `tasks_search_idx`.
+ * The planner uses an index only for the identical expression, so each match
+ * below is spelled exactly as its index is — `||` with `coalesce` rather than
+ * `concat_ws`, which is not immutable and cannot be indexed; both give the
+ * same words. The parsed query is read as a scalar subquery, not joined: a
+ * join leaves `@@` a join filter evaluated on every row of the workspace,
+ * while a subquery is an init-plan value the index condition can use. The
+ * planner still chooses by cost, so a workspace with few rows may read them
+ * through its workspace index instead.
+ *
+ * The text groups are still their own statement, after people: people search
+ * is the directory's own case-insensitive substring match on the
+ * workspace-indexed people rows, and a slow text statement can never hold it
+ * up. Each statement runs in a read-only transaction under
  * `SEARCH_STATEMENT_TIMEOUT_MS`; a cancelled one answers `timed-out`.
  *
  * Visibility is each owning module's own listing rule:
@@ -246,7 +256,6 @@ export class PostgresSearchRepository implements SearchRepository {
               row_number() over (order by note.created_at desc, note.id desc)
                 as rank
             from crm.notes note
-            cross join criteria
             join crm.people person on person.id = note.person_id
               and person.workspace_id = note.workspace_id
               and person.deleted_at is null
@@ -255,7 +264,8 @@ export class PostgresSearchRepository implements SearchRepository {
               and profile_module.key = 'notes'
             where note.workspace_id = ${workspace}
               and coalesce(profile_module.is_active, true)
-              and to_tsvector('simple', note.body) @@ criteria.terms
+              and to_tsvector('simple', note.body)
+                @@ (select terms from criteria)
             order by rank
             limit ${limit}
           ) found) as notes,
@@ -275,7 +285,6 @@ export class PostgresSearchRepository implements SearchRepository {
                 order by activity.happened_at desc, activity.id desc
               ) as rank
             from crm.activities activity
-            cross join criteria
             join lateral (
               select person.id, ${displayName("person")} as name,
                 person.archived_at is not null as archived
@@ -293,8 +302,9 @@ export class PostgresSearchRepository implements SearchRepository {
               and profile_module.key = 'activities'
             where activity.workspace_id = ${workspace}
               and coalesce(profile_module.is_active, true)
-              and to_tsvector('simple', concat_ws(' ', activity.summary,
-                activity.description)) @@ criteria.terms
+              and to_tsvector('simple', activity.summary || ' ' ||
+                coalesce(activity.description, ''))
+                @@ (select terms from criteria)
             order by rank
             limit ${limit}
           ) found) as activities,
@@ -308,12 +318,11 @@ export class PostgresSearchRepository implements SearchRepository {
                   item.id desc
               ) as rank
             from crm.journal_posts post
-            cross join criteria
             join crm.journal_items item on item.journal_post_id = post.id
               and item.workspace_id = post.workspace_id
             where post.workspace_id = ${workspace}
-              and to_tsvector('simple', concat_ws(' ', post.title, post.body))
-                @@ criteria.terms
+              and to_tsvector('simple', coalesce(post.title, '') || ' ' ||
+                post.body) @@ (select terms from criteria)
             order by rank
             limit ${limit}
           ) found) as journal_posts,
@@ -336,7 +345,6 @@ export class PostgresSearchRepository implements SearchRepository {
                   else 2 end,
                 task.updated_at desc, task.id desc) as rank
             from crm.tasks task
-            cross join criteria
             left join crm.people person on person.id = task.person_id
               and person.workspace_id = task.workspace_id
               and person.deleted_at is null
@@ -345,8 +353,9 @@ export class PostgresSearchRepository implements SearchRepository {
               and profile_module.key = 'tasks'
             where task.workspace_id = ${workspace}
               and task.deleted_at is null
-              and to_tsvector('simple', concat_ws(' ', task.title,
-                task.description)) @@ criteria.terms
+              and to_tsvector('simple', task.title || ' ' ||
+                coalesce(task.description, ''))
+                @@ (select terms from criteria)
             order by rank
             limit ${limit}
           ) found) as tasks

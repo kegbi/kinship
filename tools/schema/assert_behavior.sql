@@ -12,6 +12,10 @@ DECLARE
   member_a uuid;
   member_b uuid;
   person_a uuid;
+  pair_low uuid;
+  pair_high uuid;
+  person_b uuid;
+  dismissing_member uuid;
   missing_file uuid;
   import_run uuid;
   created_reminder_id uuid;
@@ -365,6 +369,83 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+
+  -- Duplicate dismissals (v9): one canonical row per unordered pair, and
+  -- both people in the row's own workspace.
+  INSERT INTO people (workspace_id, given_name) VALUES (workspace_a, 'Twin')
+  RETURNING id INTO pair_high;
+  SELECT least(person_a, pair_high), greatest(person_a, pair_high)
+  INTO pair_low, pair_high;
+  INSERT INTO people (workspace_id, given_name) VALUES (workspace_b, 'Other')
+  RETURNING id INTO person_b;
+
+  INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+  VALUES (workspace_a, user_b, 'member', now())
+  RETURNING id INTO dismissing_member;
+  INSERT INTO person_duplicate_dismissals (
+    workspace_id, person_low_id, person_high_id, dismissed_by_member_id
+  ) VALUES (workspace_a, pair_low, pair_high, dismissing_member);
+
+  BEGIN
+    INSERT INTO person_duplicate_dismissals (
+      workspace_id, person_low_id, person_high_id
+    ) VALUES (workspace_a, pair_high, pair_low);
+    RAISE EXCEPTION 'duplicate dismissal order was not enforced';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO person_duplicate_dismissals (
+      workspace_id, person_low_id, person_high_id
+    ) VALUES (workspace_a, pair_low, pair_low);
+    RAISE EXCEPTION 'a person was dismissed as their own duplicate';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO person_duplicate_dismissals (
+      workspace_id, person_low_id, person_high_id
+    ) VALUES (workspace_a, pair_low, pair_high);
+    RAISE EXCEPTION 'a pair was dismissed twice';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO person_duplicate_dismissals (
+      workspace_id, person_low_id, person_high_id
+    ) VALUES (
+      workspace_a, least(person_a, person_b), greatest(person_a, person_b)
+    );
+    RAISE EXCEPTION 'a dismissal spanned two workspaces';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO person_duplicate_dismissals (
+      workspace_id, person_low_id, person_high_id
+    ) VALUES (workspace_b, pair_low, pair_high);
+    RAISE EXCEPTION 'a dismissal named another workspace''s people';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  DELETE FROM workspace_members WHERE id = dismissing_member;
+  SELECT count(*) INTO row_count FROM person_duplicate_dismissals
+  WHERE workspace_id = workspace_a AND dismissed_by_member_id IS NULL;
+  IF row_count <> 1 THEN
+    RAISE EXCEPTION 'removing the dismissing member removed the dismissal';
+  END IF;
+
+  DELETE FROM people WHERE id = pair_high;
+  SELECT count(*) INTO row_count FROM person_duplicate_dismissals
+  WHERE workspace_id = workspace_a;
+  IF row_count <> 0 THEN
+    RAISE EXCEPTION 'deleting a person kept % of its dismissals', row_count;
+  END IF;
 
   IF member_b IS NULL OR workspace_b IS NULL THEN
     RAISE EXCEPTION 'secondary workspace fixture was not created';

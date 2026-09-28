@@ -19,7 +19,7 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v8.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v9.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
@@ -33,8 +33,26 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 845 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 845, got %', actual_count;
+  IF actual_count <> 850 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 850, got %', actual_count;
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_catalog.pg_indexes
+    WHERE schemaname = 'crm'
+      AND (indexname, indexdef) IN (
+        ('notes_search_idx',
+          'CREATE INDEX notes_search_idx ON crm.notes USING gin (to_tsvector(''simple''::regconfig, body))'),
+        ('activities_search_idx',
+          'CREATE INDEX activities_search_idx ON crm.activities USING gin (to_tsvector(''simple''::regconfig, ((summary || '' ''::text) || COALESCE(description, ''''::text))))'),
+        ('journal_posts_search_idx',
+          'CREATE INDEX journal_posts_search_idx ON crm.journal_posts USING gin (to_tsvector(''simple''::regconfig, ((COALESCE(title, ''''::text) || '' ''::text) || body)))'),
+        ('tasks_search_idx',
+          'CREATE INDEX tasks_search_idx ON crm.tasks USING gin (to_tsvector(''simple''::regconfig, ((title || '' ''::text) || COALESCE(description, ''''::text))))')
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'full-text search indexes are missing or changed';
   END IF;
 
   IF EXISTS (

@@ -18,7 +18,7 @@ import {
   createWorkspaceSearch,
   type SearchResult,
 } from "../../packages/backend/read-models/search/public.ts";
-import { sql as sqlQuery } from "kysely";
+import { type KyselyPlugin, RawNode, sql as sqlQuery } from "kysely";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { revokeMembership } from "../support/database.ts";
 import {
@@ -499,12 +499,6 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
   const { reader } = await twoWorkspaces("search-timeout");
   const shared = word();
   const person = await addPerson(reader, `Tia ${shared}`);
-  await sql`
-    insert into crm.notes (workspace_id, person_id, body)
-    select ${reader.workspaceId}, ${reader.personId},
-      repeat(md5(series::text) || ' filler words for the scan ', 6)
-    from generate_series(1, 80000) series
-  `;
   const bounded = createWorkspaceSearch({
     actors,
     repository: new PostgresSearchRepository(connection.db, {
@@ -512,8 +506,15 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
     }),
     transaction,
   });
+  // The text groups read their full-text indexes (REL-061), so no fixture of
+  // a sensible size makes them slow. Another transaction holds the notes
+  // table instead: the text statement waits on it past its bound, while
+  // people search never reads notes.
   const partial = ready(
-    await bounded.search(actorOf(reader), { query: shared }),
+    await sql.begin(async (locking) => {
+      await locking`lock table crm.notes in access exclusive mode`;
+      return await bounded.search(actorOf(reader), { query: shared });
+    }),
   );
   assertEquals(ids(partial.people), [person]);
   for (
@@ -626,6 +627,120 @@ Deno.test("[SEARCH-001] a statement that fails for another reason is not a timeo
       (error: unknown) => error,
     );
     assert(failed instanceof Error, "an invalid identifier is thrown");
+  }
+});
+
+/** Every index a plan node scans, at any depth. */
+function scannedIndexes(plan: unknown): readonly string[] {
+  if (Array.isArray(plan)) return plan.flatMap(scannedIndexes);
+  if (typeof plan !== "object" || plan === null) return [];
+  const node = plan as Record<string, unknown>;
+  return [
+    ...(typeof node["Index Name"] === "string" ? [node["Index Name"]] : []),
+    ...Object.values(node).flatMap(scannedIndexes),
+  ];
+}
+
+/**
+ * The plan PostgreSQL chooses for the text statement the repository sends,
+ * captured by explaining that exact statement instead of running it.
+ */
+async function textStatementPlan(
+  command: Parameters<PostgresSearchRepository["searchText"]>[0],
+): Promise<unknown> {
+  const explained = new Set<unknown>();
+  let plan: unknown;
+  const explain: KyselyPlugin = {
+    transformQuery({ node, queryId }) {
+      if (
+        RawNode.is(node) && node.sqlFragments[0]?.includes("with parsed as")
+      ) {
+        explained.add(queryId.queryId);
+        return RawNode.create(
+          [`explain (format json) ${node.sqlFragments[0]}`].concat(
+            node.sqlFragments.slice(1),
+          ),
+          node.parameters,
+        );
+      }
+      return node;
+    },
+    transformResult({ queryId, result }) {
+      if (!explained.has(queryId.queryId)) return Promise.resolve(result);
+      plan = (result.rows[0] as Record<string, unknown>)["QUERY PLAN"];
+      return Promise.resolve({
+        rows: [{ activities: [], journal_posts: [], notes: [], tasks: [] }],
+      });
+    },
+  };
+  const explainer = new PostgresSearchRepository(
+    connection.db.withPlugin(explain),
+  );
+  assertEquals((await explainer.searchText(command)).status, "ready");
+  return plan;
+}
+
+Deno.test("[REL-061] each text group of a large workspace matches through its full-text index", async () => {
+  const { reader } = await twoWorkspaces("search-indexes");
+  // Enough rows in every group that reading the workspace's rows and parsing
+  // each would cost more than the index; the planner chooses by statistics.
+  const rows = 1000;
+  await sql`
+    insert into crm.notes (workspace_id, person_id, body)
+    select ${reader.workspaceId}, ${reader.personId}, 'note ' || md5(n::text)
+    from generate_series(1, ${rows}) n
+  `;
+  await sql`
+    with created as (
+      insert into crm.activities (workspace_id, summary, happened_at)
+      select ${reader.workspaceId}, 'walk ' || md5(n::text), now()
+      from generate_series(1, ${rows}) n
+      returning id
+    )
+    insert into crm.activity_participants (activity_id, person_id)
+    select id, ${reader.personId} from created
+  `;
+  await sql`
+    with created as (
+      insert into crm.journal_posts (workspace_id, body)
+      select ${reader.workspaceId}, 'day ' || md5(n::text)
+      from generate_series(1, ${rows}) n
+      returning id, occurred_at
+    )
+    insert into crm.journal_items (workspace_id, occurred_at, journal_post_id)
+    select ${reader.workspaceId}, occurred_at, id from created
+  `;
+  await sql`
+    insert into crm.tasks (workspace_id, title)
+    select ${reader.workspaceId}, 'call ' || md5(n::text)
+    from generate_series(1, ${rows}) n
+  `;
+  await sql`
+    analyze crm.notes, crm.activities, crm.activity_participants,
+      crm.journal_posts, crm.journal_items, crm.tasks
+  `;
+  const shared = word();
+  const indexes = scannedIndexes(
+    await textStatementPlan({
+      ...actorOf(reader),
+      limit: 5,
+      query: shared,
+      sort: "given-name",
+      terms: [shared],
+    }),
+  );
+  for (
+    const index of [
+      "notes_search_idx",
+      "activities_search_idx",
+      "journal_posts_search_idx",
+      "tasks_search_idx",
+    ]
+  ) {
+    assert(
+      indexes.includes(index),
+      `the text statement does not scan ${index}: ${indexes.join(", ")}`,
+    );
   }
 });
 

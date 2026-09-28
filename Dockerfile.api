@@ -15,6 +15,7 @@ COPY --chown=deno:deno personal-crm-schema/v5 ./personal-crm-schema/v5
 COPY --chown=deno:deno personal-crm-schema/v6 ./personal-crm-schema/v6
 COPY --chown=deno:deno personal-crm-schema/v7 ./personal-crm-schema/v7
 COPY --chown=deno:deno personal-crm-schema/v8 ./personal-crm-schema/v8
+COPY --chown=deno:deno personal-crm-schema/v9 ./personal-crm-schema/v9
 
 USER deno
 RUN DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none --entrypoint apps/api/main.ts apps/worker/main.ts tools/migrations/main.ts

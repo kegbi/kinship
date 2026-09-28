@@ -122,6 +122,23 @@ const SITES = [
   PETS,
 ];
 
+/**
+ * A dismissed pair names the duplicate on either side, and its two people stay
+ * in canonical order, so pointing one column at the primary is not a relink of
+ * its own: `relinkDismissals` rewrites both columns at once.
+ */
+const DISMISSED_LOW: PersonReferenceSite = {
+  column: "person_low_id",
+  table: "crm.person_duplicate_dismissals",
+  workspaceScoped: true,
+};
+const DISMISSED_HIGH: PersonReferenceSite = {
+  column: "person_high_id",
+  table: "crm.person_duplicate_dismissals",
+  workspaceScoped: true,
+};
+const DISMISSALS = [DISMISSED_LOW, DISMISSED_HIGH];
+
 type Command = Parameters<
   PersonMergeRepository["ownTables"]["relinkPerson"]
 >[0];
@@ -252,9 +269,10 @@ export class PostgresPersonMergeRepository implements PersonMergeRepository {
   }
 
   readonly ownTables: PersonMergeRepository["ownTables"] = {
-    countReferences: (command) => countPersonReferences(SITES, command),
+    countReferences: (command) =>
+      countPersonReferences([...SITES, ...DISMISSALS], command),
     module: "people",
-    references: SITES.map(referenceName),
+    references: [...SITES, ...DISMISSALS].map(referenceName),
     relinkPerson: (command) => relinkOwnTables(command),
   };
 
@@ -465,6 +483,64 @@ async function relinkOwnTables(command: Command): Promise<ReferenceOutcome> {
     `,
   );
 
+  const dismissals = await relinkDismissals(command);
   const relinked = await relinkPersonReferences(SITES, command);
-  return { relinked, removed };
+  return {
+    relinked: { ...relinked, ...dismissals.relinked },
+    removed: { ...removed, ...dismissals.removed },
+  };
+}
+
+/**
+ * The duplicate's not-duplicate decisions become the primary's: the merged
+ * pair itself and a pair the primary already has are dropped, and every other
+ * pair is rewritten in canonical order. Each row is counted under the column
+ * that named the duplicate.
+ */
+async function relinkDismissals(command: Command): Promise<ReferenceOutcome> {
+  const db = database(command);
+  const { duplicateId: duplicate, primaryId: primary } = command;
+  const tally = (rows: readonly { readonly from_low: boolean }[]) => ({
+    [referenceName(DISMISSED_LOW)]: rows.filter((row) => row.from_low).length,
+    [referenceName(DISMISSED_HIGH)]: rows.filter((row) => !row.from_low)
+      .length,
+  });
+  const removed = await sql<{ readonly from_low: boolean }>`
+    delete from crm.person_duplicate_dismissals dismissal
+    where dismissal.workspace_id = ${command.workspaceId}::uuid
+      and ${duplicate}::uuid in (dismissal.person_low_id,
+        dismissal.person_high_id)
+      and (
+        ${primary}::uuid in (dismissal.person_low_id, dismissal.person_high_id)
+        or exists (
+          select 1 from crm.person_duplicate_dismissals kept
+          where kept.workspace_id = dismissal.workspace_id
+            and ${primary}::uuid in (kept.person_low_id, kept.person_high_id)
+            and (case when dismissal.person_low_id = ${duplicate}::uuid
+              then dismissal.person_high_id else dismissal.person_low_id end)
+              in (kept.person_low_id, kept.person_high_id)
+        )
+      )
+    returning dismissal.person_low_id = ${duplicate}::uuid as from_low
+  `.execute(db);
+  const relinked = await sql<{ readonly from_low: boolean }>`
+    with moved as (
+      select person_low_id, person_high_id,
+        person_low_id = ${duplicate}::uuid as from_low,
+        case when person_low_id = ${duplicate}::uuid
+          then person_high_id else person_low_id end as other_id
+      from crm.person_duplicate_dismissals
+      where workspace_id = ${command.workspaceId}::uuid
+        and ${duplicate}::uuid in (person_low_id, person_high_id)
+    )
+    update crm.person_duplicate_dismissals dismissal
+    set person_low_id = least(${primary}::uuid, moved.other_id),
+      person_high_id = greatest(${primary}::uuid, moved.other_id)
+    from moved
+    where dismissal.workspace_id = ${command.workspaceId}::uuid
+      and dismissal.person_low_id = moved.person_low_id
+      and dismissal.person_high_id = moved.person_high_id
+    returning moved.from_low
+  `.execute(db);
+  return { relinked: tally(relinked.rows), removed: tally(removed.rows) };
 }

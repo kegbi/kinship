@@ -50,7 +50,7 @@ flows.
 
 | Inventory                    | Current state                                                                                                                                               |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Canonical PostgreSQL schema  | 89 tables and 845 columns; current v8 passed live validation on PostgreSQL 18.4; immutable v6 additionally passed PostgreSQL 17.10 compatibility validation |
+| Canonical PostgreSQL schema  | 90 tables and 850 columns; current v9 passed live validation on PostgreSQL 18.4 and 17.10; immutable v6 also passed PostgreSQL 17.10 compatibility checking |
 | Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                    |
 | Cross-module read models     | 9 accepted, query-only compositions                                                                                                                         |
 | Cataloged pages              | 39                                                                                                                                                          |

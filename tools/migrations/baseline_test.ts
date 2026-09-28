@@ -9,51 +9,25 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v8 migration classifies only exact empty and v1-v8 states", () => {
+Deno.test("schema v9 migration classifies only exact empty and v1-v9 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v8",
-    "empty target applies the full v8 schema",
+      "apply-v9",
+    "empty target applies the full v9 schema",
   );
+  for (
+    const version of ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"] as const
+  ) {
+    assert(
+      decideSchemaAction({ crmSchemaExists: true, state: version }) ===
+        `upgrade-${version}-to-v9`,
+      `exact ${version} target upgrades`,
+    );
+  }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v1" }) ===
-      "upgrade-v1-to-v8",
-    "exact v1 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v2" }) ===
-      "upgrade-v2-to-v8",
-    "exact v2 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v3" }) ===
-      "upgrade-v3-to-v8",
-    "exact v3 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v4" }) ===
-      "upgrade-v4-to-v8",
-    "exact v4 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v5" }) ===
-      "upgrade-v5-to-v8",
-    "exact v5 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v6" }) ===
-      "upgrade-v6-to-v8",
-    "exact v6 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v7" }) ===
-      "upgrade-v7-to-v8",
-    "exact v7 target upgrades",
-  );
-  assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v8" }) ===
-      "verify-v8",
-    "exact v8 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v9" }) ===
+      "verify-v9",
+    "exact v9 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -101,23 +75,23 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v8 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v9 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v8/personal_crm_schema_spec_v8.md",
+    "personal-crm-schema/v9/personal_crm_schema_spec_v9.md",
   );
   assert(
-    specification.includes("SQL tables parsed: **89**") &&
-      specification.includes("SQL columns parsed: **845**") &&
-      specification.includes("Explicit indexes: **149**"),
-    "v8 specification metrics drifted from canonical SQL and validation JSON",
+    specification.includes("SQL tables parsed: **90**") &&
+      specification.includes("SQL columns parsed: **850**") &&
+      specification.includes("Explicit indexes: **154**"),
+    "v9 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v8/personal_crm_schema_v8.sql",
+    "personal-crm-schema/v9/personal_crm_schema_v9.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
       specification.includes("`transactional-failure`"),
-    "v8 omits the redacted post-rollback lifecycle outcome",
+    "v9 omits the redacted post-rollback lifecycle outcome",
   );
   assert(
     sql.includes("reminder_delivery text NOT NULL DEFAULT 'in_app'") &&
@@ -127,6 +101,32 @@ Deno.test("schema v8 specification reports its exact canonical metrics", async (
       sql.includes("  digest_time time,\n") &&
       specification.includes("`reminder_delivery`") &&
       specification.includes("`digest_time`"),
-    "v8 omits the member reminder-delivery preferences",
+    "v9 omits the member reminder-delivery preferences",
   );
+  assert(
+    sql.includes("CREATE TABLE person_duplicate_dismissals (") &&
+      sql.includes("CHECK (person_low_id < person_high_id)") &&
+      sql.includes(
+        "FOREIGN KEY (workspace_id, person_low_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
+      ) &&
+      sql.includes(
+        "FOREIGN KEY (workspace_id, person_high_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
+      ) &&
+      specification.includes("### `person_duplicate_dismissals`"),
+    "v9 omits the workspace-shared duplicate dismissals",
+  );
+  for (
+    const index of [
+      "notes_search_idx ON notes USING gin (to_tsvector('simple', body))",
+      "activities_search_idx ON activities USING gin (to_tsvector('simple', summary || ' ' || coalesce(description, '')))",
+      "journal_posts_search_idx ON journal_posts USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || body))",
+      "tasks_search_idx ON tasks USING gin (to_tsvector('simple', title || ' ' || coalesce(description, '')))",
+    ]
+  ) {
+    assert(
+      sql.includes(`CREATE INDEX ${index};`) &&
+        specification.includes(`CREATE INDEX ${index};`),
+      `v9 omits ${index}`,
+    );
+  }
 });

@@ -26,7 +26,7 @@ Deno.test("[GAP-042] the generated types open with the generator header", () => 
   assert(rendered.startsWith(`${DATABASE_TYPES_HEADER}\n\n`), rendered);
   assert(rendered.endsWith("}\n"), rendered);
   assertIncludes(DATABASE_TYPES_HEADER, "Do not edit.");
-  assertIncludes(DATABASE_TYPES_HEADER, "personal-crm-schema/v8");
+  assertIncludes(DATABASE_TYPES_HEADER, "personal-crm-schema/v9");
   assertEquals(renderDatabaseTypes(body), rendered);
 });
 

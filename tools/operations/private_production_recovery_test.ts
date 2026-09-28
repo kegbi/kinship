@@ -32,7 +32,7 @@ function database(
       effects.restores += 1;
       return Promise.resolve();
     },
-    verifyCanonicalV8: () => Promise.resolve(),
+    verifyCanonicalV9: () => Promise.resolve(),
   };
 }
 

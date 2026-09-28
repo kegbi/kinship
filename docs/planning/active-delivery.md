@@ -825,7 +825,7 @@ Playwright test carrying its stable flow ID.
       is never cleared. A PLANNING-003 integration test covers all three digest
       outcomes. No schema change.
 
-- [ ] **REL-061 — Search needs full-text indexes at scale (schema v9).** At
+- [x] **REL-061 — Search needs full-text indexes at scale (schema v9).** At
       50,000 notes and 50,000 activities per workspace, the text groups of
       `GET /api/v1/search` scan every row and reach GAP-048's 1.5 s statement
       bound, so they answer "temporarily unavailable". A client abort does not
@@ -835,7 +835,17 @@ Playwright test carrying its stable flow ID.
       `tasks`, with the search SQL using the same expressions. Schedule it after
       Phase 7 or when real data volumes demand it. Product-owner decision
       2026-09-28: do it now, in one synchronized schema v9 batched with
-      `REL-064`'s table.
+      `REL-064`'s table. Delivered 2026-09-28 in synchronized schema v9
+      (`personal-crm-schema/v9`, migration `0009`): GIN indexes
+      `notes_search_idx`, `activities_search_idx`, `journal_posts_search_idx`,
+      and `tasks_search_idx` on `to_tsvector('simple', …)`. The three groups
+      that used `concat_ws`, which cannot be indexed, now use the same `||` and
+      `coalesce` form in the index and the search SQL, which yields the same
+      words, and the search reads its parsed query as a scalar subquery so the
+      planner can use the indexes. An integration test runs the production
+      statement under `EXPLAIN` and requires all four indexes. v9 also adds
+      REL-064's table and corrects the `reminder_occurrences.channel` comment;
+      `test:schema:matrix` passes on PostgreSQL 18.4 and 17.10.
 
 - [x] **REL-062 — A search test checks the wrong pool for timeout leaks.**
       `tests/integration/search_postgres_test.ts:531-537` runs
@@ -866,7 +876,11 @@ Playwright test carrying its stable flow ID.
       Let a member mark a pair "not duplicates". Where that decision would be
       stored needs a product and schema decision first. Product-owner decision
       2026-09-28: store the decision in a workspace-scoped table in the same
-      schema v9 as `REL-061`, so every member shares it.
+      schema v9 as `REL-061`, so every member shares it. Schema v9 adds
+      `crm.person_duplicate_dismissals` (a canonical low/high person pair per
+      workspace, with composite same-workspace foreign keys backed by a new
+      `people (workspace_id, id)` unique key), and a merge already relinks a
+      duplicate's dismissals onto the primary. The use case, API, and UI remain.
 
 - [x] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
       GAP-050: the Monica, vCard, and CSV commits reuse an earlier import's
@@ -1138,6 +1152,17 @@ Playwright test carrying its stable flow ID.
       with an inline Today action. The query's `DISTINCT ON` subquery also reads
       all of the member's open deliveries before the 30-day filters apply;
       revisit it with the capacity profile as failed rows accumulate.
+
+- [ ] **REL-089 — The search timeout test would hang rather than fail if the
+      statement bound broke.** Found reviewing schema v9:
+      `[SEARCH-001] a text
+      statement past its timeout …` now forces the
+      timeout by holding an exclusive lock on `crm.notes` in another
+      transaction. If the 40 ms statement bound ever stopped firing, the search
+      would wait on that lock forever and the lock holder on the search. Bound
+      the wait without a longer test timeout, for example by releasing the lock
+      when the search returns or when a watchdog statement in the lock holder
+      observes the search waiting past the bound.
 
 ## Just-In-Time Technical Capabilities
 

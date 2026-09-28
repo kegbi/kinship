@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v8/personal_crm_schema_v8.sql
+schemaSource: personal-crm-schema/v9/personal_crm_schema_v9.sql
 
 # Beside the categories below, reviewed tickets placed four contracts in the
 # kernel: text and value validation (`validation.ts`, GAP-006), the transaction
@@ -161,7 +161,7 @@ modules:
   - id: people
     path: packages/backend/modules/people
     kind: core
-    description: Person identity, profile facts, dates, contact methods, places, work, tags, and pets.
+    description: Person identity, profile facts, dates, contact methods, places, work, tags, pets, and duplicate dismissals.
     ownsTables:
       - people
       - person_avatars
@@ -177,6 +177,7 @@ modules:
       - tags
       - person_tags
       - pets
+      - person_duplicate_dismissals
     publicEntryPoints: [packages/backend/modules/people/public.ts]
     allowedModuleDependencies: [workspaces]
     publishes: [

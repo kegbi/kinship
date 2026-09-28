@@ -14,15 +14,15 @@ deno task test:schema --postgres-image postgres:17.10-alpine3.23
 ```
 
 The runner creates a unique Compose project, verifies every immutable v1 through
-v7 artifact hash and every repository-v8 artifact hash, applies clean v8 in one
-transaction, upgrades exact v1 through v7 through `0002` to `0008`, checks the
+v8 artifact hash and every repository-v9 artifact hash, applies clean v9 in one
+transaction, upgrades exact v1 through v8 through `0002` to `0009`, checks the
 live PostgreSQL catalog and currency reference data, proves failed-migration
 rollback, runs database-enforceable behavior tests, proves teardown/reapply, and
 always removes its containers and temporary storage.
 
 The database tests cover:
 
-- v8 table, column, foreign-key, explicit-index, JSONB, and workspace-field
+- v9 table, column, foreign-key, explicit-index, JSONB, and workspace-field
   counts;
 - exact field-catalog table/column membership and nullability;
 - primary keys, comments, valid indexes, validated constraints, extensions, and
@@ -38,6 +38,9 @@ The database tests cover:
 - exact user-session authority purpose and fail-closed legacy revocation.
 - the 165 synchronized active ISO 4217 currency-reference rows.
 - the member reminder-delivery default and vocabulary constraint.
+- the exact expression of each full-text search index.
+- the canonical order, uniqueness, same-workspace composite foreign keys, and
+  cascades of person duplicate dismissals.
 
 The schema cannot by itself prove application behavior. Cross-workspace
 authorization, recurrence generation across time zones, object-store failure

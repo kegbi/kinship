@@ -28,7 +28,7 @@
  * be told apart from the primary's own, which is why the flow and the
  * confirmation both say so.
  *
- * ## Foreign-key inventory (canonical schema v8)
+ * ## Foreign-key inventory (canonical schema v9)
  *
  * Every column that references the people table, its owner, and its rule. The
  * `person_merge_postgres_test.ts` guard reads `pg_constraint` and fails when a
@@ -45,6 +45,8 @@
  * | `person_occupations.person_id`                   | people        | relink                                                                     |
  * | `person_tags.person_id`                          | people        | relink; a tag the primary has is dropped                                   |
  * | `pets.person_id`                                 | people        | relink                                                                     |
+ * | `person_duplicate_dismissals.person_low_id`      | people        | rewrite in pair order; the merged pair and a pair the primary has dropped  |
+ * | `person_duplicate_dismissals.person_high_id`     | people        | as `person_low_id`                                                         |
  * | `person_file_links.person_id`                    | files         | relink; a file already linked to the primary the same way is dropped       |
  * | `activity_participants.person_id`                | interactions  | relink; an activity the primary is already in is dropped                   |
  * | `calls.person_id`                                | interactions  | relink                                                                     |

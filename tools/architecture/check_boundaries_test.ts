@@ -28,7 +28,7 @@ const ROOT = new URL("../../", import.meta.url);
 const MANIFEST_PATH = "docs/architecture/module-boundaries.yaml";
 const SCHEMA_PATH = "docs/architecture/module-boundaries.schema.json";
 const CANONICAL_SCHEMA_PATH =
-  "personal-crm-schema/v8/personal_crm_schema_v8.sql";
+  "personal-crm-schema/v9/personal_crm_schema_v9.sql";
 const BASELINE_PATH = "tools/architecture/boundary-baseline.json";
 
 // --- Fixtures ------------------------------------------------------------
