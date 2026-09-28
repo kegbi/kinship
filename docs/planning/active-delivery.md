@@ -1036,14 +1036,27 @@ Playwright test carrying its stable flow ID.
       web suite passes in written order, under `--sequence.shuffle` with
       thirteen seeds, and with `-t "UXD-003B"` alone. Test files only.
 
-- [ ] **REL-072 — An ambiguous digest keeps no record of the key it was sent
+- [x] **REL-072 — An ambiguous digest keeps no record of the key it was sent
       under.** Found reviewing REL-060: once a digest ends in
       `manual_attention`, the provider may have delivered it, but the row no
       longer says which idempotency key was used, and the key cannot be
       recomputed because it derives from the digest's full occurrence-ID set,
       which is stored nowhere else. Nothing needs it today. If manual digest
       reconciliation is ever built, record the attempt key in the `failed`
-      delivery audit or in `error` before `finalize` clears it.
+      delivery audit or in `error` before `finalize` clears it. Delivered
+      2026-09-28: the worker knew the key a digest went out under, from
+      `markAttempted` on a fresh send or the occurrence's `attemptKey` on a
+      reconcile, but never gave it to the delivery audit, so once `finalize`
+      cleared `provider_receipt` nothing held it. When an attempt ends in
+      `manual_attention`, the worker now passes that key to the audit, and the
+      `planning.reminder-failed` event stores it as `payload.attemptKey`, with
+      no schema change. Refused and delivered digests and single emails carry
+      none. The key is a SHA-256 of member, date and occurrence IDs, and the
+      audit history already hides every field of this event. A unit test proves
+      the audited key equals the key sent (fresh) and the key reconciled under,
+      and is absent otherwise; an integration test drives a real digest to
+      `manual_attention` and reads the stored key back as the exact key the
+      channel received.
 
 - [ ] **REL-073 — Token authentication still locks the token row on every use.**
       Found reviewing REL-067: `findForAuthentication` takes

@@ -614,6 +614,43 @@ Deno.test("[PLANNING-003] a digest's attempt key does not outlive a failed attem
   assertEquals(delivered?.provider_receipt, "smtp:digest-delivered");
 });
 
+Deno.test("[REL-072] a digest left needing attention keeps its sent key in the failure audit", async () => {
+  const { email, fixture, personId } = await signedUp("digest-attention");
+  await choose(fixture, { digestTime: "00:00", reminderDelivery: "email" });
+  const reminder = await createReminder(fixture, personId, "Attention digest");
+  await sql`
+    update crm.reminder_occurrences
+    set deliver_at = date_trunc('day', now()) - interval '1 hour'
+    where reminder_id = ${reminder.id}::uuid
+  `;
+  // This member's digest leaves, and its answer is lost on the way back.
+  const sentKeys: string[] = [];
+  const lostAnswer: ReminderDeliveryChannel = {
+    reconcile: (command) => mail.reconcile(command),
+    send: (message) => {
+      if (message.to !== email) return mail.send(message);
+      sentKeys.push(message.idempotencyKey);
+      return Promise.reject(new Error("answer lost after DATA"));
+    },
+  };
+  await worker(lostAnswer).tick({
+    limit: 100,
+    maxAttempts: 1,
+    owner: "digest-attention",
+  });
+
+  assertEquals(sentKeys.length, 1, "the digest was sent once");
+  const [state] = await occurrencesOf(reminder.id);
+  assertEquals(state?.status, "manual_attention");
+  assertEquals(state?.provider_receipt, null, "finalize cleared the key");
+  const audits = await sql<{ readonly key: string | null }[]>`
+    select payload ->> 'attemptKey' as key from crm.audit_events
+    where subject_id = ${state!.id}::uuid
+      and action = 'planning.reminder-failed'
+  `;
+  assertEquals(audits.map((audit) => audit.key), sentKeys);
+});
+
 Deno.test("[PLANNING-003] both channels, and an unverified member keeps in-app reminders", async () => {
   const both = await signedUp("email-both");
   await choose(both.fixture, { reminderDelivery: "both" });

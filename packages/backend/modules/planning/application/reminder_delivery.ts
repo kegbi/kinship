@@ -112,6 +112,8 @@ export const EMAIL_ATTEMPT_LEASE_MILLISECONDS = 120_000;
 type Answer =
   | { readonly kind: "answered"; readonly result: ProviderDeliveryResult }
   | {
+    /** The key a digest was sent under, when it was a digest. */
+    readonly attemptKey?: string;
     readonly kind: "recorded";
     readonly recordedIds: ReadonlySet<string>;
     readonly result: ProviderDeliveryResult;
@@ -242,7 +244,14 @@ export function createReminderDeliveryWorker(
         to,
       })
     );
-    return { kind: "recorded", recordedIds, result };
+    return {
+      ...(unit.kind === "digest" && marked.attemptKey
+        ? { attemptKey: marked.attemptKey }
+        : {}),
+      kind: "recorded",
+      recordedIds,
+      result,
+    };
   };
 
   /**
@@ -293,6 +302,13 @@ export function createReminderDeliveryWorker(
             retryBaseMilliseconds: limits.retryBaseMilliseconds,
           });
           const action = deliveryAuditAction(terminal.status);
+          // A digest that may have been delivered keeps, in its audit, the
+          // key it went out under: `finalize` clears it from the occurrence.
+          const attemptKey = terminal.status === "manual_attention"
+            ? answer.kind === "recorded"
+              ? answer.attemptKey
+              : occurrence.attemptKey
+            : undefined;
           const updated = await dependencies.repository.finalize({
             claimToken: occurrence.claimToken,
             id: occurrence.id,
@@ -303,6 +319,7 @@ export function createReminderDeliveryWorker(
           if (updated && action) {
             await dependencies.audit.record({
               action,
+              ...(attemptKey ? { attemptKey } : {}),
               ...(unit.kind === "digest"
                 ? { digestSize: occurrences.filter(owned).length }
                 : {}),

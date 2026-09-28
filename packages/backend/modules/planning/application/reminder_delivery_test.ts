@@ -871,6 +871,61 @@ Deno.test("[PLANNING-003] a digest is reconciled under the key it was sent with"
   ]);
 });
 
+Deno.test("[REL-072] a digest that ends needing attention audits the key it was sent under", async () => {
+  // Sent fresh on its last attempt, the provider's answer is ambiguous.
+  const sent = emailHarness([
+    emailClaim("ada", { attemptCount: 4, digestDate: "2026-10-20" }),
+    emailClaim("grace", { attemptCount: 4, digestDate: "2026-10-20" }),
+  ]);
+  sent.send = () => Promise.reject(new Error("connection lost after DATA"));
+  const fresh = await emailWorker(sent).tick({ owner: "digest" });
+  assertEquals(fresh.results.map((item) => item.status), [
+    "manual_attention",
+    "manual_attention",
+  ]);
+  const key = sent.sent[0]?.idempotencyKey ?? "";
+  assert(/^digest:[0-9a-f]{64}$/.test(key), `digest key was ${key}`);
+  assertEquals(
+    sent.audits.map((audit) => [audit.action, audit.attemptKey]),
+    [["failed", key], ["failed", key]],
+  );
+
+  // Reconciled on its last attempt, the provider still cannot say.
+  const reconciled = emailHarness([
+    emailClaim("ada", {
+      attemptCount: 4,
+      attemptKey: "digest:sent-key",
+      digestDate: "2026-10-20",
+      providerResultState: "ambiguous",
+    }),
+  ]);
+  await emailWorker(reconciled).tick({ owner: "reconcile" });
+  assertEquals(reconciled.events, ["reconcile:digest:sent-key"]);
+  assertEquals(
+    reconciled.audits.map((audit) => [audit.action, audit.attemptKey]),
+    [["failed", "digest:sent-key"]],
+  );
+
+  // A digest the provider refused, or confirmed, owes no reconciliation.
+  const refused = emailHarness([
+    emailClaim("ada", { digestDate: "2026-10-20" }),
+  ]);
+  refused.send = () =>
+    Promise.resolve({ code: "smtp-550", status: "rejected" as const });
+  await emailWorker(refused).tick({ owner: "digest" });
+  const delivered = emailHarness([
+    emailClaim("ada", { digestDate: "2026-10-20" }),
+  ]);
+  await emailWorker(delivered).tick({ owner: "digest" });
+  assertEquals(
+    [...refused.audits, ...delivered.audits].map((audit) => [
+      audit.action,
+      Object.hasOwn(audit, "attemptKey"),
+    ]),
+    [["failed", false], ["delivered", false]],
+  );
+});
+
 Deno.test("[PLANNING-003] after each email the rest of the batch keeps its leases", async () => {
   const harness = emailHarness([
     emailClaim("ada"),

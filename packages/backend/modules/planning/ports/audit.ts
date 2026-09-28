@@ -48,6 +48,12 @@ export interface ReminderAudit {
 export interface ReminderDeliveryAudit {
   record(command: {
     readonly action: "delivered" | "failed";
+    /**
+     * The key a digest was sent under, when it ended needing attention: the
+     * provider may have delivered it, and the key derives from the digest's
+     * occurrence set, which nothing else keeps once `finalize` clears it.
+     */
+    readonly attemptKey?: string;
     /** How many occurrences the digest email carried, for a digest. */
     readonly digestSize?: number;
     readonly occurrence: ClaimedReminderOccurrence;

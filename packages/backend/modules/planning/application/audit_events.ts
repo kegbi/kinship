@@ -66,6 +66,9 @@ export function describeReminderDeliveryEvent(
     occurredAt: command.occurredAt,
     payload: {
       attemptCount: command.occurrence.attemptCount,
+      ...(command.attemptKey === undefined
+        ? {}
+        : { attemptKey: command.attemptKey }),
       channel: command.occurrence.channel,
       ...(command.digestSize === undefined
         ? {}
