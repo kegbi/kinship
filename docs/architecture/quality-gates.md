@@ -200,16 +200,22 @@ explicitly, and `deno.json` keeps an empty `allowScripts`.
 
 ### Accepted dependency advisories
 
-`deno task deps:audit` currently reports five moderate advisories and no high or
+`deno task deps:audit` currently reports two moderate advisories and no high or
 critical ones. They are recorded here rather than silenced:
 
-- three in `hono` < 4.13.5 — a `toSSG()` path escape (no route generates static
-  output through Hono), unbounded dot-notation nesting in `parseBody()` (no
-  handler calls `parseBody`), and a query-parser fragment differential, which is
-  a hardening fix that arrives with the next Hono version;
 - `stream-json` <= 3.4.0 and `decode-uri-component` <= 0.4.2, both transitive
-  through `minio`, which uses them to parse responses from the workspace's own
-  object store rather than untrusted input.
+  through `minio`. `minio` uses `stream-json` only to parse bucket-notification
+  streams from the workspace's own object store, and reaches
+  `decode-uri-component` only through `query-string`'s parser, which it never
+  calls (it only stringifies queries).
+
+Neither has a fix the lockfile can reach. `minio` 8.0.7 is its latest release
+and requires `stream-json` ^1.8.0 and, through `query-string` ^7.1.3,
+`decode-uri-component` ^0.2.2. The fixed releases (`stream-json` 3.5.0,
+`decode-uri-component` 0.5.0) are ESM-only majors, and `stream-json` 3 drops the
+`jsonl/Parser.js` module that `minio` requires on import. Deno reads npm
+`overrides` only from `package.json`, which the Deno tasks deliberately ignore.
+The exception ends when a `minio` release moves to fixed versions.
 
 CI prints the complete report and then fails on high and critical severity only
 (`deno task deps:audit --level=high`). Raising a dependency version is a

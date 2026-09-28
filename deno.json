@@ -83,7 +83,7 @@
   },
   "imports": {
     "@std/yaml": "jsr:@std/yaml@1.2.0",
-    "hono": "npm:hono@4.13.1",
+    "hono": "npm:hono@4.13.5",
     "kysely": "npm:kysely@0.29.4",
     "kysely-codegen": "npm:kysely-codegen@0.20.0",
     "kysely-postgres-js": "npm:kysely-postgres-js@3.0.0",

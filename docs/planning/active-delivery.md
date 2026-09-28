@@ -285,7 +285,7 @@ Playwright test carrying its stable flow ID.
       full rerun; the candidate touched nothing under `apps/web` or
       `tools/e2e.ts`.
 
-- [ ] **REL-035 — Raise the pinned dependencies past the accepted moderate
+- [x] **REL-035 — Raise the pinned dependencies past the accepted moderate
       advisories.** `deno task deps:audit` (GAP-003) reports five moderate
       advisories and no high or critical ones: three in `hono` < 4.13.5 (the
       repository pins 4.13.1), plus `stream-json` <= 3.4.0 and
@@ -295,6 +295,17 @@ Playwright test carrying its stable flow ID.
       Bump `hono` and re-resolve the `minio` graph under the frozen lockfile and
       the 72-hour minimum dependency age, then shrink the exception; the Hono
       contract suites and `deno task test:contract` are the focused gates.
+      Delivered 2026-09-28: `hono` is pinned at 4.13.5 (published 2026-08-26,
+      the lowest fixed release) in `deno.json` and `deno.lock`, which clears its
+      three advisories; the lock changes only Hono's own entry. `minio` 8.0.7 is
+      still its latest release, and the fixes for `stream-json` (3.5.0) and
+      `decode-uri-component` (0.5.0) are ESM-only majors that `minio` cannot
+      load, while Deno ignores `overrides` here. So the `quality-gates.md`
+      exception now lists only those two, with why each is unreachable (`minio`
+      calls only `query-string.stringify` and never `listenBucketNotification`)
+      and when it ends. `deno task deps:audit` cannot run behind this session's
+      TLS proxy; the same npm bulk advisory query went from five moderate
+      advisories to two.
 
 - [ ] **REL-036 — An Astro dev child survived the readiness probe's cleanup
       once.** During the GAP-002 verification on 2026-09-15 a
