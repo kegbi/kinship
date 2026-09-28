@@ -526,15 +526,34 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
   ) {
     assertEquals([group.results.length, group.unavailable], [0, true]);
   }
-  // SET LOCAL ends with the transaction: the pool's connections are clean.
+  // SET LOCAL ends with the transaction: every connection of the pool that ran
+  // the bounded search is clean. `connectDatabase` opens at most eight, and
+  // `DatabaseConnection` does not expose that `max`, so eight are held at once
+  // (distinct backends, asserted below) until each has answered.
+  const poolMax = 8;
+  const held = Promise.withResolvers<void>();
+  let answered = 0;
   const settings = await Promise.all(
     Array.from(
-      { length: 8 },
+      { length: poolMax },
       () =>
-        sql`show statement_timeout`.then((rows) => rows[0]?.statement_timeout),
+        connection.db.connection().execute(async (pooled) => {
+          const { rows: [backend] } = await sqlQuery<{ pid: number }>`
+            select pg_backend_pid() as pid`.execute(pooled);
+          const { rows: [setting] } = await sqlQuery<
+            { statement_timeout: string }
+          >`show statement_timeout`.execute(pooled);
+          if (++answered === poolMax) held.resolve();
+          await held.promise;
+          return { pid: backend?.pid, timeout: setting?.statement_timeout };
+        }),
     ),
   );
-  assert(settings.every((value) => value === "0"), `leaked: ${settings}`);
+  assertEquals(new Set(settings.map(({ pid }) => pid)).size, poolMax);
+  assert(
+    settings.every(({ timeout }) => timeout === "0"),
+    `leaked: ${settings.map(({ timeout }) => timeout)}`,
+  );
   assert(SEARCH_STATEMENT_TIMEOUT_MS === 1500, "the production bound");
   const { reader: other } = await twoWorkspaces("search-after-timeout");
   const after = ready(await search.search(actorOf(other), { query: "Reader" }));

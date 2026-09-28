@@ -789,12 +789,17 @@ Playwright test carrying its stable flow ID.
       `tasks`, with the search SQL using the same expressions. Schedule it after
       Phase 7 or when real data volumes demand it.
 
-- [ ] **REL-062 — A search test checks the wrong pool for timeout leaks.**
+- [x] **REL-062 — A search test checks the wrong pool for timeout leaks.**
       `tests/integration/search_postgres_test.ts:531-537` runs
       `show statement_timeout` on eight connections of the helper's separate
       client, not `connection.db`, the pool that ran the transaction-local
       bound. There is no leak today, because the bound is transaction-scoped.
-      Run the parallel check through `connection.db`.
+      Run the parallel check through `connection.db`. Delivered 2026-09-28: the
+      check holds eight `connection.db.connection()` reservations at once (the
+      pool's `max`), asserts eight distinct backend pids, and reads
+      `statement_timeout` on each, so it covers every pooled connection. With
+      the bound made session-scoped the new check fails (`leaked: 40ms,…`) where
+      the old one passed. No production change.
 
 - [x] **REL-063 — A merged duplicate's unused avatar image is never reclaimed.**
       Found reviewing GAP-049: when the primary keeps its own avatar, the
@@ -1007,6 +1012,15 @@ Playwright test carrying its stable flow ID.
       discard (`.catch(() => undefined)`), and the composition bridge ignores an
       `unavailable` answer, so a leftover image is visible only in the database.
       Emit a redacted structured log or counter through a logger port.
+
+- [ ] **REL-084 — The search pool-leak check can hang instead of failing.**
+      Found reviewing REL-062: the check in `search_postgres_test.ts` holds a
+      hard-coded eight reservations behind a barrier. If `connectDatabase`'s
+      `max` drops below eight the extra reservations wait forever, if it rises
+      the check covers only part of the pool, and if one query throws the other
+      seven keep their connections. Export one pool-size constant from
+      `platform/postgres/database.ts` for both, and release the barrier on the
+      first error.
 
 ## Just-In-Time Technical Capabilities
 
