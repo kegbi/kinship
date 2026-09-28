@@ -20,6 +20,7 @@ import {
   mountPending,
   mountSettled,
 } from "../../testing/render.tsx";
+import { SEARCH_DEBOUNCE_MS } from "./global-people-search.tsx";
 import {
   GLOBAL_PEOPLE_SEARCH_ISLAND,
   mountGlobalPeopleSearch,
@@ -209,6 +210,21 @@ function type(value: string): void {
   });
 }
 
+/**
+ * Types a workspace query and lets its debounce elapse on a fake clock, so a
+ * case does not wait the real {@link SEARCH_DEBOUNCE_MS} for each query.
+ */
+async function search(value: string): Promise<void> {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    type(value);
+    await act(() => vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS));
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 function key(target: EventTarget, init: KeyboardEventInit): KeyboardEvent {
   const event = new KeyboardEvent("keydown", {
     bubbles: true,
@@ -253,7 +269,7 @@ describe("UXD-004 global people search", () => {
       );
       stubPeople([directoryPerson(adaId, "Ada", "Lovelace", "Countess")]);
       await mount();
-      type(query);
+      await search(query);
       await waitFor(() =>
         expect(optionNames()).toEqual(["Lovelace Ada “Countess”"])
       );
@@ -302,7 +318,7 @@ describe("UXD-004 global people search", () => {
         expect.anything(),
       )
     );
-    type("Grace");
+    await search("Grace");
     await waitFor(() => expect(optionNames()[0]).toBe("Grace Hopper"));
     await act(async () => {
       pending.resolve(jsonResponse({
@@ -330,7 +346,7 @@ describe("UXD-004 global people search", () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     await waitFor(() => expect(optionNames()).toEqual(["Lovelace Ada"]));
-    type("Ada");
+    await search("Ada");
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
     expect(optionNames()[0]).toBe("Lovelace Ada");
     expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
@@ -344,7 +360,7 @@ describe("UXD-004 global people search", () => {
     }]);
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
-    type("Ada");
+    await search("Ada");
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
     const [person, add] = screen.getAllByRole("option");
     const avatar = person!.querySelector<HTMLElement>("[data-slot=avatar]")!;
@@ -376,7 +392,7 @@ describe("UXD-004 global people search", () => {
     type("> zzz");
     expect(screen.getByText("No commands match")).toBeTruthy();
     expect(screen.queryByText(NOTHING_MATCHES)).toBeNull();
-    type("zzz");
+    await search("zzz");
     await waitFor(() => expect(screen.getByText(NOTHING_MATCHES)).toBeTruthy());
     expect(screen.queryByText("No commands match")).toBeNull();
     // Empty copy is not an alert.
@@ -434,7 +450,7 @@ describe("UXD-004 global people search", () => {
     markup();
     stubPeople([]);
     const unmount = await mount();
-    type("task");
+    await search("task");
     await waitFor(() => expect(statusLine()).toBe("0 people found"));
     expect(optionNames()).toEqual([
       'Add "task" as a new person',
@@ -446,7 +462,7 @@ describe("UXD-004 global people search", () => {
     markup();
     stubPeople([directoryPerson(adaId, "Task", "Master")]);
     await mount();
-    type("task");
+    await search("task");
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
     expect(optionNames()).toEqual([
       "Task Master",
@@ -562,7 +578,7 @@ describe("UXD-004 global people search", () => {
     ]);
     const navigate = vi.fn();
     await mount(navigate);
-    type("a");
+    await search("a");
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
     const options = screen.getAllByRole("option");
     const listbox = screen.getByRole("listbox", {
@@ -597,7 +613,7 @@ describe("UXD-004 global people search", () => {
     stubPeople([]);
     const navigate = vi.fn();
     await mount(navigate);
-    type("Marie Dupont");
+    await search("Marie Dupont");
     const add = await screen.findByRole("option", {
       name: 'Add "Marie Dupont" as a new person',
     });
@@ -612,7 +628,7 @@ describe("UXD-004 global people search", () => {
     expect(destination.searchParams.get("familyName")).toBe("Dupont");
 
     await waitFor(() => expect(palette()).toBeNull());
-    type("Prince");
+    await search("Prince");
     fireEvent.click(
       await screen.findByRole("option", {
         name: 'Add "Prince" as a new person',
@@ -677,7 +693,7 @@ describe("UXD-004 global people search", () => {
     );
     expect(problem.getAttribute("role")).toBeNull();
     expect(statusLine()).toBe("Search is temporarily unavailable");
-    type("A");
+    await search("A");
     await waitFor(() =>
       expect(screen.getByText(
         "Search is temporarily unavailable. Try again.",
@@ -863,7 +879,7 @@ describe("SEARCH-001 workspace search groups", () => {
       groups,
     );
     await mount();
-    type("river");
+    await search("river");
     await waitFor(() =>
       expect(statusLine()).toBe(
         "1 person, 1 note, 1 activity, 1 journal post, and 1 task found",
@@ -904,7 +920,7 @@ describe("SEARCH-001 workspace search groups", () => {
     stubPeople([], [], undefined, groups);
     const navigate = vi.fn();
     await mount(navigate);
-    type("river");
+    await search("river");
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(5));
     const options = screen.getAllByRole("option");
     await waitFor(() =>
@@ -920,7 +936,7 @@ describe("SEARCH-001 workspace search groups", () => {
     expect(navigate).toHaveBeenCalledWith(`/app/journal/${itemId}`);
     await waitFor(() => expect(palette()).toBeNull());
 
-    type("river");
+    await search("river");
     fireEvent.click(
       await screen.findByRole("option", { name: /Loves the/ }),
     );
@@ -935,9 +951,9 @@ describe("SEARCH-001 workspace search groups", () => {
     const api = stubPeople([], [], undefined, groups);
     api.route("GET /api/v1/search?q=Ada", late.promise);
     await mount();
-    type("Ada");
+    await search("Ada");
     await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));
-    type("river");
+    await search("river");
     await waitFor(() => expect(optionNames()).toContain("River walk"));
     await act(async () => {
       late.resolve(jsonResponse(searchBody("Ada", [
@@ -963,7 +979,7 @@ describe("SEARCH-001 workspace search groups", () => {
       unavailable: true,
     });
     await mount();
-    type("Ada");
+    await search("Ada");
     await waitFor(() =>
       expect(screen.getByText("Other results are temporarily unavailable."))
         .toBeTruthy()
@@ -996,7 +1012,7 @@ describe("SEARCH-001 workspace search groups", () => {
     });
     const api = stubPeople();
     await mount();
-    type("Ada");
+    await search("Ada");
     await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));
     expect(peopleRequests(api)[0]?.url.searchParams.get("sort")).toBe(
       "family-name",

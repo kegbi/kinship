@@ -548,7 +548,7 @@ Playwright test carrying its stable flow ID.
       and the `createPerson` helpers in `app-004d` and `app-005a` wait for it
       before leaving. No assertion changed and no retry, sleep, or timeout was
       added.
-- [ ] **REL-047 — Web unit tests near the 5-second limit time out under machine
+- [x] **REL-047 — Web unit tests near the 5-second limit time out under machine
       load.** On 2026-09-26, while Docker builds and a second vitest run shared
       the machine, `apps/web/src/features/person/facts/fact-editor.test.tsx`
       timed out in one to five of its
@@ -601,7 +601,17 @@ Playwright test carrying its stable flow ID.
       test that asserted the old no-op now asserts the open editor; the one that
       focused an always-hidden shell field is replaced by the REL-049 tests. No
       `app-006b` spec exists any more, and no E2E spec exercises the first-run
-      actions.
+      actions. Delivered 2026-09-28: measured idle, the named fact-editor cases
+      take about 0.3 s here (and on `f18ff843`), so the 1.8 s came from a busier
+      machine; a shorter neighbouring draft still asserted exactly trims them to
+      about 0.2 s. The real waste was `global-people-search.test.tsx` waiting
+      out the island's real 200 ms debounce in 16 cases: a `search` helper now
+      advances fake `setTimeout` by exactly `SEARCH_DEBOUNCE_MS` and asserts no
+      timer is left, taking the file from 5.2 s to 1.2 s, while the dedicated
+      debounce test is unchanged. The APR-008 case now lives in
+      `workspace.test.ts`, whose one-time section loads `REL-071` moved into
+      `beforeEach`. No timeout was raised; the slowest web test is now under 1 s
+      idle.
 
 - [x] **REL-050 — Specs still leave a person workspace they just reached before
       it settles.** Main CI run `36276307459` on `9aa51fc` (a documentation-only
@@ -1095,7 +1105,9 @@ Playwright test carrying its stable flow ID.
       the third read in `notification-bell.test.tsx` (around lines 221–231) can
       land between the `waitFor` that sees "1 unread" and the late answer's
       release, so the check that the badge still reads one unread could fail.
-      Drive the interval with fake timers or gate the third answer.
+      Drive the interval with fake timers or gate the third answer. The same
+      file also sleeps 120 ms and 100 ms on real timers (around lines 272 and
+      342); move those to fake timers too.
 
 ## Just-In-Time Technical Capabilities
 

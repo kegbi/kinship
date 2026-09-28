@@ -426,7 +426,7 @@ describe("GAP-029 fact editor", () => {
       const neighbor = formOf("pets");
       await waitFor(() => expect(neighbor.hidden).toBe(false));
       const draft = within_("pets").getByLabelText("Pet notes");
-      await user.type(draft, "Draft made while the other section retries");
+      await user.type(draft, "Pet draft");
       await act(async () => {
         pending.resolve(
           outcome === "success" ? factRead([updated]) : problemResponse(503),
@@ -440,9 +440,7 @@ describe("GAP-029 fact editor", () => {
       );
       expect(formOf("food-preferences").hidden).toBe(true);
       expect(neighbor.hidden).toBe(false);
-      expect((draft as HTMLTextAreaElement).value).toBe(
-        "Draft made while the other section retries",
-      );
+      expect((draft as HTMLTextAreaElement).value).toBe("Pet draft");
       expect(confirm).not.toHaveBeenCalled();
       expect(add.disabled).toBe(false);
       if (outcome === "failure") expect(retry.disabled).toBe(false);
