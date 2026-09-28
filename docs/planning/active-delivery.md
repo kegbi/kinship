@@ -1109,7 +1109,7 @@ Playwright test carrying its stable flow ID.
       run and in any test order (eight shuffle seeds), and removing the early
       return fails the test. Test file only.
 
-- [ ] **REL-076 — An archive and restore during a life-event save allows two
+- [x] **REL-076 — An archive and restore during a life-event save allows two
       saves in flight.** Found reviewing REL-055: save A in flight, the person
       is archived from another island (the editor closes) and restored, and the
       member opens Add and submits B. A late `saved` for A then closes B early,
@@ -1118,7 +1118,18 @@ Playwright test carrying its stable flow ID.
       Very unlikely. Fix by keeping opening locked through an archive until the
       pending save answers, or by giving each editor an id that `saved` and
       `save-failed` must match (the existing `generation` would do if it stopped
-      resetting when the editor closes).
+      resetting when the editor closes). Delivered 2026-09-28 with `REL-079`:
+      the editor's `generation` restarted from the open editor, so it reset once
+      an archive closed the editor and the reducer's "answer only the busy
+      editor" check could not tell save A's late answer from editor B's. The
+      reducer now keeps an `opened` counter, so generations never repeat, and
+      the island records the saving editor's generation, which `saved` and
+      `save-failed` carry. A's late answer only merges its event into the list
+      and leaves B open, busy and locked, and B's own refusal still shows in B.
+      Table-driven reducer tests and two component tests through the real island
+      (A refused then B refused; A saved while B is in flight) cover the race,
+      and opening a new editor during a pending save after a failed read still
+      works as REL-055 intended.
 
 - [ ] **REL-077 — The bulk tag picker's close-while-loading path has no
       regression test, and "More tags" can drop focus while it loads.** Found
@@ -1139,12 +1150,21 @@ Playwright test carrying its stable flow ID.
       repeats its last stubbed answer when its 40 ms interval ticks a fourth
       time under load.
 
-- [ ] **REL-079 — The life-events island can lose its status live region.**
+- [x] **REL-079 — The life-events island can lose its status live region.**
       Found reviewing REL-052: like the islands REL-052 fixed, the life-events
       island renders its `.section-state` line only when its zone activates, so
       a zone opened after the workspace settles announces without a live region.
       Pass `statusRegion(props)` at mount and spread it on the line, as REL-052
-      does, with a two-mode island test.
+      does, with a two-mode island test. Delivered 2026-09-28 with `REL-076`:
+      the life-events island was the one person section REL-052 left out; it
+      drew its `.section-state` line with no role, so a Timeline zone opened
+      after the workspace's one-time promotion announced its load and save
+      results without a live region. `mountPersonLifeEvents` now passes the
+      shared `statusRegion(props)` helper, read once at mount, and the island
+      spreads it on `[data-life-event-state]`, so the line is live from its
+      first render when mounted late and stays inert for the silent first load.
+      A two-mode island test (`statesLive` false/true) checks `role`/`aria-live`
+      on the first commit and that the same line announces the answer.
 
 - [x] **REL-080 — The web UI cannot remove a quarantined or held avatar.** Found
       reviewing REL-056: `avatar-editor.tsx` shows "Remove avatar" only when the

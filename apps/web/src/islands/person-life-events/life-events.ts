@@ -189,7 +189,11 @@ export const lifeEventForm = z.preprocess(
 export type FocusTarget = "state" | "form-state" | "field" | "add";
 
 export interface LifeEventEditor {
-  /** Bumped on every open, so the fields start from the opened event. */
+  /**
+   * Bumped on every open and never reused, even after the editor closes, so
+   * the fields start from the opened event and a save's answer names the
+   * editor that sent it (REL-076).
+   */
   readonly generation: number;
   /** The event being edited; absent for a new one. */
   readonly event?: PersonLifeEvent;
@@ -219,6 +223,8 @@ export interface LifeEventsState {
   /** The event being removed. */
   readonly removing?: string;
   readonly editor?: LifeEventEditor;
+  /** The generation of the last editor opened, open or not. */
+  readonly opened: number;
   readonly focus?: { readonly target: FocusTarget; readonly tick: number };
 }
 
@@ -239,8 +245,12 @@ export type LifeEventsAction =
   | { readonly type: "open"; readonly event?: PersonLifeEvent }
   | { readonly type: "close"; readonly focus?: boolean }
   | { readonly type: "saving" }
-  | { readonly type: "save-failed" }
-  | { readonly type: "saved"; readonly event: PersonLifeEvent }
+  | { readonly type: "save-failed"; readonly generation: number }
+  | {
+    readonly type: "saved";
+    readonly event: PersonLifeEvent;
+    readonly generation: number;
+  }
   | { readonly type: "confirm"; readonly id: string }
   | { readonly type: "remove"; readonly id: string }
   | { readonly type: "remove-failed"; readonly message: string }
@@ -254,6 +264,7 @@ export function initialLifeEventsState(
     archived,
     events: [],
     initial: true,
+    opened: 0,
     status: hidden ? "hidden" : "loading",
     types: [],
   };
@@ -337,6 +348,14 @@ function withoutEditor(state: LifeEventsState): LifeEventsState {
   return rest;
 }
 
+/** Whether the open editor is the one whose save `generation` answers. */
+function sending(
+  state: LifeEventsState,
+  generation: number,
+): state is LifeEventsState & { readonly editor: LifeEventEditor } {
+  return state.editor?.busy === true && state.editor.generation === generation;
+}
+
 export function lifeEventsReducer(
   state: LifeEventsState,
   action: LifeEventsAction,
@@ -370,9 +389,10 @@ export function lifeEventsReducer(
         editor: {
           busy: false,
           ...(action.event ? { event: action.event } : {}),
-          generation: (state.editor?.generation ?? 0) + 1,
+          generation: state.opened + 1,
         },
         focus: focus(state, "field"),
+        opened: state.opened + 1,
       });
     case "close": {
       const next = withoutEditor(state);
@@ -383,9 +403,10 @@ export function lifeEventsReducer(
         ? { ...state, editor: { ...state.editor, busy: true } }
         : state;
     // A save answers only the busy editor that sent it; an editor opened
-    // after that one closed (a failed read, an archive) is left alone.
+    // after that one closed (a failed read, an archive) is left alone, even
+    // while it saves too (REL-076).
     case "save-failed":
-      return state.editor?.busy
+      return sending(state, action.generation)
         ? {
           ...state,
           editor: { ...state.editor, busy: false },
@@ -396,7 +417,7 @@ export function lifeEventsReducer(
       const { event } = action;
       const others = state.events.filter((item) => item.id !== event.id);
       const events = sortLifeEvents([...others, event]);
-      return state.editor && !state.editor.busy
+      return state.editor && !sending(state, action.generation)
         ? redrawn(state, { events })
         : redrawn(withoutEditor(state), {
           events,

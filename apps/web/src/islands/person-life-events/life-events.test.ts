@@ -230,13 +230,18 @@ describe("JOURNAL-002 life-event reducer", () => {
     );
     const busy = lifeEventsReducer(editing, { type: "saving" });
     expect(busy.editor?.busy).toBe(true);
-    const refused = lifeEventsReducer(busy, { type: "save-failed" });
+    const { generation } = editing.editor!;
+    const refused = lifeEventsReducer(busy, {
+      generation,
+      type: "save-failed",
+    });
     expect(refused.editor?.busy).toBe(false);
     expect(refused.focus?.target).toBe("form-state");
     const saved = lifeEventsReducer(
       lifeEventsReducer(refused, { type: "saving" }),
       {
         event: event({ name: "Moved to Porto" }),
+        generation,
         type: "saved",
       },
     );
@@ -245,6 +250,7 @@ describe("JOURNAL-002 life-event reducer", () => {
     expect(saved.focus?.target).toBe("state");
     const added = lifeEventsReducer(saved, {
       event: event({ date: { precision: "year", year: 2024 }, id: "new" }),
+      generation,
       type: "saved",
     });
     expect(added.events.map((item) => item.id)).toEqual(["new", event().id]);
@@ -261,7 +267,9 @@ describe("JOURNAL-002 life-event reducer", () => {
     expect(quietly.editor).toBeUndefined();
     expect(quietly.focus?.target).toBe("field");
     expect(lifeEventsReducer(added, { type: "saving" })).toBe(added);
-    expect(lifeEventsReducer(added, { type: "save-failed" })).toBe(added);
+    expect(lifeEventsReducer(added, { generation, type: "save-failed" })).toBe(
+      added,
+    );
   });
 
   it("removes an event only on a confirming second press", () => {
@@ -311,7 +319,11 @@ describe("JOURNAL-002 life-event reducer", () => {
       type: "open",
     });
     expect(opened.removing).toBe("b");
-    const saved = lifeEventsReducer(opened, { event: event(), type: "saved" });
+    const saved = lifeEventsReducer(opened, {
+      event: event(),
+      generation: opened.editor!.generation,
+      type: "saved",
+    });
     expect(saved.removing).toBe("b");
     expect(rowControlsDisabled(saved, "b")).toEqual({
       edit: true,
@@ -367,13 +379,16 @@ describe("JOURNAL-002 life-event reducer", () => {
     const opened = lifeEventsReducer(ready(), { type: "open" });
     expect(editorOpeningDisabled(opened)).toBe(false);
     const busy = lifeEventsReducer(opened, { type: "saving" });
+    const { generation } = busy.editor!;
     expect(editorOpeningDisabled(busy)).toBe(true);
     expect(
-      editorOpeningDisabled(lifeEventsReducer(busy, { type: "save-failed" })),
+      editorOpeningDisabled(
+        lifeEventsReducer(busy, { generation, type: "save-failed" }),
+      ),
     ).toBe(false);
     expect(
       editorOpeningDisabled(
-        lifeEventsReducer(busy, { event: event(), type: "saved" }),
+        lifeEventsReducer(busy, { event: event(), generation, type: "saved" }),
       ),
     ).toBe(false);
   });
@@ -399,14 +414,18 @@ describe("JOURNAL-002 life-event reducer", () => {
       ),
       { event: event(), type: "open" },
     );
+    const { generation } = busy.editor!;
     const late = lifeEventsReducer(reopened, {
       event: event({ id: "new", name: "Late" }),
+      generation,
       type: "saved",
     });
     expect(late.editor).toBe(reopened.editor);
     expect(late.focus).toBe(reopened.focus);
     expect(late.events.map((item) => item.id)).toContain("new");
-    expect(lifeEventsReducer(reopened, { type: "save-failed" })).toBe(
+    expect(
+      lifeEventsReducer(reopened, { generation, type: "save-failed" }),
+    ).toBe(
       reopened,
     );
   });
@@ -425,5 +444,59 @@ describe("JOURNAL-002 life-event reducer", () => {
       lifeEventsReducer(archived, { archived: false, type: "lifecycle" })
         .archived,
     ).toBe(false);
+  });
+});
+
+describe("REL-076 a save answers only the editor that sent it", () => {
+  // Save A is in flight when the person is archived (the editor closes) and
+  // restored, and the member opens and submits B.
+  const sentA = lifeEventsReducer(
+    lifeEventsReducer(ready(), { type: "open" }),
+    { type: "saving" },
+  );
+  const a = sentA.editor!.generation;
+  const sentB = lifeEventsReducer(
+    lifeEventsReducer(
+      lifeEventsReducer(
+        lifeEventsReducer(sentA, { archived: true, type: "lifecycle" }),
+        { archived: false, type: "lifecycle" },
+      ),
+      { type: "open" },
+    ),
+    { type: "saving" },
+  );
+  const b = sentB.editor!.generation;
+  const saved = event({ id: "saved", name: "Saved" });
+
+  it("never reuses a closed editor's generation", () => {
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it.each(
+    [
+      ["A's late save", "busy", { event: saved, generation: a, type: "saved" }],
+      ["A's late refusal", "busy", { generation: a, type: "save-failed" }],
+      ["B's save", "closed", { event: saved, generation: b, type: "saved" }],
+      ["B's refusal", "refused", { generation: b, type: "save-failed" }],
+    ] as const,
+  )("%s leaves B %s", (_name, outcome, action) => {
+    const next = lifeEventsReducer(sentB, action);
+    expect(editorOpeningDisabled(next)).toBe(outcome === "busy");
+    expect(rowControlsDisabled(next, event().id).edit).toBe(
+      outcome === "busy",
+    );
+    if (outcome === "busy") {
+      expect(next.editor).toBe(sentB.editor);
+      expect(next.focus).toBe(sentB.focus);
+    } else if (outcome === "closed") {
+      expect(next.editor).toBeUndefined();
+      expect(next.focus?.target).toBe("state");
+    } else {
+      expect(next.editor).toEqual({ ...sentB.editor, busy: false });
+      expect(next.focus?.target).toBe("form-state");
+    }
+    if (action.type === "saved") {
+      expect(next.events.map((item) => item.id)).toContain("saved");
+    }
   });
 });

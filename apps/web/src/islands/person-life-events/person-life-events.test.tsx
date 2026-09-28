@@ -6,13 +6,19 @@ import type { PersonLifeEvent } from "../../../../../packages/contracts/generate
 import { SECTION_HIDDEN_EVENT } from "../../features/person/sections.ts";
 import { expectNoAxeViolations } from "../../testing/a11y.ts";
 import {
+  deferred,
   jsonResponse,
   problemResponse,
   stubApi,
   unreachable,
 } from "../../testing/api.ts";
 import { ids, personProfile, sectionProps } from "../../testing/fixtures.ts";
-import { drawShell, element, mountSection } from "../../testing/render.tsx";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSection,
+} from "../../testing/render.tsx";
 import { mountPersonLifeEvents } from "./mount.tsx";
 
 const { person: personId, workspace: workspaceId } = ids;
@@ -619,4 +625,112 @@ describe("JOURNAL-002 maintaining a person's life events", () => {
         .map((option) => option.textContent),
     ).toEqual(["No type", "Relocation"]);
   });
+});
+
+describe("REL-076 a late save across an archive and restore", () => {
+  /**
+   * Submits A, archives and restores the person (A's editor closes), then
+   * opens and submits B; answers `release[0]` for A and `release[1]` for B.
+   */
+  async function saveAcrossArchive() {
+    markup();
+    const release: ((response: Response) => void)[] = [];
+    const pending = () =>
+      new Promise<Response>((resolve) => release.push(resolve));
+    stubApi({ [LIFE_EVENTS]: listed([]), [CREATE]: [pending, pending] });
+    await mount();
+    const lifecycle = (archived: boolean) =>
+      act(() => {
+        document.dispatchEvent(
+          new CustomEvent("person-lifecycle-changed", {
+            detail: { archived, personId },
+          }),
+        );
+      });
+    const user = userEvent.setup();
+    for (const [index, name] of ["First", "Second"].entries()) {
+      await user.click(add());
+      await user.type(within(form()).getByLabelText("Name"), name);
+      fireEvent.submit(form());
+      await waitFor(() => expect(release).toHaveLength(index + 1));
+      if (index === 0) {
+        lifecycle(true);
+        expect(editorOpen()).toBe(false);
+        lifecycle(false);
+      }
+    }
+    await waitFor(() => expect(form().getAttribute("aria-busy")).toBe("true"));
+    return async (index: number, response: Response) => {
+      await act(async () => {
+        release[index]?.(response);
+        await Promise.resolve();
+      });
+    };
+  }
+
+  it("A's late refusal leaves B saving, and B's own refusal shows in B", async () => {
+    const answer = await saveAcrossArchive();
+    await answer(0, problemResponse(503, { detail: "Try again." }));
+    expect(form().getAttribute("aria-busy")).toBe("true");
+    expect(add().disabled).toBe(true);
+
+    await answer(
+      1,
+      problemResponse(409, {
+        code: "life_event_conflict",
+        detail: "Second was refused.",
+      }),
+    );
+    await waitFor(() =>
+      expect(element("#life-event-form-state").textContent).toBe(
+        "Second was refused.",
+      )
+    );
+    expect(form().hasAttribute("aria-busy")).toBe(false);
+    expect(add().disabled).toBe(false);
+  });
+
+  it("A's late save lists A and leaves B open and saving", async () => {
+    const answer = await saveAcrossArchive();
+    await answer(
+      0,
+      jsonResponse(
+        { event: lifeEvent({ name: "First" }), status: "created" },
+        201,
+      ),
+    );
+    await waitFor(() => expect(stateLine()).toBe("1 life event."));
+    expect(editorOpen()).toBe(true);
+    expect(form().getAttribute("aria-busy")).toBe("true");
+    expect(add().disabled).toBe(true);
+  });
+});
+
+describe("REL-079 person life events status line", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns its live region from its first commit only once states are live (%s)",
+    async (live) => {
+      markup();
+      const answer = deferred<Response>();
+      stubApi({ [LIFE_EVENTS]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonLifeEvents(document.body, {
+          ...props(),
+          statesLive: () => live,
+        })
+      );
+      const line = element("[data-life-event-state]");
+      expect(line.getAttribute("role")).toBe(live ? "status" : null);
+      expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      await act(async () => {
+        answer.resolve(listed([]));
+        await settled;
+      });
+      expect(line.isConnected).toBe(true);
+      expect(line.textContent).toBe("No life events saved.");
+    },
+  );
 });

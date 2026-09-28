@@ -52,6 +52,7 @@ import { Quiet } from "../../features/person/facts/fact-list.tsx";
 import { SectionGlyph } from "../../features/person/section-glyph.tsx";
 import { SectionLoading } from "../../features/person/section-loading.tsx";
 import { SECTION_HIDDEN_EVENT } from "../../features/person/sections.ts";
+import type { StatusRegionProps } from "../../features/person/status-region.ts";
 import {
   markFormSaved,
   requestFormDiscard,
@@ -93,6 +94,8 @@ export interface PersonLifeEventsProps {
   readonly section: HTMLElement;
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /** What the state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 const BADGES: Readonly<Record<string, string>> = {
@@ -234,7 +237,7 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
     // The editor is open while it submits, and its form is locked (inert)
     // and its Save control disabled until the answer arrives.
     const element = form.current!;
-    const existing = state.editor?.event;
+    const { event: existing, generation } = state.editor!;
     dispatch({ type: "saving" });
     const answer = await saveWithLockedForm(
       element,
@@ -251,11 +254,11 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
         ),
     );
     if (answer.status !== "ready" || !answer.data) {
-      dispatch({ type: "save-failed" });
+      dispatch({ generation, type: "save-failed" });
       return answer.problem ?? UNREACHED;
     }
     markFormSaved(element);
-    dispatch({ event: answer.data.event, type: "saved" });
+    dispatch({ event: answer.data.event, generation, type: "saved" });
     timelineChanged();
     return undefined;
   };
@@ -319,6 +322,7 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
         id={STATE_ID}
         ref={stateLine}
         tabIndex={-1}
+        {...props.statusRegion}
       >
         {line}
       </p>

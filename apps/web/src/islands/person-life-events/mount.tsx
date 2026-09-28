@@ -8,6 +8,7 @@ import {
   sectionHidden,
   type SectionMount,
 } from "../../features/person/section-mounts.ts";
+import { statusRegion } from "../../features/person/status-region.ts";
 import { mountIsland } from "../core/index.ts";
 import { PersonLifeEvents } from "./person-life-events.tsx";
 
@@ -33,6 +34,7 @@ export const mountPersonLifeEvents: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         section={section}
+        statusRegion={statusRegion(props)}
         workspaceId={props.workspaceId}
       />,
     );
