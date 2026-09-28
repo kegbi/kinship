@@ -124,6 +124,32 @@ prerequisite queues.
     owed. The product owner accepted local gates as the checkpoint evidence.
   - `REL-055` through `REL-068` and `REL-071` were found on the way and stay
     parked; `REL-069` and `REL-070` are fixed.
+- The remaining queue after the gap remediation plan is integrated up to
+  `0764bba`: Wave 0 (`UXD-020`, `REL-038` folded into `REL-058`), Wave 1
+  (`REL-035`, `REL-049`, `REL-052`, `REL-053`, `REL-055`, `REL-056`, `REL-060`,
+  `REL-063`, `REL-066`, `REL-067`, `REL-068`), Wave 2 (`REL-047`, `REL-057`,
+  `REL-058`, `REL-062`, `REL-071`, with `REL-078`), and the Wave 3 decisions
+  (`REL-059`, `REL-065`, and synchronized schema v9 for `REL-061` and
+  `REL-064`). `REL-020`, `REL-025`, and `REL-054` stay watches that did not
+  recur; `REL-034` and `REL-036` stay parked for a Windows host.
+  - The checkpoint ran locally on `0764bba`, in a clean copy of main that trusts
+    the session proxy CA only for its image builds. Everything passed:
+    - `test:unit` and `test:coverage`, with every set at or above its floor (web
+      98.77/95.93/99.5/99.87);
+    - `test:integration`: 269 passed, 0 failed;
+    - `build` and the api, web, and gateway production images;
+    - the three-browser E2E suite: 208 passed, 70 tests each on Chromium,
+      Firefox, and WebKit plus GOVERNANCE-001 once in each browser's exclusive
+      phase, with `perf-001`'s two own skips and the legal spec's three
+      placeholders;
+    - `test:schema:matrix` for schema v9 on PostgreSQL 18.4 and 17.10.
+  - Batch runs on the way hit one Firefox click before its handler (`REL-086`),
+    one `ERR_NETWORK_CHANGED` from a concurrent Docker network, and one
+    externally killed integration run; each passed on its single rerun. The
+    first stack run found the new REL-061 index test depending on shared
+    statistics, fixed at `0764bba` before anything was pushed.
+  - Main CI still starts no jobs for this repository, so CI confirmation stays
+    owed. `REL-072` through `REL-090` were found on the way and stay parked.
 - Remaining-queue decisions (product owner, 2026-09-28): the optional GAP-038
   visual regression baseline stays unscheduled, and `OPS-001E` and Phase 11 stay
   parked until a named deployment environment exists. The `REL-059`, `REL-061`,
