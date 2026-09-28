@@ -99,6 +99,31 @@ prerequisite queues.
     local gates as the checkpoint evidence, and CI confirmation stays owed.
   - `REL-055` through `REL-060` were found on the way and stay parked. The next
     work is GAP-048 through GAP-053, then the Phase 7 checkpoint.
+- Phase 7 (GAP-044 through GAP-053) is integrated up to `794c055`. GAP-054 is
+  removed from scope and GAP-055 stays in the backlog.
+  - Product-owner decisions taken on the way:
+    - schema v8 for reminder delivery (GAP-044);
+    - a notification read-through watermark in `ui_state` (GAP-053);
+    - bounded query-time search, with indexes deferred to a schema v9
+      (`REL-061`);
+    - a read-only iCalendar feed instead of pushing to CalDAV (GAP-052);
+    - a third review round for GAP-049, GAP-050, and GAP-053.
+  - The checkpoint ran locally on `794c055`, in a clean copy of main that trusts
+    the session proxy CA only for its image builds. Everything passed:
+    - `test:unit` and `test:coverage`, with every set at or above its floor (web
+      98.75/95.88/99.5/99.87);
+    - `test:integration`: 252 passed, 0 failed;
+    - the api, web, and gateway production images;
+    - the three-browser E2E suite: 208 passed, 70 tests each on Chromium,
+      Firefox, and WebKit, plus `perf-001`'s two own skips;
+    - `test:schema:matrix` for schema v8 on PostgreSQL 18.4 and 17.10.
+  - The first checkpoint run on `ed8390d` failed three Firefox specs on Zod's
+    eval probe under the CSP and one load-sensitive focus test. `REL-069` and
+    `REL-070` fixed both at the root, and the rerun above is clean.
+  - Main CI still starts no jobs for this repository, so CI confirmation stays
+    owed. The product owner accepted local gates as the checkpoint evidence.
+  - `REL-055` through `REL-068` and `REL-071` were found on the way and stay
+    parked; `REL-069` and `REL-070` are fixed.
 - User-directed follow-up: responsive person blocks, focus-border repair, then
   an evidence-backed application repair plan and execution in a clean task.
 - Remaining repair statuses and execution order belong to the
