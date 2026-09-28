@@ -152,6 +152,13 @@ Deno.test({
       values (${relatedPersonId}, ${owner.workspaceId}, ${owner.memberId}, 'Related')`;
     await sql`insert into crm.files (workspace_id, uploaded_by_member_id, storage_provider, storage_bucket, storage_key, byte_size)
       values (${owner.workspaceId}, ${owner.memberId}, 'memory', 'test', 'objects/reset-me', 1)`;
+    // A pair marked not duplicates (REL-064) is workspace data a reset clears.
+    await sql`insert into crm.person_duplicate_dismissals (
+        workspace_id, person_low_id, person_high_id, dismissed_by_member_id
+      ) values (
+        ${owner.workspaceId}, least(${personId}::uuid, ${relatedPersonId}::uuid),
+        greatest(${personId}::uuid, ${relatedPersonId}::uuid), ${owner.memberId}
+      )`;
     const preview = await lifecycleRequest(
       owner,
       "/api/v1/settings/workspace-lifecycle",
@@ -280,6 +287,7 @@ Deno.test({
     const resetBody = await reset.clone().json();
     const [resetState] = await sql<{
       readonly audits: number;
+      readonly dismissals: number;
       readonly members: number;
       readonly people: number;
       readonly workspaces: number;
@@ -287,11 +295,12 @@ Deno.test({
       (select count(*)::int from crm.workspaces where id = ${owner.workspaceId}) workspaces,
       (select count(*)::int from crm.workspace_members where workspace_id = ${owner.workspaceId}) members,
       (select count(*)::int from crm.people where workspace_id = ${owner.workspaceId}) people,
+      (select count(*)::int from crm.person_duplicate_dismissals where workspace_id = ${owner.workspaceId}) dismissals,
       (select count(*)::int from crm.audit_events where workspace_id = ${owner.workspaceId} and action = 'workspace.reset') audits`;
     assert(
       reset.status === 200 && resetState?.workspaces === 1 &&
         resetState.members === 1 && resetState.people === 0 &&
-        resetState.audits === 1,
+        resetState.dismissals === 0 && resetState.audits === 1,
       `reset is atomic and preserves workspace configuration shell: ${reset.status} ${
         JSON.stringify(resetBody)
       } ${JSON.stringify(resetState)}`,

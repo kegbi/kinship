@@ -63,6 +63,7 @@ export type {
   ImportantDateAudit,
   PersonAvatarAudit,
   PersonCreatedAudit,
+  PersonDuplicateDismissalAudit,
   PersonLifecycleAudit,
   PersonMergeAudit,
   PersonMergeAuditCommand,
@@ -70,6 +71,10 @@ export type {
   ProfileFactAudit,
 } from "./ports/audit.ts";
 export type { PersonStarRepository } from "./ports/star.ts";
+export type {
+  PersonDuplicateDismissalRepository,
+  PersonDuplicatePairCommand,
+} from "./ports/duplicate_dismissal.ts";
 export type {
   LockedMergePair,
   PersonMergeCommand,
@@ -118,6 +123,12 @@ export type {
   SetPersonStarResult,
 } from "./application/person_star.ts";
 export { createPersonMerge } from "./application/merge_people.ts";
+export { createPersonDuplicateDismissals } from "./application/duplicate_dismissal.ts";
+export type {
+  DismissDuplicatePairResult,
+  PersonDuplicateDismissalDependencies,
+  PersonDuplicateDismissals,
+} from "./application/duplicate_dismissal.ts";
 export { createBulkPeopleActions } from "./application/bulk_people.ts";
 export type {
   BulkPeopleActions,
@@ -215,6 +226,7 @@ export {
   importantDateAuditFrom,
   personAvatarAuditFrom,
   personCreatedAuditFrom,
+  personDuplicateDismissalAuditFrom,
   personLifecycleAuditFrom,
   personMergeAuditFrom,
   personStarAuditFrom,

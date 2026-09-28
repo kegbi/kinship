@@ -23,6 +23,8 @@ import {
   peopleBulkInput,
   peopleBulkResult,
   peopleDirectoryPage,
+  peopleDuplicateDismissalInput,
+  peopleDuplicateDismissed,
   peopleDuplicates,
   peopleTagFacet,
   peopleTagOptionsPage,
@@ -325,6 +327,34 @@ export const listPeopleDuplicates = defineRoute({
       },
     },
     ...problemResponses(401, 403, 503),
+  },
+});
+
+export const dismissPeopleDuplicate = defineRoute({
+  method: "post",
+  path: "/api/v1/people/duplicates/dismissals",
+  operationId: "dismissPeopleDuplicate",
+  description:
+    "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing.",
+  security: [{ kinship_session: [] }],
+  request: {
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": peopleDuplicateDismissalInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "The duplicate review no longer offers the pair to any member of the workspace",
+      content: {
+        "application/json": peopleDuplicateDismissed,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
   },
 });
 
@@ -1008,6 +1038,7 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   listPeopleTagOptions,
   listPeopleTagFacet,
   listPeopleDuplicates,
+  dismissPeopleDuplicate,
   bulkPeople,
   deletePerson,
   getPerson,

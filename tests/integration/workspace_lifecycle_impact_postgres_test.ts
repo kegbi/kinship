@@ -299,6 +299,21 @@ Deno.test({
       "the label two steps from the workspace did not reach the people digest",
     );
 
+    // A pair marked not duplicates is people's too (REL-064), and a reset or
+    // deletion destroys it with the workspace.
+    await created(
+      await request(owner, "/api/v1/people/duplicates/dismissals", {
+        body: { personIds: [person.id, other.id] },
+        method: "POST",
+      }),
+      "duplicate dismissal",
+    );
+    const withDismissal = await inspectAll(owner.workspaceId);
+    assert(
+      withDismissal.people?.revision !== withLabel.people?.revision,
+      "the dismissed duplicate pair did not reach the people digest",
+    );
+
     // Relationships: the workspace's own seeded parent type relates the pair.
     const [parentType] = await sql<{ readonly id: string }[]>`
       select id::text as id from crm.relationship_types

@@ -611,6 +611,14 @@ flows:
   # - `audit_events.person_id` is re-pointed to the survivor, which the schema
   #   already treats as mutable through ON DELETE SET NULL; an event's
   #   action, payload, actor, and time are never changed.
+  # - REL-064: a pair that is two different people can be marked "Not
+  #   duplicates" instead (`people.write`). The decision is stored once per
+  #   workspace in `person_duplicate_dismissals`, lower id first, so the
+  #   review stops offering the pair to every member; dismissing it again
+  #   changes nothing, a pair across workspaces or with a deleted person is
+  #   refused, and `people.duplicate-dismissed` is audited with the two ids
+  #   only. There is no undo; a merge carries the duplicate's decisions to
+  #   the primary, and a workspace reset or deletion removes them.
   - id: PEOPLE-008
     title: Review possible duplicates and merge two people into one
     deliveryStatus: delivered
@@ -634,6 +642,7 @@ flows:
       conflicting-single-valued-dates,
       no-undo,
       reimport-stays-idempotent,
+      pair-dismissed-as-not-duplicates,
     ]
     result: One person holds everything both records held, the duplicate's page is not found, and a re-import of the same export lands on the primary.
     auditEffect: people-person-merged
@@ -651,7 +660,7 @@ flows:
       workspaces,
       import-export,
     ]
-    permissions: [people.merge]
+    permissions: [people.merge, people.write]
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,

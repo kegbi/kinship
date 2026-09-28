@@ -60,6 +60,7 @@ const FUNCTIONS: readonly string[] = [
   "deleteProfileFact",
   "deleteRelationship",
   "deleteWorkspace",
+  "dismissPeopleDuplicate",
   "disableDavSubscription",
   "editPerson",
   "exportPeopleVCards",

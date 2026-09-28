@@ -9,16 +9,24 @@
  * the person who is left. `GET .../merge-preview` answers what that merge
  * would keep, discard, and move, from the same decision the merge takes. A
  * merge cannot be undone, and nothing here offers to.
+ *
+ * `POST /api/v1/people/duplicates/dismissals` records that two people the
+ * review offered are not the same person (REL-064), so it stops offering them
+ * to every member. It is a literal under `duplicates` too, and idempotent.
  */
 
 import { Hono } from "hono";
 import {
+  dismissPeopleDuplicate,
   listPeopleDuplicates,
   mergePeople,
   previewPeopleMerge,
   previewPeopleMergeQuery,
 } from "../../../../../contracts/routes/people.ts";
-import { personMergeInput } from "../../../../../contracts/schemas/people.ts";
+import {
+  peopleDuplicateDismissalInput,
+  personMergeInput,
+} from "../../../../../contracts/schemas/people.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import {
   failureResponder,
@@ -49,7 +57,11 @@ import {
 /** What the duplicate review and the merge are served from. */
 export type PersonMergeHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "duplicates" | "merge" | "protectedSessions"
+  | "browserSecurity"
+  | "duplicateDismissals"
+  | "duplicates"
+  | "merge"
+  | "protectedSessions"
 >;
 
 export const MERGE_REQUEST_INVALID: ProblemDefinition = {
@@ -137,7 +149,43 @@ export const MERGE_FAILURES: FailureTable = {
   },
 };
 
+export const DUPLICATE_DISMISSAL_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Name the two people by their canonical identifiers.",
+  status: 400,
+  title: "Invalid dismissal",
+};
+
+/** What a refused "not duplicates" says. */
+export const DUPLICATE_DISMISSAL_FAILURES: FailureTable = {
+  fallback: {
+    code: "people_unavailable",
+    detail: "Nothing was saved. The person service is temporarily unavailable.",
+    status: 503,
+    title: "Pair could not be dismissed",
+  },
+  statuses: {
+    forbidden: {
+      code: "people_forbidden",
+      detail: "Your active workspace membership no longer permits this change.",
+      title: "People unavailable",
+    },
+    "not-found": {
+      code: "person_not_found",
+      detail: "Both people must exist in the current workspace.",
+      title: "Person not found",
+    },
+    "same-person": {
+      code: "duplicate_same_person",
+      detail: "Choose two different people.",
+      status: 400,
+      title: "A person cannot be their own duplicate",
+    },
+  },
+};
+
 const mergeFailure = failureResponder(MERGE_FAILURES);
+const dismissalFailure = failureResponder(DUPLICATE_DISMISSAL_FAILURES);
 
 export function createMergeRoutes(
   services: PersonMergeHttpServices,
@@ -165,6 +213,28 @@ export function createMergeRoutes(
       status: "ready",
       truncated: result.truncated,
     });
+  });
+
+  mount(routes, dismissPeopleDuplicate, origin, session, async (context) => {
+    const input = await parseJsonBody(context, peopleDuplicateDismissalInput);
+    if ("errors" in input) {
+      return definedProblem(context, DUPLICATE_DISMISSAL_INVALID);
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    // The contract admits exactly two identifiers.
+    const personIds = input.data.personIds as unknown as readonly [
+      string,
+      string,
+    ];
+    const result = await services.duplicateDismissals?.dismiss(
+      actor,
+      personIds,
+    ).catch(() => undefined);
+    if (!result) return dismissalFailure(context, "unavailable");
+    if (result.status !== "dismissed") return dismissalFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json({ personIds: result.personIds, status: "dismissed" });
   });
 
   mount(routes, previewPeopleMerge, session, async (context) => {

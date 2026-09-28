@@ -208,6 +208,10 @@ pages:
     # reads the preview again. A name or an email or phone value shared by
     # more than 5 people pairs nobody, so such a crowd never floods the
     # review; any of them can still be merged from their person menu.
+    # REL-064: `dismissing` marks a pair as not duplicates for every member,
+    # with every pair action busy; `dismissed` drops the pair and says so on
+    # the review's status line, which stays in view once no pair is left, and
+    # a refused dismissal keeps the pair and says why on that line.
     sectionStates:
       duplicates:
         - loading
@@ -217,6 +221,8 @@ pages:
         - reviewing
         - merging
         - stale
+        - dismissing
+        - dismissed
       # GAP-051 (PEOPLE-009): a checkbox per row and one for the page shown.
       # `none` shows no bulk bar; `selected` holds 1 to 100 people; `capped`
       # says the 100-person limit refused more. A new search, tag filter,

@@ -5,12 +5,17 @@
  * It reads the workspace's possible duplicates once, says how many pairs
  * there are, and folds the list away until the member asks for it. Each pair
  * offers "Merge…", which opens the merge confirmation for that pair; a merge
- * lands on the person who was kept. With nothing to review, or when the
- * review could not be read, the region stays empty: the directory beside it
- * keeps its own loading and error states, and this never adds a second set.
+ * lands on the person who was kept. It also offers "Not duplicates"
+ * (REL-064), which records for the whole workspace that the two are different
+ * people: the button is busy while it saves, the pair leaves the list once it
+ * is saved, and the review's status line says what happened either way. With
+ * nothing to review, or when the review could not be read, the region stays
+ * empty: the directory beside it keeps its own loading and error states, and
+ * this never adds a second set.
  *
  * Its state moves through `duplicatesReducer`; it reads once, when it mounts,
- * through the island kit's `settle`.
+ * through the island kit's `settle`, and never reads the list again: a
+ * dismissal removes exactly the pair the server confirmed.
  */
 
 import {
@@ -22,11 +27,13 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import {
+  dismissPeopleDuplicate,
   getMemberPreferences,
   listPeopleDuplicates,
   type PeopleDuplicatePair,
   type PeopleDuplicatePerson,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
+import { peopleDuplicateDismissed } from "../../../../../../packages/contracts/schemas/people.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { mountIsland, settle } from "../../../islands/core/index.ts";
 import { displayPersonName } from "../../../lib/person-name.ts";
@@ -36,6 +43,7 @@ import {
   duplicatesReducer,
   duplicatesSummary,
   initialDuplicates,
+  pairKey,
   reasonsText,
 } from "./duplicates.ts";
 
@@ -66,6 +74,7 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
     initialDuplicates,
   );
   const opener = useRef<HTMLElement | null>(null);
+  const heading = useRef<HTMLHeadingElement | null>(null);
   const settled = useRef(props.onSettled);
 
   const load = async (): Promise<void> => {
@@ -108,7 +117,33 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
     flushSync(() => dispatch({ index, type: "merge-opened" }));
   };
 
+  // The pair's buttons leave with it, so focus lands on the review's heading.
+  const dismiss = async (
+    pair: PeopleDuplicatePair,
+    names: string,
+  ): Promise<void> => {
+    const key = pairKey(pair);
+    const [first, second] = both(pair);
+    dispatch({ key, names, type: "dismiss-started" });
+    const answer = await settle(() =>
+      dismissPeopleDuplicate(
+        { personIds: [first.id, second.id] },
+        state.context?.workspaceId,
+      )
+    );
+    if (!peopleDuplicateDismissed.safeParse(answer.data).success) {
+      dispatch({
+        detail: answer.problem?.detail ?? "Nothing was saved. Try again.",
+        type: "dismiss-failed",
+      });
+      return;
+    }
+    flushSync(() => dispatch({ key, names, type: "dismissed" }));
+    heading.current?.focus();
+  };
+
   const known = state.context;
+  const busy = state.merging !== undefined || state.dismissing !== undefined;
   const nameOrder = known?.nameOrder ?? "given_family_nickname";
   const name = (person: Parameters<typeof displayPersonName>[0]) =>
     displayPersonName(person, nameOrder);
@@ -120,15 +155,27 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
     <section
       aria-labelledby="people-duplicates-heading"
       className="people-duplicates"
-      hidden={state.status !== "ready" || state.pairs.length === 0}
+      hidden={state.status !== "ready" ||
+        (state.pairs.length === 0 && state.announcement === undefined)}
       id="people-duplicates"
     >
       <div className="people-duplicates-summary">
-        <h2 id="people-duplicates-heading">Possible duplicates</h2>
+        <h2 id="people-duplicates-heading" ref={heading} tabIndex={-1}>
+          Possible duplicates
+        </h2>
         <p>{duplicatesSummary(state.pairs.length, state.truncated)}</p>
+        <p
+          aria-live="polite"
+          className="people-duplicates-status"
+          id="people-duplicates-status"
+          role="status"
+        >
+          {state.announcement}
+        </p>
         <Button
           aria-controls="people-duplicates-list"
           aria-expanded={state.expanded}
+          hidden={state.pairs.length === 0}
           id="people-duplicates-toggle"
           onClick={() => dispatch({ type: "toggled" })}
           type="button"
@@ -142,7 +189,7 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
       <ul
         aria-label="Possible duplicate pairs"
         className="people-duplicates-list"
-        hidden={!state.expanded}
+        hidden={!state.expanded || state.pairs.length === 0}
         id="people-duplicates-list"
       >
         {state.pairs.map((pair, index) => {
@@ -156,12 +203,21 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
               </p>
               <Button
                 aria-label={`Merge ${pairName}…`}
-                disabled={state.merging !== undefined}
+                disabled={busy}
                 onClick={openMerge(index)}
                 type="button"
                 variant="outline"
               >
                 Merge…
+              </Button>
+              <Button
+                aria-label={`Mark ${pairName} as not duplicates`}
+                disabled={busy}
+                onClick={() => void dismiss(pair, pairName)}
+                type="button"
+                variant="outline"
+              >
+                Not duplicates
               </Button>
             </li>
           );

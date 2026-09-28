@@ -20,5 +20,8 @@ export const PostgresPeopleWorkspaceLifecycleImpact = workspaceLifecycleImpact({
     tags: "crm.tags@id",
     personTags: "crm.person_tags@person_id,tag_id via crm.people.person_id",
     pets: "crm.pets@id via crm.people.person_id",
+    // A pair marked not duplicates (REL-064): scoped by its own workspace.
+    duplicateDismissals:
+      "crm.person_duplicate_dismissals@person_low_id,person_high_id",
   },
 });

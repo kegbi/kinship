@@ -1377,6 +1377,104 @@ Deno.test("[PEOPLE-008] the duplicate review pairs names, emails, and phones in 
   );
 });
 
+Deno.test("[PEOPLE-008] a pair marked not duplicates leaves every member's review", async () => {
+  const owner = await register("dismiss");
+  const foreign = await register("dismiss-foreign");
+  const invited = await register("dismiss-invitee");
+  await addMembership(sql, invited.userId, owner.workspaceId, "member");
+  const signed = await api.signIn(
+    (await sql<{ email: string }[]>`
+      select email from crm.users where id = ${invited.userId}
+    `)[0]!.email,
+    { workspaceId: owner.workspaceId },
+  );
+  const cookie = sessionCookie(signed);
+  assert(signed.status === 200 && cookie, "the member signs in");
+  const member: SignedInFixture = {
+    ...invited,
+    cookie,
+    memberId: (await sql<{ readonly id: string }[]>`
+      select id::text from crm.workspace_members
+      where user_id = ${invited.userId} and workspace_id = ${owner.workspaceId}
+    `)[0]!.id,
+    role: "member",
+    workspaceId: owner.workspaceId,
+  };
+  const first = await addPerson(owner, "Mary Jackson");
+  const second = await addPerson(owner, "Mary Jackson");
+  const kept = await addPerson(owner, "Dorothy Vaughan");
+  const keptAgain = await addPerson(owner, "Dorothy Vaughan");
+  const outsider = await addPerson(foreign, "Mary Jackson");
+  const [low, high] = [first, second].sort() as [string, string];
+  const review = async (fixture: SignedInFixture) => {
+    const response = await api.request(fixture, "/api/v1/people/duplicates");
+    assertEquals(response.status, 200);
+    const body = await response.json() as {
+      readonly pairs: readonly {
+        readonly people: readonly { readonly id: string }[];
+      }[];
+    };
+    return body.pairs.map((pair) =>
+      pair.people.map((person) => person.id).sort().join(" ")
+    );
+  };
+  const both = [`${low} ${high}`, [kept, keptAgain].sort().join(" ")];
+  assertEquals(await review(owner), both);
+  const dismiss = (fixture: SignedInFixture, personIds: readonly string[]) =>
+    api.request(fixture, "/api/v1/people/duplicates/dismissals", "POST", {
+      personIds,
+    });
+  const stored = () =>
+    sql<{
+      readonly by: string | null;
+      readonly high: string;
+      readonly low: string;
+      readonly workspace: string;
+    }[]>`
+      select workspace_id::text as workspace, person_low_id::text as low,
+        person_high_id::text as high, dismissed_by_member_id::text as by
+      from crm.person_duplicate_dismissals
+      where workspace_id in (${owner.workspaceId}, ${foreign.workspaceId})
+      order by created_at
+    `;
+  const audits = async () =>
+    (await sql<{ readonly payload: unknown }[]>`
+      select payload - 'requestId' as payload from crm.audit_events
+      where workspace_id = ${owner.workspaceId}
+        and action = 'people.duplicate-dismissed'
+    `).map((row) => row.payload);
+
+  // Another workspace's person, a person paired with themselves, and a
+  // deleted person are refused, and nothing is stored.
+  assertEquals((await dismiss(owner, [first, outsider])).status, 404);
+  assertEquals((await dismiss(foreign, [outsider, first])).status, 404);
+  assertEquals((await dismiss(owner, [first, first])).status, 400);
+  const gone = await addPerson(owner, "Mary Jackson");
+  await sql`update crm.people set deleted_at = now() where id = ${gone}`;
+  assertEquals((await dismiss(owner, [first, gone])).status, 404);
+  assertEquals(await stored(), []);
+
+  const dismissed = await dismiss(member, [high, low]);
+  assertEquals(dismissed.status, 200);
+  assertEquals(await dismissed.json(), {
+    personIds: [low, high],
+    status: "dismissed",
+  });
+  assertEquals(
+    (await stored()).map((row) => [row.workspace, row.low, row.high, row.by]),
+    [[owner.workspaceId, low, high, member.memberId]],
+    "stored once, lower id first, as the member who dismissed it",
+  );
+  assertEquals(await review(owner), [both[1]], "the owner no longer sees it");
+  assertEquals(await review(member), [both[1]], "nor does the member");
+  assertEquals(await audits(), [{ personIds: [low, high] }]);
+
+  // Dismissing it again, from either side, changes nothing.
+  assertEquals((await dismiss(owner, [low, high])).status, 200);
+  assertEquals((await stored()).length, 1);
+  assertEquals((await audits()).length, 1);
+});
+
 Deno.test("[PEOPLE-008] a merge whose conflicts changed after its preview is refused", async () => {
   const owner = await register("conflicts-changed");
   const primary = await addPerson(owner, "Annie Easley");

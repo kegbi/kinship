@@ -26,6 +26,7 @@ import {
   type PeopleManagement,
   type PersonAvatarManagement,
   type PersonAvatarRecord,
+  type PersonDuplicateDismissals,
   type PersonIdentity,
   type PersonLifecycle,
   type PersonLifecycleRecord,
@@ -69,6 +70,8 @@ export interface PeopleHttpServices {
   /** Acting on several people at once (GAP-051); without it, 503. */
   readonly bulk?: Pick<BulkPeopleActions, "run">;
   readonly directory: PeopleDirectory;
+  /** Marking a reviewed pair as not duplicates (REL-064); without it, 503. */
+  readonly duplicateDismissals?: PersonDuplicateDismissals;
   /** The directory's duplicate review (GAP-049); without it, 503. */
   readonly duplicates?: PeopleDuplicates;
   readonly importantDates?: ImportantDateManagement;

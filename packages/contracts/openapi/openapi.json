@@ -3774,6 +3774,111 @@
         }
       }
     },
+    "/api/v1/people/duplicates/dismissals": {
+      "post": {
+        "operationId": "dismissPeopleDuplicate",
+        "description": "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeopleDuplicateDismissalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The duplicate review no longer offers the pair to any member of the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleDuplicateDismissed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/tag-facet": {
       "get": {
         "operationId": "listPeopleTagFacet",
@@ -19757,6 +19862,46 @@
         "required": [
           "id",
           "name"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicateDismissalInput": {
+        "type": "object",
+        "properties": {
+          "personIds": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "personIds"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicateDismissed": {
+        "type": "object",
+        "properties": {
+          "personIds": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "status": {
+            "const": "dismissed"
+          }
+        },
+        "required": [
+          "personIds",
+          "status"
         ],
         "additionalProperties": false
       },

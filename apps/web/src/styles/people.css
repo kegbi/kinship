@@ -634,6 +634,13 @@
   margin: 0;
 }
 
+/* REL-064: what the last "Not duplicates" did, on a line of its own. */
+.people-duplicates-status {
+  flex-basis: 100%;
+  order: 1;
+  color: var(--ink-2);
+}
+
 .people-duplicates-list {
   display: grid;
   gap: var(--space-3);

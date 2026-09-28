@@ -122,6 +122,7 @@ import {
 } from "./search.ts";
 import {
   createMergeRoutes,
+  DUPLICATE_DISMISSAL_INVALID,
   DUPLICATES_FORBIDDEN,
   DUPLICATES_UNAVAILABLE,
   MERGE_PREVIEW_INVALID,
@@ -139,7 +140,7 @@ export type { PeopleHttpServices } from "./shared.ts";
 export { PERSON_LIFECYCLE_FAILURES } from "./shared.ts";
 export { AVATAR_FAILURES } from "./avatar.ts";
 export { STAR_FAILURES } from "./star.ts";
-export { MERGE_FAILURES } from "./merge.ts";
+export { DUPLICATE_DISMISSAL_FAILURES, MERGE_FAILURES } from "./merge.ts";
 export { IMPORTANT_DATE_FAILURES } from "./dates.ts";
 export { PROFILE_FACT_FAILURES } from "./facts.ts";
 export { possibleDuplicate } from "./identity.ts";
@@ -149,6 +150,7 @@ export const PEOPLE_PROBLEMS: readonly ProblemDefinition[] = [
   ACTIVE_PERSON_NOT_FOUND,
   CURRENT_PERSON_NOT_FOUND,
   DELETION_IMPACT_UNAVAILABLE,
+  DUPLICATE_DISMISSAL_INVALID,
   DUPLICATES_FORBIDDEN,
   DUPLICATES_UNAVAILABLE,
   IMPORTANT_DATE_CREATE_INVALID,

@@ -8,7 +8,9 @@
  * collapsed whitespace only. The pairs are computed when they are asked for,
  * from the people module's rows and the workspace's contact-method kinds, and
  * never stored: merging a pair, or editing either person, simply stops it
- * being found.
+ * being found. The one thing stored is a member's decision that two people
+ * are not duplicates (REL-064): a pair in `person_duplicate_dismissals` is
+ * never offered again, to any member of the workspace.
  *
  * The review is bounded. A value more than `PEOPLE_DUPLICATE_GROUP_LIMIT`
  * people share pairs nobody, and it shows at most `PEOPLE_DUPLICATE_PAIR_LIMIT` pairs,

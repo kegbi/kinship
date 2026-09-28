@@ -16,6 +16,8 @@ import type {
   PeopleDirectoryInput,
   PeopleDirectoryLifecycle,
   PeopleDirectoryPage,
+  PeopleDuplicateDismissalInput,
+  PeopleDuplicateDismissed,
   PeopleDuplicates,
   PeopleTagFacet,
   PeopleTagOptionsInput,
@@ -492,6 +494,21 @@ export function listPeopleDuplicates(
 ): Promise<ApiResult<PeopleDuplicates>> {
   return request("/api/v1/people/duplicates", {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/**
+ * Marks two people from the duplicate review as not duplicates, for every
+ * member of the workspace (REL-064).
+ */
+export function dismissPeopleDuplicate(
+  input: PeopleDuplicateDismissalInput,
+  workspaceId?: string,
+): Promise<ApiResult<PeopleDuplicateDismissed>> {
+  return request("/api/v1/people/duplicates/dismissals", {
+    method: "POST",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    body: JSON.stringify(input),
   });
 }
 

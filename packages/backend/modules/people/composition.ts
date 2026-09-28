@@ -3,7 +3,7 @@
  *
  * Only a declared composition root imports this file. Besides the person use
  * cases (identity, dates, lifecycle, profile facts, the avatar, bulk
- * actions, and the star) it
+ * actions, the star, and dismissing a false duplicate pair) it
  * returns the outbound ports other modules know people by — the person
  * boundary relationships, interactions, and planning read through, the
  * personalization reference counters, and the import and export boundaries.
@@ -24,6 +24,7 @@ import {
   PostgresPeopleRepository,
   PostgresPeopleTransaction,
 } from "./adapters/postgres/people_repository.ts";
+import { PostgresPersonDuplicateDismissalRepository } from "./adapters/postgres/person_duplicate_dismissal_repository.ts";
 import { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 import { PostgresPersonAvatarRepository } from "./adapters/postgres/person_avatar_repository.ts";
 import { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
@@ -39,6 +40,7 @@ import {
   createImportantDateManagement,
   createPeopleManagement,
   createPersonAvatarManagement,
+  createPersonDuplicateDismissals,
   createPersonLifecycle,
   createPersonMerge,
   createPersonStarManagement,
@@ -48,6 +50,7 @@ import {
   personAvatarAuditFrom,
   type PersonAvatarImages,
   personCreatedAuditFrom,
+  personDuplicateDismissalAuditFrom,
   type PersonGenderOptions,
   personLifecycleAuditFrom,
   personMergeAuditFrom,
@@ -132,6 +135,14 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       lifecycle,
       profileFacts,
       tags: new PostgresBulkTagLookup(),
+      transaction: shared.peopleTransaction,
+    }),
+    // Marking a possible duplicate pair as two people (REL-064, PEOPLE-008).
+    duplicateDismissals: createPersonDuplicateDismissals({
+      actors: shared.actors,
+      audit: personDuplicateDismissalAuditFrom(shared.audit),
+      clock: shared.clock,
+      repository: new PostgresPersonDuplicateDismissalRepository(),
       transaction: shared.peopleTransaction,
     }),
     exportBoundary: new PostgresPeopleExportBoundary(),

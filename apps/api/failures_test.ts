@@ -66,6 +66,7 @@ import {
 } from "../../packages/backend/modules/workspaces/transport/http/invitations.ts";
 import {
   AVATAR_FAILURES,
+  DUPLICATE_DISMISSAL_FAILURES,
   IMPORTANT_DATE_FAILURES,
   MERGE_FAILURES,
   PEOPLE_PROBLEMS,
@@ -631,6 +632,7 @@ Deno.test("[GAP-020] the refusals people.ts answers are unchanged", () => {
       "404 | person_not_found | Person not found | No active person with this identifier exists in the current workspace.",
       "404 | person_not_found | Person not found | No person with this identifier exists in the current workspace.",
       "503 | people_unavailable | Deletion impact unavailable | The person service is temporarily unavailable.",
+      "400 | validation_failed | Invalid dismissal | Name the two people by their canonical identifiers.",
       "403 | people_forbidden | Duplicates unavailable | Your active workspace membership no longer permits this view.",
       "503 | people_unavailable | Duplicates unavailable | Possible duplicates are temporarily unavailable.",
       "400 | validation_failed | Invalid important date | Review the precision and known components.",
@@ -1004,5 +1006,18 @@ Deno.test("[GAP-049] the refusals merge.ts answers are pinned", () => {
       "(fallback) | 503 | people_unavailable | People could not be merged | Nothing was merged. The person service is temporarily unavailable.",
     ].join("\n"),
     "MERGE_FAILURES",
+  );
+});
+
+Deno.test("[REL-064] the refusals a duplicate dismissal answers are pinned", () => {
+  assertEquals(
+    pinned(DUPLICATE_DISMISSAL_FAILURES),
+    [
+      "forbidden | 403 | people_forbidden | People unavailable | Your active workspace membership no longer permits this change.",
+      "not-found | 404 | person_not_found | Person not found | Both people must exist in the current workspace.",
+      "same-person | 400 | duplicate_same_person | A person cannot be their own duplicate | Choose two different people.",
+      "(fallback) | 503 | people_unavailable | Pair could not be dismissed | Nothing was saved. The person service is temporarily unavailable.",
+    ].join("\n"),
+    "DUPLICATE_DISMISSAL_FAILURES",
   );
 });

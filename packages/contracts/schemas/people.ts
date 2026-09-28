@@ -488,6 +488,20 @@ export const peopleDuplicates = z.strictObject({
   truncated: z.boolean(),
 }).meta({ id: "PeopleDuplicates" });
 
+/**
+ * Two people from the duplicate review a member says are not the same person
+ * (REL-064). The order does not matter; every member stops seeing the pair.
+ */
+export const peopleDuplicateDismissalInput = z.strictObject({
+  personIds: z.array(z.uuid()).length(2),
+}).meta({ id: "PeopleDuplicateDismissalInput" });
+
+/** The dismissed pair, as stored: the lower identifier first. */
+export const peopleDuplicateDismissed = z.strictObject({
+  personIds: z.array(z.uuid()).length(2),
+  status: z.literal("dismissed"),
+}).meta({ id: "PeopleDuplicateDismissed" });
+
 export const peopleDirectoryPerson = z.strictObject({
   avatar: personAvatar.optional(),
   familyName: z.string().optional(),

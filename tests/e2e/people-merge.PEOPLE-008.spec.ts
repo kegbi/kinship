@@ -248,5 +248,36 @@ test(
     await expect(page.locator("#person-lifecycle-status")).toHaveText(
       "Merge cancelled. No changes were made.",
     );
+
+    // REL-064: two people who really are different are marked as not
+    // duplicates, and the review stops offering them to anyone.
+    await page.goto("/app/people");
+    await waitForIsland(page, "people-duplicates");
+    const again = page.locator("#people-duplicates");
+    await again.getByRole("button", { name: "Review possible duplicates" })
+      .click();
+    await again.getByRole("button", {
+      name: "Mark Grace Hopper and Grace Hopper as not duplicates",
+    }).click();
+    await expect(again.getByRole("status")).toHaveText(
+      "Grace Hopper and Grace Hopper are marked as not duplicates. They will not be suggested again.",
+    );
+    await expect(again).toContainText(
+      "No possible duplicates are left to review.",
+    );
+    await expect(
+      again.getByRole("heading", { name: "Possible duplicates" }),
+    ).toBeFocused();
+    await expectAccessible(page);
+    const [low, high] = [grace, graceAgain].sort();
+    expect(databaseValue(
+      `select person_low_id::text || ' ' || person_high_id::text
+        from crm.person_duplicate_dismissals where workspace_id = ${
+        sqlLiteral(workspaceId)
+      }::uuid`,
+    )).toBe(`${low} ${high}`);
+    await page.reload();
+    await waitForIsland(page, "people-duplicates");
+    await expect(page.locator("#people-duplicates")).toBeHidden();
   },
 );

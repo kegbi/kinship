@@ -578,6 +578,10 @@ export type PeopleDuplicatePair = components["schemas"]["PeopleDuplicatePair"];
 export type PeopleDuplicatePerson =
   components["schemas"]["PeopleDuplicatePerson"];
 export type PeopleDuplicates = components["schemas"]["PeopleDuplicates"];
+export type PeopleDuplicateDismissalInput =
+  components["schemas"]["PeopleDuplicateDismissalInput"];
+export type PeopleDuplicateDismissed =
+  components["schemas"]["PeopleDuplicateDismissed"];
 
 export type PeopleBulkInput = components["schemas"]["PeopleBulkInput"];
 export type PeopleBulkItemResult =

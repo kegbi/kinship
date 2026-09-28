@@ -122,6 +122,17 @@ export interface PersonStarAudit {
   }): Promise<string>;
 }
 
+/** A pair of people was marked as not duplicates (REL-064). */
+export interface PersonDuplicateDismissalAudit {
+  record(command: {
+    readonly actor: PeopleActor;
+    readonly occurredAt: Date;
+    readonly personHighId: string;
+    readonly personLowId: string;
+    readonly transaction: PeopleTransaction;
+  }): Promise<string>;
+}
+
 /**
  * Two people became one (GAP-049): the primary kept, the duplicate deleted,
  * and every reference that moved counted by table.

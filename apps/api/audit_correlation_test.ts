@@ -34,6 +34,7 @@ import {
   importantDateAuditFrom,
   personAvatarAuditFrom,
   personCreatedAuditFrom,
+  personDuplicateDismissalAuditFrom,
   personLifecycleAuditFrom,
   personMergeAuditFrom,
   profileFactAuditFrom,
@@ -243,6 +244,17 @@ const WRITERS: ReadonlyArray<readonly [string, Writer]> = [
         occurredAt: OCCURRED_AT,
         primaryId: PERSON,
         tables: {},
+        transaction,
+      }),
+  ],
+  [
+    "people duplicate dismissal",
+    (recorder, actor) =>
+      personDuplicateDismissalAuditFrom(recorder).record({
+        actor,
+        occurredAt: OCCURRED_AT,
+        personHighId: SUBJECT,
+        personLowId: PERSON,
         transaction,
       }),
   ],

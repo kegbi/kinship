@@ -27,6 +27,7 @@ const PREFERENCES = "GET /api/v1/settings/preferences";
 const DUPLICATES = "GET /api/v1/people/duplicates";
 const MERGE = "POST /api/v1/people/:primaryId/merge";
 const PREVIEW = "GET /api/v1/people/:primaryId/merge-preview";
+const DISMISS = "POST /api/v1/people/duplicates/dismissals";
 
 const first = "00000000-0000-4000-8000-000000000101";
 const second = "00000000-0000-4000-8000-000000000102";
@@ -261,6 +262,131 @@ describe("PEOPLE-008 duplicate review island", () => {
       expect(document.querySelector("[role=dialog]")).toBeNull()
     );
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+});
+
+describe("REL-064 not duplicates", () => {
+  const other = {
+    people: [
+      person("00000000-0000-4000-8000-000000000103", { givenName: "Grace" }),
+      person("00000000-0000-4000-8000-000000000104", { givenName: "Grace" }),
+    ],
+    reasons: ["name"],
+  };
+  const NOT_DUPLICATES =
+    "Mark Ada Lovelace and Ada Lovelace “Countess” as not duplicates";
+
+  it("marks a pair for everyone, busy while it saves, then drops it and says so", async () => {
+    const answer = deferred<Response>();
+    const api = stubApi({
+      ...base,
+      [DISMISS]: answer.promise,
+      [DUPLICATES]: review([pair, other]),
+    });
+    const settled = deferred<void>();
+    await renderIsland(<PeopleDuplicates onSettled={settled.resolve} />);
+    await act(() => settled.promise);
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    expect(region.getByRole("button", { name: NOT_DUPLICATES }))
+      .toHaveProperty("disabled", true);
+    for (const button of region.getAllByRole("button", { name: /^Merge / })) {
+      expect(button).toHaveProperty("disabled", true);
+    }
+    expect(region.getByRole("status").textContent).toBe(
+      "Marking Ada Lovelace and Ada Lovelace “Countess” as not duplicates…",
+    );
+    await act(async () => {
+      answer.resolve(
+        jsonResponse({ personIds: [first, second], status: "dismissed" }),
+      );
+      await answer.promise;
+    });
+    await waitFor(() =>
+      expect(region.queryByRole("button", { name: NOT_DUPLICATES })).toBeNull()
+    );
+    expect(region.getByRole("status").textContent).toBe(
+      "Ada Lovelace and Ada Lovelace “Countess” are marked as not duplicates. They will not be suggested again.",
+    );
+    expect(region.getByText("1 pair of people may be the same person."))
+      .toBeTruthy();
+    expect(region.getByRole("button", { name: /^Merge Grace/ }))
+      .toHaveProperty("disabled", false);
+    expect(document.activeElement?.id).toBe("people-duplicates-heading");
+    const request = api.requests().find((entry) => entry.method === "POST");
+    expect(request?.url.pathname).toBe("/api/v1/people/duplicates/dismissals");
+    expect(request?.body).toEqual({ personIds: [first, second] });
+    await expectNoAxeViolations(element("#people-duplicates"));
+  });
+
+  it("keeps the review in view once its last pair is dismissed", async () => {
+    drawShell(`<div data-people-duplicates></div>`);
+    stubApi({
+      ...base,
+      [DISMISS]: jsonResponse({
+        personIds: [first, second],
+        status: "dismissed",
+      }),
+      [DUPLICATES]: review([pair]),
+    });
+    await mountSettled(() => mountPeopleDuplicates());
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    await waitFor(() =>
+      expect(region.getByText("No possible duplicates are left to review."))
+        .toBeTruthy()
+    );
+    expect(element("#people-duplicates").hidden).toBe(false);
+    expect(element("#people-duplicates-toggle").hidden).toBe(true);
+    expect(region.getByRole("status").textContent).toContain(
+      "are marked as not duplicates.",
+    );
+  });
+
+  it("keeps a refused pair in the list and says why", async () => {
+    stubApi({
+      ...base,
+      [DISMISS]: problemResponse(404, {
+        code: "person_not_found",
+        detail: "Both people must exist in the current workspace.",
+      }),
+      [DUPLICATES]: review([pair]),
+    });
+    const settled = deferred<void>();
+    await renderIsland(<PeopleDuplicates onSettled={settled.resolve} />);
+    await act(() => settled.promise);
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    await waitFor(() =>
+      expect(region.getByRole("status").textContent).toBe(
+        "Both people must exist in the current workspace.",
+      )
+    );
+    expect(region.getByRole("button", { name: NOT_DUPLICATES }))
+      .toHaveProperty("disabled", false);
+  });
+
+  it("says nothing was saved when the answer is not a dismissal", async () => {
+    stubApi({
+      ...base,
+      [DISMISS]: jsonResponse({ status: "ready" }),
+      [DUPLICATES]: review([pair]),
+    });
+    const settled = deferred<void>();
+    await renderIsland(<PeopleDuplicates onSettled={settled.resolve} />);
+    await act(() => settled.promise);
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    await waitFor(() =>
+      expect(region.getByRole("status").textContent).toBe(
+        "Nothing was saved. Try again.",
+      )
+    );
+    expect(region.getByRole("button", { name: NOT_DUPLICATES })).toBeTruthy();
   });
 });
 

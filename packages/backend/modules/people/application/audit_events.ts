@@ -18,6 +18,7 @@ import type {
   ImportantDateAudit,
   PersonAvatarAudit,
   PersonCreatedAudit,
+  PersonDuplicateDismissalAudit,
   PersonLifecycleAudit,
   PersonMergeAudit,
   PersonMergeAuditCommand,
@@ -325,6 +326,41 @@ export function personStarAuditFrom(
       recorder.record({
         event: describePersonStarEvent(command),
         missing: "Person star audit insert failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/**
+ * Two people marked as not duplicates (REL-064). The event is about the pair,
+ * so it names both ids, lower first, and nothing else about either person; it
+ * is filed under the lower one and kept off the dashboard, like a star.
+ */
+export function describePersonDuplicateDismissalEvent(
+  command: Parameters<PersonDuplicateDismissalAudit["record"]>[0],
+): AuditEvent {
+  return {
+    action: "people.duplicate-dismissed",
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: { personIds: [command.personLowId, command.personHighId] },
+    personId: command.personLowId,
+    subjectId: command.personLowId,
+    subjectType: "person",
+    visibleOnDashboard: false,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function personDuplicateDismissalAuditFrom(
+  recorder: AuditEventRecorder,
+): PersonDuplicateDismissalAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describePersonDuplicateDismissalEvent(command),
+        missing: "Duplicate dismissal audit insert failed.",
         transaction: command.transaction,
       }),
   };

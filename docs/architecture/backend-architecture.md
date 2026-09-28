@@ -215,6 +215,18 @@ before anything moves, to refuse it or to name a value only the primary keeps;
 the preview and the merge share that inspection, and the merge refuses a
 confirmation whose conflicts digest no longer matches the locked pair's.
 
+A pair the duplicate review offers can instead be marked as not duplicates
+(REL-064). The people `PersonDuplicateDismissals` use case, behind
+`POST /api/v1/people/duplicates/dismissals`, revalidates the member
+(`people.write`) under lock, which is also what ties `dismissed_by_member_id` to
+the pair's workspace, share-locks both undeleted people inside that workspace,
+stores the pair once in `person_duplicate_dismissals`, lower id first, and
+audits `people.duplicate-dismissed` with the two ids only. Dismissing a
+dismissed pair writes and audits nothing. The `people-directory` read model
+leaves a dismissed pair out of every member's review; a merge relinks the
+duplicate's decisions, and the people workspace-cascade digest includes them.
+There is no undo.
+
 ### Bulk directory actions
 
 Bulk directory actions (GAP-051, `PEOPLE-009`) add no write path. The people use

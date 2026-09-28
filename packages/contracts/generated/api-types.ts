@@ -549,6 +549,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/people/duplicates/dismissals": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. */
+        readonly post: operations["dismissPeopleDuplicate"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/tag-facet": {
         readonly parameters: {
             readonly query?: never;
@@ -3159,6 +3176,14 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly name: string;
+        };
+        readonly PeopleDuplicateDismissalInput: {
+            readonly personIds: readonly string[];
+        };
+        readonly PeopleDuplicateDismissed: {
+            readonly personIds: readonly string[];
+            /** @constant */
+            readonly status: "dismissed";
         };
         readonly PeopleDuplicatePair: {
             readonly people: readonly components["schemas"]["PeopleDuplicatePerson"][];
@@ -7093,6 +7118,80 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly dismissPeopleDuplicate: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PeopleDuplicateDismissalInput"];
+            };
+        };
+        readonly responses: {
+            /** @description The duplicate review no longer offers the pair to any member of the workspace */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PeopleDuplicateDismissed"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

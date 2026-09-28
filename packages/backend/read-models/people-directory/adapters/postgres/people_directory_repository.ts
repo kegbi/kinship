@@ -583,6 +583,13 @@ export class PostgresPeopleDirectoryRepository
       from matched
       join candidate first_person on first_person.id = matched.first_id
       join candidate second_person on second_person.id = matched.second_id
+      where not exists (
+        select 1 from crm.person_duplicate_dismissals dismissal
+        where dismissal.workspace_id = ${command.workspaceId}::uuid
+          and dismissal.person_low_id = least(matched.first_id, matched.second_id)
+          and dismissal.person_high_id
+            = greatest(matched.first_id, matched.second_id)
+      )
       group by matched.first_id, matched.second_id,
         first_person.created_at, second_person.created_at
       order by first_person.created_at, matched.first_id,

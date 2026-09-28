@@ -5,7 +5,9 @@
 import { assertEquals } from "../../../../testing/assert.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
 import type {
+  DismissDuplicatePairResult,
   MergePeopleResult,
+  PersonDuplicateDismissals,
   PersonMerge,
   PreviewPeopleMergeResult,
 } from "../../public.ts";
@@ -365,4 +367,111 @@ Deno.test("[PEOPLE-008] each refused preview is its own problem", async () => {
     })).status,
     503,
   );
+});
+
+function dismissals(
+  dismiss?: (personIds: readonly string[]) => Promise<
+    DismissDuplicatePairResult
+  >,
+) {
+  const calls: unknown[] = [];
+  const app = todayRoutes(
+    dismiss
+      ? {
+        duplicateDismissals: {
+          dismiss: (actor, personIds) => {
+            calls.push({ memberId: actor.memberId, personIds });
+            return dismiss(personIds);
+          },
+        } satisfies PersonDuplicateDismissals,
+      }
+      : {},
+  );
+  const send = (
+    body: unknown,
+    requestHeaders: Record<string, string> = headers,
+  ) =>
+    app.request("http://localhost/api/v1/people/duplicates/dismissals", {
+      body: JSON.stringify(body),
+      headers: requestHeaders,
+      method: "POST",
+    });
+  return { calls, send };
+}
+
+Deno.test("[PEOPLE-008] dismissing a pair answers it as stored, lower id first", async () => {
+  const { calls, send } = dismissals(() =>
+    Promise.resolve({
+      personIds: [primaryId, duplicateId],
+      status: "dismissed",
+    })
+  );
+  const response = await send({ personIds: [duplicateId, primaryId] });
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("cache-control"), "private, no-store");
+  assertEquals(await response.json(), {
+    personIds: [primaryId, duplicateId],
+    status: "dismissed",
+  });
+  assertEquals(calls, [{
+    memberId: fixtures.memberId(),
+    personIds: [duplicateId, primaryId],
+  }]);
+});
+
+Deno.test("[PEOPLE-008] each refused dismissal is its own problem", async () => {
+  const cases: readonly [DismissDuplicatePairResult, number, string][] = [
+    [{ status: "same-person" }, 400, "duplicate_same_person"],
+    [{ status: "forbidden" }, 403, "people_forbidden"],
+    [{ status: "not-found" }, 404, "person_not_found"],
+    [{ status: "unavailable" }, 503, "people_unavailable"],
+  ];
+  for (const [result, status, code] of cases) {
+    const { send } = dismissals(() => Promise.resolve(result));
+    const response = await send({ personIds: [primaryId, duplicateId] });
+    assertEquals(response.status, status, code);
+    assertEquals(await problemCode(response), code);
+  }
+  const failing = dismissals(() => Promise.reject(new Error("down")));
+  assertEquals(
+    (await failing.send({ personIds: [primaryId, duplicateId] })).status,
+    503,
+  );
+  assertEquals(
+    (await dismissals().send({ personIds: [primaryId, duplicateId] })).status,
+    503,
+  );
+});
+
+Deno.test("[PEOPLE-008] a malformed or cross-origin dismissal never reaches the use case", async () => {
+  const { calls, send } = dismissals(() =>
+    Promise.reject(new Error("must not dismiss"))
+  );
+  for (
+    const body of [
+      {},
+      { personIds: [primaryId] },
+      { personIds: [primaryId, duplicateId, fixtures.uuid(103)] },
+      { personIds: [primaryId, "not-a-uuid"] },
+      { extra: true, personIds: [primaryId, duplicateId] },
+    ]
+  ) {
+    const response = await send(body);
+    assertEquals(response.status, 400);
+    assertEquals(await problemCode(response), "validation_failed");
+  }
+  const { origin: _origin, ...withoutOrigin } = headers;
+  for (
+    const requestHeaders of [
+      withoutOrigin,
+      { ...headers, origin: "https://elsewhere.example" },
+    ]
+  ) {
+    assertEquals(
+      (await send({ personIds: [primaryId, duplicateId] }, requestHeaders))
+        .status,
+      403,
+    );
+  }
+  assertEquals(calls, []);
 });

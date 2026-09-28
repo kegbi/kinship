@@ -870,7 +870,7 @@ Playwright test carrying its stable flow ID.
       under the primary, where the files participant moved its link. A failed
       discard never fails the merge.
 
-- [ ] **REL-064 — A false duplicate pair can never be dismissed.** Found
+- [x] **REL-064 — A false duplicate pair can never be dismissed.** Found
       reviewing GAP-049: two genuinely different people with the same name, or
       sharing a phone number, stay in the directory's duplicates review forever.
       Let a member mark a pair "not duplicates". Where that decision would be
@@ -881,6 +881,17 @@ Playwright test carrying its stable flow ID.
       workspace, with composite same-workspace foreign keys backed by a new
       `people (workspace_id, id)` unique key), and a merge already relinks a
       duplicate's dismissals onto the primary. The use case, API, and UI remain.
+      Delivered 2026-09-28: a member marks a pair "Not duplicates" in the
+      directory's duplicates review
+      (`POST /api/v1/people/duplicates/dismissals`, `people.write`). The people
+      module's use case re-checks the member under lock, locks both people in id
+      order as merge does, requires both in the member's workspace and not
+      deleted, stores the pair lower id first with the server-side member, and
+      audits `people.duplicate-dismissed` once; a repeat succeeds without
+      writing. The review excludes dismissed pairs for every member before its
+      pair limit, the workspace-lifecycle digest counts them, and reset and
+      delete remove them. There is no undo. Unit, HTTP, PostgreSQL, island, and
+      PEOPLE-008 E2E tests cover it.
 
 - [x] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
       GAP-050: the Monica, vCard, and CSV commits reuse an earlier import's
@@ -1163,6 +1174,16 @@ Playwright test carrying its stable flow ID.
       the wait without a longer test timeout, for example by releasing the lock
       when the search returns or when a watchdog statement in the lock holder
       observes the search waiting past the bound.
+
+- [ ] **REL-090 — The duplicates review says nothing is left after a truncated
+      list is dismissed.** Found reviewing REL-064: the island never re-reads
+      the list, so after dismissing every shown pair of a review cut off at its
+      pair limit, `duplicatesSummary(0, truncated)` says "No possible duplicates
+      are left to review." while more exist, and the truncation text ("merge
+      some to see more") ignores dismissals. Re-read once after the last shown
+      pair goes, or say to reload. Also, the dismissal's audit event is filed
+      only under the lower-id person, so it appears in one person's history;
+      document or change that.
 
 ## Just-In-Time Technical Capabilities
 

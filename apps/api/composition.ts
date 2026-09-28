@@ -250,6 +250,7 @@ export interface ApiServices extends RegistrationHttpServices {
   /** Each member's own calendar feed secret, managed from settings. */
   readonly calendarFeeds?: CalendarFeedTokens;
   readonly directory?: PeopleDirectory;
+  readonly duplicateDismissals?: PeopleHttpServices["duplicateDismissals"];
   readonly duplicates?: PeopleDuplicates;
   readonly merge?: Pick<PersonMerge, "merge" | "preview">;
   readonly files?: PersonFileManagement;
@@ -575,6 +576,9 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           browserSecurity: services.browserSecurity,
           ...(services.bulk ? { bulk: services.bulk } : {}),
           directory: services.directory,
+          ...(services.duplicateDismissals
+            ? { duplicateDismissals: services.duplicateDismissals }
+            : {}),
           ...(services.duplicates ? { duplicates: services.duplicates } : {}),
           ...(services.importantDates
             ? { importantDates: services.importantDates }
@@ -1050,6 +1054,7 @@ export function createConfiguredApiApp(
     calendarFeeds: apiAccess.calendarFeeds,
     ...(dav ? { dav } : {}),
     directory: directory.directory,
+    duplicateDismissals: people.duplicateDismissals,
     duplicates: directory.duplicates,
     establishVerifiedEntry: (command) =>
       workspaces.protectedSessions.establishVerifiedEntry(command),
