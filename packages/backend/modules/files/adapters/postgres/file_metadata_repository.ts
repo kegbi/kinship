@@ -350,24 +350,25 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
   /**
    * The upload was reserved moments before by the same request, so only its
    * identifier and the workspace bound it: the person may be archived and
-   * the member removed by now, which is why it was never filed.
+   * the member removed by now, which is why it was never filed. The row is
+   * read without its link, so a reservation whose link is gone is still
+   * found and taken away rather than reported gone.
    */
   async lockReservedUpload(
     command: Parameters<FileMetadataRepository["lockReservedUpload"]>[0],
   ): Promise<
     Awaited<ReturnType<FileMetadataRepository["lockReservedUpload"]>>
   > {
-    const result = await sql<FileRow>`
-      select ${selectedColumns}
+    const result = await sql<{ readonly storage_key: string }>`
+      select stored.storage_key
       from crm.files stored
-      join crm.person_file_links link on link.file_id = stored.id
       where stored.id = ${command.fileId}::uuid
         and stored.workspace_id = ${command.workspaceId}::uuid
         and stored.status = 'processing' and stored.deleted_at is null
-      for update of stored
+      for update
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
-    return row ? file(row) : undefined;
+    return row ? { storageKey: row.storage_key } : undefined;
   }
 
   async discardReservedUpload(
@@ -381,6 +382,7 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
           select 1 from crm.files stored
           where stored.id = link.file_id
             and stored.workspace_id = ${command.workspaceId}::uuid
+            and stored.status = 'processing'
         )
     `.execute(database);
     await sql`

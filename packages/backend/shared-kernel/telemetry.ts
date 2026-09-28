@@ -131,11 +131,24 @@ export const LOG_EVENT_SHAPES: LogEventShapes = {
 };
 
 /**
+ * Why a file was due to go, as `observability.md` lists them: an avatar image
+ * a replacement, a failed link, a removal, a removal's held images, or a
+ * merge no longer draws, and an upload whose finalise was refused.
+ */
+export type FileCleanupReason =
+  | "avatar-held"
+  | "avatar-removed"
+  | "avatar-replaced"
+  | "avatar-unlinked"
+  | "merge-duplicate-avatar"
+  | "upload-refused";
+
+/**
  * The line for a cleanup that did not complete, correlated with the request
  * that caused it when there is one.
  */
 export function fileCleanupFailed(
-  reason: string,
+  reason: FileCleanupReason,
   source: Correlation,
 ): FileCleanupEvent {
   return {

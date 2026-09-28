@@ -201,7 +201,7 @@ class MemoryFiles implements FileMetadataRepository {
     return Promise.resolve(
       command.workspaceId === actor.workspaceId &&
         record?.status === "processing"
-        ? record
+        ? { storageKey: record.storageKey }
         : undefined,
     );
   }

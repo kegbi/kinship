@@ -27,6 +27,7 @@ import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
   fileCleanupFailed,
+  type FileCleanupReason,
   type Logger,
 } from "../../../shared-kernel/telemetry.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
@@ -120,7 +121,7 @@ export function createPersonAvatarManagement(
    */
   const cleanedUp = async (
     actor: PeopleActor,
-    reason: string,
+    reason: FileCleanupReason,
     attempt: () => Promise<AvatarDiscardResult>,
   ): Promise<void> => {
     const result = await attempt().catch(() => ({

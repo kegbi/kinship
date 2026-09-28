@@ -699,6 +699,98 @@ Deno.test("[GAP-023] PostgreSQL pages a person's files behind a bound cursor", a
 });
 
 Deno.test({
+  name:
+    "[REL-082] the reserved-upload discard reaches only a processing row, linked or not",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const fixture = await register(
+      `files-reserved-${crypto.randomUUID()}@example.test`,
+      "Files reserved",
+    );
+    const ada = await person(fixture, "Ada");
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+    const uploaded = async () => {
+      const response = await request(
+        fixture,
+        `/api/v1/people/${ada}/files`,
+        "POST",
+        pdf,
+      );
+      assert(response.status === 201, "a file uploads");
+      return (await response.json() as {
+        readonly file: { readonly fileId: string };
+      }).file.fileId;
+    };
+    const state = async (fileId: string) => {
+      const [row] = await sql<
+        { readonly linked: boolean; readonly status: string }[]
+      >`
+        select stored.status, exists (
+          select 1 from crm.person_file_links link
+          where link.file_id = stored.id
+        ) as linked
+        from crm.files stored where stored.id = ${fileId}::uuid
+      `;
+      return `${row?.status}:${row?.linked}`;
+    };
+    const connection = connectDatabase(databaseUrl);
+    const repository = new PostgresFileMetadataRepository();
+    const transaction = new PostgresPeopleTransaction(connection.db);
+    const scope = { workspaceId: fixture.workspaceId };
+    try {
+      // A filed upload is never the discard's, even called on its own.
+      const filed = await uploaded();
+      await transaction.run((session) =>
+        repository.discardReservedUpload({
+          ...scope,
+          fileId: filed,
+          occurredAt: new Date(),
+          transaction: session,
+        })
+      );
+      assert(
+        await state(filed) === "available:true",
+        `a filed upload keeps its row and link: ${await state(filed)}`,
+      );
+
+      // A reservation whose link is already gone is still found and locked.
+      const reserved = await uploaded();
+      await sql`
+        update crm.files set status = 'processing' where id = ${reserved}::uuid
+      `;
+      await sql`
+        delete from crm.person_file_links where file_id = ${reserved}::uuid
+      `;
+      const locked = await transaction.run((session) =>
+        repository.lockReservedUpload({
+          ...scope,
+          fileId: reserved,
+          transaction: session,
+        })
+      );
+      assert(locked?.storageKey, "an unlinked reservation is not hidden");
+      await transaction.run((session) =>
+        repository.discardReservedUpload({
+          ...scope,
+          fileId: reserved,
+          occurredAt: new Date(),
+          transaction: session,
+        })
+      );
+      assert(
+        await state(reserved) === "deleted:false",
+        `the unlinked reservation is recorded deleted: ${await state(
+          reserved,
+        )}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
   name: "FILES-001 PostgreSQL resources close",
   sanitizeOps: false,
   sanitizeResources: false,

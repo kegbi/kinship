@@ -74,6 +74,9 @@ Deno.test("[REL-083] a cleanup that did not complete is correlated when it can b
     ["event", "reason", "outcome"],
     "no request is no request identifier",
   );
+  // Only a documented reason code is a reason.
+  // @ts-expect-error: `avatar-lost` is not a cleanup reason.
+  fileCleanupFailed("avatar-lost", {});
 });
 
 Deno.test("[GAP-039] the silent logger drops everything", () => {

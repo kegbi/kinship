@@ -154,14 +154,18 @@ export interface FileMetadataRepository {
   }): Promise<readonly StoredPersonFile[]>;
   /**
    * Locks the named upload while it is still being processed in the
-   * workspace, or answers nothing once it has been filed or taken away.
+   * workspace, linked or not, and answers where its object is kept; or
+   * answers nothing once it has been filed or taken away.
    */
   lockReservedUpload(command: {
     readonly fileId: string;
     readonly transaction: PersonFileTransaction;
     readonly workspaceId: string;
-  }): Promise<StoredPersonFile | undefined>;
-  /** Unlinks the locked upload and records it deleted, without its key. */
+  }): Promise<{ readonly storageKey: string } | undefined>;
+  /**
+   * Unlinks the upload and records it deleted, without its key, while it is
+   * still being processed; a filed upload is left as it is.
+   */
   discardReservedUpload(command: {
     readonly fileId: string;
     readonly occurredAt: Date;
