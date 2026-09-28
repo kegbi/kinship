@@ -328,7 +328,7 @@ Playwright test carrying its stable flow ID.
       branches; `apps/api/gifts.ts` is at 92.2% branch and 100% line, the set at
       87.3% branch, and root `test:coverage` runs to completion again. No
       production file or threshold changed.
-- [ ] **REL-038 — The `lifecycle` coverage set is not perfectly deterministic.**
+- [x] **REL-038 — The `lifecycle` coverage set is not perfectly deterministic.**
       During the GAP-018 verification on 2026-09-17 one of four runs of
       `deno task test:coverage --module=lifecycle` measured
       `identity/adapters/postgres/personal_lifecycle.ts` at 83.3% branch and
@@ -341,7 +341,8 @@ Playwright test carrying its stable flow ID.
       `tests/integration/personal_lifecycle_postgres_test.ts` that sometimes
       skips a branch. Reproduce by running the set several times and diffing the
       per-file lines; fix by making the affected test deterministic, not by
-      widening the floor.
+      widening the floor. Folded into `REL-058` on 2026-09-28: the timing path
+      is the racy concurrent-leave test, and `REL-058` carries the fix.
 - [x] **REL-039 — `app-004a` and `app-003b` fail intermittently in the Chromium
       E2E under host load.** During the GAP-024 verification on 2026-09-23 two
       full Chromium runs of the candidate failed `app-004a` (`[PEOPLE-004]`, the
@@ -688,7 +689,10 @@ Playwright test carrying its stable flow ID.
       (`tests/integration/personal_lifecycle_postgres_test.ts`) races two leave
       requests, so `personal_lifecycle.ts#revokeSessions` runs only when one
       particular member wins. The `lifecycle` coverage set moves between runs
-      (functions 93.8% or 91.7%). Cover both orders deterministically.
+      (functions 93.8% or 91.7%). Cover both orders deterministically. This also
+      closes `REL-038`, folded in here: the same race is why
+      `identity/adapters/postgres/personal_lifecycle.ts` measured between 75%
+      and 100% branch across identical runs.
 
 - [ ] **REL-059 — Failed email reminders never reach Today's attention queue.**
       Found reviewing GAP-044: `today_attention_repository.ts` filters
@@ -3095,11 +3099,15 @@ asserts, so it runs that spec on its candidate.
         statements with the coordinator at 100, the three stylesheet invariants,
         the Astro production build, and the complete Chromium suite 44/44 with
         an empty `.artifacts/playwright`. No API gate applies.
-- [ ] **UXD-020 — Deferred product features named in §12 row 20.** Notifications
+- [x] **UXD-020 — Deferred product features named in §12 row 20.** Notifications
       centre, people favorites, life-event mutation, and directory tag cloud and
       sort are product scope, not design debt. They stay parked until their
       product contracts exist; life-event mutation still depends on the open
-      flow decision in [`traceability.md`](traceability.md).
+      flow decision in [`traceability.md`](traceability.md). Delivered
+      2026-09-28 by the gap remediation plan: GAP-046 (`a631e99`) delivered
+      life-event mutation in the person workspace, and GAP-053 (`ed8390d`)
+      delivered the notifications centre, people favourites, and the directory's
+      tag cloud and sort. No design debt remains under this row.
 - [x] **DOC-001 — Refresh the planning entry-point baseline.** The Current
       Baseline table in [`README.md`](README.md) described a pre-scaffold
       repository with zero delivered flows, and
