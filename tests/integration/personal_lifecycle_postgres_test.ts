@@ -339,53 +339,203 @@ Deno.test({
   },
 });
 
-Deno.test({
-  name: "AUTH-005 PostgreSQL concurrent leave preserves a final active owner",
-  sanitizeOps: false,
-  sanitizeResources: false,
-  async fn() {
-    await resetDatabase(sql, ["crm.legal_documents"]);
-    const first = await register("leave-first@example.test", "Shared circle");
-    const second = await register("leave-second@example.test", "Second home");
-    await addMembership(second, first.workspaceId, "owner");
-    const secondSession = await signIn(second.email, first.workspaceId);
-    const secondCookie = secondSession.headers.get("set-cookie")?.split(";")[0];
-    assert(
-      secondSession.status === 200 && secondCookie,
-      "second owner enters shared workspace",
-    );
-    const secondInShared = {
-      cookie: secondCookie,
-      workspaceId: first.workspaceId,
-    };
-
-    const responses = await Promise.all([
-      lifecycleRequest(first, "/api/v1/settings/personal-lifecycle/leave", {
-        method: "POST",
-        body: { confirmation: "LEAVE Shared circle", password },
-      }),
-      lifecycleRequest(
-        secondInShared,
-        "/api/v1/settings/personal-lifecycle/leave",
-        {
-          method: "POST",
-          body: { confirmation: "LEAVE Shared circle", password },
-        },
-      ),
-    ]);
-    assert(
-      responses.map((response) => response.status).sort().join(",") ===
-        "200,409",
-      "exactly one concurrent owner leaves",
-    );
-    const [owners] = await sql<{ readonly count: number }[]>`
-      select count(*)::int as count from crm.workspace_members
-      where workspace_id = ${first.workspaceId} and role = 'owner'
-        and status = 'active' and left_at is null
+/**
+ * Waits until `count` backends are parked on a database lock, re-querying
+ * without a clock. It fails fast when a request it is waiting on settles first,
+ * because that request then never reached the lock it was meant to hold.
+ */
+async function waitForLockWaiters(
+  count: number,
+  pending: readonly { readonly settled: boolean }[],
+): Promise<void> {
+  while (true) {
+    const [waiting] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock'
     `;
-    assert(owners?.count === 1, "one active owner remains");
-  },
-});
+    if ((waiting?.count ?? 0) >= count) return;
+    if (pending.some((request) => request.settled)) {
+      throw new Error(`a leave settled before ${count} lock waiters formed`);
+    }
+  }
+}
+
+function tracked<T>(promise: Promise<T>) {
+  const state = { promise, settled: false };
+  promise.finally(() => state.settled = true).catch(() => undefined);
+  return state;
+}
+
+/** The gate the ordered leave tests hold; `crm.gate_owner_leave` repeats it. */
+const LEAVE_GATE_KEY = 58_058;
+
+for (const winner of ["first", "second"] as const) {
+  Deno.test({
+    name:
+      `AUTH-005 PostgreSQL concurrent leave preserves a final active owner when the ${winner} owner commits first`,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+      await resetDatabase(sql, ["crm.legal_documents"]);
+      // `first` owns only the shared workspace, so winning signs it out and
+      // revokes its sessions; `second` still has a home to move into.
+      const first = await register("leave-first@example.test", "Shared circle");
+      const second = await register("leave-second@example.test", "Second home");
+      const secondMemberId = await addMembership(
+        second,
+        first.workspaceId,
+        "owner",
+      );
+      const secondSession = await signIn(second.email, first.workspaceId);
+      const secondCookie = secondSession.headers.get("set-cookie")?.split(
+        ";",
+      )[0];
+      assert(
+        secondSession.status === 200 && secondCookie,
+        "second owner enters shared workspace",
+      );
+      const owners = {
+        first,
+        second: {
+          ...second,
+          cookie: secondCookie,
+          memberId: secondMemberId,
+          workspaceId: first.workspaceId,
+        },
+      };
+      const loser = winner === "first" ? "second" : "first";
+      const leave = (who: "first" | "second") =>
+        lifecycleRequest(
+          owners[who],
+          "/api/v1/settings/personal-lifecycle/leave",
+          {
+            method: "POST",
+            body: { confirmation: "LEAVE Shared circle", password },
+          },
+        );
+      const activeSessions = async (userId: string) => {
+        const [row] = await sql<{ readonly count: number }[]>`
+          select count(*)::int as count from crm.user_sessions
+          where user_id = ${userId} and revoked_at is null
+            and expires_at > now()
+        `;
+        return row?.count ?? -1;
+      };
+      const winnerSessionsBefore = await activeSessions(owners[winner].userId);
+      const loserSessionsBefore = await activeSessions(owners[loser].userId);
+
+      // The winner's membership write parks on a gate this connection holds,
+      // with its workspace lock already taken; the loser then queues behind
+      // that lock, so the commit order is fixed before either finishes.
+      let gate: Awaited<ReturnType<typeof sql.reserve>> | undefined;
+      try {
+        await sql`
+          create or replace function crm.gate_owner_leave()
+          returns trigger language plpgsql as $$
+          begin
+            perform pg_advisory_xact_lock(58058);
+            return new;
+          end
+          $$
+        `;
+        await sql`
+          create trigger gate_owner_leave
+          before update on crm.workspace_members for each row
+          when (old.status = 'active' and new.status = 'left')
+          execute function crm.gate_owner_leave()
+        `;
+        gate = await sql.reserve();
+        await gate`select pg_advisory_lock(${LEAVE_GATE_KEY}::bigint)`;
+        const winning = tracked(leave(winner));
+        await waitForLockWaiters(1, [winning]);
+        const losing = tracked(leave(loser));
+        await waitForLockWaiters(2, [winning, losing]);
+        await gate`select pg_advisory_unlock(${LEAVE_GATE_KEY}::bigint)`;
+        const [won, lost] = await Promise.all([
+          winning.promise,
+          losing.promise,
+        ]);
+
+        const wonBody = await won.json() as {
+          readonly next: string;
+          readonly nextWorkspaceId?: string;
+        };
+        const lostBody = await lost.json() as {
+          readonly blockingWorkspaces: readonly { readonly name: string }[];
+          readonly code: string;
+        };
+        const [state] = await sql<{
+          readonly activeOwners: number;
+          readonly loserActive: number;
+          readonly loserAudits: number;
+        }[]>`
+          select
+            (select count(*)::int from crm.workspace_members
+              where workspace_id = ${first.workspaceId} and role = 'owner'
+                and status = 'active' and left_at is null) as "activeOwners",
+            (select count(*)::int from crm.workspace_members
+              where id = ${owners[loser].memberId} and role = 'owner'
+                and status = 'active' and left_at is null) as "loserActive",
+            (select count(*)::int from crm.audit_events
+              where subject_id = ${owners[loser].memberId}
+                and action = 'workspace.member-leave-attempted'
+                and payload->>'outcome' = 'blocked-final-owner')
+              as "loserAudits"
+        `;
+        const winnerSessions = await activeSessions(owners[winner].userId);
+        const loserSessions = await activeSessions(owners[loser].userId);
+        const observed = JSON.stringify({
+          lostBody,
+          lostStatus: lost.status,
+          loserSessions,
+          loserSessionsBefore,
+          state,
+          wonBody,
+          wonStatus: won.status,
+          winnerSessions,
+          winnerSessionsBefore,
+        });
+        assert(
+          won.status === 200 && lost.status === 409 &&
+            lostBody.code === "final_owner" &&
+            lostBody.blockingWorkspaces[0]?.name === "Shared circle",
+          `${winner} leaves and ${loser} is refused as final owner: ${observed}`,
+        );
+        assert(
+          state?.activeOwners === 1 && state.loserActive === 1 &&
+            state.loserAudits === 1,
+          `the refused owner stays the one active owner, audited: ${observed}`,
+        );
+        assert(
+          loserSessions === loserSessionsBefore,
+          `the refused owner keeps its sessions: ${observed}`,
+        );
+        assert(
+          winner === "first"
+            ? wonBody.next === "/auth/sign-in" &&
+              wonBody.nextWorkspaceId === undefined &&
+              winnerSessionsBefore > 0 && winnerSessions === 0
+            : wonBody.next === "/app" &&
+              wonBody.nextWorkspaceId === second.workspaceId &&
+              winnerSessions === winnerSessionsBefore,
+          winner === "first"
+            ? `the last-membership winner is signed out everywhere: ${observed}`
+            : `the winner with another home moves there signed in: ${observed}`,
+        );
+      } finally {
+        // A failure while the gate is held must not park the winner forever
+        // or hand a still-locked session back to the pool.
+        if (gate) {
+          await gate`select pg_advisory_unlock_all()`;
+          gate.release();
+        }
+        await sql`drop trigger if exists gate_owner_leave on crm.workspace_members`;
+        await sql`drop function if exists crm.gate_owner_leave()`;
+      }
+    },
+  });
+}
 
 Deno.test({
   name:

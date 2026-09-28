@@ -747,7 +747,7 @@ Playwright test carrying its stable flow ID.
       spec's legal document from other specs' workspaces, or run it in serial
       mode, without adding retries or longer timeouts.
 
-- [ ] **REL-058 — The concurrent-leave test covers only whichever order wins.**
+- [x] **REL-058 — The concurrent-leave test covers only whichever order wins.**
       "AUTH-005 concurrent leave preserves a final active owner"
       (`tests/integration/personal_lifecycle_postgres_test.ts`) races two leave
       requests, so `personal_lifecycle.ts#revokeSessions` runs only when one
@@ -755,7 +755,18 @@ Playwright test carrying its stable flow ID.
       (functions 93.8% or 91.7%). Cover both orders deterministically. This also
       closes `REL-038`, folded in here: the same race is why
       `identity/adapters/postgres/personal_lifecycle.ts` measured between 75%
-      and 100% branch across identical runs.
+      and 100% branch across identical runs. Delivered 2026-09-28: the racy test
+      is replaced by "…when the first owner commits first" and "…when the second
+      owner commits first". A temporary trigger parks the winner's leave write
+      on an advisory lock the test holds, after the winner already holds the
+      workspace lock; the test re-queries `pg_stat_activity` (no clock) until
+      the loser is queued behind it, then releases. Each order asserts 200 and
+      409 `final_owner`, one active owner, one audited refusal, and the winner's
+      documented outcome: the first owner, with no other workspace, is signed
+      out everywhere, so `revokeSessions` always runs; the second moves to
+      "Second home". With the workspace lock disabled both tests go red.
+      `test:coverage --module=lifecycle` now measures 86.5 / 93.8 / 95.8 on
+      every run, the identity adapter 75.0 / 100 / 98.4.
 
 - [ ] **REL-059 — Failed email reminders never reach Today's attention queue.**
       Found reviewing GAP-044: `today_attention_repository.ts` filters
