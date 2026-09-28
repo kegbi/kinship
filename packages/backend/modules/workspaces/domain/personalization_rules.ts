@@ -41,6 +41,24 @@ export const PERSONALIZATION_SECTIONS = [
 export type PersonalizationSection = typeof PERSONALIZATION_SECTIONS[number];
 
 /**
+ * The broad kinds a contact-method type may have (GAP-050), as the v8 column
+ * comment on `contact_method_types.kind` lists them. `custom` is the column
+ * default; the importer files email addresses, phone numbers, and websites
+ * under the types whose kind says so.
+ */
+export const CONTACT_METHOD_KINDS = [
+  "email",
+  "phone",
+  "url",
+  "social",
+  "im",
+  "username",
+  "custom",
+] as const;
+
+export type ContactMethodKind = typeof CONTACT_METHOD_KINDS[number];
+
+/**
  * The person-workspace sections a workspace may switch off or reorder
  * (GAP-047), in the order the workspace shows them: each one's
  * `workspace_profile_modules.key` and the name it is listed under. A section
@@ -88,6 +106,8 @@ const MAX_LABEL_LENGTH = 200;
 export interface PersonalizationEntry {
   readonly capabilities: PersonalizationItemCapabilities;
   readonly canDelete: boolean;
+  /** A contact-method type's kind; no other section has one. */
+  readonly contactKind?: ContactMethodKind;
   readonly daysBefore?: number;
   readonly forwardLabel?: string;
   readonly id: string;
@@ -129,6 +149,7 @@ export type PersonalizationResult =
 export type PersonalizationMutation =
   | {
     readonly action: "create";
+    readonly contactKind?: ContactMethodKind;
     readonly daysBefore?: number;
     readonly forwardLabel?: string;
     readonly name?: string;
@@ -137,6 +158,7 @@ export type PersonalizationMutation =
   }
   | {
     readonly action: "update";
+    readonly contactKind?: ContactMethodKind;
     readonly expectedUpdatedAt: string;
     readonly daysBefore?: number;
     readonly forwardLabel?: string;
@@ -204,6 +226,8 @@ export function normalizedMutation(
       if (!hasOnly([...common, "forwardLabel", "reverseLabel"])) {
         return undefined;
       }
+    } else if (section === "contact-method-types") {
+      if (!hasOnly([...common, "contactKind", "name"])) return undefined;
     } else if (!hasOnly([...common, "name"])) return undefined;
     if (UNORDERED_SECTIONS.includes(section) && input.sortOrder !== 0) {
       return undefined;
@@ -213,8 +237,9 @@ export function normalizedMutation(
       ? ["isActive", "name", "sortOrder"]
       : section === "gender-options"
       ? ["isActive", "isDefault", "name", "sortOrder"]
-      : section === "contact-method-types" || section === "activity-types" ||
-          section === "life-event-types"
+      : section === "contact-method-types"
+      ? ["contactKind", "isActive", "name", "sortOrder"]
+      : section === "activity-types" || section === "life-event-types"
       ? ["isActive", "name", "sortOrder"]
       : section === "contact-labels"
       ? ["name"]
@@ -239,6 +264,10 @@ export function normalizedMutation(
         (input.reverseLabel === undefined))
     ) return undefined;
   }
+  if (
+    input.contactKind !== undefined &&
+    !(CONTACT_METHOD_KINDS as readonly string[]).includes(input.contactKind)
+  ) return undefined;
   if (section === "reminder-rules") {
     if (
       (input.action === "create" && input.daysBefore === undefined) ||

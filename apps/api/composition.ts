@@ -913,7 +913,9 @@ export function createConfiguredApiApp(
   const transfer = composeImportExport(shared, {
     exportFiles: files.exportBoundary,
     exportPeople: people.exportBoundary,
+    importContactTypes: configuration.contactMethodTypes,
     importFiles: files.importBoundary,
+    importNotes: interactions.importBoundary,
     importPeople: people.importBoundary,
   });
   const governance = composeGovernance(shared);

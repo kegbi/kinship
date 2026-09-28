@@ -11,8 +11,18 @@ const ids = [
 const owners = {
   actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
+  contactTypes: { byKind: () => Promise.resolve({}) },
+  contacts: {
+    history: () => Promise.resolve({ fileImportedBefore: false, matches: [] }),
+    lockPendingCsv: () => Promise.resolve(undefined),
+    mapCsv: () => Promise.resolve(),
+    stageContacts: () => Promise.resolve(),
+    stagePendingCsv: () => Promise.resolve(),
+  },
   files: { representMissing: () => Promise.resolve() },
+  notes: { addNote: () => Promise.resolve() },
   people: {
+    addDetails: () => Promise.resolve(),
     create: () => Promise.resolve(),
     exists: () => Promise.resolve(true),
     linkAvatar: () => Promise.resolve(),
@@ -37,6 +47,7 @@ Deno.test("[IMPORT-001] Monica JSON dry-run redacts credentials and commits idem
           : [],
         contacts: [{
           archived: false,
+          entityId: ids[3]!,
           familyName: "Lovelace",
           givenName: "Ada",
           isDeceased: false,
@@ -295,6 +306,7 @@ Deno.test("[IMPORT-001] reports unsupported fields while concealing admin reads 
       diagnostics: [],
     },
     sourceProfile: "json_export" as const,
+    sourceSystem: "monica" as const,
     status: "dry_run" as const,
   };
   const repository: ImportRepository = {

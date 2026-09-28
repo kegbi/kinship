@@ -98,6 +98,17 @@ export type ImportReport = components["schemas"]["ImportReport"];
 
 export type ImportSummary = components["schemas"]["ImportSummary"];
 
+export type ImportDryRun = components["schemas"]["ImportDryRun"];
+
+export type ImportMappingRequired =
+  components["schemas"]["ImportMappingRequired"];
+
+export type CsvPreview = components["schemas"]["CsvPreview"];
+
+export type CsvColumnTarget = components["schemas"]["CsvColumnTarget"];
+
+export type ExportFormat = components["schemas"]["ExportFormat"];
+
 export type ExportManifest = components["schemas"]["ExportManifest"];
 
 export type ExportSummary = components["schemas"]["ExportSummary"];
@@ -145,6 +156,24 @@ export interface PersonalizationRelationshipCreateInput {
 export interface PersonalizationReminderCreateInput {
   readonly daysBefore: number;
 }
+
+/** A contact-method type's kind (GAP-050); `custom` by default. */
+export type ContactMethodKind = components["schemas"]["ContactMethodKind"];
+
+/** A new contact-method type: a named option that may also set its kind. */
+export type PersonalizationContactTypeCreateInput =
+  & PersonalizationNamedCreateInput
+  & { readonly contactKind?: ContactMethodKind };
+
+/** A contact-method type's edit, which may also change its kind. */
+export type PersonalizationContactTypeUpdateInput =
+  & { readonly expectedUpdatedAt: string }
+  & PersonalizationAtLeastOne<{
+    readonly contactKind: ContactMethodKind;
+    readonly isActive: boolean;
+    readonly name: string;
+    readonly sortOrder: number;
+  }>;
 
 export type PersonalizationNamedUpdateInput =
   & { readonly expectedUpdatedAt: string }
@@ -196,7 +225,7 @@ export type PersonalizationReminderUpdateInput =
 export interface PersonalizationCreateInputBySection {
   readonly "profile-modules": PersonalizationNamedCreateInput;
   readonly "gender-options": PersonalizationNamedCreateInput;
-  readonly "contact-method-types": PersonalizationNamedCreateInput;
+  readonly "contact-method-types": PersonalizationContactTypeCreateInput;
   readonly "contact-labels": PersonalizationNameOnlyCreateInput;
   readonly "activity-types": PersonalizationNamedCreateInput;
   readonly "emotion-options": never;
@@ -210,7 +239,7 @@ export interface PersonalizationCreateInputBySection {
 export interface PersonalizationUpdateInputBySection {
   readonly "profile-modules": PersonalizationNamedUpdateInput;
   readonly "gender-options": PersonalizationGenderUpdateInput;
-  readonly "contact-method-types": PersonalizationNamedUpdateInput;
+  readonly "contact-method-types": PersonalizationContactTypeUpdateInput;
   readonly "contact-labels": PersonalizationNameOnlyUpdateInput;
   readonly "activity-types": PersonalizationNamedUpdateInput;
   readonly "emotion-options": never;

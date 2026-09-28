@@ -20,6 +20,21 @@ export { createImportManagement } from "./application/import_management.ts";
 export type { ImportManagement } from "./application/import_management.ts";
 export type { ImportManagementDependencies } from "./application/import_context.ts";
 export type {
+  CsvMappingResult,
+  DryRunResult,
+} from "./application/import_staging.ts";
+export type {
+  ContactImportMatch,
+  ContactImportRepository,
+  PendingCsvRun,
+} from "./ports/contact_import_repository.ts";
+export type {
+  CsvPreview,
+  CsvTarget,
+  StagedSourceContact,
+} from "./domain/contact_import.ts";
+export { CSV_TARGETS } from "./domain/contact_import.ts";
+export type {
   ExportManifest,
   ExportSummary,
   StoredExport,

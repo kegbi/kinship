@@ -239,3 +239,42 @@ describe("EXPORT-001 settings export", () => {
     expect(api.calls().filter((call) => call === CREATE)).toHaveLength(2);
   });
 });
+
+describe("EXPORT-002 export formats", () => {
+  it("creates the chosen format, locks the choice while it runs, and names it in the history", async () => {
+    shell();
+    const created = deferred<Response>();
+    const csvRun = {
+      ...run,
+      format: "csv",
+      manifest: { ...run.manifest, profile: "csv" },
+    };
+    const api = stubApi({
+      ...base,
+      [CREATE]: created.promise,
+      [LIST]: [listed(), listed(csvRun)],
+    });
+    await mount();
+    const json = screen.getByLabelText<HTMLInputElement>(/^JSON/);
+    expect(json.checked).toBe(true);
+    const csv = screen.getByLabelText<HTMLInputElement>(/^CSV/);
+    click(csv);
+    expect(csv.checked).toBe(true);
+    click(create());
+    expect(state().textContent).toBe("Creating CSV export…");
+    expect(csv.disabled).toBe(true);
+    await act(async () => {
+      created.resolve(jsonResponse(csvRun, 201));
+      await created.promise;
+    });
+    await waitFor(() =>
+      expect(state().textContent).toBe("Export completed for 1 person.")
+    );
+    expect(csv.disabled).toBe(false);
+    const row = element("[data-export-history] li");
+    expect(row.dataset.exportFormat).toBe("csv");
+    expect(row.textContent).toContain("1 person · CSV");
+    expect(api.bodies()).toEqual([{ format: "csv" }]);
+    await expectNoAxeViolations(document.body);
+  });
+});

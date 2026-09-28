@@ -4,19 +4,24 @@ import type {
   ImportSummary,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
+  CHOOSE_CONTACTS,
   CHOOSE_EXPORT,
   DETECTED,
   historyLine,
   historyReducer,
   importHeading,
+  importHref,
   importStatus,
   initialNewImport,
   type NewImportAction,
   newImportReducer,
+  NOT_UTF8,
+  recognizeContactFile,
   recognizeSource,
   reportImportId,
   reportReducer,
   reportStatus,
+  resumedImportId,
   withinStagingLimit,
 } from "./imports.ts";
 
@@ -142,5 +147,107 @@ describe("IMPORT-001 import state", () => {
       ),
     ).toBe("00000000-0000-4000-8000-000000000010");
     expect(reportImportId("/app/settings/import/new")).toBeUndefined();
+  });
+});
+
+const ENCODER = new TextEncoder();
+const preview = {
+  delimiter: ",",
+  headers: ["Name"],
+  rowCount: 3,
+  rows: [["Ada"]],
+  suggested: ["givenName"],
+} as const;
+
+describe("IMPORT-002 contact import state", () => {
+  it("recognizes a vCard or CSV file only when it is UTF-8", () => {
+    expect(recognizeContactFile("vcard", ENCODER.encode("BEGIN:VCARD\r\n")))
+      .toEqual({
+        message: "vCard file detected.",
+        source: { format: "vcard", text: "BEGIN:VCARD\r\n" },
+      });
+    expect(recognizeContactFile("vcard", ENCODER.encode("FN:Ada")).message)
+      .toBe("This file does not look like a vCard.");
+    expect(recognizeContactFile("csv", ENCODER.encode("Name\nAda")).source)
+      .toEqual({ format: "csv", text: "Name\nAda" });
+    expect(recognizeContactFile("csv", ENCODER.encode(" \n")).message).toBe(
+      "This CSV file has no header row.",
+    );
+    expect(recognizeContactFile("csv", new Uint8Array([0xff, 0xfe])))
+      .toEqual({ message: NOT_UTF8 });
+  });
+
+  it("withdraws the dry run and the mapping when the source changes", () => {
+    const mapped = reduce({ type: "ready" }, {
+      importId: "i",
+      preview,
+      type: "mapping",
+    });
+    expect(mapped).toMatchObject({
+      mapping: { importId: "i", preview },
+      source: "csv",
+      status:
+        "Map each column to a field, or choose Ignore, then apply the mapping.",
+    });
+    const applying = newImportReducer(mapped, { type: "applying" });
+    expect(applying).toMatchObject({
+      applying: true,
+      status: "Applying the mapping…",
+    });
+    expect(
+      newImportReducer(applying, { message: "No.", type: "apply-refused" }),
+    )
+      .toMatchObject({
+        applying: false,
+        mapping: mapped.mapping,
+        status: "No.",
+      });
+    const dry = newImportReducer(applying, {
+      importId: "i",
+      report,
+      type: "dry-run",
+    });
+    expect(dry).toMatchObject({ applying: false, importId: "i", report });
+    expect(dry.mapping).toBeUndefined();
+    const vcard = newImportReducer(dry, { source: "vcard", type: "source" });
+    expect(vcard).toMatchObject({
+      detection: CHOOSE_CONTACTS,
+      importId: undefined,
+      report: undefined,
+      source: "vcard",
+    });
+    expect(newImportReducer(vcard, { source: "monica", type: "source" }))
+      .toMatchObject({ detection: CHOOSE_EXPORT, source: "monica" });
+    expect(newImportReducer(mapped, { type: "detecting" }).mapping)
+      .toBeUndefined();
+  });
+
+  it("words and links a contact import in the history", () => {
+    const pending = {
+      importId: "00000000-0000-4000-8000-000000000020",
+      preview,
+      report,
+      sourceSystem: "csv",
+      status: "pending",
+    } as unknown as ImportSummary;
+    expect(importHeading(pending)).toBe("3 rows · CSV");
+    expect(importHref(pending)).toBe(
+      "/app/settings/import/new?import=00000000-0000-4000-8000-000000000020",
+    );
+    expect(importStatus("pending")).toBe("Awaiting column mapping");
+    expect(reportStatus("pending")).toBe("Awaiting column mapping");
+    const vcard = {
+      importId: "v",
+      report,
+      sourceSystem: "vcard",
+      status: "completed",
+    } as unknown as ImportSummary;
+    expect(importHeading(vcard)).toBe("1 contact · vCard");
+    expect(importHref(vcard)).toBe("/app/settings/import/v");
+    expect(resumedImportId(`?import=${pending.importId}`)).toBe(
+      pending.importId,
+    );
+    expect(resumedImportId("?import=../../x")).toBeUndefined();
+    expect(resumedImportId("")).toBeUndefined();
   });
 });

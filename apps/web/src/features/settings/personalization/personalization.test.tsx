@@ -614,6 +614,73 @@ describe("WORKSPACE-003 personalization", () => {
     }]);
   });
 
+  it("sets a contact method type's kind when it is created and edited", async () => {
+    shell("contact-method-types");
+    const pager = entry({
+      capabilities: {
+        delete: true,
+        disable: true,
+        reorder: true,
+        rename: true,
+        replace: true,
+        setDefault: false,
+      },
+      contactKind: "custom",
+      id: "00000000-0000-4000-8000-000000000070",
+      kind: "named",
+      name: "Pager",
+      readOnly: false,
+    });
+    const api = stubApi({
+      [CREATE]: jsonResponse({ entry: pager, status: "saved" }),
+      [LIST]: listed("contact-method-types", [pager], {
+        capabilities: { create: true },
+      }),
+      [SESSION]: session,
+      [UPDATE]: jsonResponse({ entry: pager, status: "saved" }),
+    });
+    await mount();
+    const kindOf = screen.getByLabelText<HTMLSelectElement>("Kind for Pager");
+    expect(kindOf.value).toBe("custom");
+    const newKind = screen.getByLabelText<HTMLSelectElement>(
+      "New option kind",
+    );
+    expect(newKind.value).toBe("custom");
+    expect([...newKind.options].map((option) => option.textContent)).toEqual([
+      "Email",
+      "Phone",
+      "Website",
+      "Social profile",
+      "Instant messaging",
+      "Username",
+      "Custom",
+    ]);
+    type(createField("name")!, " Email ");
+    act(() => {
+      fireEvent.change(newKind, { target: { value: "email" } });
+    });
+    submit(createForm());
+    await waitFor(() => expect(status().textContent).toBe("Option created."));
+    act(() => {
+      fireEvent.change(screen.getByLabelText("Kind for Pager"), {
+        target: { value: "phone" },
+      });
+    });
+    submit(
+      element<HTMLFormElement>(`[data-personalization-form="${pager.id}"]`),
+    );
+    await waitFor(() => expect(status().textContent).toBe("Option saved."));
+    expect(writes(api.requests()).map(({ body }) => body)).toEqual([
+      { contactKind: "email", name: "Email", sortOrder: 1 },
+      {
+        contactKind: "phone",
+        expectedUpdatedAt: pager.updatedAt,
+        name: "Pager",
+        sortOrder: 0,
+      },
+    ]);
+  });
+
   it("edits reminder lead time only when the value capability is declared", async () => {
     shell("reminder-rules");
     const reminder = {

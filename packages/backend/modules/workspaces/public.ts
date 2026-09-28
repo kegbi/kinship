@@ -141,10 +141,12 @@ export type {
   PersonalizationManagement,
 } from "./application/personalization.ts";
 export {
+  CONTACT_METHOD_KINDS,
   PERSONALIZATION_SECTIONS,
   PROFILE_MODULE_DEFAULTS,
 } from "./domain/personalization_rules.ts";
 export type {
+  ContactMethodKind,
   PersonalizationEntry,
   PersonalizationItemCapabilities,
   PersonalizationMutation,
@@ -176,6 +178,12 @@ export type {
   LifeEventWorkspaceTransaction,
   WorkspaceLifeEventType,
 } from "./ports/life_event_boundary.ts";
+export type {
+  ContactMethodTypeCatalog,
+  ContactMethodTypeChoice,
+  ContactMethodTypeKind,
+  ContactMethodTypeTransaction,
+} from "./ports/contact_method_types.ts";
 export type {
   InteractionWorkspaceActor,
   InteractionWorkspaceBoundary,

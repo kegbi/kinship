@@ -2,14 +2,50 @@
  * The export page's state (GAP-033): the workspace's export history, the
  * one export being created, and each completed export's short-lived
  * download. A pure reducer with the words the page shows; `exports.tsx`
- * renders it.
+ * renders it. GAP-050 adds the format the next export is created in:
+ * portable JSON, a CSV archive, or one vCard file of everybody.
  */
 
-import type { ExportSummary } from "../../../../../../packages/contracts/generated/auth-client.ts";
+import type {
+  ExportFormat,
+  ExportSummary,
+} from "../../../../../../packages/contracts/generated/auth-client.ts";
 import type { TimePreferences } from "../../../lib/time-presentation.ts";
+
+/** Each format as the page offers it. */
+export const EXPORT_FORMATS: readonly {
+  readonly description: string;
+  readonly id: ExportFormat;
+  readonly label: string;
+}[] = [
+  {
+    description: "Monica-compatible portable JSON.",
+    id: "json",
+    label: "JSON",
+  },
+  {
+    description:
+      "A ZIP of people, contact methods, and dates, safe to open in a spreadsheet.",
+    id: "csv",
+    label: "CSV",
+  },
+  {
+    description: "One .vcf file with a card for every person.",
+    id: "vcard",
+    label: "vCard",
+  },
+];
+
+/** A format's name, as the history and the status line say it. */
+export function formatName(format: ExportFormat): string {
+  return EXPORT_FORMATS.find((option) => option.id === format)?.label ??
+    format;
+}
 
 export interface ExportsState {
   readonly phase: "loading" | "ready" | "no-session" | "member";
+  /** The format the next export is created in. */
+  readonly format: ExportFormat;
   readonly exports: readonly ExportSummary[] | undefined;
   readonly timePreferences: TimePreferences | undefined;
   readonly status: string;
@@ -32,6 +68,7 @@ export type ExportsAction =
   | { readonly type: "failed" }
   | { readonly type: "loaded"; readonly exports: readonly ExportSummary[] }
   | { readonly type: "creating"; readonly creating: boolean }
+  | { readonly type: "format"; readonly format: ExportFormat }
   | { readonly type: "preparing"; readonly exportId: string }
   | {
     readonly type: "prepared";
@@ -44,6 +81,7 @@ export const initialExports: ExportsState = {
   creating: false,
   downloads: {},
   exports: undefined,
+  format: "json",
   phase: "loading",
   preparing: [],
   retry: false,
@@ -102,8 +140,16 @@ export function exportsReducer(
       return {
         ...state,
         creating: action.creating,
-        ...(action.creating ? { status: "Creating portable export…" } : {}),
+        ...(action.creating
+          ? {
+            status: state.format === "json"
+              ? "Creating portable export…"
+              : `Creating ${formatName(state.format)} export…`,
+          }
+          : {}),
       };
+    case "format":
+      return { ...state, format: action.format };
     case "preparing":
       return {
         ...state,
@@ -122,9 +168,15 @@ export function exportsReducer(
   }
 }
 
-/** An export's heading: how many people it carries. */
+/**
+ * An export's heading: how many people it carries, and, for a CSV or vCard
+ * export, its format.
+ */
 export function exportHeading(run: ExportSummary): string {
-  return people(run.manifest.rows.people.count);
+  const count = people(run.manifest.rows.people.count);
+  return run.format && run.format !== "json"
+    ? `${count} · ${formatName(run.format)}`
+    : count;
 }
 
 /** What the page says once an export is created. */

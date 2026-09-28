@@ -14,7 +14,11 @@ import {
   problemResponses,
   workspaceHeaders,
 } from "./common.ts";
-import { exportDownload, exportSummary } from "../schemas/exports.ts";
+import {
+  exportDownload,
+  exportRequest,
+  exportSummary,
+} from "../schemas/exports.ts";
 import { uuid } from "../schemas/shared.ts";
 
 export const listExports = defineRoute({
@@ -45,15 +49,22 @@ export const createWorkspaceExport = defineRoute({
   security: [{ kinship_session: [] }],
   request: {
     headers: originAndWorkspaceHeaders,
+    body: {
+      required: false,
+      content: {
+        "application/json": exportRequest,
+      },
+    },
   },
   responses: {
     201: {
-      description: "Completed portable workspace export",
+      description:
+        "Completed workspace export: portable JSON, a CSV archive, or an all-people vCard",
       content: {
         "application/json": exportSummary,
       },
     },
-    ...problemResponses(401, 403, 413, 503),
+    ...problemResponses(400, 401, 403, 413, 503),
   },
 });
 
@@ -80,9 +91,11 @@ export const downloadExport = defineRoute({
   },
   responses: {
     200: {
-      description: "Private portable export artifact",
+      description: "Private export artifact",
       content: {
         "application/json": z.string().meta({ format: "binary" }),
+        "application/zip": z.string().meta({ format: "binary" }),
+        "text/vcard": z.string().meta({ format: "binary" }),
       },
     },
     ...problemResponses(401, 403, 404, 410, 503),

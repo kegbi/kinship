@@ -6,10 +6,10 @@
  * Monica's own importer accepts and nothing else, so an export can be read
  * back by the tool people are migrating away from; the three limitations are
  * shipped inside the manifest rather than left in a help page, because the
- * file outlives the page. GAP-050 adds CSV and an all-people vCard beside this
- * file, and neither needs anything here to move: a format module answers with
- * bytes, a manifest, and a digest, and the use case does not care which one it
- * asked.
+ * file outlives the page. GAP-050 added CSV and an all-people vCard beside
+ * this file (`contacts_export.ts`), and neither needed anything here to move:
+ * a format module answers with bytes, a manifest, and a digest, and the use
+ * case does not care which one it asked.
  *
  * `readPortableArtifact` is the other direction, and it is not a parser for
  * anybody else's file: it re-reads an artifact this module wrote, so a run

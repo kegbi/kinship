@@ -147,6 +147,26 @@ failure does not make the complete profile unavailable.
 - Concurrency-sensitive use cases must use explicit PostgreSQL constraints, row
   locks, advisory locks, or compare-and-swap semantics and must have race tests.
 
+### Contact import writes (GAP-050)
+
+A vCard or CSV import commits each new person's contact methods, addresses,
+dates, and occupation through `PeopleImportBoundary.addDetails`, and its note
+through `InteractionImportBoundary.addNote`, inside the import's one commit
+transaction. Both are the owning modules' import boundaries, not their profile
+editors, and they differ from those editors in two deliberate ways:
+
+- they do not consult `workspace_profile_modules`, so a section the workspace
+  has hidden still receives the imported rows, which appear if the section is
+  shown again; and
+- they record no per-fact or per-note audit event. The import run's own
+  `import.started`, `import.validated`, and `import.committed` events, with the
+  staging rows in `data_import_entities`, are the audit trail for everything a
+  commit wrote.
+
+The same values are still validated by the people module's own profile-fact and
+important-date rules, and each imported date is handed to planning's reminder
+publisher as a typed one is.
+
 ### DG-06A onboarding and invitation coordination
 
 The authoritative decision is

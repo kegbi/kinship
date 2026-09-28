@@ -40,3 +40,4 @@ export {
   communicationAuditFrom,
   interactionAuditFrom,
 } from "./application/audit_events.ts";
+export type { InteractionImportBoundary } from "./application/import_note_boundary.ts";

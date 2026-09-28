@@ -11,8 +11,13 @@
 
 import type { FileImportBoundary } from "../../files/public.ts";
 import type { ImportAudit } from "../../governance/public.ts";
+import type { InteractionImportBoundary } from "../../interactions/public.ts";
 import type { PeopleImportBoundary } from "../../people/public.ts";
-import type { ActorRevalidation } from "../../workspaces/public.ts";
+import type {
+  ActorRevalidation,
+  ContactMethodTypeCatalog,
+} from "../../workspaces/public.ts";
+import type { ContactImportRepository } from "../ports/contact_import_repository.ts";
 import type { ImportRepository } from "../ports/import_repository.ts";
 import type {
   ImportActor,
@@ -22,8 +27,14 @@ import type {
 
 export interface ImportManagementDependencies {
   readonly audit: ImportAudit;
+  /** How a vCard or CSV run is stored beside a Monica one (GAP-050). */
+  readonly contacts: ContactImportRepository;
+  /** The workspace's contact-method types an imported value is filed under. */
+  readonly contactTypes: ContactMethodTypeCatalog;
   readonly files: FileImportBoundary;
   readonly ids: { next(): string };
+  /** Where an imported contact's note is written. */
+  readonly notes: InteractionImportBoundary;
   readonly people: PeopleImportBoundary;
   readonly actors: ActorRevalidation;
   readonly repository: ImportRepository;

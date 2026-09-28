@@ -111,6 +111,7 @@ const FUNCTIONS: readonly string[] = [
   "listRelationships",
   "listTasks",
   "listWorkspaceAudit",
+  "mapImportColumns",
   "mergePeople",
   "parseTodayAttention",
   "parseTodayRecentPeople",

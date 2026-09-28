@@ -9,6 +9,8 @@
 import { createSettingsRoutes } from "../settings.ts";
 import { assert, assertStatus } from "../../../../../testing/assert.ts";
 import { headers, services } from "./settings.test-helper.ts";
+import { CONTACT_METHOD_KINDS } from "../../../public.ts";
+import { CONTACT_METHOD_KINDS as CONTRACT_CONTACT_METHOD_KINDS } from "../../../../../../contracts/schemas/settings.ts";
 
 Deno.test("WORKSPACE-003 HTTP keeps personalization private and maps lifecycle outcomes", async () => {
   const base = services();
@@ -168,4 +170,70 @@ Deno.test("WORKSPACE-003 HTTP rejects fields unsupported by the selected section
     assertStatus(response, 400, `${attempt.section} input is strict`);
   }
   assert(mutations === 0, "invalid section fields never enter the application");
+});
+
+Deno.test("[GAP-050] a contact method type's kind reaches the use case, and only for that section", async () => {
+  const received: unknown[] = [];
+  const base = services();
+  const app = createSettingsRoutes({
+    ...base,
+    personalization: {
+      isSection: (value): value is "contact-method-types" | "tags" =>
+        value === "contact-method-types" || value === "tags",
+      list: () => Promise.resolve({ status: "forbidden" }),
+      mutate: (_actor, _section, input) => {
+        received.push(input);
+        return Promise.resolve({ status: "conflict" });
+      },
+    },
+  });
+  const id = "00000000-0000-4000-8000-000000000021";
+  const expectedUpdatedAt = "2026-08-16T10:00:00.000Z";
+  const send = (path: string, method: string, body: unknown) =>
+    app.request(`http://localhost/api/v1/settings/personalization/${path}`, {
+      body: JSON.stringify(body),
+      headers,
+      method,
+    });
+  assertStatus(
+    await send("contact-method-types", "POST", {
+      contactKind: "email",
+      name: "Email",
+    }),
+    409,
+    "a kind is accepted on create",
+  );
+  assertStatus(
+    await send(`contact-method-types/${id}`, "PATCH", {
+      contactKind: "phone",
+      expectedUpdatedAt,
+    }),
+    409,
+    "a kind alone is a change",
+  );
+  assertStatus(
+    await send("contact-method-types", "POST", {
+      contactKind: "fax",
+      name: "Fax",
+    }),
+    400,
+    "an unknown kind is refused",
+  );
+  assertStatus(
+    await send("tags", "POST", { contactKind: "email", name: "Tag" }),
+    400,
+    "no other section has a kind",
+  );
+  assert(
+    JSON.stringify(received) === JSON.stringify([
+      { action: "create", contactKind: "email", name: "Email", sortOrder: 0 },
+      { action: "update", expectedUpdatedAt, id, contactKind: "phone" },
+    ]),
+    JSON.stringify(received),
+  );
+  assert(
+    JSON.stringify(CONTACT_METHOD_KINDS) ===
+      JSON.stringify(CONTRACT_CONTACT_METHOD_KINDS),
+    "the domain's kinds are the ones the contract publishes",
+  );
 });

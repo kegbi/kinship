@@ -1,5 +1,6 @@
 import { assertEquals } from "../../../testing/assert.ts";
 import {
+  CONTACT_METHOD_KINDS,
   isSection,
   normalizedMutation,
   PERSONALIZATION_SECTIONS,
@@ -430,4 +431,73 @@ Deno.test("[GAP-018] a name is trimmed, required on creation, and bounded", () =
     { action: "update", ...version, isActive: false },
     "an update with no name at all keeps the name it has",
   );
+});
+
+Deno.test("[GAP-050] a contact method type carries a kind the importer files values by", () => {
+  assertEquals(
+    normalizedMutation("contact-method-types", {
+      action: "create",
+      contactKind: "email",
+      name: " Email ",
+      sortOrder: 1,
+    }),
+    { action: "create", contactKind: "email", name: "Email", sortOrder: 1 },
+  );
+  assertEquals(
+    normalizedMutation("contact-method-types", {
+      action: "update",
+      contactKind: "phone",
+      expectedUpdatedAt: "2026-09-27T00:00:00.000Z",
+      id: "t",
+    }),
+    {
+      action: "update",
+      contactKind: "phone",
+      expectedUpdatedAt: "2026-09-27T00:00:00.000Z",
+      id: "t",
+    },
+  );
+  for (
+    const input of [
+      { action: "create", contactKind: "fax", name: "Fax", sortOrder: 1 },
+      { action: "create", contactKind: "email", name: "Tag", sortOrder: 0 },
+    ] as const
+  ) {
+    assertEquals(
+      normalizedMutation(
+        input.name === "Tag" ? "tags" : "contact-method-types",
+        input as never,
+      ),
+      undefined,
+      JSON.stringify(input),
+    );
+  }
+  assertEquals(
+    normalizedMutation("activity-types", {
+      action: "update",
+      contactKind: "email",
+      expectedUpdatedAt: "2026-09-27T00:00:00.000Z",
+      id: "t",
+    }),
+    undefined,
+  );
+  assertEquals(
+    normalizedMutation("contact-method-types", {
+      action: "create",
+      isActive: true,
+      name: "Email",
+      sortOrder: 1,
+    } as never),
+    undefined,
+    "a create names only its own fields",
+  );
+  assertEquals(CONTACT_METHOD_KINDS, [
+    "email",
+    "phone",
+    "url",
+    "social",
+    "im",
+    "username",
+    "custom",
+  ]);
 });

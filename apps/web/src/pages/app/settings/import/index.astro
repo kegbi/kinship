@@ -7,7 +7,7 @@ import {
   buttonVariants,
 } from "../../../../components/ui/variants.ts";
 ---
-<ApplicationLayout current="settings" description="Review Monica import history." pageId="settings.import" title="Import history — Kinship">
+<ApplicationLayout current="settings" description="Review import history." pageId="settings.import" title="Import history — Kinship">
   <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin data-import-index>
     <div class="settings-layout">
       <SettingsNavigation currentPage="settings.import" />
@@ -16,7 +16,7 @@ import {
       { href: "/app/settings", label: "Settings" },
       { label: "Import" },
     ]} />
-    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import</h1><p>Validated Monica imports and their current status.</p></div><a class={buttonVariants({ className: "mt-(--space-4)", shape: "pill" })} href="/app/settings/import/new">New import</a></header>
+    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>Import</h1><p>Validated Monica, vCard, and CSV imports and their current status.</p></div><a class={buttonVariants({ className: "mt-(--space-4)", shape: "pill" })} href="/app/settings/import/new">New import</a></header>
     <div class="contents" data-import-history-surface>
     <p data-import-state class="section-state" role="status" aria-live="polite">Loading import history…</p>
     <button data-import-retry class={buttonVariants({ variant: "outline" })} type="button" hidden>Retry</button>

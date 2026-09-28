@@ -13,9 +13,27 @@
  */
 
 import type {
+  ContactMethodKind,
   PersonalizationEntry,
   PersonalizationSection,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
+export { CONTACT_METHOD_KINDS } from "../../../../../../packages/contracts/schemas/settings.ts";
+
+/**
+ * A contact-method type's kind as the page names it (GAP-050). The importer
+ * files email addresses, phone numbers, and websites under the types whose
+ * kind is Email, Phone, and Website.
+ */
+export const CONTACT_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> =
+  {
+    email: "Email",
+    phone: "Phone",
+    url: "Website",
+    social: "Social profile",
+    im: "Instant messaging",
+    username: "Username",
+    custom: "Custom",
+  };
 
 export const PERSONALIZATION_SECTIONS: readonly {
   readonly id: PersonalizationSection;

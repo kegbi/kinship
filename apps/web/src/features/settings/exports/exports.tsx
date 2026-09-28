@@ -6,6 +6,8 @@
  * page knows its workspace (REL-041: an early click is never lost to a
  * control that looks ready), and while an export is being created. A
  * prepared download replaces its action with the link and takes focus.
+ * The format choice (GAP-050) decides what the next export is; it is locked
+ * while one is being created.
  */
 
 import {
@@ -30,6 +32,7 @@ import {
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
 import {
+  EXPORT_FORMATS,
   exportCompleted,
   exportHeading,
   exportsReducer,
@@ -97,8 +100,14 @@ export function ExportsPage(props: { readonly onSettled?: () => void }) {
     const workspaceId = workspace.current!;
     if (creating.current) return;
     creating.current = true;
+    const format = state.format;
     dispatch({ creating: true, type: "creating" });
-    const result = await settle(() => createWorkspaceExport(workspaceId));
+    const result = await settle(() =>
+      createWorkspaceExport(
+        workspaceId,
+        format === "json" ? undefined : format,
+      )
+    );
     if (result.status === "ready" && result.data) {
       await load();
       dispatch({
@@ -173,6 +182,29 @@ export function ExportsPage(props: { readonly onSettled?: () => void }) {
           Create export
         </button>
       </header>
+      <fieldset className="export-formats" data-export-formats="">
+        <legend>Format</legend>
+        {EXPORT_FORMATS.map((option) => (
+          <div className="export-format" key={option.id}>
+            <label>
+              <input
+                aria-describedby={`export-format-${option.id}-hint`}
+                checked={state.format === option.id}
+                disabled={state.creating}
+                name="exportFormat"
+                onChange={() =>
+                  dispatch({ format: option.id, type: "format" })}
+                type="radio"
+                value={option.id}
+              />{" "}
+              {option.label}
+            </label>
+            <span className="field-hint" id={`export-format-${option.id}-hint`}>
+              {option.description}
+            </span>
+          </div>
+        ))}
+      </fieldset>
       {stateLine}
       <button
         className={buttonVariants({ variant: "outline" })}
@@ -194,7 +226,7 @@ export function ExportsPage(props: { readonly onSettled?: () => void }) {
           {state.exports?.map((run) => {
             const href = state.downloads[run.exportId];
             return (
-              <li key={run.exportId}>
+              <li data-export-format={run.format} key={run.exportId}>
                 <strong>{exportHeading(run)}</strong>
                 <span>
                   {exportStatus(run)} ·{" "}

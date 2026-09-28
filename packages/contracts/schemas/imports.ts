@@ -28,6 +28,51 @@ export const importReport = z.strictObject({
   })),
 }).meta({ id: "ImportReport" });
 
+/** Every field a CSV column can be mapped to (GAP-050). */
+export const CSV_COLUMN_TARGETS = [
+  "ignore",
+  "givenName",
+  "familyName",
+  "middleName",
+  "nickname",
+  "email",
+  "phone",
+  "street",
+  "city",
+  "region",
+  "postalCode",
+  "country",
+  "birthday",
+  "note",
+  "company",
+  "jobTitle",
+] as const;
+
+export const csvColumnTarget = z.enum(CSV_COLUMN_TARGETS).meta({
+  id: "CsvColumnTarget",
+});
+
+/** The header and first rows of a CSV file, and the mapping they suggest. */
+export const csvPreview = z.strictObject({
+  delimiter: z.enum([",", ";"]),
+  headers: z.array(z.string()).max(100),
+  rowCount: z.number().int().min(0),
+  rows: z.array(z.array(z.string())).max(5),
+  suggested: z.array(csvColumnTarget).max(100),
+}).meta({ id: "CsvPreview" });
+
+/** A CSV dry run that stopped at its column-mapping step. */
+export const importMappingRequired = z.strictObject({
+  importId: z.uuid(),
+  preview: csvPreview,
+  status: z.literal("mapping"),
+}).meta({ id: "ImportMappingRequired" });
+
+/** The member's mapping, one target per CSV column, in header order. */
+export const csvColumnMapping = z.strictObject({
+  columns: z.array(csvColumnTarget).min(1).max(100),
+}).meta({ id: "CsvColumnMapping" });
+
 export const importDryRun = z.strictObject({
   importId: z.uuid(),
   report: importReport,
@@ -38,7 +83,11 @@ export const importSummary = z.strictObject({
   completedAt: z.iso.datetime({ offset: true }).optional(),
   createdAt: z.iso.datetime({ offset: true }),
   importId: z.uuid(),
+  preview: csvPreview.optional().meta({
+    description: "Present while a CSV import awaits its column mapping.",
+  }),
   report: importReport,
-  sourceProfile: z.literal("json_export"),
-  status: z.enum(["completed", "dry_run", "failed"]),
+  sourceProfile: z.enum(["csv", "json_export", "vcf"]),
+  sourceSystem: z.enum(["csv", "monica", "vcard"]),
+  status: z.enum(["completed", "dry_run", "failed", "pending"]),
 }).meta({ id: "ImportSummary" });

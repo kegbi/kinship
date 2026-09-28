@@ -6,3 +6,8 @@
 # and materialize the CSV files with the CRLF bytes recorded by the audit.
 personal-crm-schema/v1/* -text
 personal-crm-schema/v1/*.csv text eol=crlf
+
+# Import parser fixtures are byte-exact source files: CRLF line endings, a BOM,
+# and quoted-printable bytes are what the parsers under test must handle.
+packages/backend/modules/import-export/domain/formats/fixtures/* -text
+tests/e2e/fixtures/contacts.* -text

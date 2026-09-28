@@ -4,6 +4,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
   ExportContactMethod,
+  ExportDate,
   ExportPerson,
   PeopleExportBoundary,
 } from "../../application/export_people_boundary.ts";
@@ -11,6 +12,7 @@ import type {
 interface ExportPersonRow {
   readonly archived: boolean;
   readonly contact_methods: unknown;
+  readonly dates: unknown;
   readonly deleted_at: string | null;
   readonly description: string | null;
   readonly family_name: string | null;
@@ -52,10 +54,44 @@ function methods(value: unknown): readonly ExportContactMethod[] {
     : [];
 }
 
+const PRECISIONS = new Set([
+  "day",
+  "full",
+  "month",
+  "month_day",
+  "unknown",
+  "year",
+  "year_month",
+]);
+
+function dates(value: unknown): readonly ExportDate[] {
+  const parsed = typeof value === "string" ? JSON.parse(value) : value;
+  return Array.isArray(parsed)
+    ? parsed.flatMap((item) => {
+      const date = item as Record<string, unknown>;
+      if (
+        typeof date?.kind !== "string" ||
+        typeof date.precision !== "string" || !PRECISIONS.has(date.precision)
+      ) return [];
+      const part = (key: "day" | "month" | "year") =>
+        typeof date[key] === "number" ? { [key]: date[key] as number } : {};
+      return [{
+        ...part("day"),
+        kind: date.kind,
+        ...(typeof date.label === "string" ? { label: date.label } : {}),
+        ...part("month"),
+        precision: date.precision as ExportDate["precision"],
+        ...part("year"),
+      }];
+    })
+    : [];
+}
+
 function person(row: ExportPersonRow): ExportPerson {
   return {
     ...(row.archived ? { archived: true } : {}),
     contactMethods: methods(row.contact_methods),
+    dates: dates(row.dates),
     ...pickDefined({
       deletedAt: row.deleted_at,
       description: row.description,
@@ -75,7 +111,7 @@ function person(row: ExportPersonRow): ExportPerson {
  * The caller revalidates the actor before it reaches this boundary (see the
  * `ActorRevalidation` port), so the queries below scope by workspace alone.
  */
-const contactMethods = (workspaceId: string) =>
+const children = (workspaceId: string) =>
   sql`
   left join lateral (
     select jsonb_agg(jsonb_build_object(
@@ -86,6 +122,14 @@ const contactMethods = (workspaceId: string) =>
       and type.workspace_id = ${workspaceId}::uuid
     where method.person_id = person.id
   ) methods on true
+  left join lateral (
+    select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+      'kind', date.kind, 'label', date.label, 'year', date.year,
+      'month', date.month, 'day', date.day, 'precision', date.precision
+    )) order by date.kind, date.created_at, date.id) as items
+    from crm.person_dates date
+    where date.person_id = person.id
+  ) dates on true
 `;
 
 const selected = sql`
@@ -96,7 +140,8 @@ const selected = sql`
   case when person.deleted_at is null then null else
     ${instantColumn("person.deleted_at")}
   end as deleted_at,
-  coalesce(methods.items, '[]'::jsonb) as contact_methods
+  coalesce(methods.items, '[]'::jsonb) as contact_methods,
+  coalesce(dates.items, '[]'::jsonb) as dates
 `;
 
 export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
@@ -106,7 +151,7 @@ export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
     const result = await sql<ExportPersonRow>`
       select ${selected}
       from crm.people person
-      ${contactMethods(command.actor.workspaceId)}
+      ${children(command.actor.workspaceId)}
       where person.workspace_id = ${command.actor.workspaceId}::uuid
         and person.id = ${command.personId}::uuid
         and person.deleted_at is null
@@ -121,7 +166,7 @@ export class PostgresPeopleExportBoundary implements PeopleExportBoundary {
     const result = await sql<ExportPersonRow>`
       select ${selected}
       from crm.people person
-      ${contactMethods(command.actor.workspaceId)}
+      ${children(command.actor.workspaceId)}
       where person.workspace_id = ${command.actor.workspaceId}::uuid
         and person.deleted_at is null
       order by person.id

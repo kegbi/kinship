@@ -1,7 +1,9 @@
 /**
- * The import history page (GAP-033): each Monica import the workspace has
+ * The import history page (GAP-033): each import the workspace has
  * validated or committed, with its report one link away, so a dry run left
- * awaiting confirmation can be resumed. One read slot owns the list.
+ * awaiting confirmation can be resumed; a CSV import awaiting its column
+ * mapping links back to its mapping step (GAP-050). One read slot owns the
+ * list.
  */
 
 import { useEffect, useEffectEvent, useReducer, useRef } from "react";
@@ -14,7 +16,12 @@ import {
 } from "../../../lib/time-presentation.ts";
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
-import { historyReducer, importHeading, importStatus } from "./imports.ts";
+import {
+  historyReducer,
+  importHeading,
+  importHref,
+  importStatus,
+} from "./imports.ts";
 
 export const IMPORT_HISTORY_ISLAND = "settings-import-history";
 
@@ -99,7 +106,7 @@ export function ImportHistory(props: { readonly onSettled?: () => void }) {
       >
         {state.imports?.map((run) => (
           <li key={run.importId}>
-            <a href={`/app/settings/import/${run.importId}`}>
+            <a href={importHref(run)}>
               {importHeading(run)}
             </a>
             <span>

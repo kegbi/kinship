@@ -15,7 +15,10 @@
  */
 
 import { type Context, Hono } from "hono";
-import type { PersonalizationSection } from "../../../public.ts";
+import type {
+  ContactMethodKind,
+  PersonalizationSection,
+} from "../../../public.ts";
 import {
   createPersonalizationEntry,
   deletePersonalizationEntry,
@@ -214,6 +217,7 @@ export function createPersonalizationRoutes(
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
       const data = parsed.data as {
+        readonly contactKind?: ContactMethodKind;
         readonly daysBefore?: number;
         readonly forwardLabel?: string;
         readonly name?: string;
@@ -222,6 +226,9 @@ export function createPersonalizationRoutes(
       };
       const result = await services.personalization.mutate(actor, selected, {
         action: "create",
+        ...(data.contactKind === undefined
+          ? {}
+          : { contactKind: data.contactKind }),
         ...(data.daysBefore === undefined
           ? {}
           : { daysBefore: data.daysBefore }),
@@ -257,6 +264,7 @@ export function createPersonalizationRoutes(
       const actor = await requireActor(context);
       if (actor instanceof Response) return actor;
       const data = parsed.data as {
+        readonly contactKind?: ContactMethodKind;
         readonly daysBefore?: number;
         readonly expectedUpdatedAt: string;
         readonly forwardLabel?: string;
@@ -270,6 +278,9 @@ export function createPersonalizationRoutes(
         action: "update",
         expectedUpdatedAt: data.expectedUpdatedAt,
         id: id.data,
+        ...(data.contactKind === undefined
+          ? {}
+          : { contactKind: data.contactKind }),
         ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
         ...(data.isDefault === undefined ? {} : { isDefault: data.isDefault }),
         ...(data.name === undefined ? {} : { name: data.name }),

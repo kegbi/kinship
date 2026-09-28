@@ -8,11 +8,11 @@
  * whatever bytes a member uploaded into a `ParsedMonicaSource`, or into the
  * one sentence the member is shown about why it could not be read.
  *
- * The directory is called `formats` because GAP-050 adds vCard and CSV import
- * beside this file. A second profile is a sibling here with the same shape —
- * limits, a vocabulary, and a `parse` that answers with a parsed source or a
- * sentence — and the staging rules in `domain/import_rules.ts` stay as they
- * are, because they already work on the parsed shape rather than on the file.
+ * The directory is called `formats` because GAP-050 added vCard and CSV import
+ * beside this file (`vcard_parse.ts`, `csv.ts`). Each is a sibling with the
+ * same shape — limits, a vocabulary, and a `parse` that answers with a parsed
+ * source or a sentence — and their staging rules live in
+ * `domain/contact_import.ts`, beside the Monica rules in `import_rules.ts`.
  *
  * The largest attachment arrives as a limit rather than as an import: the size
  * a stored file may reach is the files module's rule, and a domain file has no

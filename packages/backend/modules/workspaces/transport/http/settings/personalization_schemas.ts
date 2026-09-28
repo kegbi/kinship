@@ -17,6 +17,8 @@
 import { z } from "zod";
 import type { PersonalizationSection } from "../../../public.ts";
 import {
+  personalizationContactTypeCreate,
+  personalizationContactTypeUpdate,
   personalizationGenderUpdate,
   personalizationNamedCreate,
   personalizationNamedUpdate,
@@ -35,6 +37,9 @@ export const personalizationCreateSchema = (
     return personalizationRelationshipCreate;
   }
   if (section === "reminder-rules") return personalizationReminderCreate;
+  if (section === "contact-method-types") {
+    return personalizationContactTypeCreate;
+  }
   if (section === "contact-labels" || section === "tags") {
     return personalizationNameOnlyCreate;
   }
@@ -47,6 +52,9 @@ export const personalizationUpdateSchema = (
   section: PersonalizationSection,
 ) => {
   if (section === "gender-options") return personalizationGenderUpdate;
+  if (section === "contact-method-types") {
+    return personalizationContactTypeUpdate;
+  }
   if (section === "contact-labels" || section === "tags") {
     return personalizationNameOnlyUpdate;
   }

@@ -7,7 +7,7 @@
 
 import type { ApiResult } from "./request.ts";
 import { request, workspaceHeader } from "./request.ts";
-import type { ExportSummary } from "./types.ts";
+import type { ExportFormat, ExportSummary } from "./types.ts";
 
 export function listExports(
   workspaceId?: string,
@@ -17,10 +17,12 @@ export function listExports(
 
 export function createWorkspaceExport(
   workspaceId?: string,
+  format?: ExportFormat,
 ): Promise<ApiResult<ExportSummary>> {
   return request("/api/v1/exports", {
     method: "POST",
     headers: workspaceHeader(workspaceId),
+    ...(format ? { body: JSON.stringify({ format }) } : {}),
   });
 }
 

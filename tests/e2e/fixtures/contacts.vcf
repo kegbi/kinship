@@ -1,0 +1,16 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:urn:uuid:9d1f6f6e-4b42-4c3b-a0c1-7ae0e3c0a001
+FN:Ada Lovelace
+N:Lovelace;Ada;;;
+EMAIL;TYPE=work:ada@example.com
+BDAY:--1210
+NOTE:Wrote the first program.
+PHOTO:https://example.com/ada.png
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Charles Babbage
+N:Babbage;Charles;;;
+TEL;TYPE=CELL:+44 20 7946 0001
+END:VCARD

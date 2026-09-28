@@ -327,6 +327,7 @@ Deno.test("[GAP-020] the refusals exports.ts answers are unchanged", () => {
     [
       "503 | exports_unavailable | Exports unavailable | A download reference could not be issued.",
       "503 | export_artifact_unavailable | Export unavailable | The export artifact could not be read.",
+      "400 | export_format_invalid | Export format invalid | Choose JSON, CSV, or vCard.",
       "503 | exports_unavailable | Exports unavailable | Export history could not be loaded.",
       "503 | export_failed | Export failed | The export artifact could not be completed.",
       "404 | export_not_found | Export unavailable | This export does not exist in the active workspace.",
@@ -410,7 +411,7 @@ Deno.test("[GAP-020] the refusals imports.ts answers are unchanged", () => {
     [
       "400 | import_confirmation_required | Confirmation required | Confirm the validated dry-run before committing it.",
       "404 | import_not_found | Import unavailable | This import does not exist in the active workspace.",
-      "413 | import_too_large | Import too large | The Monica JSON source exceeds the 1.5 MB staging limit.",
+      "413 | import_too_large | Import too large | The import source exceeds the 1.5 MB staging limit.",
     ].join("\n"),
     "IMPORT_PROBLEMS",
   );

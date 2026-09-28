@@ -102,7 +102,9 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       transaction: shared.peopleTransaction,
     }),
     exportBoundary: new PostgresPeopleExportBoundary(),
-    importBoundary: new PostgresPeopleImportBoundary(),
+    importBoundary: new PostgresPeopleImportBoundary(
+      ports.importantDatePublisher,
+    ),
     importantDates: createImportantDateManagement({
       actors: shared.actors,
       audit: importantDateAuditFrom(shared.audit),

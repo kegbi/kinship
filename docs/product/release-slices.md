@@ -132,8 +132,8 @@ workspace section, journal item, or tasks page it lives on.
 
 ## Slice 7: Data Lifecycle, Import, And Export
 
-Flows: `IMPORT-001`, `EXPORT-001`, `AUTH-005`, `WORKSPACE-002`, and
-`PEOPLE-008`.
+Flows: `IMPORT-001`, `IMPORT-002`, `EXPORT-001`, `EXPORT-002`, `AUTH-005`,
+`WORKSPACE-002`, and `PEOPLE-008`.
 
 Deliver format detection, bounded staging, identity mapping, dry-run reports,
 atomic commit, idempotent rerun, attachment manifests, vCard export, workspace
@@ -214,6 +214,11 @@ statuses, page associations, and public-page empty `flowIds` remain unchanged.
 
 The former life-event mutation flow gate is resolved: GAP-046 added
 `JOURNAL-002` (P1, Slice 6, `people.profile`).
+
+GAP-050 added `IMPORT-002` and `EXPORT-002` (P1, Slice 7, `settings.import-new`
+and `settings.export`) for vCard and CSV contacts, which the Slice 7 ticket
+names. Import sources beyond Monica, vCard, and CSV remain part of the
+optional-source import gate above.
 
 ## Slice Acceptance
 

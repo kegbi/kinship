@@ -4,8 +4,10 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
+import type { CsvPreview } from "../../domain/contact_import.ts";
 import type {
   ImportReport,
+  ImportSourceSystem,
   ImportSummary,
   PreparedImportCommit,
 } from "../../domain/import_rules.ts";
@@ -14,6 +16,10 @@ import type {
   ImportRepository,
   StageImportCommand,
 } from "../../ports/import_repository.ts";
+import {
+  insertReports,
+  preparedContacts as stagedContactRows,
+} from "./contact_import_repository.ts";
 
 export class PostgresImportTransaction
   extends PostgresTransactionRunner<ImportTransaction> {}
@@ -22,8 +28,10 @@ interface ImportRow {
   readonly completed_at: Date | null;
   readonly created_at: Date;
   readonly id: string;
+  readonly source_profile: ImportSummary["sourceProfile"];
+  readonly source_system: ImportSourceSystem;
   readonly stats: unknown;
-  readonly status: "completed" | "dry_run" | "failed";
+  readonly status: ImportSummary["status"];
 }
 
 function report(value: unknown): ImportReport {
@@ -56,17 +64,27 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 function summary(row: ImportRow): ImportSummary {
+  const preview = row.status === "pending"
+    ? jsonRecord(row.stats).preview as CsvPreview | undefined
+    : undefined;
   return {
     ...(row.completed_at
       ? { completedAt: row.completed_at.toISOString() }
       : {}),
     createdAt: row.created_at.toISOString(),
     importId: row.id,
+    ...(preview ? { preview } : {}),
     report: report(row.stats),
-    sourceProfile: "json_export",
+    sourceProfile: row.source_profile,
+    sourceSystem: row.source_system,
     status: row.status,
   };
 }
+
+const summaryColumns = sql`
+  run.id::text, run.status, run.stats, run.created_at, run.completed_at,
+  run.source_system, run.source_profile
+`;
 
 export class PostgresImportRepository implements ImportRepository {
   async stage(command: StageImportCommand): Promise<{
@@ -143,18 +161,7 @@ export class PostgresImportRepository implements ImportRepository {
         `.execute(database);
       }
     }
-    for (const diagnostic of command.report.diagnostics) {
-      await sql`
-        insert into crm.data_import_reports (
-          import_id, severity, message, details
-        ) values (
-          ${command.importId}::uuid, ${diagnostic.severity},
-          ${diagnostic.message}, ${
-        JSON.stringify({ code: diagnostic.code })
-      }::text::jsonb
-        )
-      `.execute(database);
-    }
+    await insertReports(database, command.importId, command.report);
     return {
       importId: command.importId,
       report: command.report,
@@ -169,10 +176,11 @@ export class PostgresImportRepository implements ImportRepository {
   ): Promise<PreparedImportCommit> {
     const database = databaseFromSession(transaction);
     const locked = await sql<{
+      readonly source_system: ImportSourceSystem;
       readonly stats: unknown;
       readonly status: string;
     }>`
-      select status, stats
+      select status, stats, source_system
       from crm.data_imports
       where id = ${importId}::uuid and workspace_id = ${actor.workspaceId}::uuid
       for update
@@ -192,6 +200,19 @@ export class PostgresImportRepository implements ImportRepository {
       };
     }
     if (run.status !== "dry_run") return { status: "not-found" };
+    if (run.source_system !== "monica") {
+      return {
+        avatars: [],
+        contacts: await stagedContactRows(
+          database,
+          actor,
+          importId,
+          run.source_system,
+        ),
+        importId,
+        status: "ready",
+      };
+    }
 
     const contacts = await sql<{
       readonly deleted_at: Date | null;
@@ -208,11 +229,12 @@ export class PostgresImportRepository implements ImportRepository {
       readonly avatar_color: string | null;
       readonly avatar_external_url: string | null;
       readonly avatar_source: "default" | "external" | "gravatar" | null;
+      readonly id: string;
       readonly source_primary_key: string;
       readonly source_uuid: string | null;
       readonly target_key: string;
     }>`
-      select source_primary_key, source_uuid::text, target_key,
+      select id::text, source_primary_key, source_uuid::text, target_key,
         raw_snapshot->>'first_name' as given_name,
         raw_snapshot->>'middle_name' as middle_name,
         raw_snapshot->>'last_name' as family_name,
@@ -266,6 +288,7 @@ export class PostgresImportRepository implements ImportRepository {
         ...(contact.deleted_at
           ? { deletedAt: contact.deleted_at.toISOString() }
           : {}),
+        entityId: contact.id,
         ...pickDefined({
           description: contact.description,
           familyName: contact.family_name,
@@ -317,14 +340,14 @@ export class PostgresImportRepository implements ImportRepository {
 
   async retargetContact(
     importId: string,
-    sourcePrimaryKey: string,
+    entityId: string,
     targetPersonId: string,
     transaction: ImportTransaction,
   ): Promise<void> {
     const result = await sql<{ readonly id: string }>`
       update crm.data_import_entities set target_key = ${targetPersonId}
-      where import_id = ${importId}::uuid and source_table = 'contacts'
-        and source_primary_key = ${sourcePrimaryKey}
+      where import_id = ${importId}::uuid and id = ${entityId}::uuid
+        and target_table = 'people'
       returning id::text
     `.execute(databaseFromSession(transaction));
     if (!result.rows[0]) throw new Error("Import identity retarget failed.");
@@ -364,16 +387,17 @@ export class PostgresImportRepository implements ImportRepository {
     importId: string,
   ): Promise<ImportSummary | undefined> {
     const result = await sql<ImportRow>`
-      select id::text, status, stats, created_at, completed_at
-      from crm.data_imports
-      where id = ${importId}::uuid and workspace_id = ${actor.workspaceId}::uuid
+      select ${summaryColumns}
+      from crm.data_imports run
+      where run.id = ${importId}::uuid
+        and run.workspace_id = ${actor.workspaceId}::uuid
     `.execute(this.database);
     return result.rows[0] ? summary(result.rows[0]) : undefined;
   }
 
   async list(actor: ImportActor): Promise<readonly ImportSummary[]> {
     const result = await sql<ImportRow>`
-      select run.id::text, run.status, run.stats, run.created_at, run.completed_at
+      select ${summaryColumns}
       from crm.data_imports run
       where run.workspace_id = ${actor.workspaceId}::uuid
       order by run.created_at desc, run.id desc

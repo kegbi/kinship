@@ -327,3 +327,40 @@ Deno.test("[GAP-020] every export route names its own outage and needs a session
     assertStatus(anonymous, 401, `${route.path} needs a session`);
   }
 });
+
+Deno.test("[EXPORT-002] export HTTP asks for the format the body names", async () => {
+  const asked: string[] = [];
+  const exports = management();
+  const target = app("admin", {
+    ...exports,
+    createWorkspace: (actor, format) => {
+      asked.push(format ?? "(none)");
+      return exports.createWorkspace(actor, format);
+    },
+  });
+  const post = (body: string) =>
+    target.request("http://localhost/api/v1/exports", {
+      body,
+      headers: {
+        "content-type": "application/json",
+        cookie: "kinship_session=valid",
+        origin: "http://localhost",
+      },
+      method: "POST",
+    });
+  assertStatus(await post(JSON.stringify({ format: "csv" })), 201, "csv");
+  assertStatus(await post(JSON.stringify({ format: "vcard" })), 201, "vcard");
+  assertStatus(await post(JSON.stringify({})), 201, "no format");
+  assertStatus(await post(""), 201, "no body");
+  assert(asked.join() === "csv,vcard,json,json", asked.join());
+  for (const body of [JSON.stringify({ format: "sql" }), "{", "[]"]) {
+    const refused = await post(body);
+    assertStatus(refused, 400, body);
+    assert(
+      (await refused.json() as { code: string }).code ===
+        "export_format_invalid",
+      "the refusal names the format",
+    );
+  }
+  assert(asked.length === 4, "a refused format never reaches the use case");
+});

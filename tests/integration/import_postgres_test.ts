@@ -18,6 +18,9 @@ import {
   PostgresImportRepository,
   PostgresImportTransaction,
 } from "../../packages/backend/modules/import-export/adapters/postgres/import_repository.ts";
+import { PostgresContactImportRepository } from "../../packages/backend/modules/import-export/adapters/postgres/contact_import_repository.ts";
+import { PostgresInteractionImportBoundary } from "../../packages/backend/modules/interactions/adapters/postgres/import_note_boundary.ts";
+import { PostgresContactMethodTypeCatalog } from "../../packages/backend/modules/workspaces/adapters/postgres/contact_method_types.ts";
 import {
   PostgresPeopleImportBoundary,
 } from "../../packages/backend/modules/people/adapters/postgres/import_people_boundary.ts";
@@ -35,6 +38,15 @@ import {
   revokeMembership,
 } from "../support/database.ts";
 import { apiSupport, type SignedInFixture } from "../support/api.ts";
+
+/**
+ * The reminder publisher the people import boundary requires. A Monica
+ * contact carries no dates, so these suites never reach it.
+ */
+const monicaDates = {
+  regenerate: () =>
+    Promise.reject(new Error("A Monica import regenerated a reminder.")),
+};
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
@@ -223,9 +235,12 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
   const imports = createImportManagement({
     actors: new PostgresActorRevalidation(),
     audit,
+    contactTypes: new PostgresContactMethodTypeCatalog(),
+    contacts: new PostgresContactImportRepository(),
     files: new PostgresFileImportBoundary(),
     ids: { next: () => crypto.randomUUID() },
-    people: new PostgresPeopleImportBoundary(),
+    notes: new PostgresInteractionImportBoundary(),
+    people: new PostgresPeopleImportBoundary(monicaDates),
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),
   });
@@ -297,9 +312,12 @@ Deno.test({
       const imports = createImportManagement({
         actors: new PostgresActorRevalidation(),
         audit: importAuditFrom(new PostgresAuditEventRecorder()),
+        contactTypes: new PostgresContactMethodTypeCatalog(),
+        contacts: new PostgresContactImportRepository(),
         files: new PostgresFileImportBoundary(),
         ids: { next: () => crypto.randomUUID() },
-        people: new PostgresPeopleImportBoundary(),
+        notes: new PostgresInteractionImportBoundary(),
+        people: new PostgresPeopleImportBoundary(monicaDates),
         repository: new PostgresImportRepository(connection.db),
         transaction: new PostgresImportTransaction(connection.db),
       });

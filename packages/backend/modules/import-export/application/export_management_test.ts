@@ -147,6 +147,7 @@ class MemoryFiles implements ExportFileBoundary {
 const people: PeopleExportBoundary = {
   getPerson: () =>
     Promise.resolve({
+      dates: [],
       contactMethods: [
         { kind: "email", label: "Work", value: "ada@example.test" },
         { kind: "phone", label: "Mobile", value: "+381111111" },
@@ -160,6 +161,7 @@ const people: PeopleExportBoundary = {
     }),
   listWorkspace: () =>
     Promise.resolve([{
+      dates: [],
       contactMethods: [{
         kind: "email",
         label: "Work",
@@ -277,6 +279,7 @@ Deno.test("[EXPORT-001] exports a member-authorized vCard with escaped contact d
       ...people,
       getPerson: () =>
         Promise.resolve({
+          dates: [],
           contactMethods: [{
             kind: "email",
             label: "Work:unsafe\nTYPE=home",
@@ -438,6 +441,7 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
       ...people,
       listWorkspace: () =>
         Promise.resolve(Array.from({ length: 501 }, () => ({
+          dates: [],
           contactMethods: [],
           givenName: "Person",
           id: personId,
@@ -455,4 +459,49 @@ Deno.test("[EXPORT-001] conceals lost authority, missing people, and missing job
     "oversized subset is rejected instead of truncated",
   );
   assert(repository.failed, "oversized canonical job is marked failed");
+});
+
+Deno.test("[EXPORT-002] a CSV export is one archive stored and audited like the JSON one", async () => {
+  const { audit, exports, files } = context();
+  const created = await exports.createWorkspace(actor, "csv");
+  assert(created.status === "completed", "CSV export completed");
+  assert(created.manifest.profile === "csv", "the manifest names its profile");
+  assert(
+    created.manifest.rows.contactMethods?.count === 1 &&
+      created.manifest.rows.dates?.count === 0,
+    "every table is signed",
+  );
+  const archive = new TextDecoder().decode(files.bytes);
+  assert(archive.startsWith("PK\u0003\u0004"), "a ZIP archive is stored");
+  assert(archive.includes("people.csv"), "the people table is archived");
+  assert(
+    audit.map((event) => event.action).join() === "requested,completed",
+    "requested and completed are audited",
+  );
+});
+
+Deno.test("[EXPORT-002] a vCard export resumes from its stored bytes and rebuilds changed ones", async () => {
+  const { exports, files, repository } = context();
+  const created = await exports.createWorkspace(actor, "vcard");
+  assert(created.status === "completed", "vCard export completed");
+  assert(
+    new TextDecoder().decode(files.bytes).includes("FN:Ada Lovelace"),
+    "every person's card is written",
+  );
+  // An interrupted run whose stored bytes still match what the people
+  // produce finishes from them; one whose bytes changed stores new ones.
+  repository.stored = { ...repository.stored!, status: "running" };
+  assert(
+    (await exports.createWorkspace(actor, "vcard")).status === "completed",
+    "a resumed run completes",
+  );
+  const stores = () => files.storeCount;
+  assert(stores() === 1, "matching bytes are not stored twice");
+  repository.stored = { ...repository.stored!, status: "running" };
+  files.bytes = new TextEncoder().encode("tampered");
+  assert(
+    (await exports.createWorkspace(actor, "vcard")).status === "completed",
+    "a run with changed bytes completes",
+  );
+  assert(stores() === 2, "changed bytes are discarded and rebuilt");
 });

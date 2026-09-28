@@ -403,6 +403,71 @@
   align-items: center;
   margin: var(--space-5) 0 var(--space-3);
 }
+/* GAP-050: the import source and export format choices, and the CSV
+   column-mapping preview, which scrolls sideways inside itself so a wide
+   file never widens the page. */
+.import-sources,
+.export-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+}
+.import-sources legend,
+.export-formats legend {
+  margin-bottom: var(--space-2);
+  font-weight: 700;
+}
+.import-sources label,
+.export-formats label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-weight: 600;
+}
+.export-format {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 16rem;
+}
+.export-formats .field-hint {
+  color: var(--ink-3);
+  font-size: .85rem;
+  font-weight: 500;
+}
+.import-mapping {
+  margin: var(--space-5) 0;
+}
+.import-preview {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.import-preview table {
+  border-collapse: collapse;
+  font-size: .9rem;
+}
+.import-preview th,
+.import-preview td {
+  padding: var(--space-2) var(--space-3);
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(
+    in srgb,
+    var(--ink-1) 16%,
+    transparent
+  );
+}
+.import-preview th label {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+.import-preview td {
+  max-width: 16rem;
+  overflow-wrap: anywhere;
+}
 
 .storage-page-state {
   min-height: 1.5rem;

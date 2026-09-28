@@ -16,13 +16,22 @@
  */
 
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
-import { publicSummary } from "../domain/export_rules.ts";
-import { EXPORT_WINDOWS } from "../domain/export_rules.ts";
+import { displayName, type ExportPerson } from "../../people/public.ts";
+import {
+  EXPORT_WINDOWS,
+  type ExportFormat,
+  type ExportManifest,
+  publicSummary,
+} from "../domain/export_rules.ts";
+import { sha256Hex } from "../domain/formats/canonical.ts";
+import {
+  csvArtifact,
+  vcardArtifact,
+} from "../domain/formats/contacts_export.ts";
 import {
   MAX_PORTABLE_PEOPLE,
   PORTABLE_MIME_TYPE,
   PORTABLE_TOO_LARGE,
-  type PortableArtifact,
   portableArtifact,
   portableFilename,
   readPortableArtifact,
@@ -30,11 +39,47 @@ import {
 import type { ExportActor } from "../ports/context.ts";
 import { active, type ExportManagementDependencies } from "./export_context.ts";
 
+/** What any format answers with, ready to be stored. */
+interface BuiltArtifact {
+  readonly bytes: Uint8Array;
+  readonly checksumSha256: string;
+  readonly filename: string;
+  readonly manifest: ExportManifest;
+  readonly mimeType: string;
+  readonly people: number;
+}
+
+/** The artifact of `format` for `people`. */
+async function built(
+  format: ExportFormat,
+  people: readonly ExportPerson[],
+  exportId: string,
+): Promise<BuiltArtifact> {
+  if (format === "csv") return await csvArtifact(people, exportId);
+  if (format === "vcard") {
+    return await vcardArtifact(people, displayName, exportId);
+  }
+  return {
+    ...await portableArtifact(people),
+    filename: portableFilename(exportId),
+    mimeType: PORTABLE_MIME_TYPE,
+  };
+}
+
 export function createExportArtifact(
   dependencies: ExportManagementDependencies,
 ) {
   return {
-    createWorkspace: async (actor: ExportActor) => {
+    /**
+     * Produces the workspace's artifact in `format` (GAP-050 adds `csv` and
+     * `vcard` beside the portable JSON). A stored JSON artifact re-verifies
+     * itself; a stored CSV or vCard artifact is kept when rebuilding it from
+     * the same people produces the same bytes, and discarded otherwise.
+     */
+    createWorkspace: async (
+      actor: ExportActor,
+      format: ExportFormat = "json",
+    ) => {
       if (actor.role === "member") return { status: "forbidden" as const };
       const startedAt = dependencies.clock.now();
       const claimed = await dependencies.transaction.run(
@@ -45,6 +90,7 @@ export function createExportArtifact(
           const claim = await dependencies.repository.startOrResume({
             actor,
             exportId: dependencies.ids.next(),
+            format,
             startedAt,
             transaction,
           });
@@ -54,7 +100,7 @@ export function createExportArtifact(
               actor,
               exportId: claim.exportId,
               occurredAt: startedAt,
-              payload: { format: "json" },
+              payload: { format },
               transaction,
             });
           }
@@ -76,14 +122,37 @@ export function createExportArtifact(
             return { status: "unavailable" as const };
           }
 
+          const listPeople = async () => {
+            const people = await dependencies.people.listWorkspace({
+              actor,
+              transaction,
+            });
+            return people.length > MAX_PORTABLE_PEOPLE ? undefined : people;
+          };
           let artifact = await dependencies.files.recover({
             ...actor,
             exportId: claimed.exportId,
           }).catch(() => ({ status: "unavailable" as const }));
-          let prepared: PortableArtifact | undefined =
-            artifact.status === "stored"
-              ? await readPortableArtifact(artifact.bytes)
-              : undefined;
+          let prepared: BuiltArtifact | undefined;
+          if (artifact.status === "stored") {
+            const bytes = artifact.bytes;
+            if (format === "json") {
+              const portable = await readPortableArtifact(bytes);
+              prepared = portable && {
+                ...portable,
+                filename: portableFilename(claimed.exportId),
+                mimeType: PORTABLE_MIME_TYPE,
+              };
+            } else {
+              const people = await listPeople();
+              const rebuilt = people &&
+                await built(format, people, claimed.exportId);
+              prepared = rebuilt &&
+                  rebuilt.checksumSha256 === await sha256Hex(bytes)
+                ? rebuilt
+                : undefined;
+            }
+          }
           if (artifact.status === "stored" && !prepared) {
             const discarded = await dependencies.files.discard({
               ...actor,
@@ -101,11 +170,8 @@ export function createExportArtifact(
           }
 
           if (artifact.status === "absent") {
-            const people = await dependencies.people.listWorkspace({
-              actor,
-              transaction,
-            });
-            if (people.length > MAX_PORTABLE_PEOPLE) {
+            const people = await listPeople();
+            if (!people) {
               await dependencies.repository.fail({
                 actor,
                 error: PORTABLE_TOO_LARGE,
@@ -115,18 +181,18 @@ export function createExportArtifact(
               });
               return { status: "too-large" as const };
             }
-            const built = await portableArtifact(people);
+            const next = await built(format, people, claimed.exportId);
             const stored = await dependencies.files.store({
               ...actor,
-              bytes: built.bytes,
-              checksumSha256: built.checksumSha256,
+              bytes: next.bytes,
+              checksumSha256: next.checksumSha256,
               exportId: claimed.exportId,
-              filename: portableFilename(claimed.exportId),
-              mimeType: PORTABLE_MIME_TYPE,
+              filename: next.filename,
+              mimeType: next.mimeType,
             }).catch(() => ({ status: "unavailable" as const }));
             if (stored.status !== "stored") return stored;
-            artifact = { ...stored, bytes: built.bytes };
-            prepared = built;
+            artifact = { ...stored, bytes: next.bytes };
+            prepared = next;
           }
           if (!prepared || artifact.status !== "stored") {
             return { status: "unavailable" as const };

@@ -8,6 +8,7 @@
 import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresInteractionPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresCommunicationRepository } from "./adapters/postgres/communication_repository.ts";
+import { PostgresInteractionImportBoundary } from "./adapters/postgres/import_note_boundary.ts";
 import { PostgresInteractionRepository } from "./adapters/postgres/interaction_repository.ts";
 import { PostgresJournalActivityBoundary } from "./adapters/postgres/journal_activity_boundary.ts";
 import { PostgresInteractionPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
@@ -53,6 +54,7 @@ export function composeInteractions(
     workspace: ports.workspace,
   };
   return {
+    importBoundary: new PostgresInteractionImportBoundary(),
     interactions: {
       ...createInteractionManagement({
         ...common,

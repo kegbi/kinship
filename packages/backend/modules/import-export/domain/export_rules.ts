@@ -13,6 +13,15 @@
  * the clock the use case happens to hold.
  */
 
+/** The formats a workspace export is produced in (GAP-050 adds two). */
+export type ExportFormat = "csv" | "json" | "vcard";
+
+/** One signed table of an artifact. */
+export interface ExportRowSet {
+  readonly count: number;
+  readonly sha256: string;
+}
+
 /** What an artifact contains and what it is worth, signed row by row. */
 export interface ExportManifest {
   readonly attachments: {
@@ -25,9 +34,11 @@ export interface ExportManifest {
     readonly sha256: string;
   };
   readonly limitations: readonly string[];
-  readonly profile: "monica-json";
+  readonly profile: "csv" | "monica-json" | "vcard";
   readonly rows: {
-    readonly people: { readonly count: number; readonly sha256: string };
+    readonly contactMethods?: ExportRowSet;
+    readonly dates?: ExportRowSet;
+    readonly people: ExportRowSet;
   };
   readonly version: 1;
 }
@@ -39,7 +50,7 @@ export interface ExportSummary {
   readonly error?: string;
   readonly expiresAt?: string;
   readonly exportId: string;
-  readonly format: "json";
+  readonly format: ExportFormat;
   readonly manifest: ExportManifest;
   readonly status:
     | "cancelled"

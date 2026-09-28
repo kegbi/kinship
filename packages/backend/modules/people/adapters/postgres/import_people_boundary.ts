@@ -1,13 +1,104 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type { PeopleImportBoundary } from "../../application/import_people_boundary.ts";
+import {
+  normalizeImportantDate,
+  validateImportantDate,
+} from "../../domain/important_dates/rules.ts";
+import { normalizeProfileFact } from "../../domain/profile_facts/normalize.ts";
+import { validateProfileFact } from "../../domain/profile_facts/validate.ts";
+import type {
+  ProfileFactSection,
+  ProfileFactValue,
+} from "../../domain/profile_facts/values.ts";
+import type { ImportantDatePublisher } from "../../ports/important_date_repository.ts";
+import { PostgresImportantDateRepository } from "./important_date_repository.ts";
+import { PostgresProfileFactRepository } from "./profile_fact_repository.ts";
 
 /**
  * The import use case revalidates the actor under lock and refuses anyone but
  * an owner or admin before it reaches this boundary (see the
  * `ActorRevalidation` port), so the statements below scope by workspace alone.
+ *
+ * `addDetails` (GAP-050) writes a vCard or CSV contact's people-owned rows
+ * through the same repositories and rules the profile editors use, and hands
+ * each date to planning's publisher, so an imported birthday reminds exactly
+ * as a typed one does.
  */
 export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
+  readonly #dates = new PostgresImportantDateRepository();
+  readonly #facts = new PostgresProfileFactRepository();
+
+  constructor(private readonly publisher: ImportantDatePublisher) {}
+
+  async addDetails(
+    command: Parameters<PeopleImportBoundary["addDetails"]>[0],
+  ): Promise<void> {
+    const actor = { ...command.actor, transaction: command.transaction };
+    const save = async (
+      section: ProfileFactSection,
+      input: ProfileFactValue,
+    ) => {
+      const value = normalizeProfileFact(section, input);
+      if (
+        Object.keys(validateProfileFact(section, value, command.personId))
+          .length > 0
+      ) throw new Error(`Imported ${section} value is invalid.`);
+      const saved = await this.#facts.save({
+        ...actor,
+        id: crypto.randomUUID(),
+        occurredAt: command.occurredAt,
+        personId: command.personId,
+        section,
+        value,
+      });
+      if (!saved) throw new Error(`Imported ${section} value was not saved.`);
+    };
+    const primaries = new Set<string>();
+    for (const method of command.details.contactMethods) {
+      await save("contact-methods", {
+        isPrimary: !primaries.has(method.typeId),
+        labelIds: [],
+        typeId: method.typeId,
+        value: method.value,
+      });
+      primaries.add(method.typeId);
+    }
+    for (const [index, address] of command.details.addresses.entries()) {
+      await save("addresses", {
+        ...address,
+        isPrimary: index === 0,
+        labelIds: [],
+      });
+    }
+    if (command.details.occupation) {
+      await save("work", { ...command.details.occupation, isCurrent: true });
+    }
+    for (const date of command.details.dates) {
+      const value = normalizeImportantDate({
+        ...date,
+        isAgeBased: date.kind === "birthday" && date.year !== undefined,
+        isYearApproximate: false,
+      });
+      if (Object.keys(validateImportantDate(value)).length > 0) {
+        throw new Error("Imported date is invalid.");
+      }
+      const after = await this.#dates.create({
+        ...actor,
+        id: crypto.randomUUID(),
+        occurredAt: command.occurredAt,
+        personId: command.personId,
+        value,
+      });
+      if (!after) throw new Error("Imported date was not saved.");
+      await this.publisher.regenerate({
+        ...actor,
+        after,
+        occurredAt: command.occurredAt,
+      });
+    }
+  }
+
   async create(
     command: Parameters<PeopleImportBoundary["create"]>[0],
   ): Promise<void> {

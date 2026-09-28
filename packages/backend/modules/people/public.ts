@@ -175,12 +175,14 @@ export type { TagPersonalizationFacade } from "./application/tag_personalization
 export type { PeoplePersonalizationReferences } from "./application/personalization_references.ts";
 export type {
   ImportedPerson,
+  ImportedPersonDetails,
   PeopleImportActor,
   PeopleImportBoundary,
   PeopleImportTransaction,
 } from "./application/import_people_boundary.ts";
 export type {
   ExportContactMethod,
+  ExportDate,
   ExportPerson,
   PeopleExportBoundary,
 } from "./application/export_people_boundary.ts";

@@ -683,6 +683,8 @@ export const MODULES: readonly TaskModule[] = [
           ...API_CONFIGURATION_READS,
           "packages/contracts",
           ...SCHEMA_READS,
+          // The vCard and CSV parser fixtures (GAP-050).
+          "packages/backend/modules/import-export/domain/formats/fixtures",
         ],
         // As in the unit set: `tools/e2e_test.ts` runs here too (REL-040).
         run: E2E_PROCESS_BINARIES,
@@ -802,7 +804,14 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
+        "packages/backend/modules/import-export/domain/contact_import_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contact_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contacts_export_test.ts",
+        "packages/backend/modules/import-export/domain/formats/csv_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_parse_test.ts",
+        "packages/backend/modules/import-export/domain/formats/zip_test.ts",
         "packages/backend/modules/import-export/application/import_management_test.ts",
+        "packages/backend/modules/import-export/application/contact_import_management_test.ts",
         "packages/backend/modules/import-export/application/export_management_test.ts",
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
@@ -903,7 +912,9 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/gifts_postgres_test.ts",
         "tests/integration/governance_postgres_test.ts",
         "tests/integration/import_postgres_test.ts",
+        "tests/integration/contact_import_postgres_test.ts",
         "tests/integration/export_postgres_test.ts",
+        "tests/integration/contact_export_postgres_test.ts",
         "tests/integration/interactions_activities_postgres_test.ts",
         "tests/integration/interactions_communications_postgres_test.ts",
         "tests/integration/invitation_postgres_test.ts",
@@ -1490,6 +1501,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/import-export/transport/http/imports_test.ts",
         "packages/backend/modules/import-export/application/import_management_test.ts",
+        "packages/backend/modules/import-export/application/contact_import_management_test.ts",
         "tools/architecture/APP-009A/import_ownership_boundary_test.ts",
       ],
       permissions: {
@@ -1499,21 +1511,30 @@ export const MODULES: readonly TaskModule[] = [
         ],
       },
     },
-    integration: ["tests/integration/import_postgres_test.ts"],
+    integration: [
+      "tests/integration/import_postgres_test.ts",
+      "tests/integration/contact_import_postgres_test.ts",
+    ],
     coverage: {
       directory: "imports",
       permissions: {
         read: [
           "packages/backend/modules/import-export/adapters/postgres/import_repository.ts",
           ...OWNERSHIP_BOUNDARY_READS,
+          "packages/backend/modules/import-export/domain/formats/fixtures",
         ],
       },
       tests: [
         "packages/backend/modules/import-export/transport/http/imports_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contact_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/csv_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_parse_test.ts",
+        "packages/backend/modules/import-export/domain/contact_import_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
         "packages/backend/modules/import-export/application/import_management_test.ts",
+        "packages/backend/modules/import-export/application/contact_import_management_test.ts",
         "tools/architecture/APP-009A/import_ownership_boundary_test.ts",
       ],
       include: [
@@ -1523,7 +1544,13 @@ export const MODULES: readonly TaskModule[] = [
         // one measures the import half beside the HTTP surface that uses it.
         "packages/backend/modules/import-export/domain/formats/canonical.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source.ts",
+        // The vCard and CSV sources beside it (GAP-050).
+        "packages/backend/modules/import-export/domain/formats/contact_source.ts",
+        "packages/backend/modules/import-export/domain/formats/csv.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_parse.ts",
+        "packages/backend/modules/import-export/domain/contact_import.ts",
         "packages/backend/modules/import-export/domain/import_rules.ts",
+        "packages/backend/modules/import-export/application/contact_staging.ts",
         "packages/backend/modules/import-export/application/import_management.ts",
         "packages/backend/modules/import-export/application/import_commit.ts",
         "packages/backend/modules/import-export/application/import_context.ts",
@@ -1543,7 +1570,10 @@ export const MODULES: readonly TaskModule[] = [
     contract: [
       "packages/backend/modules/import-export/transport/http/exports_test.ts",
     ],
-    integration: ["tests/integration/export_postgres_test.ts"],
+    integration: [
+      "tests/integration/export_postgres_test.ts",
+      "tests/integration/contact_export_postgres_test.ts",
+    ],
     coverage: {
       directory: "exports",
       tests: [
@@ -1551,6 +1581,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contacts_export_test.ts",
+        "packages/backend/modules/import-export/domain/formats/zip_test.ts",
         "packages/backend/modules/import-export/application/export_management_test.ts",
       ],
       include: [
@@ -1561,6 +1593,9 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/export_rules.ts",
         "packages/backend/modules/import-export/domain/formats/portable_json.ts",
         "packages/backend/modules/import-export/domain/formats/vcard.ts",
+        // The CSV archive and all-people vCard formats (GAP-050).
+        "packages/backend/modules/import-export/domain/formats/contacts_export.ts",
+        "packages/backend/modules/import-export/domain/formats/zip.ts",
         "packages/backend/modules/import-export/application/export_management.ts",
         "packages/backend/modules/import-export/application/export_artifact.ts",
         "packages/backend/modules/import-export/application/export_context.ts",
@@ -1585,11 +1620,28 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
+        "packages/backend/modules/import-export/domain/contact_import_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contact_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contacts_export_test.ts",
+        "packages/backend/modules/import-export/domain/formats/csv_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_parse_test.ts",
+        "packages/backend/modules/import-export/domain/formats/zip_test.ts",
       ],
+      // The vCard and CSV parser suites read their fixture files (GAP-050).
+      permissions: {
+        read: [
+          "packages/backend/modules/import-export/domain/formats/fixtures",
+        ],
+      },
     },
     coverage: {
       directory: "import-export-domain",
       threshold: 95,
+      permissions: {
+        read: [
+          "packages/backend/modules/import-export/domain/formats/fixtures",
+        ],
+      },
       tests: [
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
@@ -1597,6 +1649,12 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
+        "packages/backend/modules/import-export/domain/contact_import_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contact_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/contacts_export_test.ts",
+        "packages/backend/modules/import-export/domain/formats/csv_test.ts",
+        "packages/backend/modules/import-export/domain/formats/vcard_parse_test.ts",
+        "packages/backend/modules/import-export/domain/formats/zip_test.ts",
       ],
       include: ["packages/backend/modules/import-export/domain"],
     },

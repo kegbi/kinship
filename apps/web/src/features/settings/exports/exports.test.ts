@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ExportSummary } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
+  EXPORT_FORMATS,
   exportCompleted,
   exportHeading,
   exportsReducer,
   exportStatus,
+  formatName,
   initialExports,
 } from "./exports.ts";
 
@@ -76,5 +78,34 @@ describe("EXPORT-001 export state", () => {
     expect(exportHeading(run)).toBe("2 persons");
     expect(exportStatus(run)).toBe("Completed");
     expect(exportCompleted(1)).toBe("Export completed for 1 person.");
+  });
+});
+
+describe("EXPORT-002 export formats", () => {
+  it("creates the chosen format and names it in the history", () => {
+    expect(EXPORT_FORMATS.map((format) => format.id)).toEqual([
+      "json",
+      "csv",
+      "vcard",
+    ]);
+    const csv = exportsReducer(initialExports, {
+      format: "csv",
+      type: "format",
+    });
+    expect(csv.format).toBe("csv");
+    expect(exportsReducer(csv, { creating: true, type: "creating" }).status)
+      .toBe("Creating CSV export…");
+    expect(
+      exportsReducer(initialExports, { creating: true, type: "creating" })
+        .status,
+    ).toBe("Creating portable export…");
+    expect(exportHeading({ ...run, format: "vcard" } as ExportSummary)).toBe(
+      "2 persons · vCard",
+    );
+    expect(exportHeading({ ...run, format: "json" } as ExportSummary)).toBe(
+      "2 persons",
+    );
+    expect(formatName("csv")).toBe("CSV");
+    expect(formatName("xml" as never)).toBe("xml");
   });
 });

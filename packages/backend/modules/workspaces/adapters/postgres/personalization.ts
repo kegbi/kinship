@@ -5,6 +5,7 @@ import {
   writeWithUniqueConflict,
 } from "../../../../platform/postgres/transactions.ts";
 import {
+  type ContactMethodKind,
   type PersonalizationEntry,
   type PersonalizationSection,
   PROFILE_MODULE_DEFAULTS,
@@ -17,6 +18,7 @@ import type {
 
 interface Row {
   readonly canDelete: boolean;
+  readonly contactKind?: ContactMethodKind | null;
   readonly id: string;
   readonly isActive: boolean;
   readonly isDefault: boolean;
@@ -173,8 +175,10 @@ function entry(
 ): PersonalizationEntry {
   const readOnly = section === "emotion-options" ||
     section === "pet-categories";
+  const { contactKind, ...rest } = row;
   return {
-    ...row,
+    ...rest,
+    ...(contactKind ? { contactKind } : {}),
     canDelete: row.canDelete && !row.isDefault,
     capabilities: itemCapabilities(section, row.canDelete && !row.isDefault),
     kind: section === "relationship-types" ? "relationship-type" : "named",
@@ -258,7 +262,12 @@ export class PostgresWorkspacePersonalization
       command.section === "relationship-types"
         ? sql.raw("v.reverse_label")
         : sql.raw("null")
-    }::text as "reverseLabel"
+    }::text as "reverseLabel",
+        ${
+      command.section === "contact-method-types"
+        ? sql.raw("v.kind")
+        : sql.raw("null")
+    }::text as "contactKind"
       from ${
       vocabularySource(command.section, vocabulary, command.workspaceId)
     } as v
@@ -403,6 +412,15 @@ export class PostgresWorkspacePersonalization
               .name!}) returning id::text
             `.execute(database)).rows[0];
           }
+          if (command.section === "contact-method-types") {
+            return (await sql<{ readonly id: string }>`
+              insert into crm.contact_method_types
+                (workspace_id, name, kind, sort_order)
+              values (${command.workspaceId}::uuid, ${command.name!},
+                ${command.contactKind ?? "custom"}, ${command.sortOrder})
+              returning id::text
+            `.execute(database)).rows[0];
+          }
           if (command.section === "relationship-types") {
             return (await sql<{ readonly id: string }>`
               insert into crm.relationship_types
@@ -525,6 +543,14 @@ export class PostgresWorkspacePersonalization
         ${activeColumn ? sql.ref(activeColumn) : sql.ref("updated_at")} = ${
             activeColumn ? !isActive : new Date()
           }, updated_at = now()
+        where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
+            .execute(database);
+        }
+        if (
+          command.section === "contact-method-types" &&
+          command.contactKind !== undefined
+        ) {
+          await sql`update crm.contact_method_types set kind = ${command.contactKind}
         where id = ${command.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
             .execute(database);
         }

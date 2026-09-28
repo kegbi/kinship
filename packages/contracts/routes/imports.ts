@@ -14,7 +14,12 @@ import {
   problemResponses,
   workspaceHeaders,
 } from "./common.ts";
-import { importDryRun, importSummary } from "../schemas/imports.ts";
+import {
+  csvColumnMapping,
+  importDryRun,
+  importMappingRequired,
+  importSummary,
+} from "../schemas/imports.ts";
 import { uuid } from "../schemas/shared.ts";
 
 export const listImports = defineRoute({
@@ -49,16 +54,20 @@ export const createImportDryRun = defineRoute({
       required: true,
       content: {
         "application/json": z.strictObject({
-          source: z.object({}),
+          source: z.object({}).meta({
+            description:
+              'A Monica JSON export, or `{ format: "vcard" | "csv", text }` with the file\'s UTF-8 text.',
+          }),
         }),
       },
     },
   },
   responses: {
     201: {
-      description: "Validated bounded Monica dry-run",
+      description:
+        "Validated bounded dry-run, or a CSV import awaiting its column mapping",
       content: {
-        "application/json": importDryRun,
+        "application/json": z.union([importDryRun, importMappingRequired]),
       },
     },
     ...problemResponses(400, 401, 403, 413, 503),
@@ -122,10 +131,41 @@ export const commitImport = defineRoute({
   },
 });
 
+export const mapImportColumns = defineRoute({
+  method: "post",
+  path: "/api/v1/imports/{importId}/mapping",
+  operationId: "mapImportColumns",
+  description:
+    "Applies the member's column mapping to a pending CSV import and returns its dry-run report.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      importId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": csvColumnMapping,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Mapped CSV dry-run",
+      content: {
+        "application/json": importDryRun,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
+  },
+});
+
 /** Every imports route, in the order the surface mounts them. */
 export const IMPORTS_ROUTES: readonly RouteDescriptor[] = [
   listImports,
   createImportDryRun,
   getImportReport,
+  mapImportColumns,
   commitImport,
 ];

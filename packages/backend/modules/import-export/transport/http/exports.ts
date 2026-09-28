@@ -26,6 +26,7 @@ import {
   exportPersonVCardQuery,
   listExports,
 } from "../../../../../contracts/routes/exports.ts";
+import { exportRequest } from "../../../../../contracts/schemas/exports.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import { fileDownload } from "../../../../../http-kit/downloads.ts";
@@ -95,6 +96,12 @@ export const EXPORT_FAILURES: FailureTable = {
 
 const failure = failureResponder(EXPORT_FAILURES);
 
+const EXPORT_FORMAT_INVALID: ProblemDefinition = {
+  code: "export_format_invalid",
+  detail: "Choose JSON, CSV, or vCard.",
+  status: 400,
+  title: "Export format invalid",
+};
 const EXPORT_HISTORY_UNAVAILABLE: ProblemDefinition = {
   code: "exports_unavailable",
   detail: "Export history could not be loaded.",
@@ -130,6 +137,7 @@ const VCARD_UNAVAILABLE: ProblemDefinition = {
 export const EXPORT_PROBLEMS: readonly ProblemDefinition[] = [
   DOWNLOAD_NOT_ISSUED,
   EXPORT_ARTIFACT_UNAVAILABLE,
+  EXPORT_FORMAT_INVALID,
   EXPORT_HISTORY_UNAVAILABLE,
   EXPORT_NOT_COMPLETED,
   EXPORT_NOT_FOUND,
@@ -159,11 +167,27 @@ export function createExportRoutes(
   });
 
   mount(routes, createWorkspaceExport, origin, session, async (context) => {
+    // The body is optional: no body, or no format, is the portable JSON.
+    const raw = await context.req.text();
+    const request = parseValue(
+      exportRequest,
+      raw.trim() === "" ? {} : (() => {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          return undefined;
+        }
+      })(),
+    );
+    if ("errors" in request) {
+      return definedProblem(context, EXPORT_FORMAT_INVALID);
+    }
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.exports.createWorkspace(actor).catch(
-      unavailable,
-    );
+    const result = await services.exports.createWorkspace(
+      actor,
+      request.data.format ?? "json",
+    ).catch(unavailable);
     if (result.status === "forbidden" || result.status === "too-large") {
       return failure(context, result);
     }

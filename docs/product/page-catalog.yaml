@@ -492,29 +492,58 @@ pages:
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [IMPORT-001]
+    flowIds: [IMPORT-001, IMPORT-002]
     sections:
       - first-import-state
       - import-history
+    # GAP-050: a CSV import still awaiting its column mapping is listed as
+    # `awaiting-mapping` and links back to its mapping step.
+    sectionStates:
+      import-history:
+        - loading
+        - ready
+        - empty
+        - error
+        - awaiting-mapping
 
   - id: settings.import-new
     path: /app/settings/import/new
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [IMPORT-001]
+    flowIds: [IMPORT-001, IMPORT-002]
     sections:
+      - source-choice
       - source-upload
       - format-detection
+      - column-mapping
       - dry-run
       - commit-confirmation
+    # GAP-050: `source-choice` picks Monica, vCard, or CSV. `format-detection`
+    # refuses a file that is not UTF-8 before it is uploaded. `column-mapping`
+    # is the CSV step: `preview` shows the header and first five rows with one
+    # field choice per column, `applying` a mapping in flight, `refused` a
+    # mapping that names nobody, and `resumed` a pending CSV import reopened
+    # from `?import=<importId>`.
+    sectionStates:
+      format-detection:
+        - awaiting-file
+        - detected
+        - invalid-encoding
+        - unsupported
+        - too-large
+      column-mapping:
+        - preview
+        - applying
+        - refused
+        - resumed
 
   - id: settings.import-report
     path: /app/settings/import/:importId
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [IMPORT-001]
+    flowIds: [IMPORT-001, IMPORT-002]
     sections:
       - progress
       - summary
@@ -527,11 +556,18 @@ pages:
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [EXPORT-001]
+    flowIds: [EXPORT-001, EXPORT-002]
     sections:
+      - format-choice
       - create-export
       - export-history
       - downloads
+    # GAP-050: `format-choice` picks portable JSON, a CSV archive, or one vCard
+    # file, and is locked while an export is being created.
+    sectionStates:
+      format-choice:
+        - ready
+        - creating
 
   - id: settings.audit
     path: /app/settings/audit

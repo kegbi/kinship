@@ -9,11 +9,18 @@
  * the same person again. An avatar is only represented for a contact that was
  * created, because a reused person already has whatever avatar they have.
  *
+ * A vCard or CSV contact (GAP-050) brings more than the person: its contact
+ * methods, addresses, dates, and work are written through the people
+ * boundary and its note through the interactions boundary, all in the same
+ * transaction, and only for a person this commit created — a reused person
+ * is left exactly as the member has kept them.
+ *
  * The confirmation is not a formality: committing writes people into a
  * workspace that already has some, so an unconfirmed request is answered with
  * `confirmation-required` before anything is read.
  */
 
+import { personDetails } from "../domain/contact_import.ts";
 import {
   type ImportCommitResult,
   importedPerson,
@@ -42,6 +49,11 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
         );
         if (prepared.status !== "ready") return prepared;
         const occurredAt = new Date();
+        // A vCard or CSV run files its contact methods under the workspace's
+        // types, asked once, and only when a contact is actually created.
+        let types:
+          | Awaited<ReturnType<typeof dependencies.contactTypes.byKind>>
+          | undefined;
         const committedContacts = new Map<string, {
           readonly reused: boolean;
           readonly targetPersonId: string;
@@ -60,7 +72,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           if (reused) {
             await dependencies.repository.retargetContact(
               importId,
-              contact.sourcePrimaryKey,
+              contact.entityId,
               targetPersonId,
               transaction,
             );
@@ -76,6 +88,30 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             person: importedPerson(contact, targetPersonId),
             transaction,
           });
+          if (contact.contact) {
+            types ??= await dependencies.contactTypes.byKind({
+              transaction,
+              workspaceId: actor.workspaceId,
+            });
+            const { details, note } = personDetails(contact.contact, types);
+            await dependencies.people.addDetails({
+              actor,
+              details,
+              occurredAt,
+              personId: targetPersonId,
+              transaction,
+            });
+            if (note) {
+              await dependencies.notes.addNote({
+                actor,
+                body: note,
+                noteId: dependencies.ids.next(),
+                occurredAt,
+                personId: targetPersonId,
+                transaction,
+              });
+            }
+          }
           committedContacts.set(contact.sourcePrimaryKey, {
             reused: false,
             targetPersonId,

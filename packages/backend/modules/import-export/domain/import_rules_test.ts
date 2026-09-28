@@ -397,6 +397,7 @@ Deno.test("[GAP-018] a committed contact becomes a person under the settled iden
   assertEquals(
     importedPerson({
       archived: true,
+      entityId: "e1",
       deletedAt: "2026-02-01T00:00:00.000Z",
       description: "d",
       familyName: "Lovelace",
@@ -428,6 +429,7 @@ Deno.test("[GAP-018] a committed contact becomes a person under the settled iden
   assertEquals(
     importedPerson({
       archived: false,
+      entityId: "e2",
       givenName: "Solo",
       isDeceased: false,
       isPartial: false,
@@ -508,6 +510,7 @@ Deno.test("[GAP-045] a contact's Monica avatar columns become its avatar present
 Deno.test("[GAP-045] the avatar presentation reaches the committed person", () => {
   const person = importedPerson({
     archived: false,
+    entityId: "e3",
     avatarPresentation: { backgroundColor: "#b3d5fe", source: "default" },
     givenName: "Ada",
     isDeceased: false,

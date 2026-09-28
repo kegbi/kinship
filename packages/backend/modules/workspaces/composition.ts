@@ -15,6 +15,7 @@
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresContactMethodTypeCatalog } from "./adapters/postgres/contact_method_types.ts";
 import { SmtpReminderMail } from "./adapters/mail/smtp_reminder_mail.ts";
 import {
   resolveSmtpVerificationMailOptions,
@@ -157,6 +158,7 @@ export function workspaceTransactionRunner(
  */
 export function composeWorkspaceBoundaries() {
   return {
+    contactMethodTypes: new PostgresContactMethodTypeCatalog(),
     currencies: new PostgresWorkspaceCurrencyBoundary(),
     genders: new PostgresGenderOptionBoundary(),
     interactions: new PostgresInteractionWorkspaceBoundary(),

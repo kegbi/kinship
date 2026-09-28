@@ -11,6 +11,7 @@ import {
   PostgresExportRepository,
   PostgresExportTransaction,
 } from "./adapters/postgres/export_repository.ts";
+import { PostgresContactImportRepository } from "./adapters/postgres/contact_import_repository.ts";
 import {
   PostgresImportRepository,
   PostgresImportTransaction,
@@ -23,15 +24,21 @@ import {
 } from "./public.ts";
 import { exportAuditFrom, importAuditFrom } from "../governance/public.ts";
 import type { FileImportBoundary } from "../files/public.ts";
+import type { InteractionImportBoundary } from "../interactions/public.ts";
 import type {
   PeopleExportBoundary,
   PeopleImportBoundary,
 } from "../people/public.ts";
+import type { ContactMethodTypeCatalog } from "../workspaces/public.ts";
 
 export interface ImportExportPorts {
   readonly exportFiles: ExportFileBoundary;
   readonly exportPeople: PeopleExportBoundary;
+  /** The workspace types a vCard or CSV contact method is filed under. */
+  readonly importContactTypes: ContactMethodTypeCatalog;
   readonly importFiles: FileImportBoundary;
+  /** Where a vCard or CSV contact's note is written. */
+  readonly importNotes: InteractionImportBoundary;
   readonly importPeople: PeopleImportBoundary;
 }
 
@@ -54,8 +61,11 @@ export function composeImportExport(
     imports: createImportManagement({
       actors: shared.actors,
       audit: importAuditFrom(shared.audit),
+      contactTypes: ports.importContactTypes,
+      contacts: new PostgresContactImportRepository(),
       files: ports.importFiles,
       ids: { next: () => shared.ids.create() },
+      notes: ports.importNotes,
       people: ports.importPeople,
       repository: new PostgresImportRepository(shared.database),
       transaction: new PostgresImportTransaction(shared.database),

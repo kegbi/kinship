@@ -20,6 +20,21 @@ export const exportDownload = z.strictObject({
   status: z.literal("ready"),
 }).meta({ id: "ExportDownload" });
 
+const exportRowSet = z.strictObject({
+  count: z.number().int().min(0),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+/** The formats a workspace export is produced in. */
+export const exportFormat = z.enum(["csv", "json", "vcard"]).meta({
+  id: "ExportFormat",
+});
+
+/** What a new workspace export asks for; JSON when nothing is said. */
+export const exportRequest = z.strictObject({
+  format: exportFormat.optional(),
+}).meta({ id: "ExportRequest" });
+
 export const exportManifest = z.strictObject({
   attachments: z.strictObject({
     count: z.number().int().min(0),
@@ -31,12 +46,11 @@ export const exportManifest = z.strictObject({
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   }),
   limitations: z.array(z.string()),
-  profile: z.literal("monica-json"),
+  profile: z.enum(["csv", "monica-json", "vcard"]),
   rows: z.strictObject({
-    people: z.strictObject({
-      count: z.number().int().min(0),
-      sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    }),
+    contactMethods: exportRowSet.optional(),
+    dates: exportRowSet.optional(),
+    people: exportRowSet,
   }),
   version: z.literal(1),
 }).meta({ id: "ExportManifest" });
@@ -47,7 +61,7 @@ export const exportSummary = z.strictObject({
   error: z.string().optional(),
   expiresAt: z.iso.datetime({ offset: true }).optional(),
   exportId: z.uuid(),
-  format: z.literal("json"),
+  format: exportFormat,
   manifest: exportManifest,
   status: z.enum([
     "cancelled",

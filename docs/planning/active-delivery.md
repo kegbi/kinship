@@ -710,6 +710,15 @@ Playwright test carrying its stable flow ID.
       Let a member mark a pair "not duplicates". Where that decision would be
       stored needs a product and schema decision first.
 
+- [ ] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
+      GAP-050: the Monica, vCard, and CSV commits reuse an earlier import's
+      person whenever `PeopleImportBoundary.exists` finds the row, and it does
+      not look at `deleted_at`. So a member who deleted an imported person and
+      imports the same file again does not get them back; the import reports
+      them as reused. GAP-050 kept the Monica behaviour and documents it in
+      `IMPORT-002`. Decide whether `exists` should ignore deleted people
+      (recreating them) and change all three formats together.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

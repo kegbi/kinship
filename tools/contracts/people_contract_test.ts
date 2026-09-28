@@ -203,6 +203,8 @@ Deno.test("WORKSPACE-003 OpenAPI binds strict mutation inputs to each section", 
   const schemas = document.components.schemas;
   for (
     const name of [
+      "PersonalizationContactTypeCreate",
+      "PersonalizationContactTypeUpdate",
       "PersonalizationNamedCreate",
       "PersonalizationNameOnlyCreate",
       "PersonalizationRelationshipCreate",
@@ -220,8 +222,8 @@ Deno.test("WORKSPACE-003 OpenAPI binds strict mutation inputs to each section", 
     );
   }
   assert(
-    schemas.PersonalizationCreate?.anyOf?.length === 4 &&
-      schemas.PersonalizationUpdate?.anyOf?.length === 5,
+    schemas.PersonalizationCreate?.anyOf?.length === 5 &&
+      schemas.PersonalizationUpdate?.anyOf?.length === 6,
     "personalization mutations do not publish their strict shape union",
   );
   const createMapping = schemas.PersonalizationCreate as ObjectSchema & {
@@ -235,6 +237,10 @@ Deno.test("WORKSPACE-003 OpenAPI binds strict mutation inputs to each section", 
         "#/components/schemas/PersonalizationReminderCreate" &&
       updateMapping["x-sectionSchemas"]?.["relationship-types"] ===
         "#/components/schemas/PersonalizationRelationshipUpdate" &&
+      createMapping["x-sectionSchemas"]?.["contact-method-types"] ===
+        "#/components/schemas/PersonalizationContactTypeCreate" &&
+      updateMapping["x-sectionSchemas"]?.["contact-method-types"] ===
+        "#/components/schemas/PersonalizationContactTypeUpdate" &&
       createMapping["x-sectionSchemas"]?.["pet-categories"] === null &&
       updateMapping["x-sectionSchemas"]?.["emotion-options"] === null,
     "personalization mutation shapes are not bound to path sections",

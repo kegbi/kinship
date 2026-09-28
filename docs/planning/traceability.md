@@ -15,19 +15,20 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 35 required flows: 17 P0, 15 P1, and 3 P2;
-- 34 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 37 required flows: 17 P0, 17 P1, and 3 P2;
+- 36 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 40 Playwright specs under `tests/e2e/`. Flow specs are named
+- 42 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 38 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 40 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
 `docs/product/page-catalog.yaml`, `docs/product/user-flows.yaml`, and
-`tests/e2e/` on 2026-09-27 by GAP-043; the earlier count was taken on 2026-08-29
-while integrating
+`tests/e2e/` on 2026-09-27 by GAP-043 and updated by GAP-050, which added
+`IMPORT-002` and `EXPORT-002`; the earlier count was taken on 2026-08-29 while
+integrating
 [`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
 §5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
 the specs' `flow` annotations in agreement. The five cataloged dynamic routes
@@ -123,14 +124,16 @@ and exercise the production-like gateway, not an internal service URL.
 | `JOURNAL-002`      | P1       |              6 | person profile                                   | Add/edit/remove life events: precision, revision, archived read-only, and cross-workspace rejection     |
 | `SEARCH-001`       | P1       |              6 | header palette, profile, journal item, tasks     | Grouped cross-entity results, keyboard navigation, deep links, tenancy, hidden and deleted rows         |
 | `IMPORT-001`       | P0       |              7 | import index/new/report                          | Detect, stage, dry-run, validate, commit atomically, rerun idempotently, handle attachments safely      |
+| `IMPORT-002`       | P1       |              7 | import index/new/report                          | vCard and CSV staging, CSV column mapping, skipped-property report, UID conflicts, idempotent rerun     |
 | `EXPORT-001`       | P0       |              7 | export settings, person profile                  | Authorized workspace/person exports, manifests, vCard and portable round-trip checks                    |
+| `EXPORT-002`       | P1       |              7 | export settings                                  | CSV archive and all-people vCard, formula-injection guard, manifests, short-lived downloads             |
 | `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                      |
 | `INTEGRATION-001`  | P2       |              8 | integrations settings                            | Configure/synchronize DAV; isolate failures; core works while disabled                                  |
 | `GOVERNANCE-001`   | P1       |              6 | privacy, terms, compliance acceptance            | Versioned document display and immutable, required acceptance                                           |
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 35-flow snapshot, this assignment places all 17 P0 and all 15 P1
+For the current 37-flow snapshot, this assignment places all 17 P0 and all 17 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

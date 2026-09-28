@@ -242,6 +242,7 @@ flows:
       - Apply the change through the module that owns the affected records.
       - Keep data in disabled profile modules and refresh affected forms and projections.
       - List every switchable person-workspace section, visible until its first change writes its row; turn it off or on, never delete it. Reorder is stored for the settings list; the person workspace keeps its rail order.
+      - Give each contact method type a kind (Email, Phone, Website, social, instant messaging, username, or custom, the default), which vCard and CSV imports file values by (GAP-050).
     alternateOutcomes: [
       option-in-use-requires-replacement,
       required-default,
@@ -983,6 +984,58 @@ flows:
       testRefs: [tests/e2e/monica-import.IMPORT-001.spec.ts],
     }
 
+  # GAP-050: vCard and CSV contacts through the Monica import's staging, report,
+  # and commit. `re-import-idempotent` reuses the people an earlier import of
+  # the same cards or rows made; `uid-conflict` is a card whose UID an earlier
+  # import holds with different content, reported in the dry run and left
+  # unchanged; `unknown-properties-skipped` counts and names every property the
+  # importer cannot map, photos included, since photos are not imported;
+  # `invalid-encoding` refuses anything but UTF-8; `too-large` refuses a file
+  # over the staging size or more than 500 cards or rows; `no-name-rows-skipped`
+  # skips, with a warning, a card or row with no name, email, or phone; and
+  # `missing-contact-type` reports values the workspace has no contact type for,
+  # naming the fix (a type whose kind is Email, Phone, or Website), while a
+  # custom type named `Email`, `Phone`, or `Website` is used and said so.
+  # `deleted-person-not-recreated` keeps the Monica behaviour: a person an
+  # earlier import made and a member then deleted is reused, not made again
+  # (REL-065). `credential-column-refused` refuses a CSV with a password,
+  # secret, token, key, or session column before anything is stored, and a
+  # credential-like vCard property is only counted, never stored.
+  - id: IMPORT-002
+    title: Import contacts from vCard or CSV
+    deliveryStatus: delivered
+    priority: P1
+    actor: data-admin
+    trigger: The administrator uploads a vCard or CSV file of contacts.
+    preconditions: [active-admin-membership]
+    steps:
+      - Choose the vCard or CSV source.
+      - Upload a UTF-8 file within the staging limits.
+      - Map each CSV column to a field or Ignore, from the header and first rows; the mapping is kept on the resumable import run.
+      - Review the dry-run report of contacts, reused and conflicting identities, and skipped properties.
+      - Commit after explicit confirmation; people, contact methods, addresses, dates, work, and notes are written through their owning modules.
+    alternateOutcomes: [
+      re-import-idempotent,
+      unknown-properties-skipped,
+      invalid-encoding,
+      too-large,
+      no-name-rows-skipped,
+      uid-conflict,
+      missing-contact-type,
+      deleted-person-not-recreated,
+      credential-column-refused,
+    ]
+    result: Contacts from another address book are imported once, diagnosably, and tenant-safely.
+    auditEffect: import-started-validated-committed-or-failed
+    pageIds: [settings.import, settings.import-new, settings.import-report]
+    moduleIds: [import-export, people, interactions, workspaces, planning]
+    permissions: [data.import]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/contacts-import.IMPORT-002.spec.ts],
+    }
+
   - id: EXPORT-001
     title: Export workspace or person data
     deliveryStatus: delivered
@@ -1008,6 +1061,34 @@ flows:
     permissions: [data.export, people.vcard.export]
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [tests/e2e/export.EXPORT-001.spec.ts] }
+
+  # GAP-050: the workspace's people as a CSV archive (people, contact methods,
+  # and dates keyed by person id) or one vCard file, through the portable
+  # export's manifest, checksums, short-lived download, expiry, and audit.
+  # `formula-injection-safe` prefixes any cell a spreadsheet would run as a
+  # formula; `expired-download` refuses a spent or stale download reference.
+  - id: EXPORT-002
+    title: Export contacts as CSV or vCard
+    deliveryStatus: delivered
+    priority: P1
+    actor: data-admin
+    trigger: The administrator exports the workspace's people as CSV or vCard.
+    preconditions: [active-admin-membership]
+    steps:
+      - Choose the CSV or vCard format.
+      - Build the artifact with a versioned manifest of signed tables.
+      - Download it through a short-lived authorized reference.
+    alternateOutcomes: [formula-injection-safe, expired-download]
+    result: Every non-deleted person, archived included, leaves in a format other address books and spreadsheets read.
+    auditEffect: export-requested-completed-or-downloaded
+    pageIds: [settings.export]
+    moduleIds: [import-export, people, files]
+    permissions: [data.export]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/contacts-export.EXPORT-002.spec.ts],
+    }
 
   - id: API-001
     title: Create and revoke an API token

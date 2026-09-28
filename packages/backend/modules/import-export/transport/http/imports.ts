@@ -1,7 +1,8 @@
 /**
- * Importing a Monica export over HTTP.
+ * Importing a Monica export, a vCard file, or a CSV file over HTTP.
  *
- * Two reads and two writes. What is left here is the staging envelope — the
+ * Two reads and three writes: the dry run, the CSV column mapping (GAP-050),
+ * and the commit. What is left here is the staging envelope — the
  * three places a source is measured before it is parsed — and the prose each
  * refusal carries; the problem responder, the session cookie, the origin
  * check, and the kernel status map came from `packages/http-kit` (GAP-019, GAP-020), and
@@ -26,7 +27,9 @@ import {
   createImportDryRun,
   getImportReport,
   listImports,
+  mapImportColumns,
 } from "../../../../../contracts/routes/imports.ts";
+import { csvColumnMapping } from "../../../../../contracts/schemas/imports.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
@@ -73,7 +76,7 @@ const CONFIRMATION_REQUIRED: ProblemDefinition = {
 };
 const IMPORT_TOO_LARGE: ProblemDefinition = {
   code: "import_too_large",
-  detail: "The Monica JSON source exceeds the 1.5 MB staging limit.",
+  detail: "The import source exceeds the 1.5 MB staging limit.",
   status: 413,
   title: "Import too large",
 };
@@ -126,6 +129,16 @@ export function importSourceInvalid(detail: string): ProblemDefinition {
     detail,
     status: 400,
     title: "Import source invalid",
+  };
+}
+
+/** The refused column mapping, carrying the sentence the rule produced. */
+export function importMappingInvalid(detail: string): ProblemDefinition {
+  return {
+    code: "import_mapping_invalid",
+    detail,
+    status: 400,
+    title: "Column mapping invalid",
   };
 }
 
@@ -207,8 +220,39 @@ export function createImportRoutes(
     if (result.status === "invalid-source") {
       return definedProblem(context, importSourceInvalid(result.detail));
     }
-    if (result.status !== "dry_run") return writeFailure(context, result);
+    if (result.status !== "dry_run" && result.status !== "mapping") {
+      return writeFailure(context, result);
+    }
     return context.json(result, 201);
+  });
+
+  mount(routes, mapImportColumns, origin, session, async (context) => {
+    const importId = parseValue(uuid, context.req.param("importId"));
+    if ("errors" in importId) {
+      return definedProblem(context, IMPORT_NOT_FOUND);
+    }
+    const body = parseValue(
+      csvColumnMapping,
+      await context.req.json().catch(() => undefined),
+    );
+    if ("errors" in body) {
+      return definedProblem(
+        context,
+        importMappingInvalid("Map every column, or choose Ignore for it."),
+      );
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.imports.mapColumns(
+      actor,
+      importId.data,
+      body.data.columns,
+    );
+    if (result.status === "invalid-mapping") {
+      return definedProblem(context, importMappingInvalid(result.detail));
+    }
+    if (result.status !== "dry_run") return historyFailure(context, result);
+    return context.json(result);
   });
 
   mount(

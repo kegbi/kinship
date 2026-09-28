@@ -11,6 +11,8 @@
  */
 
 import type {
+  CsvColumnTarget,
+  CsvPreview,
   ImportReport,
   ImportSummary,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
@@ -18,6 +20,9 @@ import { IMPORT_SOURCE_MAX_BYTES } from "../../../../../../packages/contracts/im
 import type { TimePreferences } from "../../../lib/time-presentation.ts";
 
 export const CHOOSE_EXPORT = "Choose an export to detect its format.";
+export const CHOOSE_CONTACTS = "Choose a file to detect its format.";
+export const NOT_UTF8 =
+  "This file is not UTF-8 encoded. Save it as UTF-8 and try again.";
 export const TOO_LARGE = "This file exceeds the 1.5 MB staging limit.";
 export const DETECTED = "Monica JSON version 1 detected.";
 
@@ -44,8 +49,90 @@ export function recognizeSource(
   }
 }
 
+/** Where a new import's contacts come from (GAP-050). */
+export type ImportSource = "csv" | "monica" | "vcard";
+
+/** Each source as the page offers it, and the file field it asks for. */
+export const IMPORT_SOURCES: readonly {
+  readonly accept: string;
+  readonly field: string;
+  readonly id: ImportSource;
+  readonly label: string;
+}[] = [
+  {
+    accept: "application/json,.json",
+    field: "Monica JSON export",
+    id: "monica",
+    label: "Monica backup",
+  },
+  {
+    accept: "text/vcard,text/x-vcard,.vcf,.vcard",
+    field: "vCard file",
+    id: "vcard",
+    label: "vCard",
+  },
+  { accept: "text/csv,.csv", field: "CSV file", id: "csv", label: "CSV" },
+];
+
+/** Every field a CSV column can be mapped to, as the mapping step names it. */
+export const CSV_TARGET_LABELS: Readonly<Record<CsvColumnTarget, string>> = {
+  ignore: "Ignore",
+  givenName: "Given name",
+  familyName: "Family name",
+  middleName: "Middle name",
+  nickname: "Nickname",
+  email: "Email",
+  phone: "Phone",
+  street: "Street",
+  city: "City",
+  region: "Region",
+  postalCode: "Postal code",
+  country: "Country",
+  birthday: "Birthday",
+  note: "Note",
+  company: "Company",
+  jobTitle: "Job title",
+};
+
+/**
+ * What a chosen vCard or CSV file's bytes are: the source the dry run is
+ * sent, or why not. The bytes must be UTF-8, which is the one encoding the
+ * importer reads, so a spreadsheet saved in a legacy code page is refused
+ * here, before it is uploaded, with the same words the server would use.
+ */
+export function recognizeContactFile(
+  source: "csv" | "vcard",
+  bytes: Uint8Array,
+): { readonly source?: unknown; readonly message: string } {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return { message: NOT_UTF8 };
+  }
+  if (source === "vcard") {
+    return /BEGIN:VCARD/i.test(text)
+      ? { message: "vCard file detected.", source: { format: "vcard", text } }
+      : { message: "This file does not look like a vCard." };
+  }
+  return text.replace(/^\uFEFF/, "").trim() === ""
+    ? { message: "This CSV file has no header row." }
+    : { message: "CSV file detected.", source: { format: "csv", text } };
+}
+
+/** A CSV run awaiting its column mapping. */
+export interface PendingMapping {
+  readonly importId: string;
+  readonly preview: CsvPreview;
+}
+
 export interface NewImportState {
   readonly phase: "loading" | "ready" | "no-session" | "member";
+  readonly source: ImportSource;
+  /** The CSV run whose columns the reader is mapping, if there is one. */
+  readonly mapping: PendingMapping | undefined;
+  /** Whether a mapping is being applied. */
+  readonly applying: boolean;
   readonly detection: string;
   readonly status: string;
   readonly validating: boolean;
@@ -60,6 +147,14 @@ export interface NewImportState {
 
 export type NewImportAction =
   | { readonly type: "ready" }
+  | { readonly type: "source"; readonly source: ImportSource }
+  | {
+    readonly type: "mapping";
+    readonly importId: string;
+    readonly preview: CsvPreview;
+  }
+  | { readonly type: "applying" }
+  | { readonly type: "apply-refused"; readonly message: string }
   | { readonly type: "no-session" }
   | { readonly type: "member" }
   | { readonly type: "detecting" }
@@ -83,20 +178,32 @@ export type NewImportAction =
   };
 
 export const initialNewImport: NewImportState = {
+  applying: false,
   committed: undefined,
   committing: false,
   confirmed: false,
   detection: CHOOSE_EXPORT,
   importId: undefined,
+  mapping: undefined,
   phase: "loading",
   report: undefined,
+  source: "monica",
   status: "",
   validating: false,
 };
 
-/** Withdraws the dry run: nothing is committable until one lands again. */
+/**
+ * Withdraws the dry run and any mapping step: nothing is committable, or
+ * mappable, until one lands again.
+ */
 function withdrawn(state: NewImportState): NewImportState {
-  return { ...state, confirmed: false, importId: undefined, report: undefined };
+  return {
+    ...state,
+    confirmed: false,
+    importId: undefined,
+    mapping: undefined,
+    report: undefined,
+  };
 }
 
 export function newImportReducer(
@@ -106,6 +213,24 @@ export function newImportReducer(
   switch (action.type) {
     case "ready":
       return { ...state, phase: "ready" };
+    case "source":
+      return {
+        ...withdrawn(state),
+        detection: action.source === "monica" ? CHOOSE_EXPORT : CHOOSE_CONTACTS,
+        source: action.source,
+      };
+    case "mapping":
+      return {
+        ...withdrawn(state),
+        mapping: { importId: action.importId, preview: action.preview },
+        source: "csv",
+        status:
+          "Map each column to a field, or choose Ignore, then apply the mapping.",
+      };
+    case "applying":
+      return { ...state, applying: true, status: "Applying the mapping…" };
+    case "apply-refused":
+      return { ...state, applying: false, status: action.message };
     case "no-session":
       return {
         ...state,
@@ -139,7 +264,9 @@ export function newImportReducer(
     case "dry-run":
       return {
         ...state,
+        applying: false,
         importId: action.importId,
+        mapping: undefined,
         report: action.report,
         status: "Dry run complete. Review the report before committing.",
       };
@@ -164,10 +291,30 @@ export function newImportReducer(
   }
 }
 
-/** An import in the history: how many contacts it carries. */
+const SOURCE_NAMES: Readonly<Record<ImportSummary["sourceSystem"], string>> = {
+  csv: "CSV",
+  monica: "Monica",
+  vcard: "vCard",
+};
+
+/**
+ * An import in the history: how many contacts it carries, and, for a vCard
+ * or CSV import, its source. A CSV import awaiting its mapping counts rows.
+ */
 export function importHeading(run: ImportSummary): string {
-  const count = run.report.counts.contacts;
-  return `${count} contact${count === 1 ? "" : "s"}`;
+  const count = run.preview?.rowCount ?? run.report.counts.contacts;
+  const noun = run.preview ? "row" : "contact";
+  const source = run.sourceSystem && run.sourceSystem !== "monica"
+    ? ` · ${SOURCE_NAMES[run.sourceSystem]}`
+    : "";
+  return `${count} ${noun}${count === 1 ? "" : "s"}${source}`;
+}
+
+/** Where a history entry leads: a pending CSV run resumes its mapping. */
+export function importHref(run: ImportSummary): string {
+  return run.status === "pending"
+    ? `/app/settings/import/new?import=${encodeURIComponent(run.importId)}`
+    : `/app/settings/import/${run.importId}`;
 }
 
 /** An import's state as the history names it. */
@@ -176,6 +323,8 @@ export function importStatus(status: ImportSummary["status"]): string {
     ? "Dry run"
     : status === "completed"
     ? "Completed"
+    : status === "pending"
+    ? "Awaiting column mapping"
     : "Failed";
 }
 
@@ -185,7 +334,15 @@ export function reportStatus(status: ImportSummary["status"]): string {
     ? "Completed"
     : status === "dry_run"
     ? "Awaiting confirmation"
+    : status === "pending"
+    ? "Awaiting column mapping"
     : "Failed";
+}
+
+/** The pending import a new-import URL resumes, or `undefined`. */
+export function resumedImportId(search: string): string | undefined {
+  const id = new URLSearchParams(search).get("import") ?? "";
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : undefined;
 }
 
 /** The history's summary line. */
@@ -249,6 +406,8 @@ export interface ReportState {
   readonly retry: boolean;
   readonly report: ImportReport | undefined;
   readonly outcome: string;
+  /** Where a CSV import awaiting its mapping resumes (GAP-050). */
+  readonly resume?: string;
 }
 
 export type ReportAction =
@@ -258,6 +417,7 @@ export type ReportAction =
     readonly type: "loaded";
     readonly report: ImportReport;
     readonly outcome: string;
+    readonly resume?: string;
   };
 
 /** The report page's state: its status line, Retry, and the report. */
@@ -274,6 +434,7 @@ export function reportReducer(
       return {
         outcome: action.outcome,
         report: action.report,
+        ...(action.resume ? { resume: action.resume } : {}),
         retry: false,
         status: "Import report is current.",
       };

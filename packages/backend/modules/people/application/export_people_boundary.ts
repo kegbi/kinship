@@ -4,9 +4,27 @@ export interface ExportContactMethod {
   readonly value: string;
 }
 
+/** A remembered date, as the CSV export writes it (GAP-050). */
+export interface ExportDate {
+  readonly day?: number;
+  readonly kind: string;
+  readonly label?: string;
+  readonly month?: number;
+  readonly precision:
+    | "day"
+    | "full"
+    | "month"
+    | "month_day"
+    | "unknown"
+    | "year"
+    | "year_month";
+  readonly year?: number;
+}
+
 export interface ExportPerson {
   readonly archived?: boolean;
   readonly contactMethods: readonly ExportContactMethod[];
+  readonly dates: readonly ExportDate[];
   readonly deletedAt?: string;
   readonly description?: string;
   readonly familyName?: string;

@@ -3,9 +3,12 @@ import {
   DATE_PRECISIONS,
   type DatePrecision,
   isRealCalendarDate,
+  parsePartialDateText,
+  type PartialDateComponents,
   partialDateErrors,
+  partialDateText,
 } from "./partial_date.ts";
-import { assert } from "../testing/assert.ts";
+import { assert, assertEquals } from "../testing/assert.ts";
 
 Deno.test("[GAP-006] one precision vocabulary describes every partial date", () => {
   assert(
@@ -110,4 +113,66 @@ Deno.test("[GAP-046] a partial date carries exactly its precision's real compone
       "Enter a day from 1 through 31.",
     "a fractional day is not a day",
   );
+});
+
+Deno.test("[GAP-050] every precision has one canonical text form", () => {
+  const cases: readonly [PartialDateComponents, string][] = [
+    [{ day: 9, month: 3, precision: "full", year: 1815 }, "1815-03-09"],
+    [{ month: 12, precision: "year_month", year: 1990 }, "1990-12"],
+    [{ day: 1, month: 2, precision: "month_day" }, "--02-01"],
+    [{ precision: "year", year: 42 }, "0042"],
+    [{ month: 7, precision: "month" }, "--07"],
+    [{ day: 31, precision: "day" }, "---31"],
+    [{ precision: "unknown" }, ""],
+  ];
+  for (const [value, text] of cases) {
+    assertEquals(partialDateText(value), text);
+    // A blank cell is an absent date, not an unknown one.
+    assertEquals(
+      parsePartialDateText(text),
+      value.precision === "unknown" ? undefined : value,
+    );
+  }
+});
+
+Deno.test("[GAP-050] the basic and truncated vCard spellings parse too", () => {
+  assertEquals(parsePartialDateText("18150309"), {
+    day: 9,
+    month: 3,
+    precision: "full",
+    year: 1815,
+  });
+  assertEquals(parsePartialDateText("--0201"), {
+    day: 1,
+    month: 2,
+    precision: "month_day",
+  });
+  assertEquals(parsePartialDateText(" 1990-12-31T08:00:00Z "), {
+    day: 31,
+    month: 12,
+    precision: "full",
+    year: 1990,
+  });
+  assertEquals(parsePartialDateText("1990"), { precision: "year", year: 1990 });
+});
+
+Deno.test("[GAP-050] text that is not a real partial date is refused", () => {
+  for (
+    const text of [
+      "1990-02-30",
+      "--13-01",
+      "0000",
+      "1990/01/01",
+      "March 3",
+      "--02-30",
+      "19900101T",
+      "",
+    ]
+  ) {
+    assertEquals(parsePartialDateText(text), undefined, text);
+  }
+});
+
+Deno.test("[GAP-050] a component a malformed value lacks renders as zeros", () => {
+  assertEquals(partialDateText({ precision: "full" }), "0000-00-00");
 });

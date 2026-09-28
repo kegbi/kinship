@@ -3,7 +3,9 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
+  ExportFormat,
   ExportManifest,
+  ExportRowSet,
   ExportSummary,
   StoredExport,
 } from "../../domain/export_rules.ts";
@@ -16,7 +18,7 @@ interface ExportRow {
   readonly error: string | null;
   readonly expires_at: Date | null;
   readonly file_id: string | null;
-  readonly format: "json";
+  readonly format: ExportFormat;
   readonly id: string;
   readonly manifest: unknown;
   readonly status: ExportSummary["status"];
@@ -35,10 +37,14 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function rowSet(value: unknown): ExportRowSet {
+  const set = record(value);
+  return { count: Number(set.count ?? 0), sha256: String(set.sha256 ?? "") };
+}
+
 function manifest(value: unknown): ExportManifest {
   const source = record(value);
   const rows = record(source.rows);
-  const people = record(rows.people);
   const attachments = record(source.attachments);
   return {
     attachments: {
@@ -53,12 +59,15 @@ function manifest(value: unknown): ExportManifest {
         typeof item === "string"
       )
       : [],
-    profile: "monica-json",
+    profile: source.profile === "csv" || source.profile === "vcard"
+      ? source.profile
+      : "monica-json",
     rows: {
-      people: {
-        count: Number(people.count ?? 0),
-        sha256: String(people.sha256 ?? ""),
-      },
+      ...(rows.contactMethods
+        ? { contactMethods: rowSet(rows.contactMethods) }
+        : {}),
+      ...(rows.dates ? { dates: rowSet(rows.dates) } : {}),
+      people: rowSet(rows.people),
     },
     version: 1,
   };
@@ -73,7 +82,7 @@ function summary(row: ExportRow): ExportSummary {
     ...pickDefined({ error: row.error }),
     ...(row.expires_at ? { expiresAt: row.expires_at.toISOString() } : {}),
     exportId: row.id,
-    format: "json",
+    format: row.format,
     manifest: manifest(row.manifest),
     status: row.status,
   };
@@ -98,7 +107,7 @@ export class PostgresExportRepository implements ExportRepository {
       select id::text from crm.data_exports
       where workspace_id = ${command.actor.workspaceId}::uuid
         and requested_by_member_id = ${command.actor.memberId}::uuid
-        and status = 'running'
+        and status = 'running' and format = ${command.format}
       order by created_at, id limit 1
     `.execute(database);
     if (existing.rows[0]) {
@@ -111,7 +120,7 @@ export class PostgresExportRepository implements ExportRepository {
       started_at, created_at, updated_at
     ) values (
       ${command.exportId}::uuid, ${command.actor.workspaceId}::uuid,
-      ${command.actor.memberId}::uuid, 'json', 'running', '{}'::jsonb,
+      ${command.actor.memberId}::uuid, ${command.format}, 'running', '{}'::jsonb,
       ${command.startedAt}, ${command.startedAt}, ${command.startedAt}
     ) returning id::text`.execute(database);
     return { created: true, exportId: inserted.rows[0]!.id };

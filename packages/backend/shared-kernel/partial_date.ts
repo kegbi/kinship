@@ -113,3 +113,74 @@ function inRange(value: number | undefined, maximum: number): boolean {
   return value === undefined ||
     (Number.isInteger(value) && value >= 1 && value <= maximum);
 }
+
+/** A component as fixed-width digits. */
+function digits(value: number | undefined, width: number): string {
+  return String(value ?? 0).padStart(width, "0");
+}
+
+/**
+ * The canonical text of a partial date (GAP-050): RFC 6350's reduced and
+ * truncated ISO 8601 forms, so a birthday without a year reads `--03-09` in
+ * a CSV export exactly as it would in a vCard. `unknown` is the empty text.
+ */
+export function partialDateText(value: PartialDateComponents): string {
+  switch (value.precision) {
+    case "full":
+      return `${digits(value.year, 4)}-${digits(value.month, 2)}-${
+        digits(value.day, 2)
+      }`;
+    case "year_month":
+      return `${digits(value.year, 4)}-${digits(value.month, 2)}`;
+    case "month_day":
+      return `--${digits(value.month, 2)}-${digits(value.day, 2)}`;
+    case "year":
+      return digits(value.year, 4);
+    case "month":
+      return `--${digits(value.month, 2)}`;
+    case "day":
+      return `---${digits(value.day, 2)}`;
+    case "unknown":
+      return "";
+  }
+}
+
+const DATE_FORMS: readonly [RegExp, DatePrecision][] = [
+  [/^(\d{4})-?(\d{2})-?(\d{2})$/, "full"],
+  [/^(\d{4})-(\d{2})$/, "year_month"],
+  [/^--(\d{2})-?(\d{2})$/, "month_day"],
+  [/^(\d{4})$/, "year"],
+  [/^--(\d{2})$/, "month"],
+  [/^---(\d{2})$/, "day"],
+];
+
+/**
+ * A partial date read from its text, or `undefined` when the text is blank
+ * or is not a real date. The canonical forms above are read, and so are the
+ * basic forms (`18150309`, `--0309`) vCard exporters write; a time after the
+ * date is ignored, because only the calendar day is remembered.
+ */
+export function parsePartialDateText(
+  text: string,
+): PartialDateComponents | undefined {
+  const trimmed = text.trim();
+  const date = /^([^T]+)T\d/.exec(trimmed)?.[1] ?? trimmed;
+  for (const [pattern, precision] of DATE_FORMS) {
+    const match = pattern.exec(date);
+    if (!match) continue;
+    const numbers = match.slice(1).map(Number);
+    const parts = new Map(
+      componentShape[precision].map((part, index) => [part, numbers[index]]),
+    );
+    const value: PartialDateComponents = {
+      ...(parts.has("day") ? { day: parts.get("day")! } : {}),
+      ...(parts.has("month") ? { month: parts.get("month")! } : {}),
+      precision,
+      ...(parts.has("year") ? { year: parts.get("year")! } : {}),
+    };
+    return Object.keys(partialDateErrors(value)).length === 0
+      ? value
+      : undefined;
+  }
+  return undefined;
+}

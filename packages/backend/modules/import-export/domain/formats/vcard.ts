@@ -12,8 +12,9 @@
  * a person is called is the people module's rule, and a format module that
  * re-derived it would quietly drift from the name shown everywhere else.
  *
- * GAP-050 adds an all-people export beside this file; it needs `vcardText` per
- * person and a joiner, not a different card.
+ * GAP-050's all-people export (`contacts_export.ts`) joins `vcardText` per
+ * person rather than rendering a different card, and `vcard_parse.ts` reads
+ * these cards, and other address books' cards, back.
  */
 
 /** The person fields a card renders. */

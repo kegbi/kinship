@@ -7,7 +7,12 @@
 
 import type { ApiResult } from "./request.ts";
 import { request, workspaceHeader } from "./request.ts";
-import type { ImportReport, ImportSummary } from "./types.ts";
+import type {
+  CsvColumnTarget,
+  ImportDryRun,
+  ImportMappingRequired,
+  ImportSummary,
+} from "./types.ts";
 
 export function listImports(
   workspaceId?: string,
@@ -15,18 +20,15 @@ export function listImports(
   return request("/api/v1/imports", { headers: workspaceHeader(workspaceId) });
 }
 
+/**
+ * Stages a source: a Monica JSON export, or `{ format: "vcard" | "csv",
+ * text }`. A CSV source answers with its preview and waits for
+ * `mapImportColumns`.
+ */
 export function createImportDryRun(
   source: unknown,
   workspaceId?: string,
-): Promise<
-  ApiResult<
-    {
-      readonly importId: string;
-      readonly report: ImportReport;
-      readonly status: "dry_run";
-    }
-  >
-> {
+): Promise<ApiResult<ImportDryRun | ImportMappingRequired>> {
   return request("/api/v1/imports/dry-runs", {
     method: "POST",
     headers: workspaceHeader(workspaceId),
@@ -40,6 +42,18 @@ export function getImportReport(
 ): Promise<ApiResult<ImportSummary>> {
   return request(`/api/v1/imports/${encodeURIComponent(importId)}`, {
     headers: workspaceHeader(workspaceId),
+  });
+}
+
+export function mapImportColumns(
+  importId: string,
+  columns: readonly CsvColumnTarget[],
+  workspaceId?: string,
+): Promise<ApiResult<ImportDryRun>> {
+  return request(`/api/v1/imports/${encodeURIComponent(importId)}/mapping`, {
+    method: "POST",
+    headers: workspaceHeader(workspaceId),
+    body: JSON.stringify({ columns }),
   });
 }
 

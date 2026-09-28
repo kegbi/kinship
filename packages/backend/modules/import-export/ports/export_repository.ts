@@ -13,6 +13,7 @@
 
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
+  ExportFormat,
   ExportManifest,
   ExportSummary,
   StoredExport,
@@ -62,9 +63,11 @@ export interface ExportRepository {
     exportId: string,
     transaction: ExportTransaction,
   ): Promise<StoredExport | undefined>;
+  /** Claims a run of `format`, or rejoins the actor's running one of it. */
   startOrResume(command: {
     readonly actor: ExportActor;
     readonly exportId: string;
+    readonly format: ExportFormat;
     readonly startedAt: Date;
     readonly transaction: ExportTransaction;
   }): Promise<{ readonly created: boolean; readonly exportId: string }>;

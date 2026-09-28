@@ -48,7 +48,7 @@ export interface ImportRepository {
   ): Promise<PreparedImportCommit>;
   retargetContact(
     importId: string,
-    sourcePrimaryKey: string,
+    entityId: string,
     targetPersonId: string,
     transaction: ImportTransaction,
   ): Promise<void>;

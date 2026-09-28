@@ -1921,13 +1921,48 @@ require a synchronized schema v8 and are called out explicitly.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
       unit, integration, coverage (people-domain 100/100/100), and build.
 
-- [ ] **GAP-050 — Import vCard and CSV; export CSV and all-people vCard.** L.
+- [x] **GAP-050 — Import vCard and CSV; export CSV and all-people vCard.** L.
       Depends: 018. Flows `IMPORT-002`, `EXPORT-002`.
   - Scope: `import-export/domain/formats/{vcard,csv}.ts` parsers feeding the
     existing staging pipeline with a column-mapping step for CSV; export formats
     `csv` (people, contact methods, dates) and `vcf` (all people); settings UI
     for format choice and mapping preview.
   - Verify: parser unit tests with fixture files; integration idempotency; E2E.
+  - Delivered 2026-09-28: flows `IMPORT-002` and `EXPORT-002`, with no schema
+    change. v8 already names `vcard` and `csv` as import sources and export
+    formats.
+    - vCard and CSV parsers feed the existing import pipeline:
+      - they cover vCard 2.1, 3.0, and 4.0 (quoted-printable with its charset, a
+        BOM, Apple's no-year birthday);
+      - they cover RFC 4180 CSV with comma or semicolon delimiters and a
+        column-mapping step that can be resumed;
+      - both run in linear time, bounded by 500 cards or rows, 100 columns, 100
+        parameters per line, and 10,000 characters per value;
+      - unsupported properties and oversized values are counted and named in the
+        dry run, never dropped silently.
+    - Re-imports match per card or row against earlier completed runs of the
+      same source in the workspace. vCards match on UID, or on a normalized
+      fingerprint when a card has no UID. A changed card with the same UID is
+      reported as a conflict and changes nothing.
+    - A CSV with a password or secret column is refused before anything is
+      stored. Mapping keeps only the mapped fields.
+    - Personalization contact types gain a settable `kind`, so imported emails,
+      phones, and websites have a type to land on. Imports also match custom
+      types by name.
+    - Exports add `csv`: a deterministic ZIP of `people.csv`,
+      `contact_methods.csv`, and `dates.csv` with a formula-injection guard.
+      They also add `vcard`: every non-deleted person in one `.vcf`. Both carry
+      the JSON export's manifest, checksum, one-shot download, expiry, and
+      audit.
+    - Evidence: parser fixture and operation-count tests; integration suites for
+      idempotency, conflicts, limits, credentials, cross-workspace and
+      permission negatives, and export contents; `contacts-import.IMPORT-002`
+      and `contacts-export.EXPORT-002` with IMPORT-001, EXPORT-001, and
+      WORKSPACE-003 on Chromium and WebKit. Review took three rounds, and the
+      product owner allowed the third.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, coverage (import-export-domain 99.6/100/100), and
+      build.
 
 - [ ] **GAP-051 — Bulk directory actions.** M. Depends: 029. Flow `PEOPLE-009`.
   - Scope: selection model in the directory reducer; bulk tag, archive, restore,

@@ -14,7 +14,12 @@ import { buttonVariants } from "@/components/ui/variants.ts";
 import { useLatestRequest } from "../../../islands/core/index.ts";
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
-import { reportImportId, reportReducer, reportStatus } from "./imports.ts";
+import {
+  importHref,
+  reportImportId,
+  reportReducer,
+  reportStatus,
+} from "./imports.ts";
 
 export const IMPORT_REPORT_ISLAND = "settings-import-report";
 
@@ -91,6 +96,9 @@ export function ImportReportPage(
     dispatch({
       outcome: reportStatus(answer.data.status),
       report: answer.data.report,
+      ...(answer.data.status === "pending"
+        ? { resume: importHref(answer.data) }
+        : {}),
       type: "loaded",
     });
   };
@@ -154,6 +162,17 @@ export function ImportReportPage(
       >
         <h2 id="import-report-heading">Summary</h2>
         <p data-import-status="">{state.outcome}</p>
+        {state.resume
+          ? (
+            <a
+              className={buttonVariants({ shape: "pill", variant: "outline" })}
+              data-import-resume=""
+              href={state.resume}
+            >
+              Continue column mapping
+            </a>
+          )
+          : null}
         {state.report ? <ReportCounts report={state.report} /> : null}
       </section>
     </>

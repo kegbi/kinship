@@ -24,6 +24,7 @@ import {
 } from "react";
 import {
   type ApiResult,
+  type ContactMethodKind,
   createPersonalizationEntry,
   deletePersonalizationEntry,
   listPersonalizationEntries,
@@ -37,6 +38,8 @@ import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { resolveSettingsContext } from "../shared/context.ts";
 import { useUnsavedGuard } from "../shared/hooks.ts";
 import {
+  CONTACT_KIND_LABELS,
+  CONTACT_METHOD_KINDS,
   dirtyLine,
   draftRules,
   entryCapabilities,
@@ -140,7 +143,40 @@ function createInput(
   if (section === "emotion-options" || section === "pet-categories") {
     return undefined;
   }
+  if (section === "contact-method-types") {
+    return {
+      contactKind: (field(form, "contactKind")?.value ??
+        "custom") as ContactMethodKind,
+      name,
+      sortOrder: count,
+    };
+  }
   return { name, sortOrder: count };
+}
+
+/** A contact-method type's kind, which the importer files values by. */
+function KindSelect(
+  props: {
+    readonly defaultValue: ContactMethodKind;
+    readonly disabled: boolean;
+    readonly label: string;
+  },
+) {
+  return (
+    <label data-create-field="kind">
+      Kind
+      <select
+        aria-label={props.label}
+        defaultValue={props.defaultValue}
+        disabled={props.disabled}
+        name="contactKind"
+      >
+        {CONTACT_METHOD_KINDS.map((kind) => (
+          <option key={kind} value={kind}>{CONTACT_KIND_LABELS[kind]}</option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 export function Personalization(props: { readonly onSettled?: () => void }) {
@@ -466,6 +502,9 @@ export function Personalization(props: { readonly onSettled?: () => void }) {
     const form = event.currentTarget;
     const capabilities = entryCapabilities(entry, rendered.section);
     const text = (name: string) => field(form, name)?.value.trim();
+    const contactKind = field(form, "contactKind")?.value as
+      | ContactMethodKind
+      | undefined;
     const days = field(form, "daysBefore");
     const order = field(form, "sortOrder");
     const forwardLabel = text("forwardLabel");
@@ -478,6 +517,7 @@ export function Personalization(props: { readonly onSettled?: () => void }) {
           section,
           entry.id,
           {
+            ...(contactKind === undefined ? {} : { contactKind }),
             ...(days && capabilities.editValue
               ? { daysBefore: Number(days.value) }
               : {}),
@@ -754,6 +794,15 @@ function CreateForm(
           </>
         )
         : null}
+      {section === "contact-method-types"
+        ? (
+          <KindSelect
+            defaultValue="custom"
+            disabled={locked || !canCreate}
+            label="New option kind"
+          />
+        )
+        : null}
       {section === "reminder-rules"
         ? (
           <label data-create-field="days">
@@ -862,6 +911,15 @@ function EntryRow(
           : readOnly
           ? <strong>{entry.name}</strong>
           : text("Name", "name", entry.name)}
+        {props.section === "contact-method-types" && !readOnly
+          ? (
+            <KindSelect
+              defaultValue={entry.contactKind ?? "custom"}
+              disabled={locked}
+              label={`Kind for ${entry.name}`}
+            />
+          )
+          : null}
         {capabilities.reorder
           ? (
             <label>

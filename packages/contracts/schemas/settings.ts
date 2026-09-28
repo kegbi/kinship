@@ -131,6 +131,31 @@ export const personalizationNamedCreate = z.strictObject({
   sortOrder: z.number().int().min(0).max(10000).optional(),
 }).meta({ id: "PersonalizationNamedCreate" });
 
+/**
+ * The broad kinds of a contact-method type (GAP-050): the values the v8
+ * `contact_method_types.kind` column comment lists, `custom` by default.
+ */
+export const CONTACT_METHOD_KINDS = [
+  "email",
+  "phone",
+  "url",
+  "social",
+  "im",
+  "username",
+  "custom",
+] as const;
+
+export const contactMethodKind = z.enum(CONTACT_METHOD_KINDS).meta({
+  id: "ContactMethodKind",
+});
+
+/** A new contact-method type: a named option with an optional kind. */
+export const personalizationContactTypeCreate = z.strictObject({
+  contactKind: contactMethodKind.optional(),
+  name: z.string().trim().min(1).max(200),
+  sortOrder: z.number().int().min(0).max(10000).optional(),
+}).meta({ id: "PersonalizationContactTypeCreate" });
+
 export const personalizationRelationshipCreate = z.strictObject({
   forwardLabel: z.string().trim().min(1).max(200),
   reverseLabel: z.string().trim().min(1).max(200),
@@ -142,6 +167,7 @@ export const personalizationReminderCreate = z.strictObject({
 }).meta({ id: "PersonalizationReminderCreate" });
 
 export const personalizationCreate = z.union([
+  personalizationContactTypeCreate,
   personalizationNamedCreate,
   personalizationNameOnlyCreate,
   personalizationRelationshipCreate,
@@ -150,7 +176,8 @@ export const personalizationCreate = z.union([
   "x-sectionSchemas": {
     "profile-modules": "#/components/schemas/PersonalizationNamedCreate",
     "gender-options": "#/components/schemas/PersonalizationNamedCreate",
-    "contact-method-types": "#/components/schemas/PersonalizationNamedCreate",
+    "contact-method-types":
+      "#/components/schemas/PersonalizationContactTypeCreate",
     "contact-labels": "#/components/schemas/PersonalizationNameOnlyCreate",
     "activity-types": "#/components/schemas/PersonalizationNamedCreate",
     "emotion-options": null,
@@ -180,6 +207,7 @@ export const personalizationEntry = z.strictObject({
     setDefault: z.boolean(),
   }),
   canDelete: z.boolean(),
+  contactKind: contactMethodKind.optional(),
   daysBefore: z.number().int().min(0).max(3650).optional(),
   forwardLabel: z.string().optional(),
   id: z.uuid(),
@@ -249,6 +277,20 @@ export const personalizationNamedUpdate = z.strictObject({
   }],
 });
 
+/** A contact-method type's edit: a named update that may also set a kind. */
+export const personalizationContactTypeUpdate = z.strictObject({
+  contactKind: contactMethodKind.optional(),
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+  isActive: z.boolean().optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  sortOrder: z.number().int().min(0).max(10000).optional(),
+}).refine(changesSomething).meta({
+  id: "PersonalizationContactTypeUpdate",
+  anyOf: [{ "required": ["contactKind"] }, { "required": ["isActive"] }, {
+    "required": ["name"],
+  }, { "required": ["sortOrder"] }],
+});
+
 export const personalizationRelationshipUpdate = z.strictObject({
   expectedUpdatedAt: z.iso.datetime({ offset: true }),
   forwardLabel: z.string().trim().min(1).max(200).optional(),
@@ -284,6 +326,7 @@ export const personalizationSaved = z.strictObject({
 }).meta({ id: "PersonalizationSaved" });
 
 export const personalizationUpdate = z.union([
+  personalizationContactTypeUpdate,
   personalizationNamedUpdate,
   personalizationGenderUpdate,
   personalizationNameOnlyUpdate,
@@ -293,7 +336,8 @@ export const personalizationUpdate = z.union([
   "x-sectionSchemas": {
     "profile-modules": "#/components/schemas/PersonalizationNamedUpdate",
     "gender-options": "#/components/schemas/PersonalizationGenderUpdate",
-    "contact-method-types": "#/components/schemas/PersonalizationNamedUpdate",
+    "contact-method-types":
+      "#/components/schemas/PersonalizationContactTypeUpdate",
     "contact-labels": "#/components/schemas/PersonalizationNameOnlyUpdate",
     "activity-types": "#/components/schemas/PersonalizationNamedUpdate",
     "emotion-options": null,

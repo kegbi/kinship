@@ -33,7 +33,58 @@ export interface ImportedPerson {
   readonly nickname?: string;
 }
 
+/**
+ * What a vCard or CSV contact adds to the person it creates (GAP-050): the
+ * people-owned rows beside the person, each written through the same
+ * repositories and validated by the same rules the profile editors use.
+ */
+export interface ImportedPersonDetails {
+  readonly addresses: readonly {
+    readonly city?: string;
+    readonly country?: string;
+    readonly postalCode?: string;
+    readonly region?: string;
+    readonly street?: string;
+  }[];
+  /** Contact methods whose type the importer resolved in the workspace. */
+  readonly contactMethods: readonly {
+    readonly typeId: string;
+    readonly value: string;
+  }[];
+  readonly dates: readonly {
+    readonly day?: number;
+    readonly kind: "birthday" | "custom" | "deceased";
+    readonly label?: string;
+    readonly month?: number;
+    readonly precision:
+      | "day"
+      | "full"
+      | "month"
+      | "month_day"
+      | "unknown"
+      | "year"
+      | "year_month";
+    readonly year?: number;
+  }[];
+  readonly occupation?: {
+    readonly organizationName?: string;
+    readonly title: string;
+  };
+}
+
 export interface PeopleImportBoundary {
+  /**
+   * Writes a newly imported person's contact methods, addresses, dates, and
+   * occupation, in the commit's transaction. A value the people rules refuse
+   * fails the whole commit rather than being half written.
+   */
+  addDetails(command: {
+    readonly actor: PeopleImportActor;
+    readonly details: ImportedPersonDetails;
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: PeopleImportTransaction;
+  }): Promise<void>;
   create(command: {
     readonly actor: PeopleImportActor;
     readonly occurredAt: Date;

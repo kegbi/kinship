@@ -17,6 +17,7 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { CsvPreview, ImportedContact } from "./contact_import.ts";
 import { canonicalJson, sha256Hex } from "./formats/canonical.ts";
 import {
   booleanValue,
@@ -95,6 +96,13 @@ export interface StagedContact {
 /** A staged contact the repository has handed back to be committed. */
 export interface PreparedImportContact {
   readonly archived: boolean;
+  /**
+   * What a vCard or CSV contact carries beyond the person (GAP-050): contact
+   * methods, addresses, dates, work, and a note. A Monica contact has none.
+   */
+  readonly contact?: ImportedContact;
+  /** The staging row, which a reused contact is retargeted by. */
+  readonly entityId: string;
   readonly avatarPresentation?: ImportedAvatarPresentation;
   readonly deletedAt?: string;
   readonly description?: string;
@@ -152,14 +160,20 @@ export function mayImport(role: ImportRole): boolean {
 /** The workspace roles an import path distinguishes. */
 export type ImportRole = "admin" | "member" | "owner";
 
+/** The source systems an import run reads (`data_imports.source_system`). */
+export type ImportSourceSystem = "csv" | "monica" | "vcard";
+
 /** One import run, as a member sees it listed. */
 export interface ImportSummary {
   readonly completedAt?: string;
   readonly createdAt: string;
   readonly importId: string;
+  /** A CSV run awaiting its column mapping carries what the member maps. */
+  readonly preview?: CsvPreview;
   readonly report: ImportReport;
-  readonly sourceProfile: "json_export";
-  readonly status: "completed" | "dry_run" | "failed";
+  readonly sourceProfile: "csv" | "json_export" | "vcf";
+  readonly sourceSystem: ImportSourceSystem;
+  readonly status: "completed" | "dry_run" | "failed" | "pending";
 }
 
 /** What listing import runs answers with. */

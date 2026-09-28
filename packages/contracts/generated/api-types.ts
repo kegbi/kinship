@@ -192,6 +192,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/imports/{importId}/mapping": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description Applies the member's column mapping to a pending CSV import and returns its dry-run report. */
+        readonly post: operations["mapImportColumns"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/interaction-options": {
         readonly parameters: {
             readonly query?: never;
@@ -2055,6 +2072,8 @@ export interface components {
              */
             readonly section: "contact-methods";
         };
+        /** @enum {string} */
+        readonly ContactMethodKind: "email" | "phone" | "url" | "social" | "im" | "username" | "custom";
         readonly ConversationInteraction: {
             readonly channelType?: components["schemas"]["InteractionOption"];
             readonly contactMethod?: {
@@ -2098,6 +2117,19 @@ export interface components {
              */
             readonly requestId: string;
             readonly title?: string;
+        };
+        readonly CsvColumnMapping: {
+            readonly columns: readonly components["schemas"]["CsvColumnTarget"][];
+        };
+        /** @enum {string} */
+        readonly CsvColumnTarget: "ignore" | "givenName" | "familyName" | "middleName" | "nickname" | "email" | "phone" | "street" | "city" | "region" | "postalCode" | "country" | "birthday" | "note" | "company" | "jobTitle";
+        readonly CsvPreview: {
+            /** @enum {string} */
+            readonly delimiter: "," | ";";
+            readonly headers: readonly string[];
+            readonly rowCount: number;
+            readonly rows: readonly (readonly string[])[];
+            readonly suggested: readonly components["schemas"]["CsvColumnTarget"][];
         };
         readonly DavSubscription: {
             /** Format: uuid */
@@ -2191,6 +2223,8 @@ export interface components {
             /** @constant */
             readonly status: "ready";
         };
+        /** @enum {string} */
+        readonly ExportFormat: "csv" | "json" | "vcard";
         readonly ExportManifest: {
             readonly attachments: {
                 readonly count: number;
@@ -2202,9 +2236,17 @@ export interface components {
                 readonly sha256: string;
             };
             readonly limitations: readonly string[];
-            /** @constant */
-            readonly profile: "monica-json";
+            /** @enum {string} */
+            readonly profile: "csv" | "monica-json" | "vcard";
             readonly rows: {
+                readonly contactMethods?: {
+                    readonly count: number;
+                    readonly sha256: string;
+                };
+                readonly dates?: {
+                    readonly count: number;
+                    readonly sha256: string;
+                };
                 readonly people: {
                     readonly count: number;
                     readonly sha256: string;
@@ -2212,6 +2254,9 @@ export interface components {
             };
             /** @constant */
             readonly version: 1;
+        };
+        readonly ExportRequest: {
+            readonly format?: components["schemas"]["ExportFormat"];
         };
         readonly ExportSummary: {
             /** Format: date-time */
@@ -2223,8 +2268,7 @@ export interface components {
             readonly expiresAt?: string;
             /** Format: uuid */
             readonly exportId: string;
-            /** @constant */
-            readonly format: "json";
+            readonly format: components["schemas"]["ExportFormat"];
             readonly manifest: components["schemas"]["ExportManifest"];
             /** @enum {string} */
             readonly status: "cancelled" | "completed" | "expired" | "failed" | "pending" | "running";
@@ -2380,6 +2424,13 @@ export interface components {
             /** @constant */
             readonly status: "dry_run";
         };
+        readonly ImportMappingRequired: {
+            /** Format: uuid */
+            readonly importId: string;
+            readonly preview: components["schemas"]["CsvPreview"];
+            /** @constant */
+            readonly status: "mapping";
+        };
         readonly ImportReport: {
             readonly counts: {
                 readonly contacts: number;
@@ -2402,11 +2453,15 @@ export interface components {
             readonly createdAt: string;
             /** Format: uuid */
             readonly importId: string;
+            /** @description Present while a CSV import awaits its column mapping. */
+            readonly preview?: components["schemas"]["CsvPreview"];
             readonly report: components["schemas"]["ImportReport"];
-            /** @constant */
-            readonly sourceProfile: "json_export";
             /** @enum {string} */
-            readonly status: "completed" | "dry_run" | "failed";
+            readonly sourceProfile: "csv" | "json_export" | "vcf";
+            /** @enum {string} */
+            readonly sourceSystem: "csv" | "monica" | "vcard";
+            /** @enum {string} */
+            readonly status: "completed" | "dry_run" | "failed" | "pending";
         };
         readonly ImportantDate: {
             readonly day?: number;
@@ -3307,7 +3362,20 @@ export interface components {
             /** @constant */
             readonly status: "ready";
         };
-        readonly PersonalizationCreate: components["schemas"]["PersonalizationNamedCreate"] | components["schemas"]["PersonalizationNameOnlyCreate"] | components["schemas"]["PersonalizationRelationshipCreate"] | components["schemas"]["PersonalizationReminderCreate"];
+        readonly PersonalizationContactTypeCreate: {
+            readonly contactKind?: components["schemas"]["ContactMethodKind"];
+            readonly name: string;
+            readonly sortOrder?: number;
+        };
+        readonly PersonalizationContactTypeUpdate: {
+            readonly contactKind?: components["schemas"]["ContactMethodKind"];
+            /** Format: date-time */
+            readonly expectedUpdatedAt: string;
+            readonly isActive?: boolean;
+            readonly name?: string;
+            readonly sortOrder?: number;
+        } | unknown | unknown | unknown | unknown;
+        readonly PersonalizationCreate: components["schemas"]["PersonalizationContactTypeCreate"] | components["schemas"]["PersonalizationNamedCreate"] | components["schemas"]["PersonalizationNameOnlyCreate"] | components["schemas"]["PersonalizationRelationshipCreate"] | components["schemas"]["PersonalizationReminderCreate"];
         readonly PersonalizationDeleted: {
             /** Format: uuid */
             readonly id: string;
@@ -3325,6 +3393,7 @@ export interface components {
                 readonly setDefault: boolean;
             };
             readonly canDelete: boolean;
+            readonly contactKind?: components["schemas"]["ContactMethodKind"];
             readonly daysBefore?: number;
             readonly forwardLabel?: string;
             /** Format: uuid */
@@ -3409,7 +3478,7 @@ export interface components {
         };
         /** @enum {string} */
         readonly PersonalizationSection: "profile-modules" | "gender-options" | "contact-method-types" | "contact-labels" | "activity-types" | "emotion-options" | "life-event-types" | "relationship-types" | "pet-categories" | "reminder-rules" | "tags";
-        readonly PersonalizationUpdate: components["schemas"]["PersonalizationNamedUpdate"] | components["schemas"]["PersonalizationGenderUpdate"] | components["schemas"]["PersonalizationNameOnlyUpdate"] | components["schemas"]["PersonalizationRelationshipUpdate"] | components["schemas"]["PersonalizationReminderUpdate"];
+        readonly PersonalizationUpdate: components["schemas"]["PersonalizationContactTypeUpdate"] | components["schemas"]["PersonalizationNamedUpdate"] | components["schemas"]["PersonalizationGenderUpdate"] | components["schemas"]["PersonalizationNameOnlyUpdate"] | components["schemas"]["PersonalizationRelationshipUpdate"] | components["schemas"]["PersonalizationReminderUpdate"];
         readonly PetFact: {
             /** Format: uuid */
             readonly categoryId?: string;
@@ -4656,15 +4725,28 @@ export interface operations {
             readonly path?: never;
             readonly cookie?: never;
         };
-        readonly requestBody?: never;
+        readonly requestBody?: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
         readonly responses: {
-            /** @description Completed portable workspace export */
+            /** @description Completed workspace export: portable JSON, a CSV archive, or an all-people vCard */
             readonly 201: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ExportSummary"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -4723,13 +4805,15 @@ export interface operations {
         };
         readonly requestBody?: never;
         readonly responses: {
-            /** @description Private portable export artifact */
+            /** @description Private export artifact */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
                     readonly "application/json": string;
+                    readonly "application/zip": string;
+                    readonly "text/vcard": string;
                 };
             };
             /** @description RFC 9457 problem details */
@@ -4909,18 +4993,19 @@ export interface operations {
         readonly requestBody: {
             readonly content: {
                 readonly "application/json": {
+                    /** @description A Monica JSON export, or `{ format: "vcard" | "csv", text }` with the file's UTF-8 text. */
                     readonly source: Record<string, never>;
                 };
             };
         };
         readonly responses: {
-            /** @description Validated bounded Monica dry-run */
+            /** @description Validated bounded dry-run, or a CSV import awaiting its column mapping */
             readonly 201: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["ImportDryRun"];
+                    readonly "application/json": components["schemas"]["ImportDryRun"] | components["schemas"]["ImportMappingRequired"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -5068,6 +5153,82 @@ export interface operations {
                         /** @constant */
                         readonly status: "completed";
                     };
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly mapImportColumns: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly importId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CsvColumnMapping"];
+            };
+        };
+        readonly responses: {
+            /** @description Mapped CSV dry-run */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ImportDryRun"];
                 };
             };
             /** @description RFC 9457 problem details */

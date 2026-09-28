@@ -579,13 +579,33 @@
             "required": false
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
-            "description": "Completed portable workspace export",
+            "description": "Completed workspace export: portable JSON, a CSV archive, or an all-people vCard",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExportSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -684,9 +704,21 @@
         ],
         "responses": {
           "200": {
-            "description": "Private portable export artifact",
+            "description": "Private export artifact",
             "content": {
               "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/vcard": {
                 "schema": {
                   "type": "string",
                   "format": "binary"
@@ -954,7 +986,8 @@
                 "type": "object",
                 "properties": {
                   "source": {
-                    "type": "object"
+                    "type": "object",
+                    "description": "A Monica JSON export, or `{ format: \"vcard\" | \"csv\", text }` with the file's UTF-8 text."
                   }
                 },
                 "required": [
@@ -967,11 +1000,18 @@
         },
         "responses": {
           "201": {
-            "description": "Validated bounded Monica dry-run",
+            "description": "Validated bounded dry-run, or a CSV import awaiting its column mapping",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportDryRun"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ImportDryRun"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImportMappingRequired"
+                    }
+                  ]
                 }
               }
             }
@@ -1201,6 +1241,120 @@
                     "status"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/imports/{importId}/mapping": {
+      "post": {
+        "operationId": "mapImportColumns",
+        "description": "Applies the member's column mapping to a pending CSV import and returns its dry-run report.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "importId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvColumnMapping"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Mapped CSV dry-run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportDryRun"
                 }
               }
             }
@@ -15218,6 +15372,18 @@
         ],
         "additionalProperties": false
       },
+      "ContactMethodKind": {
+        "type": "string",
+        "enum": [
+          "email",
+          "phone",
+          "url",
+          "social",
+          "im",
+          "username",
+          "custom"
+        ]
+      },
       "ConversationInteraction": {
         "type": "object",
         "properties": {
@@ -15350,6 +15516,92 @@
           "kind",
           "personId",
           "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "CsvColumnMapping": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CsvColumnTarget"
+            }
+          }
+        },
+        "required": [
+          "columns"
+        ],
+        "additionalProperties": false
+      },
+      "CsvColumnTarget": {
+        "type": "string",
+        "enum": [
+          "ignore",
+          "givenName",
+          "familyName",
+          "middleName",
+          "nickname",
+          "email",
+          "phone",
+          "street",
+          "city",
+          "region",
+          "postalCode",
+          "country",
+          "birthday",
+          "note",
+          "company",
+          "jobTitle"
+        ]
+      },
+      "CsvPreview": {
+        "type": "object",
+        "properties": {
+          "delimiter": {
+            "type": "string",
+            "enum": [
+              ",",
+              ";"
+            ]
+          },
+          "headers": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rowCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rows": {
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "suggested": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CsvColumnTarget"
+            }
+          }
+        },
+        "required": [
+          "delimiter",
+          "headers",
+          "rowCount",
+          "rows",
+          "suggested"
         ],
         "additionalProperties": false
       },
@@ -15692,6 +15944,14 @@
         ],
         "additionalProperties": false
       },
+      "ExportFormat": {
+        "type": "string",
+        "enum": [
+          "csv",
+          "json",
+          "vcard"
+        ]
+      },
       "ExportManifest": {
         "type": "object",
         "properties": {
@@ -15746,11 +16006,52 @@
             }
           },
           "profile": {
-            "const": "monica-json"
+            "type": "string",
+            "enum": [
+              "csv",
+              "monica-json",
+              "vcard"
+            ]
           },
           "rows": {
             "type": "object",
             "properties": {
+              "contactMethods": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "count",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              },
+              "dates": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "count",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              },
               "people": {
                 "type": "object",
                 "properties": {
@@ -15788,6 +16089,15 @@
         ],
         "additionalProperties": false
       },
+      "ExportRequest": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/ExportFormat"
+          }
+        },
+        "additionalProperties": false
+      },
       "ExportSummary": {
         "type": "object",
         "properties": {
@@ -15811,7 +16121,7 @@
             "format": "uuid"
           },
           "format": {
-            "const": "json"
+            "$ref": "#/components/schemas/ExportFormat"
           },
           "manifest": {
             "$ref": "#/components/schemas/ExportManifest"
@@ -16314,6 +16624,27 @@
         ],
         "additionalProperties": false
       },
+      "ImportMappingRequired": {
+        "type": "object",
+        "properties": {
+          "importId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/CsvPreview"
+          },
+          "status": {
+            "const": "mapping"
+          }
+        },
+        "required": [
+          "importId",
+          "preview",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "ImportReport": {
         "type": "object",
         "properties": {
@@ -16400,18 +16731,36 @@
             "type": "string",
             "format": "uuid"
           },
+          "preview": {
+            "description": "Present while a CSV import awaits its column mapping.",
+            "$ref": "#/components/schemas/CsvPreview"
+          },
           "report": {
             "$ref": "#/components/schemas/ImportReport"
           },
           "sourceProfile": {
-            "const": "json_export"
+            "type": "string",
+            "enum": [
+              "csv",
+              "json_export",
+              "vcf"
+            ]
+          },
+          "sourceSystem": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "monica",
+              "vcard"
+            ]
           },
           "status": {
             "type": "string",
             "enum": [
               "completed",
               "dry_run",
-              "failed"
+              "failed",
+              "pending"
             ]
           }
         },
@@ -16420,6 +16769,7 @@
           "importId",
           "report",
           "sourceProfile",
+          "sourceSystem",
           "status"
         ],
         "additionalProperties": false
@@ -19686,8 +20036,84 @@
         ],
         "additionalProperties": false
       },
+      "PersonalizationContactTypeCreate": {
+        "type": "object",
+        "properties": {
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationContactTypeUpdate": {
+        "type": "object",
+        "properties": {
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "contactKind"
+            ]
+          },
+          {
+            "required": [
+              "isActive"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "sortOrder"
+            ]
+          }
+        ]
+      },
       "PersonalizationCreate": {
         "anyOf": [
+          {
+            "$ref": "#/components/schemas/PersonalizationContactTypeCreate"
+          },
           {
             "$ref": "#/components/schemas/PersonalizationNamedCreate"
           },
@@ -19704,7 +20130,7 @@
         "x-sectionSchemas": {
           "profile-modules": "#/components/schemas/PersonalizationNamedCreate",
           "gender-options": "#/components/schemas/PersonalizationNamedCreate",
-          "contact-method-types": "#/components/schemas/PersonalizationNamedCreate",
+          "contact-method-types": "#/components/schemas/PersonalizationContactTypeCreate",
           "contact-labels": "#/components/schemas/PersonalizationNameOnlyCreate",
           "activity-types": "#/components/schemas/PersonalizationNamedCreate",
           "emotion-options": null,
@@ -19773,6 +20199,9 @@
           },
           "canDelete": {
             "type": "boolean"
+          },
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
           },
           "daysBefore": {
             "type": "integer",
@@ -20191,6 +20620,9 @@
       "PersonalizationUpdate": {
         "anyOf": [
           {
+            "$ref": "#/components/schemas/PersonalizationContactTypeUpdate"
+          },
+          {
             "$ref": "#/components/schemas/PersonalizationNamedUpdate"
           },
           {
@@ -20209,7 +20641,7 @@
         "x-sectionSchemas": {
           "profile-modules": "#/components/schemas/PersonalizationNamedUpdate",
           "gender-options": "#/components/schemas/PersonalizationGenderUpdate",
-          "contact-method-types": "#/components/schemas/PersonalizationNamedUpdate",
+          "contact-method-types": "#/components/schemas/PersonalizationContactTypeUpdate",
           "contact-labels": "#/components/schemas/PersonalizationNameOnlyUpdate",
           "activity-types": "#/components/schemas/PersonalizationNamedUpdate",
           "emotion-options": null,

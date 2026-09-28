@@ -1,0 +1,36 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:urn:uuid:4fbe8971-0bc3-424c-9c26-36c3e1eff6b1
+FN:Ada King\, Countess of Lovelace
+N:Lovelace;Ada;Augusta;;
+NICKNAME:Ada,Enchantress of Numbers
+item1.EMAIL;TYPE=work:ada@example.com
+item1.X-ABLABEL:Office
+EMAIL:ada.lovelace@example.org
+TEL;VALUE=uri;TYPE="voice,cell":tel:+44-20-7946-0000
+ADR;TYPE=home:;;12 St James's Square;London;;SW1Y 4JH;United Kin
+ gdom
+BDAY:18151210
+DEATHDATE:1852-11-27
+ANNIVERSARY:--0708
+NOTE:Wrote the first program.\nLoved poetry\, too\; and horses.
+ORG:Analytical Engine Society;Research
+TITLE:Mathematician
+URL:https://example.com/ada
+URL:ftp://example.com/files
+PHOTO:data:image/png;base64,iVBORw0KGgo=
+X-SOCIALPROFILE:twitter:ada
+END:VCARD
+BEGIN:VCARD
+VERSION:4.0
+FN:Charles Babbage
+N:Babbage;Charles;;;
+BDAY:--1226
+TEL:+44 20 7946 0001
+END:VCARD
+BEGIN:VCARD
+VERSION:4.0
+FN:Grace Hopper
+BDAY;VALUE=text:circa 1906
+PHOTO;MEDIATYPE=image/jpeg:https://example.com/grace.jpg
+END:VCARD
