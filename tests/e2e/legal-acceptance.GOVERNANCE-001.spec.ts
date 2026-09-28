@@ -8,6 +8,12 @@ import { expectAccessible } from "./support/page-checks.ts";
 let documentId = "";
 
 test.beforeEach(() => {
+  // The active terms are instance-wide, so this spec runs only in its
+  // browser's `-exclusive` project, after every parallel spec (REL-057).
+  test.skip(
+    !test.info().project.name.endsWith("-exclusive"),
+    "runs in the browser's -exclusive project after the parallel specs",
+  );
   documentId = crypto.randomUUID();
   database(`insert into crm.legal_documents
     (id, document_type, version, content, published_at, is_active)

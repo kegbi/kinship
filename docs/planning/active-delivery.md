@@ -739,13 +739,23 @@ Playwright test carrying its stable flow ID.
       avatar reads are not audited. Unit and PostgreSQL tests cover each path,
       including cross-workspace and cross-person discards.
 
-- [ ] **REL-057 — The legal-acceptance spec disturbs concurrent E2E specs.**
+- [x] **REL-057 — The legal-acceptance spec disturbs concurrent E2E specs.**
       Found in GAP-045's full local E2E run with three workers:
       `legal-acceptance.GOVERNANCE-001` publishes an active legal document. At
       that moment IMPORT-001 answered `legal_acceptance_required` (403), and
       JOURNAL-001 and AUTH-002 failed too. All of them pass alone. Isolate the
       spec's legal document from other specs' workspaces, or run it in serial
-      mode, without adding retries or longer timeouts.
+      mode, without adding retries or longer timeouts. Delivered 2026-09-28:
+      legal documents are instance-wide (no workspace column, one active per
+      type), so the spec is scheduled rather than isolated. Each browser project
+      names a `<browser>-exclusive` project as its `teardown`, which runs only
+      the legal spec in a later Playwright phase, after every other spec of that
+      browser has finished and even when one failed. Selecting a browser project
+      pulls its teardown in, so `--project=chromium` and the default launcher
+      still run GOVERNANCE-001 in every browser; the copy in the browser project
+      skips first thing in `beforeEach`. With three workers, the legal,
+      IMPORT-001, JOURNAL-001, and AUTH-002 specs failed three of four before
+      and pass on all three browsers after. No retry or timeout was added.
 
 - [x] **REL-058 — The concurrent-leave test covers only whichever order wins.**
       "AUTH-005 concurrent leave preserves a final active owner"
@@ -1032,6 +1042,16 @@ Playwright test carrying its stable flow ID.
       seven keep their connections. Export one pool-size constant from
       `platform/postgres/database.ts` for both, and release the barrier on the
       first error.
+
+- [ ] **REL-085 — The three exclusive legal-acceptance projects can collide
+      under parallel workers.** Found reviewing REL-057: an all-browser run with
+      `--workers` above 1 puts `chromium-exclusive`, `firefox-exclusive`, and
+      `webkit-exclusive` in the same final phase, and each inserts an active
+      `terms` document that the one-active-per-type index refuses. The launcher
+      adds `--workers=1` by default, so CI and `deno task test:e2e` are
+      unaffected, and the collision predates REL-057. Make the launcher reject
+      `--workers` above 1 when several browsers are selected, or have the spec
+      hold a database advisory lock around its insert-and-accept window.
 
 ## Just-In-Time Technical Capabilities
 
