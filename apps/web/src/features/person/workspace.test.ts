@@ -6,6 +6,12 @@ import {
   mountPersonWorkspace,
   SECTION_NOTICE_LINK_TEMPLATE_ID,
 } from "./workspace.ts";
+import {
+  RAIL_MOUNT,
+  SECTION_MOUNTS,
+  TAGS_MOUNT,
+  TIMELINE_MOUNT,
+} from "./section-mounts.ts";
 import { clearToasts } from "../shell/toasts/toasts.ts";
 import { TOAST_REGION } from "../../testing/shell.ts";
 
@@ -30,7 +36,7 @@ import {
   preferences,
   workspaceSession,
 } from "../../testing/fixtures.ts";
-import { drawShell } from "../../testing/render.tsx";
+import { adoptMount, drawShell } from "../../testing/render.tsx";
 
 const segment = segmentVariants();
 
@@ -41,8 +47,32 @@ vi.mock(
     getMemberPreferences: vi.fn(),
   }),
 );
+// The page keeps no handle on the islands it mounts, so each is handed to the
+// test's teardown here: every island a test mounted is unmounted when it
+// ends, and none renders into a later test or after the document is gone
+// (REL-071).
+vi.mock("../../islands/core/index.ts", async (original) => {
+  const core = await original<typeof import("../../islands/core/index.ts")>();
+  return {
+    ...core,
+    mountIsland: (...args: Parameters<typeof core.mountIsland>) =>
+      adoptMount(core.mountIsland(...args)),
+  };
+});
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Every owner's code finishes loading before the page mounts (REL-071).
+  // Vitest's module runner can hand a second `import()` of a module still
+  // evaluating its first one back half-initialised, where a browser waits,
+  // so a test must not depend on an earlier one having warmed that code.
+  await Promise.all(
+    [
+      ...Object.values(SECTION_MOUNTS),
+      RAIL_MOUNT,
+      TAGS_MOUNT,
+      TIMELINE_MOUNT,
+    ].map((owner) => owner.load()),
+  );
   vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
     ok: true,
     value: { status: "ready", preferences: preferences() },

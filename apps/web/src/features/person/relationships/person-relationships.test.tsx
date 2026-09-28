@@ -1154,8 +1154,12 @@ describe("RELATIONSHIP-001 relationships island", () => {
     expect(list().querySelector(`[data-relationship-id="${relationshipId}"]`))
       .toBeNull();
     expect(list().textContent).toBe("No relationships saved.");
-    expect(summary.railCount("relationships")).toBe("0");
-    expect(summary.railEmpty("relationships")).toBe(true);
+    // The rail hears the count from a passive effect, which can commit after
+    // the state line the wait above saw (REL-071).
+    await waitFor(() => {
+      expect(summary.railCount("relationships")).toBe("0");
+      expect(summary.railEmpty("relationships")).toBe(true);
+    });
     expect(document.activeElement).toBe(state());
     const unlinks = api.requests().filter((request) =>
       request.method === "DELETE"

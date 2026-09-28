@@ -208,8 +208,13 @@ describe("TODAY-002 notification bell", () => {
   it("refreshes the badge on its interval through one slot", async () => {
     markup();
     const late = deferred<Response>();
+    // The interval keeps reading while the test waits, however slowly the
+    // machine runs it, so every read after the third answers as the third
+    // did (REL-071).
+    const reads = [late.promise, feed([item(1, true)], 1), feed([], 0)];
+    let read = 0;
     const api = stubApi({
-      [FEED]: [late.promise, feed([item(1, true)], 1), feed([], 0)],
+      [FEED]: () => reads[Math.min(read++, reads.length - 1)]!,
       [SESSION]: jsonResponse(workspaceSession()),
     });
     await mount(40);

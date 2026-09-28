@@ -933,7 +933,7 @@ Playwright test carrying its stable flow ID.
       moment the status first reads the new text, which failed every time before
       the fix.
 
-- [ ] **REL-071 — Some web unit tests depend on their written order.** Found
+- [x] **REL-071 — Some web unit tests depend on their written order.** Found
       while proving REL-070. Under `vitest --sequence.shuffle`, which also
       reorders tests inside a file, `theme.test.ts` fails 3 tests and
       `features/person/workspace.test.ts` throws "window is not defined". The
@@ -942,7 +942,18 @@ Playwright test carrying its stable flow ID.
       reviewing REL-052: `workspace.test.ts` "UXD-003B paints a busy shell
       before identity resolves" fails every time it runs alone
       (`-t "UXD-003B"`), on `main` as well, and passes in the full file, which
-      points at a lazy import warmed by an earlier test.
+      points at a lazy import warmed by an earlier test. Delivered 2026-09-28:
+      the workspace suite loads every section's code in `beforeEach`, because
+      Vite's module runner hands a second concurrent import of the hero island
+      its still-loading exports when it detects the island's harmless circular
+      import of `section-mounts.ts` (a browser and the Rollup build resolve
+      `import()` only after the module has run), and it routes every island the
+      page mounts through the existing test unmount, so none outlives its
+      environment. `theme.test.ts` replaces a `Storage.prototype` spy, which
+      happy-dom's per-instance method copies made order-dependent, with a
+      throwing `localStorage` stand-in and resets its mocks per test. The full
+      web suite passes in written order, under `--sequence.shuffle` with
+      thirteen seeds, and with `-t "UXD-003B"` alone. Test files only.
 
 - [ ] **REL-072 — An ambiguous digest keeps no record of the key it was sent
       under.** Found reviewing REL-060: once a digest ends in
@@ -1002,12 +1013,16 @@ Playwright test carrying its stable flow ID.
       request is in flight, and some browsers move focus off a focused button
       when it becomes disabled.
 
-- [ ] **REL-078 — A person-relationships rail count test failed once under
+- [x] **REL-078 — A person-relationships rail count test failed once under
       full-suite load.** Found in REL-066's coverage run:
       `person-relationships.test.tsx:1157` (RELATIONSHIP-001) saw the rail count
       read `1` instead of `0` once, and passed three times alone and in the full
       rerun. Same class as `REL-047` and `REL-071`; find the ordering or timing
-      assumption and remove it.
+      assumption and remove it. Delivered 2026-09-28 with `REL-071`: the rail
+      count is published from a passive effect a tick after the status line, so
+      the assertions now wait for the count itself; the notification bell's test
+      repeats its last stubbed answer when its 40 ms interval ticks a fourth
+      time under load.
 
 - [ ] **REL-079 — The life-events island can lose its status live region.**
       Found reviewing REL-052: like the islands REL-052 fixed, the life-events
@@ -1074,6 +1089,13 @@ Playwright test carrying its stable flow ID.
       REL-045 class (a control visible and enabled before its handler is wired);
       audit the personalization page's section navigation and keep each link
       inert until its handler attaches.
+
+- [ ] **REL-087 — The notification bell's "latest read wins" test can race its
+      interval.** Found reviewing REL-071: with a 40 ms interval on real timers,
+      the third read in `notification-bell.test.tsx` (around lines 221–231) can
+      land between the `waitFor` that sees "1 unread" and the late answer's
+      release, so the check that the badge still reads one unread could fail.
+      Drive the interval with fake timers or gate the third answer.
 
 ## Just-In-Time Technical Capabilities
 

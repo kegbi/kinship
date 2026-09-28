@@ -34,7 +34,8 @@ async function loadTheme() {
 
 beforeEach(() => {
   vi.resetModules();
-  vi.clearAllMocks();
+  // Implementations too, so no test inherits another's answers.
+  vi.resetAllMocks();
   document.documentElement.removeAttribute("data-theme");
   document.head.innerHTML = `
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="light-original" />
@@ -86,20 +87,24 @@ describe("explicit application theme", () => {
 
   it("still reconciles the DOM when local storage is disabled", async () => {
     const { applyTheme } = await loadTheme();
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    // A stand-in, not a spy on `Storage.prototype`: happy-dom binds a
+    // storage method to the instance the first time it is read, so a
+    // prototype spy works or leaks depending on which test read it first.
+    const disabled = vi.fn(() => {
       throw new Error("storage disabled");
+    });
+    vi.stubGlobal("localStorage", {
+      getItem: () => "dark",
+      removeItem: disabled,
+      setItem: disabled,
     });
 
     applyTheme("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
 
-    vi.restoreAllMocks();
-    localStorage.setItem("kinship.theme", "dark");
-    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
-      throw new Error("storage disabled");
-    });
     applyTheme("system");
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(disabled).toHaveBeenCalledTimes(2);
   });
 
   it("lets durable session state repair stale cache on resolution and revalidation", async () => {
