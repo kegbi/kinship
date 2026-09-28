@@ -1,5 +1,5 @@
 /**
- * The two settings a member's browser remembers for them.
+ * The settings a member's browser remembers for them.
  *
  * The theme and the person-page view are read on every page load by a script
  * rather than by a form, which is why these two routes keep their own
@@ -9,6 +9,10 @@
  *
  * The origin is checked in the handler rather than by middleware for the same
  * reason — the middleware's refusal would not carry the code.
+ *
+ * GAP-053 (`TODAY-002`) adds the notifications read-through watermark: the
+ * shell's bell marks everything shown read by saving the newest item's time
+ * here, and the `workspaces` use case only ever moves it forward.
  */
 
 import { Hono } from "hono";
@@ -105,6 +109,9 @@ export function createUiStateRoutes(
     const actor = await actorOf(context);
     if (!actor) return definedProblem(context, UI_STATE_SESSION_INVALID);
     const input: MemberUiState = {
+      ...(parsed.data.notificationsReadThrough === undefined ? {} : {
+        notificationsReadThrough: parsed.data.notificationsReadThrough,
+      }),
       ...(parsed.data.personWorkspaceView === undefined
         ? {}
         : { personWorkspaceView: parsed.data.personWorkspaceView }),

@@ -2,8 +2,8 @@
  * People composition.
  *
  * Only a declared composition root imports this file. Besides the person use
- * cases (identity, dates, lifecycle, profile facts, the avatar, and bulk
- * actions) it
+ * cases (identity, dates, lifecycle, profile facts, the avatar, bulk
+ * actions, and the star) it
  * returns the outbound ports other modules know people by — the person
  * boundary relationships, interactions, and planning read through, the
  * personalization reference counters, and the import and export boundaries.
@@ -28,6 +28,7 @@ import { PostgresPeoplePersonalizationReferences } from "./adapters/postgres/per
 import { PostgresPersonAvatarRepository } from "./adapters/postgres/person_avatar_repository.ts";
 import { PostgresPersonLifecycleRepository } from "./adapters/postgres/person_lifecycle_repository.ts";
 import { PostgresPersonMergeRepository } from "./adapters/postgres/person_merge_repository.ts";
+import { PostgresPersonStarRepository } from "./adapters/postgres/person_star_repository.ts";
 import { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fact_organizations.ts";
 import { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
 import { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
@@ -40,6 +41,7 @@ import {
   createPersonAvatarManagement,
   createPersonLifecycle,
   createPersonMerge,
+  createPersonStarManagement,
   createProfileFactManagement,
   importantDateAuditFrom,
   type ImportantDatePublisher,
@@ -50,6 +52,7 @@ import {
   personLifecycleAuditFrom,
   personMergeAuditFrom,
   type PersonMergeParticipant,
+  personStarAuditFrom,
   profileFactAuditFrom,
   type ProfileFactWorkspaceBoundary,
 } from "./public.ts";
@@ -158,6 +161,14 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     people,
     personalizationReferences: PostgresPeoplePersonalizationReferences,
     profileFacts,
+    // Starring a person for the workspace (GAP-053, PEOPLE-010).
+    stars: createPersonStarManagement({
+      actors: shared.actors,
+      audit: personStarAuditFrom(shared.audit),
+      clock: shared.clock,
+      repository: new PostgresPersonStarRepository(),
+      transaction: shared.peopleTransaction,
+    }),
     tagPersonalization: new PostgresTagPersonalization(),
   };
 }

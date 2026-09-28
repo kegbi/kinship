@@ -66,8 +66,10 @@ export type {
   PersonLifecycleAudit,
   PersonMergeAudit,
   PersonMergeAuditCommand,
+  PersonStarAudit,
   ProfileFactAudit,
 } from "./ports/audit.ts";
+export type { PersonStarRepository } from "./ports/star.ts";
 export type {
   LockedMergePair,
   PersonMergeCommand,
@@ -109,6 +111,12 @@ export { createPeopleManagement } from "./application/create_person.ts";
 export { createImportantDateManagement } from "./application/important_dates.ts";
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
 export { createPersonAvatarManagement } from "./application/person_avatar.ts";
+export { createPersonStarManagement } from "./application/person_star.ts";
+export type {
+  PersonStarDependencies,
+  PersonStarManagement,
+  SetPersonStarResult,
+} from "./application/person_star.ts";
 export { createPersonMerge } from "./application/merge_people.ts";
 export { createBulkPeopleActions } from "./application/bulk_people.ts";
 export type {
@@ -208,5 +216,6 @@ export {
   personCreatedAuditFrom,
   personLifecycleAuditFrom,
   personMergeAuditFrom,
+  personStarAuditFrom,
   profileFactAuditFrom,
 } from "./application/audit_events.ts";

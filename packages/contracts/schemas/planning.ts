@@ -306,3 +306,35 @@ export const todayTasks = z.strictObject({
   items: z.array(task).max(20),
   status: z.literal("ready"),
 }).meta({ id: "TodayTasks" });
+
+/**
+ * The member's notification feed (GAP-053, `TODAY-002`): delivered in-app
+ * reminders, undeliverable email reminders, finished exports and imports,
+ * and accepted invitations, newest first. `unread` compares the item's time
+ * with the member's read-through watermark.
+ */
+export const notificationItem = z.strictObject({
+  href: z.string().regex(/^\/app(?:[/?].*)?$/),
+  id: z.uuid(),
+  kind: z.enum([
+    "reminder",
+    "reminder-email-failed",
+    "export-ready",
+    "import-finished",
+    "invitation-accepted",
+  ]),
+  occurredAt: z.iso.datetime(),
+  person: todayReminderPerson.optional(),
+  title: z.string().optional(),
+  unread: z.boolean(),
+}).meta({ id: "NotificationItem" });
+
+export const notificationsPage = z.strictObject({
+  items: z.array(notificationItem).max(50),
+  nextCursor: z.string().optional(),
+  readThrough: z.iso.datetime().optional(),
+  status: z.literal("ready"),
+  unreadCount: z.number().int().min(0).max(100).meta({
+    description: "Unread items, counted no further than 100: show 99+ there.",
+  }),
+}).meta({ id: "NotificationsPage" });

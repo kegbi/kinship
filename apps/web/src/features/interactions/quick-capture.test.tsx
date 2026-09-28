@@ -335,7 +335,9 @@ describe("INTERACTION-001 Quick capture", () => {
       expect(optionNames(participants())).toEqual(["Lovelace Ada"])
     );
     expect(getMemberPreferences).toHaveBeenCalledWith(ids.workspace);
-    expect(api.calls()).toContain("GET /api/v1/people?limit=20&search=Ada");
+    expect(api.calls()).toContain(
+      "GET /api/v1/people?limit=20&search=Ada&starredFirst=true",
+    );
   });
 
   it("PEOPLE-007 draws each chosen participant with their avatar", async () => {
@@ -1005,7 +1007,7 @@ describe("INTERACTION-001 Quick capture", () => {
     fireEvent.click(element("[data-emotions-more]"));
     await waitFor(() => {
       expect(api.calls()).toContain(
-        "GET /api/v1/people?cursor=people-2&limit=20",
+        "GET /api/v1/people?cursor=people-2&limit=20&starredFirst=true",
       );
       expect(api.calls()).toContain(
         "GET /api/v1/interaction-options?activityTypeCursor=types-2&limit=20",
@@ -1353,7 +1355,7 @@ describe("INTERACTION-001 Quick capture", () => {
     await openReady(noteOpener());
     expect(participants().value).toBe(otherId);
     expect(api.calls()).toContain(
-      `GET /api/v1/people?limit=20&selectedPersonId=${otherId}`,
+      `GET /api/v1/people?limit=20&selectedPersonId=${otherId}&starredFirst=true`,
     );
     chooseOptions(participants(), [personId]);
     fireEvent.click(cancel());

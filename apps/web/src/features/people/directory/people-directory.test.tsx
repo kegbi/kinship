@@ -28,12 +28,19 @@ const SESSION = "GET /api/v1/session";
 const PREFERENCES = "GET /api/v1/settings/preferences";
 const PEOPLE = "GET /api/v1/people";
 const TAGS = "GET /api/v1/people/tag-options";
+const FACET = "GET /api/v1/people/tag-facet";
 const ENTRY = "POST /api/v1/application-entry";
 
 const session = jsonResponse(workspaceSession());
 const savedPreferences = (overrides = {}) =>
   jsonResponse({ preferences: preferences(overrides), status: "ready" });
 const noTags = jsonResponse({ options: [], status: "ready" });
+const noFacet = jsonResponse({
+  lifecycle: "active",
+  status: "ready",
+  tags: [],
+  truncated: false,
+});
 const page = (
   people: readonly unknown[],
   extra: Record<string, unknown> = {},
@@ -124,6 +131,7 @@ describe("PEOPLE-002 people directory island", () => {
         }),
         [SESSION]: session,
         [TAGS]: noTags,
+        [FACET]: noFacet,
       });
       const unmount = await mount();
       expect(element("#people-directory-list h2").textContent).toBe(
@@ -153,6 +161,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PEOPLE]: held.promise,
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
+      [FACET]: noFacet,
       [TAGS]: jsonResponse({
         options: [{
           id: "00000000-0000-4000-8000-000000000090",
@@ -226,6 +235,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const link = region().getByRole("link", { name: /Ada Lovelace/ });
@@ -252,6 +262,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const items = region().getAllByRole("link");
@@ -276,6 +287,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     const unmount = await mount();
     expect(heading("#people-directory-empty")).toBe(
@@ -301,6 +313,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     expect(heading("#people-directory-error")).toBe(
@@ -319,6 +332,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: held.promise,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     const mounted = mountPending(() => mountPeopleDirectory());
     const user = userEvent.setup();
@@ -345,6 +359,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const search = region().getByLabelText("Search people");
@@ -363,6 +378,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const field = region().getByLabelText("Search tag options");
@@ -379,6 +395,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     const unmount = await mount();
     expect(heading("#people-directory-empty")).toBe("No archived people");
@@ -407,6 +424,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: problemResponse(503),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     expect(heading("#people-directory-error")).toBe("People unavailable");
@@ -426,6 +444,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: [problemResponse(503), session],
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     expect(heading("#people-directory-error")).toBe(
@@ -449,6 +468,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const more = region().getByRole("button", { name: "Load more people" });
@@ -478,6 +498,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
+      [FACET]: noFacet,
     });
     await mount();
     const more = region().getByRole("button", { name: "Load more people" });
@@ -504,6 +525,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PEOPLE]: [page([person()]), page([person()]), page([])],
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
+      [FACET]: noFacet,
       [TAGS]: jsonResponse({
         options: [{ id: tagId, name: "Friends" }],
         status: "ready",
@@ -545,6 +567,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PEOPLE]: page([]),
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
+      [FACET]: noFacet,
       [TAGS]: [
         jsonResponse({
           nextCursor: "tag-cursor",
@@ -619,6 +642,7 @@ describe("PEOPLE-002 people directory island", () => {
       [PEOPLE]: page([]),
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
+      [FACET]: noFacet,
       [TAGS]: [
         jsonResponse({ options: [], status: "ready" }),
         problemResponse(503),
@@ -691,6 +715,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -733,6 +758,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -798,6 +824,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -838,6 +865,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -909,6 +937,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -934,6 +963,13 @@ describe("PEOPLE-009 bulk directory actions", () => {
         region().getByRole("checkbox", { name: "Select Grace Hopper" }),
       ).toBeTruthy()
     );
+    // The run moved who carries which tag here, so the facet is read again
+    // for the archived view (GAP-053).
+    const facetReads = api.requests().filter((request) =>
+      request.url.pathname === "/api/v1/people/tag-facet"
+    );
+    expect(facetReads.map((read) => read.url.searchParams.get("lifecycle")))
+      .toEqual(["archived", "archived"]);
     await user.click(
       within(element("#people-bulk-result")).getByRole("button", {
         name: "Dismiss",
@@ -976,6 +1012,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [TAGS]: tags,
+        [FACET]: noFacet,
         [VCARD]: new Response(
           "BEGIN:VCARD\r\nFN:Ada Lovelace\r\nEND:VCARD\r\n",
           {
@@ -1034,6 +1071,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [TAGS]: noTags,
+        [FACET]: noFacet,
         [VCARD]: new Response("BEGIN:VCARD\r\nEND:VCARD\r\n"),
       });
       await mount();
@@ -1077,6 +1115,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
       [VCARD]: problemResponse(404, { detail: "None of them." }),
     });
     await mount();
@@ -1122,6 +1161,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     const user = userEvent.setup();
@@ -1150,6 +1190,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
+      [FACET]: noFacet,
     });
     await mount();
     await userEvent.setup().click(
@@ -1159,5 +1200,201 @@ describe("PEOPLE-009 bulk directory actions", () => {
     expect(element("#people-selection-notice").textContent).toBe(
       "You can select up to 100 people at a time. The first 100 are selected.",
     );
+  });
+});
+
+describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
+  const friends = "00000000-0000-4000-8000-000000000090";
+  const family = "00000000-0000-4000-8000-000000000091";
+  const facet = (truncated = false) =>
+    jsonResponse({
+      lifecycle: "active",
+      status: "ready",
+      tags: [
+        { count: 3, id: friends, name: "Friends" },
+        { count: 1, id: family, name: "Family" },
+      ],
+      truncated,
+    });
+
+  it("shows the view's tags with counts and filters by a chip at once", async () => {
+    markup();
+    const api = stubApi({
+      [PEOPLE]: page([person()]),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [FACET]: facet(true),
+      [TAGS]: noTags,
+    });
+    await mount();
+    const group = within(element("#people-tag-facet"));
+    const list = group.getByRole("list", { name: "Tags in this view" });
+    const chip = within(list).getByRole("button", {
+      name: "Friends, 3 people",
+    });
+    expect(within(list).getByRole("button", { name: "Family, 1 person" }))
+      .toBeTruthy();
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    expect(
+      api.requests().find((request) =>
+        request.url.pathname === "/api/v1/people/tag-facet"
+      )?.url.searchParams.get("lifecycle"),
+    ).toBe("active");
+    await expectNoAxeViolations(element("[data-people-directory]"));
+    const user = userEvent.setup();
+    await user.click(chip);
+    await waitFor(() => expect(listRequests(api)).toHaveLength(2));
+    expect(listRequests(api)[1]!.url.searchParams.get("tag")).toBe(friends);
+    await waitFor(() => expect(chip.getAttribute("aria-pressed")).toBe("true"));
+    expect(
+      (element("#people-directory-tag") as HTMLSelectElement).value,
+      "the picker shows the facet's tag",
+    ).toBe(friends);
+    await waitFor(() => expect(location.search).toBe(`?tag=${friends}`));
+    await user.click(chip);
+    await waitFor(() => expect(listRequests(api)).toHaveLength(3));
+    expect(listRequests(api)[2]!.url.searchParams.get("tag")).toBeNull();
+    await user.click(group.getByRole("button", { name: "More tags…" }));
+    expect(document.activeElement).toBe(
+      element("#people-tag-options-search"),
+    );
+  });
+
+  it("says when tag counts are unavailable or unused", async () => {
+    for (
+      const [answer, words] of [
+        [
+          problemResponse(503, { code: "tag_facet_unavailable" }),
+          "Tag counts are temporarily unavailable.",
+        ],
+        [noFacet, "No tags are used in this view."],
+      ] as const
+    ) {
+      markup();
+      stubApi({
+        [PEOPLE]: page([person()]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: answer,
+        [TAGS]: noTags,
+      });
+      const unmount = await mount();
+      expect(element("#people-tag-facet").textContent).toContain(words);
+      unmount();
+    }
+  });
+
+  it("asks for starred people, starred first, and the new orders on submission", async () => {
+    markup("active", "?starredFirst=1");
+    const api = stubApi({
+      [PEOPLE]: [
+        page([person({ isStarred: true })]),
+        page([person({ isStarred: true })]),
+      ],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [FACET]: noFacet,
+      [TAGS]: noTags,
+    });
+    await mount();
+    const first = listRequests(api)[0]!.url.searchParams;
+    expect(first.get("starredFirst"), "the address's choice is read").toBe(
+      "true",
+    );
+    expect(first.get("starred")).toBeNull();
+    expect(
+      element("#people-directory-list .directory-person-star").getAttribute(
+        "aria-hidden",
+      ),
+    ).toBe("true");
+    expect(element("#people-directory-list").textContent).toContain(
+      "Favorite",
+    );
+    const user = userEvent.setup();
+    const sort = region().getByLabelText("Sort by");
+    expect(
+      within(sort).getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      "Given name",
+      "Family name",
+      "Recently added",
+      "Last contacted",
+      "Recently updated",
+    ]);
+    await user.selectOptions(sort, "last-contacted");
+    await user.click(region().getByLabelText("Starred only"));
+    await user.click(region().getByLabelText("Starred first"));
+    await user.click(region().getByRole("button", { name: "Find people" }));
+    await waitFor(() => expect(listRequests(api)).toHaveLength(2));
+    const second = listRequests(api)[1]!.url.searchParams;
+    expect(second.get("sort")).toBe("last-contacted");
+    expect(second.get("starred")).toBe("true");
+    expect(second.get("starredFirst")).toBeNull();
+    await waitFor(() =>
+      expect(location.search).toBe("?starred=1&sort=last-contacted")
+    );
+  });
+});
+
+describe("PEOPLE-010 tag facet under a newer tag read", () => {
+  it("carries the facet over to a tag read that replaces the one counting", async () => {
+    markup();
+    const slow = deferred<Response>();
+    const api = stubApi({
+      [PEOPLE]: page([person()]),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [FACET]: [
+        slow.promise,
+        jsonResponse({
+          lifecycle: "active",
+          status: "ready",
+          tags: [{
+            count: 2,
+            id: "00000000-0000-4000-8000-000000000090",
+            name: "Friends",
+          }],
+          truncated: false,
+        }),
+      ],
+      [TAGS]: noTags,
+    });
+    const settled = mountPending(() => mountPeopleDirectory());
+    await waitFor(() =>
+      expect(element("#people-directory-list").hidden).toBe(false)
+    );
+    expect(element("#people-tag-facet").textContent).toContain(
+      "Counting tags…",
+    );
+    const user = userEvent.setup();
+    await user.click(region().getByRole("button", { name: "Search tags" }));
+    await waitFor(() =>
+      expect(
+        within(element("#people-tag-facet")).getByRole("button", {
+          name: "Friends, 2 people",
+        }),
+      ).toBeTruthy()
+    );
+    await act(async () => {
+      slow.resolve(
+        jsonResponse({
+          lifecycle: "active",
+          status: "ready",
+          tags: [],
+          truncated: false,
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(
+      element("#people-tag-facet").textContent,
+      "the superseded facet answer is dropped",
+    ).toContain("Friends");
+    expect(
+      api.requests().filter((request) =>
+        request.url.pathname === "/api/v1/people/tag-facet"
+      ),
+    ).toHaveLength(2);
+    await settled;
   });
 });

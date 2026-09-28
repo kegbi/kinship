@@ -9,26 +9,27 @@ contract.
 
 The current baseline contains:
 
-- 15 backend modules and 8 read models in `module-boundaries.yaml`; 14 modules
-  and all 8 read models exist under `packages/backend`, the optional `billing`
+- 15 backend modules and 9 read models in `module-boundaries.yaml`; 14 modules
+  and all 9 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 39 required flows: 17 P0, 18 P1, and 4 P2;
-- 38 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 41 required flows: 17 P0, 20 P1, and 4 P2;
+- 40 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 44 Playwright specs under `tests/e2e/`. Flow specs are named
+- 46 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 42 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 44 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
 `docs/product/page-catalog.yaml`, `docs/product/user-flows.yaml`, and
 `tests/e2e/` on 2026-09-27 by GAP-043 and updated by GAP-050, which added
-`IMPORT-002` and `EXPORT-002`, and by GAP-051, which added `PEOPLE-009`; the
-earlier count was taken on 2026-08-29 while integrating
+`IMPORT-002` and `EXPORT-002`, by GAP-051, which added `PEOPLE-009`, and by
+GAP-053, which added `TODAY-002`, `PEOPLE-010`, and the `notifications` read
+model; the earlier count was taken on 2026-08-29 while integrating
 [`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
 §5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
 the specs' `flow` annotations in agreement. The five cataloged dynamic routes
@@ -105,6 +106,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `WORKSPACE-002`    | P1       |              7 | workspace danger zone                            | Preview, confirmation, atomic reset/delete, retained audit policy, owner safeguards                     |
 | `WORKSPACE-003`    | P1       |              2 | personalization settings                         | Module toggles and vocabulary CRUD via stable `section` deep links                                      |
 | `TODAY-001`        | P0       |              4 | Today, person profile, tasks                     | Documented semantic ordering, empty/overdue/due states, authorized inline actions                       |
+| `TODAY-002`        | P1       |              4 | application shell, person profile, settings      | Member-scoped notification feed, read-through watermark, bounded badge, cross-member negatives          |
 | `PEOPLE-001`       | P0       |              1 | create person, person profile                    | Create minimal/full person, validation, duplicate guidance, navigation                                  |
 | `PEOPLE-002`       | P0       |              1 | people, archived people, profile                 | Search/filter/order/paginate and distinguish active/archived/not-found/forbidden                        |
 | `PEOPLE-003`       | P0       |              6 | person profile                                   | Complete composable workspace across all enabled core sections; shell begins in Slice 1                 |
@@ -114,6 +116,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects   |
 | `PEOPLE-008`       | P1       |              7 | people, person profile                           | Duplicate review and atomic merge through every owning module; no undo; re-import stays idempotent      |
 | `PEOPLE-009`       | P1       |              7 | people, archived people                          | Bulk tag, archive, restore, and vCard export through single-person use cases with per-person results    |
+| `PEOPLE-010`       | P1       |              7 | people, archived people, person profile          | Workspace star with archived rule and audit, tag facet counts, every order's keyset cursor              |
 | `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them |
 | `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                               |
 | `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
@@ -136,7 +139,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 39-flow snapshot, this assignment places all 17 P0 and all 18 P1
+For the current 41-flow snapshot, this assignment places all 17 P0 and all 20 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

@@ -122,7 +122,7 @@
 .people-directory-controls {
   display: grid;
   grid-template-columns: minmax(16rem, 1fr) minmax(18rem, .75fr) minmax(10rem,
-    .35fr) auto;
+    .35fr) auto auto;
   gap: var(--space-3);
   margin: var(--space-6) 0 var(--space-5);
   padding: var(--space-4);
@@ -427,6 +427,93 @@
   transform: translateY(-1px);
 }
 
+/* GAP-053: the starred filter and starred-first. */
+.directory-starred {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: var(--space-2);
+}
+
+.directory-starred legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  color: var(--ink-2);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.people-directory-controls .directory-starred label {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+/* GAP-053: the view's most carried tags, as chips with their counts. */
+.directory-tag-facet {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.directory-tag-facet-heading,
+.directory-tag-facet-state {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .72rem;
+}
+
+.directory-tag-facet-heading {
+  font-weight: 700;
+}
+
+.directory-tag-facet ul {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.directory-tag-chip,
+.directory-tag-facet-more {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink-1);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.directory-tag-chip[aria-pressed="true"] {
+  border-color: var(--ink-1);
+  color: var(--ink-inverse);
+  background: var(--ink-1);
+}
+
+.directory-tag-count {
+  min-width: 1.25rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--positive-soft);
+  color: var(--ink-1);
+  text-align: center;
+}
+
+.directory-tag-facet-more {
+  justify-self: start;
+}
+
 /* The avatar beside the name (GAP-045). */
 .directory-person-heading {
   display: flex;
@@ -438,6 +525,13 @@
 .directory-person-heading h2 {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* GAP-053: a starred person's mark beside their name. */
+.directory-person-star {
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .person-directory-link h2 {

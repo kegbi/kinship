@@ -127,6 +127,10 @@ const accessAction = buttonVariants({
                 <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
               </div>
             </div>
+            {/* The notification bell (features/shell/notifications/, GAP-053) mounts here, last in the
+              header's tab order so the shell's order before it is unchanged; its
+              button stays disabled until the island has read the member's notifications. */}
+            <div class="notification-bell" data-notification-bell><button class="notification-bell-button" type="button" aria-label="Notifications" disabled><span class="desktop-action-label">Notifications</span></button></div>
           </div>
         </div>
       </header>
@@ -148,12 +152,14 @@ const accessAction = buttonVariants({
 </script>
 
 <script>
-  // The people palette (GAP-027) and Quick capture (GAP-031) are React
-  // islands. Their own script lets the shell's static modules start without
+  // The people palette (GAP-027), Quick capture (GAP-031), and the
+  // notification bell (GAP-053) are React islands. Their own script lets the shell's static modules start without
   // waiting for React to load; every Quick capture opener stays disabled
   // until the island has wired it.
   import { mountGlobalPeopleSearch } from "../islands/global-people-search/mount.tsx";
   import { mountQuickCapture } from "../features/interactions/mount.tsx";
+  import { mountNotificationBell } from "../features/shell/notifications/notification-bell.tsx";
   mountGlobalPeopleSearch();
   mountQuickCapture();
+  mountNotificationBell();
 </script>

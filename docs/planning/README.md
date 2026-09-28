@@ -52,10 +52,10 @@ flows.
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Canonical PostgreSQL schema  | 89 tables and 845 columns; current v8 passed live validation on PostgreSQL 18.4; immutable v6 additionally passed PostgreSQL 17.10 compatibility validation |
 | Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                    |
-| Cross-module read models     | 8 accepted, query-only compositions                                                                                                                         |
+| Cross-module read models     | 9 accepted, query-only compositions                                                                                                                         |
 | Cataloged pages              | 39                                                                                                                                                          |
-| Cataloged flows              | 39 total: 17 P0, 18 P1, and 4 P2                                                                                                                            |
-| Delivered flows              | 38 of 39; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                       |
+| Cataloged flows              | 41 total: 17 P0, 20 P1, and 4 P2                                                                                                                            |
+| Delivered flows              | 40 of 41; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                       |
 | Existing executable code     | Runnable Deno API and worker, Astro web app, gateway, shared contracts, and application test suites                                                         |
 | Current application scaffold | API, worker, web app, contracts, main Compose stack, and application tests are present; CI and hooks remain pending                                         |
 

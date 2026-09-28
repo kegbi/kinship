@@ -242,6 +242,8 @@ export function QuickCapture(props: QuickCaptureProps) {
       listPeople({
         limit: PAGE_SIZE,
         ...(preferredId ? { selectedPersonId: preferredId } : {}),
+        // Starred people are offered first (GAP-053).
+        starredFirst: true,
       }, workspaceId),
       listInteractionOptions({ limit: PAGE_SIZE }, workspaceId),
     ]);
@@ -436,6 +438,7 @@ export function QuickCapture(props: QuickCaptureProps) {
         limit: PAGE_SIZE,
         ...(search ? { search } : {}),
         ...(preferredId ? { selectedPersonId: preferredId } : {}),
+        starredFirst: true,
       }, session?.workspaceId);
       return answer.ok
         ? {

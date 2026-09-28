@@ -14,10 +14,25 @@ export interface PeopleDirectoryActor {
 }
 
 export type PeopleDirectoryLifecycle = "active" | "archived";
+/**
+ * The directory's orders. GAP-053 (`PEOPLE-010`) adds `last-contacted`, the
+ * newest call or conversation first with never-contacted people last, and
+ * `recently-updated`, the person record changed most recently first.
+ */
 export type PeopleDirectorySort =
   | "family-name"
   | "given-name"
-  | "recently-added";
+  | "last-contacted"
+  | "recently-added"
+  | "recently-updated";
+
+const SORTS: ReadonlySet<string> = new Set<PeopleDirectorySort>([
+  "family-name",
+  "given-name",
+  "last-contacted",
+  "recently-added",
+  "recently-updated",
+]);
 
 export const PEOPLE_DIRECTORY_TAG_PREVIEW_LIMIT = 5;
 
@@ -49,13 +64,23 @@ export interface ListPeopleInput {
   readonly search?: string;
   readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
+  /** Only starred people (GAP-053). */
+  readonly starred?: boolean;
+  /** Starred people before everybody else, each group in the sort. */
+  readonly starredFirst?: boolean;
   readonly tagId?: string;
 }
 
+/**
+ * Where a page ended: the last person's sort keys, their id, and whether
+ * they are starred, which orders the page first when starred people lead.
+ */
 export interface PeopleDirectoryCursor {
   readonly id: string;
   readonly primary: string;
   readonly secondary: string;
+  /** Whether that person is starred; a record that omits it is not. */
+  readonly starred?: boolean;
 }
 
 export interface PeopleDirectoryPersonRecord extends PeopleDirectoryPerson {
@@ -68,6 +93,8 @@ export interface PeopleDirectoryCriteria {
   readonly limit: number;
   readonly search: string;
   readonly sort: PeopleDirectorySort;
+  readonly starred: boolean;
+  readonly starredFirst: boolean;
   readonly tagId?: string;
 }
 
@@ -103,13 +130,16 @@ export type ListPeopleResult =
     readonly status: "ready";
   };
 
-interface EncodedCursor extends PeopleDirectoryCursor {
+interface EncodedCursor extends Required<PeopleDirectoryCursor> {
   readonly excludePersonId: string | null;
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly search: string;
   readonly sort: PeopleDirectorySort;
+  readonly starredOnly: boolean;
+  readonly starredFirst: boolean;
   readonly tagId: string | null;
-  readonly version: 1;
+  /** 2 since GAP-053 added the starred criteria; a 1 is stale. */
+  readonly version: 2;
 }
 
 const UUID_PATTERN =
@@ -126,6 +156,8 @@ function normalize(input: ListPeopleInput): PeopleDirectoryCriteria {
     limit: Number.isFinite(limit) ? limit : 20,
     search,
     sort: input.sort ?? "given-name",
+    starred: input.starred ?? false,
+    starredFirst: input.starredFirst ?? false,
     ...(input.tagId ? { tagId: input.tagId } : {}),
   };
 }
@@ -160,16 +192,18 @@ function decodeCursor(value: string): EncodedCursor | undefined {
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const cursor = parsed as Partial<EncodedCursor>;
     if (
-      cursor.version !== 1 ||
+      cursor.version !== 2 ||
       (cursor.excludePersonId !== null &&
         !UUID_PATTERN.test(cursor.excludePersonId ?? "")) ||
       !UUID_PATTERN.test(cursor.id ?? "") ||
       typeof cursor.primary !== "string" ||
       typeof cursor.secondary !== "string" ||
+      typeof cursor.starred !== "boolean" ||
+      typeof cursor.starredOnly !== "boolean" ||
+      typeof cursor.starredFirst !== "boolean" ||
       (cursor.lifecycle !== "active" && cursor.lifecycle !== "archived") ||
       typeof cursor.search !== "string" ||
-      (cursor.sort !== "family-name" && cursor.sort !== "given-name" &&
-        cursor.sort !== "recently-added") ||
+      typeof cursor.sort !== "string" || !SORTS.has(cursor.sort) ||
       (cursor.tagId !== null && !UUID_PATTERN.test(cursor.tagId ?? ""))
     ) {
       return undefined;
@@ -187,6 +221,8 @@ function cursorMatches(
   return cursor.lifecycle === criteria.lifecycle &&
     cursor.excludePersonId === (criteria.excludePersonId ?? null) &&
     cursor.search === criteria.search && cursor.sort === criteria.sort &&
+    cursor.starredOnly === criteria.starred &&
+    cursor.starredFirst === criteria.starredFirst &&
     cursor.tagId === (criteria.tagId ?? null);
 }
 
@@ -197,12 +233,15 @@ function encodeCursor(
   return base64UrlEncode(JSON.stringify(
     {
       ...record.cursor,
+      starred: record.cursor.starred ?? false,
       excludePersonId: criteria.excludePersonId ?? null,
       lifecycle: criteria.lifecycle,
       search: criteria.search,
       sort: criteria.sort,
+      starredFirst: criteria.starredFirst,
+      starredOnly: criteria.starred,
       tagId: criteria.tagId ?? null,
-      version: 1,
+      version: 2,
     } satisfies EncodedCursor,
   ));
 }
@@ -262,6 +301,7 @@ export function createPeopleDirectory(dependencies: {
               id: decoded.id,
               primary: decoded.primary,
               secondary: decoded.secondary,
+              starred: decoded.starred,
             },
           }
           : {}),

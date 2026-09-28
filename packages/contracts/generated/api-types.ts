@@ -434,6 +434,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/notifications": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description The signed-in member's notifications in the active workspace, newest first, fifty at a time, with the unread count after their read-through watermark. Marking read saves `notificationsReadThrough` through `PATCH /api/v1/member/ui-state`. */
+        readonly get: operations["listNotifications"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/password-reset-requests": {
         readonly parameters: {
             readonly query?: never;
@@ -524,6 +541,23 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get: operations["listPeopleDuplicates"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/tag-facet": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. */
+        readonly get: operations["listPeopleTagFacet"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -943,6 +977,24 @@ export interface paths {
         readonly put?: never;
         readonly post: operations["restorePerson"];
         readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/{personId}/star": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** @description Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. */
+        readonly put: operations["starPerson"];
+        readonly post?: never;
+        /** @description Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. */
+        readonly delete: operations["unstarPerson"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -2890,12 +2942,16 @@ export interface components {
             readonly members: readonly components["schemas"]["ManagedMember"][];
         };
         readonly MemberUiState: {
+            /** Format: date-time */
+            readonly notificationsReadThrough?: string;
             /** @enum {string} */
             readonly personWorkspaceView?: "all" | "timeline" | "planning" | "things" | "admin";
             /** @enum {string} */
             readonly theme?: "system" | "light" | "dark";
         };
         readonly MemberUiStateInput: {
+            /** Format: date-time */
+            readonly notificationsReadThrough?: string;
             /** @enum {string} */
             readonly personWorkspaceView?: "all" | "timeline" | "planning" | "things" | "admin";
             /** @enum {string} */
@@ -2947,6 +3003,28 @@ export interface components {
              * @description Client retry key mapped deterministically to a distinct workspace-scoped aggregate identifier; it is not the returned record id.
              */
             readonly requestId: string;
+        };
+        readonly NotificationItem: {
+            readonly href: string;
+            /** Format: uuid */
+            readonly id: string;
+            /** @enum {string} */
+            readonly kind: "reminder" | "reminder-email-failed" | "export-ready" | "import-finished" | "invitation-accepted";
+            /** Format: date-time */
+            readonly occurredAt: string;
+            readonly person?: components["schemas"]["TodayReminderPerson"];
+            readonly title?: string;
+            readonly unread: boolean;
+        };
+        readonly NotificationsPage: {
+            readonly items: readonly components["schemas"]["NotificationItem"][];
+            readonly nextCursor?: string;
+            /** Format: date-time */
+            readonly readThrough?: string;
+            /** @constant */
+            readonly status: "ready";
+            /** @description Unread items, counted no further than 100: show 99+ there. */
+            readonly unreadCount: number;
         };
         readonly OccupationFact: {
             readonly description?: string;
@@ -3102,6 +3180,20 @@ export interface components {
             /** @constant */
             readonly status: "ready";
             readonly truncated: boolean;
+        };
+        readonly PeopleTagFacet: {
+            /** @constant */
+            readonly status: "ready";
+            /** @enum {string} */
+            readonly lifecycle: "active" | "archived";
+            readonly tags: readonly components["schemas"]["PeopleTagFacetEntry"][];
+            readonly truncated: boolean;
+        };
+        readonly PeopleTagFacetEntry: {
+            readonly count: number;
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
         };
         readonly PeopleTagOptionsPage: {
             /** @constant */
@@ -3422,6 +3514,11 @@ export interface components {
             readonly cadences: readonly components["schemas"]["StayInTouchCadence"][];
             readonly nextCursor?: string;
             readonly reminders: readonly components["schemas"]["Reminder"][];
+            /** @constant */
+            readonly status: "ready";
+        };
+        readonly PersonStarChanged: {
+            readonly isStarred: boolean;
             /** @constant */
             readonly status: "ready";
         };
@@ -6497,6 +6594,67 @@ export interface operations {
             };
         };
     };
+    readonly listNotifications: {
+        readonly parameters: {
+            readonly query?: {
+                readonly cursor?: string;
+            };
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description One page of the member's notifications */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["NotificationsPage"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     readonly requestPasswordReset: {
         readonly parameters: {
             readonly query?: never;
@@ -6609,7 +6767,11 @@ export interface operations {
                 readonly selectedPersonId?: string;
                 readonly tag?: string;
                 readonly lifecycle?: "active" | "archived";
-                readonly sort?: "given-name" | "family-name" | "recently-added";
+                readonly sort?: "given-name" | "family-name" | "recently-added" | "last-contacted" | "recently-updated";
+                /** @description Only starred people (GAP-053). */
+                readonly starred?: "true" | "false";
+                /** @description Starred people before everybody else, each group in the sort order. */
+                readonly starredFirst?: "true" | "false";
                 readonly limit?: number;
             };
             readonly header?: {
@@ -6911,6 +7073,67 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PeopleDuplicates"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly listPeopleTagFacet: {
+        readonly parameters: {
+            readonly query?: {
+                readonly lifecycle?: "active" | "archived";
+            };
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Bounded tenant-scoped tag counts for the directory view */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PeopleTagFacet"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -10135,6 +10358,168 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PersonLifecycleChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly starPerson: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The person is starred */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonStarChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly unstarPerson: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The person is no longer starred */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonStarChanged"];
                 };
             };
             /** @description RFC 9457 problem details */

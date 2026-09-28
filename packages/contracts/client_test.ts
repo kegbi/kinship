@@ -99,8 +99,10 @@ const FUNCTIONS: readonly string[] = [
   "listJournal",
   "listManagedMembers",
   "listMemberSessions",
+  "listNotifications",
   "listPeople",
   "listPeopleDuplicates",
+  "listPeopleTagFacet",
   "listPeopleTagOptions",
   "listPersonAudit",
   "listPersonCommunications",
@@ -142,6 +144,7 @@ const FUNCTIONS: readonly string[] = [
   "saveJournalDayRating",
   "saveMemberUiState",
   "searchWorkspace",
+  "setPersonStar",
   "setReminderActive",
   "setTaskCompletion",
   "signIn",
@@ -235,6 +238,8 @@ const TYPES: readonly string[] = [
   "PeopleDirectoryPerson",
   "PeopleDirectorySort",
   "PeopleDirectoryTag",
+  "PeopleTagFacet",
+  "PeopleTagFacetEntry",
   "PeopleTagOptionsInput",
   "PeopleTagOptionsPage",
   "PeopleVCardDownload",
@@ -257,6 +262,7 @@ const TYPES: readonly string[] = [
   "PersonProfileSectionId",
   "PersonProfileSummary",
   "PersonRelationshipCount",
+  "PersonStarChanged",
   "PersonReminders",
   "PersonTimelineItem",
   "PersonTimelineKind",
@@ -334,6 +340,8 @@ const TYPES: readonly string[] = [
   "TodayReminderItem",
   "TodayReminderPerson",
   "TodayReminders",
+  "NotificationItem",
+  "NotificationsPage",
   "WorkspaceLifecyclePreview",
   "WorkspaceMembers",
   "WorkspaceSettings",
@@ -577,6 +585,43 @@ Deno.test("[GAP-023] a list call keeps its old spelling and pages only when aske
   assert(
     JSON.stringify(spelled) === JSON.stringify(expected),
     `the list calls asked for ${JSON.stringify(spelled)}`,
+  );
+});
+
+Deno.test("[GAP-053] stars, the tag facet, the directory's criteria, and notifications ask for their routes", async () => {
+  const original = globalThis.fetch;
+  const sent: { readonly method: string; readonly url: string }[] = [];
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ method: init?.method ?? "GET", url: String(input) });
+    return Promise.resolve(Response.json({ status: "ready" }));
+  }) as typeof fetch;
+  try {
+    await client.setPersonStar(UUID, true);
+    await client.setPersonStar(UUID, false);
+    await client.listPeopleTagFacet("archived");
+    await client.listPeople({
+      sort: "last-contacted",
+      starred: true,
+      starredFirst: true,
+    });
+    await client.listPeople({ starred: false, starredFirst: false });
+    await client.listNotifications("a/b");
+    await client.listNotifications();
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert(
+    JSON.stringify(sent.map((entry) => `${entry.method} ${entry.url}`)) ===
+      JSON.stringify([
+        `PUT /api/v1/people/${UUID}/star`,
+        `DELETE /api/v1/people/${UUID}/star`,
+        "GET /api/v1/people/tag-facet?lifecycle=archived",
+        "GET /api/v1/people?sort=last-contacted&starred=true&starredFirst=true",
+        "GET /api/v1/people",
+        "GET /api/v1/notifications?cursor=a%2Fb",
+        "GET /api/v1/notifications",
+      ]),
+    `the requests were ${JSON.stringify(sent)}`,
   );
 });
 

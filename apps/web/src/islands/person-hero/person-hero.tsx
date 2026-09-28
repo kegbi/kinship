@@ -5,7 +5,8 @@
  * delete); the vital stats, stay-in-touch due state, and tag preview; and the
  * identity section's editor, and the avatar the person is drawn with and its
  * editor (GAP-045). Merge (GAP-049) opens the people feature's merge dialog,
- * which the hero only opens and closes.
+ * which the hero only opens and closes. The star toggle (GAP-053) sets the
+ * person's workspace-shared star optimistically and puts it back on refusal.
  *
  * The page's static hero keeps its layout, so the island renders its root —
  * the identity — in place and every other part through a portal into the
@@ -46,6 +47,7 @@ import {
   replacePersonAvatar,
   type ResolvedMemberPreferences,
   restorePerson,
+  setPersonStar,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { badgeVariants, breadcrumbVariants } from "@/components/ui/variants.ts";
@@ -348,6 +350,27 @@ export function PersonHero(props: PersonHeroProps) {
     void changeAvatar(true, () => removePersonAvatar(personId, workspaceId));
   };
 
+  // The star shows at once and the toggle waits for the answer; a refusal
+  // puts it back (GAP-053). It is the workspace's star, not the member's.
+  // The toggle is disabled while a change runs and for an archived person,
+  // so a click always starts from a settled star.
+  const toggleStar = async (): Promise<void> => {
+    const starred = !latest.current.identity.isStarred;
+    dispatch({ starred, type: "star-started" });
+    const answer = await settle(() =>
+      setPersonStar(personId, starred, workspaceId)
+    );
+    if (answer.status !== "ready" || !answer.data) {
+      dispatch({
+        detail: answer.problem?.detail ??
+          "The star could not be changed right now.",
+        type: "star-failed",
+      });
+      return;
+    }
+    dispatch({ starred: answer.data.isStarred, type: "star-saved" });
+  };
+
   const transition = async (action: "archive" | "restore"): Promise<void> => {
     dispatch({ type: "transition-started" });
     const input = { expectedUpdatedAt: latest.current.updatedAt };
@@ -491,6 +514,21 @@ export function PersonHero(props: PersonHeroProps) {
       <div className="person-profile-heading">
         <div className="person-profile-title">
           <h1 id="person-profile-name" ref={heading} tabIndex={-1}>{name}</h1>
+          <button
+            aria-pressed={identity.isStarred}
+            className="person-profile-star"
+            disabled={state.archived || state.starBusy}
+            id="person-profile-star"
+            onClick={() => void toggleStar()}
+            title={identity.isStarred
+              ? "Starred for everyone in this workspace"
+              : "Star for everyone in this workspace"}
+            type="button"
+          >
+            <span aria-hidden="true">{identity.isStarred ? "★" : "☆"}</span>
+            {" "}
+            Star
+          </button>
           <p hidden id="person-profile-nickname">
             {identity.nickname ? `“${identity.nickname}”` : ""}
           </p>

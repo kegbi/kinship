@@ -231,6 +231,48 @@ transaction that revalidates the actor. The selection vCard is an
 export boundary, audits each download as the single card does, and joins the
 cards with the all-people export's joiner.
 
+### Starred people, the directory's facet and orders, and notifications
+
+GAP-053 (`PEOPLE-010`, `TODAY-002`) adds no table and no schema change.
+
+- The star is `people.is_starred`, one flag the whole workspace shares. It is
+  written only by the people `PersonStarManagement` use case, behind `PUT` and
+  `DELETE /api/v1/people/{personId}/star`: an idempotent flag on a sub-resource
+  rather than a field of the identity PATCH, which is an optimistic edit that
+  needs the person's revision. The use case revalidates the member
+  (`people.write`), locks the person inside the workspace, refuses an archived
+  person as the avatar and tags do, audits `people.person-starred` or
+  `people.person-unstarred`, and leaves the person's `updated_at` alone, so an
+  open identity editor stays current.
+- The `people-directory` read model gains the starred filter, starred-first, the
+  `last-contacted` order (the person's newest call, or conversation by its
+  newest message, as the person profile's hero reads it, which adds
+  `interactions` to its sources), the `recently-updated` order, and a tag facet
+  of the view's thirty most carried tags. Every order keeps a keyset cursor, the
+  starred state is part of the cursor when starred people lead, and a cursor
+  from before these criteria is stale. The directory's last-contact rule is one
+  aggregate per person over the workspace's calls, threads, and messages,
+  hash-joined to the people on existing indexes, in the read model's own adapter
+  (`people-directory/adapters/postgres/last_contact.ts`), where the architecture
+  check measures its reads of the `interactions` tables. The person profile's
+  adapter keeps the same rule for its one person; the two are duplicated on
+  purpose, each names the other, and an integration test holds them in
+  agreement. A directory page is chosen on its sort keys first and only its rows
+  are drawn with their avatar and tag preview, which keeps every order inside
+  the capacity profile's read budget at the large boundary
+  (`tests/integration/people_directory_capacity_postgres_test.ts`).
+- The `notifications` read model answers `GET /api/v1/notifications` through the
+  planning transport. Every arm of its feed is addressed to one member of one
+  workspace: their own delivered in-app reminder occurrences, their own email
+  occurrences that `planning.reminder-failed` recorded, their own
+  `export.completed` and `import.committed` events while they still hold a role
+  that may run them, and `workspace.member-joined` for members they invited.
+  Read state is the product owner's per-member read-through watermark,
+  `notificationsReadThrough` in `member_preferences.ui_state`: the read model
+  reads it with the `workspaces` rule, and marking read is the `workspaces`
+  interface-state use case, which validates it and only moves it forward.
+  Workspace-admin-only items, such as a member leaving, are left out.
+
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
 rollback, catalog introspection, generated-type agreement, and every validation

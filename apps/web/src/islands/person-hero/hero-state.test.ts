@@ -352,3 +352,58 @@ describe("PEOPLE-008 the merge dialog's anchor", () => {
     });
   });
 });
+
+describe("PEOPLE-010 hero star", () => {
+  it("stars optimistically, waits while saving, and settles on the answer", () => {
+    const unstarred = initialHeroState(
+      { ...identity, isStarred: false },
+      false,
+    );
+    const started = heroReducer(unstarred, {
+      starred: true,
+      type: "star-started",
+    });
+    expect(started.identity.isStarred).toBe(true);
+    expect(started.starBusy).toBe(true);
+    expect(started.status).toBe("Starring…");
+    expect(started.updatedAt, "a star is not the person's revision").toBe(
+      unstarred.updatedAt,
+    );
+    const saved = heroReducer(started, { starred: true, type: "star-saved" });
+    expect(saved.starBusy).toBe(false);
+    expect(saved.identity.isStarred).toBe(true);
+    expect(saved.status).toBe(
+      "Starred. Everyone in this workspace sees the star.",
+    );
+    const removing = heroReducer(saved, {
+      starred: false,
+      type: "star-started",
+    });
+    expect(removing.status).toBe("Removing star…");
+    expect(
+      heroReducer(removing, { starred: false, type: "star-saved" }).status,
+    ).toBe("Star removed.");
+  });
+
+  it("rolls the star back when the save fails", () => {
+    const started = heroReducer(start(), {
+      starred: false,
+      type: "star-started",
+    });
+    expect(started.identity.isStarred).toBe(false);
+    const failed = heroReducer(started, {
+      detail: "Restore this person before starring or unstarring them.",
+      type: "star-failed",
+    });
+    expect(failed.identity.isStarred).toBe(true);
+    expect(failed.starBusy).toBe(false);
+    expect(failed.status).toBe(
+      "Restore this person before starring or unstarring them.",
+    );
+  });
+
+  it("starts idle with the profile's star", () => {
+    expect(start().starBusy).toBe(false);
+    expect(start().identity.isStarred).toBe(true);
+  });
+});

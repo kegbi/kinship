@@ -1495,3 +1495,92 @@ describe("PEOPLE-008 merge from the person menu", () => {
     ).toBe(true);
   });
 });
+
+describe("PEOPLE-010 person hero star", () => {
+  const STAR = `${PERSON}/star`;
+
+  it("stars at once, holds the toggle while it saves, and unstars", async () => {
+    markup();
+    await mount(profile({ person: { isStarred: false } }));
+    const user = userEvent.setup();
+    const star = screen.getByRole("button", { name: "Star" });
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+    expect(element("#person-profile-favorite").hidden).toBe(true);
+    const held = deferred<Response>();
+    const api = stubApi({
+      [`PUT ${STAR}`]: held.promise,
+      [`DELETE ${STAR}`]: jsonResponse({ isStarred: false, status: "ready" }),
+    });
+    await user.click(star);
+    expect(star.getAttribute("aria-pressed"), "optimistic").toBe("true");
+    expect(star).toHaveProperty("disabled", true);
+    expect(element("#person-profile-favorite").hidden).toBe(false);
+    expect(text("#person-lifecycle-status")).toBe("Starring…");
+    expect(api.requests()[0]?.headers.get("X-Workspace-Id")).toBe(
+      workspaceId,
+    );
+    await act(async () => {
+      held.resolve(jsonResponse({ isStarred: true, status: "ready" }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "Starred. Everyone in this workspace sees the star.",
+      )
+    );
+    expect(star).toHaveProperty("disabled", false);
+    await user.click(star);
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe("Star removed.")
+    );
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+    expect(api.calls()).toEqual([
+      `PUT /api/v1/people/${personId}/star`,
+      `DELETE /api/v1/people/${personId}/star`,
+    ]);
+  });
+
+  it("puts the star back when the change is refused", async () => {
+    markup();
+    await mount(profile({ person: { isStarred: true } }));
+    const user = userEvent.setup();
+    stubApi({
+      [`DELETE ${STAR}`]: problemResponse(503, {
+        code: "person_star_unavailable",
+        detail: "The star could not be changed right now.",
+      }),
+    });
+    const star = screen.getByRole("button", { name: "Star" });
+    await user.click(star);
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "The star could not be changed right now.",
+      )
+    );
+    expect(star.getAttribute("aria-pressed"), "rolled back").toBe("true");
+    expect(element("#person-profile-favorite").hidden).toBe(false);
+  });
+
+  it("puts the star back when the change gets no answer", async () => {
+    markup();
+    await mount(profile({ person: { isStarred: false } }));
+    const user = userEvent.setup();
+    stubApi({ [`PUT ${STAR}`]: unreachable });
+    const star = screen.getByRole("button", { name: "Star" });
+    await user.click(star);
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "The star could not be changed right now.",
+      )
+    );
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keeps an archived person's star read-only", async () => {
+    markup();
+    await mount(profile({ person: { isStarred: true }, status: "archived" }));
+    const star = screen.getByRole("button", { name: "Star" });
+    expect(star).toHaveProperty("disabled", true);
+    expect(star.getAttribute("aria-pressed")).toBe("true");
+  });
+});

@@ -2962,6 +2962,90 @@
         }
       }
     },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "description": "The signed-in member's notifications in the active workspace, newest first, fifty at a time, with the unread count after their read-through watermark. Marking read saves `notificationsReadThrough` through `PATCH /api/v1/member/ui-state`.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the member's notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/password-reset-requests": {
       "post": {
         "operationId": "requestPasswordReset",
@@ -3188,9 +3272,37 @@
               "enum": [
                 "given-name",
                 "family-name",
-                "recently-added"
+                "recently-added",
+                "last-contacted",
+                "recently-updated"
               ]
             },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "starred",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Only starred people (GAP-053).",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "starredFirst",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Starred people before everybody else, each group in the sort order.",
             "required": false
           },
           {
@@ -3620,6 +3732,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PeopleDuplicates"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/tag-facet": {
+      "get": {
+        "operationId": "listPeopleTagFacet",
+        "description": "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lifecycle",
+            "schema": {
+              "default": "active",
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded tenant-scoped tag counts for the directory view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleTagFacet"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -8542,6 +8742,232 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PersonLifecycleChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/star": {
+      "put": {
+        "operationId": "starPerson",
+        "description": "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The person is starred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonStarChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unstarPerson",
+        "description": "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The person is no longer starred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonStarChanged"
                 }
               }
             }
@@ -18615,6 +19041,10 @@
       "MemberUiState": {
         "type": "object",
         "properties": {
+          "notificationsReadThrough": {
+            "type": "string",
+            "format": "date-time"
+          },
           "personWorkspaceView": {
             "type": "string",
             "enum": [
@@ -18639,6 +19069,10 @@
       "MemberUiStateInput": {
         "type": "object",
         "properties": {
+          "notificationsReadThrough": {
+            "type": "string",
+            "format": "date-time"
+          },
           "personWorkspaceView": {
             "type": "string",
             "enum": [
@@ -18807,6 +19241,84 @@
           "kind",
           "personId",
           "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "NotificationItem": {
+        "type": "object",
+        "properties": {
+          "href": {
+            "type": "string",
+            "pattern": "^\\/app(?:[/?].*)?$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reminder",
+              "reminder-email-failed",
+              "export-ready",
+              "import-finished",
+              "invitation-accepted"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayReminderPerson"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unread": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "href",
+          "id",
+          "kind",
+          "occurredAt",
+          "unread"
+        ],
+        "additionalProperties": false
+      },
+      "NotificationsPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationItem"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "readThrough": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "unreadCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Unread items, counted no further than 100: show 99+ there."
+          }
+        },
+        "required": [
+          "items",
+          "status",
+          "unreadCount"
         ],
         "additionalProperties": false
       },
@@ -19329,6 +19841,60 @@
           "pairs",
           "status",
           "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleTagFacet": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "tags": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleTagFacetEntry"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "lifecycle",
+          "tags",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleTagFacetEntry": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name"
         ],
         "additionalProperties": false
       },
@@ -20544,6 +21110,22 @@
         "required": [
           "cadences",
           "reminders",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonStarChanged": {
+        "type": "object",
+        "properties": {
+          "isStarred": {
+            "type": "boolean"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "isStarred",
           "status"
         ],
         "additionalProperties": false

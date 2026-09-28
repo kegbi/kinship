@@ -226,6 +226,10 @@ test(
       await expect(target).toBeFocused();
       await expect(target).toBeInViewport();
     }
+    // GAP-053: the header's notification bell follows the member menu.
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: /^Notifications/ }))
+      .toBeFocused();
     const outsideLink = page.getByRole("link", {
       name: "Open all tasks",
       exact: true,

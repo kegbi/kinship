@@ -97,7 +97,8 @@ Prove that the read composition does not permit cross-module writes.
 
 ## Slice 4: Today, Planning, And Worker Reliability
 
-Flows: `TODAY-001`, `PLANNING-001`, `PLANNING-002`, and `PLANNING-003`.
+Flows: `TODAY-001`, `TODAY-002`, `PLANNING-001`, `PLANNING-002`, and
+`PLANNING-003`.
 
 Deliver global tasks, person tasks, reminders, stay-in-touch cadence, Today
 projections, occurrence generation, worker claiming, retries, time-zone and
@@ -133,7 +134,7 @@ workspace section, journal item, or tasks page it lives on.
 ## Slice 7: Data Lifecycle, Import, And Export
 
 Flows: `IMPORT-001`, `IMPORT-002`, `EXPORT-001`, `EXPORT-002`, `AUTH-005`,
-`WORKSPACE-002`, `PEOPLE-008`, and `PEOPLE-009`.
+`WORKSPACE-002`, `PEOPLE-008`, `PEOPLE-009`, and `PEOPLE-010`.
 
 Deliver format detection, bounded staging, identity mapping, dry-run reports,
 atomic commit, idempotent rerun, attachment manifests, vCard export, workspace
@@ -226,6 +227,11 @@ optional-source import gate above.
 
 GAP-051 added `PEOPLE-009` (P1, Slice 7, `people.index` and `people.archived`)
 for bulk directory actions beside the merge and selection export it sits with.
+
+GAP-053 added `TODAY-002` (P1, Slice 4, the application shell's notification
+bell) beside the reminders it reports, and `PEOPLE-010` (P1, Slice 7,
+`people.index`, `people.archived`, and `people.profile`) for starred people, the
+tag facet, and the directory's orders beside the other directory work.
 
 ## Slice Acceptance
 

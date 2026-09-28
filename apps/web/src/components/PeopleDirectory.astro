@@ -74,8 +74,15 @@ import {
           <option value="given-name">Given name</option>
           <option value="family-name">Family name</option>
           <option value="recently-added">Recently added</option>
+          <option value="last-contacted">Last contacted</option>
+          <option value="recently-updated">Recently updated</option>
         </select>
       </label>
+      <fieldset class="directory-starred">
+        <legend>Starred people</legend>
+        <label><input id="people-directory-starred" name="starred" type="checkbox" disabled /> Starred only</label>
+        <label><input id="people-directory-starred-first" name="starredFirst" type="checkbox" disabled /> Starred first</label>
+      </fieldset>
       <button type="submit" disabled>Find people</button>
     </form>
 

@@ -443,7 +443,9 @@ readModels:
     path: packages/backend/read-models/people-directory
     # files (GAP-045): a row's avatar image is offered only while its file is
     # available, so a quarantined, missing, or removed image is never drawn.
-    sourceModules: [files, people, workspaces]
+    # interactions (GAP-053): the `last-contacted` order reads each person's
+    # newest call or conversation, as the person profile's hero does.
+    sourceModules: [files, interactions, people, workspaces]
     consumers: [apps/api]
     writeAccess: false
 
@@ -484,5 +486,18 @@ readModels:
     # workspace's time zone, and the workspace's name. integrations serializes
     # the answer; the feed keeps no per-event state, so no dav_* table is read.
     sourceModules: [people, planning, workspaces]
+    consumers: [apps/api]
+    writeAccess: false
+
+  - id: notifications
+    path: packages/backend/read-models/notifications
+    # GAP-053 (`TODAY-002`): the member's notification feed. planning answers
+    # their delivered in-app reminder occurrences; governance the audit events
+    # addressed to them (their finished exports and imports, their failed
+    # email reminders, and accepted invitations they sent); workspaces the
+    # actor revalidation, the membership, and the read-through watermark in
+    # their interface state; people the names. Marking read is the workspaces
+    # interface-state use case, never this read model.
+    sourceModules: [governance, people, planning, workspaces]
     consumers: [apps/api]
     writeAccess: false

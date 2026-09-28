@@ -198,6 +198,15 @@ the tasks page. It has no route of its own, so `page-catalog.yaml` lists it
 under a separate top-level `sharedSurfaces` key, beside `pages`, with its owner,
 read model, flows, states, and groups.
 
+The header notification bell (`TODAY-002`) is the second shared surface. It
+reports what happened for the signed-in member — their delivered in-app
+reminders, their email reminders that could not be delivered, their finished
+exports and imports, and the invitations they sent that were accepted — newest
+first, and opens each where it lives. Read state is one read-through watermark
+per member, saved in their interface state; "Mark all read" moves it to the
+newest shown notification. It is not a Today card: Today's attention queue stays
+the place for work that is due.
+
 ## Rendering Contract
 
 | Page class                                               | Default strategy                  | Reason                                                             |

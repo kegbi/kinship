@@ -39,6 +39,7 @@ Deno.test("[GAP-021] the mounted people concerns register every route in order",
     [
       "GET /api/v1/people",
       "GET /api/v1/people/tag-options",
+      "GET /api/v1/people/tag-facet",
       "POST /api/v1/people/:personId/view",
       "GET /api/v1/today/recent-people",
       "GET /api/v1/people/duplicates",
@@ -64,9 +65,11 @@ Deno.test("[GAP-021] the mounted people concerns register every route in order",
       "DELETE /api/v1/people/:personId",
       "PUT /api/v1/people/:personId/avatar",
       "DELETE /api/v1/people/:personId/avatar",
+      "PUT /api/v1/people/:personId/star",
+      "DELETE /api/v1/people/:personId/star",
       "GET /api/v1/search",
     ].join("\n"),
-    "ten mounted concerns register what one file used to, plus the avatar, search, the merge, and bulk actions",
+    "eleven mounted concerns register what one file used to, plus the avatar, search, the merge, bulk actions, the star, and the tag facet",
   );
 });
 

@@ -10,6 +10,7 @@ import { pageQuery, request } from "./request.ts";
 import { parseTodayAttention, parseTodayReminders } from "./today.ts";
 import type {
   CadenceCreateInput,
+  NotificationsPage,
   PageInput,
   PersonReminders,
   Reminder,
@@ -84,6 +85,17 @@ export function getTodayTasks(
   workspaceId?: string,
 ): Promise<ApiResult<TaskList>> {
   return request("/api/v1/today/tasks", {
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/** One page of the signed-in member's notifications (GAP-053). */
+export function listNotifications(
+  cursor?: string,
+  workspaceId?: string,
+): Promise<ApiResult<NotificationsPage>> {
+  const suffix = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return request(`/api/v1/notifications${suffix}`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }

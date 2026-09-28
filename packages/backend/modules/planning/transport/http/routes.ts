@@ -26,7 +26,9 @@ import type {
   TodayReminders,
   TodayTasks,
 } from "../../../../read-models/today/public.ts";
+import type { Notifications } from "../../../../read-models/notifications/public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
+import { mountNotificationRoutes } from "./notifications.ts";
 import {
   changeTask,
   createReminder,
@@ -80,6 +82,8 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface PlanningHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
+  /** The member's notification feed (GAP-053); without it, 503. */
+  readonly notifications?: Notifications;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly reminders?: ReminderManagement;
   readonly tasks: TaskManagement;
@@ -561,6 +565,8 @@ export function createPlanningRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
+
+  mountNotificationRoutes(routes, session, services.notifications);
 
   return routes;
 }

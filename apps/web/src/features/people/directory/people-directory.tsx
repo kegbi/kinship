@@ -22,6 +22,12 @@
  * reducer. A bulk request is not a third slot: the bar is inert while one
  * runs, so there is never a second, and when it answers the report is kept
  * and the list is read again once, through the list slot.
+ *
+ * GAP-053 (PEOPLE-010) adds the starred filter, starred-first, two more
+ * orders, a star on starred rows, and the tag facet. The facet is not a
+ * third slot either: it is read with the tag options' first page, through
+ * the tag slot, when the directory starts and after a bulk run changed the
+ * counts. A facet chip applies the existing tag filter and reads the list.
  */
 
 import {
@@ -38,6 +44,7 @@ import {
   exportPeopleVCards,
   getMemberPreferences,
   listPeople,
+  listPeopleTagFacet,
   listPeopleTagOptions,
   type PeopleDirectoryLifecycle,
   type PeopleDirectoryPerson,
@@ -75,10 +82,13 @@ import {
   emptyCopy,
   errorCopy,
   exportReport,
+  facetLabel,
+  type FacetState,
   initialDirectory,
   isSort,
   personDetails,
   personName,
+  starredCriteria,
 } from "./directory.ts";
 
 export const PEOPLE_DIRECTORY_ISLAND = "people-directory";
@@ -144,7 +154,8 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const [state, dispatch] = useReducer(
     directoryReducer,
     query().get("tag") ?? "",
-    initialDirectory,
+    (tag: string) =>
+      initialDirectory(tag, starredCriteria(globalThis.location.search)),
   );
   const listRequest = useLatestRequest();
   const tagRequest = useLatestRequest();
@@ -162,9 +173,14 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   // What the next read asks for, as the reader last left it.
   const reading = useRef({
     sort: state.sort,
+    starred: state.starred,
+    starredFirst: state.starredFirst,
     tagId: state.tag.selected,
   });
   const settled = useRef(props.onSettled);
+  // A facet read is owed until one answers: a newer tag read that replaces
+  // the one counting carries it over, so the facet never stays counting.
+  const facetOwed = useRef(false);
 
   const load = async (append: boolean): Promise<void> => {
     const known = context.current;
@@ -173,6 +189,8 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     const current = {
       search: search.current?.value ?? "",
       sort: reading.current.sort,
+      starred: reading.current.starred,
+      starredFirst: reading.current.starredFirst,
       tagId: reading.current.tagId,
     };
     dispatch({ append, type: "loading" });
@@ -208,7 +226,9 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     }
     dispatch({
       append,
-      filtered: Boolean(current.search.trim() || current.tagId),
+      filtered: Boolean(
+        current.search.trim() || current.tagId || current.starred,
+      ),
       lifecycle,
       nextCursor: page.nextCursor,
       people: page.people,
@@ -216,26 +236,53 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     });
   };
 
-  const loadTags = async (append: boolean): Promise<void> => {
+  /**
+   * A page of tag options and, when `facet` asks, the tag facet with it:
+   * both through the tag slot, so only the latest answer of either lands.
+   */
+  const loadTags = async (append: boolean, asked = false): Promise<void> => {
     const known = context.current;
     if (!known) return;
+    if (asked) facetOwed.current = true;
+    const facet = facetOwed.current;
     const cursor = append ? state.tag.cursor : undefined;
     const text = tagSearch.current?.value.trim() ?? "";
     const selectedTagId = reading.current.tagId;
     dispatch({ append, type: "tags-loading" });
-    const answer = await tagRequest(() =>
-      listPeopleTagOptions({
-        ...(cursor ? { cursor } : {}),
-        ...(text ? { search: text } : {}),
-        ...(selectedTagId ? { selectedTagId } : {}),
-      }, known.workspaceId)
-    );
+    // The options land as soon as they answer, so a slow facet never holds
+    // the tag picker; the facet lands after them unless a newer tag read
+    // replaced this one, which then carries the owed facet itself.
+    let retired: AbortSignal | undefined;
+    const answer = await tagRequest(async (signal) => {
+      retired = signal;
+      const counts = facet
+        ? settle(() => listPeopleTagFacet(lifecycle, known.workspaceId))
+        : undefined;
+      const options = await settle(() =>
+        listPeopleTagOptions({
+          ...(cursor ? { cursor } : {}),
+          ...(text ? { search: text } : {}),
+          ...(selectedTagId ? { selectedTagId } : {}),
+        }, known.workspaceId)
+      );
+      return { ok: true as const, value: { counts, options } };
+    });
     if (!answer) return;
-    if (answer.status !== "ready") {
+    const { counts, options } = answer.data!;
+    if (options.status !== "ready") {
       dispatch({ type: "tags-failed" });
-      return;
+    } else {
+      dispatch({ append, page: options.data!, type: "tags-loaded" });
     }
-    dispatch({ append, page: answer.data!, type: "tags-loaded" });
+    if (!counts) return;
+    const counted = await counts;
+    if (retired?.aborted) return;
+    facetOwed.current = false;
+    dispatch(
+      counted.status === "ready"
+        ? { facet: counted.data!, type: "facet-loaded" }
+        : { type: "facet-failed" },
+    );
   };
 
   /** Resolves the workspace and preferences, then reads both lists. */
@@ -262,7 +309,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       sort,
       type: "context",
     });
-    await Promise.all([load(false), loadTags(false)]);
+    await Promise.all([load(false), loadTags(false, true)]);
   };
 
   // A search typed while the page loaded is kept over the address's.
@@ -328,7 +375,9 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       report: bulkReport(kind, answer.data!, names, tag?.name),
       type: "bulk-finished",
     });
-    await load(false);
+    // The run changed who carries which tag in this view, so the facet's
+    // counts are read again with the list.
+    await Promise.all([load(false), loadTags(false, true)]);
   };
 
   const exportSelection = async (): Promise<void> => {
@@ -406,9 +455,29 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     dispatch({ sort: value, type: "sort" });
   };
 
-  const chooseTag = (value: string) => {
+  const chooseTag = (value: string, name?: string) => {
     reading.current.tagId = value;
-    dispatch({ selected: value, type: "tag" });
+    dispatch({
+      selected: value,
+      type: "tag",
+      ...(name === undefined ? {} : { name }),
+    });
+  };
+
+  // A facet chip applies the tag filter at once; the chosen chip clears it.
+  const chooseFacetTag = (id: string, name: string) => {
+    chooseTag(reading.current.tagId === id ? "" : id, name);
+    void load(false);
+  };
+
+  const chooseStarred = (starred: boolean) => {
+    reading.current.starred = starred;
+    dispatch({ starred, type: "starred" });
+  };
+
+  const chooseStarredFirst = (starredFirst: boolean) => {
+    reading.current.starredFirst = starredFirst;
+    dispatch({ starredFirst, type: "starred-first" });
   };
 
   const { loading, status } = state;
@@ -497,6 +566,13 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
               {state.tag.status}
             </p>
           </div>
+          <TagFacet
+            busy={busy}
+            facet={state.facet}
+            onChoose={chooseFacetTag}
+            onMore={() => tagSearch.current?.focus()}
+            selected={state.tag.selected}
+          />
         </fieldset>
         <label>
           Sort by
@@ -511,8 +587,35 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             <option value="given-name">Given name</option>
             <option value="family-name">Family name</option>
             <option value="recently-added">Recently added</option>
+            <option value="last-contacted">Last contacted</option>
+            <option value="recently-updated">Recently updated</option>
           </select>
         </label>
+        <fieldset className="directory-starred">
+          <legend>Starred people</legend>
+          <label>
+            <input
+              checked={state.starred}
+              disabled={busy}
+              id="people-directory-starred"
+              name="starred"
+              onChange={(event) => chooseStarred(event.target.checked)}
+              type="checkbox"
+            />
+            Starred only
+          </label>
+          <label>
+            <input
+              checked={state.starredFirst}
+              disabled={busy}
+              id="people-directory-starred-first"
+              name="starredFirst"
+              onChange={(event) => chooseStarredFirst(event.target.checked)}
+              type="checkbox"
+            />
+            Starred first
+          </label>
+        </fieldset>
         <button disabled={busy} type="submit">Find people</button>
       </form>
 
@@ -780,6 +883,79 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   );
 }
 
+/**
+ * The tag facet (GAP-053): the view's most carried tags as chips with their
+ * person counts. A chip applies the tag filter; the chosen chip is pressed
+ * and clears it. When more tags are in use, More tags… moves to the tag
+ * options search, where every tag stays reachable.
+ */
+function TagFacet(
+  props: {
+    readonly busy: boolean;
+    readonly facet: FacetState;
+    readonly onChoose: (id: string, name: string) => void;
+    readonly onMore: () => void;
+    readonly selected: string;
+  },
+) {
+  const { facet } = props;
+  return (
+    <div
+      aria-labelledby="people-tag-facet-heading"
+      className="directory-tag-facet"
+      id="people-tag-facet"
+      role="group"
+    >
+      <p className="directory-tag-facet-heading" id="people-tag-facet-heading">
+        Tags in this view
+      </p>
+      {facet.status === "ready" && facet.tags.length > 0
+        ? (
+          <ul aria-labelledby="people-tag-facet-heading">
+            {facet.tags.map((entry) => (
+              <li key={entry.id}>
+                <button
+                  aria-label={facetLabel(entry)}
+                  aria-pressed={props.selected === entry.id}
+                  className="directory-tag-chip"
+                  disabled={props.busy}
+                  onClick={() => props.onChoose(entry.id, entry.name)}
+                  type="button"
+                >
+                  <span>{entry.name}</span>
+                  <span aria-hidden="true" className="directory-tag-count">
+                    {entry.count}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+        : (
+          <p className="directory-tag-facet-state">
+            {facet.status === "loading"
+              ? "Counting tags…"
+              : facet.status === "unavailable"
+              ? "Tag counts are temporarily unavailable."
+              : "No tags are used in this view."}
+          </p>
+        )}
+      {facet.status === "ready" && facet.truncated
+        ? (
+          <button
+            className="directory-tag-facet-more"
+            disabled={props.busy}
+            onClick={props.onMore}
+            type="button"
+          >
+            More tags…
+          </button>
+        )
+        : null}
+    </div>
+  );
+}
+
 const plural = (count: number) =>
   `${count} ${count === 1 ? "person" : "people"}`;
 
@@ -899,6 +1075,17 @@ function PersonItem(
         <span className="directory-person-heading">
           <Avatar avatar={person.avatar} initials={nameInitials(name)} />
           <h2>{name}</h2>
+          {
+            /* The row's details already say "Favorite" to a screen reader;
+            the star is its mark for the eye (GAP-053). */
+          }
+          {person.isStarred
+            ? (
+              <span aria-hidden="true" className="directory-person-star">
+                ★
+              </span>
+            )
+            : null}
         </span>
         <p className="directory-person-details">{personDetails(person)}</p>
         {person.tagCount > 0

@@ -203,3 +203,56 @@ Deno.test("UXD-002C3 HTTP validates and attributes every member UI-state problem
     );
   }
 });
+
+Deno.test("[GAP-053] HTTP saves the notifications watermark through the use case", async () => {
+  const saved: MemberUiState[] = [];
+  const app = createSettingsRoutes(services(
+    settings(),
+    memberUiState({
+      save: (_actor, input) => {
+        saved.push(input);
+        return Promise.resolve({ status: "ready", uiState: input });
+      },
+    }),
+  ));
+  const marked = await app.request("http://localhost/api/v1/member/ui-state", {
+    body: JSON.stringify({
+      notificationsReadThrough: "2026-09-28T10:00:00.123Z",
+    }),
+    headers,
+    method: "PATCH",
+  });
+  assertStatus(marked, 200, "the watermark saves");
+  assert(
+    (await marked.json()).uiState.notificationsReadThrough ===
+      "2026-09-28T10:00:00.123Z",
+    "the saved watermark is answered",
+  );
+  assert(
+    JSON.stringify(saved) ===
+      JSON.stringify([{
+        notificationsReadThrough: "2026-09-28T10:00:00.123Z",
+      }]),
+    "only the watermark reaches the use case",
+  );
+  for (
+    const value of [
+      "2026-09-28",
+      "2026-09-28T10:00:00+02:00",
+      "2026-09-28T10:00:00.123456Z",
+      "2026-02-30T10:00:00.000Z",
+      42,
+    ]
+  ) {
+    const refused = await app.request(
+      "http://localhost/api/v1/member/ui-state",
+      {
+        body: JSON.stringify({ notificationsReadThrough: value }),
+        headers,
+        method: "PATCH",
+      },
+    );
+    assertStatus(refused, 400, `${String(value)} is not a watermark`);
+  }
+  assert(saved.length === 1, "a refused watermark never reaches the use case");
+});

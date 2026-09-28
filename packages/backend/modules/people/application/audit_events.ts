@@ -21,6 +21,7 @@ import type {
   PersonLifecycleAudit,
   PersonMergeAudit,
   PersonMergeAuditCommand,
+  PersonStarAudit,
   ProfileFactAudit,
 } from "../ports/audit.ts";
 
@@ -290,6 +291,40 @@ export function personMergeAuditFrom(
         auditId: command.auditId,
         event: describePersonMergeEvent(command),
         failure: "Person merge audit postcondition failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/**
+ * A star is recorded like an avatar change: a non-content flag on the person,
+ * audited with no payload beyond which way it moved (GAP-053).
+ */
+export function describePersonStarEvent(
+  command: Parameters<PersonStarAudit["record"]>[0],
+): AuditEvent {
+  return {
+    action: `people.person-${command.action}`,
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: {},
+    personId: command.personId,
+    subjectId: command.personId,
+    subjectType: "person",
+    visibleOnDashboard: false,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function personStarAuditFrom(
+  recorder: AuditEventRecorder,
+): PersonStarAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describePersonStarEvent(command),
+        missing: "Person star audit insert failed.",
         transaction: command.transaction,
       }),
   };

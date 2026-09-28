@@ -87,7 +87,22 @@ export const managedMembers = z.strictObject({
   members: z.array(managedMember),
 }).meta({ id: "ManagedMembers" });
 
+/**
+ * The notifications read-through watermark (GAP-053, `TODAY-002`): a UTC
+ * instant with at most millisecond precision. A save only ever moves it
+ * forward.
+ */
+const notificationsReadThrough = z.string().regex(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/,
+).refine((value) => {
+  // A date that does not exist (February 30) is refused, not rolled over.
+  const instant = new Date(value);
+  return !Number.isNaN(instant.getTime()) &&
+    instant.toISOString().slice(0, 19) === value.slice(0, 19);
+}).meta({ format: "date-time" }).optional();
+
 export const memberUiState = z.strictObject({
+  notificationsReadThrough,
   personWorkspaceView: z.enum([
     "all",
     "timeline",
@@ -99,6 +114,7 @@ export const memberUiState = z.strictObject({
 }).meta({ id: "MemberUiState" });
 
 export const memberUiStateInput = z.strictObject({
+  notificationsReadThrough,
   personWorkspaceView: z.enum([
     "all",
     "timeline",
@@ -109,6 +125,7 @@ export const memberUiStateInput = z.strictObject({
   theme: z.enum(["system", "light", "dark"]).optional(),
 }).refine(
   (value) =>
+    value.notificationsReadThrough !== undefined ||
     value.personWorkspaceView !== undefined || value.theme !== undefined,
 ).meta({ minProperties: 1, id: "MemberUiStateInput" });
 

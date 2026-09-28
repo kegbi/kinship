@@ -11,7 +11,12 @@ const actor = fixtures.actor();
 function record(index: number): PeopleDirectoryPersonRecord {
   const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
   return {
-    cursor: { id, primary: `person-${index}`, secondary: "family" },
+    cursor: {
+      id,
+      primary: `person-${index}`,
+      secondary: "family",
+      starred: index === 1,
+    },
     familyName: "Family",
     givenName: `Person ${index}`,
     id,
@@ -171,7 +176,12 @@ Deno.test("PEOPLE-002 directory preserves forbidden without disclosure", async (
 Deno.test("PEOPLE-006 directory hydrates one selected active tenant person outside the page", async () => {
   const selectedId = "00000000-0000-4000-8000-000000000099";
   const selected = {
-    cursor: { id: selectedId, primary: "charles", secondary: "babbage" },
+    cursor: {
+      id: selectedId,
+      primary: "charles",
+      secondary: "babbage",
+      starred: false,
+    },
     familyName: "Babbage",
     givenName: "Charles",
     id: selectedId,
@@ -224,6 +234,7 @@ Deno.test("PEOPLE-006 selected hydration is bound to the requested lifecycle", a
                 id: selectedId,
                 primary: "harriet",
                 secondary: "tubman",
+                starred: false,
               },
               familyName: "Tubman",
               givenName: "Harriet",
@@ -290,4 +301,109 @@ Deno.test("[PEOPLE-007] a directory row carries the person's avatar record", asy
     result.selected?.avatar?.backgroundColor === "#abcdef",
     "the selected person keeps their colour",
   );
+});
+
+Deno.test("[PEOPLE-010] every sort, the starred filter, and starred-first travel in the cursor", async () => {
+  const calls: Parameters<PeopleDirectoryRepository["list"]>[0][] = [];
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      list(command) {
+        calls.push(command);
+        return Promise.resolve({
+          people: [
+            { ...record(1), cursor: { ...record(1).cursor, starred: true } },
+            { ...record(2), cursor: { ...record(2).cursor, starred: false } },
+          ],
+          status: "ready",
+        });
+      },
+    },
+  });
+  for (
+    const sort of [
+      "given-name",
+      "family-name",
+      "recently-added",
+      "last-contacted",
+      "recently-updated",
+    ] as const
+  ) {
+    for (const starred of [false, true]) {
+      for (const starredFirst of [false, true]) {
+        calls.length = 0;
+        const input = { limit: 1, sort, starred, starredFirst };
+        const first = await directory.list(actor, input);
+        assert(
+          first.status === "ready" && first.nextCursor,
+          `${sort} pages with a cursor`,
+        );
+        assert(
+          calls[0]?.sort === sort && calls[0]?.starred === starred &&
+            calls[0]?.starredFirst === starredFirst,
+          `${sort} criteria reach the repository`,
+        );
+        const next = await directory.list(actor, {
+          ...input,
+          cursor: first.nextCursor,
+        });
+        assert(next.status === "ready", `${sort} continues`);
+        assert(
+          calls[1]?.after?.id === record(1).id &&
+            calls[1]?.after?.starred === true,
+          `${sort} resumes after the last person, starred state included`,
+        );
+        for (
+          const changed of [
+            { ...input, starred: !starred },
+            { ...input, starredFirst: !starredFirst },
+            {
+              ...input,
+              sort: sort === "last-contacted"
+                ? "recently-updated" as const
+                : "last-contacted" as const,
+            },
+          ]
+        ) {
+          const refused = await directory.list(actor, {
+            ...changed,
+            cursor: first.nextCursor,
+          });
+          assert(
+            refused.status === "stale-cursor",
+            `${sort} refuses a cursor made for other criteria`,
+          );
+        }
+      }
+    }
+  }
+});
+
+Deno.test("[PEOPLE-010] a cursor from before the starred criteria is stale", async () => {
+  let calls = 0;
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      list() {
+        calls += 1;
+        return Promise.resolve({ people: [], status: "ready" });
+      },
+    },
+  });
+  const legacy = btoa(JSON.stringify({
+    excludePersonId: null,
+    id: record(1).id,
+    lifecycle: "active",
+    primary: "person-1",
+    search: "",
+    secondary: "family",
+    sort: "given-name",
+    tagId: null,
+    version: 1,
+  })).replaceAll("=", "");
+  const result = await directory.list(actor, { cursor: legacy });
+  assert(result.status === "stale-cursor", "a version 1 cursor is stale");
+  assert(calls === 0, "a stale cursor queries nothing");
 });

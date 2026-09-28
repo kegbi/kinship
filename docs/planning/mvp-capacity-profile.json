@@ -88,6 +88,14 @@
           "directory normalizes criteria and emits a bounded opaque cursor",
           "directory rejects malformed, mismatched, and stale cursors"
         ]
+      },
+      {
+        "path": "tests/integration/people_directory_capacity_postgres_test.ts",
+        "markers": [
+          "every directory order reads its pages within the large-boundary read budget",
+          "ORDINARY_API_READ_MS = 500",
+          "REPRESENTATIVE_QUERY_MS = 250"
+        ]
       }
     ],
     "worker": [

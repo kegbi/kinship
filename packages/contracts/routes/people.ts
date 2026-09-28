@@ -24,6 +24,7 @@ import {
   peopleBulkResult,
   peopleDirectoryPage,
   peopleDuplicates,
+  peopleTagFacet,
   peopleTagOptionsPage,
   personAvatarChanged,
   personCreated,
@@ -42,6 +43,7 @@ import {
   personMergeInput,
   personMergePreview,
   personReady,
+  personStarChanged,
   personTimelinePage,
   personTransitionInput,
   personViewRecorded,
@@ -70,9 +72,20 @@ export const listPeopleQuery = z.strictObject({
   selectedPersonId: z.uuid().optional(),
   tag: z.uuid().optional(),
   lifecycle: z.enum(["active", "archived"]).default("active"),
-  sort: z.enum(["given-name", "family-name", "recently-added"]).default(
+  sort: z.enum([
     "given-name",
-  ),
+    "family-name",
+    "recently-added",
+    "last-contacted",
+    "recently-updated",
+  ]).default("given-name"),
+  starred: z.enum(["true", "false"]).optional().meta({
+    description: "Only starred people (GAP-053).",
+  }),
+  starredFirst: z.enum(["true", "false"]).optional().meta({
+    description:
+      "Starred people before everybody else, each group in the sort order.",
+  }),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
@@ -145,6 +158,33 @@ export const listPeopleTagOptions = defineRoute({
       },
     },
     ...problemResponses(400, 401, 403, 409, 503),
+  },
+});
+
+/** What `listPeopleTagFacet` accepts in the query string. */
+export const listPeopleTagFacetQuery = z.strictObject({
+  lifecycle: z.enum(["active", "archived"]).default("active"),
+});
+
+export const listPeopleTagFacet = defineRoute({
+  method: "get",
+  path: "/api/v1/people/tag-facet",
+  operationId: "listPeopleTagFacet",
+  description:
+    "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use.",
+  security: [{ kinship_session: [] }],
+  request: {
+    query: listPeopleTagFacetQuery,
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "Bounded tenant-scoped tag counts for the directory view",
+      content: {
+        "application/json": peopleTagFacet,
+      },
+    },
+    ...problemResponses(400, 401, 403, 503),
   },
 });
 
@@ -402,6 +442,51 @@ export const removePersonAvatar = defineRoute({
       description: "The person is drawn with their initials again",
       content: {
         "application/json": personAvatarChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+const starRequest = {
+  params: z.object({
+    personId: uuid,
+  }),
+  headers: originAndWorkspaceHeaders,
+};
+
+export const starPerson = defineRoute({
+  method: "put",
+  path: "/api/v1/people/{personId}/star",
+  operationId: "starPerson",
+  description:
+    "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only.",
+  security: [{ kinship_session: [] }],
+  request: starRequest,
+  responses: {
+    200: {
+      description: "The person is starred",
+      content: {
+        "application/json": personStarChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const unstarPerson = defineRoute({
+  method: "delete",
+  path: "/api/v1/people/{personId}/star",
+  operationId: "unstarPerson",
+  description:
+    "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only.",
+  security: [{ kinship_session: [] }],
+  request: starRequest,
+  responses: {
+    200: {
+      description: "The person is no longer starred",
+      content: {
+        "application/json": personStarChanged,
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
@@ -921,6 +1006,7 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   listPeople,
   createPerson,
   listPeopleTagOptions,
+  listPeopleTagFacet,
   listPeopleDuplicates,
   bulkPeople,
   deletePerson,
@@ -929,6 +1015,8 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   archivePerson,
   replacePersonAvatar,
   removePersonAvatar,
+  starPerson,
+  unstarPerson,
   listImportantDates,
   createImportantDate,
   deleteImportantDate,

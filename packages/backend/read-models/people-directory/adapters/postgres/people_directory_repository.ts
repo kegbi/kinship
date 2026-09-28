@@ -15,12 +15,17 @@ import type {
   PeopleTagOptionsRepository,
 } from "../../application/list_tag_options.ts";
 import type {
+  PeopleTagFacetEntry,
+  PeopleTagFacetRepository,
+} from "../../application/list_tag_facet.ts";
+import type {
   PeopleDuplicatePairRecord,
   PeopleDuplicatePerson,
   PeopleDuplicateReason,
   PeopleDuplicatesRepository,
 } from "../../application/list_duplicates.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
+import { lastContactByPerson } from "./last_contact.ts";
 
 /** The avatar columns both directory reads select. */
 interface AvatarColumns {
@@ -101,7 +106,37 @@ function filters(
   const excluded = command.excludePersonId
     ? sql`and person.id <> ${command.excludePersonId}::uuid`
     : sql``;
-  return { excluded, lifecycle, search, tag };
+  const starred = command.starred ? sql`and person.is_starred` : sql``;
+  return { excluded, lifecycle, search, starred, tag };
+}
+
+/**
+ * When the person was last in contact (GAP-053), by the one rule the person
+ * profile's hero also reads (`./last_contact.ts`, duplicated there): one
+ * aggregate per person over the workspace's history, hash-joined to the
+ * people, never a per-person subquery ahead of the limit. A cursor's anchor
+ * names its one person. It is joined only for the `last-contacted` order.
+ */
+function lastContactJoin(
+  sort: PeopleDirectoryCriteria["sort"],
+  workspaceId: string,
+  personId?: string,
+) {
+  if (sort !== "last-contacted") return sql``;
+  return sql`
+    left join ${lastContactByPerson(workspaceId, personId)} last_contact
+      on last_contact.person_id = person.id
+  `;
+}
+
+/**
+ * A newest-first instant as a sort key: fixed-width UTC text compared
+ * byte-wise, so text order is time order, and the empty key of a person with
+ * no time sorts after everyone else.
+ */
+function newestKey(expression: string): RawBuilder<string> {
+  return sql.raw(`coalesce(to_char(${expression} at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.US'), '') collate "C"`);
 }
 
 function ordering(sort: PeopleDirectoryCriteria["sort"]): {
@@ -116,6 +151,18 @@ function ordering(sort: PeopleDirectoryCriteria["sort"]): {
       order: sql`${sql`person.created_at`} desc, person.id asc`,
       primary,
       secondary,
+    };
+  }
+  if (sort === "last-contacted" || sort === "recently-updated") {
+    const primary = newestKey(
+      sort === "last-contacted"
+        ? "last_contact.contacted_at"
+        : "person.updated_at",
+    );
+    return {
+      order: sql`${primary} desc, person.id asc`,
+      primary,
+      secondary: sql<string>`''::text`,
     };
   }
   const primary = sort === "family-name"
@@ -135,26 +182,59 @@ function ordering(sort: PeopleDirectoryCriteria["sort"]): {
   };
 }
 
-function seek(
+/** The order a page is read in: starred people first when asked. */
+function pageOrder(
+  criteria: PeopleDirectoryCriteria,
+  order: RawBuilder<unknown>,
+) {
+  return criteria.starredFirst ? sql`person.is_starred desc, ${order}` : order;
+}
+
+/** The people after `after` within one starred group, in the sort. */
+function seekWithinGroup(
   sort: PeopleDirectoryCriteria["sort"],
-  after: PeopleDirectoryCursor | undefined,
+  after: PeopleDirectoryCursor,
   primary: RawBuilder<string>,
   secondary: RawBuilder<string>,
 ) {
-  if (!after) return sql``;
   if (sort === "recently-added") {
-    return sql`and (
+    return sql`(
       person.created_at < ${after.primary}::timestamptz or
       (person.created_at = ${after.primary}::timestamptz and
         person.id > ${after.id}::uuid)
     )`;
   }
-  return sql`and (
+  if (sort === "last-contacted" || sort === "recently-updated") {
+    return sql`(
+      ${primary} < ${after.primary} collate "C" or
+      (${primary} = ${after.primary} collate "C" and
+        person.id > ${after.id}::uuid)
+    )`;
+  }
+  return sql`(
     ${primary} > ${after.primary} or
     (${primary} = ${after.primary} and ${secondary} > ${after.secondary}) or
     (${primary} = ${after.primary} and ${secondary} = ${after.secondary}
       and person.id > ${after.id}::uuid)
   )`;
+}
+
+function seek(
+  criteria: PeopleDirectoryCriteria,
+  after: PeopleDirectoryCursor | undefined,
+  primary: RawBuilder<string>,
+  secondary: RawBuilder<string>,
+) {
+  if (!after) return sql``;
+  const within = seekWithinGroup(criteria.sort, after, primary, secondary);
+  // With starred people first, the starred group ends before the rest, so a
+  // page that ended among the starred continues with every unstarred person.
+  return criteria.starredFirst
+    ? sql`and (
+      person.is_starred < ${after.starred}::boolean or
+      (person.is_starred = ${after.starred}::boolean and ${within})
+    )`
+    : sql`and ${within}`;
 }
 
 interface DuplicatePairRow {
@@ -176,6 +256,7 @@ export class PostgresPeopleDirectoryRepository
   implements
     PeopleDirectoryRepository,
     PeopleDuplicatesRepository,
+    PeopleTagFacetRepository,
     PeopleTagOptionsRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
@@ -217,6 +298,7 @@ export class PostgresPeopleDirectoryRepository
         id: row.id,
         primary: row.given_name.toLowerCase(),
         secondary: row.family_name?.toLowerCase() ?? "",
+        starred: row.is_starred,
       },
       ...pickDefined({ familyName: row.family_name }),
       givenName: row.given_name,
@@ -237,43 +319,69 @@ export class PostgresPeopleDirectoryRepository
     const sort = ordering(command.sort);
     if (command.after) {
       const anchor = await sql<{
+        readonly is_starred: boolean;
         readonly sort_primary: string;
         readonly sort_secondary: string;
       }>`
         select ${sort.primary} as sort_primary,
-          ${sort.secondary} as sort_secondary
+          ${sort.secondary} as sort_secondary, person.is_starred
         from crm.people person
+        ${lastContactJoin(command.sort, command.workspaceId, command.after.id)}
         where person.id = ${command.after.id}::uuid
           and person.workspace_id = ${command.workspaceId}::uuid
           and person.deleted_at is null
           ${criteria.excluded}
           and ${criteria.lifecycle}
           ${criteria.search}
+          ${criteria.starred}
           ${criteria.tag}
       `.execute(this.database);
       const row = anchor.rows[0];
       if (
         !row || row.sort_primary !== command.after.primary ||
-        row.sort_secondary !== command.after.secondary
+        row.sort_secondary !== command.after.secondary ||
+        (command.starredFirst && row.is_starred !== command.after.starred)
       ) {
         return { status: "stale-cursor" };
       }
     }
 
     const continuation = seek(
-      command.sort,
+      command,
       command.after,
       sort.primary,
       sort.secondary,
     );
+    // The page is chosen first, on the sort keys alone, and only its rows
+    // are then drawn with their avatar and tag preview, so a large workspace
+    // pays for twenty rows' laterals rather than every person's (GAP-053).
     const people = await sql<PersonRow>`
+      with page as (
+        select person.id, ${sort.primary} as sort_primary,
+          ${sort.secondary} as sort_secondary,
+          row_number() over (order by ${pageOrder(command, sort.order)})
+            as position
+        from crm.people person
+        ${lastContactJoin(command.sort, command.workspaceId)}
+        where person.workspace_id = ${command.workspaceId}::uuid
+          and person.deleted_at is null
+          ${criteria.excluded}
+          and ${criteria.lifecycle}
+          ${criteria.search}
+          ${criteria.starred}
+          ${criteria.tag}
+          ${continuation}
+        order by ${pageOrder(command, sort.order)}
+        limit ${command.limit + 1}
+      )
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.is_partial,
-        person.is_starred, ${sort.primary} as sort_primary,
-        ${sort.secondary} as sort_secondary,
+        person.is_starred, page.sort_primary, page.sort_secondary,
         coalesce(tag_summary.tag_count, 0)::int as tag_count,
         coalesce(tag_preview.tags, '[]'::jsonb) as tags, ${avatarColumns}
-      from crm.people person
+      from page
+      join crm.people person on person.id = page.id
+        and person.workspace_id = ${command.workspaceId}::uuid
       ${avatarJoin(command.workspaceId)}
       left join lateral (
         select count(*)::int as tag_count
@@ -297,15 +405,7 @@ export class PostgresPeopleDirectoryRepository
           limit ${PEOPLE_DIRECTORY_TAG_PREVIEW_LIMIT}
         ) preview
       ) tag_preview on true
-      where person.workspace_id = ${command.workspaceId}::uuid
-        and person.deleted_at is null
-        ${criteria.excluded}
-        and ${criteria.lifecycle}
-        ${criteria.search}
-        ${criteria.tag}
-        ${continuation}
-      order by ${sort.order}
-      limit ${command.limit + 1}
+      order by page.position
     `.execute(this.database);
     return {
       people: people.rows.map((row): PeopleDirectoryPersonRecord => ({
@@ -314,6 +414,7 @@ export class PostgresPeopleDirectoryRepository
           id: row.id,
           primary: row.sort_primary,
           secondary: row.sort_secondary,
+          starred: row.is_starred,
         },
         ...pickDefined({ familyName: row.family_name }),
         givenName: row.given_name,
@@ -373,6 +474,37 @@ export class PostgresPeopleDirectoryRepository
       status: "ready",
     };
   }
+  /**
+   * The tag facet (GAP-053): each workspace tag with the non-deleted people
+   * of the view who carry it, most carried first. A tag nobody in the view
+   * carries is left out.
+   */
+  async listTagFacet(
+    command: Parameters<PeopleTagFacetRepository["listTagFacet"]>[0],
+  ): Promise<readonly PeopleTagFacetEntry[]> {
+    const lifecycle = command.lifecycle === "active"
+      ? sql`person.archived_at is null`
+      : sql`person.archived_at is not null`;
+    const result = await sql<PeopleTagFacetEntry>`
+      select tag.id::text, tag.name, count(*)::int as count
+      from crm.tags tag
+      join crm.person_tags link on link.tag_id = tag.id
+      join crm.people person on person.id = link.person_id
+        and person.workspace_id = ${command.workspaceId}::uuid
+        and person.deleted_at is null
+        and ${lifecycle}
+      where tag.workspace_id = ${command.workspaceId}::uuid
+      group by tag.id, tag.name
+      order by count(*) desc, lower(tag.name), tag.id
+      limit ${command.limit}
+    `.execute(this.database);
+    return result.rows.map((row) => ({
+      count: row.count,
+      id: row.id,
+      name: row.name,
+    }));
+  }
+
   /**
    * The possible duplicates (GAP-049): active people with the same full name
    * once case and spacing are ignored, or sharing an email address or phone

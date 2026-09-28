@@ -453,6 +453,15 @@ export const personAvatarChanged = z.strictObject({
 }).meta({ id: "PersonAvatarChanged" });
 
 /**
+ * A person's star after it was set (GAP-053, `PEOPLE-010`). The star is
+ * shared by the whole workspace, not kept per member.
+ */
+export const personStarChanged = z.strictObject({
+  isStarred: z.boolean(),
+  status: z.literal("ready"),
+}).meta({ id: "PersonStarChanged" });
+
+/**
  * One person of a possible duplicate pair (GAP-049): enough to tell the two
  * apart, and the revision a merge of the pair is decided against.
  */
@@ -507,6 +516,20 @@ export const peopleTagOptionsPage = z.strictObject({
   nextCursor: z.string().optional(),
   selected: peopleDirectoryTag.optional(),
 }).meta({ id: "PeopleTagOptionsPage" });
+
+/** The directory's tag facet (GAP-053): the top thirty tags by people. */
+export const peopleTagFacet = z.strictObject({
+  status: z.literal("ready"),
+  lifecycle: z.enum(["active", "archived"]),
+  tags: z.array(
+    z.strictObject({
+      count: z.number().int().min(1),
+      id: z.uuid(),
+      name: z.string(),
+    }).meta({ id: "PeopleTagFacetEntry" }),
+  ).max(30),
+  truncated: z.boolean(),
+}).meta({ id: "PeopleTagFacet" });
 
 export const personIdentity = z.strictObject({
   familyName: z.string().optional(),

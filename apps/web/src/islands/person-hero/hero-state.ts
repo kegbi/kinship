@@ -2,8 +2,9 @@
  * The person hero's state and every change to it, as one pure reducer
  * (GAP-028).
  *
- * The hero runs four kinds of work — saving the identity editor, archiving
- * or restoring, reading the deletion impact, and deleting — and each moves
+ * The hero runs its kinds of work — saving the identity editor, archiving
+ * or restoring, reading the deletion impact, deleting, changing the avatar,
+ * and starring (GAP-053) — and each moves
  * the same few facts: who the person is, the revision a write must name, the
  * lifecycle, which control surface is open, and what the status line says.
  * Folding them here keeps one owner of that state and lets each transition
@@ -51,6 +52,11 @@ export interface HeroState {
   readonly deletion: DeleteDialogState;
   /** The merge dialog is open (GAP-049); it owns its own steps. */
   readonly merging: boolean;
+  /**
+   * A star change is in flight (GAP-053); the toggle waits. The identity
+   * already shows the star asked for, and a refusal puts it back.
+   */
+  readonly starBusy: boolean;
 }
 
 export type HeroAction =
@@ -93,7 +99,10 @@ export type HeroAction =
     readonly type: "avatar-changed";
     readonly avatar: PersonAvatar;
     readonly removed: boolean;
-  };
+  }
+  | { readonly type: "star-started"; readonly starred: boolean }
+  | { readonly type: "star-saved"; readonly starred: boolean }
+  | { readonly type: "star-failed"; readonly detail: string };
 
 export function initialHeroState(
   identity: HeroIdentity,
@@ -108,6 +117,7 @@ export function initialHeroState(
     identity,
     menuOpen: false,
     merging: false,
+    starBusy: false,
     status: "",
     transitioning: false,
     updatedAt: identity.updatedAt,
@@ -287,6 +297,33 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
         status: action.removed
           ? "Avatar removed. Initials are shown instead."
           : "Avatar updated.",
+      };
+    case "star-started":
+      // Optimistic: the star shows at once. A star is not part of the
+      // person's revision, so `updatedAt` stays (GAP-053).
+      return {
+        ...state,
+        identity: { ...state.identity, isStarred: action.starred },
+        starBusy: true,
+        status: action.starred ? "Starring…" : "Removing star…",
+      };
+    case "star-saved":
+      return {
+        ...state,
+        identity: { ...state.identity, isStarred: action.starred },
+        starBusy: false,
+        status: action.starred
+          ? "Starred. Everyone in this workspace sees the star."
+          : "Star removed.",
+      };
+    case "star-failed":
+      // Only one change runs at a time, so the star before it is the
+      // opposite of the one shown.
+      return {
+        ...state,
+        identity: { ...state.identity, isStarred: !state.identity.isStarred },
+        starBusy: false,
+        status: action.detail,
       };
   }
 }

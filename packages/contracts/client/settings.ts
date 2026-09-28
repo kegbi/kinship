@@ -72,6 +72,8 @@ export function getMemberUiState(
 
 export function saveMemberUiState(
   input: {
+    /** Marks every notification up to this instant read (GAP-053). */
+    readonly notificationsReadThrough?: string;
     readonly personWorkspaceView?: PersonWorkspaceView;
     readonly theme?: "system" | "light" | "dark";
   },

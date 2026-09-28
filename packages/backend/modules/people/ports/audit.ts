@@ -111,6 +111,17 @@ export interface PersonAvatarAudit {
   }): Promise<string>;
 }
 
+/** A person was starred or unstarred for the workspace (GAP-053). */
+export interface PersonStarAudit {
+  record(command: {
+    readonly action: "starred" | "unstarred";
+    readonly actor: PeopleActor;
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: PeopleTransaction;
+  }): Promise<string>;
+}
+
 /**
  * Two people became one (GAP-049): the primary kept, the duplicate deleted,
  * and every reference that moved counted by table.

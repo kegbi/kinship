@@ -2040,13 +2040,51 @@ require a synchronized schema v8 and are called out explicitly.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
       unit, integration, coverage (calendar-feed 98.1/100/99.5), and build.
 
-- [ ] **GAP-053 — Notifications centre, favorites, directory tag cloud and
+- [x] **GAP-053 — Notifications centre, favorites, directory tag cloud and
       sort.** M-L. Depends: 028, 039. Flows `TODAY-002`, `PEOPLE-010`.
   - Scope: in-app notification feed backed by audit/reminder events with read
     state (schema v8 if a table is needed); starred people (`isStarred` exists
     in the profile read model; verify write path); directory tag facet and sort
     options.
   - Verify: unit, integration, E2E.
+  - Delivered 2026-09-28: flows `TODAY-002` and `PEOPLE-010`, with no schema
+    change.
+    - Notifications:
+      - A new `notifications` read model covers governance, people, planning,
+        and workspaces. It feeds a header bell with the member's delivered
+        in-app reminders, their finished exports and imports while they are
+        owner or admin, the accepted invitations they sent, and their
+        undeliverable email reminders.
+      - Every source is scoped to the member and the workspace, newest first, 50
+        per page. The unread count stops at 99+.
+      - Read state is the product owner's per-member `notificationsReadThrough`
+        watermark in `member_preferences.ui_state`. It is written through the
+        existing ui-state use case and only moves forward.
+      - The bell is one island on a Base UI popover. It refreshes every 60 s
+        while the page is visible. The pinned APR-007 header tab order gained
+        its one new stop.
+    - Favourites:
+      - `PUT` and `DELETE /people/{personId}/star` go through a people use case:
+        `people.write`, archived people read-only, audited, idempotent, and
+        leaving `updated_at` untouched. The star is shared by the workspace.
+      - The hero, the directory rows, a starred filter, a starred-first toggle,
+        and Quick capture's ordering use it.
+    - Directory:
+      - A tag facet lists per-tag counts for the current view, with the top 30.
+      - New sorts are `last-contacted` and `recently-updated`, on version-2
+        keyset cursors.
+      - The query picks the page on its sort keys first. `last-contacted`
+        aggregates calls, threads, and messages once per workspace inside the
+        read-model adapters. Person-profile keeps its own copy of the rule, and
+        an agreement test keeps the two equal.
+      - At the large boundary of 10,000 people and 250,000 history records,
+        every sort pages at a p50 of 97 ms or less.
+    - Evidence: the notifications, favourites, and directory capacity
+      integration suites; `notifications.TODAY-002` and `favorites.PEOPLE-010`
+      with TODAY-001, PEOPLE-002, PEOPLE-003, and PEOPLE-009 on Chromium and
+      WebKit. Review took three rounds; the product owner allowed the third.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, coverage, and build.
 
 - [ ] **GAP-054 — AI assistance: DG-08 contract and first slice.** L. Depends:
       039, 015. Flow `ASSIST-001`.

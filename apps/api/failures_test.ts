@@ -71,6 +71,7 @@ import {
   PEOPLE_PROBLEMS,
   PERSON_LIFECYCLE_FAILURES,
   PROFILE_FACT_FAILURES,
+  STAR_FAILURES,
 } from "../../packages/backend/modules/people/transport/http/routes.ts";
 import {
   PERSONAL_LIFECYCLE_FAILURES,
@@ -109,6 +110,7 @@ import {
   REMINDER_FAILURES,
   TASK_FAILURES,
 } from "../../packages/backend/modules/planning/transport/http/routes.ts";
+import { NOTIFICATIONS_PROBLEMS } from "../../packages/backend/modules/planning/transport/http/notifications.ts";
 import {
   failureDefinitions,
   type FailureTable,
@@ -220,6 +222,18 @@ Deno.test("[GAP-019] the reminder failure table is what planning.ts answered", (
       "(fallback) | 400 | reminder_validation_failed | Invalid reminder | Review the calendar reminder fields.",
     ].join("\n"),
     "reminder problems",
+  );
+});
+
+Deno.test("[GAP-053] the problems the notification feed answers are pinned", () => {
+  assertEquals(
+    listed(NOTIFICATIONS_PROBLEMS),
+    [
+      "403 | notifications_forbidden | Notifications unavailable | Your active workspace membership no longer permits this view.",
+      "400 | notifications_query_invalid | Invalid notifications page | Start again from the newest notifications.",
+      "503 | notifications_unavailable | Notifications unavailable | Notifications are temporarily unavailable.",
+    ].join("\n"),
+    "NOTIFICATIONS_PROBLEMS",
   );
 });
 
@@ -674,6 +688,9 @@ Deno.test("[GAP-020] the refusals people.ts answers are unchanged", () => {
       "403 | search_forbidden | Search unavailable | Your active workspace membership no longer permits this search.",
       "400 | search_query_invalid | Invalid search | Search for one to two hundred characters, ten results at most.",
       "503 | search_unavailable | Search unavailable | Search is temporarily unavailable.",
+      "403 | people_forbidden | Tag counts unavailable | Your active workspace membership no longer permits this view.",
+      "400 | tag_facet_query_invalid | Invalid tag facet query | Ask for the active or the archived people's tags.",
+      "503 | tag_facet_unavailable | Tag counts unavailable | Tag counts are temporarily unavailable.",
       "400 | tag_options_cursor_invalid | Invalid tag options cursor | Start a new tag search before continuing.",
       "403 | people_forbidden | Tag options unavailable | Your active workspace membership no longer permits this view.",
       "400 | tag_options_query_invalid | Invalid tag options query | Review the tag search and pagination criteria.",
@@ -957,6 +974,19 @@ Deno.test("[GAP-045] the refusals avatar.ts answers are pinned", () => {
       "(fallback) | 503 | avatar_unavailable | Avatar unavailable | The avatar could not be changed right now.",
     ].join("\n"),
     "AVATAR_FAILURES",
+  );
+});
+
+Deno.test("[GAP-053] the refusals star.ts answers are pinned", () => {
+  assertEquals(
+    pinned(STAR_FAILURES),
+    [
+      "archived-write-rejected | 409 | archived_write_rejected | Archived person is read-only | Restore this person before starring or unstarring them.",
+      "forbidden | 403 | people_forbidden | Star unavailable | Your active workspace membership no longer permits this change.",
+      "not-found | 404 | person_not_found | Person not found | No person with this identifier exists in the current workspace.",
+      "(fallback) | 503 | person_star_unavailable | Star unavailable | The star could not be changed right now.",
+    ].join("\n"),
+    "STAR_FAILURES",
   );
 });
 

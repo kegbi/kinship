@@ -161,6 +161,8 @@ import type {
 } from "../../packages/backend/read-models/people-directory/public.ts";
 import { composePersonProfile } from "../../packages/backend/read-models/person-profile/composition.ts";
 import type { PersonProfile } from "../../packages/backend/read-models/person-profile/public.ts";
+import { composeNotifications } from "../../packages/backend/read-models/notifications/composition.ts";
+import type { Notifications } from "../../packages/backend/read-models/notifications/public.ts";
 import { composeSearch } from "../../packages/backend/read-models/search/composition.ts";
 import type { WorkspaceSearch } from "../../packages/backend/read-models/search/public.ts";
 import { composeToday } from "../../packages/backend/read-models/today/composition.ts";
@@ -260,6 +262,7 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly exports?: ExportManagement;
   readonly legal?: LegalAcceptance;
   readonly memberUiState?: MemberUiStateManagement;
+  readonly notifications?: Notifications;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
   readonly interactions?: InteractionManagement & CommunicationManagement;
@@ -278,6 +281,8 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly relationships?: RelationshipManagement;
   readonly reminders?: ReminderManagement;
   readonly search?: WorkspaceSearch;
+  readonly stars?: PeopleHttpServices["stars"];
+  readonly tagFacet?: PeopleHttpServices["tagFacet"];
   readonly tagOptions?: PeopleTagOptions;
   readonly tasks?: TaskManagement;
   readonly dav?: DavSyncManagement;
@@ -585,6 +590,8 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
             ? { recentPeople: services.recentPeople }
             : {}),
           ...(services.search ? { search: services.search } : {}),
+          ...(services.stars ? { stars: services.stars } : {}),
+          ...(services.tagFacet ? { tagFacet: services.tagFacet } : {}),
           tagOptions: services.tagOptions,
           ...(services.todayRecentPeople
             ? { todayRecentPeople: services.todayRecentPeople }
@@ -637,6 +644,9 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         "/",
         createPlanningRoutes({
           browserSecurity: services.browserSecurity,
+          ...(services.notifications
+            ? { notifications: services.notifications }
+            : {}),
           protectedSessions: services.protectedSessions,
           ...(services.reminders ? { reminders: services.reminders } : {}),
           tasks: services.tasks,
@@ -1053,6 +1063,7 @@ export function createConfiguredApiApp(
     ...(logger ? { logger } : {}),
     merge: people.merge,
     memberUiState: workspaces.memberUiState,
+    notifications: composeNotifications(shared),
     passwordRecovery: identity.passwordRecovery,
     people: { ...people.people, ...people.lifecycle },
     personalization,
@@ -1068,7 +1079,9 @@ export function createConfiguredApiApp(
     retryVerificationDelivery: workspaces.retryVerificationDelivery,
     search: composeSearch(shared),
     settings: workspaces.settings,
+    stars: people.stars,
     storageSettings: files.storageSettings,
+    tagFacet: directory.tagFacet,
     tagOptions: directory.tagOptions,
     tasks: planning.tasks,
     today: today.interactions,

@@ -30,6 +30,7 @@ import {
   type PersonLifecycle,
   type PersonLifecycleRecord,
   type PersonMerge,
+  type PersonStarManagement,
   type ProfileFactManagement,
 } from "../../public.ts";
 import type { PersonProfile } from "../../../../read-models/person-profile/public.ts";
@@ -38,6 +39,7 @@ import type { WorkspaceSearch } from "../../../../read-models/search/public.ts";
 import type {
   PeopleDirectory,
   PeopleDuplicates,
+  PeopleTagFacet,
   PeopleTagOptions,
 } from "../../../../read-models/people-directory/public.ts";
 import type {
@@ -79,6 +81,10 @@ export interface PeopleHttpServices {
   readonly recentPeople?: RecentPeopleManagement;
   /** Workspace search (GAP-048); without it the search route answers 503. */
   readonly search?: WorkspaceSearch;
+  /** A person's workspace star (GAP-053); without it the star answers 503. */
+  readonly stars?: Pick<PersonStarManagement, "set">;
+  /** The directory's tag facet (GAP-053); without it, 503. */
+  readonly tagFacet?: PeopleTagFacet;
   readonly tagOptions: PeopleTagOptions;
   readonly todayRecentPeople?: TodayRecentPeople;
 }

@@ -54,6 +54,31 @@ sharedSurfaces:
     ]
     groups: [people, notes, activities, journal-posts, tasks]
 
+  # GAP-053 (`TODAY-002`): the header notification bell. `loading` is the
+  # disabled bell while the session and the first page resolve; `read` shows
+  # no badge and `unread` a badge of 1 to 99, or 99+, that the button's
+  # accessible name also says. The panel shows `empty` with no notifications,
+  # `ready` the newest fifty with unread ones emphasized, `marking` while
+  # Mark all read saves the member's read-through watermark, `marked` once it
+  # did, and `error` a list it could not read, with Try again. The bell is
+  # `hidden` when the session is gone. It is refreshed on every page and once
+  # a minute; each notification opens a cataloged page.
+  - id: shell.notifications
+    owner: planning
+    readModel: notifications
+    flowIds: [TODAY-002]
+    states: [
+      loading,
+      read,
+      unread,
+      empty,
+      ready,
+      marking,
+      marked,
+      error,
+      hidden,
+    ]
+
 pages:
   - id: public.home
     path: /
@@ -138,7 +163,12 @@ pages:
     rendering: static-shell-islands
     owner: web
     readModel: today
-    flowIds: [TODAY-001, PLANNING-001, PLANNING-002, INTERACTION-001]
+    flowIds:
+      - TODAY-001
+      - TODAY-002
+      - PLANNING-001
+      - PLANNING-002
+      - INTERACTION-001
     sections:
       - attention-queue
       - people-due-for-contact
@@ -158,11 +188,14 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002, PEOPLE-007, PEOPLE-008, PEOPLE-009]
+    flowIds: [PEOPLE-002, PEOPLE-007, PEOPLE-008, PEOPLE-009, PEOPLE-010]
     sections:
       - search
       - saved-filters
       - tags
+      - tag-facet
+      - starred
+      - sort
       - active-people
       - duplicates
       - selection
@@ -206,15 +239,45 @@ pages:
         - running
         - reported
         - refused
+      # GAP-053 (PEOPLE-010): the view's most carried tags as chips with
+      # their person counts, at most 30. `truncated` adds More tags…, which
+      # moves to the tag options search; `selected` is the chip the list is
+      # filtered by, pressed, and choosing it again clears the filter.
+      tag-facet:
+        - loading
+        - ready
+        - empty
+        - unavailable
+        - truncated
+        - selected
+      # Starred only lists starred people; Starred first lists them ahead of
+      # everybody else, each group in the chosen order. Starred rows carry a
+      # star mark. Both travel in the address.
+      starred:
+        - all
+        - starred-only
+        - starred-first
+      # Given name, family name, recently added, last contacted (newest call
+      # or conversation first, never-contacted people last), and recently
+      # updated. A cursor made for another order or filter restarts the list.
+      sort:
+        - given-name
+        - family-name
+        - recently-added
+        - last-contacted
+        - recently-updated
 
   - id: people.archived
     path: /app/people/archived
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002, PEOPLE-004, PEOPLE-009]
+    flowIds: [PEOPLE-002, PEOPLE-004, PEOPLE-009, PEOPLE-010]
     sections:
       - archived-people
+      - tag-facet
+      - starred
+      - sort
       - selection
       - bulk-actions
     # GAP-051: the same selection and bulk bar as `people.index`, with Restore
@@ -261,6 +324,8 @@ pages:
       - FILES-001
       - GIFTS-001
       - JOURNAL-002
+      - PEOPLE-010
+      - TODAY-002
     sections:
       - identity-summary
       - important-dates
@@ -317,6 +382,15 @@ pages:
         - validation-error
         - stale
         - read-only
+        # GAP-053 (PEOPLE-010): the hero's Star toggle. `starred` and
+        # `unstarred` are its pressed states, shared by the whole workspace;
+        # `star-saving` shows the new state at once and holds the toggle, and
+        # `star-failed` puts the star back with the refusal's words. An
+        # archived person's star is `read-only`.
+        - starred
+        - unstarred
+        - star-saving
+        - star-failed
       # GAP-047: each section the workspace can turn off has `hidden`. Its
       # card and navigation link are absent, and a `?section=` deep link to it
       # lands on the workspace with the quiet "This section is hidden in this
@@ -484,7 +558,7 @@ pages:
     access: workspace-admin
     rendering: static-shell-islands
     owner: workspaces
-    flowIds: [AUTH-002, WORKSPACE-001]
+    flowIds: [AUTH-002, WORKSPACE-001, TODAY-002]
     sections:
       - active-members
       - pending-invitations
@@ -600,7 +674,7 @@ pages:
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [IMPORT-001, IMPORT-002]
+    flowIds: [IMPORT-001, IMPORT-002, TODAY-002]
     sections:
       - progress
       - summary
@@ -613,7 +687,7 @@ pages:
     access: data-admin
     rendering: static-shell-islands
     owner: import-export
-    flowIds: [EXPORT-001, EXPORT-002]
+    flowIds: [EXPORT-001, EXPORT-002, TODAY-002]
     sections:
       - format-choice
       - create-export

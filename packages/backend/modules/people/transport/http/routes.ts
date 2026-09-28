@@ -9,8 +9,8 @@
  * avatar they are drawn with (GAP-045) joined as the seventh, and the
  * workspace search that grew out of the directory (GAP-048) as the eighth, and
  * duplicate review and merge (GAP-049) as the ninth, mounted before the page
- * so `duplicates` stays a literal, and bulk directory actions (GAP-051) as the
- * tenth. What
+ * so `duplicates` stays a literal, bulk directory actions (GAP-051) as the
+ * tenth, and the workspace star (GAP-053) as the eleventh. What
  * more than one concern needs lives in `people/shared.ts`.
  *
  * The mounted order is the registration order, and it is contract: Hono
@@ -40,6 +40,9 @@ import {
   PERSON_VIEW_UNRESOLVED,
   RECENT_PEOPLE_FORBIDDEN,
   RECENT_PEOPLE_UNAVAILABLE,
+  TAG_FACET_FORBIDDEN,
+  TAG_FACET_QUERY_INVALID,
+  TAG_FACET_UNAVAILABLE,
   TAG_OPTIONS_CURSOR_INVALID,
   TAG_OPTIONS_FORBIDDEN,
   TAG_OPTIONS_QUERY_INVALID,
@@ -103,6 +106,7 @@ import {
   PERSON_NOT_DELETED,
 } from "./lifecycle.ts";
 import { createAvatarRoutes } from "./avatar.ts";
+import { createStarRoutes } from "./star.ts";
 import {
   createBulkRoutes,
   PEOPLE_BULK_FORBIDDEN,
@@ -134,6 +138,7 @@ import {
 export type { PeopleHttpServices } from "./shared.ts";
 export { PERSON_LIFECYCLE_FAILURES } from "./shared.ts";
 export { AVATAR_FAILURES } from "./avatar.ts";
+export { STAR_FAILURES } from "./star.ts";
 export { MERGE_FAILURES } from "./merge.ts";
 export { IMPORTANT_DATE_FAILURES } from "./dates.ts";
 export { PROFILE_FACT_FAILURES } from "./facts.ts";
@@ -201,6 +206,9 @@ export const PEOPLE_PROBLEMS: readonly ProblemDefinition[] = [
   SEARCH_FORBIDDEN,
   SEARCH_QUERY_INVALID,
   SEARCH_UNAVAILABLE,
+  TAG_FACET_FORBIDDEN,
+  TAG_FACET_QUERY_INVALID,
+  TAG_FACET_UNAVAILABLE,
   TAG_OPTIONS_CURSOR_INVALID,
   TAG_OPTIONS_FORBIDDEN,
   TAG_OPTIONS_QUERY_INVALID,
@@ -227,6 +235,7 @@ export function createPeopleRoutes(
   routes.route("/", createIdentityRoutes(services));
   routes.route("/", createLifecycleRoutes(services));
   routes.route("/", createAvatarRoutes(services));
+  routes.route("/", createStarRoutes(services));
   routes.route("/", createSearchRoutes(services));
   return routes;
 }

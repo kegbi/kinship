@@ -14,6 +14,10 @@
  * one choice at a time and is inert while its request runs; its report
  * outlives the refresh that follows, so a member reads what happened after
  * the list has moved on.
+ *
+ * GAP-053 (PEOPLE-010) adds the starred filter, starred-first, the last
+ * contacted and recently updated orders, and the tag facet: the view's most
+ * carried tags with their person counts, read beside the tag options.
  */
 
 import type {
@@ -23,6 +27,8 @@ import type {
   PeopleDirectoryPerson,
   PeopleDirectorySort,
   PeopleDirectoryTag,
+  PeopleTagFacet,
+  PeopleTagFacetEntry,
   PeopleTagOptionsPage,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
@@ -39,13 +45,31 @@ const CAP_NOTICE = "You can select up to 100 people at a time.";
 
 export function isSort(value: string | null): value is PeopleDirectorySort {
   return value === "given-name" || value === "family-name" ||
-    value === "recently-added";
+    value === "recently-added" || value === "last-contacted" ||
+    value === "recently-updated";
+}
+
+/** The starred filter and starred-first, as the reader chose them. */
+export interface StarredCriteria {
+  readonly starred: boolean;
+  readonly starredFirst: boolean;
+}
+
+/** The starred choices an address names (`?starred=1&starredFirst=1`). */
+export function starredCriteria(search: string): StarredCriteria {
+  const query = new URLSearchParams(search);
+  return {
+    starred: query.get("starred") === "1",
+    starredFirst: query.get("starredFirst") === "1",
+  };
 }
 
 /** What the reader asked the directory for. */
 export interface DirectoryQuery {
   readonly search: string;
   readonly sort: PeopleDirectorySort;
+  readonly starred?: boolean;
+  readonly starredFirst?: boolean;
   readonly tagId: string;
 }
 
@@ -62,6 +86,8 @@ export function directoryInput(
     limit: PAGE_SIZE,
     ...(search ? { search } : {}),
     sort: query.sort,
+    ...(query.starred ? { starred: true } : {}),
+    ...(query.starredFirst ? { starredFirst: true } : {}),
     ...(query.tagId ? { tagId: query.tagId } : {}),
   };
 }
@@ -81,6 +107,8 @@ export function directoryLocation(
   const search = query.search.trim();
   if (search) next.set("search", search);
   if (query.tagId) next.set("tag", query.tagId);
+  if (query.starred) next.set("starred", "1");
+  if (query.starredFirst) next.set("starredFirst", "1");
   if (
     query.sort !== defaultSort ||
     isSort(new URLSearchParams(current).get("sort"))
@@ -95,6 +123,13 @@ export function personDetails(person: PeopleDirectoryPerson): string {
     person.isPartial ? "Partial identity" : "",
     person.lifecycle === "archived" ? "Archived · read-only" : "",
   ].filter(Boolean).join(" · ") || "Open person workspace";
+}
+
+/** A facet chip's accessible name: the tag and how many people carry it. */
+export function facetLabel(entry: PeopleTagFacetEntry): string {
+  return `${entry.name}, ${entry.count} ${
+    entry.count === 1 ? "person" : "people"
+  }`;
 }
 
 export function personName(
@@ -265,11 +300,24 @@ export interface DirectoryState {
   readonly sort: PeopleDirectorySort;
   readonly defaultSort: PeopleDirectorySort;
   readonly tag: TagPickerState;
+  /** Only starred people are listed (GAP-053). */
+  readonly starred: boolean;
+  /** Starred people are listed first. */
+  readonly starredFirst: boolean;
+  /** The view's most carried tags, with their person counts. */
+  readonly facet: FacetState;
   /** The people chosen for a bulk action, in the order they were chosen. */
   readonly selection: readonly string[];
   /** Why the last choice was not added, when the cap refused it. */
   readonly selectionNotice: string;
   readonly bulk: BulkState;
+}
+
+export interface FacetState {
+  readonly status: "loading" | "ready" | "unavailable";
+  readonly tags: readonly PeopleTagFacetEntry[];
+  /** More tags are in use than the facet shows. */
+  readonly truncated: boolean;
 }
 
 export interface TagPickerState {
@@ -301,7 +349,16 @@ export type DirectoryAction =
   | { readonly type: "failed"; readonly forbidden: boolean }
   | { readonly type: "announce"; readonly announcement: string }
   | { readonly type: "sort"; readonly sort: PeopleDirectorySort }
-  | { readonly type: "tag"; readonly selected: string }
+  | { readonly type: "starred"; readonly starred: boolean }
+  | { readonly type: "starred-first"; readonly starredFirst: boolean }
+  | {
+    readonly type: "tag";
+    readonly selected: string;
+    /** The tag's name, when it was chosen from the facet. */
+    readonly name?: string;
+  }
+  | { readonly type: "facet-loaded"; readonly facet: PeopleTagFacet }
+  | { readonly type: "facet-failed" }
   | { readonly type: "tags-loading"; readonly append: boolean }
   | {
     readonly type: "tags-loaded";
@@ -325,12 +382,16 @@ export type DirectoryAction =
   }
   | { readonly type: "bulk-dismiss" };
 
-export function initialDirectory(selectedTag: string): DirectoryState {
+export function initialDirectory(
+  selectedTag: string,
+  criteria: StarredCriteria = { starred: false, starredFirst: false },
+): DirectoryState {
   return {
     announcement: "",
     appending: false,
     bulk: { report: undefined, running: undefined, sequence: 0, step: "idle" },
     defaultSort: "given-name",
+    facet: { status: "loading", tags: [], truncated: false },
     filtered: false,
     forbidden: false,
     loading: false,
@@ -340,6 +401,8 @@ export function initialDirectory(selectedTag: string): DirectoryState {
     selection: [],
     selectionNotice: "",
     sort: "given-name",
+    starred: criteria.starred,
+    starredFirst: criteria.starredFirst,
     status: "context",
     tag: {
       cursor: undefined,
@@ -492,10 +555,42 @@ export function directoryReducer(
       return { ...state, announcement: action.announcement };
     case "sort":
       return { ...unselected(state), sort: action.sort };
-    case "tag":
+    case "starred":
+      return { ...unselected(state), starred: action.starred };
+    case "starred-first":
+      return { ...unselected(state), starredFirst: action.starredFirst };
+    case "tag": {
+      // A facet chip can name a tag the picker has not paged to yet; it is
+      // added so the picker shows the tag the list is filtered by.
+      const missing = action.name !== undefined && action.selected !== "" &&
+        !state.tag.options.some((option) => option.id === action.selected);
       return {
         ...unselected(state),
-        tag: { ...state.tag, selected: action.selected },
+        tag: {
+          ...state.tag,
+          options: missing
+            ? [...state.tag.options, {
+              id: action.selected,
+              name: action.name!,
+            }]
+            : state.tag.options,
+          selected: action.selected,
+        },
+      };
+    }
+    case "facet-loaded":
+      return {
+        ...state,
+        facet: {
+          status: "ready",
+          tags: action.facet.tags,
+          truncated: action.facet.truncated,
+        },
+      };
+    case "facet-failed":
+      return {
+        ...state,
+        facet: { status: "unavailable", tags: [], truncated: false },
       };
     case "tags-loading":
       return {

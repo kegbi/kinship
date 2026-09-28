@@ -1,9 +1,10 @@
 /**
  * The people directory, its tag filter, and the recently viewed list.
  *
- * The four routes a person meets before they open anybody: the bounded list,
- * the tag options that filter it, the view that records who was opened, and
- * the recent-people strip that reads those views back.
+ * The routes a person meets before they open anybody: the bounded list, the
+ * tag options that filter it, the tag facet that counts people per tag
+ * (GAP-053), the view that records who was opened, and the recent-people
+ * strip that reads those views back.
  *
  * The directory is the one route in the whole surface that accepts an API
  * token as well as a session cookie, which is what `tokenOrSessionActor` is
@@ -21,6 +22,8 @@ import {
   getTodayRecentPeople,
   listPeople,
   listPeopleQuery,
+  listPeopleTagFacet,
+  listPeopleTagFacetQuery,
   listPeopleTagOptions,
   listPeopleTagOptionsQuery,
   recordPersonView,
@@ -55,6 +58,7 @@ export type PeopleDirectoryHttpServices = Pick<
   | "profile"
   | "protectedSessions"
   | "recentPeople"
+  | "tagFacet"
   | "tagOptions"
   | "todayRecentPeople"
 >;
@@ -109,6 +113,24 @@ export const TAG_OPTIONS_CURSOR_INVALID: ProblemDefinition = {
   detail: "Start a new tag search before continuing.",
   status: 400,
   title: "Invalid tag options cursor",
+};
+export const TAG_FACET_QUERY_INVALID: ProblemDefinition = {
+  code: "tag_facet_query_invalid",
+  detail: "Ask for the active or the archived people's tags.",
+  status: 400,
+  title: "Invalid tag facet query",
+};
+export const TAG_FACET_FORBIDDEN: ProblemDefinition = {
+  code: "people_forbidden",
+  detail: "Your active workspace membership no longer permits this view.",
+  status: 403,
+  title: "Tag counts unavailable",
+};
+export const TAG_FACET_UNAVAILABLE: ProblemDefinition = {
+  code: "tag_facet_unavailable",
+  detail: "Tag counts are temporarily unavailable.",
+  status: 503,
+  title: "Tag counts unavailable",
 };
 export const PERSON_VIEW_INVALID: ProblemDefinition = {
   code: "person_view_invalid",
@@ -177,6 +199,8 @@ export function createDirectoryRoutes(
         ? { selectedPersonId: parsed.data.selectedPersonId }
         : {}),
       sort: parsed.data.sort,
+      starred: parsed.data.starred === "true",
+      starredFirst: parsed.data.starredFirst === "true",
       ...(parsed.data.tag ? { tagId: parsed.data.tag } : {}),
     }).catch(() => undefined);
     if (!result) return definedProblem(context, PEOPLE_UNAVAILABLE);
@@ -224,6 +248,26 @@ export function createDirectoryRoutes(
       ...(result.selected ? { selected: result.selected } : {}),
       status: "ready",
     });
+  });
+
+  // The tag facet (GAP-053): a literal path, so it is registered, like the
+  // tag options, before any route that reads one person.
+  mount(routes, listPeopleTagFacet, session, async (context) => {
+    const parsed = parseQuery(context, listPeopleTagFacetQuery);
+    if ("errors" in parsed) {
+      return definedProblem(context, TAG_FACET_QUERY_INVALID);
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.tagFacet?.list(actor, {
+      lifecycle: parsed.data.lifecycle,
+    }).catch(() => undefined);
+    if (!result) return definedProblem(context, TAG_FACET_UNAVAILABLE);
+    if (result.status === "forbidden") {
+      return definedProblem(context, TAG_FACET_FORBIDDEN);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
   });
 
   mount(

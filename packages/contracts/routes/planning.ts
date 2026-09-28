@@ -17,6 +17,7 @@ import {
 import {
   cadenceCreated,
   cadenceCreateInput,
+  notificationsPage,
   personReminders,
   reminderActiveInput,
   reminderCreated,
@@ -310,6 +311,33 @@ export const getTodayTasks = defineRoute({
   },
 });
 
+/** What `listNotifications` accepts in the query string. */
+export const listNotificationsQuery = z.strictObject({
+  cursor: z.string().max(500).optional(),
+});
+
+export const listNotifications = defineRoute({
+  method: "get",
+  path: "/api/v1/notifications",
+  operationId: "listNotifications",
+  description:
+    "The signed-in member's notifications in the active workspace, newest first, fifty at a time, with the unread count after their read-through watermark. Marking read saves `notificationsReadThrough` through `PATCH /api/v1/member/ui-state`.",
+  security: [{ kinship_session: [] }],
+  request: {
+    query: listNotificationsQuery,
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "One page of the member's notifications",
+      content: {
+        "application/json": notificationsPage,
+      },
+    },
+    ...problemResponses(400, 401, 403, 503),
+  },
+});
+
 /** Every planning route, in the order the surface mounts them. */
 export const PLANNING_ROUTES: readonly RouteDescriptor[] = [
   listPersonReminders,
@@ -323,4 +351,5 @@ export const PLANNING_ROUTES: readonly RouteDescriptor[] = [
   getTodayAttention,
   getTodayReminders,
   getTodayTasks,
+  listNotifications,
 ];

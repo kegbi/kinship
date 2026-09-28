@@ -298,6 +298,60 @@ flows:
       ],
     }
 
+  - id: TODAY-002
+    title: See and clear notifications
+    deliveryStatus: delivered
+    priority: P1
+    actor: active-member
+    trigger: The member opens the notification bell in the application header on any protected page.
+    preconditions: [active-membership]
+    steps:
+      - See the bell's unread badge, refreshed on every page and once a minute, and its accessible name with the unread count (99+ above 99).
+      - Open the panel to read their own notifications, newest first - delivered in-app reminders, email reminders that could not be delivered, their finished exports and imports, and accepted invitations they sent - with unread ones emphasized.
+      - Follow a notification to where it happened, such as a reminder's person workspace reminders section.
+      - Choose Mark all read, which saves the newest shown notification's time as the member's read-through watermark, and see the badge clear.
+    alternateOutcomes: [
+      empty,
+      unread-badge,
+      unread-count-bounded-at-99-plus,
+      mark-all-read,
+      # Read state is one read-through watermark per member in their
+      # interface state, not a flag per notification; it only moves forward,
+      # so an older tab never marks newer notifications unread again.
+      stale-watermark-never-moves-back,
+      # The watermark compares each item's own time, not when it was
+      # committed: an item timed just before a watermark but committed after
+      # it was saved arrives already read.
+      item-committed-after-watermark-arrives-read,
+      reminder-notification-links-to-person,
+      export-ready,
+      import-finished,
+      invitation-accepted,
+      email-reminder-undeliverable,
+      # A member never sees another member's reminders, data jobs, or
+      # invitations, nor anything from another workspace; finished data jobs
+      # show only while the member still holds a role that may run them.
+      another-members-items-never-shown,
+      cross-workspace-items-never-shown,
+      notifications-unavailable-retry,
+    ]
+    result: The member knows what happened for them since they last looked and can clear it in one action, without a Today card or a per-item read flag.
+    auditEffect: none
+    pageIds: [
+      app.today,
+      people.profile,
+      settings.export,
+      settings.import-report,
+      settings.members,
+    ]
+    moduleIds: [planning, governance, workspaces, people]
+    permissions: [workspace.read, member.self.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/notifications.TODAY-002.spec.ts],
+    }
+
   - id: PEOPLE-001
     title: Create a person
     deliveryStatus: delivered
@@ -655,6 +709,43 @@ flows:
     e2e: {
       required: true,
       testRefs: [tests/e2e/people-bulk.PEOPLE-009.spec.ts],
+    }
+
+  - id: PEOPLE-010
+    title: Star people and browse the directory by tag and sort
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member stars a person from their workspace, or browses the people directory.
+    preconditions: [active-membership]
+    steps:
+      - Star or unstar a person from the person workspace hero; the star is shared by the whole workspace, not kept per member.
+      - See starred people marked in the directory, list only starred people, or list them first.
+      - See the view's most carried tags with their person counts and choose one to filter by it.
+      - Order the directory by given name, family name, recently added, last contacted, or recently updated, and page through it.
+    alternateOutcomes: [
+      star-and-unstar,
+      star-is-workspace-shared,
+      # An archived person is read-only: their star can be neither set nor
+      # removed until they are restored, and the star they had is kept.
+      archived-star-read-only,
+      starred-filter,
+      starred-first,
+      tag-facet-counts,
+      tag-facet-bounded-with-more,
+      each-sort-order,
+      stale-cursor-restarts-list,
+      cross-workspace-person-refused,
+    ]
+    result: The member finds the people who matter most and browses the directory by the tags and orders they think in.
+    auditEffect: person-starred-or-unstarred
+    pageIds: [people.profile, people.index, people.archived]
+    moduleIds: [people, interactions, workspaces, governance]
+    permissions: [people.read, people.write]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/favorites.PEOPLE-010.spec.ts],
     }
 
   - id: RELATIONSHIP-001

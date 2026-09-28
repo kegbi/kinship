@@ -1,0 +1,350 @@
+// @vitest-environment happy-dom
+
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it } from "vitest";
+import { expectNoAxeViolations } from "../../../testing/a11y.ts";
+import {
+  deferred,
+  jsonResponse,
+  problemResponse,
+  stubApi,
+} from "../../../testing/api.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
+import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
+import { mountNotificationBell } from "./notification-bell.tsx";
+
+const SESSION = "GET /api/v1/session";
+const FEED = "GET /api/v1/notifications";
+const UI_STATE = "PATCH /api/v1/member/ui-state";
+const personId = ids.person;
+
+afterEach(() => {
+  sessionStorage.clear();
+});
+
+const item = (index: number, unread: boolean) => ({
+  href: `/app/people/${personId}?section=reminders`,
+  id: `00000000-0000-4000-8000-00000000000${index}`,
+  kind: "reminder",
+  occurredAt: `2026-09-28T1${index}:00:00.000Z`,
+  person: { archived: false, id: personId, name: "Ada Lovelace" },
+  title: `Call Ada ${index}`,
+  unread,
+});
+
+const feed = (items: readonly unknown[], unreadCount: number) =>
+  jsonResponse({ items, status: "ready", unreadCount });
+
+/** The header slot as ApplicationLayout.astro draws it. */
+function markup(): void {
+  drawShell(`
+    <header>
+      <div class="notification-bell" data-notification-bell>
+        <button type="button" aria-label="Notifications" disabled>Notifications</button>
+      </div>
+      <button id="elsewhere" type="button">Elsewhere</button>
+    </header>`);
+}
+
+const mount = (refreshMs?: number) =>
+  mountSettled(() =>
+    Promise.resolve(
+      mountNotificationBell(
+        document,
+        refreshMs === undefined ? {} : { refreshMs },
+      ),
+    )
+  );
+
+const bell = () =>
+  screen.getByRole("button", { name: /^Notifications/ }) as HTMLButtonElement;
+
+describe("TODAY-002 notification bell", () => {
+  it("shows the unread count, opens the list, and marks everything read", async () => {
+    markup();
+    const api = stubApi({
+      [FEED]: [
+        feed([item(2, true), item(1, false)], 1),
+        feed([item(2, true), item(1, false)], 1),
+        feed([item(2, false), item(1, false)], 0),
+      ],
+      [SESSION]: jsonResponse(workspaceSession()),
+      [UI_STATE]: jsonResponse({
+        status: "ready",
+        uiState: { notificationsReadThrough: "2026-09-28T12:00:00.000Z" },
+      }),
+    });
+    await mount();
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe(
+        "Notifications, 1 unread",
+      )
+    );
+    expect(element(".notification-bell-badge").textContent).toBe("1");
+    expect(
+      element("[data-notification-bell]").hasAttribute("data-island-ready"),
+    )
+      .toBe(true);
+    const user = userEvent.setup();
+    await user.click(bell());
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    const list = await within(panel).findByRole("list", {
+      name: "Recent notifications",
+    });
+    const links = within(list).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      `/app/people/${personId}?section=reminders`,
+      `/app/people/${personId}?section=reminders`,
+    ]);
+    expect(links[0]!.textContent).toContain("Unread:");
+    expect(links[0]!.textContent).toContain("Call Ada 2");
+    expect(links[1]!.textContent).not.toContain("Unread:");
+    await expectNoAxeViolations(panel);
+    await user.click(
+      within(panel).getByRole("button", { name: "Mark all read" }),
+    );
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe("Notifications")
+    );
+    expect(document.querySelector(".notification-bell-badge")).toBeNull();
+    expect(within(panel).getByRole("status").textContent).toBe(
+      "All notifications marked read.",
+    );
+    expect(
+      within(panel).getByRole("button", { name: "Mark all read" }),
+    ).toHaveProperty("disabled", true);
+    expect(document.activeElement, "focus leaves the disabled button").toBe(
+      within(panel).getByRole("heading", { name: "Notifications" }),
+    );
+    const saved = api.requests().find((request) => request.method === "PATCH");
+    expect(saved?.body).toEqual({
+      notificationsReadThrough: "2026-09-28T12:00:00.000Z",
+    });
+    expect(saved?.headers.get("X-Workspace-Id")).toBe(ids.workspace);
+    await waitFor(() =>
+      expect(
+        api.requests().filter((request) =>
+          request.url.pathname === "/api/v1/notifications"
+        ),
+        "one authoritative read follows the mark",
+      ).toHaveLength(3)
+    );
+  });
+
+  it("closes on Escape and hands focus back to the bell", async () => {
+    markup();
+    stubApi({
+      [FEED]: feed([], 0),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    await waitFor(() => expect(bell().disabled).toBe(false));
+    const user = userEvent.setup();
+    await user.click(bell());
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    expect(panel.textContent).toContain("No notifications yet.");
+    expect(
+      within(panel).getByRole("button", { name: "Mark all read" }),
+    ).toHaveProperty("disabled", true);
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Notifications" }))
+        .toBeNull()
+    );
+    expect(document.activeElement).toBe(bell());
+  });
+
+  it("bounds the badge at 99+ and says so in the name", async () => {
+    markup();
+    stubApi({
+      [FEED]: feed([item(1, true)], 100),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe(
+        "Notifications, more than 99 unread",
+      )
+    );
+    expect(element(".notification-bell-badge").textContent).toBe("99+");
+  });
+
+  it("offers a retry when the list cannot be read, and keeps a failed mark's count", async () => {
+    markup();
+    stubApi({
+      [FEED]: [
+        problemResponse(503, { code: "notifications_unavailable" }),
+        problemResponse(503, { code: "notifications_unavailable" }),
+        feed([item(1, true)], 1),
+        feed([item(1, true)], 1),
+      ],
+      [SESSION]: jsonResponse(workspaceSession()),
+      [UI_STATE]: problemResponse(503, {
+        code: "member_ui_state_unavailable",
+        detail: "Your member UI state could not be saved.",
+      }),
+    });
+    await mount();
+    await waitFor(() => expect(bell().disabled).toBe(false));
+    const user = userEvent.setup();
+    await user.click(bell());
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    const alert = await within(panel).findByRole("alert");
+    expect(alert.textContent).toContain("Notifications could not be loaded.");
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await within(panel).findByRole("list", { name: "Recent notifications" });
+    await user.click(
+      within(panel).getByRole("button", { name: "Mark all read" }),
+    );
+    await waitFor(() =>
+      expect(within(panel).getByRole("status").textContent).toBe(
+        "Your member UI state could not be saved.",
+      )
+    );
+    expect(bell().getAttribute("aria-label")).toBe("Notifications, 1 unread");
+  });
+
+  it("refreshes the badge on its interval through one slot", async () => {
+    markup();
+    const late = deferred<Response>();
+    const api = stubApi({
+      [FEED]: [late.promise, feed([item(1, true)], 1), feed([], 0)],
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount(40);
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe(
+        "Notifications, 1 unread",
+      )
+    );
+    // The first read answers last and is dropped: the latest read won.
+    await act(async () => {
+      late.resolve(feed([item(1, true), item(2, true)], 2));
+      await Promise.resolve();
+    });
+    expect(bell().getAttribute("aria-label")).toBe("Notifications, 1 unread");
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe("Notifications")
+    );
+    expect(
+      api.requests().filter((request) =>
+        request.url.pathname === "/api/v1/notifications"
+      ).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("stays out of a page whose session is gone", async () => {
+    markup();
+    const api = stubApi({
+      "POST /api/v1/application-entry": problemResponse(409, {
+        code: "entry_handoff_invalid",
+      }),
+      [SESSION]: problemResponse(401, { code: "authentication_required" }),
+    });
+    await mount();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^Notifications/ }))
+        .toBeNull()
+    );
+    expect(api.calls()).not.toContain("GET /api/v1/notifications");
+  });
+});
+
+describe("TODAY-002 notification bell edges", () => {
+  it("skips a refresh while the page is hidden", async () => {
+    markup();
+    const api = stubApi({
+      [FEED]: feed([], 0),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    const visibility = Object.getOwnPropertyDescriptor(
+      Document.prototype,
+      "visibilityState",
+    );
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    try {
+      await mount(20);
+      await waitFor(() => expect(bell().disabled).toBe(false));
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      expect(
+        api.requests().filter((request) =>
+          request.url.pathname === "/api/v1/notifications"
+        ),
+        "only the first read runs while hidden",
+      ).toHaveLength(1);
+    } finally {
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+      if (visibility) {
+        Object.defineProperty(
+          Document.prototype,
+          "visibilityState",
+          visibility,
+        );
+      }
+    }
+  });
+
+  it("keeps the bell waiting when the session is unavailable", async () => {
+    markup();
+    const api = stubApi({
+      [SESSION]: problemResponse(503, { code: "session_unavailable" }),
+    });
+    await mount();
+    await waitFor(() => expect(api.calls()).toContain("GET /api/v1/session"));
+    expect(bell().disabled).toBe(true);
+    expect(api.calls()).not.toContain("GET /api/v1/notifications");
+  });
+
+  it("says so when marking read gets no answer", async () => {
+    markup();
+    stubApi({
+      [FEED]: feed([item(1, true)], 1),
+      [SESSION]: jsonResponse(workspaceSession()),
+      [UI_STATE]: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+    await mount();
+    await waitFor(() => expect(bell().disabled).toBe(false));
+    const user = userEvent.setup();
+    await user.click(bell());
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    await within(panel).findByRole("list", { name: "Recent notifications" });
+    await user.click(
+      within(panel).getByRole("button", { name: "Mark all read" }),
+    );
+    await waitFor(() =>
+      expect(within(panel).getByRole("status").textContent).toBe(
+        "Notifications could not be marked read. Try again.",
+      )
+    );
+  });
+
+  it("mounts nothing where the layout drew no bell", () => {
+    drawShell("<header></header>");
+    const unmount = mountNotificationBell();
+    expect(document.querySelector("[data-island]")).toBeNull();
+    unmount();
+  });
+});
+
+describe("TODAY-002 notification bell before the session", () => {
+  it("does not read on its interval until the session resolves", async () => {
+    markup();
+    const session = deferred<Response>();
+    const api = stubApi({
+      [FEED]: feed([], 0),
+      [SESSION]: session.promise,
+    });
+    await mount(20);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(api.calls()).not.toContain("GET /api/v1/notifications");
+    await act(async () => {
+      session.resolve(jsonResponse(workspaceSession()));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(bell().disabled).toBe(false));
+  });
+});

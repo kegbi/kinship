@@ -127,6 +127,101 @@
   background: var(--ink-1);
 }
 
+/* GAP-053: the notification bell and its unread badge. */
+.notification-bell {
+  display: contents;
+}
+
+.global-actions .notification-bell-button {
+  position: relative;
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.notification-bell-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.notification-bell-badge {
+  min-width: 1.35rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  color: var(--ink-inverse);
+  background: var(--accent);
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.35rem;
+  text-align: center;
+}
+
+/* The panel is portaled to the body, outside the header's rules. */
+.notification-panel-header {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notification-panel-header h2:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.notification-panel-status,
+.notification-panel-state {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .85rem;
+}
+
+.notification-panel-status:empty {
+  display: none;
+}
+
+.notification-panel-state {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.notification-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notification-list a {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink-1);
+  text-decoration: none;
+}
+
+.notification-list a:hover,
+.notification-list a:focus-visible {
+  background: var(--surface-3);
+}
+
+.notification-list li[data-unread] a {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.notification-list li[data-unread] .notification-title {
+  font-weight: 700;
+}
+
+.notification-detail,
+.notification-list time {
+  color: var(--ink-2);
+  font-size: .8rem;
+}
+
 .member-menu {
   position: relative;
 }

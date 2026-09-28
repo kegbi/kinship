@@ -49,6 +49,33 @@
   flex-wrap: wrap;
 }
 
+/* GAP-053: the workspace star beside the name. */
+.person-profile-star {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  align-self: center;
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.person-profile-star[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.person-profile-star:disabled {
+  cursor: default;
+  opacity: .7;
+}
+
 .person-profile-heading h1 {
   margin: 0;
   overflow-wrap: anywhere;

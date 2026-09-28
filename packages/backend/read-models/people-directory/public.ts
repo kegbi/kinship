@@ -32,6 +32,16 @@ export type {
   PeopleTagOptionsRepositoryResult,
 } from "./application/list_tag_options.ts";
 export {
+  createPeopleTagFacet,
+  PEOPLE_TAG_FACET_LIMIT,
+} from "./application/list_tag_facet.ts";
+export type {
+  ListPeopleTagFacetResult,
+  PeopleTagFacet,
+  PeopleTagFacetEntry,
+  PeopleTagFacetRepository,
+} from "./application/list_tag_facet.ts";
+export {
   createPeopleDuplicates,
   PEOPLE_DUPLICATE_GROUP_LIMIT,
   PEOPLE_DUPLICATE_PAIR_LIMIT,

@@ -10,10 +10,12 @@ import {
   emptyCopy,
   errorCopy,
   exportReport,
+  facetLabel,
   initialDirectory,
   isSort,
   personDetails,
   personName,
+  starredCriteria,
 } from "./directory.ts";
 
 const person = (overrides: Partial<PeopleDirectoryPerson> = {}) =>
@@ -534,5 +536,138 @@ describe("PEOPLE-009 bulk reports", () => {
       title: "No vCard was exported.",
       tone: "attention",
     });
+  });
+});
+
+describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
+  it("recognises the two new orders", () => {
+    expect(isSort("last-contacted")).toBe(true);
+    expect(isSort("recently-updated")).toBe(true);
+  });
+
+  it("asks for starred people and starred-first only when chosen", () => {
+    expect(directoryInput("active", {
+      search: "",
+      sort: "last-contacted",
+      starred: true,
+      starredFirst: true,
+      tagId: "",
+    })).toEqual({
+      lifecycle: "active",
+      limit: 20,
+      sort: "last-contacted",
+      starred: true,
+      starredFirst: true,
+    });
+    expect(directoryInput("active", {
+      search: "",
+      sort: "given-name",
+      starred: false,
+      starredFirst: false,
+      tagId: "",
+    })).toEqual({ lifecycle: "active", limit: 20, sort: "given-name" });
+  });
+
+  it("keeps the starred choices in the address", () => {
+    expect(directoryLocation("/app/people", "", {
+      search: "",
+      sort: "recently-updated",
+      starred: true,
+      starredFirst: true,
+      tagId: "t",
+    }, "given-name")).toBe(
+      "/app/people?tag=t&starred=1&starredFirst=1&sort=recently-updated",
+    );
+    expect(starredCriteria("?starred=1&starredFirst=1")).toEqual({
+      starred: true,
+      starredFirst: true,
+    });
+    expect(starredCriteria("?starred=yes")).toEqual({
+      starred: false,
+      starredFirst: false,
+    });
+  });
+
+  it("starts from the address's starred choices and clears a selection on change", () => {
+    const start = initialDirectory("", { starred: true, starredFirst: false });
+    expect(start).toMatchObject({ starred: true, starredFirst: false });
+    const selected = directoryReducer(
+      directoryReducer(start, {
+        append: false,
+        filtered: true,
+        lifecycle: "active",
+        nextCursor: undefined,
+        people: [person()],
+        type: "loaded",
+      }),
+      { personId: "p", selected: true, type: "select" },
+    );
+    expect(selected.selection).toEqual(["p"]);
+    const unstarred = directoryReducer(selected, {
+      starred: false,
+      type: "starred",
+    });
+    expect(unstarred).toMatchObject({ selection: [], starred: false });
+    const first = directoryReducer(selected, {
+      starredFirst: true,
+      type: "starred-first",
+    });
+    expect(first).toMatchObject({ selection: [], starredFirst: true });
+    expect(initialDirectory("")).toMatchObject({
+      starred: false,
+      starredFirst: false,
+    });
+  });
+
+  it("holds the tag facet's counts, its bound, and its failure", () => {
+    const start = initialDirectory("");
+    expect(start.facet).toEqual({
+      status: "loading",
+      tags: [],
+      truncated: false,
+    });
+    const loaded = directoryReducer(start, {
+      facet: {
+        lifecycle: "active",
+        status: "ready",
+        tags: [{ count: 2, id: "f", name: "Friends" }],
+        truncated: true,
+      },
+      type: "facet-loaded",
+    });
+    expect(loaded.facet).toEqual({
+      status: "ready",
+      tags: [{ count: 2, id: "f", name: "Friends" }],
+      truncated: true,
+    });
+    expect(
+      directoryReducer(loaded, { type: "facet-failed" }).facet,
+    ).toEqual({ status: "unavailable", tags: [], truncated: false });
+  });
+
+  it("chooses a facet tag the picker has not loaded yet", () => {
+    const chosen = directoryReducer(initialDirectory(""), {
+      name: "Friends",
+      selected: "f",
+      type: "tag",
+    });
+    expect(chosen.tag.selected).toBe("f");
+    expect(chosen.tag.options).toEqual([{ id: "f", name: "Friends" }]);
+    const again = directoryReducer(chosen, {
+      name: "Friends",
+      selected: "f",
+      type: "tag",
+    });
+    expect(again.tag.options, "a loaded tag is not repeated").toHaveLength(1);
+  });
+
+  it("words a facet chip and the star on a row", () => {
+    expect(facetLabel({ count: 1, id: "f", name: "Friends" })).toBe(
+      "Friends, 1 person",
+    );
+    expect(facetLabel({ count: 3, id: "f", name: "Friends" })).toBe(
+      "Friends, 3 people",
+    );
+    expect(personDetails(person({ isStarred: true }))).toBe("Favorite");
   });
 });

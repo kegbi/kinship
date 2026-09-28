@@ -142,3 +142,94 @@ Deno.test("[GAP-018] recording a person moves them to the front and keeps eight"
   );
   assertEquals((full.recentPersonIds as readonly string[])[0], PERSON(0));
 });
+
+Deno.test("[GAP-053] the notifications read-through watermark is an instant", () => {
+  assertEquals(
+    projection({ notificationsReadThrough: "2026-09-28T10:00:00.123Z" }),
+    { notificationsReadThrough: "2026-09-28T10:00:00.123Z" },
+  );
+  for (
+    const invalid of [
+      "2026-09-28",
+      "2026-09-28T10:00:00+02:00",
+      "2026-02-30T10:00:00.000Z",
+      "yesterday",
+      "2026-09-28T10:00:00.1234Z",
+      17,
+      null,
+    ]
+  ) {
+    assertEquals(
+      projection({ notificationsReadThrough: invalid }),
+      {},
+      `a stored ${String(invalid)} is not a watermark`,
+    );
+    assertEquals(
+      validMemberUiState({ notificationsReadThrough: invalid }),
+      false,
+      `a saved ${String(invalid)} is refused`,
+    );
+  }
+  assertEquals(
+    validMemberUiState({ notificationsReadThrough: "2026-09-28T10:00:00Z" }),
+    true,
+  );
+  assertEquals(
+    validMemberUiState({
+      notificationsReadThrough: "2026-09-28T10:00:00.000Z",
+      theme: "dark",
+    }),
+    true,
+    "the watermark saves beside the other fields",
+  );
+});
+
+Deno.test("[GAP-053] the watermark only moves forward and keeps its siblings", () => {
+  const stored = {
+    notificationsReadThrough: "2026-09-28T10:00:00.000Z",
+    recentPersonIds: [PERSON(1)],
+    theme: "dark",
+  };
+  assertEquals(
+    mergedUiState(stored, {
+      notificationsReadThrough: "2026-09-28T11:00:00Z",
+    }),
+    { ...stored, notificationsReadThrough: "2026-09-28T11:00:00.000Z" },
+    "a later watermark replaces the stored one, normalised",
+  );
+  assertEquals(
+    mergedUiState(stored, {
+      notificationsReadThrough: "2026-09-28T09:00:00.000Z",
+    }),
+    stored,
+    "an older watermark from a stale tab never marks items unread again",
+  );
+  assertEquals(
+    mergedUiState({ theme: "dark", notificationsReadThrough: "junk" }, {
+      notificationsReadThrough: "2026-09-28T09:00:00.000Z",
+    }),
+    { theme: "dark", notificationsReadThrough: "2026-09-28T09:00:00.000Z" },
+    "a corrupt stored watermark is replaced",
+  );
+  assertEquals(
+    mergedUiState(stored, { theme: "light" }).notificationsReadThrough,
+    stored.notificationsReadThrough,
+    "a theme save keeps the watermark",
+  );
+});
+
+Deno.test("[GAP-053] an impossible instant is no watermark, and never replaces one", () => {
+  assertEquals(
+    projection({ notificationsReadThrough: "2026-13-01T10:00:00.000Z" }),
+    {},
+    "month thirteen is not a date",
+  );
+  assertEquals(
+    mergedUiState(
+      { notificationsReadThrough: "2026-09-28T10:00:00.000Z" },
+      { notificationsReadThrough: "2026-13-01T10:00:00.000Z" },
+    ),
+    { notificationsReadThrough: "2026-09-28T10:00:00.000Z" },
+    "an invalid save keeps the stored watermark",
+  );
+});

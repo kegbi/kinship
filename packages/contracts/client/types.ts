@@ -368,6 +368,9 @@ export type TodayRecentPerson = components["schemas"]["TodayRecentPerson"];
 export type TodayRecentPeople = components["schemas"]["TodayRecentPeople"];
 
 export type TodayReminderPerson = components["schemas"]["TodayReminderPerson"];
+/** The member's notification feed (GAP-053). */
+export type NotificationItem = components["schemas"]["NotificationItem"];
+export type NotificationsPage = components["schemas"]["NotificationsPage"];
 
 /**
  * A reminder occurrence, with the correlation the document states as a `oneOf`.
@@ -515,7 +518,9 @@ export type PeopleDirectoryLifecycle = "active" | "archived";
 export type PeopleDirectorySort =
   | "given-name"
   | "family-name"
-  | "recently-added";
+  | "recently-added"
+  | "last-contacted"
+  | "recently-updated";
 
 export type PeopleDirectoryTag = components["schemas"]["PeopleDirectoryTag"];
 
@@ -533,6 +538,10 @@ export interface PeopleDirectoryInput {
   readonly search?: string;
   readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
+  /** Only starred people (GAP-053). */
+  readonly starred?: boolean;
+  /** Starred people before everybody else. */
+  readonly starredFirst?: boolean;
   readonly tagId?: string;
 }
 
@@ -560,6 +569,11 @@ export interface PeopleTagOptionsInput {
 
 export type PeopleTagOptionsPage =
   components["schemas"]["PeopleTagOptionsPage"];
+/** The directory's tag facet (GAP-053). */
+export type PeopleTagFacet = components["schemas"]["PeopleTagFacet"];
+export type PeopleTagFacetEntry = components["schemas"]["PeopleTagFacetEntry"];
+/** A person's workspace star after it was set (GAP-053). */
+export type PersonStarChanged = components["schemas"]["PersonStarChanged"];
 export type PeopleDuplicatePair = components["schemas"]["PeopleDuplicatePair"];
 export type PeopleDuplicatePerson =
   components["schemas"]["PeopleDuplicatePerson"];

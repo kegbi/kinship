@@ -14,8 +14,10 @@ import type {
   PeopleBulkInput,
   PeopleBulkResult,
   PeopleDirectoryInput,
+  PeopleDirectoryLifecycle,
   PeopleDirectoryPage,
   PeopleDuplicates,
+  PeopleTagFacet,
   PeopleTagOptionsInput,
   PeopleTagOptionsPage,
   PersonAvatarChanged,
@@ -35,6 +37,7 @@ import type {
   PersonMergePreview,
   PersonProfileIdentity,
   PersonProfileSummary,
+  PersonStarChanged,
   PersonTimelineKind,
   PersonTimelinePage,
   PersonTransitionInput,
@@ -64,6 +67,8 @@ export function listPeople(
     query.set("selectedPersonId", input.selectedPersonId);
   }
   if (input.sort) query.set("sort", input.sort);
+  if (input.starred) query.set("starred", "true");
+  if (input.starredFirst) query.set("starredFirst", "true");
   if (input.tagId) query.set("tag", input.tagId);
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
   return request(`/api/v1/people${suffix}`, {
@@ -81,6 +86,16 @@ export function listPeopleTagOptions(
   if (input.selectedTagId) query.set("selected", input.selectedTagId);
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
   return request(`/api/v1/people/tag-options${suffix}`, {
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/** How many people of the view carry each of the top tags (GAP-053). */
+export function listPeopleTagFacet(
+  lifecycle: PeopleDirectoryLifecycle = "active",
+  workspaceId?: string,
+): Promise<ApiResult<PeopleTagFacet>> {
+  return request(`/api/v1/people/tag-facet?lifecycle=${lifecycle}`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }
@@ -455,6 +470,18 @@ export function removePersonAvatar(
 ): Promise<ApiResult<PersonAvatarChanged>> {
   return request(`/api/v1/people/${encodeURIComponent(personId)}/avatar`, {
     method: "DELETE",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+/** Stars, or unstars, a person for the whole workspace (GAP-053). */
+export function setPersonStar(
+  personId: string,
+  starred: boolean,
+  workspaceId?: string,
+): Promise<ApiResult<PersonStarChanged>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/star`, {
+    method: starred ? "PUT" : "DELETE",
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }

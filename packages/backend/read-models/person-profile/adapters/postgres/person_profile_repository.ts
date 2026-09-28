@@ -358,19 +358,29 @@ export class PostgresPersonProfileRepository
         and avatar_file.workspace_id = workspace.id
         and avatar_file.status = 'available'
         and avatar_file.deleted_at is null
+      -- The last-contact rule (GAP-053) for this one person: their newest
+      -- call, or conversation by its newest message. It is DUPLICATED in
+      -- read-models/people-directory/adapters/postgres/last_contact.ts, which
+      -- orders the directory by it; the two must change together, and
+      -- tests/integration/people_favorites_postgres_test.ts checks they agree.
       left join lateral (
         select ${
-      millisecondInstantColumn("max(contacted_at)")
+      millisecondInstantColumn("max(contact.contacted_at)")
     } as last_contact_at
         from (
-          select called_at as contacted_at from crm.calls
-          where workspace_id = workspace.id and person_id = person.id
+          select max(call.called_at) as contacted_at from crm.calls call
+          where call.workspace_id = ${command.workspaceId}::uuid
+            and call.person_id = person.id
           union all
-          select greatest(thread.happened_at, coalesce(max(message.written_at), thread.happened_at))
+          select max(thread.happened_at) from crm.conversation_threads thread
+          where thread.workspace_id = ${command.workspaceId}::uuid
+            and thread.person_id = person.id
+          union all
+          select max(message.written_at)
           from crm.conversation_threads thread
-          left join crm.messages message on message.conversation_id = thread.id
-          where thread.workspace_id = workspace.id and thread.person_id = person.id
-          group by thread.id, thread.happened_at
+          join crm.messages message on message.conversation_id = thread.id
+          where thread.workspace_id = ${command.workspaceId}::uuid
+            and thread.person_id = person.id
         ) contact
       ) last_contact on true
       left join lateral (
