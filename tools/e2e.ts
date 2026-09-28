@@ -51,15 +51,91 @@ export function e2eEnvironment(
   };
 }
 
+const E2E_BROWSERS = ["chromium", "firefox", "webkit"] as const;
+
+/** Every value given to `--workers`/`-j`, in any accepted spelling. */
+function workerValues(testArgs: readonly string[]): string[] {
+  const values: string[] = [];
+  testArgs.forEach((argument, index) => {
+    if (argument === "--workers" || argument === "-j") {
+      values.push(testArgs[index + 1] ?? "");
+    } else if (argument.startsWith("--workers=")) {
+      values.push(argument.slice("--workers=".length));
+    } else if (argument.startsWith("-j=")) {
+      values.push(argument.slice("-j=".length));
+    } else if (/^-j\d/.test(argument)) {
+      values.push(argument.slice("-j".length));
+    }
+  });
+  return values;
+}
+
+/**
+ * The browsers whose projects `--project` selects. Playwright's option is
+ * variadic, matches case-insensitively, and accepts `*` wildcards; selecting
+ * nothing runs every browser. A browser's `-exclusive` teardown project runs
+ * whenever its browser project or the exclusive project itself is selected.
+ */
+function selectedBrowsers(testArgs: readonly string[]): Set<string> {
+  const filters: string[] = [];
+  let variadic = false;
+  for (const argument of testArgs) {
+    if (argument === "--project") {
+      variadic = true;
+    } else if (argument.startsWith("--project=")) {
+      filters.push(argument.slice("--project=".length));
+      variadic = false;
+    } else if (argument.startsWith("-")) {
+      variadic = false;
+    } else if (variadic) {
+      filters.push(argument);
+    }
+  }
+  if (filters.length === 0) return new Set(E2E_BROWSERS);
+  const patterns = filters.map((filter) =>
+    new RegExp(
+      `^${
+        filter.split("*").map((part) =>
+          part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+        ).join(".*")
+      }$`,
+      "i",
+    )
+  );
+  return new Set(
+    E2E_BROWSERS.filter((browser) =>
+      patterns.some((pattern) =>
+        pattern.test(browser) || pattern.test(`${browser}-exclusive`)
+      )
+    ),
+  );
+}
+
 export function e2ePlaywrightArgs(
   testArgs: readonly string[],
 ): string[] {
   const args = ["exec", "playwright", "test", ...testArgs];
-  const hasWorkerOverride = testArgs.some((argument) =>
-    argument === "--workers" || argument.startsWith("--workers=") ||
-    argument === "-j" || argument.startsWith("-j=") || /^-j\d/.test(argument)
+  const workers = workerValues(testArgs);
+  if (workers.length === 0) {
+    args.push("--workers=1");
+    return args;
+  }
+  // Each browser's `-exclusive` project publishes the active terms, which the
+  // one-active-per-type index allows only once, so two of them must never
+  // share a phase (REL-085). A percentage depends on the host, so it counts
+  // as parallel.
+  const parallel = workers.some((value) =>
+    value.endsWith("%") || Number(value) > 1
   );
-  if (!hasWorkerOverride) args.push("--workers=1");
+  const browsers = selectedBrowsers(testArgs);
+  if (parallel && browsers.size > 1) {
+    throw new Error(
+      `--workers above 1 cannot run the legal-acceptance exclusive projects of ${
+        [...browsers].join(", ")
+      } together: they would publish competing active terms. Select one ` +
+        "browser with --project or omit --workers.",
+    );
+  }
   return args;
 }
 
@@ -946,6 +1022,8 @@ async function assertGatewayDependencyReadiness(
 }
 
 async function main(): Promise<void> {
+  // Refuse unsafe arguments before any container starts.
+  const playwrightArgs = e2ePlaywrightArgs(Deno.args);
   const project = e2eProjectName(Deno.pid, Date.now());
   let browser: OwnedProcess | undefined;
   let tls: E2eTlsMaterial | undefined;
@@ -981,7 +1059,7 @@ async function main(): Promise<void> {
       await assertGatewayDependencyReadiness(gatewayOrigin, environment);
     },
     test: async () => {
-      const args = e2ePlaywrightArgs(Deno.args);
+      const args = playwrightArgs;
       const child = new Deno.Command("pnpm", {
         args,
         cwd: new URL("../", import.meta.url),

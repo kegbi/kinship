@@ -309,15 +309,58 @@ Deno.test("production-like E2E serializes shared state unless explicitly overrid
     "the shared Compose database is serialized by default",
   );
   assert(
-    e2ePlaywrightArgs(["--workers=2", "tests/e2e/journal.JOURNAL-001.spec.ts"])
-          .join(
-            " ",
-          ) ===
-        "exec playwright test --workers=2 tests/e2e/journal.JOURNAL-001.spec.ts" &&
-      e2ePlaywrightArgs(["-j", "2"]).join(" ") ===
-        "exec playwright test -j 2",
+    e2ePlaywrightArgs([
+          "--project=chromium",
+          "--workers=2",
+          "tests/e2e/journal.JOURNAL-001.spec.ts",
+        ]).join(" ") ===
+        "exec playwright test --project=chromium --workers=2 tests/e2e/journal.JOURNAL-001.spec.ts" &&
+      e2ePlaywrightArgs(["-j", "2", "--project", "webkit"]).join(" ") ===
+        "exec playwright test -j 2 --project webkit",
     "an explicit Playwright worker choice remains authoritative",
   );
+});
+
+Deno.test("parallel workers are refused when several browsers' exclusive projects would run", () => {
+  const refused: readonly (readonly string[])[] = [
+    ["--workers=4"],
+    ["--workers", "4"],
+    ["-j", "4"],
+    ["-j4"],
+    ["-j=4"],
+    ["--workers=50%"],
+    ["-j", "1%"],
+    ["--project=chromium", "--project=firefox", "-j", "2"],
+    ["--project", "chromium", "webkit", "--workers=2"],
+    ["--project=chromium-exclusive", "--project=WebKit", "--workers=2"],
+    ["--project=*-exclusive", "-j", "2"],
+    ["--project", "firefox*", "--project=chromium", "-j2"],
+  ];
+  for (const testArgs of refused) {
+    let message = "";
+    try {
+      e2ePlaywrightArgs(testArgs);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    assert(
+      message.includes("--workers") && message.includes("--project") &&
+        message.includes("legal-acceptance"),
+      `${testArgs.join(" ")} must be refused with guidance, got "${message}"`,
+    );
+  }
+  const allowed: readonly (readonly string[])[] = [
+    [],
+    ["--workers=1"],
+    ["-j", "1"],
+    ["--project=chromium", "--workers=4"],
+    ["--project=firefox", "--project=firefox-exclusive", "-j", "50%"],
+    ["--project", "webkit", "tests/e2e/x.spec.ts", "-j4"],
+    ["--project=chrom*", "--workers", "3"],
+  ];
+  for (const testArgs of allowed) {
+    e2ePlaywrightArgs(testArgs);
+  }
 });
 
 Deno.test("E2E Astro startup alone bypasses the persistent dev lock", async () => {

@@ -1248,7 +1248,7 @@ Playwright test carrying its stable flow ID.
       thrown reservation fails the check at once while "closes its connections"
       still passes.
 
-- [ ] **REL-085 — The three exclusive legal-acceptance projects can collide
+- [x] **REL-085 — The three exclusive legal-acceptance projects can collide
       under parallel workers.** Found reviewing REL-057: an all-browser run with
       `--workers` above 1 puts `chromium-exclusive`, `firefox-exclusive`, and
       `webkit-exclusive` in the same final phase, and each inserts an active
@@ -1257,6 +1257,18 @@ Playwright test carrying its stable flow ID.
       unaffected, and the collision predates REL-057. Make the launcher reject
       `--workers` above 1 when several browsers are selected, or have the spec
       hold a database advisory lock around its insert-and-accept window.
+      Delivered 2026-09-28: the launcher passed any explicit `--workers`/`-j`
+      value straight to Playwright, so with more than one browser selected the
+      `-exclusive` projects could share the final phase and publish competing
+      active `terms` documents. `tools/e2e.ts` now reads every worker spelling
+      (`--workers=N`, `--workers N`, `-j N`, `-j=N`, `-jN`, percentages) and
+      works out the browsers selected by `--project` (several names per flag,
+      case-insensitive, `*` wildcards, a browser or its `-exclusive` project,
+      all three when none is given). It refuses a count above 1 or any
+      percentage when more than one browser is selected, before any container
+      starts. The default `--workers=1` is unchanged. A table-driven test in
+      `tools/e2e_test.ts` proves twelve refused spellings and seven allowed
+      ones.
 
 - [ ] **REL-086 — The personalization section links can be clicked before they
       navigate on Firefox.** Found in the REL-052/REL-056 batch E2E run:
