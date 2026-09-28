@@ -23,6 +23,7 @@ import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { openSql, revokeMembership, type Sql } from "../support/database.ts";
 import {
   connectDatabase,
+  DATABASE_POOL_MAX,
   type DatabaseConnection,
 } from "../../packages/backend/platform/postgres/database.ts";
 import {
@@ -514,12 +515,33 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
   // The text groups read their full-text indexes (REL-061), so no fixture of
   // a sensible size makes them slow. Another transaction holds the notes
   // table instead: the text statement waits on it past its bound, while
-  // people search never reads notes.
-  const partial = ready(
-    await sql.begin(async (locking) => {
-      await locking`lock table crm.notes in access exclusive mode`;
-      return await bounded.search(actorOf(reader), { query: shared });
-    }),
+  // people search never reads notes. Were the bound ever to stop firing, the
+  // search would wait on the lock and the lock holder on the search, so the
+  // lock holder watches: once a statement has waited on the notes lock far
+  // past the bound, it commits, the search finishes, and the test fails.
+  let watchdogFired = false;
+  const { searching } = await sql.begin(async (locking) => {
+    await locking`lock table crm.notes in access exclusive mode`;
+    let settled = false;
+    const searching = bounded.search(actorOf(reader), { query: shared });
+    searching.then(() => settled = true, () => settled = true);
+    while (!settled) {
+      const stuck = await locking`
+        select 1 from pg_locks
+        where relation = 'crm.notes'::regclass and not granted
+          and waitstart < clock_timestamp() - interval '2 seconds'`;
+      if (stuck.length > 0) {
+        watchdogFired = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return { searching };
+  });
+  const partial = ready(await searching);
+  assert(
+    !watchdogFired,
+    "the text statement waited on the notes lock past its 40 ms bound",
   );
   assertEquals(ids(partial.people), [person]);
   for (
@@ -533,29 +555,34 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
     assertEquals([group.results.length, group.unavailable], [0, true]);
   }
   // SET LOCAL ends with the transaction: every connection of the pool that ran
-  // the bounded search is clean. `connectDatabase` opens at most eight, and
-  // `DatabaseConnection` does not expose that `max`, so eight are held at once
-  // (distinct backends, asserted below) until each has answered.
-  const poolMax = 8;
+  // the bounded search is clean. The whole pool, `DATABASE_POOL_MAX`
+  // connections, is held at once (distinct backends, asserted below) until
+  // each has answered; the first failure releases the rest, so no connection
+  // stays reserved behind the barrier.
   const held = Promise.withResolvers<void>();
   let answered = 0;
   const settings = await Promise.all(
     Array.from(
-      { length: poolMax },
+      { length: DATABASE_POOL_MAX },
       () =>
         connection.db.connection().execute(async (pooled) => {
-          const { rows: [backend] } = await sqlQuery<{ pid: number }>`
-            select pg_backend_pid() as pid`.execute(pooled);
-          const { rows: [setting] } = await sqlQuery<
-            { statement_timeout: string }
-          >`show statement_timeout`.execute(pooled);
-          if (++answered === poolMax) held.resolve();
-          await held.promise;
-          return { pid: backend?.pid, timeout: setting?.statement_timeout };
+          try {
+            const { rows: [backend] } = await sqlQuery<{ pid: number }>`
+              select pg_backend_pid() as pid`.execute(pooled);
+            const { rows: [setting] } = await sqlQuery<
+              { statement_timeout: string }
+            >`show statement_timeout`.execute(pooled);
+            if (++answered === DATABASE_POOL_MAX) held.resolve();
+            await held.promise;
+            return { pid: backend?.pid, timeout: setting?.statement_timeout };
+          } catch (error) {
+            held.resolve();
+            throw error;
+          }
         }),
     ),
   );
-  assertEquals(new Set(settings.map(({ pid }) => pid)).size, poolMax);
+  assertEquals(new Set(settings.map(({ pid }) => pid)).size, DATABASE_POOL_MAX);
   assert(
     settings.every(({ timeout }) => timeout === "0"),
     `leaked: ${settings.map(({ timeout }) => timeout)}`,

@@ -21,11 +21,18 @@ export interface DatabaseConnection {
   destroy(): Promise<void>;
 }
 
+/**
+ * The most connections one `connectDatabase` pool opens. Exported so a check
+ * that must reserve every connection of the pool at once holds exactly this
+ * many: fewer would miss some, more would wait forever for a free one.
+ */
+export const DATABASE_POOL_MAX = 8;
+
 export function connectDatabase(url: string): DatabaseConnection {
   const client = postgres(url, {
     connect_timeout: 5,
     idle_timeout: 10,
-    max: 8,
+    max: DATABASE_POOL_MAX,
     prepare: true,
   });
   const db = new Kysely<ApplicationDatabase>({

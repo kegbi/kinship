@@ -1231,14 +1231,22 @@ Playwright test carrying its stable flow ID.
       passes `unavailable` on, and `json_logger_test.ts` proves smuggled ids and
       filenames are stripped.
 
-- [ ] **REL-084 — The search pool-leak check can hang instead of failing.**
+- [x] **REL-084 — The search pool-leak check can hang instead of failing.**
       Found reviewing REL-062: the check in `search_postgres_test.ts` holds a
       hard-coded eight reservations behind a barrier. If `connectDatabase`'s
       `max` drops below eight the extra reservations wait forever, if it rises
       the check covers only part of the pool, and if one query throws the other
       seven keep their connections. Export one pool-size constant from
       `platform/postgres/database.ts` for both, and release the barrier on the
-      first error.
+      first error. Delivered 2026-09-28 with `REL-089`: the check now reserves
+      `DATABASE_POOL_MAX`, which `platform/postgres/database.ts` exports and
+      `connectDatabase` uses as its `max`, so it always holds exactly the whole
+      pool, and each reservation releases the barrier on its first error, so a
+      failed query no longer leaves the other connections reserved. Before the
+      fix a four-connection pool hung the old check and a thrown reservation
+      hung the file's closing test; with it, a four-connection pool passes and a
+      thrown reservation fails the check at once while "closes its connections"
+      still passes.
 
 - [ ] **REL-085 — The three exclusive legal-acceptance projects can collide
       under parallel workers.** Found reviewing REL-057: an all-browser run with
@@ -1279,7 +1287,7 @@ Playwright test carrying its stable flow ID.
       all of the member's open deliveries before the 30-day filters apply;
       revisit it with the capacity profile as failed rows accumulate.
 
-- [ ] **REL-089 — The search timeout test would hang rather than fail if the
+- [x] **REL-089 — The search timeout test would hang rather than fail if the
       statement bound broke.** Found reviewing schema v9:
       `[SEARCH-001] a text
       statement past its timeout …` now forces the
@@ -1288,7 +1296,13 @@ Playwright test carrying its stable flow ID.
       would wait on that lock forever and the lock holder on the search. Bound
       the wait without a longer test timeout, for example by releasing the lock
       when the search returns or when a watchdog statement in the lock holder
-      observes the search waiting past the bound.
+      observes the search waiting past the bound. Delivered 2026-09-28 with
+      `REL-084`: the lock holder now starts the bounded search without awaiting
+      it and polls `pg_locks` every 20 ms; once any waiter on `crm.notes` has a
+      `waitstart` more than 2 seconds old, it commits and releases the lock, and
+      the test then asserts that this never happened. With the statement timeout
+      disabled, the old test hung and the new one fails in 2 s with "the text
+      statement waited on the notes lock past its 40 ms bound".
 
 - [ ] **REL-090 — The duplicates review says nothing is left after a truncated
       list is dismissed.** Found reviewing REL-064: the island never re-reads
