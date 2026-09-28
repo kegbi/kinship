@@ -528,7 +528,10 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
     while (!settled) {
       const stuck = await locking`
         select 1 from pg_locks
-        where relation = 'crm.notes'::regclass and not granted
+        where database = (select oid from pg_database
+            where datname = current_database())
+          and relation = 'crm.notes'::regclass and not granted
+          and pid <> pg_backend_pid()
           and waitstart < clock_timestamp() - interval '2 seconds'`;
       if (stuck.length > 0) {
         watchdogFired = true;
@@ -566,19 +569,18 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
       { length: DATABASE_POOL_MAX },
       () =>
         connection.db.connection().execute(async (pooled) => {
-          try {
-            const { rows: [backend] } = await sqlQuery<{ pid: number }>`
-              select pg_backend_pid() as pid`.execute(pooled);
-            const { rows: [setting] } = await sqlQuery<
-              { statement_timeout: string }
-            >`show statement_timeout`.execute(pooled);
-            if (++answered === DATABASE_POOL_MAX) held.resolve();
-            await held.promise;
-            return { pid: backend?.pid, timeout: setting?.statement_timeout };
-          } catch (error) {
-            held.resolve();
-            throw error;
-          }
+          const { rows: [backend] } = await sqlQuery<{ pid: number }>`
+            select pg_backend_pid() as pid`.execute(pooled);
+          const { rows: [setting] } = await sqlQuery<
+            { statement_timeout: string }
+          >`show statement_timeout`.execute(pooled);
+          if (++answered === DATABASE_POOL_MAX) held.resolve();
+          await held.promise;
+          return { pid: backend?.pid, timeout: setting?.statement_timeout };
+        }).catch((error) => {
+          // A failed query or a failed acquisition both land here.
+          held.resolve();
+          throw error;
         }),
     ),
   );
