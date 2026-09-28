@@ -777,11 +777,18 @@ Playwright test carrying its stable flow ID.
       later use with a controlled clock. "Last used" can now be up to 15 minutes
       behind.
 
-- [ ] **REL-068 — The calendar feed has no credential-specific rate limit.**
+- [x] **REL-068 — The calendar feed has no credential-specific rate limit.**
       Found reviewing GAP-052: `/api/v1/calendar-feeds/*` falls only under the
       gateway's general `kinship_api` zone (50 requests per second per IP).
       Anyone holding a leaked URL can drive about 50 feed statements per second,
       each allowed up to 1.5 s. Put the path in a stricter per-credential zone.
+      Delivered 2026-09-28: the gateway gives `/api/v1/calendar-feeds/` its own
+      `^~` location, which keeps the per-IP `kinship_api` zone and every
+      `/api/v1/` proxy directive and adds `kinship_calendar_feeds`, 12 requests
+      per minute with a burst of 6, keyed on the feed id (`kin_cal_<uuid>`) and
+      never the secret, so nginx's shared memory holds no secret and a leaked
+      URL cannot dodge the limit by varying the secret. A static contract test
+      and a real-Nginx 429 case prove it; `compose-contract.md` lists the zone.
 
 - [x] **REL-069 — Firefox reports CSP `eval` violations from the Zod chunk.**
       Found at the Phase 7 checkpoint: `favorites.PEOPLE-010`,

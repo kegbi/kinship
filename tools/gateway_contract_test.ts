@@ -1,6 +1,7 @@
 import { PERSON_SECTIONS } from "../apps/web/src/features/person/sections.ts";
 import { PROFILE_MODULE_DEFAULTS } from "../packages/backend/modules/workspaces/public.ts";
 import { problemBody } from "../packages/http-kit/problem.ts";
+import { calendarFeedFile } from "../packages/contracts/schemas/calendar_feeds.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -627,6 +628,77 @@ Deno.test("[GAP-040] the gateway limits API and credential request rates per cli
       /^\s*add_header Retry-After "\d+" always;$/m.test(limited) &&
       /^\s*include \/etc\/nginx\/security_headers\.conf;$/m.test(limited),
     "the rate-limit answer is an uncached problem with the browser policy",
+  );
+});
+
+/** A well-formed subscription path: the feed id, then its secret, then `.ics`. */
+const CALENDAR_FEED_ID = "kin_cal_0f8b2c1e-5d4a-4b3c-9a21-7e6d5c4b3a29";
+const CALENDAR_FEED_PATH =
+  `/api/v1/calendar-feeds/${CALENDAR_FEED_ID}.s3cr3t_Calendar-Feed_Value.ics`;
+
+/** The directive lines of one location, without its `limit_req` lines. */
+function proxyDirectives(location: string): string[] {
+  return location.split("\n").map((line) => line.trim()).filter((line) =>
+    line !== "" && !line.startsWith("#") && !line.startsWith("limit_req ")
+  );
+}
+
+Deno.test("[REL-068] the calendar feed is limited per feed credential as well as per address", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const feedMap = nginxMap(gateway, "$kinship_calendar_feed_credential");
+  const [, pattern, value] = feedMap.match(/^\s*"~(\S+)" (\S+);$/m) ?? [];
+  assert(
+    pattern !== undefined && value === "$1" &&
+      /^\s*default "";$/m.test(feedMap),
+    "feed requests are keyed by a captured path segment and all others by nothing",
+  );
+  const key = (path: string) => path.match(new RegExp(pattern))?.[1];
+  const file = CALENDAR_FEED_PATH.split("/").at(-1) ?? "";
+  assert(
+    calendarFeedFile.safeParse(file).success &&
+      key(CALENDAR_FEED_PATH) === CALENDAR_FEED_ID,
+    "every well-formed feed path is keyed by its feed id, never its secret",
+  );
+  for (
+    const path of [...ORDINARY_API_PATHS, "/api/v1/settings/calendar-feed"]
+  ) {
+    assert(key(path) === undefined, `${path} is not a feed credential`);
+  }
+
+  const feedRate = zoneRate(gateway, "kinship_calendar_feeds");
+  assert(
+    /^ {2}limit_req_zone \$kinship_calendar_feed_credential zone=kinship_calendar_feeds:10m rate=\d+r\/m;$/m
+      .test(gateway) &&
+      feedRate > 0 && feedRate <= 0.5 &&
+      feedRate < zoneRate(gateway, "kinship_credentials"),
+    `a feed credential has its own zone stricter than the credential zone (${feedRate}/s)`,
+  );
+
+  const api = nginxLocation(gateway, "/api/v1/");
+  const feed = nginxLocation(gateway, "^~ /api/v1/calendar-feeds/");
+  const addressLimit = (location: string) =>
+    location.match(/^\s*limit_req zone=kinship_api burst=\d+ nodelay;$/m)?.[0]
+      .trim();
+  const feedBurst = feed.match(
+    /^\s*limit_req zone=kinship_calendar_feeds burst=(\d+) nodelay;$/m,
+  )?.[1];
+  assert(
+    feedBurst !== undefined && Number(feedBurst) <= 10 &&
+      addressLimit(feed) !== undefined &&
+      addressLimit(feed) === addressLimit(api),
+    "the feed location counts against its credential zone and the address zone",
+  );
+  assert(
+    JSON.stringify(proxyDirectives(feed)) ===
+      JSON.stringify(proxyDirectives(api)),
+    `the feed location proxies exactly like /api/v1/: ${proxyDirectives(feed)}`,
+  );
+  assert(
+    !gateway.slice(gateway.indexOf("log_format"), gateway.indexOf("access_log"))
+      .includes("kinship_calendar_feed_credential"),
+    "no log format records the feed credential",
   );
 });
 

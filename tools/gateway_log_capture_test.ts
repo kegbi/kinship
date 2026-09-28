@@ -404,6 +404,33 @@ Deno.test({
         container,
         /"event":"gateway\.request","method":"GET","route":"\/api\/v1\/\*","status":429/,
       );
+
+      // REL-068: one leaked feed URL is refused past its own small burst,
+      // while another feed from the same address is still served.
+      const feedPath = (id: string, secret: string) =>
+        `${origin}/api/v1/calendar-feeds/kin_cal_00000000-0000-4000-8000-${id}.${secret}.ics`;
+      const feedRefusals = (await Promise.all(
+        Array.from(
+          { length: 12 },
+          (_, index) =>
+            rateLimitedAnswer(
+              feedPath("000000000002", `leaked-feed-secret-${index}`),
+            ),
+        ),
+      )).filter((answer) => answer !== undefined);
+      assert(
+        feedRefusals.length > 0 &&
+          feedRefusals.every(({ body }) =>
+            body.includes('"code":"request_rate_limited"')
+          ),
+        "a burst on one feed past its credential limit is refused",
+      );
+      assert(
+        await rateLimitedAnswer(
+          feedPath("000000000003", "other-feed-secret"),
+        ) === undefined,
+        "another feed from the same address is not refused",
+      );
     } catch (error) {
       errors.push(error);
     } finally {
