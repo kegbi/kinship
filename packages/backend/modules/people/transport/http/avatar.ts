@@ -33,9 +33,9 @@ import {
 } from "../../../../../http-kit/session.ts";
 import { parseValue } from "../../../../../http-kit/validate.ts";
 import {
-  avatarDescriptor,
   type PeopleHttpServices,
   PERSON_ID_INVALID,
+  storedAvatarDescriptor,
 } from "./shared.ts";
 
 /** What an avatar is served from. */
@@ -141,7 +141,7 @@ export function createAvatarRoutes(
     if (result.status !== "updated") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json({
-      avatar: avatarDescriptor(personId.data, result.avatar),
+      avatar: storedAvatarDescriptor(personId.data, result.avatar),
       status: "updated",
     });
   });
@@ -157,7 +157,7 @@ export function createAvatarRoutes(
     if (result.status !== "removed") return failure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json({
-      avatar: avatarDescriptor(personId.data, result.avatar),
+      avatar: storedAvatarDescriptor(personId.data, result.avatar),
       status: "removed",
     });
   });

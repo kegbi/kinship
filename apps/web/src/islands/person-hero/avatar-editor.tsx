@@ -1,6 +1,8 @@
 /**
  * The hero's avatar editor (GAP-045, PEOPLE-007): choose an image and upload
- * it, remove the image the person has, or cancel.
+ * it, remove the image the person has, or cancel. An image held for review is
+ * never drawn, so the editor says one is there and offers to remove it all the
+ * same (REL-080).
  *
  * It renders what `PersonHero` hands it and reports every action back; the
  * hero's reducer owns whether it is open, whether a write is in flight, and
@@ -18,6 +20,8 @@ export interface AvatarEditorProps {
   readonly busy: boolean;
   /** The person has an image to remove. */
   readonly removable: boolean;
+  /** Their only image is held for review, so the initials are drawn. */
+  readonly held: boolean;
   readonly formRef: Ref<HTMLFormElement>;
   readonly inputRef: Ref<HTMLInputElement>;
   readonly onSubmit: (event: SubmitEvent<HTMLFormElement>) => void;
@@ -32,6 +36,7 @@ export function AvatarEditor(
   {
     busy,
     formRef,
+    held,
     inputRef,
     onCancel,
     onRemove,
@@ -65,11 +70,20 @@ export function AvatarEditor(
       <p className="form-hint" id="person-avatar-hint">
         A JPEG, PNG, or WebP image of 1 MB or less.
       </p>
+      {held
+        ? (
+          <p className="form-hint" id="person-avatar-held">
+            An image for this avatar is held for review and is not shown. Remove
+            avatar deletes it.
+          </p>
+        )
+        : null}
       <div className="person-lifecycle-buttons">
         <Button disabled={busy} type="submit">Upload avatar</Button>
         {removable
           ? (
             <Button
+              aria-describedby={held ? "person-avatar-held" : undefined}
               disabled={busy}
               onClick={onRemove}
               type="button"

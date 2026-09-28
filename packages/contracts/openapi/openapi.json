@@ -20114,7 +20114,7 @@
         "type": "object",
         "properties": {
           "avatar": {
-            "$ref": "#/components/schemas/PersonAvatar"
+            "$ref": "#/components/schemas/PersonProfileAvatar"
           },
           "status": {
             "type": "string",
@@ -20977,11 +20977,32 @@
         ],
         "additionalProperties": false
       },
+      "PersonProfileAvatar": {
+        "type": "object",
+        "properties": {
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "imageUrl": {
+            "type": "string",
+            "pattern": "^\\/api\\/v1\\/people\\/[0-9a-f-]{36}\\/files\\/[0-9a-f-]{36}\\/content$"
+          },
+          "hasStoredImage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "color",
+          "hasStoredImage"
+        ],
+        "additionalProperties": false
+      },
       "PersonProfileIdentity": {
         "type": "object",
         "properties": {
           "avatar": {
-            "$ref": "#/components/schemas/PersonAvatar"
+            "$ref": "#/components/schemas/PersonProfileAvatar"
           },
           "description": {
             "type": "string"

@@ -1146,13 +1146,29 @@ Playwright test carrying its stable flow ID.
       Pass `statusRegion(props)` at mount and spread it on the line, as REL-052
       does, with a two-mode island test.
 
-- [ ] **REL-080 — The web UI cannot remove a quarantined or held avatar.** Found
+- [x] **REL-080 — The web UI cannot remove a quarantined or held avatar.** Found
       reviewing REL-056: `avatar-editor.tsx` shows "Remove avatar" only when the
       descriptor has an `imageUrl`, which quarantined images never have, so a
       person drawn with initials who has images held for review, or whose linked
       avatar was later quarantined, has no Remove button; only the API's avatar
       `DELETE` clears them. Give the avatar descriptor a "has a stored image"
-      flag and show Remove when it is set (a contract change).
+      flag and show Remove when it is set (a contract change). Delivered
+      2026-09-28: the avatar descriptor carried an `imageUrl` only for an
+      available file, so the hero's Remove avatar, gated on it, disappeared
+      exactly when an image was quarantined or held for review. A new
+      `PersonProfileAvatar` contract (`personAvatar` plus required
+      `hasStoredImage`) now backs the person profile's identity and the avatar
+      PUT/DELETE answers; list readers keep the plain `PersonAvatar`. The
+      person-profile read model computes the flag from the person's linked
+      avatar file while it is available or quarantined, and from any quarantined
+      avatar-kind image linked to them, which is the set the removal discards.
+      `avatar-editor.tsx` shows Remove avatar whenever an image is stored, with
+      "An image for this avatar is held for review and is not shown. Remove
+      avatar deletes it." when none is drawn, and the hero records an upload
+      answered 423 `avatar_quarantined` as a stored image. The profile and
+      avatar handler tests, a contract test, the person-hero component and
+      reducer tests, and new assertions in `avatars_postgres_test.ts` (held
+      image true, quarantined linked avatar true, false after removal) prove it.
 
 - [x] **REL-081 — A gift can attach an avatar image and keep a link to it after
       the image is removed.** Found reviewing REL-056:

@@ -12,8 +12,8 @@
  */
 
 import type {
-  PersonAvatar,
   PersonLifecycleIdentity,
+  PersonProfileAvatar,
   PersonProfileIdentity,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import type { MergePerson } from "../../features/people/merge/merge-state.ts";
@@ -94,10 +94,15 @@ export type HeroAction =
   | { readonly type: "avatar-opened" }
   | { readonly type: "avatar-cancelled" }
   | { readonly type: "avatar-started"; readonly removing: boolean }
-  | { readonly type: "avatar-failed"; readonly detail: string }
+  | {
+    readonly type: "avatar-failed";
+    readonly detail: string;
+    /** The upload was kept, held for review, so there is one to remove. */
+    readonly held?: boolean;
+  }
   | {
     readonly type: "avatar-changed";
-    readonly avatar: PersonAvatar;
+    readonly avatar: PersonProfileAvatar;
     readonly removed: boolean;
   }
   | { readonly type: "star-started"; readonly starred: boolean }
@@ -286,7 +291,19 @@ export function heroReducer(state: HeroState, action: HeroAction): HeroState {
         status: action.removing ? "Removing avatar…" : "Uploading avatar…",
       };
     case "avatar-failed":
-      return { ...state, avatarBusy: false, status: action.detail };
+      return {
+        ...state,
+        avatarBusy: false,
+        ...(action.held && state.identity.avatar
+          ? {
+            identity: {
+              ...state.identity,
+              avatar: { ...state.identity.avatar, hasStoredImage: true },
+            },
+          }
+          : {}),
+        status: action.detail,
+      };
     case "avatar-changed":
       // An avatar is not part of the person's revision: `updatedAt` stays.
       return {

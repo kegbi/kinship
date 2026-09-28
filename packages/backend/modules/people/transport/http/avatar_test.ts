@@ -62,6 +62,7 @@ Deno.test("[PEOPLE-007] an uploaded image answers with the avatar descriptor", a
   assertEquals(await response.json(), {
     avatar: {
       color: "#b3d5fe",
+      hasStoredImage: true,
       imageUrl: `/api/v1/people/${personId}/files/${fileId}/content`,
     },
     status: "updated",
@@ -142,7 +143,7 @@ Deno.test("[PEOPLE-007] removing an avatar answers with the initials descriptor"
   });
   assertStatus(response, 200);
   assertEquals(await response.json(), {
-    avatar: { color: avatarColor(personId) },
+    avatar: { color: avatarColor(personId), hasStoredImage: false },
     status: "removed",
   });
 

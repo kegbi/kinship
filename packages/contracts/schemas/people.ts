@@ -446,9 +446,19 @@ export const personAvatar = z.strictObject({
   ).optional(),
 }).meta({ id: "PersonAvatar" });
 
+/**
+ * The avatar on the person's own page and in an avatar change (REL-080): as
+ * every reader draws it, and whether an avatar image is stored for the person
+ * at all. An image held for review is stored but never drawn, so a person
+ * drawn with initials can still have one for Remove avatar to take away.
+ */
+export const personProfileAvatar = personAvatar.extend({
+  hasStoredImage: z.boolean(),
+}).meta({ id: "PersonProfileAvatar" });
+
 /** A person's avatar after it changed. */
 export const personAvatarChanged = z.strictObject({
-  avatar: personAvatar,
+  avatar: personProfileAvatar,
   status: z.enum(["removed", "updated"]),
 }).meta({ id: "PersonAvatarChanged" });
 
@@ -789,7 +799,7 @@ export const personProfileSectionId = z.enum([
 ]).meta({ id: "PersonProfileSectionId" });
 
 export const personProfileIdentity = z.strictObject({
-  avatar: personAvatar.optional(),
+  avatar: personProfileAvatar.optional(),
   description: z.string().optional(),
   familyName: z.string().optional(),
   gender: z.string().optional(),

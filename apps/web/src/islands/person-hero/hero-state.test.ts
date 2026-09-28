@@ -189,6 +189,7 @@ describe("GAP-028 hero state", () => {
 describe("GAP-045 hero avatar state", () => {
   const avatar = {
     color: "#1f6f5c",
+    hasStoredImage: true,
     imageUrl: `/api/v1/people/${identity.id}/files/${identity.id}/content`,
   };
 
@@ -238,12 +239,38 @@ describe("GAP-045 hero avatar state", () => {
     });
     expect(state.updatedAt).toBe(identity.updatedAt);
     state = heroReducer(state, {
-      avatar: { color: "#1f6f5c" },
+      avatar: { color: "#1f6f5c", hasStoredImage: false },
       removed: true,
       type: "avatar-changed",
     });
-    expect(state.identity.avatar).toEqual({ color: "#1f6f5c" });
+    expect(state.identity.avatar).toEqual({
+      color: "#1f6f5c",
+      hasStoredImage: false,
+    });
     expect(state.status).toBe("Avatar removed. Initials are shown instead.");
+  });
+
+  it("[REL-080] notes an upload held for review as an image to remove", () => {
+    const drawn = heroReducer(start(), {
+      avatar: { color: "#1f6f5c", hasStoredImage: false },
+      removed: true,
+      type: "avatar-changed",
+    });
+    const refused = heroReducer(drawn, {
+      detail: "Choose a JPEG, PNG, or WebP image.",
+      type: "avatar-failed",
+    });
+    expect(refused.identity.avatar?.hasStoredImage).toBe(false);
+    const held = heroReducer(drawn, {
+      detail: "Held for review.",
+      held: true,
+      type: "avatar-failed",
+    });
+    expect(held.identity.avatar).toEqual({
+      color: "#1f6f5c",
+      hasStoredImage: true,
+    });
+    expect(held.status).toBe("Held for review.");
   });
 
   it("closes the avatar editor when the person is archived", () => {
@@ -322,7 +349,7 @@ describe("PEOPLE-008 the merge dialog's anchor", () => {
     });
     const full = initialHeroState(
       personIdentity({
-        avatar: { color: "#b3d5fe" },
+        avatar: { color: "#b3d5fe", hasStoredImage: false },
         familyName: "Lovelace",
         middleName: "Augusta",
         nickname: "Countess",
@@ -330,7 +357,7 @@ describe("PEOPLE-008 the merge dialog's anchor", () => {
       false,
     );
     expect(mergeAnchor(full, ids.person)).toEqual({
-      avatar: { color: "#b3d5fe" },
+      avatar: { color: "#b3d5fe", hasStoredImage: false },
       familyName: "Lovelace",
       givenName: "Ada",
       id: ids.person,

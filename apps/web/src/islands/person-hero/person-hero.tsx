@@ -317,6 +317,7 @@ export function PersonHero(props: PersonHeroProps) {
       dispatch({
         detail: answer.problem?.detail ??
           "The avatar could not be changed right now.",
+        held: answer.problem?.code === "avatar_quarantined",
         type: "avatar-failed",
       });
       return;
@@ -647,7 +648,12 @@ export function PersonHero(props: PersonHeroProps) {
             onRemove={removeAvatar}
             onSubmit={uploadAvatar}
             open={state.avatarEditing && !state.archived}
-            removable={Boolean(identity.avatar?.imageUrl)}
+            held={Boolean(
+              identity.avatar?.hasStoredImage && !identity.avatar.imageUrl,
+            )}
+            removable={Boolean(
+              identity.avatar?.imageUrl || identity.avatar?.hasStoredImage,
+            )}
           />
           <DeleteDialog
             confirmable={confirmable}

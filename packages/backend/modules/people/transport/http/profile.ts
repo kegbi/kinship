@@ -34,7 +34,7 @@ import {
   type PeopleHttpServices,
   PERSON_FORBIDDEN,
   PERSON_ID_INVALID,
-  withAvatarDescriptor,
+  withStoredAvatarDescriptor,
 } from "./shared.ts";
 
 /** What one person's read-only page is served from. */
@@ -204,7 +204,7 @@ export function createProfileRoutes(
     return context.json({
       dueInformation: result.dueInformation,
       ...(result.genderOptions ? { genderOptions: result.genderOptions } : {}),
-      person: withAvatarDescriptor(result.person),
+      person: withStoredAvatarDescriptor(result.person),
       status: result.status,
       ...(includeSummary && result.summary ? { summary: result.summary } : {}),
     });

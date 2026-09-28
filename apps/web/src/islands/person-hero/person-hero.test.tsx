@@ -976,7 +976,9 @@ describe("PEOPLE-007 person hero avatar", () => {
 
   it("draws the avatar's colour behind the initials", async () => {
     markup();
-    await mount(profile({ person: { avatar: { color: "#1f6f5c" } } }));
+    await mount(profile({
+      person: { avatar: { color: "#1f6f5c", hasStoredImage: false } },
+    }));
     const avatar = element("#person-profile-avatar");
     expect(avatar.textContent).toBe("AL");
     expect(avatar.style.backgroundColor).toBe("#1f6f5c");
@@ -986,7 +988,9 @@ describe("PEOPLE-007 person hero avatar", () => {
 
   it("uploads an avatar, holding its controls while it saves, and removes it", async () => {
     markup();
-    await mount(profile({ person: { avatar: { color: "#1f6f5c" } } }));
+    await mount(profile({
+      person: { avatar: { color: "#1f6f5c", hasStoredImage: false } },
+    }));
     const user = userEvent.setup();
     await openMenu();
     await user.click(screen.getByRole("button", { name: "Change avatar" }));
@@ -1003,7 +1007,7 @@ describe("PEOPLE-007 person hero avatar", () => {
     const api = stubApi({
       [`PUT ${AVATAR}`]: held.promise,
       [`DELETE ${AVATAR}`]: jsonResponse({
-        avatar: { color: "#1f6f5c" },
+        avatar: { color: "#1f6f5c", hasStoredImage: false },
         status: "removed",
       }),
     });
@@ -1024,7 +1028,7 @@ describe("PEOPLE-007 person hero avatar", () => {
     expect(upload?.headers.get("X-Workspace-Id")).toBe(workspaceId);
     await act(async () => {
       held.resolve(jsonResponse({
-        avatar: { color: "#1f6f5c", imageUrl },
+        avatar: { color: "#1f6f5c", hasStoredImage: true, imageUrl },
         status: "updated",
       }));
       await Promise.resolve();
@@ -1086,6 +1090,73 @@ describe("PEOPLE-007 person hero avatar", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Change avatar" }),
     );
+  });
+
+  it("[REL-080] removes an image held for review though initials are drawn", async () => {
+    markup();
+    await mount(profile({
+      person: { avatar: { color: "#1f6f5c", hasStoredImage: true } },
+    }));
+    const user = userEvent.setup();
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    const form = screen.getByRole("form", { name: "Change avatar" });
+    expect(within(form).getByText(/held for review/).textContent).toBe(
+      "An image for this avatar is held for review and is not shown. Remove avatar deletes it.",
+    );
+    const api = stubApi({
+      [`DELETE ${AVATAR}`]: jsonResponse({
+        avatar: { color: "#1f6f5c", hasStoredImage: false },
+        status: "removed",
+      }),
+    });
+    await user.click(
+      within(form).getByRole("button", { name: "Remove avatar" }),
+    );
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toBe(
+        "Avatar removed. Initials are shown instead.",
+      )
+    );
+    expect(api.calls()).toContain(`DELETE /api/v1/people/${personId}/avatar`);
+
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    expect(within(form).queryByRole("button", { name: "Remove avatar" }))
+      .toBeNull();
+    expect(within(form).queryByText(/held for review/)).toBeNull();
+  });
+
+  it("[REL-080] offers to remove an upload the file check held for review", async () => {
+    markup();
+    await mount(profile({
+      person: { avatar: { color: "#1f6f5c", hasStoredImage: false } },
+    }));
+    const user = userEvent.setup();
+    await openMenu();
+    await user.click(screen.getByRole("button", { name: "Change avatar" }));
+    const form = screen.getByRole("form", { name: "Change avatar" });
+    expect(within(form).queryByRole("button", { name: "Remove avatar" }))
+      .toBeNull();
+    stubApi({
+      [`PUT ${AVATAR}`]: problemResponse(423, {
+        code: "avatar_quarantined",
+        detail:
+          "This image did not pass the file check and was held for review. Choose another image.",
+      }),
+    });
+    await user.upload(within(form).getByLabelText("Avatar image"), png());
+    await user.click(
+      within(form).getByRole("button", { name: "Upload avatar" }),
+    );
+    await waitFor(() =>
+      expect(text("#person-lifecycle-status")).toContain("held for review")
+    );
+    expect(form.hidden).toBe(false);
+    expect(
+      within(form).getByRole("button", { name: "Remove avatar" }),
+    ).toHaveProperty("disabled", false);
+    expect(within(form).getByText(/is not shown/)).toBeTruthy();
   });
 
   it("offers no avatar change for an archived person", async () => {

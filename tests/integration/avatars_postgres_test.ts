@@ -90,7 +90,11 @@ const api = apiSupport(configured.app, mail, sql);
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 interface AvatarBody {
-  readonly avatar?: { readonly color: string; readonly imageUrl?: string };
+  readonly avatar?: {
+    readonly color: string;
+    readonly hasStoredImage?: boolean;
+    readonly imageUrl?: string;
+  };
   readonly code?: string;
   readonly status?: string;
 }
@@ -219,7 +223,10 @@ Deno.test("[PEOPLE-007] an avatar is uploaded, drawn, replaced, and removed thro
   );
   const removedBody = await removed.json() as AvatarBody;
   assertEquals(removed.status, 200, "the avatar is removed");
-  assertEquals(removedBody.avatar, { color: before.color });
+  assertEquals(removedBody.avatar, {
+    color: before.color,
+    hasStoredImage: false,
+  });
   assertEquals((await profileAvatar(owner, ada))?.imageUrl, undefined);
   const actions = await audits(ada);
   assertEquals(
@@ -466,6 +473,11 @@ Deno.test("[PEOPLE-007] removing the avatar removes a quarantined avatar and the
   assertEquals(held.status, 423, "the disguised image is held for review");
   const [heldId] = await keptAvatarFiles(ada);
   assert(heldId, "the held image is kept");
+  const heldAvatar = await profileAvatar(owner, ada);
+  assert(
+    heldAvatar?.hasStoredImage === true && heldAvatar.imageUrl === undefined,
+    "the person's page says an image is held though none is drawn (REL-080)",
+  );
   const linked = await storedAvatar(owner, ada);
   // A later verification of the stored bytes can quarantine a linked image.
   await sql`
@@ -475,6 +487,11 @@ Deno.test("[PEOPLE-007] removing the avatar removes a quarantined avatar and the
     (await profileAvatar(owner, ada))?.imageUrl,
     undefined,
     "a quarantined avatar is not drawn",
+  );
+  assertEquals(
+    (await profileAvatar(owner, ada))?.hasStoredImage,
+    true,
+    "the quarantined avatar is still stored for Remove avatar to take away",
   );
 
   const removed = await api.request(
@@ -489,6 +506,11 @@ Deno.test("[PEOPLE-007] removing the avatar removes a quarantined avatar and the
     assertEquals(state.kind, null, "and unlinked");
   }
   assertEquals(await keptAvatarFiles(ada), [], "no avatar image is left");
+  assertEquals(
+    (await profileAvatar(owner, ada))?.hasStoredImage,
+    false,
+    "and the person's page says so",
+  );
   const actions = await audits(ada);
   assertEquals(
     actions.filter((action) => action === "people.avatar-removed").length,

@@ -35,6 +35,7 @@ interface PersonProfileRow {
   readonly archived_at: Date | null;
   readonly avatar_background_color: string | null;
   readonly avatar_file_id: string | null;
+  readonly avatar_stored: boolean | null;
   readonly description: string | null;
   readonly family_name: string | null;
   readonly gender: string | null;
@@ -127,10 +128,13 @@ function identity(row: PersonProfileRow): PersonProfileIdentity | undefined {
     return undefined;
   }
   return {
-    avatar: pickDefined({
-      backgroundColor: row.avatar_background_color,
-      fileId: row.avatar_file_id,
-    }),
+    avatar: {
+      ...pickDefined({
+        backgroundColor: row.avatar_background_color,
+        fileId: row.avatar_file_id,
+      }),
+      hasStoredImage: row.avatar_stored === true,
+    },
     ...pickDefined({
       description: row.description,
       familyName: row.family_name,
@@ -314,6 +318,23 @@ export class PostgresPersonProfileRepository
         avatar.background_color as avatar_background_color,
         case when avatar.source = 'file' then avatar_file.id::text end
           as avatar_file_id,
+        -- An avatar image stored for the person, drawn or held for review,
+        -- which removing the avatar takes away (REL-080): the linked one,
+        -- or any avatar-kind image of theirs the file check quarantined.
+        ((avatar.source = 'file' and exists (
+          select 1 from crm.files linked
+          where linked.id = avatar.file_id
+            and linked.workspace_id = workspace.id
+            and linked.status in ('available', 'quarantined')
+            and linked.deleted_at is null
+        )) or exists (
+          select 1 from crm.person_file_links held_link
+          join crm.files held on held.id = held_link.file_id
+            and held.workspace_id = workspace.id
+            and held.status = 'quarantined'
+            and held.deleted_at is null
+          where held_link.person_id = person.id and held_link.kind = 'avatar'
+        )) as avatar_stored,
         ${instantColumn("person.updated_at")} as updated_at,
         coalesce((select self.self_person_id from crm.workspace_members self
           where self.id = ${command.memberId}::uuid) = person.id,

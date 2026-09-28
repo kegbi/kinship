@@ -3236,7 +3236,7 @@ export interface components {
             readonly imageUrl?: string;
         };
         readonly PersonAvatarChanged: {
-            readonly avatar: components["schemas"]["PersonAvatar"];
+            readonly avatar: components["schemas"]["PersonProfileAvatar"];
             /** @enum {string} */
             readonly status: "removed" | "updated";
         };
@@ -3472,8 +3472,13 @@ export interface components {
             readonly label: string;
             readonly value: string;
         };
+        readonly PersonProfileAvatar: {
+            readonly color: string;
+            readonly imageUrl?: string;
+            readonly hasStoredImage: boolean;
+        };
         readonly PersonProfileIdentity: {
-            readonly avatar?: components["schemas"]["PersonAvatar"];
+            readonly avatar?: components["schemas"]["PersonProfileAvatar"];
             readonly description?: string;
             readonly familyName?: string;
             readonly gender?: string;

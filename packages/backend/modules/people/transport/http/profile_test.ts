@@ -7,7 +7,12 @@
  */
 
 import { createPeopleRoutes } from "./routes.ts";
-import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertStatus,
+} from "../../../../testing/assert.ts";
+import { avatarColor } from "../../public.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
 import { actor, headers, services } from "./people.test-helper.ts";
 
@@ -347,4 +352,60 @@ Deno.test("PEOPLE-001 HTTP maps canonical identity read states safely", async ()
     { headers },
   );
   assertStatus(malformed, 400, "malformed canonical ID is rejected");
+});
+
+Deno.test("[REL-080] the profile avatar says whether an image is stored, drawn or held", async () => {
+  const personId = fixtures.personId();
+  const fileId = "00000000-0000-4000-8000-000000000200";
+  const read = async (avatar: Record<string, unknown>) => {
+    const app = createPeopleRoutes(services(
+      { create: () => Promise.reject(new Error("must not create")) },
+      undefined,
+      undefined,
+      {
+        get: () =>
+          Promise.resolve({
+            dueInformation: {
+              detail: "0 open tasks.",
+              openTaskCount: 0,
+              status: "ready",
+            },
+            person: {
+              avatar,
+              givenName: "Ada",
+              id: personId,
+              isDeceased: false,
+              isPartial: false,
+              isSelf: false,
+              isStarred: false,
+              tagCount: 0,
+              tags: [],
+              updatedAt: "2026-08-15T08:00:00.000Z",
+            },
+            status: "ready",
+          }),
+      },
+    ));
+    const response = await app.request(
+      `http://localhost/api/v1/people/${personId}`,
+      { headers },
+    );
+    assertStatus(response, 200);
+    return (await response.json() as {
+      readonly person: { readonly avatar?: unknown };
+    }).person.avatar;
+  };
+  const color = avatarColor(personId);
+
+  assertEquals(await read({}), { color, hasStoredImage: false });
+  assertEquals(
+    await read({ hasStoredImage: true }),
+    { color, hasStoredImage: true },
+    "an image held for review is stored though it is not drawn",
+  );
+  assertEquals(await read({ fileId, hasStoredImage: true }), {
+    color,
+    hasStoredImage: true,
+    imageUrl: `/api/v1/people/${personId}/files/${fileId}/content`,
+  });
 });

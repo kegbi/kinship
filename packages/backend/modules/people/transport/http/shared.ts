@@ -123,6 +123,27 @@ export function avatarDescriptor(
 }
 
 /**
+ * The avatar on the person's own page and in an avatar change (REL-080): the
+ * descriptor, and whether an image is stored for the person at all — drawn,
+ * or held for review and so never drawn — which removing the avatar clears.
+ */
+export function storedAvatarDescriptor(
+  personId: string,
+  record: PersonAvatarRecord = {},
+): {
+  readonly color: string;
+  readonly hasStoredImage: boolean;
+  readonly imageUrl?: string;
+} {
+  const { color, ...image } = avatarDescriptor(personId, record);
+  return {
+    color,
+    hasStoredImage: Boolean(record.fileId) || record.hasStoredImage === true,
+    ...image,
+  };
+}
+
+/**
  * A read model's person with its avatar record presented as the descriptor.
  * A person the read model said nothing about keeps saying nothing.
  */
@@ -136,6 +157,20 @@ export function withAvatarDescriptor<
   return {
     ...rest,
     ...(avatar ? { avatar: avatarDescriptor(person.id, avatar) } : {}),
+  };
+}
+
+/** The same, for the person's own page, saying whether an image is stored. */
+export function withStoredAvatarDescriptor<
+  Person extends {
+    readonly avatar?: PersonAvatarRecord;
+    readonly id: string;
+  },
+>(person: Person) {
+  const { avatar, ...rest } = person;
+  return {
+    ...rest,
+    ...(avatar ? { avatar: storedAvatarDescriptor(person.id, avatar) } : {}),
   };
 }
 

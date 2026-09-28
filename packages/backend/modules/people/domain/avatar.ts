@@ -70,11 +70,14 @@ export function avatarColor(personId: string, stored?: string): string {
 
 /**
  * What a read model knows about a person's avatar: the stored colour, and the
- * file behind the image only when that file is available to be drawn.
+ * file behind the image only when that file is available to be drawn. The
+ * person's own page also says whether any avatar image is stored for them,
+ * drawn or held for review, since removing the avatar takes it away (REL-080).
  */
 export interface PersonAvatarRecord {
   readonly backgroundColor?: string;
   readonly fileId?: string;
+  readonly hasStoredImage?: boolean;
 }
 
 /** The avatar a reader is given: a colour, and an image when there is one. */

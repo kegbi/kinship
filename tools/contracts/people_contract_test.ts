@@ -1408,3 +1408,29 @@ Deno.test("PEOPLE-006 OpenAPI exposes strict section-scoped profile facts", () =
     "the documented query relation matches runtime option continuation",
   );
 });
+
+Deno.test("[REL-080] the person's own page and an avatar change say whether an image is stored", () => {
+  const schemas = (buildOpenApiDocument().components as {
+    schemas: Record<string, {
+      required?: string[];
+      properties: Record<string, { $ref?: string; type?: string }>;
+    }>;
+  }).schemas;
+  const stored = schemas.PersonProfileAvatar;
+  assert(
+    stored?.properties.hasStoredImage?.type === "boolean" &&
+      stored.required?.includes("hasStoredImage"),
+    "the profile avatar always says whether an image is stored",
+  );
+  for (const owner of ["PersonProfileIdentity", "PersonAvatarChanged"]) {
+    assert(
+      schemas[owner]?.properties.avatar?.$ref ===
+        "#/components/schemas/PersonProfileAvatar",
+      `${owner} carries the stored-image flag`,
+    );
+  }
+  assert(
+    !("hasStoredImage" in (schemas.PersonAvatar?.properties ?? {})),
+    "a list's avatar draws only what it shows",
+  );
+});
