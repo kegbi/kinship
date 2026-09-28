@@ -85,12 +85,15 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
   async findForAuthentication(
     command: Parameters<ApiTokenRepository["findForAuthentication"]>[0],
   ) {
+    // The lock only has to hold off a revocation or another writer until the
+    // use is recorded; no key column changes, so a foreign key check against
+    // the row need not wait (REL-073).
     const result = await sql<AuthenticationRow>`
       select ${columns}, token.token_hash as hash,
         token.user_id::text as user_id, token.workspace_id::text as workspace_id
       from crm.api_tokens token
       where token.id = ${command.id}::uuid
-      for update of token
+      for no key update of token
     `.execute(databaseFromSession(command.transaction));
     const value = result.rows[0];
     return value
@@ -118,12 +121,15 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
 
   async markUsed(command: Parameters<ApiTokenRepository["markUsed"]>[0]) {
     // The throttle lives in the predicate, so skipping the write costs no
-    // extra read (REL-067).
+    // extra read (REL-067). A last use after `occurredAt` came from a host
+    // whose clock ran ahead; it is replaced rather than left to pause the
+    // record until real time catches up (REL-073).
     await sql`
       update crm.api_tokens set last_used_at = ${command.occurredAt},
         updated_at = ${command.occurredAt}
       where id = ${command.id}::uuid and revoked_at is null
-        and (last_used_at is null or last_used_at < ${command.staleBefore})
+        and (last_used_at is null or last_used_at < ${command.staleBefore}
+          or last_used_at > ${command.occurredAt})
     `.execute(databaseFromSession(command.transaction));
   }
 

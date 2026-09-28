@@ -1,3 +1,4 @@
+import type postgres from "postgres";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createApiTokenManagement,
@@ -299,6 +300,142 @@ Deno.test({
         later.status === "authenticated" && later.lastUsedAt === minute(16) &&
           later.updatedAt === minute(16),
         `a use after 15 minutes is recorded: ${JSON.stringify(later)}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+// --- REL-073 -------------------------------------------------------------
+
+/** Whether `statement`, run on another connection, waits on a row lock. */
+function blockedBy(
+  statement: (transaction: postgres.TransactionSql) => Promise<unknown>,
+) {
+  return sql.begin(async (transaction) => {
+    await transaction`set local lock_timeout = '250ms'`;
+    try {
+      await transaction.savepoint(statement);
+      return false;
+    } catch (error) {
+      if (error instanceof sql.PostgresError && error.code === "55P03") {
+        return true;
+      }
+      throw error;
+    }
+  });
+}
+
+Deno.test({
+  name:
+    "[API-001] REL-073 authentication locks the token against writers but not key-share readers",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `api-token-lock-${crypto.randomUUID()}`,
+      );
+      const actors = new PostgresActorRevalidation();
+      const repository = new PostgresApiTokenRepository();
+      const transactions = new PostgresApiTokenTransaction(connection.db);
+      const tokens = createApiTokenManagement({
+        actorContext: actors,
+        actors,
+        audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
+        clock: { now: () => new Date() },
+        ids: { next: () => crypto.randomUUID() },
+        repository,
+        secrets: new WebCryptoApiTokenSecrets(),
+        transaction: transactions,
+      });
+      const created = await tokens.create(actor, {
+        name: "Locked token",
+        scopes: ["people:read"],
+      });
+      assert(created.status === "created", "token minted");
+      const id = created.record.id;
+      const probes = await transactions.run(async (transaction) => {
+        const found = await repository.findForAuthentication({
+          id,
+          transaction,
+        });
+        assert(found.status === "found", "token found");
+        return {
+          // A foreign key check takes this lock; FOR UPDATE would block it.
+          keyShare: await blockedBy((t) =>
+            t`select 1 from crm.api_tokens where id = ${id}::uuid for key share`
+          ),
+          revocation: await blockedBy((t) =>
+            t`update crm.api_tokens set revoked_at = now() where id = ${id}::uuid`
+          ),
+        };
+      });
+      assert(
+        !probes.keyShare && probes.revocation,
+        `only the revocation waits on the authentication: ${
+          JSON.stringify(probes)
+        }`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[API-001] REL-073 a last use recorded in the future does not pause the record",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `api-token-skew-${crypto.randomUUID()}`,
+      );
+      const start = new Date(Math.floor(Date.now() / 1_000) * 1_000);
+      let now = start;
+      const actors = new PostgresActorRevalidation();
+      const tokens = createApiTokenManagement({
+        actorContext: actors,
+        actors,
+        audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
+        clock: { now: () => now },
+        ids: { next: () => crypto.randomUUID() },
+        repository: new PostgresApiTokenRepository(),
+        secrets: new WebCryptoApiTokenSecrets(),
+        transaction: new PostgresApiTokenTransaction(connection.db),
+      });
+      const created = await tokens.create(actor, {
+        name: "Skewed token",
+        scopes: ["people:read"],
+      });
+      assert(created.status === "created", "token minted");
+      // A host whose clock runs an hour ahead records a use first.
+      now = new Date(start.getTime() + 60 * 60_000);
+      await tokens.authenticate(created.secret, "people:read");
+      now = start;
+      const accepted = await tokens.authenticate(
+        created.secret,
+        "people:read",
+      );
+      const [row] = await sql<
+        { last_used_at: Date | null }[]
+      >`select last_used_at from crm.api_tokens where id = ${created.record.id}::uuid`;
+      assert(
+        accepted.status === "authenticated" &&
+          row?.last_used_at?.getTime() === start.getTime(),
+        `a correct clock replaces a future last use: ${
+          JSON.stringify({
+            lastUsedAt: row?.last_used_at,
+            status: accepted.status,
+          })
+        }`,
       );
     } finally {
       await connection.destroy();

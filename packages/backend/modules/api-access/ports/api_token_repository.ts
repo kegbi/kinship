@@ -50,8 +50,9 @@ export interface ApiTokenRepository {
     command: ApiTokenActor & { readonly transaction: ApiTokenTransaction },
   ): Promise<readonly ApiTokenRecord[]>;
   /**
-   * Records the use at `occurredAt` only when the stored last use is missing
-   * or earlier than `staleBefore`; otherwise the row is left untouched.
+   * Records the use at `occurredAt` only when the stored last use is missing,
+   * earlier than `staleBefore`, or later than `occurredAt` (a skewed clock);
+   * otherwise the row is left untouched.
    */
   markUsed(command: {
     readonly id: string;

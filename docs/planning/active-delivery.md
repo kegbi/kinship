@@ -1058,7 +1058,7 @@ Playwright test carrying its stable flow ID.
       `manual_attention` and reads the stored key back as the exact key the
       channel received.
 
-- [ ] **REL-073 — Token authentication still locks the token row on every use.**
+- [x] **REL-073 — Token authentication still locks the token row on every use.**
       Found reviewing REL-067: `findForAuthentication` takes
       `SELECT … FOR UPDATE` on every calendar-feed fetch and API call, which
       writes lock information into the row's page even when REL-067 skips the
@@ -1067,6 +1067,18 @@ Playwright test carrying its stable flow ID.
       needs its own look at the revocation race. Separately, one host whose
       clock runs ahead can write a future `last_used_at` and pause other hosts'
       updates until real time passes it plus 15 minutes (display only).
+      Delivered 2026-09-28: `findForAuthentication` takes `FOR NO KEY UPDATE`
+      instead of `FOR UPDATE`. The lock only has to hold off a revocation or
+      usage write until the use is recorded, and no key column changes, so
+      foreign-key checks (`FOR KEY SHARE`) no longer wait on every token use
+      while a concurrent revocation still does. `markUsed` also writes when the
+      stored `last_used_at` is later than the writer's `occurredAt`, so a host
+      whose clock ran ahead no longer pauses other hosts' records until real
+      time passes that value plus 15 minutes. One adapter serves both personal
+      access and calendar-feed tokens. API-001 integration tests probe a second
+      connection with `lock_timeout`: during authentication a key-share lock is
+      granted and a revocation times out; a correct-clock use replaces a last
+      use recorded an hour in the future.
 
 - [ ] **REL-074 — Other person islands report settled before their read is
       drawn.** Found in REL-049: the fact editor (`facts/fact-editor.tsx`) and
