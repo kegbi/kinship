@@ -774,7 +774,7 @@ const FIRST_RUN_ACTIONS = {
     section: "important-dates",
   },
   "stay-in-touch": {
-    control: '[data-cadence-form] input[name="intervalCount"]',
+    control: '[data-profile-section="stay-in-touch"] [data-cadence-add]',
     section: "stay-in-touch",
   },
 } as const;
@@ -798,15 +798,15 @@ function mountPersonFirstRunActions(
         FIRST_RUN_ACTIONS[action as keyof typeof FIRST_RUN_ACTIONS];
       focusSection(profile, navigation, target.section);
       await eagerRail;
-      const control = document.querySelector<
-        HTMLButtonElement | HTMLInputElement
-      >(target.control);
+      // Each action's add control is its section owner's one open path.
+      const control = document.querySelector<HTMLButtonElement>(
+        target.control,
+      );
       if (
         !control || control.hidden || control.disabled ||
         control.closest("[hidden]")
       ) return;
-      if (control instanceof HTMLButtonElement) control.click();
-      else control.focus();
+      control.click();
     });
   }
 }

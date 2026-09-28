@@ -405,7 +405,7 @@ function reminderSectionMarkup(): void {
 
 function firstRunActionMarkup(): {
   readonly birthday: HTMLButtonElement;
-  readonly cadence: HTMLInputElement;
+  readonly cadenceAdd: HTMLButtonElement;
   readonly firstMeeting: HTMLButtonElement;
 } {
   document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
@@ -425,8 +425,9 @@ function firstRunActionMarkup(): {
        <button data-profile-fact-add type="button" hidden>Add first meeting</button>
      </section>
      <section data-profile-section="stay-in-touch" tabindex="-1">
+       <header><h3>Stay in touch</h3><button data-cadence-add type="button" aria-label="Add stay-in-touch cadence" hidden>+</button></header>
        <p data-cadence-state></p><ul data-cadence-list></ul>
-       <form data-cadence-form><input name="intervalCount"><button type="submit">Save cadence</button></form>
+       <form data-cadence-form hidden><input name="intervalCount"><button type="submit">Save cadence</button></form>
      </section>`,
   );
   document.querySelector('[data-zone="planning"]')?.insertAdjacentHTML(
@@ -440,8 +441,8 @@ function firstRunActionMarkup(): {
     birthday: document.querySelector<HTMLButtonElement>(
       "#important-date-add",
     )!,
-    cadence: document.querySelector<HTMLInputElement>(
-      '[data-cadence-form] input[name="intervalCount"]',
+    cadenceAdd: document.querySelector<HTMLButtonElement>(
+      "[data-cadence-add]",
     )!,
     firstMeeting: document.querySelector<HTMLButtonElement>(
       '[data-profile-section="first-meeting"] [data-profile-fact-add]',
@@ -1374,7 +1375,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ) action.click();
     expect(firstMeetingClick).not.toHaveBeenCalled();
     expect(birthdayClick).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(controls.cadence);
+    expect(controls.cadenceAdd.hidden).toBe(true);
 
     controls.firstMeeting.hidden = false;
     controls.birthday.hidden = false;
@@ -1382,18 +1383,41 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     await mounting;
     await vi.waitFor(() => expect(firstMeetingClick).toHaveBeenCalledOnce());
     expect(birthdayClick).toHaveBeenCalledOnce();
-    // The reminders island (GAP-031) owns the stay-in-touch block and draws
-    // its cadence editor closed, as the shell does, so the action focuses no
-    // field inside it and focus stays on the person's heading.
-    const cadenceForm = document.querySelector<HTMLFormElement>(
-      "[data-cadence-form]",
-    )!;
-    expect(cadenceForm.hidden || cadenceForm.closest("[hidden]") !== null)
-      .toBe(true);
-    expect(cadenceForm.contains(document.activeElement)).toBe(false);
-    expect(document.activeElement).toBe(
-      document.querySelector("#person-profile-name"),
+    // The reminders island (GAP-031) owns the stay-in-touch block; its add
+    // control opens the cadence editor with focus in the cadence field.
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector(
+          '[data-cadence-form] input[name="intervalCount"]',
+        ),
+      )
     );
+  });
+
+  it("REL-049 opens the cadence editor from the stay-in-touch first action", async () => {
+    markup(`/app/people/${firstRunPersonId}`);
+    firstRunActionMarkup();
+    stubProfile(zeroProfile(), {
+      [REMINDERS]: noReminders,
+      [REST]: recorded,
+    });
+    await mountPersonWorkspace();
+
+    document.querySelector<HTMLButtonElement>(
+      '[data-first-run-action="stay-in-touch"]',
+    )!.click();
+    // The reminders island owns the block; its add control opens the editor
+    // and moves focus into the cadence field.
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector(
+          '[data-cadence-form] input[name="intervalCount"]',
+        ),
+      )
+    );
+    expect(
+      document.querySelector<HTMLFormElement>("[data-cadence-form]")?.hidden,
+    ).toBe(false);
   });
 
   it("UXD-005B never clicks a hidden or disabled first-action control", async () => {
@@ -1405,7 +1429,11 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     controls.birthday.addEventListener("click", birthdayClick);
     controls.birthday.hidden = false;
     controls.birthday.disabled = true;
-    controls.cadence.disabled = true;
+    // Without its reminder form the reminders island stays unmounted, so the
+    // shell's cadence add control stays hidden and its editor closed.
+    document.querySelector("[data-reminder-form]")?.remove();
+    const cadenceClick = vi.fn();
+    controls.cadenceAdd.addEventListener("click", cadenceClick);
     stubProfile(zeroProfile(), {
       [REMINDERS]: noReminders,
       [REST]: recorded,
@@ -1420,27 +1448,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     await Promise.resolve();
     expect(firstMeetingClick).not.toHaveBeenCalled();
     expect(birthdayClick).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(controls.cadence);
-  });
-
-  it("UXD-005B focuses a visible first-action field once the rail settles", async () => {
-    markup(`/app/people/${firstRunPersonId}`);
-    const controls = firstRunActionMarkup();
-    // Without its reminder form the reminders island stays unmounted, so the
-    // shell's cadence field remains the visible stay-in-touch control.
-    document.querySelector("[data-reminder-form]")?.remove();
-    stubProfile(zeroProfile(), {
-      [REMINDERS]: noReminders,
-      [REST]: recorded,
-    });
-    await mountPersonWorkspace();
-
-    document.querySelector<HTMLButtonElement>(
-      '[data-first-run-action="stay-in-touch"]',
-    )!.click();
-    await vi.waitFor(() =>
-      expect(document.activeElement).toBe(controls.cadence)
-    );
+    expect(cadenceClick).not.toHaveBeenCalled();
   });
 
   it("PRF-001 aligns the shared navigator only when opening its directory", async () => {

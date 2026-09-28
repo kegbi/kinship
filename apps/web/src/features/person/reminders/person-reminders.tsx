@@ -199,7 +199,9 @@ export function PersonReminders(props: PersonRemindersProps) {
     try {
       await read(false);
     } finally {
-      setBusy(false);
+      // The answer is drawn before the read settles, so the page acting on a
+      // settled island finds the controls it shows (REL-049).
+      flushSync(() => setBusy(false));
     }
   };
 

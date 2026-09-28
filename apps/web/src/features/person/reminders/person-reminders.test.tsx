@@ -988,6 +988,20 @@ describe("PLANNING-002 person reminders island", () => {
     expect(reminderAdd().disabled).toBe(false);
   });
 
+  it("REL-049 resolves once the settled add controls are drawn", async () => {
+    shell();
+    stubApi({ [LIST]: listed() });
+    // Outside `act`, as the page mounts it: the page acts on the block as
+    // soon as the mount resolves.
+    const unmount = await mountPersonReminders(
+      element("#person-profile-ready"),
+      sectionProps({ preferences: preferences() }),
+    );
+    onTestFinished(() => act(unmount));
+    expect(cadenceAdd().hidden).toBe(false);
+    expect(cadenceAdd().disabled).toBe(false);
+  });
+
   it("lets a restore's read replace a pending page, and a pending write hold the restore", async () => {
     shell();
     const page = deferred<Response>();

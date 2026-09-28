@@ -569,7 +569,7 @@ Playwright test carrying its stable flow ID.
       loading, proved by a reducer test over every read sequence and an island
       test with a failed preferences read and a superseded first read; every
       main run since passed `app-006c` on all three browsers.
-- [ ] **REL-049 — "Set a stay-in-touch cadence" never opens the cadence
+- [x] **REL-049 — "Set a stay-in-touch cadence" never opens the cadence
       editor.** Found reviewing GAP-031: the first-run action in
       `lib/people-profile.ts` targets the cadence field inside
       `[data-cadence-form]`, which `StayInTouchSection.astro` draws `hidden` and
@@ -577,7 +577,16 @@ Playwright test carrying its stable flow ID.
       `control.closest("[hidden]")` and focuses nothing, before and after
       GAP-031. Fix by aiming the action at the block's add control
       (`[data-cadence-add]`) so it opens the editor, with a focused test and the
-      `app-006b` flow unchanged.
+      `app-006b` flow unchanged. Delivered 2026-09-28: the first-run action, now
+      in `features/person/workspace.ts`, clicks the stay-in-touch block's
+      `[data-cadence-add]`, so the reminders island opens its editor and focuses
+      the cadence field as the single owner of the block. The island commits its
+      busy release with `flushSync` before it reports settled, so a click made
+      while the rail loads finds the add control drawn and enabled. The unit
+      test that asserted the old no-op now asserts the open editor; the one that
+      focused an always-hidden shell field is replaced by the REL-049 tests. No
+      `app-006b` spec exists any more, and no E2E spec exercises the first-run
+      actions.
 
 - [x] **REL-050 — Specs still leave a person workspace they just reached before
       it settles.** Main CI run `36276307459` on `9aa51fc` (a documentation-only
@@ -845,6 +854,26 @@ Playwright test carrying its stable flow ID.
       needs its own look at the revocation race. Separately, one host whose
       clock runs ahead can write a future `last_used_at` and pause other hosts'
       updates until real time passes it plus 15 minutes (display only).
+
+- [ ] **REL-074 — Other person islands report settled before their read is
+      drawn.** Found in REL-049: the fact editor (`facts/fact-editor.tsx`) and
+      probably other rail islands resolve their settled callback before React
+      commits the read result, so a first-run action such as "Log how you met"
+      clicked while the rail loads can find its add control still hidden or
+      disabled and do nothing. The existing test covers first-meeting and
+      birthday only with stand-in buttons. Apply REL-049's committed busy
+      release (or a settle-after-commit contract with a `mountSettled` helper
+      that supports it) to each island a first-run action targets, with a test
+      per island.
+
+- [ ] **REL-075 — `workspace.ts` coverage flips on one timing-dependent
+      branch.** Found reviewing REL-049: `focusSection`'s hidden-section early
+      return (`features/person/workspace.ts`, reached from
+      `reconcileSectionLocation(..., "settle")`) is covered in about one run in
+      five, on `main` as well, so the file's line and branch totals swing by
+      about 0.5 and 0.8 points. Add one test that deep-links to a hidden section
+      with focus on a real button before the workspace settles, and asserts
+      focus stays there while the notice appears.
 
 ## Just-In-Time Technical Capabilities
 
