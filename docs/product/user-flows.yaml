@@ -906,13 +906,16 @@ flows:
     # already generated. A digest-time change also applies to email
     # occurrences already pending, because the digest window is computed when
     # the worker claims. The audit event `planning.reminder-delivered` records
-    # the channel, and a digest's occurrence count.
+    # the channel, and a digest's occurrence count. An email occurrence that
+    # ends `failed` or `manual_attention` joins the member's Today attention
+    # queue as an email delivery problem, once per occurrence (REL-059).
     alternateOutcomes: [
       digest-batches-due-reminders-at-local-digest-time,
       unverified-email-falls-back-to-in-app,
       both-generates-in-app-and-email,
       provider-failure-then-retry,
       ambiguous-result-reconciled-never-resent,
+      undelivered-email-joins-today-attention,
     ]
     result: Each due email reminder, or each member's daily digest, is delivered exactly once and links to the person.
     auditEffect: reminder-delivered-with-channel

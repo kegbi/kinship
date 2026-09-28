@@ -218,14 +218,31 @@ export function attentionDestination(
   return `/app/people/${encodeURIComponent(item.person.id)}?section=${section}`;
 }
 
+/**
+ * What went wrong delivering an item by email, as the start of its line. The
+ * queue lists an email delivery only once it failed or needs attention
+ * (REL-059).
+ */
+function deliveryProblem(item: TodayAttentionItem): string {
+  if (
+    item.kind === "task" || item.kind === "cadence" ||
+    item.channel !== "email"
+  ) return "";
+  return item.reminderStatus === "manual_attention"
+    ? "Email reminder needs attention · "
+    : item.reminderStatus === "failed"
+    ? "Email reminder not delivered · "
+    : "";
+}
+
 /** The line under a queued item's title. */
 export function attentionMeta(
   item: TodayAttentionItem,
   preferences: TimePreferences | undefined,
 ): string {
-  const due = `${item.kind === "cadence" ? "Reconnect by" : "Due"} ${
-    formatInstant(item.dueAt, preferences)
-  }`;
+  const due = `${deliveryProblem(item)}${
+    item.kind === "cadence" ? "Reconnect by" : "Due"
+  } ${formatInstant(item.dueAt, preferences)}`;
   const who = item.person ? ` · ${item.person.name}` : "";
   if (item.kind !== "cadence") return `${due}${who}`;
   const contact = item.lastContactedAt
@@ -241,7 +258,7 @@ export function upcomingMeta(
   item: TodayAttentionItem,
   preferences: TimePreferences | undefined,
 ): string {
-  return `${formatInstant(item.dueAt, preferences)}${
+  return `${deliveryProblem(item)}${formatInstant(item.dueAt, preferences)}${
     item.person ? ` · ${item.person.name}` : ""
   }`;
 }

@@ -518,6 +518,41 @@ describe("GAP-033 Today attention presentation", () => {
     );
   });
 
+  it("REL-059 says when an email reminder was not delivered or needs attention", () => {
+    const due = "Aug 20, 2026, 9:00 AM";
+    const reminder = (
+      channel: "email" | "in_app",
+      reminderStatus: "failed" | "manual_attention" | "pending" | "retry",
+    ): TodayAttentionItem => ({
+      channel,
+      dueAt: "2026-08-20T09:00:00.000Z",
+      id: "r",
+      kind: "reminder",
+      occursOn: "2026-08-20",
+      person,
+      reminderStatus,
+      title: "Call Ada",
+    });
+    expect(attentionMeta(reminder("email", "failed"), utc)).toBe(
+      `Email reminder not delivered · Due ${due} · Ada Lovelace`,
+    );
+    expect(attentionMeta(reminder("email", "manual_attention"), utc)).toBe(
+      `Email reminder needs attention · Due ${due} · Ada Lovelace`,
+    );
+    expect(upcomingMeta(reminder("email", "failed"), utc)).toBe(
+      `Email reminder not delivered · ${due} · Ada Lovelace`,
+    );
+    expect(attentionMeta(reminder("in_app", "failed"), utc)).toBe(
+      `Due ${due} · Ada Lovelace`,
+    );
+    expect(upcomingMeta(reminder("in_app", "pending"), utc)).toBe(
+      `${due} · Ada Lovelace`,
+    );
+    expect(upcomingMeta(reminder("email", "retry"), utc)).toBe(
+      `${due} · Ada Lovelace`,
+    );
+  });
+
   it("offers Complete only for an active person's or the workspace's tasks", () => {
     expect(
       actionableTaskIds({

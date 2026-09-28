@@ -26,6 +26,7 @@ Deno.test("TODAY-001 groups and bounds attention in the member timezone", async 
             kind: "task",
             title: "Overdue task",
           }, {
+            channel: "in_app",
             dueAt: "2026-03-29T21:59:00.000Z",
             id: "00000000-0000-4000-8000-000000000902",
             kind: "reminder",
@@ -33,6 +34,7 @@ Deno.test("TODAY-001 groups and bounds attention in the member timezone", async 
             reminderStatus: "pending",
             title: "Today reminder",
           }, {
+            channel: "in_app",
             dueAt: "2026-03-29T21:58:00.000Z",
             id: "00000000-0000-4000-8000-000000000904",
             kind: "important-date",
@@ -40,6 +42,7 @@ Deno.test("TODAY-001 groups and bounds attention in the member timezone", async 
             reminderStatus: "pending",
             title: "Today important date",
           }, {
+            channel: "in_app",
             dueAt: "2026-03-29T21:58:30.000Z",
             id: "00000000-0000-4000-8000-000000000905",
             kind: "life-event",
@@ -117,6 +120,7 @@ Deno.test("TODAY-001 uses kind for stable bounded ties and deterministic dedupli
     {
       ...task(id, dueAt),
       kind: "reminder",
+      channel: "in_app",
       occursOn: dueAt.slice(0, 10),
       reminderStatus: "pending",
     },

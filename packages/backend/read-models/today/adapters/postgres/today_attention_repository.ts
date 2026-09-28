@@ -12,6 +12,7 @@ import { todayAttentionWindow } from "../../application/get_today_attention.ts";
 
 interface ItemRow {
   readonly archived: boolean | null;
+  readonly channel: "email" | "in_app" | null;
   readonly due_at: string | null;
   readonly id: string | null;
   readonly kind: TodayAttentionItem["kind"] | null;
@@ -51,6 +52,7 @@ export class PostgresTodayAttentionRepository
       ), projection_source as (
         select task.id, 'task'::text as kind, task.title, task.due_at,
           null::date as occurs_on, null::text as reminder_status,
+          null::text as channel,
           null::timestamptz as last_contacted_at, person.id as person_id,
           0::int as source_order, task.id as source_id,
           person.archived_at is not null as archived,
@@ -74,7 +76,8 @@ export class PostgresTodayAttentionRepository
           coalesce(occurrence.title_snapshot, reminder.title,
             target_task.title, target_event.name, target_date.label, 'Reminder'),
           effective.due_at,
-          occurrence.occurs_on, occurrence.status, null::timestamptz,
+          occurrence.occurs_on, occurrence.status, occurrence.channel,
+          null::timestamptz,
           target_person.id as person_id,
           1::int, occurrence.id,
           target_person.archived_at is not null,
@@ -85,8 +88,25 @@ export class PostgresTodayAttentionRepository
           sql.raw(personDisplayNameSql(UNNAMED_PERSON, "target_person"))
         } end
         from authorized join crm.reminders reminder on reminder.workspace_id = authorized.id
-        join crm.reminder_occurrences occurrence on occurrence.reminder_id = reminder.id
-          and occurrence.member_id = ${command.memberId}::uuid
+        join (
+          -- One row per occurrence: a member on 'both' has an in-app and an
+          -- email row for it. Attention is listed first, then failure, then
+          -- in-app. An email row is listed only when it failed or needs
+          -- attention (REL-059), since in-app already shows pending work.
+          select distinct on (delivery.reminder_id, delivery.occurs_on,
+              coalesce(delivery.lead_time_days, -1)) delivery.*
+          from crm.reminder_occurrences delivery
+          where delivery.member_id = ${command.memberId}::uuid
+            and (delivery.channel = 'in_app' or (delivery.channel = 'email'
+              and delivery.status in ('failed','manual_attention')))
+            and delivery.status in ('pending','retry','failed','manual_attention')
+            and (delivery.status <> 'retry' or delivery.next_attempt_at is not null)
+          order by delivery.reminder_id, delivery.occurs_on,
+            coalesce(delivery.lead_time_days, -1),
+            case delivery.status when 'manual_attention' then 0
+              when 'failed' then 1 else 2 end,
+            delivery.channel = 'email', delivery.id
+        ) occurrence on occurrence.reminder_id = reminder.id
         cross join lateral (select case when occurrence.status = 'retry'
           then occurrence.next_attempt_at else occurrence.deliver_at end as due_at) effective
         left join crm.tasks target_task on target_task.id = reminder.task_id
@@ -116,9 +136,6 @@ export class PostgresTodayAttentionRepository
             else reminder.target_kind = 'custom' and
               (reminder.person_id is null or (target_person.id is not null and target_person.deleted_at is null))
           end
-          and occurrence.channel = 'in_app'
-          and occurrence.status in ('pending','retry','failed','manual_attention')
-          and (occurrence.status <> 'retry' or occurrence.next_attempt_at is not null)
           and effective.due_at < ${window.thirtyDaysEnd}
           and not exists (select 1 from crm.stay_in_touch_cadences cadence
             where cadence.reminder_id = reminder.id and cadence.is_active)
@@ -126,7 +143,8 @@ export class PostgresTodayAttentionRepository
         select cadence.id, 'cadence', 'Reconnect with ' || ${
           sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
         },
-          cadence.next_due_at, null::date, null::text, cadence.last_contacted_at,
+          cadence.next_due_at, null::date, null::text, null::text,
+          cadence.last_contacted_at,
           person.id, 2::int, cadence.id, person.archived_at is not null, false,
           ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
         from authorized join crm.people person on person.workspace_id = authorized.id
@@ -152,13 +170,14 @@ export class PostgresTodayAttentionRepository
         from projection
       )
       select id::text, kind, title, ${instantColumn("due_at")} as due_at,
-        occurs_on::text, reminder_status,
+        occurs_on::text, reminder_status, channel,
         ${instantColumn("last_contacted_at")} as last_contacted_at,
         person_id::text, archived, unavailable, person_name
       from ranked where position <= case when bucket = 'upcoming'
         then ${command.upcomingLimit}::bigint
         else ${command.perAttentionGroupLimit}::bigint end
-      union all select null, null, null, null, null, null, null, null, null, null, null
+      union all select null, null, null, null, null, null, null, null, null, null,
+        null, null
         from authorized
     `.execute(transaction);
         if (result.rows.length === 0) return { status: "forbidden" as const };
@@ -193,11 +212,12 @@ export class PostgresTodayAttentionRepository
           }
           return (row.kind === "important-date" || row.kind === "life-event" ||
               row.kind === "reminder") &&
-              row.occurs_on &&
+              row.occurs_on && row.channel &&
               ["failed", "manual_attention", "pending", "retry"].includes(
                 row.reminder_status ?? "",
               )
             ? [{
+              channel: row.channel,
               dueAt: row.due_at,
               id: row.id,
               kind: row.kind,

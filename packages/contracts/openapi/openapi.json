@@ -24484,6 +24484,13 @@
             "type": "string",
             "format": "date"
           },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "in_app"
+            ]
+          },
           "reminderStatus": {
             "type": "string",
             "enum": [
@@ -24502,6 +24509,7 @@
           "id",
           "kind",
           "occursOn",
+          "channel",
           "reminderStatus",
           "title"
         ],
@@ -24528,6 +24536,13 @@
             "type": "string",
             "format": "date"
           },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "in_app"
+            ]
+          },
           "reminderStatus": {
             "type": "string",
             "enum": [
@@ -24546,6 +24561,7 @@
           "id",
           "kind",
           "occursOn",
+          "channel",
           "reminderStatus",
           "title"
         ],
@@ -24633,6 +24649,13 @@
             "type": "string",
             "format": "date"
           },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "in_app"
+            ]
+          },
           "reminderStatus": {
             "type": "string",
             "enum": [
@@ -24651,6 +24674,7 @@
           "id",
           "kind",
           "occursOn",
+          "channel",
           "reminderStatus",
           "title"
         ],

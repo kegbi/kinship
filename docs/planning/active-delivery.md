@@ -792,14 +792,23 @@ Playwright test carrying its stable flow ID.
       `test:coverage --module=lifecycle` now measures 86.5 / 93.8 / 95.8 on
       every run, the identity adapter 75.0 / 100 / 98.4.
 
-- [ ] **REL-059 — Failed email reminders never reach Today's attention queue.**
+- [x] **REL-059 — Failed email reminders never reach Today's attention queue.**
       Found reviewing GAP-044: `today_attention_repository.ts` filters
       `channel = 'in_app'`, so an email-only member's `failed` and
       `manual_attention` email occurrences are missing there. They still show in
       the Today reminders list and on the profile. Include email delivery
       failures in the attention queue, or record the product decision not to.
       Product-owner decision 2026-09-28: include failed and `manual_attention`
-      email deliveries in the attention queue.
+      email deliveries in the attention queue. Delivered 2026-09-28: the Today
+      attention read model picks one delivery per occurrence for the reader,
+      from in-app rows that are pending, retrying, failed, or need attention and
+      email rows that failed or need attention; `manual_attention` beats
+      `failed`, which beats pending work, and in-app wins a tie. Reminder,
+      important-date, and life-event attention items carry a required `channel`,
+      and Today prefixes "Email reminder not delivered" or "Email reminder needs
+      attention". Planning has no public dismiss or retry, so the item links to
+      the person's reminders. PostgreSQL, contract, and island tests cover it,
+      including member and workspace isolation and the tie.
 
 - [x] **REL-060 — A digest's attempt key outlives a failed attempt.** Found
       reviewing GAP-044: `markAttempted` stores the digest key in
@@ -1108,6 +1117,16 @@ Playwright test carrying its stable flow ID.
       Drive the interval with fake timers or gate the third answer. The same
       file also sleeps 120 ms and 100 ms on real timers (around lines 272 and
       342); move those to fake timers too.
+
+- [ ] **REL-088 — An undelivered reminder stays in Today's Overdue with no way
+      to clear it.** Found reviewing REL-059: failed and `manual_attention` rows
+      have no date limit in the attention query and planning has no public
+      dismiss or retry, so each undelivered email (and, as before, each failed
+      in-app delivery) stays in Overdue until its reminder or target changes.
+      Add a planning use case to acknowledge or retry an undelivered occurrence,
+      with an inline Today action. The query's `DISTINCT ON` subquery also reads
+      all of the member's open deliveries before the 30-day filters apply;
+      revisit it with the capacity profile as failed rows accumulate.
 
 ## Just-In-Time Technical Capabilities
 

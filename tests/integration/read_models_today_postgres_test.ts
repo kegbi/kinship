@@ -27,6 +27,7 @@ import {
   addPerson,
   closeResources,
   connection,
+  memberOf,
   type SeededActor,
   sql,
   transaction,
@@ -422,6 +423,139 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today attention stays in the reader's 
   assert(
     allowed.status === "ready" && refused.status === "forbidden",
     "the attention facade did not follow the reader's membership",
+  );
+});
+
+/**
+ * One delivery row of an existing reminder occurrence: `occurs_on` and the
+ * absent lead time are the source row's, so rows differing only in channel
+ * are the same occurrence delivered two ways.
+ */
+async function addDelivery(
+  actor: SeededActor,
+  occurrenceId: string,
+  channel: "email" | "in_app",
+  status: "failed" | "manual_attention" | "pending" | "sent",
+): Promise<string> {
+  const id = crypto.randomUUID();
+  const sent = status === "sent";
+  const result = sent
+    ? "confirmed"
+    : status === "manual_attention"
+    ? "ambiguous"
+    : "unattempted";
+  await sql`
+    insert into crm.reminder_occurrences (id, reminder_id, member_id,
+      occurs_on, deliver_at, channel, status, title_snapshot, sent_at,
+      provider_result_state, provider_receipt, provider_effect_at, visible_at)
+    select ${id}, source.reminder_id, ${actor.memberId}, source.occurs_on,
+      source.deliver_at, ${channel}, ${status}, source.title_snapshot,
+      case when ${sent} then source.deliver_at end,
+      ${result},
+      case when ${sent} then 'receipt' end,
+      case when ${sent} then source.deliver_at end,
+      case when ${sent} then source.deliver_at end
+    from crm.reminder_occurrences source where source.id = ${occurrenceId}
+  `;
+  return id;
+}
+
+/** A reminder of `actor`'s delivered by email alone, in the given state. */
+async function addEmailReminder(
+  actor: SeededActor,
+  title: string,
+  deliverAt: string,
+  status: "failed" | "manual_attention" | "pending" | "sent",
+): Promise<string> {
+  const seed = await addPersonReminder(actor, actor.personId, title, deliverAt);
+  const email = await addDelivery(actor, seed, "email", status);
+  await sql`delete from crm.reminder_occurrences where id = ${seed}`;
+  return email;
+}
+
+Deno.test("[TODAY-001] [PLANNING-003] REL-059 PostgreSQL Today attention lists the reader's undelivered email reminders once", async () => {
+  const { foreign, reader } = await twoWorkspaces("today-attention-email");
+  const colleague = await memberOf(reader, "member");
+  const failed = await addEmailReminder(
+    reader,
+    "Email failed",
+    inDays(-2),
+    "failed",
+  );
+  const unclear = await addEmailReminder(
+    reader,
+    "Email unclear",
+    inDays(-1),
+    "manual_attention",
+  );
+  await addEmailReminder(reader, "Email sent", inDays(-1), "sent");
+  await addEmailReminder(reader, "Email pending", inDays(1), "pending");
+  // `both`: the in-app copy was shown and the email copy failed.
+  const shown = await addPersonReminder(
+    reader,
+    reader.personId,
+    "Both failed",
+    inDays(-3),
+  );
+  const bothFailed = await addDelivery(reader, shown, "email", "failed");
+  await sql`
+    update crm.reminder_occurrences set status = 'sent', sent_at = deliver_at,
+      provider_result_state = 'confirmed', provider_receipt = 'in_app:shown',
+      provider_effect_at = deliver_at, visible_at = deliver_at
+    where id = ${shown}
+  `;
+  // `both`: the in-app copy is still pending and the email copy is unclear.
+  const pending = await addPersonReminder(
+    reader,
+    reader.personId,
+    "Both pending",
+    inDays(-4),
+  );
+  const bothUnclear = await addDelivery(
+    reader,
+    pending,
+    "email",
+    "manual_attention",
+  );
+  // `both`: both copies failed, so the tie goes to the in-app copy.
+  const twiceFailed = await addPersonReminder(
+    reader,
+    reader.personId,
+    "Both failed twice",
+    inDays(-5),
+  );
+  await sql`
+    update crm.reminder_occurrences set status = 'failed'
+    where id = ${twiceFailed}
+  `;
+  await addDelivery(reader, twiceFailed, "email", "failed");
+  await addEmailReminder(colleague, "Colleague failed", inDays(-1), "failed");
+  await addEmailReminder(foreign, "Foreign failed", inDays(-1), "failed");
+
+  const snapshot = await new PostgresTodayAttentionRepository(connection.db)
+    .getSnapshot({
+      ...actorOf(reader),
+      now: NOW,
+      perAttentionGroupLimit: 20,
+      upcomingLimit: 30,
+    });
+  assert(snapshot.status === "ready", `attention refused: ${snapshot.status}`);
+  const listed = snapshot.items.map((item) =>
+    item.kind === "reminder"
+      ? `${item.title}:${item.channel}:${item.reminderStatus}:${item.id}`
+      : `${item.kind}:${item.title}`
+  ).sort();
+  assert(
+    JSON.stringify(listed) === JSON.stringify([
+      `Both failed twice:in_app:failed:${twiceFailed}`,
+      `Both failed:email:failed:${bothFailed}`,
+      `Both pending:email:manual_attention:${bothUnclear}`,
+      `Email failed:email:failed:${failed}`,
+      `Email unclear:email:manual_attention:${unclear}`,
+    ]),
+    `Today attention did not list exactly the reader's undelivered email reminders once: ${
+      JSON.stringify(listed)
+    }`,
   );
 });
 

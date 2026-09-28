@@ -87,7 +87,12 @@ expand in place without changing route.
 - **Needs attention** unifies overdue and due tasks, reminder occurrences,
   important dates, and due stay-in-touch cadences. It groups first by `overdue`,
   `today`, and `next-seven-days`, then uses a deterministic due-time and person
-  sort.
+  sort. It lists the reader's own in-app reminder occurrences, and an email one
+  only once its delivery `failed` or needs `manual_attention`; that row says
+  "Email reminder not delivered" or "Email reminder needs attention" and opens
+  the person's reminders. An occurrence delivered both ways is listed once:
+  `manual_attention` wins over `failed`, which wins over pending work, and
+  in-app wins a tie.
 - **People to reconnect** shows people whose cadence is due or overdue, with
   last interaction context and direct log-interaction/open-person actions.
 - **Upcoming** previews the next 30 days. It does not initially render three

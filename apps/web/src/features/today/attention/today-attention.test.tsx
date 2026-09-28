@@ -171,6 +171,7 @@ describe("PLANNING-001 Today attention island", () => {
     const unavailableLongTitle = "U".repeat(500);
     const active = task(1, "Call Ada", { dueAt });
     const reminder = {
+      channel: "in_app",
       dueAt,
       kind: "reminder",
       occursOn: "2026-03-08",
@@ -418,6 +419,36 @@ describe("PLANNING-001 Today attention island", () => {
     expect(document.body.textContent).toContain("Time unavailable");
     expect(date().textContent).toBe("Date unavailable");
     expect(date().dateTime).toBe("2026-08-18");
+  });
+
+  it("REL-059 lists an undelivered email reminder as an email problem that opens the person's reminders", async () => {
+    todayShell();
+    const reminder = {
+      channel: "email",
+      dueAt: "2026-08-17T09:00:00.000Z",
+      kind: "reminder",
+      occursOn: "2026-08-17",
+      person,
+    };
+    routes(attention([
+      { ...reminder, id: uuid(1), reminderStatus: "failed", title: "Failed" },
+      {
+        ...reminder,
+        id: uuid(2),
+        reminderStatus: "manual_attention",
+        title: "Unclear",
+      },
+    ]));
+    await mount();
+    const failed = row(overdue(), "Failed");
+    expect(failed.textContent).toContain("Email reminder not delivered · Due");
+    expect(
+      within(failed).getByRole("link", { name: "Failed" }).getAttribute("href"),
+    ).toBe(`/app/people/${personId}?section=reminders`);
+    expect(row(overdue(), "Unclear").textContent).toContain(
+      "Email reminder needs attention · Due",
+    );
+    expect(within(overdue()).queryByRole("button")).toBeNull();
   });
 
   it("REL-048 settles the queue once its read answers, even when the preferences read fails or a newer read replaced it", async () => {

@@ -79,6 +79,7 @@ Deno.test("[GAP-022] the Today guards accept the responses the API sends", () =>
       ...ATTENTION,
       upcoming: [{
         ...ATTENTION_ITEM,
+        channel: "in_app",
         kind: "reminder",
         occursOn: "2026-01-02",
         person: { ...PERSON, unavailable: true },
@@ -86,6 +87,22 @@ Deno.test("[GAP-022] the Today guards accept the responses the API sends", () =>
       }],
     }).upcoming.length === 1,
     "a dated attention item carries the day it occurs on",
+  );
+  assert(
+    parseTodayAttention({
+      ...ATTENTION,
+      attention: {
+        ...ATTENTION.attention,
+        overdue: [{
+          ...ATTENTION_ITEM,
+          channel: "email",
+          kind: "important-date",
+          occursOn: "2026-01-01",
+          reminderStatus: "failed",
+        }],
+      },
+    }).attention.overdue.length === 1,
+    "an undelivered email reminder carries its channel (REL-059)",
   );
   assert(
     parseTodayAttention({
@@ -169,9 +186,33 @@ Deno.test("[GAP-022] the Today guards refuse a response that drifted", () => {
         ...ATTENTION,
         upcoming: [{
           ...ATTENTION_ITEM,
+          channel: "in_app",
           kind: "life-event",
           reminderStatus: "pending",
         }],
+      }],
+      ["a dated item with no channel", {
+        ...ATTENTION,
+        upcoming: [{
+          ...ATTENTION_ITEM,
+          kind: "reminder",
+          occursOn: "2026-01-02",
+          reminderStatus: "failed",
+        }],
+      }],
+      ["a channel nothing delivers on", {
+        ...ATTENTION,
+        upcoming: [{
+          ...ATTENTION_ITEM,
+          channel: "sms",
+          kind: "reminder",
+          occursOn: "2026-01-02",
+          reminderStatus: "failed",
+        }],
+      }],
+      ["a channel on a task", {
+        ...ATTENTION,
+        upcoming: [{ ...ATTENTION_ITEM, channel: "email" }],
       }],
       ["an unbounded bucket", {
         ...ATTENTION,

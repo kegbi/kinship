@@ -4374,6 +4374,8 @@ export interface components {
             /** Format: date */
             readonly occursOn: string;
             /** @enum {string} */
+            readonly channel: "email" | "in_app";
+            /** @enum {string} */
             readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry";
             readonly title: string;
         };
@@ -4387,6 +4389,8 @@ export interface components {
             readonly person?: components["schemas"]["TodayAttentionPerson"];
             /** Format: date */
             readonly occursOn: string;
+            /** @enum {string} */
+            readonly channel: "email" | "in_app";
             /** @enum {string} */
             readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry";
             readonly title: string;
@@ -4417,6 +4421,8 @@ export interface components {
             readonly person?: components["schemas"]["TodayAttentionPerson"];
             /** Format: date */
             readonly occursOn: string;
+            /** @enum {string} */
+            readonly channel: "email" | "in_app";
             /** @enum {string} */
             readonly reminderStatus: "failed" | "manual_attention" | "pending" | "retry";
             readonly title: string;

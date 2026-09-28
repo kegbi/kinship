@@ -22,6 +22,11 @@ export type TodayAttentionItem =
   | (TodayAttentionBase & { readonly kind: "task" })
   | (TodayAttentionBase & {
     readonly kind: "important-date" | "life-event" | "reminder";
+    /**
+     * The channel of the listed delivery. An email one is listed only when
+     * it failed or needs attention (REL-059).
+     */
+    readonly channel: "email" | "in_app";
     readonly occursOn: string;
     readonly reminderStatus:
       | "failed"

@@ -388,6 +388,7 @@ Deno.test("TODAY-001 contract is closed, bounded, and runtime validated", () => 
       nextSevenDays: [],
       overdue: [],
       today: [{
+        channel: "in_app",
         dueAt: "2026-08-18T08:00:00.000Z",
         id: crypto.randomUUID(),
         kind: "reminder",
@@ -396,6 +397,7 @@ Deno.test("TODAY-001 contract is closed, bounded, and runtime validated", () => 
         reminderStatus: "pending",
         title: "Call Ada",
       }, {
+        channel: "in_app",
         dueAt: "2026-08-18T08:30:00.000Z",
         id: crypto.randomUUID(),
         kind: "life-event",
@@ -404,6 +406,7 @@ Deno.test("TODAY-001 contract is closed, bounded, and runtime validated", () => 
         reminderStatus: "pending",
         title: "Ada moved",
       }, {
+        channel: "in_app",
         dueAt: "2026-08-18T09:00:00.000Z",
         id: crypto.randomUUID(),
         kind: "important-date",

@@ -148,6 +148,7 @@ function validTodayAttentionItem(value: unknown): value is TodayAttentionItem {
   const base = ["dueAt", "id", "kind", "title"];
   if (
     !exactTodayRecord(value, base, [
+      "channel",
       "lastContactedAt",
       "occursOn",
       "person",
@@ -166,9 +167,13 @@ function validTodayAttentionItem(value: unknown): value is TodayAttentionItem {
     value.kind === "important-date" || value.kind === "life-event" ||
     value.kind === "reminder"
   ) {
-    return exactTodayRecord(value, [...base, "occursOn", "reminderStatus"], [
-      "person",
-    ]) && validTodayDate(value.occursOn) &&
+    return exactTodayRecord(value, [
+      ...base,
+      "channel",
+      "occursOn",
+      "reminderStatus",
+    ], ["person"]) && validTodayDate(value.occursOn) &&
+      ["email", "in_app"].includes(String(value.channel)) &&
       ["failed", "manual_attention", "pending", "retry"].includes(
         String(value.reminderStatus),
       );

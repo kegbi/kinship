@@ -115,6 +115,7 @@ Deno.test("TODAY-001 HTTP returns only a closed bounded attention projection", a
         title: task.title,
       }],
       today: [{
+        channel: "in_app" as const,
         dueAt: task.dueAt,
         id: crypto.randomUUID(),
         kind: "important-date" as const,
@@ -123,6 +124,7 @@ Deno.test("TODAY-001 HTTP returns only a closed bounded attention projection", a
         reminderStatus: "pending" as const,
         title: "Ada's birthday",
       }, {
+        channel: "in_app" as const,
         dueAt: task.dueAt,
         id: crypto.randomUUID(),
         kind: "life-event" as const,
