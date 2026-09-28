@@ -345,10 +345,17 @@ function mountZoneVisibilityActivation(
   for (const { element } of zones) observer.observe(element);
 }
 
+/**
+ * Makes the state lines drawn during the initial fan-out polite live regions
+ * once it has settled, so its loads are not read out (UXD-003B). A line that
+ * already has a role owns it: the hero's lifecycle status, every form's
+ * alert, and each section mounted after this runs, which brings its own
+ * region (`status-region.ts`, REL-052).
+ */
 function promoteSectionStatusRegions(): void {
   for (
     const state of document.querySelectorAll<HTMLElement>(
-      '.section-state:not(#person-lifecycle-status):not([role="alert"])',
+      ".section-state:not([role])",
     )
   ) {
     state.setAttribute("role", "status");
@@ -927,11 +934,15 @@ export async function mountPersonWorkspace(): Promise<void> {
       archived = detail.archived;
     }
   }, { signal });
+  // Flipped in the same step that promotes the state lines, so every owner
+  // mounted after it owns its own line's live region (REL-052).
+  let statesLive = false;
   const sectionProps = (): SectionProps => ({
     archived,
     initial: profileAnswer,
     personId: id,
     preferences: memberPreferences,
+    statesLive: () => statesLive,
     workspaceId,
   });
   hideTurnedOffSections(hiddenSectionIds);
@@ -969,6 +980,7 @@ export async function mountPersonWorkspace(): Promise<void> {
   await Promise.all([eagerRail, afterFirstPaint()]);
   await zoneRegistry.settled();
   promoteSectionStatusRegions();
+  statesLive = true;
   reconcileSectionLocation(profile, sectionNavigation, "settle");
   // REL-046: the workspace has nothing left in flight once its first sections
   // have answered and its view is recorded. Leaving earlier cancels those

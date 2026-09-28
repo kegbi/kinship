@@ -64,6 +64,7 @@ import {
 import { setLastContact } from "../profile-summary.ts";
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
+import type { StatusRegionProps } from "../status-region.ts";
 import {
   COMMUNICATION_MESSAGES,
   type CommunicationKind,
@@ -88,6 +89,8 @@ export interface PersonCommunicationsProps {
   };
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /** What each card's state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 const CARDS = {
@@ -317,6 +320,7 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
       onSave={(form) => void save(kind, form)}
       section={section}
       state={state}
+      statusRegion={props.statusRegion}
     >
       {kind === "call"
         ? <CallFields draft={state.editors.call.draft} state={state} />
@@ -353,6 +357,7 @@ function CommunicationCard(
     readonly onSave: (form: HTMLFormElement) => void;
     readonly onRefresh: () => void;
     readonly onRetry: () => void;
+    readonly statusRegion?: StatusRegionProps | undefined;
   },
 ) {
   const { hidden, kind, section, state } = props;
@@ -431,7 +436,11 @@ function CommunicationCard(
           {wording.add}
         </button>
       </header>
-      <p className="section-state" data-communication-state="">
+      <p
+        className="section-state"
+        data-communication-state=""
+        {...props.statusRegion}
+      >
         {list.status === "loading"
           ? state.options
             ? `Loading ${wording.section}…`

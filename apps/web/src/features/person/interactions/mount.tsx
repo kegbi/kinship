@@ -6,6 +6,7 @@
 
 import { mountIsland } from "../../../islands/core/index.ts";
 import { sectionHidden, type SectionMount } from "../section-mounts.ts";
+import { statusRegion } from "../status-region.ts";
 import { PersonInteractions } from "./person-interactions.tsx";
 
 export const PERSON_INTERACTIONS_ISLAND = "person-interactions";
@@ -39,6 +40,7 @@ export const mountPersonInteractions: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         sections={{ activities, notes }}
+        statusRegion={statusRegion(props)}
         workspaceId={props.workspaceId}
       />,
     );

@@ -801,6 +801,35 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       .toBe(true);
   });
 
+  it("REL-052 keeps a live region on the state lines of zones opened after the fan-out settles", async () => {
+    markup();
+    deferredZoneMarkup();
+    const zoneObserver = stubDeferredZoneObserver();
+    const api = stubProfile(undefined, {
+      [FILES]: noFiles,
+      [GIFTS]: noGifts(),
+      [AUDIT]: noAudit,
+      [VIEW]: recorded,
+    });
+
+    await mountPersonWorkspace();
+    zoneObserver.activate("things");
+    zoneObserver.activate("admin");
+    await vi.waitFor(() => {
+      expect(requested(api, `/${personId}/files`)).toHaveLength(1);
+      expect(requested(api, `/${personId}/gifts`)).toHaveLength(1);
+      expect(requested(api, `/${personId}/audit`)).toHaveLength(1);
+    });
+    const states = [...document.querySelectorAll<HTMLElement>(
+      "[data-file-state], [data-gift-state], [data-person-audit-state]",
+    )];
+    expect(states).toHaveLength(5);
+    for (const state of states) {
+      expect(state.getAttribute("role")).toBe("status");
+      expect(state.getAttribute("aria-live")).toBe("polite");
+    }
+  });
+
   it("UXD-002B requests summary and seeds visible and hidden rail counts before fact refresh", async () => {
     markup();
     summaryRailMarkup();

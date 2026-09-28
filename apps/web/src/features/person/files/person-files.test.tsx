@@ -11,7 +11,12 @@ import {
   stubApi,
 } from "../../../testing/api.ts";
 import { ids, sectionProps } from "../../../testing/fixtures.ts";
-import { drawShell, element, mountSection } from "../../../testing/render.tsx";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSection,
+} from "../../../testing/render.tsx";
 import { mountPersonFiles } from "./person-files.tsx";
 
 const { person: personId, workspace: workspaceId } = ids;
@@ -544,4 +549,37 @@ describe("FILES-001 person profile files", () => {
     expect(hook<HTMLButtonElement>("document", "[data-file-refresh]").hidden)
       .toBe(false);
   });
+});
+
+describe("REL-052 person files status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns each card's live region from its first commit only once states are live (%s)",
+    async (live) => {
+      markup();
+      const list = deferred<Response>();
+      stubApi({ [FILES]: list.promise });
+      const settled = mountPending(() =>
+        mountPersonFiles(
+          document.body,
+          sectionProps({ statesLive: () => live }),
+        )
+      );
+      const lines = (["document", "photo"] as const).map((kind) =>
+        hook(kind, "[data-file-state]")
+      );
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        list.resolve(listed([]));
+        await settled;
+      });
+      // The region that announces the answer is the one that was there first.
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
 });

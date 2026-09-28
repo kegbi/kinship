@@ -7,6 +7,7 @@
  * zone's settle waits for the first list answer as it did before.
  */
 
+import { statusRegion } from "../../features/person/status-region.ts";
 import { mountIsland } from "../core/index.ts";
 import { PersonGifts } from "./person-gifts.tsx";
 
@@ -21,6 +22,8 @@ export function mountGiftsIsland(options: {
   readonly archived: boolean;
   readonly personId: string;
   readonly workspaceId: string;
+  /** Whether the profile already promoted its state lines (REL-052). */
+  readonly statesLive?: (() => boolean) | undefined;
 }): Promise<() => void> {
   const gift = document.querySelector<HTMLElement>(
     '[data-person-gifts="gift"]',
@@ -41,6 +44,7 @@ export function mountGiftsIsland(options: {
         onSettled={() => resolve(unmount)}
         personId={options.personId}
         sections={{ debt, gift }}
+        statusRegion={statusRegion(options)}
         workspaceId={options.workspaceId}
       />,
     );

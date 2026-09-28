@@ -65,6 +65,7 @@ import {
   setStayInTouch,
 } from "../profile-summary.ts";
 import type { SectionMount } from "../section-mounts.ts";
+import { statusRegion, type StatusRegionProps } from "../status-region.ts";
 import {
   CADENCE_FAILED,
   CADENCE_LOADING,
@@ -100,6 +101,8 @@ export interface PersonRemindersProps {
   };
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /** What both state lines spread to be live regions, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 function sectionState(
@@ -470,7 +473,13 @@ export function PersonReminders(props: PersonRemindersProps) {
       {props.headings.stayInTouch
         ? createPortal(addCadence, props.headings.stayInTouch)
         : null}
-      <p className="section-state" data-reminder-state="">{reminderLine}</p>
+      <p
+        className="section-state"
+        data-reminder-state=""
+        {...props.statusRegion}
+      >
+        {reminderLine}
+      </p>
       <ul
         aria-label="Person reminders"
         className="task-list reminder-list"
@@ -569,6 +578,7 @@ export function PersonReminders(props: PersonRemindersProps) {
             data-rail-editor-feedback=""
             ref={cadenceState}
             tabIndex={-1}
+            {...props.statusRegion}
           >
             {cadenceLine}
           </p>
@@ -677,6 +687,7 @@ export const mountPersonReminders: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         sections={{ reminders, stayInTouch }}
+        statusRegion={statusRegion(props)}
         timePreferences={props.preferences}
         workspaceId={props.workspaceId}
       />,

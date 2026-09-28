@@ -48,6 +48,7 @@ import {
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
 import type { SectionMount } from "../section-mounts.ts";
+import { statusRegion, type StatusRegionProps } from "../status-region.ts";
 import {
   countText,
   FILE_CARDS,
@@ -72,6 +73,8 @@ export interface PersonFilesProps {
   readonly sections: Readonly<Record<FileKind, HTMLElement>>;
   /** Called once, when the first list answer has settled either way. */
   readonly onSettled?: () => void;
+  /** What each card's state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 export function PersonFiles(props: PersonFilesProps) {
@@ -232,6 +235,7 @@ export function PersonFiles(props: PersonFilesProps) {
       onRetry={() => void refresh()}
       onUpload={(event) => void upload(kind, event)}
       state={state}
+      statusRegion={props.statusRegion}
     />
   );
 
@@ -253,6 +257,7 @@ function FilesCard(
     readonly onRetry: () => void;
     readonly onUpload: (event: SyntheticEvent<HTMLFormElement>) => void;
     readonly state: FilesState;
+    readonly statusRegion?: StatusRegionProps | undefined;
   },
 ) {
   const { kind, state } = props;
@@ -310,7 +315,9 @@ function FilesCard(
           Attach {noun}
         </button>
       </header>
-      <p className="section-state" data-file-state="">{line}</p>
+      <p className="section-state" data-file-state="" {...props.statusRegion}>
+        {line}
+      </p>
       <button
         className={buttonVariants({ variant: "outline" })}
         data-file-refresh=""
@@ -472,6 +479,7 @@ export const mountPersonFiles: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         sections={{ document, photo }}
+        statusRegion={statusRegion(props)}
         workspaceId={props.workspaceId}
       />,
     );

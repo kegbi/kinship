@@ -14,11 +14,17 @@ import {
   unreachable,
 } from "../../../testing/api.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
-import { ids, personProfile, sectionProps } from "../../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  preferences,
+  sectionProps,
+} from "../../../testing/fixtures.ts";
 import {
   chooseOptions,
   drawShell,
   element,
+  mountPending,
   mountSection,
 } from "../../../testing/render.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
@@ -779,4 +785,36 @@ describe("INTERACTION-002 person communications", () => {
     submit("call");
     expect(posts(api)).toHaveLength(0);
   });
+});
+
+describe("REL-052 person communications status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns each card's live region from its first commit only once states are live (%s)",
+    async (live) => {
+      shell();
+      const answer = deferred<Response>();
+      stub({ [HISTORY]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonCommunications(
+          document.body,
+          sectionProps({ preferences: preferences(), statesLive: () => live }),
+        )
+      );
+      const lines = (["call", "conversation"] as const).map((kind) =>
+        element("[data-communication-state]", card(kind))
+      );
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        answer.resolve(history());
+        await settled;
+      });
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
 });

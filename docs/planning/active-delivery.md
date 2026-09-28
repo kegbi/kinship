@@ -628,7 +628,7 @@ Playwright test carrying its stable flow ID.
       sleep, or timeout was added. `app-004c` in full with the touched specs
       passed 12 of 12 on each of Firefox, WebKit, and Chromium; web tests 1,043.
 
-- [ ] **REL-052 — Lazily mounted person sections can lose their status live
+- [x] **REL-052 — Lazily mounted person sections can lose their status live
       region.** Found reviewing GAP-033: `promoteSectionStatusRegions` in
       `features/person/workspace.ts` gives each section's `.section-state` line
       `role="status"` once, when the workspace settles, but the files, gifts,
@@ -638,7 +638,19 @@ Playwright test carrying its stable flow ID.
       line kept it. Fix by having each island render its own status line with
       `role="status"` (and `aria-live="polite"`) from its first commit, checking
       that no spec's `getByRole("status")` becomes ambiguous, with a unit test
-      per island and the affected specs unchanged.
+      per island and the affected specs unchanged. Delivered 2026-09-28: the
+      workspace flips a `statesLive` flag in the same synchronous step as
+      `promoteSectionStatusRegions` and hands it to every section owner through
+      `sectionProps()`. `statusRegion(props)` in
+      `features/person/status-region.ts` gives an island's status lines
+      `role="status"` and `aria-live="polite"` from its first commit only when
+      it mounts after that point, so UXD-003B's silent first load holds and the
+      promotion (now `.section-state:not([role])`) stays the one role setter for
+      lines mounted before it. It covers the files, gifts, reminders (reminder
+      and cadence lines), audit-summary, timeline, notes and activities, calls
+      and conversations, and person-tasks islands; each island test runs both
+      modes, and a workspace test opens Things and Admin after settle. No
+      person-page spec uses an unscoped `getByRole("status")`.
 
 - [x] **REL-053 — A boundary test checks a file that no longer exists.** Found
       in GAP-034: "workspaces interaction boundary owns its actor and
@@ -858,7 +870,11 @@ Playwright test carrying its stable flow ID.
       reorders tests inside a file, `theme.test.ts` fails 3 tests and
       `features/person/workspace.test.ts` throws "window is not defined". The
       suite runs in written order, so these tests pass today. Make each test set
-      up and reset its own DOM and module state, so any order passes.
+      up and reset its own DOM and module state, so any order passes. Also found
+      reviewing REL-052: `workspace.test.ts` "UXD-003B paints a busy shell
+      before identity resolves" fails every time it runs alone
+      (`-t "UXD-003B"`), on `main` as well, and passes in the full file, which
+      points at a lazy import warmed by an earlier test.
 
 - [ ] **REL-072 — An ambiguous digest keeps no record of the key it was sent
       under.** Found reviewing REL-060: once a digest ends in
@@ -924,6 +940,13 @@ Playwright test carrying its stable flow ID.
       read `1` instead of `0` once, and passed three times alone and in the full
       rerun. Same class as `REL-047` and `REL-071`; find the ordering or timing
       assumption and remove it.
+
+- [ ] **REL-079 — The life-events island can lose its status live region.**
+      Found reviewing REL-052: like the islands REL-052 fixed, the life-events
+      island renders its `.section-state` line only when its zone activates, so
+      a zone opened after the workspace settles announces without a live region.
+      Pass `statusRegion(props)` at mount and spread it on the line, as REL-052
+      does, with a two-mode island test.
 
 ## Just-In-Time Technical Capabilities
 

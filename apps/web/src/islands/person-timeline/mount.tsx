@@ -5,6 +5,7 @@
  */
 
 import type { SectionMount } from "../../features/person/section-mounts.ts";
+import { statusRegion } from "../../features/person/status-region.ts";
 import { mountIsland } from "../core/index.ts";
 import { PersonTimeline } from "./person-timeline.tsx";
 
@@ -29,6 +30,7 @@ export const mountPersonTimeline: SectionMount = (container, props) => {
         personId={props.personId}
         preferences={props.preferences}
         section={section}
+        statusRegion={statusRegion(props)}
         workspaceId={props.workspaceId}
       />,
     );

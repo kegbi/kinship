@@ -41,6 +41,11 @@ export interface SectionProps {
   readonly preferences?: ResolvedMemberPreferences | undefined;
   /** The profile answer the page already has, so no owner refetches it. */
   readonly initial?: PersonProfile | undefined;
+  /**
+   * Whether the workspace has already promoted the section state lines to
+   * live regions; an owner mounting after that owns its own (REL-052).
+   */
+  readonly statesLive?: (() => boolean) | undefined;
 }
 
 /**
@@ -170,6 +175,7 @@ const gifts = island(() =>
       mountGiftsIsland({
         archived: props.archived,
         personId: props.personId,
+        statesLive: props.statesLive,
         workspaceId: props.workspaceId,
       }),
   )

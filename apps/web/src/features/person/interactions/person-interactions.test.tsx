@@ -11,7 +11,12 @@ import {
 } from "../../../testing/api.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import { ids, personProfile, sectionProps } from "../../../testing/fixtures.ts";
-import { drawShell, element, mountSection } from "../../../testing/render.tsx";
+import {
+  drawShell,
+  element,
+  mountPending,
+  mountSection,
+} from "../../../testing/render.tsx";
 import { mountPersonInteractions } from "./mount.tsx";
 
 const personId = ids.person;
@@ -498,4 +503,36 @@ describe("INTERACTION-001 person notes and activities", () => {
       )
     );
   });
+});
+
+describe("REL-052 person notes and activities status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns each card's live region from its first commit only once states are live (%s)",
+    async (live) => {
+      shell();
+      const answer = deferred<Response>();
+      stubApi({ [REPORT]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonInteractions(
+          document.body,
+          sectionProps({ statesLive: () => live }),
+        )
+      );
+      const lines = (["activities", "notes"] as const).map((id) =>
+        element(`#person-${id}-state`)
+      );
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        answer.resolve(report([]));
+        await settled;
+      });
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
 });

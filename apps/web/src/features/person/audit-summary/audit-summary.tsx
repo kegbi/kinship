@@ -32,6 +32,7 @@ import { AuditEventItem } from "../../audit/audit-event.tsx";
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
 import type { SectionMount } from "../section-mounts.ts";
+import { statusRegion, type StatusRegionProps } from "../status-region.ts";
 
 export const PERSON_AUDIT_SUMMARY_ISLAND = "person-audit-summary";
 
@@ -50,6 +51,8 @@ export interface PersonAuditSummaryProps {
   readonly section: HTMLElement;
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /** What the state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 function badge(state: SummaryState): string {
@@ -125,7 +128,11 @@ export function PersonAuditSummary(props: PersonAuditSummaryProps) {
           </span>
         </div>
       </header>
-      <p className="section-state" data-person-audit-state="">
+      <p
+        className="section-state"
+        data-person-audit-state=""
+        {...props.statusRegion}
+      >
         {statusLine(state)}
       </p>
       <ol
@@ -190,6 +197,7 @@ export const mountPersonAuditSummary: SectionMount = (container, props) => {
         personId={props.personId}
         preferences={props.preferences}
         section={section}
+        statusRegion={statusRegion(props)}
         workspaceId={props.workspaceId}
       />,
     );

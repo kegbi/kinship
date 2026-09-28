@@ -605,3 +605,31 @@ describe("merged person timeline island", () => {
     expect(screen.queryByRole("list")).toBeNull();
   });
 });
+
+describe("REL-052 person timeline status line", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns its live region from its first commit only once states are live (%s)",
+    async (live) => {
+      markup();
+      const answer = deferred<Response>();
+      stubApi({ [TIMELINE]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonTimeline(document.body, {
+          ...props(),
+          statesLive: () => live,
+        })
+      );
+      const line = element("p[data-timeline-state]");
+      expect(line.getAttribute("role")).toBe(live ? "status" : null);
+      expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      await act(async () => {
+        answer.resolve(page([]));
+        await settled;
+      });
+      expect(line.isConnected).toBe(true);
+    },
+  );
+});

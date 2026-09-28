@@ -1092,3 +1092,33 @@ describe("PLANNING-002 person reminders island", () => {
     expect(api.fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("REL-052 person reminders status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns both lines' live regions from the first commit only once states are live (%s)",
+    async (live) => {
+      shell();
+      const first = deferred<Response>();
+      stubApi({ [LIST]: first.promise });
+      const mounted = mountPending(() =>
+        mountPersonReminders(
+          element("#person-profile-ready"),
+          sectionProps({ preferences: preferences(), statesLive: () => live }),
+        )
+      );
+      const lines = [reminderState(), element("[data-cadence-state]")];
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        first.resolve(listed([reminder]));
+        await mounted;
+      });
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
+});

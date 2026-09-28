@@ -752,3 +752,32 @@ describe("GIFTS-001 person gifts and debts", () => {
     expect(screen.getAllByRole("button", { name: /^Add / })).toHaveLength(2);
   });
 });
+
+describe("REL-052 gift and debt status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns each card's live region from its first commit only once states are live (%s)",
+    async (live) => {
+      markup();
+      const list = deferred<Response>();
+      stubApi({ [GIFTS]: list.promise });
+      const settled = mountPending(() =>
+        mountGiftsIsland(sectionProps({ statesLive: () => live }))
+      );
+      const lines = (["gift", "debt"] as const).map((type) =>
+        element("[data-gift-state]", section(type))
+      );
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        list.resolve(page());
+        await settled;
+      });
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
+});

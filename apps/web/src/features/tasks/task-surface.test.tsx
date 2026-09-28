@@ -908,3 +908,33 @@ describe("PLANNING-001 task surface island", () => {
     expect(retry.hidden).toBe(true);
   });
 });
+
+describe("REL-052 person tasks status lines", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns the card's and the form's live regions from the first commit only once states are live (%s)",
+    async (live) => {
+      personShell();
+      const answer = deferred<Response>();
+      stubApi({ [TASKS]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonTasks(
+          element("#person-profile-ready"),
+          sectionProps({ preferences: preferences(), statesLive: () => live }),
+        )
+      );
+      const lines = [stateLine(), formState()];
+      for (const line of lines) {
+        expect(line.getAttribute("role")).toBe(live ? "status" : null);
+        expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      }
+      await act(async () => {
+        answer.resolve(listed([]));
+        await settled;
+      });
+      expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
+});

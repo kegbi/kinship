@@ -45,6 +45,7 @@ import {
   skeletonLinesVariants,
   skeletonVariants,
 } from "@/components/ui/variants.ts";
+import type { StatusRegionProps } from "../../features/person/status-region.ts";
 import { SECTION_ICON_PATHS } from "../../lib/section-icons.ts";
 import {
   LoadMore,
@@ -78,6 +79,8 @@ export interface PersonGiftsProps {
   readonly personId: string;
   /** The two server-rendered cards; the gift card is the island's root. */
   readonly sections: { readonly debt: HTMLElement; readonly gift: HTMLElement };
+  /** What each card's state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
   readonly workspaceId: string;
 }
 
@@ -293,6 +296,7 @@ export function PersonGifts(props: PersonGiftsProps) {
           },
         )}
       onRetry={() => void refresh()}
+      statusRegion={props.statusRegion}
       type={type}
     >
       {items}
@@ -344,6 +348,7 @@ function Surface(
     readonly onAdd: () => void;
     readonly onLoadMore: (cursor: string) => Promise<unknown>;
     readonly onRetry: () => void;
+    readonly statusRegion?: StatusRegionProps | undefined;
     readonly type: RecordType;
   },
 ) {
@@ -396,10 +401,12 @@ function Surface(
         </Button>
       </header>
       {
-        /* The profile promotes every state line to a polite live region once
-          its first fan-out settles (UXD-003B), so the loads are not read out. */
+        /* The profile promotes every state line drawn during its first
+          fan-out to a polite live region once that settles (UXD-003B), so the
+          loads are not read out; a card mounted after that brings its own
+          region (REL-052). */
       }
-      <p className="section-state" data-gift-state="">
+      <p className="section-state" data-gift-state="" {...props.statusRegion}>
         {state ?? <LoadingState plural={plural} />}
       </p>
       <Button

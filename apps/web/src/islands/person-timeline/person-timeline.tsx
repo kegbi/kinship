@@ -26,6 +26,7 @@ import { segmentVariants } from "@/components/ui/variants.ts";
 import type { TimePreferences } from "../../lib/time-presentation.ts";
 import { SectionGlyph } from "../../features/person/section-glyph.tsx";
 import { SectionLoading } from "../../features/person/section-loading.tsx";
+import type { StatusRegionProps } from "../../features/person/status-region.ts";
 import { useDocumentEvent, useLatestRequest } from "../core/index.ts";
 import {
   countText,
@@ -45,6 +46,8 @@ export interface PersonTimelineProps {
   readonly section: HTMLElement;
   /** Called once, when the first page has settled either way. */
   readonly onSettled?: () => void;
+  /** What the state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 type TimelineStatus =
@@ -249,7 +252,11 @@ export function PersonTimeline(props: PersonTimelineProps) {
           </button>
         ))}
       </div>
-      <p className="section-state" data-timeline-state="">
+      <p
+        className="section-state"
+        data-timeline-state=""
+        {...props.statusRegion}
+      >
         {state.initial && state.status === "loading"
           ? <SectionLoading label="Loading the timeline…" />
           : statusText(state)}

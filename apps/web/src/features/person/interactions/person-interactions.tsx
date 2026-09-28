@@ -37,6 +37,7 @@ import {
 import { INTERACTION_CREATED_EVENT } from "../../interactions/shared.ts";
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
+import type { StatusRegionProps } from "../status-region.ts";
 
 export type InteractionKind = "activity" | "note";
 
@@ -53,6 +54,8 @@ export interface PersonInteractionsProps {
   };
   /** Called once, when both cards' first reads have settled. */
   readonly onSettled?: () => void;
+  /** What each card's state line spreads to be a live region, if anything. */
+  readonly statusRegion?: StatusRegionProps;
 }
 
 interface CardWording {
@@ -149,6 +152,7 @@ export function PersonInteractions(props: PersonInteractionsProps) {
       onSettled={onCardSettled}
       personId={personId}
       section={section}
+      statusRegion={props.statusRegion}
       workspaceId={props.workspaceId}
     />
   );
@@ -169,6 +173,7 @@ function InteractionCard(
     readonly workspaceId: string;
     readonly section: HTMLElement;
     readonly onSettled: () => void;
+    readonly statusRegion?: StatusRegionProps | undefined;
   },
 ) {
   const { kind, personId, section, workspaceId } = props;
@@ -254,7 +259,11 @@ function InteractionCard(
           {wording.action}
         </button>
       </header>
-      <p className="section-state" id={`${wording.prefix}-state`}>
+      <p
+        className="section-state"
+        id={`${wording.prefix}-state`}
+        {...props.statusRegion}
+      >
         {state.status === "loading"
           ? state.initial
             ? <SectionLoading label={wording.loading} />

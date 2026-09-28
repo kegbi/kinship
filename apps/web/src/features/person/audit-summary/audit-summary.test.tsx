@@ -185,3 +185,31 @@ describe("GOVERNANCE-002 person audit summary", () => {
     expect(api.requests()).toHaveLength(0);
   });
 });
+
+describe("REL-052 person audit summary status line", () => {
+  // Mounted during the initial fan-out, the line waits for the workspace's
+  // promotion (UXD-003B); mounted after it, the line is its own live region
+  // from the first commit.
+  it.each([false, true])(
+    "owns its live region from its first commit only once states are live (%s)",
+    async (live) => {
+      markup();
+      const answer = deferred<Response>();
+      stubApi({ [AUDIT]: answer.promise });
+      const settled = mountPending(() =>
+        mountPersonAuditSummary(document.body, {
+          ...props(),
+          statesLive: () => live,
+        })
+      );
+      const line = element("[data-person-audit-state]");
+      expect(line.getAttribute("role")).toBe(live ? "status" : null);
+      expect(line.getAttribute("aria-live")).toBe(live ? "polite" : null);
+      await act(async () => {
+        answer.resolve(jsonResponse({ items: [], status: "ready" }));
+        await settled;
+      });
+      expect(line.isConnected).toBe(true);
+    },
+  );
+});

@@ -57,6 +57,10 @@ import {
 import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import { sectionHidden, type SectionMount } from "../person/section-mounts.ts";
 import {
+  statusRegion,
+  type StatusRegionProps,
+} from "../person/status-region.ts";
+import {
   changeInput,
   createInput,
   directoryName,
@@ -93,6 +97,11 @@ export interface TaskSurfaceProps {
   readonly heading?: HTMLElement | undefined;
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /**
+   * What the person card's state lines spread to be live regions, if
+   * anything; the page's lines always are.
+   */
+  readonly statusRegion?: StatusRegionProps | undefined;
 }
 
 const UNAVAILABLE = "Tasks are unavailable. Sign in again or retry.";
@@ -626,12 +635,22 @@ export function TaskSurface(props: TaskSurfaceProps) {
         )
         : (
           <>
-            <p className="section-state" data-task-state="">{line}</p>
+            <p
+              className="section-state"
+              data-task-state=""
+              {...props.statusRegion}
+            >
+              {line}
+            </p>
             {retryControl}
             {editorForm(
               <>
                 {fields}
-                <p className="section-state" data-task-form-state="">
+                <p
+                  className="section-state"
+                  data-task-form-state=""
+                  {...props.statusRegion}
+                >
                   {notice}
                 </p>
                 {actions("outline", { "data-form-actions": "" })}
@@ -772,6 +791,7 @@ export const mountPersonTasks: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         section={section}
+        statusRegion={statusRegion(props)}
         timePreferences={props.preferences}
         variant="person"
         workspaceId={props.workspaceId}
