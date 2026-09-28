@@ -1964,10 +1964,36 @@ require a synchronized schema v8 and are called out explicitly.
       unit, integration, coverage (import-export-domain 99.6/100/100), and
       build.
 
-- [ ] **GAP-051 — Bulk directory actions.** M. Depends: 029. Flow `PEOPLE-009`.
+- [x] **GAP-051 — Bulk directory actions.** M. Depends: 029. Flow `PEOPLE-009`.
   - Scope: selection model in the directory reducer; bulk tag, archive, restore,
     export-selection using existing facades with per-item results.
   - Verify: unit, integration, E2E.
+  - Delivered 2026-09-28: flow `PEOPLE-009`. No schema change.
+    - `POST /api/v1/people/bulk` tags, untags, archives, or restores up to 100
+      people. Each person goes through the existing single-person facade in its
+      own transaction, with that operation's permission, audit, and optimistic
+      version:
+      - archive and restore inspect under lock, then act;
+      - tag and untag go through the profile-fact tags update, so a concurrent
+        edit becomes that item's `stale` rather than a lost update.
+    - Every person gets a result in request order: `done`, `unchanged`,
+      `skipped`, or `failed` with a stable code.
+    - The tag is checked once, through people's own workspace-scoped lookup.
+    - `POST /api/v1/people/bulk/vcard` exports the selected people as one
+      `.vcf`. It goes through the export boundary, records a per-person download
+      audit, and reports skipped people in `X-Skipped-Count`.
+    - The directory reducer gains a selection model, capped at 100 and cleared
+      on every list read, sort change, or filter change.
+    - A labelled bulk toolbar offers add or remove tag (active view only),
+      archive with confirmation, restore, export, and clear. It stays busy and
+      inert during a request, and reports per-item results once.
+    - Evidence: the bulk integration suite (per-item results and audit,
+      `unchanged`, partial failure, cross-workspace people and tags, a revoked
+      member's exact 403, the cap, vCard content and headers);
+      `people-bulk.PEOPLE-009` with PEOPLE-002, PEOPLE-004, PEOPLE-006, and
+      PEOPLE-008 on Chromium and WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check
+      (135 documented, 138 mounted), unit, integration, coverage, and build.
 
 - [ ] **GAP-052 — CalDAV VEVENT for important dates and reminders.** M-L.
       Depends: 016. Extends `INTEGRATION-001`.

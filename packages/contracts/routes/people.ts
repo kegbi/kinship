@@ -20,6 +20,8 @@ import {
   importantDateInput,
   importantDateList,
   importantDateUpdateInput,
+  peopleBulkInput,
+  peopleBulkResult,
   peopleDirectoryPage,
   peopleDuplicates,
   peopleTagOptionsPage,
@@ -887,12 +889,40 @@ export const getTodayRecentPeople = defineRoute({
   },
 });
 
+export const bulkPeople = defineRoute({
+  method: "post",
+  path: "/api/v1/people/bulk",
+  operationId: "bulkPeople",
+  description:
+    "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request.",
+  security: [{ kinship_session: [] }],
+  request: {
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": peopleBulkInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Each person's outcome; partial success is expected",
+      content: {
+        "application/json": peopleBulkResult,
+      },
+    },
+    ...problemResponses(400, 401, 403, 503),
+  },
+});
+
 /** Every people route, in the order the surface mounts them. */
 export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   listPeople,
   createPerson,
   listPeopleTagOptions,
   listPeopleDuplicates,
+  bulkPeople,
   deletePerson,
   getPerson,
   editPerson,

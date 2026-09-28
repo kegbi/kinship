@@ -9,7 +9,8 @@
  * avatar they are drawn with (GAP-045) joined as the seventh, and the
  * workspace search that grew out of the directory (GAP-048) as the eighth, and
  * duplicate review and merge (GAP-049) as the ninth, mounted before the page
- * so `duplicates` stays a literal. What
+ * so `duplicates` stays a literal, and bulk directory actions (GAP-051) as the
+ * tenth. What
  * more than one concern needs lives in `people/shared.ts`.
  *
  * The mounted order is the registration order, and it is contract: Hono
@@ -103,6 +104,13 @@ import {
 } from "./lifecycle.ts";
 import { createAvatarRoutes } from "./avatar.ts";
 import {
+  createBulkRoutes,
+  PEOPLE_BULK_FORBIDDEN,
+  PEOPLE_BULK_INVALID,
+  PEOPLE_BULK_TAG_INVALID,
+  PEOPLE_BULK_UNAVAILABLE,
+} from "./bulk.ts";
+import {
   createSearchRoutes,
   SEARCH_FORBIDDEN,
   SEARCH_QUERY_INVALID,
@@ -151,6 +159,10 @@ export const PEOPLE_PROBLEMS: readonly ProblemDefinition[] = [
   MERGE_PREVIEW_INVALID,
   MERGE_PREVIEW_UNAVAILABLE,
   MERGE_REQUEST_INVALID,
+  PEOPLE_BULK_FORBIDDEN,
+  PEOPLE_BULK_INVALID,
+  PEOPLE_BULK_TAG_INVALID,
+  PEOPLE_BULK_UNAVAILABLE,
   PEOPLE_CURSOR_STALE,
   PEOPLE_FORBIDDEN,
   PEOPLE_NOT_MERGED,
@@ -208,6 +220,7 @@ export function createPeopleRoutes(
   const routes = new Hono<ActorEnv>();
   routes.route("/", createDirectoryRoutes(services));
   routes.route("/", createMergeRoutes(services));
+  routes.route("/", createBulkRoutes(services));
   routes.route("/", createProfileRoutes(services));
   routes.route("/", createFactsRoutes(services));
   routes.route("/", createDatesRoutes(services));

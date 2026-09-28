@@ -647,3 +647,517 @@ describe("PEOPLE-002 people directory island", () => {
     expect(api.fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("PEOPLE-009 bulk directory actions", () => {
+  const BULK = "POST /api/v1/people/bulk";
+  const VCARD = "POST /api/v1/people/bulk/vcard";
+  const friends = {
+    id: "00000000-0000-4000-8000-000000000090",
+    name: "Friends",
+  };
+  const family = { id: "00000000-0000-4000-8000-000000000091", name: "Family" };
+  const ada = person({ familyName: "Lovelace" });
+  const grace = person({
+    familyName: "Hopper",
+    givenName: "Grace",
+    id: "00000000-0000-4000-8000-000000000102",
+  });
+  const alan = person({
+    familyName: "Turing",
+    givenName: "Alan",
+    id: "00000000-0000-4000-8000-000000000103",
+  });
+  const tags = jsonResponse({ options: [friends, family], status: "ready" });
+  const answer = (
+    action: string,
+    results: readonly Record<string, unknown>[],
+  ) => {
+    const summary = { done: 0, failed: 0, skipped: 0, unchanged: 0 };
+    for (const item of results) {
+      summary[item.outcome as keyof typeof summary] += 1;
+    }
+    return jsonResponse({ action, results, summary });
+  };
+  const bar = () => region().getByRole("toolbar", { name: "Bulk actions" });
+  const bulkRequests = (api: ReturnType<typeof stubApi>) =>
+    api.requests().filter((request) =>
+      request.url.pathname.startsWith("/api/v1/people/bulk")
+    );
+
+  it("selects rows and the page without renaming the row links", async () => {
+    markup();
+    stubApi({
+      [PEOPLE]: page([ada, grace, alan]),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    expect(region().queryByRole("toolbar")).toBeNull();
+    expect(
+      region().getByRole("link", { name: /Ada Lovelace/ }).getAttribute(
+        "aria-label",
+      ),
+    ).toBeNull();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    expect(within(bar()).getByText("1 selected")).toBeTruthy();
+    const all = region().getByRole("checkbox", { name: "Select all 3 shown" });
+    await user.click(all);
+    expect(within(bar()).getByText("3 selected")).toBeTruthy();
+    expect(all).toHaveProperty("checked", true);
+    expect(
+      region().getByRole("checkbox", { name: "Select Grace Hopper" }),
+    ).toHaveProperty("checked", true);
+    await expectNoAxeViolations(element("main"));
+    await user.click(all);
+    expect(region().queryByRole("toolbar")).toBeNull();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select Alan Turing" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Clear" }));
+    expect(region().queryByRole("toolbar")).toBeNull();
+    expect(
+      region().getByRole("checkbox", { name: "Select Alan Turing" }),
+    ).toHaveProperty("checked", false);
+  });
+
+  it("adds a tag to the selection, reports each outcome, and refreshes once", async () => {
+    markup();
+    const held = deferred<Response>();
+    const api = stubApi({
+      [BULK]: held.promise,
+      [PEOPLE]: [page([ada, grace, alan]), page([ada, grace, alan])],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select all 3 shown" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+    const picker = within(bar()).getByLabelText("Tag to add");
+    expect(document.activeElement).toBe(picker);
+    await user.selectOptions(picker, family.id);
+    await user.click(within(bar()).getByRole("button", { name: "Add tag" }));
+    expect(bar().getAttribute("aria-busy")).toBe("true");
+    expect(bar().hasAttribute("inert")).toBe(true);
+    expect(bulkRequests(api)[0]?.body).toEqual({
+      action: "tag",
+      personIds: [personId, grace.id, alan.id],
+      tagId: family.id,
+    });
+    expect(bulkRequests(api)[0]?.headers.get("X-Workspace-Id")).toBe(
+      workspaceId,
+    );
+    await act(async () => {
+      held.resolve(answer("tag", [
+        { outcome: "done", personId },
+        { outcome: "unchanged", personId: grace.id },
+        {
+          code: "archived_write_rejected",
+          outcome: "failed",
+          personId: alan.id,
+        },
+      ]));
+      await held.promise;
+    });
+    const report = await waitFor(() => element("#people-bulk-result"));
+    expect(report.textContent).toContain("Added “Family” to 1 person.");
+    expect(report.textContent).toContain("1 done · 1 unchanged · 1 failed");
+    expect(
+      within(report).getByRole("list", { name: "People not changed" })
+        .textContent,
+    ).toBe("Alan Turing: Archived and read-only; restore first");
+    await waitFor(() => expect(listRequests(api)).toHaveLength(2));
+    expect(document.activeElement).toBe(report);
+    expect(region().queryByRole("toolbar")).toBeNull();
+    await waitFor(() =>
+      expect(region().getByRole("link", { name: /Ada Lovelace/ })).toBeTruthy()
+    );
+    expect(element("#people-bulk-result")).toBe(report);
+    await user.click(within(report).getByRole("button", { name: "Dismiss" }));
+    expect(document.querySelector("#people-bulk-result")).toBeNull();
+    // The selection went with the run, so focus returns to the first person
+    // it was made of.
+    expect(document.activeElement).toBe(
+      region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    expect(bulkRequests(api)).toHaveLength(1);
+  });
+
+  it("removes a tag, and cancels a choice without a request", async () => {
+    markup();
+    const api = stubApi({
+      [BULK]: answer("untag", [{ outcome: "done", personId }]),
+      [PEOPLE]: [page([ada]), page([ada])],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    await user.click(
+      within(bar()).getByRole("button", { name: "Remove tag…" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(
+      within(bar()).getByRole("button", { name: "Remove tag…" }),
+    );
+    await user.click(
+      within(bar()).getByRole("button", { name: "Remove tag…" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Remove tag" }));
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "Removed “Friends” from 1 person.",
+      )
+    );
+    expect(bulkRequests(api)[0]?.body).toEqual({
+      action: "untag",
+      personIds: [personId],
+      tagId: friends.id,
+    });
+  });
+
+  it("asks before archiving and archives on confirmation", async () => {
+    markup();
+    const api = stubApi({
+      [BULK]: answer("archive", [
+        { outcome: "done", personId },
+        { code: "not_found", outcome: "failed", personId: grace.id },
+      ]),
+      [PEOPLE]: [page([ada, grace]), page([])],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select all 2 shown" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Archive" }));
+    const dialog = await waitFor(() =>
+      document.querySelector<HTMLElement>("[role=dialog]")!
+    );
+    expect(within(dialog).getByText("Archive 2 people?")).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(document.querySelector("[role=dialog]")).toBeNull()
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Archive" }));
+    await waitFor(() =>
+      expect(document.querySelector("[role=dialog]")).not.toBeNull()
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(document.querySelector("[role=dialog]")).toBeNull()
+    );
+    expect(document.activeElement).toBe(
+      within(bar()).getByRole("button", { name: "Archive" }),
+    );
+    expect(bulkRequests(api)).toHaveLength(0);
+    await user.click(within(bar()).getByRole("button", { name: "Archive" }));
+    const again = await waitFor(() =>
+      document.querySelector<HTMLElement>("[role=dialog]")!
+    );
+    await user.click(
+      within(again).getByRole("button", { name: "Archive 2 people" }),
+    );
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "Archived 1 person.",
+      )
+    );
+    expect(bulkRequests(api)[0]?.body).toEqual({
+      action: "archive",
+      personIds: [personId, grace.id],
+    });
+    expect(element("#people-bulk-result").textContent).toContain(
+      "Grace Hopper: No longer in this workspace",
+    );
+    await waitFor(() =>
+      expect(element("#people-directory-empty").hidden).toBe(false)
+    );
+    await user.click(
+      within(element("#people-bulk-result")).getByRole("button", {
+        name: "Dismiss",
+      }),
+    );
+    // Nobody is left to return to, so focus goes back to the search.
+    expect(document.activeElement).toBe(
+      region().getByLabelText("Search people"),
+    );
+  });
+
+  it("restores from the archived view without asking", async () => {
+    markup("archived");
+    const api = stubApi({
+      [BULK]: answer("restore", [{ outcome: "done", personId }]),
+      [PEOPLE]: [
+        page([person({ lifecycle: "archived" })], { lifecycle: "archived" }),
+        page([{ ...grace, lifecycle: "archived" }], { lifecycle: "archived" }),
+      ],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(region().getByRole("checkbox", { name: "Select Ada" }));
+    expect(within(bar()).queryByRole("button", { name: "Archive" })).toBeNull();
+    // An archived person is read-only, so tagging is not offered.
+    expect(within(bar()).queryByRole("button", { name: "Add tag…" }))
+      .toBeNull();
+    expect(within(bar()).queryByRole("button", { name: "Remove tag…" }))
+      .toBeNull();
+    await user.click(within(bar()).getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "Restored 1 person.",
+      )
+    );
+    expect(bulkRequests(api)[0]?.body).toEqual({
+      action: "restore",
+      personIds: [personId],
+    });
+    await waitFor(() =>
+      expect(
+        region().getByRole("checkbox", { name: "Select Grace Hopper" }),
+      ).toBeTruthy()
+    );
+    await user.click(
+      within(element("#people-bulk-result")).getByRole("button", {
+        name: "Dismiss",
+      }),
+    );
+    // Ada left the list, so focus goes to the page's selection box.
+    expect(document.activeElement).toBe(
+      region().getByRole("checkbox", { name: "Select all 1 shown" }),
+    );
+  });
+
+  it("exports the selection as one vCard and says who was skipped", async () => {
+    markup();
+    const created: Blob[] = [];
+    const saved: string[] = [];
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = (blob: Blob) => {
+      created.push(blob);
+      return "blob:selection";
+    };
+    const revoked: string[] = [];
+    URL.revokeObjectURL = (url: string) => {
+      revoked.push(url);
+    };
+    const timers: (() => void)[] = [];
+    const setTimeout = globalThis.setTimeout;
+    globalThis.setTimeout =
+      ((work: () => void, delay?: number) =>
+        delay === 60_000
+          ? (timers.push(work), 0)
+          : setTimeout(work, delay)) as typeof globalThis.setTimeout;
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      saved.push(`${this.download} ${this.getAttribute("href")}`);
+    };
+    try {
+      const api = stubApi({
+        [PEOPLE]: page([ada, grace]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [TAGS]: tags,
+        [VCARD]: new Response(
+          "BEGIN:VCARD\r\nFN:Ada Lovelace\r\nEND:VCARD\r\n",
+          {
+            headers: {
+              "content-disposition":
+                "attachment; filename=\"kinship-people-1.vcf\"; filename*=UTF-8''kinship-people-1.vcf",
+              "content-type": "text/vcard; charset=utf-8",
+              "x-skipped-count": "1",
+            },
+          },
+        ),
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select all 2 shown" }),
+      );
+      await user.click(
+        within(bar()).getByRole("button", { name: "Export vCard" }),
+      );
+      await waitFor(() =>
+        expect(element("#people-bulk-result").textContent).toContain(
+          "Exported 1 person to a vCard.",
+        )
+      );
+      expect(element("#people-bulk-result").textContent).toContain(
+        "1 skipped: no longer in this workspace.",
+      );
+      expect(bulkRequests(api)[0]?.body).toEqual({
+        personIds: [personId, grace.id],
+      });
+      expect(saved).toEqual(["kinship-people-1.vcf blob:selection"]);
+      expect(await created[0]?.text()).toContain("FN:Ada Lovelace");
+      expect(listRequests(api)).toHaveLength(1);
+      expect(within(bar()).getByText("2 selected")).toBeTruthy();
+      expect(revoked).toEqual([]);
+      for (const work of timers) work();
+      expect(revoked).toEqual(["blob:selection"]);
+    } finally {
+      globalThis.setTimeout = setTimeout;
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+      HTMLAnchorElement.prototype.click = click;
+    }
+  });
+
+  it("reports an export that skipped nobody without a skipped line", async () => {
+    markup();
+    const createObjectURL = URL.createObjectURL;
+    const click = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = () => "blob:one";
+    HTMLAnchorElement.prototype.click = () => undefined;
+    try {
+      stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [TAGS]: noTags,
+        [VCARD]: new Response("BEGIN:VCARD\r\nEND:VCARD\r\n"),
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      expect(within(bar()).getByRole("button", { name: "Add tag" }))
+        .toHaveProperty("disabled", true);
+      await user.click(within(bar()).getByRole("button", { name: "Cancel" }));
+      await user.click(
+        within(bar()).getByRole("button", { name: "Export vCard" }),
+      );
+      const report = await waitFor(() => element("#people-bulk-result"));
+      await waitFor(() =>
+        expect(report.textContent).toBe(
+          "Exported 1 person to a vCard.Dismiss",
+        )
+      );
+      await user.click(within(report).getByRole("button", { name: "Dismiss" }));
+      // The selection is still there, so focus returns to its bar.
+      expect(bar().contains(document.activeElement)).toBe(true);
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      HTMLAnchorElement.prototype.click = click;
+    }
+  });
+
+  it("reports a refused or unanswered request and keeps the selection", async () => {
+    markup();
+    const api = stubApi({
+      [BULK]: [
+        problemResponse(400, {
+          code: "profile_fact_reference_invalid",
+          detail: "Select an active option from the current workspace.",
+        }),
+        () => Promise.reject(new Error("offline")),
+      ],
+      [PEOPLE]: page([ada]),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+      [VCARD]: problemResponse(404, { detail: "None of them." }),
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+    await user.click(within(bar()).getByRole("button", { name: "Add tag" }));
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "Nothing was changed.Select an active option from the current workspace.",
+      )
+    );
+    expect(within(bar()).getByText("1 selected")).toBeTruthy();
+    await user.click(within(bar()).getByRole("button", { name: "Archive" }));
+    const dialog = await waitFor(() =>
+      document.querySelector<HTMLElement>("[role=dialog]")!
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Archive 1 person" }),
+    );
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "The people service is temporarily unavailable. Try again.",
+      )
+    );
+    await user.click(
+      within(bar()).getByRole("button", { name: "Export vCard" }),
+    );
+    await waitFor(() =>
+      expect(element("#people-bulk-result").textContent).toContain(
+        "No vCard was exported.None of them.",
+      )
+    );
+    expect(listRequests(api)).toHaveLength(1);
+  });
+
+  it("clears the selection when a new search runs", async () => {
+    markup();
+    stubApi({
+      [PEOPLE]: [page([ada]), page([ada])],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    expect(bar()).toBeTruthy();
+    await user.click(region().getByRole("button", { name: "Find people" }));
+    await waitFor(() => expect(region().queryByRole("toolbar")).toBeNull());
+    await waitFor(() =>
+      expect(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      ).toHaveProperty("checked", false)
+    );
+  });
+
+  it("says when the selection cap refuses more people", async () => {
+    markup();
+    const many = Array.from({ length: 101 }, (_, index) =>
+      person({
+        givenName: `Person ${index}`,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      }));
+    stubApi({
+      [PEOPLE]: page(many),
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: tags,
+    });
+    await mount();
+    await userEvent.setup().click(
+      region().getByRole("checkbox", { name: "Select all 101 shown" }),
+    );
+    expect(within(bar()).getByText("100 selected")).toBeTruthy();
+    expect(element("#people-selection-notice").textContent).toBe(
+      "You can select up to 100 people at a time. The first 100 are selected.",
+    );
+  });
+});

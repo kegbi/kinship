@@ -719,6 +719,12 @@ Playwright test carrying its stable flow ID.
       `IMPORT-002`. Decide whether `exists` should ignore deleted people
       (recreating them) and change all three formats together.
 
+- [ ] **REL-066 — The bulk tag picker only lists the tag options already
+      loaded.** Found reviewing GAP-051: in a workspace with more than 20 tags,
+      or while a tag search is typed, the tag a member wants may be missing from
+      the bulk bar's picker. Give the picker its own tag search, or reuse the
+      directory tag filter's search and "More tags" paging.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

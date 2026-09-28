@@ -18,6 +18,7 @@ import {
   exportDownload,
   exportRequest,
   exportSummary,
+  peopleVCardInput,
 } from "../schemas/exports.ts";
 import { uuid } from "../schemas/shared.ts";
 
@@ -155,11 +156,45 @@ export const exportPersonVCard = defineRoute({
   },
 });
 
+export const exportPeopleVCards = defineRoute({
+  method: "post",
+  path: "/api/v1/people/bulk/vcard",
+  operationId: "exportPeopleVCards",
+  description:
+    "One vCard file of up to 100 selected people, in request order. People missing from the active workspace are skipped and counted in `X-Skipped-Count`.",
+  security: [{ kinship_session: [] }],
+  request: {
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": peopleVCardInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Member-authorized vCard of the selected people",
+      content: {
+        "text/vcard": z.string().meta({ format: "binary" }),
+      },
+      headers: z.object({
+        "X-Skipped-Count": z.string().regex(/^\d+$/).meta({
+          description:
+            "How many selected people were missing from the workspace and left out.",
+        }),
+      }),
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
+  },
+});
+
 /** Every exports route, in the order the surface mounts them. */
 export const EXPORTS_ROUTES: readonly RouteDescriptor[] = [
   listExports,
   createWorkspaceExport,
   downloadExport,
   createExportDownload,
+  exportPeopleVCards,
   exportPersonVCard,
 ];

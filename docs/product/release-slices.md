@@ -133,7 +133,7 @@ workspace section, journal item, or tasks page it lives on.
 ## Slice 7: Data Lifecycle, Import, And Export
 
 Flows: `IMPORT-001`, `IMPORT-002`, `EXPORT-001`, `EXPORT-002`, `AUTH-005`,
-`WORKSPACE-002`, and `PEOPLE-008`.
+`WORKSPACE-002`, `PEOPLE-008`, and `PEOPLE-009`.
 
 Deliver format detection, bounded staging, identity mapping, dry-run reports,
 atomic commit, idempotent rerun, attachment manifests, vCard export, workspace
@@ -141,7 +141,9 @@ exports, and explicit legacy credential non-activation. Complete workspace reset
 and deletion only after every introduced module participates in the atomic data
 lifecycle and impact preview. `PEOPLE-008` merges two people the same way: every
 owning module relinks its own rows in one transaction, and a re-import of the
-same export lands on the person who was kept.
+same export lands on the person who was kept. `PEOPLE-009` acts on up to 100
+selected people at once, each through the single-person use case in its own
+transaction, and exports the selection as one vCard.
 
 > **Proposed Slice 7 amendment:** complete the durable import/export job design,
 > destructive-lifecycle coordinator, legacy-credential policy, surviving
@@ -219,6 +221,9 @@ GAP-050 added `IMPORT-002` and `EXPORT-002` (P1, Slice 7, `settings.import-new`
 and `settings.export`) for vCard and CSV contacts, which the Slice 7 ticket
 names. Import sources beyond Monica, vCard, and CSV remain part of the
 optional-source import gate above.
+
+GAP-051 added `PEOPLE-009` (P1, Slice 7, `people.index` and `people.archived`)
+for bulk directory actions beside the merge and selection export it sits with.
 
 ## Slice Acceptance
 

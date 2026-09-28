@@ -17,6 +17,11 @@
  * tag picker's pages of options. While a list read is in flight every
  * control waits, and Load more people is hidden unless that read continues
  * the list.
+ *
+ * GAP-051 (PEOPLE-009) adds the selection and the bulk bar to the same
+ * reducer. A bulk request is not a third slot: the bar is inert while one
+ * runs, so there is never a second, and when it answers the report is kept
+ * and the list is read again once, through the list slot.
  */
 
 import {
@@ -27,7 +32,10 @@ import {
   useReducer,
   useRef,
 } from "react";
+import { flushSync } from "react-dom";
 import {
+  bulkPeople,
+  exportPeopleVCards,
   getMemberPreferences,
   listPeople,
   listPeopleTagOptions,
@@ -36,6 +44,14 @@ import {
   type PeopleDirectorySort,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
+import { Button } from "@/components/ui/button.tsx";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import {
   mountIsland,
@@ -49,11 +65,16 @@ import {
 import { readStaticForm } from "../../../lib/static-form.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import {
+  type BulkKind,
+  bulkProblemReport,
+  type BulkReport,
+  bulkReport,
   directoryInput,
   directoryLocation,
   directoryReducer,
   emptyCopy,
   errorCopy,
+  exportReport,
   initialDirectory,
   isSort,
   personDetails,
@@ -103,6 +124,21 @@ async function readContext(): Promise<ContextAnswer> {
 
 const query = () => new URLSearchParams(globalThis.location.search);
 
+/** Hands a downloaded file to the browser to save. */
+function saveFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // The browser has taken the file once the click is handled; the address is
+  // released a little later for the engines that read it asynchronously.
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function PeopleDirectory(props: PeopleDirectoryProps) {
   const { lifecycle } = props;
   const [state, dispatch] = useReducer(
@@ -115,6 +151,13 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const search = useRef<HTMLInputElement>(null);
   const tagSearch = useRef<HTMLInputElement>(null);
   const error = useRef<HTMLElement>(null);
+  const bulkTag = useRef<HTMLSelectElement>(null);
+  // The bar control a choice was opened from, which takes focus back. The
+  // tag choice replaces the bar's buttons, so it is found again by its step.
+  const opener = useRef<string>("");
+  // The people the last run was started for, so dismissing its report can
+  // hand focus back to the first of them once the selection has gone.
+  const lastRun = useRef<readonly string[]>([]);
   const context = useRef<Context | undefined>(undefined);
   // What the next read asks for, as the reader last left it.
   const reading = useRef({
@@ -245,6 +288,112 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     if (state.status === "error") error.current?.focus();
   }, [state.status]);
 
+  /** The people a report names, as the list shows them now. */
+  const shownNames = () =>
+    new Map(
+      state.people.map((person) => [
+        person.id,
+        personName(person, state.nameOrder),
+      ]),
+    );
+
+  const runBulk = async (
+    kind: Exclude<BulkKind, "export">,
+    tag?: { readonly id: string; readonly name: string },
+  ): Promise<void> => {
+    // The bar is drawn only over a loaded list and is inert while a run is
+    // in flight, so the workspace is known and nothing else is running.
+    const known = context.current!;
+    const names = shownNames();
+    const personIds = [...state.selection];
+    lastRun.current = personIds;
+    dispatch({ kind, type: "bulk-start" });
+    const answer = await settle(() =>
+      bulkPeople({
+        action: kind,
+        personIds,
+        ...(tag ? { tagId: tag.id } : {}),
+      }, known.workspaceId)
+    );
+    if (answer.status !== "ready") {
+      dispatch({
+        clearSelection: false,
+        report: bulkProblemReport(kind, answer.problem?.detail),
+        type: "bulk-finished",
+      });
+      return;
+    }
+    dispatch({
+      clearSelection: true,
+      report: bulkReport(kind, answer.data!, names, tag?.name),
+      type: "bulk-finished",
+    });
+    await load(false);
+  };
+
+  const exportSelection = async (): Promise<void> => {
+    // The bar is drawn only over a loaded list and is inert while a run is
+    // in flight, so the workspace is known and nothing else is running.
+    const known = context.current!;
+    const personIds = [...state.selection];
+    lastRun.current = personIds;
+    dispatch({ kind: "export", type: "bulk-start" });
+    const answer = await settle(() =>
+      exportPeopleVCards({ personIds }, known.workspaceId)
+    );
+    let finished: BulkReport;
+    if (answer.status === "ready") {
+      const file = answer.data!;
+      saveFile(file.blob, file.filename);
+      finished = exportReport(personIds.length - file.skipped, file.skipped);
+    } else {
+      finished = bulkProblemReport("export", answer.problem?.detail);
+    }
+    dispatch({
+      clearSelection: false,
+      report: finished,
+      type: "bulk-finished",
+    });
+  };
+
+  // A choice opens inside its click, so its first control takes focus while
+  // the click is still being handled (REL-051).
+  const openStep = (step: "confirm-archive" | "tag" | "untag") => {
+    opener.current = step;
+    flushSync(() => dispatch({ step, type: "bulk-step" }));
+    if (step !== "confirm-archive") bulkTag.current?.focus();
+  };
+
+  const closeStep = () => {
+    flushSync(() => dispatch({ step: "idle", type: "bulk-step" }));
+    document.querySelector<HTMLElement>(
+      `[data-bulk-opener="${opener.current}"]`,
+    )?.focus();
+  };
+
+  // Dismissing the report returns focus to the bar while a selection
+  // remains, otherwise to the first person the run was for, never the body.
+  const dismissReport = () => {
+    flushSync(() => dispatch({ type: "bulk-dismiss" }));
+    const target =
+      document.querySelector<HTMLElement>("#people-bulk-bar button") ??
+        document.querySelector<HTMLElement>(
+          `[data-person-select="${lastRun.current[0] ?? ""}"]`,
+        ) ??
+        document.querySelector<HTMLElement>("#people-directory-select-all") ??
+        document.querySelector<HTMLElement>("#people-directory-search");
+    target?.focus();
+  };
+
+  const applyTag = () => {
+    const step = state.bulk.step;
+    const chosen = state.tag.options.find((option) =>
+      option.id === bulkTag.current?.value
+    );
+    if ((step !== "tag" && step !== "untag") || !chosen) return;
+    void runBulk(step, chosen);
+  };
+
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     // Before the workspace is known, the first load serves the submission.
@@ -263,6 +412,9 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   };
 
   const { loading, status } = state;
+  const running = state.bulk.running !== undefined;
+  // A bulk run holds every control the list is read with, as a read does.
+  const busy = loading || running;
   const archived = lifecycle === "archived";
   const empty = emptyCopy(state.filtered, lifecycle);
   const failure = errorCopy(state.forbidden);
@@ -283,7 +435,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
           <input
             ref={search}
             autoComplete="off"
-            disabled={loading}
+            disabled={busy}
             id="people-directory-search"
             maxLength={200}
             name="search"
@@ -298,7 +450,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             <input
               ref={tagSearch}
               autoComplete="off"
-              disabled={loading}
+              disabled={busy}
               id="people-tag-options-search"
               name="tagSearch"
               maxLength={200}
@@ -306,7 +458,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
               type="search"
             />
             <button
-              disabled={loading || state.tag.loading}
+              disabled={busy || state.tag.loading}
               id="people-tag-options-search-button"
               onClick={() => void loadTags(false)}
               type="button"
@@ -316,7 +468,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
           </div>
           <label htmlFor="people-directory-tag">Tag</label>
           <select
-            disabled={loading}
+            disabled={busy}
             id="people-directory-tag"
             name="tag"
             onChange={(event) => chooseTag(event.target.value)}
@@ -329,7 +481,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
           </select>
           <div className="directory-tag-pagination">
             <button
-              disabled={loading || state.tag.loading}
+              disabled={busy || state.tag.loading}
               hidden={!state.tag.cursor}
               id="people-tag-options-more"
               onClick={() => void loadTags(true)}
@@ -349,7 +501,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
         <label>
           Sort by
           <select
-            disabled={loading}
+            disabled={busy}
             id="people-directory-sort"
             name="sort"
             onChange={(event) =>
@@ -361,7 +513,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             <option value="recently-added">Recently added</option>
           </select>
         </label>
-        <button disabled={loading} type="submit">Find people</button>
+        <button disabled={busy} type="submit">Find people</button>
       </form>
 
       <p
@@ -432,6 +584,47 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
         </div>
       </section>
 
+      {state.bulk.report
+        ? (
+          <BulkResult
+            onDismiss={dismissReport}
+            report={state.bulk.report}
+            sequence={state.bulk.sequence}
+          />
+        )
+        : null}
+
+      {listShown && state.people.length > 0
+        ? (
+          <div className="directory-selection">
+            <label className="directory-select-all">
+              <input
+                checked={state.people.every((person) =>
+                  state.selection.includes(person.id)
+                )}
+                disabled={busy}
+                id="people-directory-select-all"
+                onChange={(event) =>
+                  dispatch({
+                    selected: event.target.checked,
+                    type: "select-page",
+                  })}
+                type="checkbox"
+              />
+              Select all {state.people.length} shown
+            </label>
+            <p
+              aria-live="polite"
+              className="directory-selection-notice"
+              id="people-selection-notice"
+              role="status"
+            >
+              {state.selectionNotice}
+            </p>
+          </div>
+        )
+        : null}
+
       <ul
         aria-label={archived ? "Archived people" : "Active people"}
         className="people-directory-list"
@@ -440,15 +633,19 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       >
         {state.people.map((person) => (
           <PersonItem
+            disabled={busy}
             key={person.id}
             nameOrder={state.nameOrder}
+            onSelect={(selected) =>
+              dispatch({ personId: person.id, selected, type: "select" })}
             person={person}
+            selected={state.selection.includes(person.id)}
           />
         ))}
       </ul>
       <div className="directory-pagination">
         <button
-          disabled={loading}
+          disabled={busy}
           hidden={!state.nextCursor || !listShown}
           id="people-directory-more"
           onClick={() => void load(true)}
@@ -457,14 +654,230 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
           Load more people
         </button>
       </div>
+
+      {state.selection.length > 0
+        ? (
+          <div
+            aria-busy={running}
+            aria-label="Bulk actions"
+            className="people-bulk-bar"
+            id="people-bulk-bar"
+            inert={running}
+            role="toolbar"
+          >
+            <p className="people-bulk-count">
+              {state.selection.length} selected
+            </p>
+            {state.bulk.step === "tag" || state.bulk.step === "untag"
+              ? (
+                <div className="people-bulk-choice">
+                  <label htmlFor="people-bulk-tag">
+                    {state.bulk.step === "tag" ? "Tag to add" : "Tag to remove"}
+                  </label>
+                  <select
+                    defaultValue={state.tag.options[0]?.id}
+                    id="people-bulk-tag"
+                    ref={bulkTag}
+                  >
+                    {state.tag.options.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={state.tag.options.length === 0}
+                    onClick={applyTag}
+                    type="button"
+                  >
+                    {state.bulk.step === "tag" ? "Add tag" : "Remove tag"}
+                  </Button>
+                  <Button
+                    onClick={closeStep}
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )
+              : (
+                <div className="people-bulk-actions">
+                  {
+                    /* An archived person is read-only, so the archived view
+                    offers no tagging: every person would be refused. */
+                  }
+                  {archived ? null : (
+                    <>
+                      <Button
+                        data-bulk-opener="tag"
+                        onClick={() => openStep("tag")}
+                        type="button"
+                        variant="outline"
+                      >
+                        Add tag…
+                      </Button>
+                      <Button
+                        data-bulk-opener="untag"
+                        onClick={() => openStep("untag")}
+                        type="button"
+                        variant="outline"
+                      >
+                        Remove tag…
+                      </Button>
+                    </>
+                  )}
+                  {archived
+                    ? (
+                      <Button
+                        onClick={() => void runBulk("restore")}
+                        type="button"
+                        variant="outline"
+                      >
+                        Restore
+                      </Button>
+                    )
+                    : (
+                      <Button
+                        data-bulk-opener="confirm-archive"
+                        onClick={() => openStep("confirm-archive")}
+                        type="button"
+                        variant="outline"
+                      >
+                        Archive
+                      </Button>
+                    )}
+                  <Button
+                    onClick={() => void exportSelection()}
+                    type="button"
+                    variant="outline"
+                  >
+                    Export vCard
+                  </Button>
+                  <Button
+                    onClick={() => dispatch({ type: "clear-selection" })}
+                    type="button"
+                    variant="outline"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              )}
+          </div>
+        )
+        : null}
+
+      {state.bulk.step === "confirm-archive"
+        ? (
+          <ArchiveConfirmation
+            count={state.selection.length}
+            onCancel={closeStep}
+            onConfirm={() => void runBulk("archive")}
+          />
+        )
+        : null}
     </>
+  );
+}
+
+const plural = (count: number) =>
+  `${count} ${count === 1 ? "person" : "people"}`;
+
+/** Archiving moves people out of the active list, so it is asked first. */
+function ArchiveConfirmation(
+  props: {
+    readonly count: number;
+    readonly onCancel: () => void;
+    readonly onConfirm: () => void;
+  },
+) {
+  return (
+    <Dialog
+      disablePointerDismissal
+      // The dialog is open for as long as it is drawn, so any change is a
+      // request to close it: Escape.
+      onOpenChange={props.onCancel}
+      open
+    >
+      <DialogContent className="w-[min(30rem,calc(100%-2rem))]">
+        <DialogTitle>Archive {plural(props.count)}?</DialogTitle>
+        <DialogDescription>
+          They leave the active list and become read-only. You can restore them
+          from Archived people.
+        </DialogDescription>
+        <div className="flex flex-wrap justify-end gap-(--space-2)">
+          <DialogClose
+            render={
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            }
+          />
+          <Button onClick={props.onConfirm} type="button">
+            Archive {plural(props.count)}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** What the last bulk action did, kept after the list refreshes. */
+function BulkResult(
+  props: {
+    readonly onDismiss: () => void;
+    readonly report: BulkReport;
+    /** Which finished run this reports; each new one takes focus once. */
+    readonly sequence: number;
+  },
+) {
+  const { report } = props;
+  const section = useRef<HTMLElement>(null);
+  // Each finished bulk run hands focus to its report, since the bar it was
+  // started from has usually gone with the selection.
+  useLayoutEffect(() => {
+    section.current?.focus();
+  }, [props.sequence]);
+  return (
+    <section
+      aria-labelledby="people-bulk-result-title"
+      className="people-bulk-result"
+      data-tone={report.tone}
+      id="people-bulk-result"
+      ref={section}
+      tabIndex={-1}
+    >
+      <p id="people-bulk-result-title">
+        <strong>{report.title}</strong>
+      </p>
+      {report.counts ? <p>{report.counts}</p> : null}
+      {report.failures.length > 0
+        ? (
+          <ul aria-label="People not changed">
+            {report.failures.map((failure, index) => (
+              <li key={index}>{failure.name}: {failure.reason}</li>
+            ))}
+          </ul>
+        )
+        : null}
+      <Button
+        onClick={props.onDismiss}
+        type="button"
+        variant="outline"
+      >
+        Dismiss
+      </Button>
+    </section>
   );
 }
 
 function PersonItem(
   props: {
+    readonly disabled: boolean;
     readonly nameOrder: PersonNameOrder;
+    readonly onSelect: (selected: boolean) => void;
     readonly person: PeopleDirectoryPerson;
+    readonly selected: boolean;
   },
 ) {
   const { person } = props;
@@ -472,6 +885,16 @@ function PersonItem(
   const remaining = person.tagCount - person.tags.length;
   return (
     <li>
+      {/* Beside the link, not in it, so the link keeps its own name. */}
+      <input
+        aria-label={`Select ${name}`}
+        data-person-select={person.id}
+        checked={props.selected}
+        className="directory-person-select"
+        disabled={props.disabled}
+        onChange={(event) => props.onSelect(event.target.checked)}
+        type="checkbox"
+      />
       <a className="person-directory-link" href={`/app/people/${person.id}`}>
         <span className="directory-person-heading">
           <Avatar avatar={person.avatar} initials={nameInitials(name)} />

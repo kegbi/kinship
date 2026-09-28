@@ -465,6 +465,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/people/bulk": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. */
+        readonly post: operations["bulkPeople"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/bulk/vcard": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description One vCard file of up to 100 selected people, in request order. People missing from the active workspace are skipped and counted in `X-Skipped-Count`. */
+        readonly post: operations["exportPeopleVCards"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/duplicates": {
         readonly parameters: {
             readonly query?: never;
@@ -2912,6 +2946,39 @@ export interface components {
             readonly password: string;
             readonly token: string;
         };
+        readonly PeopleBulkInput: {
+            /** @enum {string} */
+            readonly action: "archive" | "restore" | "tag" | "untag";
+            /** @description Distinct people in the active workspace. */
+            readonly personIds: readonly string[];
+            /**
+             * Format: uuid
+             * @description The workspace tag to add or remove; only tagging names one.
+             */
+            readonly tagId?: string;
+        };
+        readonly PeopleBulkItemResult: {
+            /**
+             * @description Why a failed person was refused.
+             * @enum {string}
+             */
+            readonly code?: "archived_write_rejected" | "forbidden" | "invalid" | "not_found" | "section_hidden" | "stale" | "tag_unavailable" | "unavailable";
+            /** @enum {string} */
+            readonly outcome: "done" | "failed" | "skipped" | "unchanged";
+            /** Format: uuid */
+            readonly personId: string;
+        };
+        readonly PeopleBulkResult: {
+            /** @enum {string} */
+            readonly action: "archive" | "restore" | "tag" | "untag";
+            readonly results: readonly components["schemas"]["PeopleBulkItemResult"][];
+            readonly summary: {
+                readonly done: number;
+                readonly failed: number;
+                readonly skipped: number;
+                readonly unchanged: number;
+            };
+        };
         readonly PeopleDirectoryPage: {
             /** @constant */
             readonly status: "ready";
@@ -2968,6 +3035,10 @@ export interface components {
             readonly options: readonly components["schemas"]["PeopleDirectoryTag"][];
             readonly nextCursor?: string;
             readonly selected?: components["schemas"]["PeopleDirectoryTag"];
+        };
+        readonly PeopleVCardInput: {
+            /** @description Distinct people in the active workspace. */
+            readonly personIds: readonly string[];
         };
         readonly PersonAvatar: {
             readonly color: string;
@@ -6531,6 +6602,147 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly bulkPeople: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PeopleBulkInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Each person's outcome; partial success is expected */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PeopleBulkResult"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly exportPeopleVCards: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PeopleVCardInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Member-authorized vCard of the selected people */
+            readonly 200: {
+                headers: {
+                    /** @description How many selected people were missing from the workspace and left out. */
+                    readonly "X-Skipped-Count": string;
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "text/vcard": string;
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

@@ -158,13 +158,15 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002, PEOPLE-007, PEOPLE-008]
+    flowIds: [PEOPLE-002, PEOPLE-007, PEOPLE-008, PEOPLE-009]
     sections:
       - search
       - saved-filters
       - tags
       - active-people
       - duplicates
+      - selection
+      - bulk-actions
     # GAP-049: the duplicate review. It stays out of the page while `loading`,
     # when there is nothing to review (`empty`), and when it could not be read
     # (`unavailable`); `ready` shows the folded summary, `reviewing` the pairs,
@@ -182,13 +184,53 @@ pages:
         - reviewing
         - merging
         - stale
+      # GAP-051 (PEOPLE-009): a checkbox per row and one for the page shown.
+      # `none` shows no bulk bar; `selected` holds 1 to 100 people; `capped`
+      # says the 100-person limit refused more. A new search, tag filter,
+      # sort, page, or view clears the selection.
+      selection:
+        - none
+        - selected
+        - capped
+      # The sticky bulk bar while anything is selected: `idle` offers Add
+      # tag…, Remove tag…, Archive, Export vCard, and Clear; `choosing-tag`
+      # picks a tag from the loaded tag options; `confirming-archive` asks before archiving; `running` is busy
+      # and inert; `reported` shows the done, unchanged, and failed counts
+      # with each failed person named, and outlives the one refresh after it;
+      # `refused` reports a request refused as a whole and keeps the
+      # selection.
+      bulk-actions:
+        - idle
+        - choosing-tag
+        - confirming-archive
+        - running
+        - reported
+        - refused
 
   - id: people.archived
     path: /app/people/archived
     access: active-member
     rendering: static-shell-islands
     owner: people
-    flowIds: [PEOPLE-002, PEOPLE-004]
+    flowIds: [PEOPLE-002, PEOPLE-004, PEOPLE-009]
+    sections:
+      - archived-people
+      - selection
+      - bulk-actions
+    # GAP-051: the same selection and bulk bar as `people.index`, with Restore
+    # in place of Archive and no confirmation. An archived person is
+    # read-only, so the bar offers no Add tag… or Remove tag… here and has no
+    # `choosing-tag` state.
+    sectionStates:
+      selection:
+        - none
+        - selected
+        - capped
+      bulk-actions:
+        - idle
+        - running
+        - reported
+        - refused
 
   - id: people.create
     path: /app/people/new

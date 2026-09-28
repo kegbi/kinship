@@ -15,20 +15,20 @@ The current baseline contains:
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 37 required flows: 17 P0, 17 P1, and 3 P2;
-- 36 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 38 required flows: 17 P0, 18 P1, and 3 P2;
+- 37 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 42 Playwright specs under `tests/e2e/`. Flow specs are named
+- 43 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 40 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 41 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
 `docs/product/page-catalog.yaml`, `docs/product/user-flows.yaml`, and
 `tests/e2e/` on 2026-09-27 by GAP-043 and updated by GAP-050, which added
-`IMPORT-002` and `EXPORT-002`; the earlier count was taken on 2026-08-29 while
-integrating
+`IMPORT-002` and `EXPORT-002`, and by GAP-051, which added `PEOPLE-009`; the
+earlier count was taken on 2026-08-29 while integrating
 [`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
 §5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
 the specs' `flow` annotations in agreement. The five cataloged dynamic routes
@@ -112,6 +112,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `PEOPLE-006`       | P1       |              2 | person profile                                   | All remaining enabled profile facts and section visibility behavior                                     |
 | `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects   |
 | `PEOPLE-008`       | P1       |              7 | people, person profile                           | Duplicate review and atomic merge through every owning module; no undo; re-import stays idempotent      |
+| `PEOPLE-009`       | P1       |              7 | people, archived people                          | Bulk tag, archive, restore, and vCard export through single-person use cases with per-person results    |
 | `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them |
 | `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                               |
 | `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
@@ -133,7 +134,7 @@ and exercise the production-like gateway, not an internal service URL.
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 37-flow snapshot, this assignment places all 17 P0 and all 17 P1
+For the current 38-flow snapshot, this assignment places all 17 P0 and all 18 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

@@ -166,15 +166,26 @@ export async function csvArtifact(
   };
 }
 
+/**
+ * Several people's cards as one `.vcf`, in the order given. The all-people
+ * export and the directory's selection export (GAP-051) both write this.
+ */
+export function joinVCards<Person extends VCardPerson>(
+  people: readonly Person[],
+  displayName: (person: Person) => string,
+): string {
+  return people.map((person) => vcardText(person, displayName(person))).join(
+    "",
+  );
+}
+
 /** Every person's card, joined into one file. */
 export async function vcardArtifact(
   people: readonly ContactExportPerson[],
   displayName: (person: ContactExportPerson) => string,
   exportId: string,
 ): Promise<ContactArtifact> {
-  const bytes = ENCODER.encode(
-    people.map((person) => vcardText(person, displayName(person))).join(""),
-  );
+  const bytes = ENCODER.encode(joinVCards(people, displayName));
   const manifest = await manifestFor(
     "vcard",
     { people: await signed(bytes, people.length) },

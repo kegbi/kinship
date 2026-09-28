@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { PeopleDirectoryPerson } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
+  BULK_SELECTION_LIMIT,
+  bulkProblemReport,
+  bulkReport,
   directoryInput,
   directoryLocation,
   directoryReducer,
   emptyCopy,
   errorCopy,
+  exportReport,
   initialDirectory,
   isSort,
   personDetails,
@@ -247,6 +251,288 @@ describe("PEOPLE-002 directory reducer", () => {
       cursor: undefined,
       loading: false,
       status: "Tag options are temporarily unavailable.",
+    });
+  });
+});
+
+describe("PEOPLE-009 directory selection", () => {
+  const people = (count: number, from = 0) =>
+    Array.from(
+      { length: count },
+      (_, index) => person({ id: `p${from + index}` }),
+    );
+  const listed = (count: number) =>
+    directoryReducer(initialDirectory(""), {
+      append: false,
+      filtered: false,
+      lifecycle: "active",
+      nextCursor: undefined,
+      people: people(count),
+      type: "loaded",
+    });
+
+  it("selects and deselects people one at a time", () => {
+    const state = listed(3);
+    expect(state.selection).toEqual([]);
+    const one = directoryReducer(state, {
+      personId: "p1",
+      selected: true,
+      type: "select",
+    });
+    const two = directoryReducer(one, {
+      personId: "p0",
+      selected: true,
+      type: "select",
+    });
+    expect(two.selection).toEqual(["p1", "p0"]);
+    expect(
+      directoryReducer(two, { personId: "p0", selected: true, type: "select" })
+        .selection,
+    ).toEqual(["p1", "p0"]);
+    expect(
+      directoryReducer(two, { personId: "p1", selected: false, type: "select" })
+        .selection,
+    ).toEqual(["p0"]);
+    expect(directoryReducer(two, { type: "clear-selection" }).selection)
+      .toEqual([]);
+  });
+
+  it("selects the visible page and caps a selection at 100", () => {
+    expect(BULK_SELECTION_LIMIT).toBe(100);
+    const page = directoryReducer(listed(3), {
+      selected: true,
+      type: "select-page",
+    });
+    expect(page.selection).toEqual(["p0", "p1", "p2"]);
+    expect(page.selectionNotice).toBe("");
+    expect(
+      directoryReducer(page, { selected: false, type: "select-page" })
+        .selection,
+    ).toEqual([]);
+
+    const many = directoryReducer(listed(0), {
+      append: true,
+      filtered: false,
+      lifecycle: "active",
+      nextCursor: undefined,
+      people: people(120),
+      type: "loaded",
+    });
+    const capped = directoryReducer(many, {
+      selected: true,
+      type: "select-page",
+    });
+    expect(capped.selection).toHaveLength(100);
+    expect(capped.selection.at(-1)).toBe("p99");
+    expect(capped.selectionNotice).toBe(
+      "You can select up to 100 people at a time. The first 100 are selected.",
+    );
+    const refused = directoryReducer(capped, {
+      personId: "p110",
+      selected: true,
+      type: "select",
+    });
+    expect(refused.selection).toHaveLength(100);
+    expect(refused.selectionNotice).toBe(
+      "You can select up to 100 people at a time.",
+    );
+    const freed = directoryReducer(refused, {
+      personId: "p0",
+      selected: false,
+      type: "select",
+    });
+    expect(freed.selection).toHaveLength(99);
+    expect(freed.selectionNotice).toBe("");
+  });
+
+  it("clears the selection when the list, filter, sort, or page changes", () => {
+    const selected = directoryReducer(listed(2), {
+      selected: true,
+      type: "select-page",
+    });
+    for (
+      const action of [
+        { append: false, type: "loading" },
+        { append: true, type: "loading" },
+        { sort: "family-name", type: "sort" },
+        { selected: "t", type: "tag" },
+      ] as const
+    ) {
+      const next = directoryReducer(
+        { ...selected, selectionNotice: "Full" },
+        action,
+      );
+      expect(next.selection).toEqual([]);
+      expect(next.selectionNotice).toBe("");
+    }
+  });
+
+  it("walks the bar through a choice, a run, and a report", () => {
+    const selected = directoryReducer(listed(2), {
+      selected: true,
+      type: "select-page",
+    });
+    const choosing = directoryReducer(selected, {
+      step: "tag",
+      type: "bulk-step",
+    });
+    expect(choosing.bulk.step).toBe("tag");
+    const running = directoryReducer(choosing, {
+      kind: "tag",
+      type: "bulk-start",
+    });
+    expect(running.bulk).toMatchObject({ running: "tag", step: "idle" });
+    expect(running.bulk.report).toBeUndefined();
+    const report = exportReport(2, 0);
+    const finished = directoryReducer(running, {
+      clearSelection: true,
+      report,
+      type: "bulk-finished",
+    });
+    expect(finished.bulk).toMatchObject({
+      report,
+      running: undefined,
+      sequence: 1,
+    });
+    expect(finished.selection).toEqual([]);
+    const kept = directoryReducer(running, {
+      clearSelection: false,
+      report,
+      type: "bulk-finished",
+    });
+    expect(kept.selection).toEqual(["p0", "p1"]);
+    expect(kept.bulk.sequence).toBe(1);
+    // The refresh after a run keeps the report.
+    const refreshed = directoryReducer(finished, {
+      append: false,
+      type: "loading",
+    });
+    expect(refreshed.bulk.report).toBe(report);
+    expect(directoryReducer(refreshed, { type: "bulk-dismiss" }).bulk.report)
+      .toBeUndefined();
+    // A new list read closes an open choice.
+    expect(
+      directoryReducer(choosing, { append: false, type: "loading" }).bulk.step,
+    ).toBe("idle");
+  });
+});
+
+describe("PEOPLE-009 bulk reports", () => {
+  const names = new Map([["a", "Ada Lovelace"], ["g", "Grace Hopper"]]);
+
+  it("counts outcomes and names each failed person with a reason", () => {
+    expect(bulkReport("archive", {
+      action: "archive",
+      results: [
+        { outcome: "done", personId: "a" },
+        { outcome: "unchanged", personId: "x" },
+        { code: "not_found", outcome: "failed", personId: "g" },
+      ],
+      summary: { done: 1, failed: 1, skipped: 0, unchanged: 1 },
+    }, names)).toEqual({
+      counts: "1 done · 1 unchanged · 1 failed",
+      failures: [{
+        name: "Grace Hopper",
+        reason: "No longer in this workspace",
+      }],
+      title: "Archived 1 person.",
+      tone: "attention",
+    });
+    expect(bulkReport(
+      "tag",
+      {
+        action: "tag",
+        results: [
+          { outcome: "done", personId: "a" },
+          { outcome: "done", personId: "g" },
+        ],
+        summary: { done: 2, failed: 0, skipped: 0, unchanged: 0 },
+      },
+      names,
+      "Friends",
+    )).toEqual({
+      counts: "2 done · 0 unchanged · 0 failed",
+      failures: [],
+      title: "Added “Friends” to 2 people.",
+      tone: "done",
+    });
+    const reasons = bulkReport(
+      "untag",
+      {
+        action: "untag",
+        results: [
+          "archived_write_rejected",
+          "forbidden",
+          "stale",
+          "section_hidden",
+          "tag_unavailable",
+          "unavailable",
+        ].map((code, index) => ({
+          code: code as "stale",
+          outcome: "failed" as const,
+          personId: index === 0 ? "a" : `u${index}`,
+        })).concat([
+          { outcome: "failed", personId: "u9" } as never,
+          { outcome: "skipped", personId: "g" } as never,
+        ]),
+        summary: { done: 0, failed: 7, skipped: 1, unchanged: 0 },
+      },
+      names,
+      "Friends",
+    );
+    expect(reasons.title).toBe("Removed “Friends” from 0 people.");
+    expect(reasons.counts).toBe(
+      "0 done · 0 unchanged · 7 failed · 1 skipped",
+    );
+    expect(reasons.failures).toEqual([
+      { name: "Ada Lovelace", reason: "Archived and read-only; restore first" },
+      {
+        name: "Unknown person",
+        reason: "Your access to this workspace changed",
+      },
+      { name: "Unknown person", reason: "Changed elsewhere; try again" },
+      {
+        name: "Unknown person",
+        reason: "Tags are turned off in this workspace",
+      },
+      { name: "Unknown person", reason: "The tag is no longer available" },
+      { name: "Unknown person", reason: "Could not be changed right now" },
+      { name: "Unknown person", reason: "Could not be changed right now" },
+      { name: "Grace Hopper", reason: "Not attempted after access changed" },
+    ]);
+    expect(
+      bulkReport("restore", {
+        action: "restore",
+        results: [{ outcome: "done", personId: "a" }],
+        summary: { done: 1, failed: 0, skipped: 0, unchanged: 0 },
+      }, names).title,
+    ).toBe("Restored 1 person.");
+  });
+
+  it("words an export and a refused request", () => {
+    expect(exportReport(2, 0)).toEqual({
+      counts: "",
+      failures: [],
+      title: "Exported 2 people to a vCard.",
+      tone: "done",
+    });
+    expect(exportReport(1, 3)).toEqual({
+      counts: "3 skipped: no longer in this workspace.",
+      failures: [],
+      title: "Exported 1 person to a vCard.",
+      tone: "attention",
+    });
+    expect(bulkProblemReport("archive", "Refused.")).toEqual({
+      counts: "Refused.",
+      failures: [],
+      title: "Nothing was changed.",
+      tone: "attention",
+    });
+    expect(bulkProblemReport("export", undefined)).toEqual({
+      counts: "The people service is temporarily unavailable. Try again.",
+      failures: [],
+      title: "No vCard was exported.",
+      tone: "attention",
     });
   });
 });

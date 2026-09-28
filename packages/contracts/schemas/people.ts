@@ -379,6 +379,55 @@ export const occupationFactUpdateInput = z.strictObject({
   section: z.literal("work"),
 }).meta({ id: "OccupationFactUpdateInput" });
 
+/** How many people one bulk request may name (GAP-051, PEOPLE-009). */
+export const PEOPLE_BULK_LIMIT = 100;
+
+/** 1 to 100 distinct people, the selection a bulk action applies to. */
+export const peopleBulkPersonIds = z.array(z.uuid()).min(1).max(
+  PEOPLE_BULK_LIMIT,
+).refine((ids) => new Set(ids).size === ids.length, {
+  message: "Select each person once.",
+}).meta({ description: "Distinct people in the active workspace." });
+
+const tagging = (action: string) => action === "tag" || action === "untag";
+
+export const peopleBulkInput = z.strictObject({
+  action: z.enum(["archive", "restore", "tag", "untag"]),
+  personIds: peopleBulkPersonIds,
+  tagId: z.uuid().optional().meta({
+    description: "The workspace tag to add or remove; only tagging names one.",
+  }),
+}).refine((input) => tagging(input.action) === (input.tagId !== undefined), {
+  message: "Tagging names exactly one tag; archive and restore name none.",
+  path: ["tagId"],
+}).meta({ id: "PeopleBulkInput" });
+
+export const peopleBulkItemResult = z.strictObject({
+  code: z.enum([
+    "archived_write_rejected",
+    "forbidden",
+    "invalid",
+    "not_found",
+    "section_hidden",
+    "stale",
+    "tag_unavailable",
+    "unavailable",
+  ]).optional().meta({ description: "Why a failed person was refused." }),
+  outcome: z.enum(["done", "failed", "skipped", "unchanged"]),
+  personId: z.uuid(),
+}).meta({ id: "PeopleBulkItemResult" });
+
+export const peopleBulkResult = z.strictObject({
+  action: z.enum(["archive", "restore", "tag", "untag"]),
+  results: z.array(peopleBulkItemResult).max(PEOPLE_BULK_LIMIT),
+  summary: z.strictObject({
+    done: z.number().int().min(0),
+    failed: z.number().int().min(0),
+    skipped: z.number().int().min(0),
+    unchanged: z.number().int().min(0),
+  }),
+}).meta({ id: "PeopleBulkResult" });
+
 export const peopleDirectoryTag = z.strictObject({
   id: z.uuid(),
   name: z.string(),

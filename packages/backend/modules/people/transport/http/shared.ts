@@ -21,6 +21,7 @@
 
 import {
   avatarView,
+  type BulkPeopleActions,
   type ImportantDateManagement,
   type PeopleManagement,
   type PersonAvatarManagement,
@@ -63,6 +64,8 @@ export interface PeopleHttpServices {
   /** A person's avatar (GAP-045); without it the avatar routes answer 503. */
   readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;
+  /** Acting on several people at once (GAP-051); without it, 503. */
+  readonly bulk?: Pick<BulkPeopleActions, "run">;
   readonly directory: PeopleDirectory;
   /** The directory's duplicate review (GAP-049); without it, 503. */
   readonly duplicates?: PeopleDuplicates;

@@ -4,9 +4,10 @@
  * Exporting is two separate pieces of work — producing a workspace's portable
  * artifact, and handing out what has been produced — which share only the
  * context they each establish first. They are assembled here so a composition
- * root still builds one object with `createWorkspace`, `exportVCard`, `list`,
- * `createDownload`, and `download` on it, and so the split stays an internal
- * matter rather than something every caller has to know about.
+ * root still builds one object with `createWorkspace`, `exportVCard`,
+ * `exportVCards`, `list`, `createDownload`, and `download` on it, and so the
+ * split stays an internal matter rather than something every caller has to
+ * know about.
  */
 
 import { createExportArtifact } from "./export_artifact.ts";
@@ -21,6 +22,7 @@ export function createExportManagement(
   return {
     createWorkspace: artifact.createWorkspace,
     exportVCard: downloads.exportVCard,
+    exportVCards: downloads.exportVCards,
     list: downloads.list,
     createDownload: downloads.createDownload,
     download: downloads.download,

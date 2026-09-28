@@ -23,6 +23,7 @@ const FUNCTIONS: readonly string[] = [
   "acceptWorkspaceInvitation",
   "archivePerson",
   "authenticateWorkspaceInvitation",
+  "bulkPeople",
   "changeDebtStatus",
   "changeGiftStatus",
   "changeTask",
@@ -60,6 +61,7 @@ const FUNCTIONS: readonly string[] = [
   "deleteWorkspace",
   "disableDavSubscription",
   "editPerson",
+  "exportPeopleVCards",
   "getActivityReport",
   "getApiTokens",
   "getDavSubscriptions",
@@ -216,6 +218,9 @@ const TYPES: readonly string[] = [
   "MemberUiState",
   "OccupationFact",
   "PageInput",
+  "PeopleBulkInput",
+  "PeopleBulkItemResult",
+  "PeopleBulkResult",
   "PeopleDirectoryInput",
   "PeopleDirectoryLifecycle",
   "PeopleDirectoryPage",
@@ -224,6 +229,8 @@ const TYPES: readonly string[] = [
   "PeopleDirectoryTag",
   "PeopleTagOptionsInput",
   "PeopleTagOptionsPage",
+  "PeopleVCardDownload",
+  "PeopleVCardInput",
   "PersonDeletionImpact",
   "PersonDueInformation",
   "PersonEditInput",
@@ -563,4 +570,59 @@ Deno.test("[GAP-023] a list call keeps its old spelling and pages only when aske
     JSON.stringify(spelled) === JSON.stringify(expected),
     `the list calls asked for ${JSON.stringify(spelled)}`,
   );
+});
+
+Deno.test("[PEOPLE-009] the selection vCard is read as a file with its skipped count", async () => {
+  const original = globalThis.fetch;
+  const answers = [
+    new Response("BEGIN:VCARD\r\nEND:VCARD\r\n", {
+      headers: {
+        "content-disposition":
+          "attachment; filename=\"Ada_.vcf\"; filename*=UTF-8''Ada%C3%A9.vcf",
+        "x-skipped-count": "2",
+      },
+    }),
+    new Response("BEGIN:VCARD\r\nEND:VCARD\r\n", {
+      headers: {
+        "content-disposition":
+          "attachment; filename=\"plain.vcf\"; filename*=UTF-8''%E0%A4%A.vcf",
+      },
+    }),
+    new Response(
+      JSON.stringify({ code: "person_not_found", status: 404 }),
+      { status: 404 },
+    ),
+  ];
+  const sent: RequestInit[] = [];
+  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
+    sent.push(init ?? {});
+    return Promise.resolve(answers.shift()!);
+  }) as typeof fetch;
+  try {
+    const first = await client.exportPeopleVCards({ personIds: [UUID] }, UUID);
+    assert(
+      first.ok && first.value.filename === "Adaé.vcf" &&
+        first.value.skipped === 2 &&
+        (await first.value.blob.text()).startsWith("BEGIN:VCARD"),
+      "the UTF-8 filename and the skipped count are read",
+    );
+    const second = await client.exportPeopleVCards({ personIds: [UUID] });
+    assert(
+      second.ok && second.value.filename === "plain.vcf" &&
+        second.value.skipped === 0,
+      "a malformed UTF-8 name falls back to the ASCII one",
+    );
+    const refused = await client.exportPeopleVCards({ personIds: [UUID] });
+    assert(
+      !refused.ok && refused.problem.code === "person_not_found",
+      "a refusal is the problem body",
+    );
+    assert(
+      new Headers(sent[0]?.headers).get("X-Workspace-Id") === UUID &&
+        new Headers(sent[1]?.headers).get("X-Workspace-Id") === null,
+      "the workspace is named only when given",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });

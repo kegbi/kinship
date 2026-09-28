@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { peopleBulkPersonIds } from "./people.ts";
 
 export const exportDownload = z.strictObject({
   expiresAt: z.iso.datetime({ offset: true }),
@@ -72,3 +73,8 @@ export const exportSummary = z.strictObject({
     "running",
   ]),
 }).meta({ id: "ExportSummary" });
+
+/** The people one selection vCard is made of (GAP-051, PEOPLE-009). */
+export const peopleVCardInput = z.strictObject({
+  personIds: peopleBulkPersonIds,
+}).meta({ id: "PeopleVCardInput" });

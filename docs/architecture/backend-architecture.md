@@ -215,6 +215,22 @@ before anything moves, to refuse it or to name a value only the primary keeps;
 the preview and the merge share that inspection, and the merge refuses a
 confirmation whose conflicts digest no longer matches the locked pair's.
 
+### Bulk directory actions
+
+Bulk directory actions (GAP-051, `PEOPLE-009`) add no write path. The people use
+case runs each selected person through the single-person use case, in its own
+transaction: archive and restore through the lifecycle, and tagging through the
+tags profile fact. So each person gets that use case's permission, audit event,
+and postconditions, and one refused person never rolls another back. The answer
+is per person and partial success is ordinary. Only a malformed request, an
+actor who lost access, or a tag outside the workspace refuses the whole request.
+The tag is checked once through a `PeopleBulkTagLookup` port that people answers
+from its own `crm.tags`: one workspace-scoped existence check by id, inside the
+transaction that revalidates the actor. The selection vCard is an
+`import-export` use case. It reads each person through the existing people
+export boundary, audits each download as the single card does, and joins the
+cards with the all-people export's joiner.
+
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
 rollback, catalog introspection, generated-type agreement, and every validation

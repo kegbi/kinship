@@ -2,7 +2,8 @@
  * People composition.
  *
  * Only a declared composition root imports this file. Besides the person use
- * cases (identity, dates, lifecycle, profile facts, and the avatar) it
+ * cases (identity, dates, lifecycle, profile facts, the avatar, and bulk
+ * actions) it
  * returns the outbound ports other modules know people by — the person
  * boundary relationships, interactions, and planning read through, the
  * personalization reference counters, and the import and export boundaries.
@@ -15,6 +16,7 @@
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresBulkTagLookup } from "./adapters/postgres/bulk_tag_lookup.ts";
 import { PostgresPeopleExportBoundary } from "./adapters/postgres/export_people_boundary.ts";
 import { PostgresPeopleImportBoundary } from "./adapters/postgres/import_people_boundary.ts";
 import { PostgresImportantDateRepository } from "./adapters/postgres/important_date_repository.ts";
@@ -32,6 +34,7 @@ import { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relation
 import { PostgresTagPersonalization } from "./adapters/postgres/tag_personalization.ts";
 import { PostgresPeopleWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import {
+  createBulkPeopleActions,
   createImportantDateManagement,
   createPeopleManagement,
   createPersonAvatarManagement,
@@ -92,6 +95,24 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     repository: new PostgresPeopleRepository(),
     transaction: shared.peopleTransaction,
   });
+  const lifecycle = createPersonLifecycle({
+    actors: shared.actors,
+    audit: personLifecycleAuditFrom(shared.audit),
+    clock: shared.clock,
+    genders: ports.genderOptions,
+    repository: new PostgresPersonLifecycleRepository(),
+    transaction: shared.peopleTransaction,
+  });
+  const profileFacts = createProfileFactManagement({
+    actors: shared.actors,
+    audit: profileFactAuditFrom(shared.audit),
+    clock: shared.clock,
+    ids: shared.ids,
+    organizations: new PostgresProfileFactOrganizations(),
+    repository: new PostgresProfileFactRepository(),
+    transaction: shared.peopleTransaction,
+    workspace: ports.profileFactWorkspace,
+  });
   return {
     avatars: createPersonAvatarManagement({
       actors: shared.actors,
@@ -99,6 +120,15 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       clock: shared.clock,
       images: ports.avatarImages,
       repository: new PostgresPersonAvatarRepository(),
+      transaction: shared.peopleTransaction,
+    }),
+    // Acting on several people at once (GAP-051) through the lifecycle and
+    // profile-fact use cases above, one transaction per person.
+    bulk: createBulkPeopleActions({
+      actors: shared.actors,
+      lifecycle,
+      profileFacts,
+      tags: new PostgresBulkTagLookup(),
       transaction: shared.peopleTransaction,
     }),
     exportBoundary: new PostgresPeopleExportBoundary(),
@@ -114,14 +144,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       repository: new PostgresImportantDateRepository(),
       transaction: shared.peopleTransaction,
     }),
-    lifecycle: createPersonLifecycle({
-      actors: shared.actors,
-      audit: personLifecycleAuditFrom(shared.audit),
-      clock: shared.clock,
-      genders: ports.genderOptions,
-      repository: new PostgresPersonLifecycleRepository(),
-      transaction: shared.peopleTransaction,
-    }),
+    lifecycle,
     lifecycleImpact: PostgresPeopleWorkspaceLifecycleImpact,
     merge: createPersonMerge({
       actors: shared.actors,
@@ -134,16 +157,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     }),
     people,
     personalizationReferences: PostgresPeoplePersonalizationReferences,
-    profileFacts: createProfileFactManagement({
-      actors: shared.actors,
-      audit: profileFactAuditFrom(shared.audit),
-      clock: shared.clock,
-      ids: shared.ids,
-      organizations: new PostgresProfileFactOrganizations(),
-      repository: new PostgresProfileFactRepository(),
-      transaction: shared.peopleTransaction,
-      workspace: ports.profileFactWorkspace,
-    }),
+    profileFacts,
     tagPersonalization: new PostgresTagPersonalization(),
   };
 }

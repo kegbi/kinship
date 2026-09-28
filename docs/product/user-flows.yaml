@@ -604,6 +604,59 @@ flows:
       testRefs: [tests/e2e/people-merge.PEOPLE-008.spec.ts],
     }
 
+  # GAP-051: bulk directory actions. The member selects up to 100 people on
+  # `people.index` or `people.archived` and adds or removes one tag, archives
+  # (active view) or restores (archived view) them, or exports their vCards.
+  # Each person runs through the single-person use case in its own
+  # transaction, with that use case's permission and its normal audit event;
+  # there is no separate bulk audit event. Partial success is the ordinary
+  # answer: each person is `done`, `unchanged`, `skipped` (not attempted after
+  # access was lost part-way), or `failed` with a stable code. Rules:
+  # - `partial-failure`: a person archived or deleted elsewhere fails with
+  #   `archived_write_rejected` or `not_found` while the rest are changed.
+  # - `already-archived-unchanged`: archiving an archived person, restoring an
+  #   active one, tagging a tagged one, or untagging an untagged one writes
+  #   nothing and is reported `unchanged`.
+  # - `selection-cap`: a selection holds at most 100 people and says so; the
+  #   API refuses more with 400.
+  # - `selection-cleared-on-filter-change`: a new search, tag filter, sort,
+  #   page, or view clears the selection.
+  # - `cross-workspace-tag-refused`: a tag from another workspace refuses the
+  #   whole request with 400 `profile_fact_reference_invalid`; another
+  #   workspace's person fails as `not_found`.
+  # - `export-skipped-count`: the selection vCard leaves out anybody missing
+  #   from the workspace and counts them in `X-Skipped-Count`.
+  - id: PEOPLE-009
+    title: Act on several people at once
+    deliveryStatus: delivered
+    priority: P1
+    actor: crm-writer
+    trigger: The member selects people in the directory and chooses a bulk action.
+    preconditions: [active-membership]
+    steps:
+      - Select people on the directory, one row at a time or the whole visible page, up to 100.
+      - Choose an action from the bulk bar - add or remove a tag, archive or restore, or export a vCard.
+      - Confirm the action; archiving asks first.
+      - Review the results - how many were done, unchanged, and failed, with each failed person named and why - while the directory refreshes once.
+    alternateOutcomes: [
+      partial-failure,
+      selection-cap,
+      selection-cleared-on-filter-change,
+      already-archived-unchanged,
+      cross-workspace-tag-refused,
+      export-skipped-count,
+    ]
+    result: Every selected person in the workspace is tagged, archived, restored, or exported through the single-person use case, and the member sees exactly who was not.
+    auditEffect: per-person-archived-restored-profile-fact-updated-or-downloaded
+    pageIds: [people.index, people.archived]
+    moduleIds: [people, import-export, governance, workspaces]
+    permissions: [people.write, people.vcard.export]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/people-bulk.PEOPLE-009.spec.ts],
+    }
+
   - id: RELATIONSHIP-001
     title: Create or change a relationship between people
     deliveryStatus: delivered

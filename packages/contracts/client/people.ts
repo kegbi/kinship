@@ -11,6 +11,8 @@ import { parseTodayRecentPeople } from "./today.ts";
 import type {
   ImportantDate,
   ImportantDateInput,
+  PeopleBulkInput,
+  PeopleBulkResult,
   PeopleDirectoryInput,
   PeopleDirectoryPage,
   PeopleDuplicates,
@@ -492,6 +494,18 @@ export function mergePeople(
   workspaceId?: string,
 ): Promise<ApiResult<PersonMerged>> {
   return request(`/api/v1/people/${encodeURIComponent(primaryId)}/merge`, {
+    method: "POST",
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    body: JSON.stringify(input),
+  });
+}
+
+/** Archives, restores, tags, or untags up to 100 people (GAP-051). */
+export function bulkPeople(
+  input: PeopleBulkInput,
+  workspaceId?: string,
+): Promise<ApiResult<PeopleBulkResult>> {
+  return request("/api/v1/people/bulk", {
     method: "POST",
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     body: JSON.stringify(input),

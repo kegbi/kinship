@@ -3286,6 +3286,218 @@
         }
       }
     },
+    "/api/v1/people/bulk": {
+      "post": {
+        "operationId": "bulkPeople",
+        "description": "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeopleBulkInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Each person's outcome; partial success is expected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleBulkResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/bulk/vcard": {
+      "post": {
+        "operationId": "exportPeopleVCards",
+        "description": "One vCard file of up to 100 selected people, in request order. People missing from the active workspace are skipped and counted in `X-Skipped-Count`.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeopleVCardInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member-authorized vCard of the selected people",
+            "headers": {
+              "X-Skipped-Count": {
+                "required": true,
+                "description": "How many selected people were missing from the workspace and left out.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\\d+$",
+                  "description": "How many selected people were missing from the workspace and left out."
+                }
+              }
+            },
+            "content": {
+              "text/vcard": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/duplicates": {
       "get": {
         "operationId": "listPeopleDuplicates",
@@ -18320,6 +18532,132 @@
         ],
         "additionalProperties": false
       },
+      "PeopleBulkInput": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "archive",
+              "restore",
+              "tag",
+              "untag"
+            ]
+          },
+          "personIds": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Distinct people in the active workspace."
+          },
+          "tagId": {
+            "description": "The workspace tag to add or remove; only tagging names one.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "action",
+          "personIds"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleBulkItemResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Why a failed person was refused.",
+            "type": "string",
+            "enum": [
+              "archived_write_rejected",
+              "forbidden",
+              "invalid",
+              "not_found",
+              "section_hidden",
+              "stale",
+              "tag_unavailable",
+              "unavailable"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "done",
+              "failed",
+              "skipped",
+              "unchanged"
+            ]
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "outcome",
+          "personId"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleBulkResult": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "archive",
+              "restore",
+              "tag",
+              "untag"
+            ]
+          },
+          "results": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleBulkItemResult"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "done": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unchanged": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "done",
+              "failed",
+              "skipped",
+              "unchanged"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "action",
+          "results",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
       "PeopleDirectoryPage": {
         "type": "object",
         "properties": {
@@ -18540,6 +18878,25 @@
         "required": [
           "status",
           "options"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleVCardInput": {
+        "type": "object",
+        "properties": {
+          "personIds": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Distinct people in the active workspace."
+          }
+        },
+        "required": [
+          "personIds"
         ],
         "additionalProperties": false
       },

@@ -287,7 +287,123 @@
 }
 
 .people-directory-list > li {
+  position: relative;
   min-width: 0;
+}
+
+/* GAP-051: each row's selection box sits over the card's corner, beside the
+   link rather than inside it, so the link keeps its own accessible name. */
+.directory-person-select {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 1;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: 0;
+  accent-color: var(--ink-1);
+}
+
+.people-directory-list .person-directory-link {
+  padding-right: var(--space-7);
+}
+
+.directory-selection {
+  display: flex;
+  margin-bottom: var(--space-3);
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.directory-select-all {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-weight: 600;
+}
+
+.directory-select-all input {
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0;
+  accent-color: var(--ink-1);
+}
+
+.directory-selection-notice {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: .85rem;
+}
+
+/* The bulk bar stays in reach at the foot of the viewport while the list
+   scrolls beneath it. */
+.people-bulk-bar {
+  position: sticky;
+  bottom: var(--space-3);
+  z-index: 2;
+  display: flex;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line-1);
+  border-radius: .9rem;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-2);
+}
+
+.people-bulk-bar[aria-busy="true"] {
+  opacity: .7;
+}
+
+.people-bulk-count {
+  margin: 0;
+  font-weight: 700;
+}
+
+.people-bulk-actions,
+.people-bulk-choice {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.people-bulk-choice select {
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-1);
+  border-radius: .65rem;
+  background: var(--surface-1);
+  color: inherit;
+  font: inherit;
+}
+
+.people-bulk-result {
+  display: grid;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line-1);
+  border-radius: .9rem;
+  gap: var(--space-2);
+  justify-items: start;
+  background: var(--positive-soft);
+}
+
+.people-bulk-result[data-tone="attention"] {
+  border-color: var(--accent-line);
+  background: var(--warning-soft);
+}
+
+.people-bulk-result p,
+.people-bulk-result ul {
+  margin: 0;
+}
+
+.people-bulk-result ul {
+  padding-left: var(--space-4);
 }
 
 .person-directory-link {

@@ -556,6 +556,19 @@ export type PeopleDuplicatePair = components["schemas"]["PeopleDuplicatePair"];
 export type PeopleDuplicatePerson =
   components["schemas"]["PeopleDuplicatePerson"];
 export type PeopleDuplicates = components["schemas"]["PeopleDuplicates"];
+
+export type PeopleBulkInput = components["schemas"]["PeopleBulkInput"];
+export type PeopleBulkItemResult =
+  components["schemas"]["PeopleBulkItemResult"];
+export type PeopleBulkResult = components["schemas"]["PeopleBulkResult"];
+export type PeopleVCardInput = components["schemas"]["PeopleVCardInput"];
+
+/** The selection vCard a caller saves, and how many people it left out. */
+export interface PeopleVCardDownload {
+  readonly blob: Blob;
+  readonly filename: string;
+  readonly skipped: number;
+}
 export type PersonMergeInput = components["schemas"]["PersonMergeInput"];
 export type PersonMerged = components["schemas"]["PersonMerged"];
 export type PersonMergeConflict = components["schemas"]["PersonMergeConflict"];

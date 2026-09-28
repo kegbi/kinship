@@ -230,6 +230,7 @@ import {
 export interface ApiServices extends RegistrationHttpServices {
   readonly apiTokens?: ApiTokenManagement;
   readonly avatars?: PeopleHttpServices["avatars"];
+  readonly bulk?: PeopleHttpServices["bulk"];
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
   readonly directory?: PeopleDirectory;
@@ -536,6 +537,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
           ...(services.avatars ? { avatars: services.avatars } : {}),
           browserSecurity: services.browserSecurity,
+          ...(services.bulk ? { bulk: services.bulk } : {}),
           directory: services.directory,
           ...(services.duplicates ? { duplicates: services.duplicates } : {}),
           ...(services.importantDates
@@ -989,6 +991,7 @@ export function createConfiguredApiApp(
     avatars: people.avatars,
     auditHistory: composeAuditHistory(shared, { cursorKeyset: subjectKeyset }),
     browserSecurity: policy,
+    bulk: people.bulk,
     ...(dav ? { dav } : {}),
     directory: directory.directory,
     duplicates: directory.duplicates,

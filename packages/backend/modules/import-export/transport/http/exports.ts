@@ -1,8 +1,9 @@
 /**
  * Exporting a workspace, and one person's vCard, over HTTP.
  *
- * Five routes: the history, the two steps that turn it into a link, the link
- * itself, and a single person's card. The problem responder, the session
+ * Six routes: the history, the two steps that turn it into a link, the link
+ * itself, a single person's card, and the directory selection's cards
+ * (GAP-051), which is posted from the page rather than opened as a link. The problem responder, the session
  * cookie, the origin check, the kernel status map, and the download response
  * came from `packages/http-kit` (GAP-019, GAP-020).
  *
@@ -22,11 +23,15 @@ import {
   createWorkspaceExport,
   downloadExport,
   downloadExportQuery,
+  exportPeopleVCards,
   exportPersonVCard,
   exportPersonVCardQuery,
   listExports,
 } from "../../../../../contracts/routes/exports.ts";
-import { exportRequest } from "../../../../../contracts/schemas/exports.ts";
+import {
+  exportRequest,
+  peopleVCardInput,
+} from "../../../../../contracts/schemas/exports.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import { fileDownload } from "../../../../../http-kit/downloads.ts";
@@ -47,7 +52,11 @@ import {
   sessionActor,
   workspaceScopedActor,
 } from "../../../../../http-kit/session.ts";
-import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
+import {
+  parseJsonBody,
+  parseQuery,
+  parseValue,
+} from "../../../../../http-kit/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ExportHttpServices {
@@ -133,6 +142,31 @@ const VCARD_UNAVAILABLE: ProblemDefinition = {
   title: "vCard unavailable",
 };
 
+const VCARD_SELECTION_INVALID: ProblemDefinition = {
+  code: "validation_failed",
+  detail: "Select between 1 and 100 different people.",
+  status: 400,
+  title: "Invalid selection",
+};
+const VCARD_SELECTION_FORBIDDEN: ProblemDefinition = {
+  code: "people_forbidden",
+  detail: "Your active workspace membership no longer permits this export.",
+  status: 403,
+  title: "vCard unavailable",
+};
+const VCARD_SELECTION_EMPTY: ProblemDefinition = {
+  code: "person_not_found",
+  detail: "None of the selected people exists in the active workspace.",
+  status: 404,
+  title: "vCard unavailable",
+};
+const VCARD_SELECTION_UNAVAILABLE: ProblemDefinition = {
+  code: "vcard_unavailable",
+  detail: "These people could not be exported right now.",
+  status: 503,
+  title: "vCard unavailable",
+};
+
 /** Every problem this file answers on its own, for the pinning suite. */
 export const EXPORT_PROBLEMS: readonly ProblemDefinition[] = [
   DOWNLOAD_NOT_ISSUED,
@@ -141,6 +175,10 @@ export const EXPORT_PROBLEMS: readonly ProblemDefinition[] = [
   EXPORT_HISTORY_UNAVAILABLE,
   EXPORT_NOT_COMPLETED,
   EXPORT_NOT_FOUND,
+  VCARD_SELECTION_EMPTY,
+  VCARD_SELECTION_FORBIDDEN,
+  VCARD_SELECTION_INVALID,
+  VCARD_SELECTION_UNAVAILABLE,
   VCARD_UNAVAILABLE,
 ];
 
@@ -271,6 +309,31 @@ export function createExportRoutes(
       return definedProblem(context, VCARD_UNAVAILABLE);
     }
     return fileDownload(result);
+  });
+
+  mount(routes, exportPeopleVCards, origin, session, async (context) => {
+    const input = await parseJsonBody(context, peopleVCardInput);
+    if ("errors" in input) {
+      return definedProblem(context, VCARD_SELECTION_INVALID, input.errors);
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.exports.exportVCards(
+      actor,
+      input.data.personIds,
+    ).catch(unavailable);
+    if (result.status === "forbidden") {
+      return definedProblem(context, VCARD_SELECTION_FORBIDDEN);
+    }
+    if (result.status === "not-found") {
+      return definedProblem(context, VCARD_SELECTION_EMPTY);
+    }
+    if (result.status !== "ready") {
+      return definedProblem(context, VCARD_SELECTION_UNAVAILABLE);
+    }
+    const response = fileDownload(result);
+    response.headers.set("X-Skipped-Count", String(result.skipped));
+    return response;
   });
   return routes;
 }

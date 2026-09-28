@@ -51,6 +51,16 @@ function management(): ExportManagement {
         mimeType: "text/vcard; charset=utf-8",
         status: "ready",
       }),
+    exportVCards: (_actor, personIds) =>
+      Promise.resolve({
+        bytes: new TextEncoder().encode(
+          "BEGIN:VCARD\r\nFN:Ada\r\nEND:VCARD\r\n",
+        ),
+        filename: "kinship-people-1.vcf",
+        mimeType: "text/vcard; charset=utf-8",
+        skipped: personIds.length - 1,
+        status: "ready",
+      }),
     list: (actor) =>
       Promise.resolve(
         actor.role === "member"
@@ -363,4 +373,78 @@ Deno.test("[EXPORT-002] export HTTP asks for the format the body names", async (
     );
   }
   assert(asked.length === 4, "a refused format never reaches the use case");
+});
+
+Deno.test("[PEOPLE-009] the selection vCard is one download that counts who was skipped", async () => {
+  const other = "00000000-0000-4000-8000-000000000007";
+  const post = (
+    target: ReturnType<typeof app>,
+    body: unknown,
+    origin = "http://localhost",
+  ) =>
+    target.request("http://localhost/api/v1/people/bulk/vcard", {
+      body: JSON.stringify(body),
+      headers: {
+        "content-type": "application/json",
+        cookie: "kinship_session=valid",
+        origin,
+      },
+      method: "POST",
+    });
+  const download = await post(app("member"), { personIds: [personId, other] });
+  assertStatus(download, 200, "a member downloads the selection");
+  assert(
+    download.headers.get("content-type") === "text/vcard; charset=utf-8" &&
+      download.headers.get("cache-control") === "private, no-store" &&
+      download.headers.get("x-content-type-options") === "nosniff" &&
+      download.headers.get("content-disposition")?.includes(
+          "kinship-people-1.vcf",
+        ) === true,
+    "the single card's download headers",
+  );
+  assert(download.headers.get("x-skipped-count") === "1", "skipped count");
+  assert((await download.text()).includes("FN:Ada"), "the cards");
+  for (
+    const body of [
+      { personIds: [] },
+      { personIds: [personId, personId] },
+      { personIds: ["nobody"] },
+      {
+        personIds: Array.from(
+          { length: 101 },
+          (_, index) =>
+            `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        ),
+      },
+    ]
+  ) {
+    assertStatus(await post(app(), body), 400, "a bad selection is refused");
+  }
+  assertStatus(
+    await post(app(), { personIds: [personId] }, "http://evil.test"),
+    403,
+    "origin enforced",
+  );
+  for (
+    const [status, expected] of [
+      ["forbidden", 403],
+      ["not-found", 404],
+      ["unavailable", 503],
+    ] as const
+  ) {
+    const target = app("admin", {
+      ...management(),
+      exportVCards: () => Promise.resolve({ status } as never),
+    });
+    assertStatus(
+      await post(target, { personIds: [personId] }),
+      expected,
+      `${status} maps`,
+    );
+  }
+  const offline = app("admin", {
+    ...management(),
+    exportVCards: () => Promise.reject(new Error("offline")),
+  });
+  assertStatus(await post(offline, { personIds: [personId] }), 503, "outage");
 });

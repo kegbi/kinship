@@ -505,3 +505,75 @@ Deno.test("[EXPORT-002] a vCard export resumes from its stored bytes and rebuild
   );
   assert(stores() === 2, "changed bytes are discarded and rebuilt");
 });
+
+Deno.test("[PEOPLE-009] exports the selected people as one vCard and counts who is skipped", async () => {
+  const { audit, exports, standing } = context();
+  const grace = "00000000-0000-4000-8000-000000000007";
+  const missing = "00000000-0000-4000-8000-000000000008";
+  const selection = createExportManagement({
+    actors: { revalidate: () => Promise.resolve("active") },
+    audit: {
+      record: () => Promise.resolve(),
+      recordPersonDownload: (command) => {
+        audit.push({ action: "downloaded", subjectId: command.personId });
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-08-23T10:00:00.000Z"),
+    files: new MemoryFiles(),
+    ids: { next: () => exportId },
+    people: {
+      ...people,
+      getPerson: (command) =>
+        command.personId === missing
+          ? Promise.resolve(undefined)
+          : people.getPerson(command).then((person) =>
+            command.personId === grace
+              ? {
+                ...person!,
+                contactMethods: [],
+                familyName: "Hopper",
+                givenName: "Grace",
+                id: grace,
+              }
+              : person
+          ),
+    },
+    repository: new MemoryRepository(),
+    tokens: { next: () => "download-secret" },
+    transaction: { run: (work) => work({ opaque: {} }) },
+  });
+  const result = await selection.exportVCards(
+    { ...actor, role: "member" },
+    [grace, missing, personId],
+  );
+  assert(result.status === "ready", "the selection is exported");
+  const text = new TextDecoder().decode(result.bytes);
+  assert(
+    text.indexOf("FN:Grace Hopper") < text.indexOf("FN:Ada Lovelace") &&
+      text.indexOf("FN:Grace Hopper") >= 0,
+    "one card per person, in request order",
+  );
+  assert(
+    text.split("BEGIN:VCARD").length === 3,
+    "the missing person has no card",
+  );
+  assert(result.skipped === 1, "the missing person is counted");
+  assert(result.mimeType === "text/vcard; charset=utf-8", "vCard media type");
+  assert(result.filename === "kinship-people-2.vcf", "selection filename");
+  assert(
+    audit.filter((event) => event.action === "downloaded").map((event) =>
+      event.subjectId
+    ).join() === [grace, personId].join(),
+    "each exported person's download is audited",
+  );
+  assert(
+    (await selection.exportVCards(actor, [missing])).status === "not-found",
+    "a selection of nobody exportable is not found",
+  );
+  standing.active = false;
+  assert(
+    (await exports.exportVCards(actor, [personId])).status === "forbidden",
+    "a revoked member is refused",
+  );
+});

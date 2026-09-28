@@ -110,6 +110,22 @@ export { createImportantDateManagement } from "./application/important_dates.ts"
 export { createPersonLifecycle } from "./application/lifecycle_person.ts";
 export { createPersonAvatarManagement } from "./application/person_avatar.ts";
 export { createPersonMerge } from "./application/merge_people.ts";
+export { createBulkPeopleActions } from "./application/bulk_people.ts";
+export type {
+  BulkPeopleActions,
+  BulkPeopleDependencies,
+  BulkPeopleResult,
+} from "./application/bulk_people.ts";
+export { BULK_PEOPLE_LIMIT } from "./domain/bulk_rules.ts";
+export type {
+  BulkFailureCode,
+  BulkItemOutcome,
+  BulkItemResult,
+  BulkPeopleAction,
+  BulkPeopleInput,
+  BulkSummary,
+} from "./domain/bulk_rules.ts";
+export type { PeopleBulkTagLookup } from "./ports/bulk.ts";
 export type {
   MergePeopleResult,
   PersonMerge,

@@ -7,9 +7,17 @@
  * a time, filtered by a name search and one tag, in the member's sort. The
  * tag picker pages its own options, so a workspace with many tags stays
  * bounded while every tag remains reachable by continuation or refinement.
+ *
+ * GAP-051 (PEOPLE-009) adds a selection to the same reducer: a checkbox per
+ * row and one for the page shown, capped at 100 people, cleared whenever the
+ * list it was made from changes. The bulk bar that acts on it moves through
+ * one choice at a time and is inert while its request runs; its report
+ * outlives the refresh that follows, so a member reads what happened after
+ * the list has moved on.
  */
 
 import type {
+  PeopleBulkResult,
   PeopleDirectoryInput,
   PeopleDirectoryLifecycle,
   PeopleDirectoryPerson,
@@ -23,6 +31,11 @@ import {
 } from "../../../lib/person-name.ts";
 
 export const PAGE_SIZE = 20;
+
+/** How many people one bulk action may take, as the API caps it. */
+export const BULK_SELECTION_LIMIT = 100;
+
+const CAP_NOTICE = "You can select up to 100 people at a time.";
 
 export function isSort(value: string | null): value is PeopleDirectorySort {
   return value === "given-name" || value === "family-name" ||
@@ -130,6 +143,108 @@ export function errorCopy(
     };
 }
 
+/** What a bulk action did, as the bar reports it. */
+export interface BulkReport {
+  readonly title: string;
+  /** The done, unchanged, and failed counts, or why nothing ran. */
+  readonly counts: string;
+  /** Each person who was not changed, by name, with the reason. */
+  readonly failures: readonly {
+    readonly name: string;
+    readonly reason: string;
+  }[];
+  readonly tone: "attention" | "done";
+}
+
+export type BulkKind = "archive" | "export" | "restore" | "tag" | "untag";
+
+/** The one choice the bar is waiting on, if any. */
+export type BulkStep = "confirm-archive" | "idle" | "tag" | "untag";
+
+export interface BulkState {
+  readonly step: BulkStep;
+  /** The action whose request is in flight; the bar is inert meanwhile. */
+  readonly running: BulkKind | undefined;
+  readonly report: BulkReport | undefined;
+  /** Counts finished runs, so each new report takes focus once. */
+  readonly sequence: number;
+}
+
+const people = (count: number) =>
+  `${count} ${count === 1 ? "person" : "people"}`;
+
+const REASONS: Readonly<Record<string, string>> = {
+  archived_write_rejected: "Archived and read-only; restore first",
+  forbidden: "Your access to this workspace changed",
+  not_found: "No longer in this workspace",
+  section_hidden: "Tags are turned off in this workspace",
+  stale: "Changed elsewhere; try again",
+  tag_unavailable: "The tag is no longer available",
+};
+
+/** What a finished bulk action reports, naming each person it could not change. */
+export function bulkReport(
+  kind: Exclude<BulkKind, "export">,
+  answer: PeopleBulkResult,
+  names: ReadonlyMap<string, string>,
+  tagName = "",
+): BulkReport {
+  const { done, failed, skipped, unchanged } = answer.summary;
+  const title = kind === "archive"
+    ? `Archived ${people(done)}.`
+    : kind === "restore"
+    ? `Restored ${people(done)}.`
+    : kind === "tag"
+    ? `Added “${tagName}” to ${people(done)}.`
+    : `Removed “${tagName}” from ${people(done)}.`;
+  return {
+    counts: [
+      `${done} done`,
+      `${unchanged} unchanged`,
+      `${failed} failed`,
+      ...(skipped > 0 ? [`${skipped} skipped`] : []),
+    ].join(" · "),
+    failures: answer.results.filter((item) =>
+      item.outcome === "failed" || item.outcome === "skipped"
+    ).map((item) => ({
+      name: names.get(item.personId) ?? "Unknown person",
+      reason: item.outcome === "skipped"
+        ? "Not attempted after access changed"
+        : REASONS[item.code ?? ""] ?? "Could not be changed right now",
+    })),
+    title,
+    tone: failed > 0 || skipped > 0 ? "attention" : "done",
+  };
+}
+
+/** What a selection export reports: the cards written and who was left out. */
+export function exportReport(exported: number, skipped: number): BulkReport {
+  return {
+    counts: skipped > 0
+      ? `${skipped} skipped: no longer in this workspace.`
+      : "",
+    failures: [],
+    title: `Exported ${people(exported)} to a vCard.`,
+    tone: skipped > 0 ? "attention" : "done",
+  };
+}
+
+/** A bulk request refused as a whole, or never answered. */
+export function bulkProblemReport(
+  kind: BulkKind,
+  detail: string | undefined,
+): BulkReport {
+  return {
+    counts: detail ??
+      "The people service is temporarily unavailable. Try again.",
+    failures: [],
+    title: kind === "export"
+      ? "No vCard was exported."
+      : "Nothing was changed.",
+    tone: "attention",
+  };
+}
+
 export type DirectoryStatus = "context" | "loading" | "ready" | "error";
 
 export interface DirectoryState {
@@ -150,6 +265,11 @@ export interface DirectoryState {
   readonly sort: PeopleDirectorySort;
   readonly defaultSort: PeopleDirectorySort;
   readonly tag: TagPickerState;
+  /** The people chosen for a bulk action, in the order they were chosen. */
+  readonly selection: readonly string[];
+  /** Why the last choice was not added, when the cap refused it. */
+  readonly selectionNotice: string;
+  readonly bulk: BulkState;
 }
 
 export interface TagPickerState {
@@ -188,12 +308,28 @@ export type DirectoryAction =
     readonly append: boolean;
     readonly page: PeopleTagOptionsPage;
   }
-  | { readonly type: "tags-failed" };
+  | { readonly type: "tags-failed" }
+  | {
+    readonly type: "select";
+    readonly personId: string;
+    readonly selected: boolean;
+  }
+  | { readonly type: "select-page"; readonly selected: boolean }
+  | { readonly type: "clear-selection" }
+  | { readonly type: "bulk-step"; readonly step: BulkStep }
+  | { readonly type: "bulk-start"; readonly kind: BulkKind }
+  | {
+    readonly type: "bulk-finished";
+    readonly report: BulkReport;
+    readonly clearSelection: boolean;
+  }
+  | { readonly type: "bulk-dismiss" };
 
 export function initialDirectory(selectedTag: string): DirectoryState {
   return {
     announcement: "",
     appending: false,
+    bulk: { report: undefined, running: undefined, sequence: 0, step: "idle" },
     defaultSort: "given-name",
     filtered: false,
     forbidden: false,
@@ -201,6 +337,8 @@ export function initialDirectory(selectedTag: string): DirectoryState {
     nameOrder: "given_family_nickname",
     nextCursor: undefined,
     people: [],
+    selection: [],
+    selectionNotice: "",
     sort: "given-name",
     status: "context",
     tag: {
@@ -246,6 +384,67 @@ function tagOptions(
   return kept;
 }
 
+/** A list that changes under a selection takes the selection with it. */
+function unselected(state: DirectoryState): DirectoryState {
+  return {
+    ...state,
+    bulk: { ...state.bulk, step: "idle" },
+    selection: [],
+    selectionNotice: "",
+  };
+}
+
+function select(
+  state: DirectoryState,
+  personId: string,
+  selected: boolean,
+): DirectoryState {
+  if (!selected) {
+    return {
+      ...state,
+      selection: state.selection.filter((id) => id !== personId),
+      selectionNotice: "",
+    };
+  }
+  if (state.selection.includes(personId)) return state;
+  if (state.selection.length >= BULK_SELECTION_LIMIT) {
+    return { ...state, selectionNotice: CAP_NOTICE };
+  }
+  return {
+    ...state,
+    selection: [...state.selection, personId],
+    selectionNotice: "",
+  };
+}
+
+function selectPage(state: DirectoryState, selected: boolean): DirectoryState {
+  const shown = new Set(state.people.map((person) => person.id));
+  if (!selected) {
+    return {
+      ...state,
+      selection: state.selection.filter((id) => !shown.has(id)),
+      selectionNotice: "",
+    };
+  }
+  const selection = [...state.selection];
+  let refused = false;
+  for (const person of state.people) {
+    if (selection.includes(person.id)) continue;
+    if (selection.length >= BULK_SELECTION_LIMIT) {
+      refused = true;
+      break;
+    }
+    selection.push(person.id);
+  }
+  return {
+    ...state,
+    selection,
+    selectionNotice: refused
+      ? `${CAP_NOTICE} The first ${BULK_SELECTION_LIMIT} are selected.`
+      : "",
+  };
+}
+
 export function directoryReducer(
   state: DirectoryState,
   action: DirectoryAction,
@@ -260,7 +459,7 @@ export function directoryReducer(
       };
     case "loading":
       return {
-        ...state,
+        ...unselected(state),
         appending: action.append,
         loading: true,
         status: action.append ? state.status : "loading",
@@ -292,9 +491,12 @@ export function directoryReducer(
     case "announce":
       return { ...state, announcement: action.announcement };
     case "sort":
-      return { ...state, sort: action.sort };
+      return { ...unselected(state), sort: action.sort };
     case "tag":
-      return { ...state, tag: { ...state.tag, selected: action.selected } };
+      return {
+        ...unselected(state),
+        tag: { ...state.tag, selected: action.selected },
+      };
     case "tags-loading":
       return {
         ...state,
@@ -331,5 +533,36 @@ export function directoryReducer(
           status: "Tag options are temporarily unavailable.",
         },
       };
+    case "select":
+      return select(state, action.personId, action.selected);
+    case "select-page":
+      return selectPage(state, action.selected);
+    case "clear-selection":
+      return unselected(state);
+    case "bulk-step":
+      return { ...state, bulk: { ...state.bulk, step: action.step } };
+    case "bulk-start":
+      return {
+        ...state,
+        bulk: {
+          ...state.bulk,
+          report: undefined,
+          running: action.kind,
+          step: "idle",
+        },
+      };
+    case "bulk-finished": {
+      const bulk = {
+        ...state.bulk,
+        report: action.report,
+        running: undefined,
+        sequence: state.bulk.sequence + 1,
+      };
+      return action.clearSelection
+        ? { ...unselected(state), bulk: { ...bulk, step: "idle" } }
+        : { ...state, bulk };
+    }
+    case "bulk-dismiss":
+      return { ...state, bulk: { ...state.bulk, report: undefined } };
   }
 }
