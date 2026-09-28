@@ -286,6 +286,17 @@ browser sessions. Keep API tokens separate and never store browser session
 credentials in `localStorage`. Apply CSRF protection to cookie-authenticated
 mutations and explicit origin/CORS rules at the gateway and API.
 
+The calendar feed (GAP-052, `INTEGRATION-002`) is the one read whose credential
+travels in its path, because a calendar application cannot send a header:
+`GET /api/v1/calendar-feeds/{secret}.ics`. The secret is an `api-access` token
+row scoped `calendar.read`, spelled `kin_cal_…` so the personal-token parser
+refuses it; the route reads no session or cookie, answers 404 for every refusal,
+and is logged only as its route pattern by the API and as `/api/v1/*` by the
+gateway. The `calendar-feed` read model reads the events, and `integrations`
+writes them as iCalendar with a strong entity tag of the body. The feed is a
+personal setting, managed from `settings.preferences` beside reminder delivery,
+never from the admin-only `settings.integrations` page.
+
 ## Pagination
 
 Every list endpoint pages the same way, so a client learns the rule once.

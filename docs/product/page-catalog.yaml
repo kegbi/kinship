@@ -422,11 +422,12 @@ pages:
     access: active-member
     rendering: static-shell-islands
     owner: workspaces
-    flowIds: [AUTH-004, PLANNING-003]
+    flowIds: [AUTH-004, PLANNING-003, INTEGRATION-002]
     sections:
       - locale-and-time-zone
       - regional-formats
       - reminder-delivery-time
+      - calendar-feed
       - display-and-density
     # PLANNING-003: the reminder-delivery controls share the preferences
     # form's states. `unverified-fallback` is the always-visible note that a
@@ -440,6 +441,20 @@ pages:
         - saved
         - validation-error
         - unverified-fallback
+      # GAP-052: the member's own calendar feed, a personal setting beside
+      # reminder delivery. `loading` until its status is read, `unavailable`
+      # when it could not be; `none` offers "Create calendar feed", `active`
+      # rotation and revocation with its creation and last use, and
+      # `link-shown` the one-time subscription link with its warning, after a
+      # create or a rotation, until it is dismissed. `busy` holds every feed
+      # control while a change runs.
+      calendar-feed:
+        - loading
+        - unavailable
+        - none
+        - active
+        - link-shown
+        - busy
 
   - id: settings.security
     path: /app/settings/security

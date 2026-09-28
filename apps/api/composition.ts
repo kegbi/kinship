@@ -34,6 +34,7 @@ import {
 import {
   type ApiTokenManagement,
   type AuthenticationSubjectKeyset,
+  type CalendarFeedTokens,
   decodeAuthenticationSubjectKeyset,
 } from "../../packages/backend/modules/api-access/public.ts";
 import {
@@ -78,10 +79,12 @@ import {
   type DavPorts,
   decodeDavEncryptionKeyset,
 } from "../../packages/backend/modules/integrations/composition.ts";
-import type {
-  DavEncryptionKeyset,
-  DavRemoteClient,
-  DavSyncManagement,
+import {
+  type CalendarFeedPublication,
+  createCalendarFeedPublication,
+  type DavEncryptionKeyset,
+  type DavRemoteClient,
+  type DavSyncManagement,
 } from "../../packages/backend/modules/integrations/public.ts";
 import {
   composeInteractions,
@@ -146,6 +149,7 @@ import {
 import { composeActivityReport } from "../../packages/backend/read-models/activity-report/composition.ts";
 import type { ActivityReport } from "../../packages/backend/read-models/activity-report/public.ts";
 import { composeAuditHistory } from "../../packages/backend/read-models/audit-history/composition.ts";
+import { composeCalendarFeed } from "../../packages/backend/read-models/calendar-feed/composition.ts";
 import type { AuditHistory } from "../../packages/backend/read-models/audit-history/public.ts";
 import { composeJournalTimeline } from "../../packages/backend/read-models/journal-timeline/composition.ts";
 import type { JournalTimeline } from "../../packages/backend/read-models/journal-timeline/public.ts";
@@ -167,7 +171,10 @@ import type {
   TodayReminders,
   TodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
-import { createApiTokenRoutes } from "../../packages/backend/modules/api-access/transport/http/routes.ts";
+import {
+  createApiTokenRoutes,
+  createCalendarFeedSettingsRoutes,
+} from "../../packages/backend/modules/api-access/transport/http/routes.ts";
 import { createFileRoutes } from "../../packages/backend/modules/files/transport/http/routes.ts";
 import { createGiftRoutes } from "../../packages/backend/modules/gifts/transport/http/routes.ts";
 import {
@@ -178,7 +185,10 @@ import {
   createExportRoutes,
   createImportRoutes,
 } from "../../packages/backend/modules/import-export/transport/http/routes.ts";
-import { createIntegrationRoutes } from "../../packages/backend/modules/integrations/transport/http/routes.ts";
+import {
+  createCalendarFeedRoutes,
+  createIntegrationRoutes,
+} from "../../packages/backend/modules/integrations/transport/http/routes.ts";
 import { createInteractionRoutes } from "../../packages/backend/modules/interactions/transport/http/routes.ts";
 import { createJournalRoutes } from "../../packages/backend/modules/journal/transport/http/routes.ts";
 import {
@@ -233,6 +243,10 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly bulk?: PeopleHttpServices["bulk"];
   readonly activityReport?: ActivityReport;
   readonly auditHistory?: AuditHistory;
+  /** The subscribed iCalendar feed itself (GAP-052), read by its secret. */
+  readonly calendarFeed?: Pick<CalendarFeedPublication, "publish">;
+  /** Each member's own calendar feed secret, managed from settings. */
+  readonly calendarFeeds?: CalendarFeedTokens;
   readonly directory?: PeopleDirectory;
   readonly duplicates?: PeopleDuplicates;
   readonly merge?: Pick<PersonMerge, "merge" | "preview">;
@@ -441,6 +455,16 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           }),
         );
       }
+      if (services.calendarFeeds) {
+        api.route(
+          "/",
+          createCalendarFeedSettingsRoutes({
+            browserSecurity: services.browserSecurity,
+            calendarFeeds: services.calendarFeeds,
+            protectedSessions: services.protectedSessions,
+          }),
+        );
+      }
       if (services.dav) {
         api.route(
           "/",
@@ -526,6 +550,13 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
           }),
         );
       }
+    }
+    // The calendar feed takes no session: its secret is its path.
+    if (services.calendarFeed) {
+      api.route(
+        "/",
+        createCalendarFeedRoutes({ calendarFeed: services.calendarFeed }),
+      );
     }
     if (
       services.directory && services.people && services.profile &&
@@ -984,6 +1015,14 @@ export function createConfiguredApiApp(
     : undefined;
   const directory = composePeopleDirectory(shared);
   const today = composeToday(shared);
+  // The calendar feed (GAP-052): api-access accepts its secret, the
+  // calendar-feed read model reads its events, and integrations writes them
+  // as iCalendar with links at the configured public origin.
+  const calendarFeed = createCalendarFeedPublication({
+    authority: apiAccess.calendarFeeds,
+    origin: policy.origin,
+    source: composeCalendarFeed(shared),
+  });
 
   const app = createApiApp({
     activityReport: composeActivityReport(shared),
@@ -992,6 +1031,8 @@ export function createConfiguredApiApp(
     auditHistory: composeAuditHistory(shared, { cursorKeyset: subjectKeyset }),
     browserSecurity: policy,
     bulk: people.bulk,
+    calendarFeed,
+    calendarFeeds: apiAccess.calendarFeeds,
     ...(dav ? { dav } : {}),
     directory: directory.directory,
     duplicates: directory.duplicates,

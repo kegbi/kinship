@@ -9,19 +9,19 @@ contract.
 
 The current baseline contains:
 
-- 15 backend modules and 7 read models in `module-boundaries.yaml`; 14 modules
-  and all 7 read models exist under `packages/backend`, the optional `billing`
+- 15 backend modules and 8 read models in `module-boundaries.yaml`; 14 modules
+  and all 8 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
 - 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 38 required flows: 17 P0, 18 P1, and 3 P2;
-- 37 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 39 required flows: 17 P0, 18 P1, and 4 P2;
+- 38 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 43 Playwright specs under `tests/e2e/`. Flow specs are named
+- 44 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 41 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 42 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -86,6 +86,7 @@ still invokes the owning module's public use case.
 | `today`            |      1 |        4 | Starts as onboarding/empty shell; complete semantic queue and inline owning-module actions arrive in Slice 4                                                          |
 | `journal-timeline` |      3 |        6 | Interaction history can seed the projection; journal ordering determines Slice 6 completion; `JOURNAL-002` life-event edits refresh it                                |
 | `search`           |      6 |        6 | `SEARCH-001` palette groups over people, notes, activities, journal posts, and tasks; tenancy, visibility, soft-delete, snippet, and bound tests                      |
+| `calendar-feed`    |      8 |        8 | `INTEGRATION-002` read-only iCalendar feed of person dates and the member's reminder days; tenancy, archived/deleted, window, cap, and timeout tests                  |
 
 ## Flow-To-Slice Matrix
 
@@ -130,11 +131,12 @@ and exercise the production-like gateway, not an internal service URL.
 | `EXPORT-002`       | P1       |              7 | export settings                                  | CSV archive and all-people vCard, formula-injection guard, manifests, short-lived downloads             |
 | `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                      |
 | `INTEGRATION-001`  | P2       |              8 | integrations settings                            | Configure/synchronize DAV; isolate failures; core works while disabled                                  |
+| `INTEGRATION-002`  | P2       |              8 | personal preferences                             | Read-only iCalendar feed: secret URL shown once, rotate/revoke 404, 304, cap, secret never logged       |
 | `GOVERNANCE-001`   | P1       |              6 | privacy, terms, compliance acceptance            | Versioned document display and immutable, required acceptance                                           |
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
 
-For the current 38-flow snapshot, this assignment places all 17 P0 and all 18 P1
+For the current 39-flow snapshot, this assignment places all 17 P0 and all 18 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

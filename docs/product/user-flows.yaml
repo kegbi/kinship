@@ -1190,6 +1190,61 @@ flows:
     testLayers: [unit, adapter-contract, integration, e2e]
     e2e: { required: true, testRefs: [tests/e2e/dav.INTEGRATION-001.spec.ts] }
 
+  # GAP-052 extends INTEGRATION-001. The product owner chose a read-only
+  # iCalendar subscription feed with no schema change, which deliberately
+  # narrows the plan's wording: nothing is pushed to a remote CalDAV server, and
+  # no `dav_objects` row or `dav_sync_tokens` token is kept, because v8's
+  # `dav_objects.object_kind` allows only person and task and events computed
+  # on each request need no per-object state. The feed's secret is an
+  # `api_tokens` row with the single scope `calendar.read`. Event UIDs embed
+  # the public origin's host, so changing the public origin makes subscribers
+  # see every event twice until their calendar drops the old copies.
+  - id: INTEGRATION-002
+    title: Subscribe to a calendar of dates and reminders
+    deliveryStatus: delivered
+    priority: P2
+    actor: active-member
+    trigger: The member wants their important dates and reminders in their own calendar app.
+    preconditions: [active-membership]
+    steps:
+      - Create the member's calendar feed from the personal preferences page.
+      - Copy the subscription URL, shown once beside a warning that anyone with the link can see these names and dates.
+      - A calendar app fetches the URL with no session or cookie.
+      - Yearly all-day events appear for every person date with a known month and day, and one all-day event per reminder day of the member's from 30 days back to 365 days ahead.
+    alternateOutcomes: [
+      # An unknown, revoked, or out-of-scope secret, and a member who has left,
+      # all answer the same 404, so the route never confirms a secret exists.
+      revoked-link-not-found,
+      rotated-link-old-url-not-found,
+      # A strong entity tag of the body; a matching If-None-Match answers 304.
+      not-modified,
+      archived-or-deleted-people-excluded,
+      # Deceased people keep their dates, as the person workspace and Today do.
+      deceased-person-dates-kept,
+      # Feb 29 recurs from a leap placeholder year and, per RFC 5545, only in
+      # leap years, as planning schedules a Feb 29 person-date reminder.
+      feb-29-recurs-in-leap-years,
+      year-unknown-placeholder-stated,
+      cancelled-or-skipped-occurrences-excluded,
+      email-and-in-app-collapsed-into-one-event,
+      # At most 2000 events per feed; a cut feed says so in X-KINSHIP-TRUNCATED.
+      event-cap-reached,
+      # A bounded read-only statement; a timeout answers 503.
+      feed-unavailable,
+      # The gateway logs `/api/v1/*` and the API its route pattern.
+      secret-never-logged,
+    ]
+    result: The member's calendar shows the workspace's dates and their own reminders, read-only, until they rotate or revoke the link.
+    auditEffect: api-token-created-or-revoked
+    pageIds: [settings.preferences]
+    moduleIds: [integrations, api-access, people, planning, workspaces]
+    permissions: [calendar-feed.manage]
+    testLayers: [unit, integration, e2e]
+    e2e: {
+      required: true,
+      testRefs: [tests/e2e/calendar-feed.INTEGRATION-002.spec.ts],
+    }
+
   - id: GOVERNANCE-001
     title: Review and accept a legal document
     deliveryStatus: delivered

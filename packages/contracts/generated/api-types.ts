@@ -32,6 +32,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/calendar-feeds/{feedFile}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description The read-only iCalendar subscription: yearly all-day events for person dates with a known month and day, and the member's reminder days from 30 days back to 365 days ahead, at most 2000 events. It needs no session or cookie; an unknown, revoked, or out-of-scope secret answers 404. */
+        readonly get: operations["getCalendarFeedDocument"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/communication-options": {
         readonly parameters: {
             readonly query?: never;
@@ -1156,6 +1173,38 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/settings/calendar-feed": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["getCalendarFeed"];
+        readonly put?: never;
+        readonly post: operations["createCalendarFeed"];
+        readonly delete: operations["revokeCalendarFeed"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/settings/calendar-feed/rotation": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post: operations["rotateCalendarFeed"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/settings/integrations/dav": {
         readonly parameters: {
             readonly query?: never;
@@ -2004,6 +2053,31 @@ export interface components {
             readonly cadence: components["schemas"]["StayInTouchCadence"];
             /** @constant */
             readonly status: "created";
+        };
+        readonly CalendarFeed: {
+            /** Format: date-time */
+            readonly createdAt: string;
+            /** Format: date-time */
+            readonly lastUsedAt?: string;
+        };
+        readonly CalendarFeedIssued: {
+            readonly feed: components["schemas"]["CalendarFeed"];
+            /** @enum {string} */
+            readonly status: "created" | "rotated";
+            /**
+             * Format: uri
+             * @description The subscription URL, shown once. Anyone holding it can read the feed until it is rotated or revoked.
+             */
+            readonly url: string;
+        };
+        readonly CalendarFeedRevoked: {
+            /** @constant */
+            readonly status: "revoked";
+        };
+        readonly CalendarFeedStatus: {
+            readonly feed?: components["schemas"]["CalendarFeed"];
+            /** @constant */
+            readonly status: "ready";
         };
         readonly CallInteraction: {
             /** Format: date-time */
@@ -4544,6 +4618,63 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly getCalendarFeedDocument: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description A tag from an earlier answer; a match answers 304. */
+                readonly "If-None-Match"?: string;
+            };
+            readonly path: {
+                /** @description The feed's secret followed by `.ics`. It is the request's only credential and is never logged. */
+                readonly feedFile: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The member's calendar feed */
+            readonly 200: {
+                headers: {
+                    readonly "Cache-Control": "private, max-age=300";
+                    /** @description A strong tag of the exact body. */
+                    readonly ETag: string;
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "text/calendar": string;
+                };
+            };
+            /** @description The feed has not changed since the tag presented */
+            readonly 304: {
+                headers: {
+                    readonly "Cache-Control": "private, max-age=300";
+                    /** @description A strong tag of the exact body. */
+                    readonly ETag: string;
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -11056,6 +11187,239 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ApiTokenRevoked"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly getCalendarFeed: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The member's live calendar feed, if any, without its URL */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CalendarFeedStatus"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly createCalendarFeed: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Calendar feed created; the URL is shown this once */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CalendarFeedIssued"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly revokeCalendarFeed: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Calendar feed revoked; its URL answers 404 from now on */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CalendarFeedRevoked"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly rotateCalendarFeed: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The old URL is revoked and a new one is shown this once */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CalendarFeedIssued"];
                 };
             };
             /** @description RFC 9457 problem details */

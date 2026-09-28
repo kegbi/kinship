@@ -42,6 +42,7 @@ const EXPECTED_FLOW_IDS = [
   "EXPORT-002",
   "API-001",
   "INTEGRATION-001",
+  "INTEGRATION-002",
   "GOVERNANCE-001",
   "GOVERNANCE-002",
   "BILLING-001",
@@ -421,6 +422,10 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["EXPORT-002", ["tests/e2e/contacts-export.EXPORT-002.spec.ts"]],
     ["API-001", ["tests/e2e/api-tokens.API-001.spec.ts"]],
     ["INTEGRATION-001", ["tests/e2e/dav.INTEGRATION-001.spec.ts"]],
+    [
+      "INTEGRATION-002",
+      ["tests/e2e/calendar-feed.INTEGRATION-002.spec.ts"],
+    ],
   ]);
   for (const flow of flows) {
     const deliveredTestRefs = deliveredFlows.get(flow.id);
@@ -447,7 +452,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
   }
   assertEquals(
     JSON.stringify(priorityTotals),
-    JSON.stringify({ P0: 17, P1: 18, P2: 3 }),
+    JSON.stringify({ P0: 17, P1: 18, P2: 4 }),
     "priority totals",
   );
 
@@ -699,7 +704,7 @@ Deno.test("PRODUCT-001 AC-02 accepts catalog-derived milestone meanings", () => 
   );
   assertNotMatches(
     milestones,
-    /\b(?:17 P0|18 P1|38 flows?)\b/i,
+    /\b(?:17 P0|18 P1|39 flows?)\b/i,
     "milestone authority is not a fixed count",
   );
 
@@ -770,7 +775,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   assertIncludes(
     planningReadme,
-    "38 total: 17 P0, 18 P1, and 3 P2",
+    "39 total: 17 P0, 18 P1, and 4 P2",
     "planning catalog totals",
   );
   assertIncludes(
@@ -796,7 +801,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
 
   assertIncludes(
     traceIntro,
-    "38 required flows: 17 P0, 18 P1, and 3 P2",
+    "39 required flows: 17 P0, 18 P1, and 4 P2",
     "traceability catalog totals",
   );
   assertNotMatches(

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import {
   assert,
   assertEquals,
@@ -143,7 +143,7 @@ Deno.test("[GAP-019] a bearer token is read only from a well-formed header", asy
 });
 
 Deno.test("[GAP-019] an Authorization header commits the request to the token path", async () => {
-  const tokens: ScopedTokenAuthority = {
+  const tokens: ScopedTokenAuthority<"people:read"> = {
     authenticate(rawToken, requiredScope) {
       return Promise.resolve(
         rawToken === "good" && requiredScope === "people:read"
@@ -405,5 +405,23 @@ Deno.test("[GAP-039] a token-authenticated actor carries the request identifier 
     await response.json(),
     { requestId: "minted-7" },
     "a minted identifier reaches a token actor as well",
+  );
+});
+
+Deno.test("[INTEGRATION-002] a scoped token authority is only asked for the scopes it serves", () => {
+  const personal: ScopedTokenAuthority<"people:read"> = {
+    authenticate: () => Promise.resolve({ status: "invalid" as const }),
+  };
+  const asked = (context: Context<ActorEnv>) => [
+    tokenOrSessionActor(context, { scope: "people:read", tokens: personal }),
+    // @ts-expect-error a personal-token authority never serves the calendar feed
+    tokenOrSessionActor(context, { scope: "calendar.read", tokens: personal }),
+    // @ts-expect-error nor any scope it does not name
+    personal.authenticate("token", "calendar.read"),
+  ];
+  assertEquals(
+    typeof asked,
+    "function",
+    "the constraint is checked at compile time",
   );
 });

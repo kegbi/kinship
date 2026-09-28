@@ -725,6 +725,19 @@ Playwright test carrying its stable flow ID.
       the bulk bar's picker. Give the picker its own tag search, or reuse the
       directory tag filter's search and "More tags" paging.
 
+- [ ] **REL-067 — Every calendar-feed fetch writes a row.** Found reviewing
+      GAP-052: `last_used_at` and `updated_at` on the feed's `api_tokens` row
+      are rewritten on every fetch. With 1,000 members polling every 5 minutes,
+      that is about 290,000 row updates a day, plus dead tuples. Personal access
+      tokens behave the same way. Throttle the write, for example only when the
+      last use is more than 15 minutes old, for both token kinds.
+
+- [ ] **REL-068 — The calendar feed has no credential-specific rate limit.**
+      Found reviewing GAP-052: `/api/v1/calendar-feeds/*` falls only under the
+      gateway's general `kinship_api` zone (50 requests per second per IP).
+      Anyone holding a leaked URL can drive about 50 feed statements per second,
+      each allowed up to 1.5 s. Put the path in a stricter per-credential zone.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.

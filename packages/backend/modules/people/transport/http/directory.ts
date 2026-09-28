@@ -60,7 +60,7 @@ export type PeopleDirectoryHttpServices = Pick<
 >;
 
 /** The scope an API token needs to read the people directory. */
-const DIRECTORY_SCOPE = "people:read";
+const DIRECTORY_SCOPE = "people:read" as const;
 
 export const PEOPLE_QUERY_INVALID: ProblemDefinition = {
   code: "people_query_invalid",

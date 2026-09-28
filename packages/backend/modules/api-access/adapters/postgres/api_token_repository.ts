@@ -3,11 +3,15 @@ import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
-import type {
-  ApiTokenRecord,
-  ApiTokenScope,
+import {
+  type ApiTokenRecord,
+  CALENDAR_FEED_SCOPE,
+  CALENDAR_FEED_TOKEN_NAME,
+  type CalendarFeedRecord,
+  type StoredTokenScope,
 } from "../../domain/token_rules.ts";
 import type { ApiTokenRepository } from "../../ports/api_token_repository.ts";
+import type { CalendarFeedRepository } from "../../ports/calendar_feed_repository.ts";
 import type { ApiTokenTransaction } from "../../ports/context.ts";
 
 interface TokenRow {
@@ -17,7 +21,7 @@ interface TokenRow {
   readonly last_used_at: string | null;
   readonly name: string;
   readonly revoked_at: string | null;
-  readonly scopes: ApiTokenScope[];
+  readonly scopes: StoredTokenScope[];
 }
 
 interface AuthenticationRow extends TokenRow {
@@ -106,6 +110,7 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
       from crm.api_tokens token
       where token.user_id = ${command.userId}::uuid
         and token.workspace_id = ${command.workspaceId}::uuid
+        and not (${CALENDAR_FEED_SCOPE} = any(token.scopes))
       order by token.created_at desc, token.id desc
     `.execute(databaseFromSession(command.transaction));
     return result.rows.map(record);
@@ -129,11 +134,88 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
         and token.user_id = ${command.userId}::uuid
         and token.workspace_id = ${command.workspaceId}::uuid
         and token.revoked_at is null
+        and not (${CALENDAR_FEED_SCOPE} = any(token.scopes))
       returning ${columns}
     `.execute(databaseFromSession(command.transaction));
     const value = result.rows[0];
     return value
       ? { record: record(value), status: "revoked" as const }
       : { status: "not-found" as const };
+  }
+}
+
+interface FeedRow {
+  readonly created_at: string;
+  readonly id: string;
+  readonly last_used_at: string | null;
+}
+
+const feedColumns = sql`
+  token.id::text, ${instantColumn("token.created_at")} as created_at,
+  case when token.last_used_at is null then null else ${
+  instantColumn("token.last_used_at")
+} end as last_used_at
+`;
+
+function feed(row: FeedRow): CalendarFeedRecord {
+  return {
+    createdAt: row.created_at,
+    id: row.id,
+    ...pickDefined({ lastUsedAt: row.last_used_at }),
+  };
+}
+
+/**
+ * A member's calendar feed (GAP-052): an `api_tokens` row whose scopes are
+ * exactly `calendar.read`. The personal-token listing and revocation above
+ * leave these rows out, so a feed is managed only from its own section.
+ */
+export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
+  async active(command: Parameters<CalendarFeedRepository["active"]>[0]) {
+    const result = await sql<FeedRow>`
+      select ${feedColumns}
+      from crm.api_tokens token
+      where token.user_id = ${command.userId}::uuid
+        and token.workspace_id = ${command.workspaceId}::uuid
+        and ${CALENDAR_FEED_SCOPE} = any(token.scopes)
+        and token.revoked_at is null
+        and (token.expires_at is null or token.expires_at > now())
+      order by token.created_at desc, token.id desc
+      limit 1
+    `.execute(databaseFromSession(command.transaction));
+    const value = result.rows[0];
+    return value ? feed(value) : undefined;
+  }
+
+  async create(command: Parameters<CalendarFeedRepository["create"]>[0]) {
+    const result = await sql<FeedRow>`
+      insert into crm.api_tokens as token (
+        id, user_id, workspace_id, name, token_hash, scopes, created_at,
+        updated_at
+      )
+      values (
+        ${command.id}::uuid, ${command.userId}::uuid,
+        ${command.workspaceId}::uuid, ${CALENDAR_FEED_TOKEN_NAME},
+        ${command.hash}, array[${CALENDAR_FEED_SCOPE}]::text[],
+        ${command.occurredAt}, ${command.occurredAt}
+      )
+      returning ${feedColumns}
+    `.execute(databaseFromSession(command.transaction));
+    return feed(result.rows[0]!);
+  }
+
+  async revokeActive(
+    command: Parameters<CalendarFeedRepository["revokeActive"]>[0],
+  ) {
+    const result = await sql<FeedRow>`
+      update crm.api_tokens token
+      set revoked_at = ${command.occurredAt}, updated_at = ${command.occurredAt}
+      where token.user_id = ${command.userId}::uuid
+        and token.workspace_id = ${command.workspaceId}::uuid
+        and ${CALENDAR_FEED_SCOPE} = any(token.scopes)
+        and token.revoked_at is null
+      returning ${feedColumns}
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map(feed);
   }
 }

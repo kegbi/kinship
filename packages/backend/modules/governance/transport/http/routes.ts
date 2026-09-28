@@ -217,7 +217,13 @@ export function createLegalRequirementGuard(
     if (
       legalGuardExemptions.has(key) ||
       (context.req.method === "GET" &&
-        /^\/api\/v1\/legal-documents\/(privacy|terms)$/.test(context.req.path))
+        /^\/api\/v1\/legal-documents\/(privacy|terms)$/.test(
+          context.req.path,
+        )) ||
+      // GAP-052: a calendar feed is authorized by the secret in its path and
+      // never by a session, so a cookie sent beside it cannot change its answer.
+      (context.req.method === "GET" &&
+        /^\/api\/v1\/calendar-feeds\/[^/]+$/.test(context.req.path))
     ) {
       return next();
     }

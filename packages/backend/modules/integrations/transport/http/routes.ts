@@ -41,6 +41,12 @@ import {
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 
+export {
+  CALENDAR_FEED_PROBLEMS,
+  type CalendarFeedHttpServices,
+  createCalendarFeedRoutes,
+} from "./calendar_feed.ts";
+
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface IntegrationHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;

@@ -243,11 +243,16 @@ export async function readActor(
   return resolved && membership(resolved, context);
 }
 
-/** What this module needs of a scoped API-token authority. */
-export interface ScopedTokenAuthority {
+/**
+ * What this module needs of a scoped API-token authority. `Scope` is the
+ * scopes it serves, so a personal-token authority can never be asked for a
+ * calendar feed's `calendar.read` (GAP-052), nor for any scope it does not
+ * name.
+ */
+export interface ScopedTokenAuthority<Scope extends string> {
   authenticate(
     rawToken: string,
-    requiredScope: string,
+    requiredScope: Scope,
     requestedWorkspaceId?: string,
   ): Promise<
     | { readonly actor: SessionActor; readonly status: "authenticated" }
@@ -268,11 +273,11 @@ export function bearerToken(context: Context): string | undefined {
  * that names a token this deployment cannot check, or a token without the
  * required scope, is nobody rather than a silent fallback onto the cookie.
  */
-export async function tokenOrSessionActor(
+export async function tokenOrSessionActor<Scope extends string>(
   context: Context<ActorEnv>,
   options: {
-    readonly scope: string;
-    readonly tokens?: ScopedTokenAuthority;
+    readonly scope: Scope;
+    readonly tokens?: ScopedTokenAuthority<NoInfer<Scope>>;
   },
 ): Promise<SessionActor | undefined> {
   if (context.req.header("Authorization") === undefined) {

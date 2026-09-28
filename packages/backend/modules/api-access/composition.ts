@@ -10,6 +10,7 @@ import { WebCryptoApiTokenSecrets } from "./adapters/crypto/api_token_secrets.ts
 import {
   PostgresApiTokenRepository,
   PostgresApiTokenTransaction,
+  PostgresCalendarFeedRepository,
 } from "./adapters/postgres/api_token_repository.ts";
 import { PostgresAuthenticationAttemptBudget } from "./adapters/postgres/authentication_attempt_budget.ts";
 import {
@@ -17,6 +18,7 @@ import {
   AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
   createApiTokenManagement,
+  createCalendarFeedTokens,
 } from "./public.ts";
 
 export interface ApiAccessPorts {
@@ -27,16 +29,22 @@ export function composeApiAccess(
   shared: SharedComposition,
   ports: ApiAccessPorts,
 ) {
+  const tokens = {
+    actorContext: shared.actors,
+    actors: shared.actors,
+    audit: apiTokenAuditFrom(shared.audit),
+    clock: shared.clock,
+    ids: { next: () => shared.ids.create() },
+    repository: new PostgresApiTokenRepository(),
+    secrets: new WebCryptoApiTokenSecrets(),
+    transaction: new PostgresApiTokenTransaction(shared.database),
+  };
   return {
-    apiTokens: createApiTokenManagement({
-      actorContext: shared.actors,
-      actors: shared.actors,
-      audit: apiTokenAuditFrom(shared.audit),
-      clock: shared.clock,
-      ids: { next: () => shared.ids.create() },
-      repository: new PostgresApiTokenRepository(),
-      secrets: new WebCryptoApiTokenSecrets(),
-      transaction: new PostgresApiTokenTransaction(shared.database),
+    apiTokens: createApiTokenManagement(tokens),
+    /** Each member's calendar feed secret (GAP-052, `INTEGRATION-002`). */
+    calendarFeeds: createCalendarFeedTokens({
+      ...tokens,
+      calendarFeeds: new PostgresCalendarFeedRepository(),
     }),
     /** The shared sign-in throttle, which workspaces' session flows consume. */
     attemptBudget: new PostgresAuthenticationAttemptBudget(

@@ -164,7 +164,7 @@ settings from search results.
 | --------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
 | `settings.index`            | `/app/settings`                             | Searchable grouped settings overview                                         |
 | `settings.profile`          | `/app/settings/profile`                     | Name, email, self-person link, personal account lifecycle                    |
-| `settings.preferences`      | `/app/settings/preferences`                 | Locale, time zone, regional formats, reminder delivery time, display density |
+| `settings.preferences`      | `/app/settings/preferences`                 | Locale, time zone, regional formats, reminder timing, calendar feed, density |
 | `settings.security`         | `/app/settings/security`                    | Password, MFA, passkeys, recovery codes, active sessions                     |
 | `settings.workspace`        | `/app/settings/workspace`                   | Workspace identity and workspace-wide defaults                               |
 | `settings.members`          | `/app/settings/members`                     | Members, roles, pending invitations                                          |

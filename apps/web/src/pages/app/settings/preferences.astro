@@ -45,15 +45,23 @@ import {
       <button type="submit" class={buttonVariants()} disabled>Save changes</button><p id="settings-dirty" role="status" aria-live="polite"></p><p id="settings-status" role="status" aria-live="polite">Loading your preferences…</p>
     </form>
     </div>
+    <section class={cardVariants({ className: "settings-form" })} aria-labelledby="calendar-feed-heading" data-calendar-feed-surface>
+      <header><p class="scope-label">Your subscription</p><h2 id="calendar-feed-heading">Calendar feed</h2></header>
+      <p data-calendar-feed-state class="section-state" role="status" aria-live="polite">Loading your calendar feed…</p>
+    </section>
       </div>
     </div>
   </main>
 </ApplicationLayout>
 <script>
   // The preferences form is an island (`features/settings/preferences/`,
-  // GAP-033) that takes over the disabled form drawn above.
+  // GAP-033) that takes over the disabled form drawn above. The member's own
+  // calendar feed (GAP-052) is a second island over its own region, beside the
+  // reminder-delivery controls, because it is a personal setting.
+  import { mountCalendarFeed } from "../../../features/settings/calendar-feed/calendar-feed.tsx";
   import { mountPreferenceSettings } from "../../../features/settings/preferences/preference-settings.tsx";
   import { mountThemePreferenceControl } from "../../../lib/theme.ts";
   void mountPreferenceSettings();
+  void mountCalendarFeed();
   void mountThemePreferenceControl();
 </script>

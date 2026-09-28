@@ -166,6 +166,13 @@ permissions:
     roles: [owner, admin]
     scope: active-workspace
 
+  # GAP-052 (`INTEGRATION-002`): each member creates, rotates, and revokes only
+  # their own calendar feed. The feed itself is read by the holder of its
+  # secret, an `api_tokens` row scoped `calendar.read`, with no session.
+  - id: calendar-feed.manage
+    roles: [owner, admin, member]
+    scope: own-calendar-feed-in-active-workspace
+
   - id: billing.manage
     roles: [owner]
     scope: active-workspace

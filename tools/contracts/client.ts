@@ -31,6 +31,7 @@ export const CLIENT_MODULES = [
   "invitations",
   "settings",
   "api_tokens",
+  "calendar_feeds",
   "integrations",
   "personal_lifecycle",
   "workspace_lifecycle",

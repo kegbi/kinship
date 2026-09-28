@@ -1995,12 +1995,50 @@ require a synchronized schema v8 and are called out explicitly.
     - Gates: fmt:check, lint, check, check:architecture (14), contracts:check
       (135 documented, 138 mounted), unit, integration, coverage, and build.
 
-- [ ] **GAP-052 — CalDAV VEVENT for important dates and reminders.** M-L.
+- [x] **GAP-052 — CalDAV VEVENT for important dates and reminders.** M-L.
       Depends: 016. Extends `INTEGRATION-001`.
   - Scope: `integrations` publishes yearly VEVENTs for important dates and
     one-off VEVENTs for reminder occurrences; subscriptions per member; sync
     tokens reuse `dav_sync_tokens`.
   - Verify: adapter unit tests with fixture calendars; integration.
+  - Delivered 2026-09-28: flow `INTEGRATION-002`, as a read-only iCalendar
+    subscription feed.
+    - The product owner narrowed the ticket to a feed that needs no schema
+      change. It pushes nothing to a remote CalDAV server, writes no
+      `dav_objects` rows, and uses no sync tokens: v8's `dav_objects` CHECK
+      allows only person and task objects.
+    - Each member can hold one feed per workspace, created, rotated, and revoked
+      from the personal preferences page. The feed is backed by an `api_tokens`
+      row with the `calendar.read` scope.
+      - Only the SHA-256 hash of its 256-bit secret is stored, and the secret is
+        shown once.
+      - Scopes are isolated in both directions from personal access tokens.
+      - Every unknown, revoked, out-of-scope, or departed-member request
+        answers 404.
+      - `GET /api/v1/calendar-feeds/{secret}.ics` runs without a session. API
+        and gateway logs record only the route pattern, and tests prove the
+        secret never appears in them.
+    - A new `calendar-feed` read model (people, planning, workspaces) builds the
+      feed in one read-only statement:
+      - a transaction-local 1.5 s timeout;
+      - a 2,000-event cap, flagged when it is hit;
+      - a strong ETag and a 304 answer.
+    - The feed serves yearly all-day events for important dates. An unknown year
+      uses the leap placeholder 2000, so Feb 29 recurs only in leap years, as
+      planning schedules it.
+    - It serves one-off events for the member's reminders from 30 days back to
+      365 days ahead. It mirrors Today's rules for paused, cancelled, and
+      skipped occurrences and for inactive people.
+    - The feed is RFC 5545 with folding, escaping, and CRLF line endings,
+      verified by a parser.
+    - Evidence: the calendar-feed integration suite (lifecycle and 404s, scope,
+      foreign workspace, departed member, archived and deleted people, paused
+      reminders, Feb 29, the window, the cap, ETag and 304, the timeout, and
+      logs); the Docker gateway log test; `calendar-feed.INTEGRATION-002` with
+      AUTH-004, PLANNING-002, PLANNING-003, and INTEGRATION-001 on Chromium and
+      WebKit.
+    - Gates: fmt:check, lint, check, check:architecture (14), contracts:check,
+      unit, integration, coverage (calendar-feed 98.1/100/99.5), and build.
 
 - [ ] **GAP-053 — Notifications centre, favorites, directory tag cloud and
       sort.** M-L. Depends: 028, 039. Flows `TODAY-002`, `PEOPLE-010`.

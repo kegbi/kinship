@@ -20,6 +20,7 @@ import { AUTHENTICATION_ROUTES } from "./authentication.ts";
 import { INVITATIONS_ROUTES } from "./invitations.ts";
 import { SETTINGS_ROUTES } from "./settings.ts";
 import { API_TOKENS_ROUTES } from "./api_tokens.ts";
+import { CALENDAR_FEEDS_ROUTES } from "./calendar_feeds.ts";
 import { INTEGRATIONS_ROUTES } from "./integrations.ts";
 import { PERSONAL_LIFECYCLE_ROUTES } from "./personal_lifecycle.ts";
 import { WORKSPACE_LIFECYCLE_ROUTES } from "./workspace_lifecycle.ts";
@@ -43,6 +44,7 @@ export const API_ROUTES: readonly RouteDescriptor[] = collectRoutes([
   INVITATIONS_ROUTES,
   SETTINGS_ROUTES,
   API_TOKENS_ROUTES,
+  CALENDAR_FEEDS_ROUTES,
   INTEGRATIONS_ROUTES,
   PERSONAL_LIFECYCLE_ROUTES,
   WORKSPACE_LIFECYCLE_ROUTES,

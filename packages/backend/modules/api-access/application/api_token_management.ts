@@ -24,7 +24,6 @@ import {
   parseToken,
   privileged,
   renderToken,
-  usable,
   validateApiToken,
 } from "../domain/token_rules.ts";
 import type { ApiTokenAudit } from "../ports/audit.ts";
@@ -35,6 +34,7 @@ import type {
   ApiTokenTransactionRunner,
 } from "../ports/context.ts";
 import type { ApiTokenSecrets } from "../ports/secrets.ts";
+import { authenticatePresented } from "./token_authentication.ts";
 import type {
   ActorContext,
   ActorRevalidation,
@@ -94,42 +94,13 @@ export function createApiTokenManagement(
       "active";
 
   return {
-    authenticate: async (rawToken, requiredScope, requestedWorkspaceId) => {
-      const presented = parseToken(rawToken);
-      if (!presented) return { status: "invalid" };
-      return await dependencies.transaction.run(async (transaction) => {
-        const found = await dependencies.repository.findForAuthentication({
-          id: presented.id,
-          transaction,
-        });
-        if (found.status !== "found") return { status: "invalid" };
-        // The token names a user and a workspace; `workspaces` says which
-        // membership, if any, still grants an actor context.
-        const actor = await dependencies.actorContext.describe({
-          transaction,
-          userId: found.userId,
-          workspaceId: found.workspaceId,
-        });
-        if (!actor) return { status: "invalid" };
-        const now = dependencies.clock.now();
-        const valid = usable({
-          now,
-          record: found.record,
-          ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
-          requiredScope,
-          workspaceId: actor.workspaceId,
-        }) && await dependencies.secrets.matches(presented.secret, found.hash);
-        if (!valid) return { status: "invalid" };
-        if (
-          !await dependencies.repository.markUsed({
-            id: found.record.id,
-            occurredAt: now,
-            transaction,
-          })
-        ) return { status: "invalid" };
-        return { actor, status: "authenticated" };
-      });
-    },
+    authenticate: (rawToken, requiredScope, requestedWorkspaceId) =>
+      authenticatePresented(
+        dependencies,
+        parseToken(rawToken),
+        requiredScope,
+        requestedWorkspaceId,
+      ),
     create: async (actor, input) => {
       if (!privileged(actor)) return { status: "forbidden" };
       const now = dependencies.clock.now();

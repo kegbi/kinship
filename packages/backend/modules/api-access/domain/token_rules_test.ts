@@ -2,8 +2,11 @@ import { assertEquals } from "../../../testing/assert.ts";
 import {
   API_TOKEN_SCOPES,
   type ApiTokenRecord,
+  CALENDAR_FEED_SCOPE,
+  parseCalendarFeedToken,
   parseToken,
   privileged,
+  renderCalendarFeedToken,
   renderToken,
   usable,
   validateApiToken,
@@ -171,5 +174,44 @@ Deno.test("[GAP-018] a good token is usable and every cheap reason to refuse is 
     usable({ ...base, requestedWorkspaceId: "w2" }),
     false,
     "a token cannot reach a workspace its owner is not acting in",
+  );
+});
+
+Deno.test("[INTEGRATION-002] a calendar feed secret is its own spelling", () => {
+  const feed = renderCalendarFeedToken(ID, SECRET);
+  assertEquals(feed, `kin_cal_${ID}.${SECRET}`);
+  assertEquals(parseCalendarFeedToken(feed), { id: ID, secret: SECRET });
+  assertEquals(parseToken(feed), undefined, "never a personal token");
+  assertEquals(
+    parseCalendarFeedToken(renderToken(ID, SECRET)),
+    undefined,
+    "a personal token is never a feed",
+  );
+  for (
+    const presented of [
+      `${feed}.ics`,
+      `kin_cal_${ID}.short`,
+      `kin_cal_not-a-uuid.${SECRET}`,
+      `kin_cal_${ID.replace("-4f7a-", "-1f7a-")}.${SECRET}`,
+    ]
+  ) {
+    assertEquals(parseCalendarFeedToken(presented), undefined, presented);
+  }
+});
+
+Deno.test("[INTEGRATION-002] the calendar scope opens only a calendar token", () => {
+  const feed: ApiTokenRecord = { ...RECORD, scopes: [CALENDAR_FEED_SCOPE] };
+  const command = { now: NOW, workspaceId: "w" };
+  assertEquals(
+    usable({ ...command, record: feed, requiredScope: CALENDAR_FEED_SCOPE }),
+    true,
+  );
+  assertEquals(
+    usable({ ...command, record: feed, requiredScope: "people:read" }),
+    false,
+  );
+  assertEquals(
+    usable({ ...command, record: RECORD, requiredScope: CALENDAR_FEED_SCOPE }),
+    false,
   );
 });

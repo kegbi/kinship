@@ -307,6 +307,9 @@ Deno.test({
       const apiSecret = "api-query-secret-a54e";
       const authorizationSecret = "authorization-secret-d811";
       const cookieSecret = "cookie-secret-35f4";
+      // GAP-052: a calendar feed's secret is its path, so the path itself
+      // must never reach a log line.
+      const calendarSecret = "calendar-path-secret-9b3e71c4a0";
       await Promise.all([
         requestForLog(`${origin}/auth/reset-password?token=${resetSecret}`),
         requestForLog(
@@ -319,6 +322,9 @@ Deno.test({
           authorization: `Bearer ${authorizationSecret}`,
           cookie: `kinship_session=${cookieSecret}`,
         }),
+        requestForLog(
+          `${origin}/api/v1/calendar-feeds/kin_cal_00000000-0000-4000-8000-000000000001.${calendarSecret}.ics`,
+        ),
       ]);
 
       let logs = "";
@@ -336,6 +342,8 @@ Deno.test({
           apiSecret,
           authorizationSecret,
           cookieSecret,
+          calendarSecret,
+          "kin_cal_",
           "private-query-value",
         ]
       ) {

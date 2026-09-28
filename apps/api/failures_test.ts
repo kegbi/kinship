@@ -22,6 +22,8 @@ import { assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   API_TOKEN_FAILURES,
   API_TOKEN_PROBLEMS,
+  CALENDAR_FEED_FAILURES,
+  CALENDAR_FEED_SETTINGS_PROBLEMS,
 } from "../../packages/backend/modules/api-access/transport/http/routes.ts";
 import {
   AUTHENTICATION_PROBLEMS,
@@ -46,6 +48,7 @@ import {
   IMPORT_WRITE_FAILURES,
 } from "../../packages/backend/modules/import-export/transport/http/imports.ts";
 import {
+  CALENDAR_FEED_PROBLEMS,
   INTEGRATION_FAILURES,
   INTEGRATION_PROBLEMS,
 } from "../../packages/backend/modules/integrations/transport/http/routes.ts";
@@ -266,6 +269,28 @@ Deno.test("[GAP-020] the refusals api_tokens.ts answers are unchanged", () => {
       "400 | api_token_invalid | Invalid API token | Choose a name, at least one accepted scope, and a future expiry.",
     ].join("\n"),
     "API_TOKEN_PROBLEMS",
+  );
+});
+
+Deno.test("[INTEGRATION-002] the calendar feed's refusals are pinned", () => {
+  assertEquals(
+    pinned(CALENDAR_FEED_FAILURES),
+    [
+      "conflict | 409 | calendar_feed_exists | Calendar feed exists | You already have a calendar feed. Rotate it for a new link.",
+      "forbidden | 403 | calendar_feed_forbidden | Calendar feed unavailable | Your active workspace membership no longer permits this.",
+      "not-found | 404 | calendar_feed_not_found | Calendar feed not found | You have no calendar feed in this workspace.",
+      "(fallback) | 503 | calendar_feed_settings_unavailable | Calendar feed unavailable | Your calendar feed could not be loaded or changed. Try again.",
+    ].join("\n"),
+    "CALENDAR_FEED_FAILURES",
+  );
+  assertEquals(
+    listed([...CALENDAR_FEED_SETTINGS_PROBLEMS, ...CALENDAR_FEED_PROBLEMS]),
+    [
+      "503 | calendar_feed_settings_unavailable | Calendar feed unavailable | Your calendar feed could not be loaded or changed. Try again.",
+      "404 | calendar_feed_not_found | Calendar feed not found | This calendar feed does not exist or has been revoked.",
+      "503 | calendar_feed_unavailable | Calendar feed unavailable | The calendar feed is temporarily unavailable. Try again later.",
+    ].join("\n"),
+    "CALENDAR_FEED_PROBLEMS",
   );
 });
 

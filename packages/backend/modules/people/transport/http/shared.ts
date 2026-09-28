@@ -60,7 +60,7 @@ export interface PeopleHttpServices {
    * depend on api-access, so the route names the kit's structural port and
    * the composition root hands api-access's facade in.
    */
-  readonly apiTokens?: ScopedTokenAuthority;
+  readonly apiTokens?: ScopedTokenAuthority<"people:read">;
   /** A person's avatar (GAP-045); without it the avatar routes answer 503. */
   readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;

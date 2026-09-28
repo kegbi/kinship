@@ -163,11 +163,13 @@ transaction, and exports the selection as one vCard.
 
 ## Slice 8: Optional Platform Modules
 
-Flows: `API-001`, `INTEGRATION-001`, and `BILLING-001`.
+Flows: `API-001`, `INTEGRATION-001`, `INTEGRATION-002`, and `BILLING-001`.
 
 Deliver API tokens/OAuth only when required, DAV and other optional adapters,
-billing, and operational administration. Each optional module must be disabled
-without breaking core CRM workflows.
+billing, and operational administration. `INTEGRATION-002` is a read-only
+iCalendar feed of person dates and a member's reminder days behind a secret URL
+the member can rotate or revoke; it pushes nothing to a remote server. Each
+optional module must be disabled without breaking core CRM workflows.
 
 > **Proposed Slice 8 amendment (DG-07):** do not ship an operations UI until an
 > accepted page ID, flow ID, permissions, states, and E2E contract exist;

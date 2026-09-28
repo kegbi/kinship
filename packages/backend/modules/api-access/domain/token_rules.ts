@@ -17,9 +17,23 @@
  * caller only pays that cost for a token that is otherwise good.
  */
 
-/** Every permission a token may carry. */
+/** Every permission a personal access token may carry. */
 export const API_TOKEN_SCOPES = ["people:read"] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
+
+/**
+ * The one permission a calendar feed's secret carries (GAP-052,
+ * `INTEGRATION-002`). It is never offered to a personal access token: a feed
+ * is minted by its own use case, one per member and workspace, and read by a
+ * calendar application that can only put the secret in a URL.
+ */
+export const CALENDAR_FEED_SCOPE = "calendar.read" as const;
+
+/** Every scope a stored token row may carry. */
+export type StoredTokenScope = ApiTokenScope | typeof CALENDAR_FEED_SCOPE;
+
+/** The name a calendar feed's token row is stored under. */
+export const CALENDAR_FEED_TOKEN_NAME = "Calendar feed";
 
 /** The standing a token is created and listed under. */
 export type ApiTokenRole = "owner" | "admin" | "member";
@@ -32,7 +46,14 @@ export interface ApiTokenRecord {
   readonly lastUsedAt?: string;
   readonly name: string;
   readonly revokedAt?: string;
-  readonly scopes: readonly ApiTokenScope[];
+  readonly scopes: readonly StoredTokenScope[];
+}
+
+/** A member's calendar feed, as its settings section shows it. */
+export interface CalendarFeedRecord {
+  readonly createdAt: string;
+  readonly id: string;
+  readonly lastUsedAt?: string;
 }
 
 /** What a member asks for when they mint a token. */
@@ -57,6 +78,10 @@ export interface ApiTokenValues {
 const TOKEN_PATTERN =
   /^kin_pat_([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{16,128})$/i;
 
+/** The same shape for a calendar feed, under its own prefix. */
+const FEED_TOKEN_PATTERN =
+  /^kin_cal_([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{16,128})$/i;
+
 /** Tokens are an administrative facility; a member neither mints nor sees one. */
 export function privileged(actor: { readonly role: ApiTokenRole }): boolean {
   return actor.role === "owner" || actor.role === "admin";
@@ -74,6 +99,20 @@ export function parseToken(
 /** The one text a member is ever shown, at the moment the token is minted. */
 export function renderToken(id: string, secret: string): string {
   return `kin_pat_${id}.${secret}`;
+}
+
+/** The identifier and the secret inside a presented feed secret, or nothing. */
+export function parseCalendarFeedToken(
+  rawToken: string,
+): { readonly id: string; readonly secret: string } | undefined {
+  const matched = FEED_TOKEN_PATTERN.exec(rawToken);
+  if (!matched?.[1] || !matched[2]) return undefined;
+  return { id: matched[1], secret: matched[2] };
+}
+
+/** A calendar feed's secret, as its URL carries it. */
+export function renderCalendarFeedToken(id: string, secret: string): string {
+  return `kin_cal_${id}.${secret}`;
 }
 
 /**
@@ -104,7 +143,7 @@ export function usable(command: {
   readonly now: Date;
   readonly record: ApiTokenRecord;
   readonly requestedWorkspaceId?: string;
-  readonly requiredScope: ApiTokenScope;
+  readonly requiredScope: StoredTokenScope;
   readonly workspaceId: string;
 }): boolean {
   const { now, record, requestedWorkspaceId, requiredScope } = command;

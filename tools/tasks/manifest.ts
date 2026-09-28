@@ -796,6 +796,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/adapters/crypto/totp_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+        "packages/backend/modules/integrations/domain/ical_test.ts",
         "packages/backend/modules/files/domain/cursors_test.ts",
         "packages/backend/modules/files/domain/file_rules_test.ts",
         "packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage_test.ts",
@@ -870,6 +871,11 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/today/application/get_today_reminders_test.ts",
         "packages/backend/read-models/today/application/get_today_tasks_test.ts",
         "packages/backend/read-models/search/application/search_workspace_test.ts",
+        "packages/backend/read-models/calendar-feed/application/read_calendar_feed_test.ts",
+        "packages/backend/modules/integrations/application/calendar_feed_test.ts",
+        "packages/backend/modules/integrations/transport/http/calendar_feed_test.ts",
+        "packages/backend/modules/api-access/application/calendar_feed_tokens_test.ts",
+        "packages/backend/modules/api-access/transport/http/calendar_feed_test.ts",
         "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",
@@ -950,6 +956,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/read_models_reports_postgres_test.ts",
         "tests/integration/read_models_today_postgres_test.ts",
         "tests/integration/search_postgres_test.ts",
+        "tests/integration/calendar_feed_postgres_test.ts",
       ],
     },
   },
@@ -958,7 +965,9 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "packages/backend/modules/api-access/transport/http/routes_test.ts",
+        "packages/backend/modules/api-access/transport/http/calendar_feed_test.ts",
         "packages/backend/modules/api-access/application/api_token_management_test.ts",
+        "packages/backend/modules/api-access/application/calendar_feed_tokens_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "packages/contracts/api_tokens_test.ts",
       ],
@@ -971,16 +980,22 @@ export const MODULES: readonly TaskModule[] = [
       permissions: { env: "all", net: "all" },
       tests: [
         "packages/backend/modules/api-access/transport/http/routes_test.ts",
+        "packages/backend/modules/api-access/transport/http/calendar_feed_test.ts",
         "packages/backend/modules/people/transport/http/directory_test.ts",
         "packages/backend/modules/api-access/application/api_token_management_test.ts",
+        "packages/backend/modules/api-access/application/calendar_feed_tokens_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "tests/integration/api_tokens_postgres_test.ts",
+        "tests/integration/calendar_feed_postgres_test.ts",
       ],
       include: [
         "packages/backend/modules/api-access/transport/http/routes.ts",
+        "packages/backend/modules/api-access/transport/http/calendar_feed.ts",
         "packages/backend/modules/api-access/adapters/crypto/api_token_secrets.ts",
         "packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts",
         "packages/backend/modules/api-access/application/api_token_management.ts",
+        "packages/backend/modules/api-access/application/calendar_feed_tokens.ts",
+        "packages/backend/modules/api-access/application/token_authentication.ts",
         "packages/backend/modules/api-access/application/audit_events.ts",
         "packages/backend/modules/api-access/domain",
       ],
@@ -1007,6 +1022,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/integrations/transport/http/routes_test.ts",
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+        "packages/backend/modules/integrations/domain/ical_test.ts",
         "packages/backend/modules/integrations/application/dav_sync_test.ts",
         "packages/backend/modules/integrations/adapters/dav/http_dav_client_test.ts",
         "packages/backend/modules/integrations/adapters/crypto/dav_secret_box_test.ts",
@@ -1021,6 +1037,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/integrations/transport/http/routes_test.ts",
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+        "packages/backend/modules/integrations/domain/ical_test.ts",
         "packages/backend/modules/integrations/application/dav_sync_test.ts",
         "packages/backend/modules/integrations/adapters/dav/http_dav_client_test.ts",
         "packages/backend/modules/integrations/adapters/crypto/dav_secret_box_test.ts",
@@ -1061,6 +1078,7 @@ export const MODULES: readonly TaskModule[] = [
       threshold: 95,
       tests: [
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
+        "packages/backend/modules/integrations/domain/ical_test.ts",
       ],
       include: ["packages/backend/modules/integrations/domain"],
     },
@@ -1502,6 +1520,42 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/search/application",
         "packages/backend/read-models/search/adapters",
         "packages/backend/modules/people/transport/http/search.ts",
+      ],
+    },
+  },
+  {
+    // The calendar feed (GAP-052, `INTEGRATION-002`): the `calendar-feed` read
+    // model, the integrations use case and route that publish it as
+    // iCalendar, and the PostgreSQL suite that drives the whole subscription
+    // through the configured API. Its visibility rules exist only in SQL, so
+    // the set measures the PostgreSQL suite beside the unit ones.
+    id: "calendar-feed",
+    unit: {
+      tests: [
+        "packages/backend/read-models/calendar-feed/application/read_calendar_feed_test.ts",
+        "packages/backend/modules/integrations/application/calendar_feed_test.ts",
+        "packages/backend/modules/integrations/transport/http/calendar_feed_test.ts",
+      ],
+    },
+    integration: ["tests/integration/calendar_feed_postgres_test.ts"],
+    coverage: {
+      directory: "calendar-feed",
+      postgres: true,
+      permissions: { env: "all", net: "all" },
+      tests: [
+        "packages/backend/read-models/calendar-feed/application/read_calendar_feed_test.ts",
+        "packages/backend/modules/integrations/application/calendar_feed_test.ts",
+        "packages/backend/modules/integrations/transport/http/calendar_feed_test.ts",
+        "packages/backend/modules/integrations/domain/ical_test.ts",
+        "tests/integration/calendar_feed_postgres_test.ts",
+      ],
+      include: [
+        "packages/backend/read-models/calendar-feed/application",
+        "packages/backend/read-models/calendar-feed/adapters",
+        "packages/backend/modules/integrations/application/calendar_feed.ts",
+        "packages/backend/modules/integrations/transport/http/calendar_feed.ts",
+        "packages/backend/modules/integrations/domain/ical.ts",
+        "packages/backend/modules/integrations/domain/calendar_feed_rules.ts",
       ],
     },
   },
@@ -2011,6 +2065,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "gifts",
   "journal",
   "search",
+  "calendar-feed",
   "imports",
   "exports",
   "import-export",
@@ -2052,6 +2107,7 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "journal",
   "journal-domain",
   "search",
+  "calendar-feed",
   "imports",
   "exports",
   "import-export",

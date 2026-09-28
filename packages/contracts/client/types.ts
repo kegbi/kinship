@@ -126,6 +126,14 @@ export type ApiTokenList = components["schemas"]["ApiTokenList"];
 
 export type ApiTokenCreated = components["schemas"]["ApiTokenCreated"];
 
+export type CalendarFeed = components["schemas"]["CalendarFeed"];
+
+export type CalendarFeedIssued = components["schemas"]["CalendarFeedIssued"];
+
+export type CalendarFeedRevoked = components["schemas"]["CalendarFeedRevoked"];
+
+export type CalendarFeedStatus = components["schemas"]["CalendarFeedStatus"];
+
 export type DavSubscription = components["schemas"]["DavSubscription"];
 
 export type DavSubscriptionList = components["schemas"]["DavSubscriptionList"];

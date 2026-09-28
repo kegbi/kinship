@@ -15,3 +15,18 @@ export { createDavSyncManagement } from "./application/dav_sync.ts";
 export type { DavSyncManagement } from "./application/dav_sync.ts";
 export type { DavEncryptionKeyset } from "./adapters/crypto/dav_secret_box.ts";
 export { davAuditFrom } from "./application/audit_events.ts";
+export { createCalendarFeedPublication } from "./application/calendar_feed.ts";
+export type {
+  CalendarFeedPublication,
+  CalendarFeedPublicationDependencies,
+  CalendarFeedPublished,
+} from "./application/calendar_feed.ts";
+export type {
+  CalendarFeedAuthority,
+  CalendarFeedSource,
+} from "./ports/calendar_feed.ts";
+export type {
+  CalendarFeedContent,
+  CalendarFeedDate,
+  CalendarFeedReminder,
+} from "./domain/calendar_feed_rules.ts";

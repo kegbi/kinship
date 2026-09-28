@@ -579,3 +579,46 @@ Deno.test("[GAP-020] the legal guard refuses everything while it cannot see", as
   assertStatus(outage, 503, "a session store that will not answer blocks");
   assertStatus(anonymous, 204, "nobody is passed on to the route that refuses");
 });
+
+Deno.test("[INTEGRATION-002] the calendar feed never waits on a session's legal acceptance", async () => {
+  let asked = 0;
+  const legal = {
+    requirements: () => {
+      asked += 1;
+      return Promise.resolve({
+        documents: [{
+          content: "Required",
+          documentType: "terms",
+          id: ids.person,
+          version: "2026-09",
+        }],
+        status: "ready" as const,
+      });
+    },
+    publicDocument: () => Promise.resolve({ status: "not-found" as const }),
+    accept: () => Promise.resolve({ status: "superseded-version" as const }),
+  } as LegalAcceptance;
+  const app = new Hono();
+  app.use(
+    "/api/v1/*",
+    createLegalRequirementGuard({
+      legal,
+      protectedSessions: services(
+        () => Promise.resolve({ items: [], status: "ready" }),
+      ).protectedSessions,
+    }),
+  );
+  app.get("/api/v1/calendar-feeds/:feedFile", (context) => context.text("ok"));
+  app.post("/api/v1/calendar-feeds/:feedFile", (context) => context.text("ok"));
+  const feed = await app.request(
+    "http://localhost/api/v1/calendar-feeds/kin_cal_x.secret.ics",
+    { headers: { cookie: "kinship_session=test" } },
+  );
+  assertStatus(feed, 200, "a cookie beside the feed changed its answer");
+  assert(asked === 0, "the guard read the session's legal state");
+  const other = await app.request(
+    "http://localhost/api/v1/calendar-feeds/kin_cal_x.secret.ics",
+    { headers: { cookie: "kinship_session=test" }, method: "POST" },
+  );
+  assertStatus(other, 403, "only the feed read is exempt");
+});

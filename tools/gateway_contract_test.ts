@@ -963,3 +963,34 @@ Deno.test("[GAP-047] personalization lists exactly the sections the workspace ca
     "each switchable registry section is a default profile module, in registry order and under its title",
   );
 });
+
+Deno.test("[INTEGRATION-002] the calendar feed is a personal preference, not a workspace integration", async () => {
+  const page = (name: string) =>
+    Deno.readTextFile(
+      new URL(
+        `../apps/web/src/pages/app/settings/${name}.astro`,
+        import.meta.url,
+      ),
+    );
+  const preferences = await page("preferences");
+  const integrations = await page("integrations");
+  const form = preferences.indexOf('id="preferences-form"');
+  const region = preferences.indexOf("data-calendar-feed-surface");
+  assert(
+    form >= 0 && region > form &&
+      /<h2 id="calendar-feed-heading">Calendar feed<\/h2>/.test(preferences) &&
+      preferences.includes("void mountCalendarFeed();"),
+    "the preferences page draws and mounts the calendar feed after its form",
+  );
+  assert(
+    !/data-requires-workspace-admin/.test(
+      preferences.slice(0, preferences.indexOf("</main>")),
+    ),
+    "every member reaches the preferences page",
+  );
+  assert(
+    !integrations.includes("calendar-feed") &&
+      !integrations.includes("mountCalendarFeed"),
+    "the admin-only integrations page no longer carries the feed",
+  );
+});

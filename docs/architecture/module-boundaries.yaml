@@ -475,3 +475,14 @@ readModels:
     sourceModules: [files, interactions, journal, people, planning, workspaces]
     consumers: [apps/api]
     writeAccess: false
+
+  - id: calendar-feed
+    path: packages/backend/read-models/calendar-feed
+    # GAP-052 (`INTEGRATION-002`): the read-only iCalendar subscription feed.
+    # people answers the person dates and names, planning the member's reminder
+    # occurrences, and workspaces the actor revalidation, the member's and the
+    # workspace's time zone, and the workspace's name. integrations serializes
+    # the answer; the feed keeps no per-event state, so no dav_* table is read.
+    sourceModules: [people, planning, workspaces]
+    consumers: [apps/api]
+    writeAccess: false

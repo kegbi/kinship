@@ -40,6 +40,13 @@ import {
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 
+export {
+  CALENDAR_FEED_FAILURES,
+  CALENDAR_FEED_SETTINGS_PROBLEMS,
+  type CalendarFeedHttpServices,
+  createCalendarFeedSettingsRoutes,
+} from "./calendar_feed.ts";
+
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ApiTokenHttpServices {
   readonly apiTokens: ApiTokenManagement;
