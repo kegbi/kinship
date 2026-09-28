@@ -60,7 +60,7 @@ function fixture() {
         );
       },
       list: () => Promise.resolve(records.list()),
-      markUsed: () => Promise.resolve(true),
+      markUsed: () => Promise.resolve(),
       revoke: ({ id, occurredAt }) => {
         const current = records.find(id);
         if (!current || current.revokedAt) {

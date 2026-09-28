@@ -7,10 +7,16 @@
  * ask `workspaces` whether the user and workspace it names still add up to an
  * actor, decide everything cheap — revoked, expired, the wrong scope, the
  * wrong workspace — and only then compare the secret against the stored hash
- * in constant time, and record the use.
+ * in constant time, and record the use — at most once per
+ * `TOKEN_USE_RECORD_INTERVAL_MS`, so a polling client does not rewrite the
+ * row on every request.
  */
 
-import { type StoredTokenScope, usable } from "../domain/token_rules.ts";
+import {
+  type StoredTokenScope,
+  TOKEN_USE_RECORD_INTERVAL_MS,
+  usable,
+} from "../domain/token_rules.ts";
 import type { ApiTokenActor } from "../ports/context.ts";
 import type { ApiTokenDependencies } from "./api_token_management.ts";
 
@@ -51,13 +57,14 @@ export async function authenticatePresented(
       workspaceId: actor.workspaceId,
     }) && await dependencies.secrets.matches(presented.secret, found.hash);
     if (!valid) return { status: "invalid" };
-    if (
-      !await dependencies.repository.markUsed({
-        id: found.record.id,
-        occurredAt: now,
-        transaction,
-      })
-    ) return { status: "invalid" };
+    // The row is locked, so it is still exactly what `usable` just accepted;
+    // whether the use is written is bookkeeping, never part of the verdict.
+    await dependencies.repository.markUsed({
+      id: found.record.id,
+      occurredAt: now,
+      staleBefore: new Date(now.getTime() - TOKEN_USE_RECORD_INTERVAL_MS),
+      transaction,
+    });
     return { actor, status: "authenticated" };
   });
 }

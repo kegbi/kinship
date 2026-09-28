@@ -761,12 +761,21 @@ Playwright test carrying its stable flow ID.
       the bulk bar's picker. Give the picker its own tag search, or reuse the
       directory tag filter's search and "More tags" paging.
 
-- [ ] **REL-067 — Every calendar-feed fetch writes a row.** Found reviewing
+- [x] **REL-067 — Every calendar-feed fetch writes a row.** Found reviewing
       GAP-052: `last_used_at` and `updated_at` on the feed's `api_tokens` row
       are rewritten on every fetch. With 1,000 members polling every 5 minutes,
       that is about 290,000 row updates a day, plus dead tuples. Personal access
       tokens behave the same way. Throttle the write, for example only when the
-      last use is more than 15 minutes old, for both token kinds.
+      last use is more than 15 minutes old, for both token kinds. Delivered
+      2026-09-28: `markUsed` writes `last_used_at` and `updated_at` only when
+      the stored last use is empty or older than `TOKEN_USE_RECORD_INTERVAL_MS`
+      (15 minutes), in the UPDATE's own WHERE clause, for calendar-feed tokens
+      and personal access tokens alike. A skipped write no longer turns into
+      "invalid": validity comes from the locked `findForAuthentication` row and
+      `usable()`, which already cover a missing or revoked token. API-001 and
+      INTEGRATION-002 integration tests prove the first, a throttled, and a
+      later use with a controlled clock. "Last used" can now be up to 15 minutes
+      behind.
 
 - [ ] **REL-068 — The calendar feed has no credential-specific rate limit.**
       Found reviewing GAP-052: `/api/v1/calendar-feeds/*` falls only under the
@@ -819,6 +828,16 @@ Playwright test carrying its stable flow ID.
       which is stored nowhere else. Nothing needs it today. If manual digest
       reconciliation is ever built, record the attempt key in the `failed`
       delivery audit or in `error` before `finalize` clears it.
+
+- [ ] **REL-073 — Token authentication still locks the token row on every use.**
+      Found reviewing REL-067: `findForAuthentication` takes
+      `SELECT … FOR UPDATE` on every calendar-feed fetch and API call, which
+      writes lock information into the row's page even when REL-067 skips the
+      usage write. The lock now only guards the gap between the check and a
+      bookkeeping write, so `FOR NO KEY UPDATE` would do; dropping the lock
+      needs its own look at the revocation race. Separately, one host whose
+      clock runs ahead can write a future `last_used_at` and pause other hosts'
+      updates until real time passes it plus 15 minutes (display only).
 
 ## Just-In-Time Technical Capabilities
 

@@ -22,6 +22,17 @@ import { createCalendarFeed } from "../../packages/backend/read-models/calendar-
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  apiTokenAuditFrom,
+  createCalendarFeedTokens,
+} from "../../packages/backend/modules/api-access/public.ts";
+import {
+  PostgresApiTokenRepository,
+  PostgresApiTokenTransaction,
+  PostgresCalendarFeedRepository as PostgresFeedTokenRepository,
+} from "../../packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts";
+import { WebCryptoApiTokenSecrets } from "../../packages/backend/modules/api-access/adapters/crypto/api_token_secrets.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { openSql, requireDatabaseUrl } from "../support/database.ts";
@@ -608,6 +619,56 @@ Deno.test("[INTEGRATION-002] the API request log never carries a feed secret", a
       line,
     );
   }
+});
+
+Deno.test("[INTEGRATION-002] REL-067 a feed's fetches write its use at most once per 15 minutes", async () => {
+  const fixture = await owner("feed-use");
+  const start = new Date(Math.floor(Date.now() / 1_000) * 1_000);
+  let now = start;
+  const actors = new PostgresActorRevalidation();
+  const feeds = createCalendarFeedTokens({
+    actorContext: actors,
+    actors,
+    audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
+    calendarFeeds: new PostgresFeedTokenRepository(),
+    clock: { now: () => now },
+    ids: { next: () => crypto.randomUUID() },
+    repository: new PostgresApiTokenRepository(),
+    secrets: new WebCryptoApiTokenSecrets(),
+    transaction: new PostgresApiTokenTransaction(connection.db),
+  });
+  const created = await feeds.create({ ...fixture, role: "owner" });
+  assert(created.status === "created", "feed minted");
+  const fetchAt = async (minutes: number) => {
+    now = new Date(start.getTime() + minutes * 60_000);
+    const accepted = await feeds.authenticate(created.secret);
+    const [row] = await sql<{ last_used_at: Date | null; updated_at: Date }[]>`
+      select last_used_at, updated_at from crm.api_tokens
+      where id = ${created.feed.id}::uuid
+    `;
+    return {
+      lastUsedAt: row?.last_used_at?.getTime(),
+      status: accepted.status,
+      updatedAt: row?.updated_at.getTime(),
+    };
+  };
+  const minute = (value: number) => start.getTime() + value * 60_000;
+
+  assertEquals(await fetchAt(1), {
+    lastUsedAt: minute(1),
+    status: "authenticated",
+    updatedAt: minute(1),
+  }, "the first fetch is recorded");
+  assertEquals(await fetchAt(15), {
+    lastUsedAt: minute(1),
+    status: "authenticated",
+    updatedAt: minute(1),
+  }, "a fetch within 15 minutes is accepted but not written");
+  assertEquals(await fetchAt(17), {
+    lastUsedAt: minute(17),
+    status: "authenticated",
+    updatedAt: minute(17),
+  }, "a fetch after 15 minutes is recorded");
 });
 
 Deno.test("[INTEGRATION-002] closes its connections", async () => {

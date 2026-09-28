@@ -231,6 +231,81 @@ Deno.test({
     }
   },
 });
+// --- REL-067 -------------------------------------------------------------
+
+Deno.test({
+  name:
+    "[API-001] REL-067 a token's use is written at most once per 15 minutes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `api-token-use-${crypto.randomUUID()}`,
+      );
+      const start = new Date(Math.floor(Date.now() / 1_000) * 1_000);
+      let now = start;
+      const actors = new PostgresActorRevalidation();
+      const tokens = createApiTokenManagement({
+        actorContext: actors,
+        actors,
+        audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
+        clock: { now: () => now },
+        ids: { next: () => crypto.randomUUID() },
+        repository: new PostgresApiTokenRepository(),
+        secrets: new WebCryptoApiTokenSecrets(),
+        transaction: new PostgresApiTokenTransaction(connection.db),
+      });
+      const created = await tokens.create(actor, {
+        name: "Polling token",
+        scopes: ["people:read"],
+      });
+      assert(created.status === "created", "token minted");
+      const use = async (minutes: number) => {
+        now = new Date(start.getTime() + minutes * 60_000);
+        const accepted = await tokens.authenticate(
+          created.secret,
+          "people:read",
+        );
+        const [row] = await sql<
+          { last_used_at: Date | null; updated_at: Date }[]
+        >`select last_used_at, updated_at from crm.api_tokens where id = ${created.record.id}::uuid`;
+        return {
+          lastUsedAt: row?.last_used_at?.getTime(),
+          status: accepted.status,
+          updatedAt: row?.updated_at.getTime(),
+        };
+      };
+      const minute = (value: number) => start.getTime() + value * 60_000;
+
+      const first = await use(0);
+      assert(
+        first.status === "authenticated" && first.lastUsedAt === minute(0) &&
+          first.updatedAt === minute(0),
+        `first use is recorded: ${JSON.stringify(first)}`,
+      );
+      const soon = await use(14);
+      assert(
+        soon.status === "authenticated" && soon.lastUsedAt === minute(0) &&
+          soon.updatedAt === minute(0),
+        `a use within 15 minutes is accepted but not written: ${
+          JSON.stringify(soon)
+        }`,
+      );
+      const later = await use(16);
+      assert(
+        later.status === "authenticated" && later.lastUsedAt === minute(16) &&
+          later.updatedAt === minute(16),
+        `a use after 15 minutes is recorded: ${JSON.stringify(later)}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
 Deno.test({
   name: "close API token PostgreSQL fixture",
   sanitizeOps: false,

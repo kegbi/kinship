@@ -35,6 +35,15 @@ export type StoredTokenScope = ApiTokenScope | typeof CALENDAR_FEED_SCOPE;
 /** The name a calendar feed's token row is stored under. */
 export const CALENDAR_FEED_TOKEN_NAME = "Calendar feed";
 
+/**
+ * How stale a token's recorded last use may grow before an accepted use writes
+ * it again (REL-067). A calendar application polls its feed every few minutes,
+ * and writing the row on every fetch would cost an update and a dead tuple
+ * each time; the owner only needs to know roughly when the token was last
+ * used, so its "last used" is at most this far behind.
+ */
+export const TOKEN_USE_RECORD_INTERVAL_MS = 15 * 60_000;
+
 /** The standing a token is created and listed under. */
 export type ApiTokenRole = "owner" | "admin" | "member";
 

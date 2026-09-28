@@ -33,6 +33,7 @@ function fixture(options: { readonly standing?: "active" | "revoked" } = {}) {
   const ids = [FIRST, SECOND];
   let secrets = 0;
   let used = 0;
+  let window: number | undefined;
   let described: typeof member | undefined = member;
   const dependencies: CalendarFeedTokenDependencies = {
     actorContext: { describe: () => Promise.resolve(described) },
@@ -92,9 +93,10 @@ function fixture(options: { readonly standing?: "active" | "revoked" } = {}) {
         );
       },
       list: () => Promise.resolve([]),
-      markUsed: () => {
+      markUsed: ({ occurredAt, staleBefore }) => {
         used += 1;
-        return Promise.resolve(true);
+        window = occurredAt.getTime() - staleBefore.getTime();
+        return Promise.resolve();
       },
       revoke: () => Promise.resolve({ status: "not-found" as const }),
     },
@@ -116,6 +118,7 @@ function fixture(options: { readonly standing?: "active" | "revoked" } = {}) {
     },
     rows,
     used: () => used,
+    window: () => window,
   };
 }
 
@@ -190,6 +193,11 @@ Deno.test("[INTEGRATION-002] a feed secret authenticates only as itself", async 
   const accepted = await state.feeds.authenticate(created.secret);
   assertEquals(accepted, { actor: member, status: "authenticated" });
   assertEquals(state.used(), 1, "the use is recorded");
+  assertEquals(
+    state.window(),
+    15 * 60_000,
+    "an earlier use within 15 minutes leaves the row alone",
+  );
   for (
     const presented of [
       "",

@@ -117,13 +117,14 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
   }
 
   async markUsed(command: Parameters<ApiTokenRepository["markUsed"]>[0]) {
-    const result = await sql<{ readonly id: string }>`
+    // The throttle lives in the predicate, so skipping the write costs no
+    // extra read (REL-067).
+    await sql`
       update crm.api_tokens set last_used_at = ${command.occurredAt},
         updated_at = ${command.occurredAt}
       where id = ${command.id}::uuid and revoked_at is null
-      returning id::text
+        and (last_used_at is null or last_used_at < ${command.staleBefore})
     `.execute(databaseFromSession(command.transaction));
-    return result.rows.length === 1;
   }
 
   async revoke(command: Parameters<ApiTokenRepository["revoke"]>[0]) {
