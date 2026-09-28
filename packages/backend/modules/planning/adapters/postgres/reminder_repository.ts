@@ -1071,7 +1071,8 @@ export class PostgresReminderDeliveryRepository
       const recordedIds = held.rows.map((row) => row.id);
       if (recordedIds.length === 0) return { recordedIds };
       // A digest's key covers exactly what is recorded, and is stored on each
-      // occurrence as its attempt reference until a receipt replaces it.
+      // occurrence as its attempt reference until a receipt replaces it or
+      // `finalize` records the attempt as failed or needing attention.
       const attemptKey = command.digest
         ? await digestIdempotencyKey({
           ...command.digest,
@@ -1106,8 +1107,12 @@ export class PostgresReminderDeliveryRepository
         claim_token = null, claim_owner = null, lease_expires_at = null,
         next_attempt_at = ${command.nextAttemptAt ?? null},
         provider_result_state = ${command.providerResultState},
+        -- A digest's attempt key is a reference only while its attempt may
+        -- still be reconciled; an attempt that ended unconfirmed drops it.
         provider_receipt = case
           when ${command.providerResultState} = 'unattempted' then null
+          when ${command.status} in ('failed','manual_attention')
+            and occurrence.provider_receipt like 'digest:%' then null
           else coalesce(${
       command.receipt ?? null
     }, occurrence.provider_receipt) end,

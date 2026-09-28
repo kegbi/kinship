@@ -701,13 +701,20 @@ Playwright test carrying its stable flow ID.
       the Today reminders list and on the profile. Include email delivery
       failures in the attention queue, or record the product decision not to.
 
-- [ ] **REL-060 — A digest's attempt key outlives a failed attempt.** Found
+- [x] **REL-060 — A digest's attempt key outlives a failed attempt.** Found
       reviewing GAP-044: `markAttempted` stores the digest key in
       `reminder_occurrences.provider_receipt`, and `finalize` keeps it on
       `rejected` and `manual_attention` rows. The column comment describes a
       receipt after confirmed delivery or reconciliation. Nothing misreads it
       today. Clear it on those outcomes, or document the attempt-reference
-      convention in the flow.
+      convention in the flow. Delivered 2026-09-28: `finalize` clears a
+      `digest:` attempt key from `provider_receipt` when it records `failed` or
+      `manual_attention`, so the column holds only a receipt after confirmed
+      delivery or reconciliation. A `retry` keeps the key for the
+      ambiguous-attempt reclaim, a `sent` digest keeps its SMTP receipt, and a
+      genuine `in_app:` receipt on an in-app row that ends in `manual_attention`
+      is never cleared. A PLANNING-003 integration test covers all three digest
+      outcomes. No schema change.
 
 - [ ] **REL-061 — Search needs full-text indexes at scale (schema v9).** At
       50,000 notes and 50,000 activities per workspace, the text groups of
@@ -803,6 +810,15 @@ Playwright test carrying its stable flow ID.
       `features/person/workspace.test.ts` throws "window is not defined". The
       suite runs in written order, so these tests pass today. Make each test set
       up and reset its own DOM and module state, so any order passes.
+
+- [ ] **REL-072 — An ambiguous digest keeps no record of the key it was sent
+      under.** Found reviewing REL-060: once a digest ends in
+      `manual_attention`, the provider may have delivered it, but the row no
+      longer says which idempotency key was used, and the key cannot be
+      recomputed because it derives from the digest's full occurrence-ID set,
+      which is stored nowhere else. Nothing needs it today. If manual digest
+      reconciliation is ever built, record the attempt key in the `failed`
+      delivery audit or in `error` before `finalize` clears it.
 
 ## Just-In-Time Technical Capabilities
 

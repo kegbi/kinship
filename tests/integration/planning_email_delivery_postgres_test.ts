@@ -542,6 +542,78 @@ Deno.test("[PLANNING-003] a recorded digest stores the key it is sent under", as
   assertEquals(again?.attemptKey, marked.attemptKey);
 });
 
+Deno.test("[PLANNING-003] a digest's attempt key does not outlive a failed attempt", async () => {
+  /** One digest occurrence, claimed and recorded under its attempt key. */
+  const recordedDigest = async (label: string) => {
+    const { fixture, personId } = await signedUp(label);
+    await choose(fixture, { digestTime: "00:00", reminderDelivery: "email" });
+    const reminder = await createReminder(fixture, personId, label);
+    await sql`
+      update crm.reminder_occurrences
+      set deliver_at = date_trunc('day', now()) - interval '1 hour'
+      where reminder_id = ${reminder.id}::uuid
+    `;
+    const [claim] = (await deliveryRepository.claimDue({
+      channels: ["email"],
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+      limit: 100,
+      now: new Date(),
+      owner: label,
+    })).filter((item) => item.title === label);
+    assert(claim?.digestDate, `${label} is a digest claim`);
+    const marked = await deliveryRepository.markAttempted({
+      claims: [claim],
+      digest: { localDate: claim.digestDate, memberId: claim.memberId },
+      leaseExpiresAt: new Date(Date.now() + 120_000),
+      now: new Date(),
+    });
+    assert(marked.attemptKey, `${label} recorded an attempt key`);
+    return { claim, reminderId: reminder.id };
+  };
+  const finalized = async (
+    digest: Awaited<ReturnType<typeof recordedDigest>>,
+    outcome: {
+      readonly providerResultState: "ambiguous" | "confirmed" | "rejected";
+      readonly receipt?: string;
+      readonly status: "failed" | "manual_attention" | "sent";
+    },
+  ) => {
+    const updated = await deliveryTransaction.run((transaction) =>
+      deliveryRepository.finalize({
+        claimToken: digest.claim.claimToken,
+        id: digest.claim.id,
+        now: new Date(),
+        transaction,
+        ...outcome,
+      })
+    );
+    assert(updated, "the held claim was finalized");
+    const [state] = await occurrencesOf(digest.reminderId);
+    return state;
+  };
+
+  const rejected = await finalized(await recordedDigest("digest-rejected"), {
+    providerResultState: "rejected",
+    status: "failed",
+  });
+  assertEquals(rejected?.provider_receipt, null, "a rejected digest's key");
+  const unresolved = await finalized(await recordedDigest("digest-manual"), {
+    providerResultState: "ambiguous",
+    status: "manual_attention",
+  });
+  assertEquals(
+    unresolved?.provider_receipt,
+    null,
+    "a manual-attention digest's key",
+  );
+  const delivered = await finalized(await recordedDigest("digest-delivered"), {
+    providerResultState: "confirmed",
+    receipt: "smtp:digest-delivered",
+    status: "sent",
+  });
+  assertEquals(delivered?.provider_receipt, "smtp:digest-delivered");
+});
+
 Deno.test("[PLANNING-003] both channels, and an unverified member keeps in-app reminders", async () => {
   const both = await signedUp("email-both");
   await choose(both.fixture, { reminderDelivery: "both" });
