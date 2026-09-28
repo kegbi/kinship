@@ -780,11 +780,19 @@ Playwright test carrying its stable flow ID.
       `IMPORT-002`. Decide whether `exists` should ignore deleted people
       (recreating them) and change all three formats together.
 
-- [ ] **REL-066 — The bulk tag picker only lists the tag options already
+- [x] **REL-066 — The bulk tag picker only lists the tag options already
       loaded.** Found reviewing GAP-051: in a workspace with more than 20 tags,
       or while a tag search is typed, the tag a member wants may be missing from
       the bulk bar's picker. Give the picker its own tag search, or reuse the
-      directory tag filter's search and "More tags" paging.
+      directory tag filter's search and "More tags" paging. Delivered
+      2026-09-28: while "Add tag…" or "Remove tag…" is open, the bulk bar's own
+      `BulkTagPicker` reads the tag options endpoint with its own labelled
+      search and "More tags" paging, independent of the tag filter's search, so
+      every workspace tag is reachable. Its state is one pure reducer
+      (`bulk-tag-picker.ts`) and one latest-request slot that is released when
+      the picker closes; the directory island keeps its own two slots. Opening
+      the picker focuses its search, a failed "More tags" page keeps the button
+      to retry, and a polite status line announces loading, counts, and failure.
 
 - [x] **REL-067 — Every calendar-feed fetch writes a row.** Found reviewing
       GAP-052: `last_used_at` and `updated_at` on the feed's `api_tokens` row
@@ -901,6 +909,21 @@ Playwright test carrying its stable flow ID.
       pending save answers, or by giving each editor an id that `saved` and
       `save-failed` must match (the existing `generation` would do if it stopped
       resetting when the editor closes).
+
+- [ ] **REL-077 — The bulk tag picker's close-while-loading path has no
+      regression test, and "More tags" can drop focus while it loads.** Found
+      reviewing REL-066: closing the picker while a read is in flight and
+      reopening it is correct today because `useLatestRequest` aborts on
+      unmount, but no component test pins it. "More tags" is disabled while its
+      request is in flight, and some browsers move focus off a focused button
+      when it becomes disabled.
+
+- [ ] **REL-078 — A person-relationships rail count test failed once under
+      full-suite load.** Found in REL-066's coverage run:
+      `person-relationships.test.tsx:1157` (RELATIONSHIP-001) saw the rail count
+      read `1` instead of `0` once, and passed three times alone and in the full
+      rerun. Same class as `REL-047` and `REL-071`; find the ordering or timing
+      assumption and remove it.
 
 ## Just-In-Time Technical Capabilities
 

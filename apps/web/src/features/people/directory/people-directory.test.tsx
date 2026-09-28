@@ -767,7 +767,10 @@ describe("PEOPLE-009 bulk directory actions", () => {
     );
     await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
     const picker = within(bar()).getByLabelText("Tag to add");
-    expect(document.activeElement).toBe(picker);
+    // REL-066: the choice opens on its search, which comes first.
+    expect(document.activeElement).toBe(
+      within(bar()).getByLabelText("Search tags to add"),
+    );
     await user.selectOptions(picker, family.id);
     await user.click(within(bar()).getByRole("button", { name: "Add tag" }));
     expect(bar().getAttribute("aria-busy")).toBe("true");
@@ -1200,6 +1203,279 @@ describe("PEOPLE-009 bulk directory actions", () => {
     expect(element("#people-selection-notice").textContent).toBe(
       "You can select up to 100 people at a time. The first 100 are selected.",
     );
+  });
+
+  describe("REL-066 the bar's own tag picker", () => {
+    const tagId = (index: number) =>
+      `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+
+    it("reaches a tag beyond the first page by More tags and by its own search, and applies it", async () => {
+      markup();
+      const first = Array.from({ length: 20 }, (_, index) => ({
+        id: tagId(300 + index),
+        name: `Tag ${String(index + 1).padStart(2, "0")}`,
+      }));
+      const later = { id: tagId(400), name: "Tag 21" };
+      const needle = { id: tagId(401), name: "Needle" };
+      const api = stubApi({
+        [BULK]: answer("tag", [{ outcome: "done", personId }]),
+        [PEOPLE]: [page([ada]), page([ada])],
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: ({ url }) => {
+          const query = url.searchParams;
+          if (query.get("search") === "Needle") {
+            return jsonResponse({ options: [needle], status: "ready" });
+          }
+          if (query.get("cursor") === "picker-next") {
+            return jsonResponse({ options: [later], status: "ready" });
+          }
+          return jsonResponse({
+            nextCursor: "picker-next",
+            options: first,
+            status: "ready",
+          });
+        },
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      const picker = within(bar()).getByLabelText<HTMLSelectElement>(
+        "Tag to add",
+      );
+      expect(document.activeElement).toBe(
+        within(bar()).getByLabelText("Search tags to add"),
+      );
+      await waitFor(() => expect(picker.options.length).toBe(20));
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "20 tag options shown.",
+      );
+
+      await user.click(
+        within(bar()).getByRole("button", { name: "More tags" }),
+      );
+      await waitFor(() => expect(picker.options.length).toBe(21));
+      expect(picker.options[20]?.text).toBe("Tag 21");
+      const continued = tagRequests(api).at(-1)!;
+      expect(continued.url.searchParams.get("cursor")).toBe("picker-next");
+      expect(continued.url.searchParams.has("search")).toBe(false);
+      expect(
+        within(bar()).queryByRole("button", { name: "More tags" }),
+      ).toBeNull();
+      // The control went with the last page, so focus moves to the options.
+      expect(document.activeElement).toBe(picker);
+
+      await user.type(
+        within(bar()).getByLabelText("Search tags to add"),
+        "  Needle  {Enter}",
+      );
+      await waitFor(() => expect(picker.options.length).toBe(1));
+      expect(picker.value).toBe(needle.id);
+      expect(tagRequests(api).at(-1)?.url.searchParams.get("search")).toBe(
+        "Needle",
+      );
+      expect(tagRequests(api).at(-1)?.url.searchParams.has("cursor")).toBe(
+        false,
+      );
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "1 tag option shown.",
+      );
+      // The directory's own tag filter is left as it was.
+      expect(
+        region().getByLabelText<HTMLSelectElement>("Tag").options.length,
+      ).toBe(21);
+
+      await user.click(within(bar()).getByRole("button", { name: "Add tag" }));
+      await waitFor(() =>
+        expect(element("#people-bulk-result").textContent).toContain(
+          "Added “Needle” to 1 person.",
+        )
+      );
+      expect(bulkRequests(api)[0]?.body).toEqual({
+        action: "tag",
+        personIds: [personId],
+        tagId: needle.id,
+      });
+    });
+
+    it("lists tags regardless of the search typed into the tag filter", async () => {
+      markup();
+      const api = stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: ({ url }) =>
+          jsonResponse({
+            options: url.searchParams.get("search") === "Fri"
+              ? [friends]
+              : [friends, family],
+            status: "ready",
+          }),
+      });
+      await mount();
+      const user = userEvent.setup();
+      const filter = region().getByLabelText<HTMLSelectElement>("Tag");
+      await user.type(region().getByLabelText("Search tag options"), "Fri");
+      await user.click(region().getByRole("button", { name: "Search tags" }));
+      await waitFor(() => expect(filter.options.length).toBe(2));
+
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(
+        within(bar()).getByRole("button", { name: "Remove tag…" }),
+      );
+      const picker = within(bar()).getByLabelText<HTMLSelectElement>(
+        "Tag to remove",
+      );
+      await waitFor(() => expect(picker.options.length).toBe(2));
+      expect(tagRequests(api).at(-1)?.url.searchParams.has("search")).toBe(
+        false,
+      );
+
+      // A filter search while the choice is open leaves the picker alone.
+      await user.clear(region().getByLabelText("Search tag options"));
+      await user.type(region().getByLabelText("Search tag options"), "Fri");
+      await user.click(region().getByRole("button", { name: "Search tags" }));
+      await waitFor(() =>
+        expect(tagRequests(api).at(-1)?.url.searchParams.get("search")).toBe(
+          "Fri",
+        )
+      );
+      await waitFor(() =>
+        expect(element("#people-tag-options-status").textContent).toBe(
+          "1 tag option shown.",
+        )
+      );
+      expect([...picker.options].map((option) => option.text)).toEqual([
+        "Friends",
+        "Family",
+      ]);
+    });
+
+    it("says when it cannot read tag options and offers nothing to apply", async () => {
+      markup();
+      const api = stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: [noTags, problemResponse(503)],
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      await waitFor(() =>
+        expect(element("#people-bulk-tag-status").textContent).toBe(
+          "Tag options are temporarily unavailable.",
+        )
+      );
+      expect(
+        within(bar()).getByRole("button", { name: "Add tag" }),
+      ).toHaveProperty("disabled", true);
+      await expectNoAxeViolations(element("main"));
+      expect(bulkRequests(api)).toHaveLength(0);
+    });
+
+    it("keeps More tags to try again when a later page cannot be read", async () => {
+      markup();
+      stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: [
+          noTags,
+          jsonResponse({
+            nextCursor: "picker-next",
+            options: [friends],
+            status: "ready",
+          }),
+          problemResponse(503),
+          jsonResponse({ options: [family], status: "ready" }),
+        ],
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      const more = await waitFor(() =>
+        within(bar()).getByRole("button", { name: "More tags" })
+      );
+      await user.click(more);
+      await waitFor(() =>
+        expect(element("#people-bulk-tag-status").textContent).toBe(
+          "Tag options are temporarily unavailable.",
+        )
+      );
+      const retry = within(bar()).getByRole("button", { name: "More tags" });
+      expect(retry).toHaveProperty("disabled", false);
+      expect(document.activeElement).toBe(retry);
+      await user.click(retry);
+      const picker = within(bar()).getByLabelText<HTMLSelectElement>(
+        "Tag to add",
+      );
+      await waitFor(() => expect(picker.options.length).toBe(2));
+      expect(document.activeElement).toBe(picker);
+    });
+
+    it("ignores the answer to a picker search a newer one replaced", async () => {
+      markup();
+      const stale = deferred<Response>();
+      stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: ({ url }) => {
+          const search = url.searchParams.get("search");
+          if (search === "Fam") return stale.promise;
+          return jsonResponse({
+            options: search === "Fri" ? [friends] : [friends, family],
+            status: "ready",
+          });
+        },
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      const picker = within(bar()).getByLabelText<HTMLSelectElement>(
+        "Tag to add",
+      );
+      await waitFor(() => expect(picker.options.length).toBe(2));
+      const field = within(bar()).getByLabelText("Search tags to add");
+      await user.type(field, "Fam{Enter}");
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "Loading tag options…",
+      );
+      await user.clear(field);
+      await user.type(field, "Fri");
+      await user.click(within(bar()).getByRole("button", { name: "Search" }));
+      await waitFor(() => expect(picker.options.length).toBe(1));
+      await act(async () => {
+        stale.resolve(jsonResponse({ options: [family], status: "ready" }));
+        await stale.promise;
+      });
+      expect([...picker.options].map((option) => option.text)).toEqual([
+        "Friends",
+      ]);
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "1 tag option shown.",
+      );
+    });
   });
 });
 

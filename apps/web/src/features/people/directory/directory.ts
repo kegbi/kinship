@@ -423,6 +423,11 @@ function countAnnouncement(
     : `${count} ${lifecycle} ${count === 1 ? "person" : "people"} shown.`;
 }
 
+/** What a tag picker announces once its options have arrived. */
+export function tagOptionsStatus(count: number): string {
+  return `${count} tag ${count === 1 ? "option" : "options"} shown.`;
+}
+
 /**
  * The options a tag page leaves: a first page starts over, keeping the
  * chosen tag even when the page does not reach it; a continuation appends
@@ -612,9 +617,7 @@ export function directoryReducer(
           cursor: action.page.nextCursor,
           loading: false,
           options,
-          status: `${options.length} tag ${
-            options.length === 1 ? "option" : "options"
-          } shown.`,
+          status: tagOptionsStatus(options.length),
         },
       };
     }

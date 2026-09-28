@@ -28,9 +28,17 @@
  * third slot either: it is read with the tag options' first page, through
  * the tag slot, when the directory starts and after a bulk run changed the
  * counts. A facet chip applies the existing tag filter and reads the list.
+ *
+ * REL-066 gives the bar's tag choice its own picker, `BulkTagPicker`: a
+ * surface of its own, drawn only while the choice is open, with its own pure
+ * reducer (`bulk-tag-picker.ts`) and one request slot. It lists tags apart
+ * from the tag filter, so the filter's search never narrows what a bulk
+ * action can pick, and reaches every tag by its own search and More tags.
+ * The directory itself keeps its two slots.
  */
 
 import {
+  type RefObject,
   type SyntheticEvent,
   useEffect,
   useEffectEvent,
@@ -49,6 +57,8 @@ import {
   type PeopleDirectoryLifecycle,
   type PeopleDirectoryPerson,
   type PeopleDirectorySort,
+  type PeopleDirectoryTag,
+  type PeopleTagOptionsInput,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -71,6 +81,11 @@ import {
 } from "../../../lib/person-name.ts";
 import { readStaticForm } from "../../../lib/static-form.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
+import {
+  bulkTagPickerReducer,
+  initialBulkTagPicker,
+  tagOptionsInput,
+} from "./bulk-tag-picker.ts";
 import {
   type BulkKind,
   bulkProblemReport,
@@ -162,7 +177,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const search = useRef<HTMLInputElement>(null);
   const tagSearch = useRef<HTMLInputElement>(null);
   const error = useRef<HTMLElement>(null);
-  const bulkTag = useRef<HTMLSelectElement>(null);
+  const bulkTagSearch = useRef<HTMLInputElement>(null);
   // The bar control a choice was opened from, which takes focus back. The
   // tag choice replaces the bar's buttons, so it is found again by its step.
   const opener = useRef<string>("");
@@ -410,7 +425,8 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const openStep = (step: "confirm-archive" | "tag" | "untag") => {
     opener.current = step;
     flushSync(() => dispatch({ step, type: "bulk-step" }));
-    if (step !== "confirm-archive") bulkTag.current?.focus();
+    // The tag choice opens on its search, the first of its controls.
+    if (step !== "confirm-archive") bulkTagSearch.current?.focus();
   };
 
   const closeStep = () => {
@@ -434,14 +450,9 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     target?.focus();
   };
 
-  const applyTag = () => {
-    const step = state.bulk.step;
-    const chosen = state.tag.options.find((option) =>
-      option.id === bulkTag.current?.value
-    );
-    if ((step !== "tag" && step !== "untag") || !chosen) return;
-    void runBulk(step, chosen);
-  };
+  // The picker is drawn only over a loaded list, so the workspace is known.
+  const readBulkTags = (input: PeopleTagOptionsInput) =>
+    listPeopleTagOptions(input, context.current!.workspaceId);
 
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -773,36 +784,14 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             </p>
             {state.bulk.step === "tag" || state.bulk.step === "untag"
               ? (
-                <div className="people-bulk-choice">
-                  <label htmlFor="people-bulk-tag">
-                    {state.bulk.step === "tag" ? "Tag to add" : "Tag to remove"}
-                  </label>
-                  <select
-                    defaultValue={state.tag.options[0]?.id}
-                    id="people-bulk-tag"
-                    ref={bulkTag}
-                  >
-                    {state.tag.options.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    disabled={state.tag.options.length === 0}
-                    onClick={applyTag}
-                    type="button"
-                  >
-                    {state.bulk.step === "tag" ? "Add tag" : "Remove tag"}
-                  </Button>
-                  <Button
-                    onClick={closeStep}
-                    type="button"
-                    variant="outline"
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                <BulkTagPicker
+                  key={state.bulk.step}
+                  onApply={(step, tag) => void runBulk(step, tag)}
+                  onCancel={closeStep}
+                  read={readBulkTags}
+                  searchRef={bulkTagSearch}
+                  step={state.bulk.step}
+                />
               )
               : (
                 <div className="people-bulk-actions">
@@ -880,6 +869,124 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
         )
         : null}
     </>
+  );
+}
+
+/**
+ * The bar's tag choice (REL-066): the tag options a bulk action can pick,
+ * read apart from the tag filter. It reads the first page when it opens;
+ * its search and More tags reach the rest. Only the latest read lands, so a
+ * search a newer one replaced is never shown.
+ */
+function BulkTagPicker(
+  props: {
+    readonly onApply: (
+      step: "tag" | "untag",
+      tag: PeopleDirectoryTag,
+    ) => void;
+    readonly onCancel: () => void;
+    readonly read: (
+      input: PeopleTagOptionsInput,
+    ) => ReturnType<typeof listPeopleTagOptions>;
+    readonly searchRef: RefObject<HTMLInputElement | null>;
+    readonly step: "tag" | "untag";
+  },
+) {
+  const { onApply, onCancel, read, searchRef: search, step } = props;
+  const [picker, dispatch] = useReducer(
+    bulkTagPickerReducer,
+    initialBulkTagPicker,
+  );
+  const request = useLatestRequest();
+  const adding = step === "tag";
+
+  const load = async (append: boolean): Promise<void> => {
+    const text = append ? picker.query : search.current!.value.trim();
+    const input = tagOptionsInput(text, append ? picker.cursor : undefined);
+    dispatch({ append, query: text, type: "loading" });
+    const answer = await request(() => read(input));
+    if (!answer) return;
+    flushSync(() =>
+      dispatch(
+        answer.status === "ready"
+          ? { append, page: answer.data!, type: "loaded" }
+          : { append, type: "failed" },
+      )
+    );
+    // More tags goes once the last page has come; focus moves to the
+    // options it brought rather than falling to the page. A failed page
+    // keeps the control, and focus on it, to try again.
+    if (append && answer.status === "ready" && !answer.data!.nextCursor) {
+      document.querySelector<HTMLElement>("#people-bulk-tag")?.focus();
+    }
+  };
+
+  const first = useEffectEvent(() => load(false));
+  useEffect(() => {
+    void first();
+  }, []);
+
+  const chosen = picker.options.find((option) => option.id === picker.chosen);
+  return (
+    <div className="people-bulk-choice">
+      <label htmlFor="people-bulk-tag-search">
+        {adding ? "Search tags to add" : "Search tags to remove"}
+      </label>
+      <input
+        ref={search}
+        autoComplete="off"
+        id="people-bulk-tag-search"
+        maxLength={200}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          void load(false);
+        }}
+        placeholder="Tag name"
+        type="search"
+      />
+      <Button onClick={() => void load(false)} type="button" variant="outline">
+        Search
+      </Button>
+      <label htmlFor="people-bulk-tag">
+        {adding ? "Tag to add" : "Tag to remove"}
+      </label>
+      <select
+        id="people-bulk-tag"
+        onChange={(event) =>
+          dispatch({ id: event.target.value, type: "choose" })}
+        value={picker.chosen}
+      >
+        {picker.options.map((option) => (
+          <option key={option.id} value={option.id}>{option.name}</option>
+        ))}
+      </select>
+      {picker.cursor
+        ? (
+          <Button
+            disabled={picker.loading}
+            onClick={() => void load(true)}
+            type="button"
+            variant="outline"
+          >
+            More tags
+          </Button>
+        )
+        : null}
+      <Button
+        disabled={!chosen}
+        onClick={() => chosen && onApply(step, chosen)}
+        type="button"
+      >
+        {adding ? "Add tag" : "Remove tag"}
+      </Button>
+      <Button onClick={onCancel} type="button" variant="outline">
+        Cancel
+      </Button>
+      <p aria-live="polite" id="people-bulk-tag-status" role="status">
+        {picker.status}
+      </p>
+    </div>
   );
 }
 
