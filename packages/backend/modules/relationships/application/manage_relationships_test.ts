@@ -13,7 +13,7 @@ import {
 import {
   PostgresAuditEventRecorder,
 } from "../../governance/adapters/postgres/audit_event_recorder.ts";
-import { assert } from "../../../testing/assert.ts";
+import { assert, assertRejects } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
 
@@ -56,14 +56,32 @@ async function directDependencies(target: string) {
         readonly code?: { readonly specifier: string };
         readonly type?: { readonly specifier: string };
       }[];
+      readonly error?: string;
       readonly specifier: string;
     }[];
   };
-  return graph.modules.find((module) => module.specifier === target)
-    ?.dependencies?.map((dependency) =>
-      dependency.code?.specifier ?? dependency.type?.specifier ?? ""
-    ) ?? [];
+  // `deno info` exits 0 for a module it cannot load and records the reason on
+  // the root, so a stale path fails here instead of reading as no imports.
+  const root = graph.modules.find((module) => module.specifier === target);
+  assert(root, `the dependency graph has no entry for ${target}`);
+  assert(
+    root.error === undefined,
+    `${target} could not be read: ${root.error}`,
+  );
+  return root.dependencies?.map((dependency) =>
+    dependency.code?.specifier ?? dependency.type?.specifier ?? ""
+  ) ?? [];
 }
+
+Deno.test("[REL-053] the dependency reader rejects a module that does not exist", async () => {
+  // `deno info` exits 0 for a missing file and reports no dependencies, so a
+  // stale path would otherwise make every import-edge assertion pass vacuously.
+  const missing = new URL("./no_such_module.ts", import.meta.url).href;
+  await assertRejects(
+    () => directDependencies(missing),
+    "a missing module read as having no dependencies",
+  );
+});
 
 Deno.test("relationships and governance have no direct dependency edge", async () => {
   const governance = new URL(

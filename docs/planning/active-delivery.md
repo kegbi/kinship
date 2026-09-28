@@ -640,7 +640,7 @@ Playwright test carrying its stable flow ID.
       that no spec's `getByRole("status")` becomes ambiguous, with a unit test
       per island and the affected specs unchanged.
 
-- [ ] **REL-053 — A boundary test checks a file that no longer exists.** Found
+- [x] **REL-053 — A boundary test checks a file that no longer exists.** Found
       in GAP-034: "workspaces interaction boundary owns its actor and
       transaction types" runs `deno info` on
       `workspaces/application/interaction_workspace_boundary.ts`, which no
@@ -648,7 +648,15 @@ Playwright test carrying its stable flow ID.
       passes without checking anything. Point it at the file that now carries
       that boundary (or delete it if the boundary is gone and another test
       already holds the rule), and make the helper fail on a missing path so the
-      class cannot recur.
+      class cannot recur. Delivered 2026-09-28: the stale interactions test is
+      deleted. The boundary's types now live in
+      `workspaces/ports/interaction_boundary.ts`, and `check_boundaries.ts`
+      already rejects any import, `import type` included, from a workspaces file
+      into a module it does not declare or through a non-public entry point,
+      which is stronger than the deleted check. The one remaining `deno info`
+      helper, `directDependencies` in the relationships suite, now fails when
+      its root module is missing or carries an `error`, proved by a `[REL-053]`
+      test, and the interactions unit set no longer grants `run: deno`.
 
 - [ ] **REL-054 — Signing in with a pending legal version can outlast the spec's
       navigation window on Linux WebKit.** Main CI run `36294196846` on

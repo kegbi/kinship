@@ -30,39 +30,6 @@ function deepEqual(left: unknown, right: unknown): boolean {
     keys.every((key) => deepEqual(leftRecord[key], rightRecord[key]));
 }
 
-async function directDependencies(target: string): Promise<readonly string[]> {
-  const output = await new Deno.Command(Deno.execPath(), {
-    args: ["info", "--json", target],
-    env: { DENO_NO_PACKAGE_JSON: "1" },
-  }).output();
-  assert(output.success, "interaction boundary dependency graph is readable");
-  const graph = JSON.parse(new TextDecoder().decode(output.stdout)) as {
-    readonly modules: readonly {
-      readonly dependencies?: readonly {
-        readonly code?: { readonly specifier: string };
-        readonly type?: { readonly specifier: string };
-      }[];
-      readonly specifier: string;
-    }[];
-  };
-  return graph.modules.find((module) => module.specifier === target)
-    ?.dependencies?.map((dependency) =>
-      dependency.code?.specifier ?? dependency.type?.specifier ?? ""
-    ) ?? [];
-}
-
-Deno.test("workspaces interaction boundary owns its actor and transaction types", async () => {
-  const boundary = new URL(
-    "../../workspaces/application/interaction_workspace_boundary.ts",
-    import.meta.url,
-  ).href;
-  const dependencies = await directDependencies(boundary);
-  assert(
-    !dependencies.some((dependency) => dependency.includes("/modules/people/")),
-    "workspaces interaction boundary imports the people module",
-  );
-});
-
 const actor = {
   memberId: "00000000-0000-4000-8000-0000000000a2",
   role: "member" as const,

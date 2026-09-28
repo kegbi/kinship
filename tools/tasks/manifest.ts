@@ -1271,12 +1271,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
         "packages/backend/modules/interactions/application/record_interaction_test.ts",
       ],
-      permissions: {
-        // The suite proves the workspace interaction boundary owns its own
-        // actor and transaction types by reading the module graph with
-        // `deno info`.
-        run: ["deno"],
-      },
     },
     coverage: {
       directory: "interactions-domain",
