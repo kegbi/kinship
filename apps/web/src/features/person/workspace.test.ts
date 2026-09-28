@@ -1915,6 +1915,46 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(document.activeElement).toBe(personalization);
   });
 
+  it("REL-075 keeps focus on a button the reader chose before a hidden-section deep link settles", async () => {
+    markup(`/app/people/${personId}?section=documents`);
+    deferredZoneMarkup();
+    // Every zone activates at once, and the photos read holds the workspace
+    // short of settling until the reader has chosen a control.
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const files = deferred<Response>();
+    const api = stubProfile(
+      profileOf({ profileSections: [{ id: "documents", status: "hidden" }] }),
+      {
+        [FILES]: files.promise,
+        [GIFTS]: noGifts([]),
+        [AUDIT]: noAudit,
+        [VIEW]: recorded,
+      },
+    );
+
+    const mounting = mountPersonWorkspace();
+    await vi.waitFor(() =>
+      expect(requested(api, `/${personId}/files`)).not.toHaveLength(0)
+    );
+    const notice = document.querySelector<HTMLElement>(
+      "#person-profile-section-notice",
+    )!;
+    expect(document.activeElement).toBe(notice);
+    const logInteraction = document.querySelector<HTMLButtonElement>(
+      '[data-quick-capture][data-interaction-intended-kind="activity"]',
+    )!;
+    logInteraction.focus();
+    expect(document.activeElement).toBe(logInteraction);
+    files.resolve(noFiles);
+    await mounting;
+
+    expect(document.activeElement).toBe(logInteraction);
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toBe(
+      "Documents — this section is hidden in this workspace. A workspace owner or admin can turn this section back on.",
+    );
+  });
+
   it("UXD-006 does not describe a DOM-hidden visible module as turned off", async () => {
     markup(`/app/people/${personId}?section=documents`);
     reminderSectionMarkup();

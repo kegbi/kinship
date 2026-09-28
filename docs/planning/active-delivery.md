@@ -1091,14 +1091,23 @@ Playwright test carrying its stable flow ID.
       that supports it) to each island a first-run action targets, with a test
       per island.
 
-- [ ] **REL-075 — `workspace.ts` coverage flips on one timing-dependent
+- [x] **REL-075 — `workspace.ts` coverage flips on one timing-dependent
       branch.** Found reviewing REL-049: `focusSection`'s hidden-section early
       return (`features/person/workspace.ts`, reached from
       `reconcileSectionLocation(..., "settle")`) is covered in about one run in
       five, on `main` as well, so the file's line and branch totals swing by
       about 0.5 and 0.8 points. Add one test that deep-links to a hidden section
       with focus on a real button before the workspace settles, and asserts
-      focus stays there while the notice appears.
+      focus stays there while the notice appears. Delivered 2026-09-28: the only
+      test that went through the settle-time early return held reads that no
+      zone owner waits on, so the workspace usually settled before the test
+      moved focus and the branch was covered only by chance. A new workspace
+      test deep-links a turned-off section and holds the photos read, which the
+      Things zone must answer before the workspace settles; before releasing it,
+      the test moves focus to "Log interaction", then asserts focus stays there
+      while the hidden-section notice shows. The branch is now covered on every
+      run and in any test order (eight shuffle seeds), and removing the early
+      return fails the test. Test file only.
 
 - [ ] **REL-076 — An archive and restore during a life-event save allows two
       saves in flight.** Found reviewing REL-055: save A in flight, the person
