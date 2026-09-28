@@ -20,6 +20,8 @@ const LINKS: PersonReferenceSite = {
  * the primary the same way keeps that link and drops the duplicate's, since a
  * person holds one link per file and kind. The bytes never move: only the
  * link row does, so nothing in the object store has to join the transaction.
+ * A duplicate's avatar image the primary does not use is discarded through
+ * the files facade once the merge commits (REL-063).
  */
 export class PostgresFilePersonMergeParticipant
   implements PersonMergeParticipant {

@@ -11,6 +11,11 @@
  * `authorizeUpload` is asked before any of that, because whether this actor
  * may add a file to this person is not a question the staging can answer once
  * the bytes are already moving.
+ *
+ * `lockAvatarImages` and `discardAvatarImages` are the avatar's own removal
+ * (REL-056, REL-063): an image that is no longer, or never became, anybody's
+ * avatar is cleaned up whatever has happened to the person since, so these
+ * are scoped by workspace and person alone, never by the person's state.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
@@ -109,6 +114,8 @@ export interface FileMetadataRepository {
   reserveRemoval(
     command: PersonFileActor & {
       readonly fileId: string;
+      /** The kinds this removal may take; any other is not found. */
+      readonly kinds: readonly PersonFileKind[];
       readonly occurredAt: Date;
       readonly personId: string;
       readonly transaction: PersonFileTransaction;
@@ -128,4 +135,23 @@ export interface FileMetadataRepository {
     | { readonly file: StoredPersonFile; readonly status: "removed" }
     | Failure<"forbidden" | "not-found">
   >;
+  /**
+   * Locks the person's avatar images a discard removes: the one named, or,
+   * without a name, every one held in quarantine. A deleted image, one still
+   * being processed, and any other kind of file are never among them.
+   */
+  lockAvatarImages(command: {
+    readonly fileId?: string;
+    readonly personId: string;
+    readonly transaction: PersonFileTransaction;
+    readonly workspaceId: string;
+  }): Promise<readonly StoredPersonFile[]>;
+  /** Unlinks the locked images and records them deleted, without their key. */
+  discardAvatarImages(command: {
+    readonly fileIds: readonly string[];
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: PersonFileTransaction;
+    readonly workspaceId: string;
+  }): Promise<void>;
 }

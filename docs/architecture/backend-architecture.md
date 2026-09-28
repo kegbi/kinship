@@ -421,6 +421,27 @@ production may use RustFS or another compatible S3 implementation. Uploads
 require size/type limits, generated object names, malware-scanning integration
 points, and tests for missing or quarantined objects.
 
+A person's avatar image (GAP-045, `PEOPLE-007`) is a files-owned `avatar`-kind
+file that the `people` module links from `person_avatars`. Two rules set it
+apart from the documents and photos of `FILES-001`:
+
+- Opening an avatar image is not audited. Every other person-file read records
+  `files.file-read`, but an avatar is drawn on every row a person appears in, so
+  recording each draw would bury the reads that mean something (`recordsReads`
+  in `files/domain/file_rules.ts`). Changes to an avatar are still audited by
+  `people` as `people.avatar-updated` or `people.avatar-removed`.
+- Only the avatar route removes an avatar image (REL-056). The generic person
+  file removal answers an avatar-kind file as not found, as the file listing
+  omits it. Once `people` stops drawing an image (a replaced or removed avatar,
+  a replacement that could not be linked, the duplicate's image a merge did not
+  keep) or on removing the avatar (every image held in quarantine for the
+  person), it calls the files facade's avatar discard after its own transaction
+  commits. A discard is cleanup, not a member request: it does not depend on the
+  person being active or the member still being a member, and it is bounded by
+  the actor's workspace and the person alone. It records `files.file-removed`
+  for each image and is best effort, so a failure never undoes the people-side
+  change.
+
 Email, webhooks, OAuth, AI providers, geocoding, and similar services are ports.
 Each adapter has timeouts, bounded retries, redacted structured logs, and
 deterministic fakes for tests. No domain code calls vendor SDKs directly.

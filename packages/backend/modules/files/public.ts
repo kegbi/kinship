@@ -37,6 +37,7 @@ export type {
   ListPersonFilesInput,
   ListPersonFilesResult,
 } from "./application/person_file_reads.ts";
+export type { DiscardAvatarImagesResult } from "./application/avatar_discards.ts";
 export type {
   RemovePersonFileResult,
   UploadPersonFileResult,

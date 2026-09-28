@@ -3,14 +3,37 @@
  * PEOPLE-007): the upload is the files module's `avatar` kind, the link is
  * people's `person_avatars` row, every reader draws the same descriptor, and
  * an image whose bytes went missing falls back to the initials.
+ *
+ * The last suites follow an avatar image to its end (REL-056, REL-063): only
+ * the avatar route removes one, an image held for review goes with the
+ * avatar, a replacement that could not be linked is discarded whatever
+ * happened to the person or the member meanwhile, and a merge discards the
+ * duplicate's image when the primary keeps its own.
  */
 
 import {
+  avatarImages,
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import { composeFiles } from "../../packages/backend/modules/files/composition.ts";
 import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
+import { giftAttachmentTarget } from "../../packages/backend/modules/gifts/composition.ts";
+import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
+import { PostgresPersonAvatarRepository } from "../../packages/backend/modules/people/adapters/postgres/person_avatar_repository.ts";
+import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
+import {
+  createPersonAvatarManagement,
+  personAvatarAuditFrom,
+} from "../../packages/backend/modules/people/public.ts";
+import {
+  activeWorkspaceResolver,
+  workspaceActors,
+  workspaceTransactionRunner,
+} from "../../packages/backend/modules/workspaces/composition.ts";
+import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
@@ -24,6 +47,7 @@ class CapturedObjectStorage implements ObjectStorage {
   readonly bucket = "captured-avatars";
   readonly objects = new Map<string, Uint8Array>();
   readonly provider = "captured";
+  failRemove = false;
 
   get(command: { readonly key: string }): Promise<Uint8Array | undefined> {
     return Promise.resolve(this.objects.get(command.key));
@@ -38,6 +62,9 @@ class CapturedObjectStorage implements ObjectStorage {
     return Promise.resolve();
   }
   remove(command: { readonly key: string }): Promise<void> {
+    if (this.failRemove) {
+      return Promise.reject(new Error("object store unavailable"));
+    }
     this.objects.delete(command.key);
     return Promise.resolve();
   }
@@ -339,4 +366,351 @@ Deno.test("[PEOPLE-007] refused images, archived people, other workspaces, and r
     revoked.status === 401 || revoked.status === 403,
     `a removed member cannot change an avatar (${revoked.status})`,
   );
+});
+
+/** The stored state of one file, and whether its bytes are still kept. */
+async function fileState(fileId: string) {
+  const [row] = await sql<{
+    readonly kind: string | null;
+    readonly person_id: string | null;
+    readonly status: string;
+    readonly storage_key: string | null;
+  }[]>`
+    select stored.status, stored.storage_key, link.kind,
+      link.person_id::text
+    from crm.files stored
+    left join crm.person_file_links link on link.file_id = stored.id
+    where stored.id = ${fileId}::uuid
+  `;
+  assert(row, `${fileId} exists`);
+  return row;
+}
+
+/** Every avatar-kind file linked to the person that is not removed. */
+async function keptAvatarFiles(personId: string): Promise<readonly string[]> {
+  const rows = await sql<{ readonly file_id: string }[]>`
+    select stored.id::text as file_id from crm.person_file_links link
+    join crm.files stored on stored.id = link.file_id
+    where link.person_id = ${personId}::uuid and link.kind = 'avatar'
+      and stored.deleted_at is null
+    order by stored.created_at
+  `;
+  return rows.map((row) => row.file_id);
+}
+
+/** The file an avatar's descriptor names. */
+function fileOf(imageUrl: string | undefined): string {
+  const fileId = imageUrl?.match(/files\/([^/]+)\/content$/)?.[1];
+  assert(fileId, `an image URL names a file (${imageUrl})`);
+  return fileId;
+}
+
+async function storedAvatar(
+  fixture: SignedInFixture,
+  personId: string,
+): Promise<string> {
+  const response = await putAvatar(fixture, personId, PNG);
+  assertEquals(response.status, 200, "the avatar is stored");
+  return fileOf((await response.json() as AvatarBody).avatar?.imageUrl);
+}
+
+Deno.test("[FILES-001] the generic file removal refuses an avatar image as not found", async () => {
+  const owner = await api.register(
+    `avatar-generic-${crypto.randomUUID()}@example.test`,
+    "Generic",
+  );
+  const ada = await createPerson(api, owner, "Ada");
+  const fileId = await storedAvatar(owner, ada);
+
+  const removed = await api.request(
+    owner,
+    `/api/v1/people/${ada}/files/${fileId}`,
+    "DELETE",
+  );
+  assertEquals(removed.status, 404, "an avatar is not one of the listed files");
+  assertEquals(
+    (await removed.json() as { readonly code: string }).code,
+    "person_file_not_found",
+  );
+  const state = await fileState(fileId);
+  assertEquals(state.status, "available", "the image is untouched");
+  assert(
+    state.storage_key !== null && storage.objects.has(state.storage_key),
+    "with its bytes",
+  );
+  assertEquals(
+    fileOf((await profileAvatar(owner, ada))?.imageUrl),
+    fileId,
+    "and still drawn",
+  );
+  assertEquals(
+    (await audits(ada)).includes("files.file-removed"),
+    false,
+    "nothing was removed",
+  );
+});
+
+Deno.test("[PEOPLE-007] removing the avatar removes a quarantined avatar and the images held for review", async () => {
+  const owner = await api.register(
+    `avatar-quarantine-${crypto.randomUUID()}@example.test`,
+    "Quarantine",
+  );
+  const ada = await createPerson(api, owner, "Ada");
+  const held = await putAvatar(
+    owner,
+    ada,
+    new TextEncoder().encode("not an image"),
+  );
+  assertEquals(held.status, 423, "the disguised image is held for review");
+  const [heldId] = await keptAvatarFiles(ada);
+  assert(heldId, "the held image is kept");
+  const linked = await storedAvatar(owner, ada);
+  // A later verification of the stored bytes can quarantine a linked image.
+  await sql`
+    update crm.files set status = 'quarantined' where id = ${linked}::uuid
+  `;
+  assertEquals(
+    (await profileAvatar(owner, ada))?.imageUrl,
+    undefined,
+    "a quarantined avatar is not drawn",
+  );
+
+  const removed = await api.request(
+    owner,
+    `/api/v1/people/${ada}/avatar`,
+    "DELETE",
+  );
+  assertEquals(removed.status, 200, "the avatar is removed");
+  for (const fileId of [linked, heldId]) {
+    const state = await fileState(fileId);
+    assertEquals(state.status, "deleted", `${fileId} is removed`);
+    assertEquals(state.kind, null, "and unlinked");
+  }
+  assertEquals(await keptAvatarFiles(ada), [], "no avatar image is left");
+  const actions = await audits(ada);
+  assertEquals(
+    actions.filter((action) => action === "people.avatar-removed").length,
+    1,
+    "the removal is audited like any avatar removal",
+  );
+});
+
+Deno.test("[PEOPLE-007] a replacement that cannot be linked is discarded whatever happened meanwhile, within its own workspace", async () => {
+  const owner = await api.register(
+    `avatar-race-${crypto.randomUUID()}@example.test`,
+    "Race",
+  );
+  const foreign = await api.register(
+    `avatar-race-foreign-${crypto.randomUUID()}@example.test`,
+    "Foreign",
+  );
+  const ada = await createPerson(api, owner, "Ada");
+  const grace = await createPerson(api, owner, "Grace");
+  const previous = await storedAvatar(owner, ada);
+
+  const connection = connectDatabase(databaseUrl);
+  try {
+    const shared: SharedComposition = {
+      actors: workspaceActors(),
+      audit: governanceAuditRecorder(),
+      clock: { now: () => new Date() },
+      database: connection.db,
+      ids: { create: () => crypto.randomUUID() },
+      peopleTransaction: peopleTransactionRunner(connection.db),
+      transaction: workspaceTransactionRunner(connection.db),
+      workspaceEntry: activeWorkspaceResolver(),
+    };
+    const files = composeFiles(shared, {
+      giftTarget: giftAttachmentTarget(),
+      objectStore: storage,
+    });
+    const images = avatarImages(files.files);
+    const stored: string[] = [];
+    /** People's avatar use case, with `meanwhile` run once the image is stored. */
+    const avatars = (meanwhile: () => Promise<void>) =>
+      createPersonAvatarManagement({
+        actors: shared.actors,
+        audit: personAvatarAuditFrom(shared.audit),
+        clock: shared.clock,
+        images: {
+          ...images,
+          store: async (command) => {
+            const result = await images.store(command);
+            if ("fileId" in result) stored.push(result.fileId);
+            await meanwhile();
+            return result;
+          },
+        },
+        repository: new PostgresPersonAvatarRepository(),
+        transaction: shared.peopleTransaction,
+      });
+    const actor = {
+      memberId: owner.memberId,
+      role: owner.role,
+      userId: owner.userId,
+      workspaceId: owner.workspaceId,
+    };
+    const image = { bytes: PNG, filename: "ada.png", mimeType: "image/png" };
+
+    // Another workspace can never discard this workspace's image.
+    await images.discard({
+      actor: {
+        memberId: foreign.memberId,
+        role: foreign.role,
+        userId: foreign.userId,
+        workspaceId: foreign.workspaceId,
+      },
+      fileId: previous,
+      personId: ada,
+    });
+    assertEquals((await fileState(previous)).status, "available");
+    // Nor can a discard reach an image through somebody else.
+    await images.discard({ actor, fileId: previous, personId: grace });
+    assertEquals((await fileState(previous)).status, "available");
+
+    const archived = await avatars(async () => {
+      await sql`update crm.people set archived_at = now() where id = ${ada}::uuid`;
+    }).replace(actor, ada, image);
+    assertEquals(archived.status, "archived-write-rejected");
+    const [archivedImage] = stored;
+    assert(archivedImage, "the replacement had been stored");
+    const afterArchive = await fileState(archivedImage);
+    assertEquals(afterArchive.status, "deleted", "the unlinked image goes");
+    assertEquals(afterArchive.kind, null);
+    assertEquals(
+      await keptAvatarFiles(ada),
+      [previous],
+      "only the linked avatar is left",
+    );
+    await sql`update crm.people set archived_at = null where id = ${ada}::uuid`;
+
+    const revoked = await avatars(async () => {
+      await revokeMembership(sql, owner.memberId);
+    }).replace(actor, ada, image);
+    assertEquals(revoked.status, "forbidden");
+    const revokedImage = stored[1];
+    assert(revokedImage, "the second replacement had been stored");
+    assertEquals((await fileState(revokedImage)).status, "deleted");
+    assertEquals(await keptAvatarFiles(ada), [previous]);
+    const objects = await sql<{ readonly storage_key: string | null }[]>`
+      select storage_key from crm.files
+      where id in (${archivedImage}::uuid, ${revokedImage}::uuid)
+    `;
+    assert(
+      objects.every((row) => row.storage_key === null),
+      "neither keeps a stored object",
+    );
+  } finally {
+    await connection.destroy();
+  }
+});
+
+/** Merges the duplicate into the primary as the confirmation does. */
+async function merge(
+  fixture: SignedInFixture,
+  primaryId: string,
+  duplicateId: string,
+): Promise<Response> {
+  const preview = await api.request(
+    fixture,
+    `/api/v1/people/${primaryId}/merge-preview?duplicateId=${duplicateId}`,
+  );
+  assertEquals(preview.status, 200, "the merge is previewed");
+  const body = await preview.json() as {
+    readonly conflictsDigest: string;
+    readonly duplicate: { readonly updatedAt: string };
+    readonly primary: { readonly updatedAt: string };
+  };
+  return await api.request(
+    fixture,
+    `/api/v1/people/${primaryId}/merge`,
+    "POST",
+    {
+      confirmed: true,
+      conflictsDigest: body.conflictsDigest,
+      duplicateId,
+      duplicateRevision: body.duplicate.updatedAt,
+      primaryRevision: body.primary.updatedAt,
+    },
+  );
+}
+
+Deno.test("[PEOPLE-008] a merge whose primary keeps its own avatar discards the duplicate's image", async () => {
+  const owner = await api.register(
+    `avatar-merge-${crypto.randomUUID()}@example.test`,
+    "Merge",
+  );
+  const primary = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const duplicate = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const kept = await storedAvatar(owner, primary);
+  const unused = await storedAvatar(owner, duplicate);
+
+  const merged = await merge(owner, primary, duplicate);
+  assertEquals(merged.status, 200, await merged.clone().text());
+  const state = await fileState(unused);
+  assertEquals(state.status, "deleted", "the duplicate's image is removed");
+  assertEquals(state.storage_key, null, "with its bytes");
+  assertEquals(await keptAvatarFiles(primary), [kept]);
+  assertEquals(fileOf((await profileAvatar(owner, primary))?.imageUrl), kept);
+
+  // Over the initials, the duplicate's image becomes the primary's instead.
+  const bare = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Grace",
+    isPartial: false,
+  });
+  const pictured = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Grace",
+    isPartial: false,
+  });
+  const taken = await storedAvatar(owner, pictured);
+  assertEquals((await merge(owner, bare, pictured)).status, 200);
+  assertEquals((await fileState(taken)).status, "available");
+  assertEquals(await keptAvatarFiles(bare), [taken]);
+});
+
+Deno.test("[PEOPLE-008] a merge still succeeds when the duplicate's image cannot be discarded", async () => {
+  const owner = await api.register(
+    `avatar-merge-fail-${crypto.randomUUID()}@example.test`,
+    "Merge",
+  );
+  const primary = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const duplicate = await createPerson(api, owner, {
+    duplicateOverride: true,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const kept = await storedAvatar(owner, primary);
+  const unused = await storedAvatar(owner, duplicate);
+
+  storage.failRemove = true;
+  try {
+    const merged = await merge(owner, primary, duplicate);
+    assertEquals(merged.status, 200, "the merge is committed");
+  } finally {
+    storage.failRemove = false;
+  }
+  const [gone] = await sql<{ readonly deleted_at: string | null }[]>`
+    select deleted_at::text from crm.people where id = ${duplicate}::uuid
+  `;
+  assert(gone?.deleted_at, "the duplicate is merged away");
+  assertEquals(
+    (await fileState(unused)).status,
+    "available",
+    "the image that could not be discarded is left as it was",
+  );
+  assertEquals(fileOf((await profileAvatar(owner, primary))?.imageUrl), kept);
 });

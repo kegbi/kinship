@@ -149,7 +149,10 @@ class MemoryFiles implements FileMetadataRepository {
     command: Parameters<FileMetadataRepository["reserveRemoval"]>[0],
   ) {
     const record = this.records.get(command.fileId);
-    if (!record || record.status === "deleted") {
+    if (
+      !record || record.status === "deleted" ||
+      !command.kinds.includes(record.kind)
+    ) {
       return Promise.resolve({ status: "not-found" } as const);
     }
     if (record.status === "processing") {
@@ -173,6 +176,33 @@ class MemoryFiles implements FileMetadataRepository {
     this.records.set(command.fileId, { ...record, status: "deleted" });
     return Promise.resolve({ file: record, status: "removed" } as const);
   }
+
+  /** Every workspace this fake's records belong to is the test actor's. */
+  lockAvatarImages(
+    command: Parameters<FileMetadataRepository["lockAvatarImages"]>[0],
+  ) {
+    return Promise.resolve(
+      command.workspaceId !== actor.workspaceId ? [] : [
+        ...this.records.values(),
+      ].filter((record) =>
+        record.personId === command.personId && record.kind === "avatar" &&
+        record.status !== "deleted" && record.status !== "processing" &&
+        (command.fileId
+          ? record.fileId === command.fileId
+          : record.status === "quarantined")
+      ),
+    );
+  }
+
+  discardAvatarImages(
+    command: Parameters<FileMetadataRepository["discardAvatarImages"]>[0],
+  ) {
+    for (const id of command.fileIds) {
+      const record = this.records.get(id)!;
+      this.records.set(id, { ...record, status: "deleted" });
+    }
+    return Promise.resolve();
+  }
 }
 
 class MemoryAudit implements FileAudit {
@@ -184,7 +214,13 @@ class MemoryAudit implements FileAudit {
 }
 
 function management(
-  options: { storage?: MemoryStorage; repository?: MemoryFiles } = {},
+  options: {
+    ids?: () => string;
+    revalidation?: "active" | "revoked";
+    scan?: "clean" | "quarantined";
+    storage?: MemoryStorage;
+    repository?: MemoryFiles;
+  } = {},
 ) {
   const audit = new MemoryAudit();
   const repository = options.repository ?? new MemoryFiles();
@@ -192,13 +228,21 @@ function management(
   return {
     audit,
     files: createPersonFileManagement({
-      actors: { revalidate: () => Promise.resolve("active" as const) },
+      actors: {
+        revalidate: () => Promise.resolve(options.revalidation ?? "active"),
+      },
       audit,
       clock: fixedClock("2026-08-23T08:00:00.000Z"),
-      ids: { next: () => fileId },
-      keys: { next: () => "objects/opaque-generated-key" },
+      ids: { next: options.ids ?? (() => fileId) },
+      keys: {
+        next: options.ids
+          ? () => `objects/${crypto.randomUUID()}`
+          : () => "objects/opaque-generated-key",
+      },
       repository,
-      scanner: { inspect: () => Promise.resolve("clean") },
+      scanner: {
+        inspect: () => Promise.resolve(options.scan ?? "clean"),
+      },
       storage,
       transaction: {
         run: async <T>(
@@ -544,4 +588,140 @@ Deno.test("[GAP-045] an avatar is stored as the avatar kind, scanned, and served
     mimeType: "application/pdf",
   });
   assert(pdf.status === "rejected-media", "only an image may be an avatar");
+});
+
+Deno.test("[REL-056] the generic removal refuses an avatar image as a file it does not list", async () => {
+  const context = management();
+  const stored = await context.files.uploadAvatar(actor, personId, {
+    bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    filename: "ada.png",
+    mimeType: "image/png",
+  });
+  assert(stored.status === "created", "the avatar is stored");
+  const removed = await context.files.remove(actor, personId, fileId);
+  assert(removed.status === "not-found", "the avatar is not a listed file");
+  assert(context.storage.objects.size === 1, "its bytes stay");
+  assert(
+    context.repository.records.get(fileId)?.status === "available",
+    "and so does its row",
+  );
+  assert(context.audit.actions.join(",") === "uploaded", "nothing removed");
+});
+
+Deno.test("[REL-056] an avatar image is discarded whatever the member's standing", async () => {
+  let next = 0;
+  const ids = () => `00000000-0000-4000-8000-00000000010${++next}`;
+  const repository = new MemoryFiles();
+  const storage = new MemoryStorage();
+  const uploader = management({ ids, repository, storage });
+  const png = {
+    bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    filename: "ada.png",
+    mimeType: "image/png",
+  };
+  const kept = await uploader.files.uploadAvatar(actor, personId, png);
+  const replaced = await uploader.files.uploadAvatar(actor, personId, png);
+  assert(kept.status === "created" && replaced.status === "created", "stored");
+
+  const revoked = management({ repository, revalidation: "revoked", storage });
+  const discarded = await revoked.files.discardAvatar(
+    actor,
+    personId,
+    replaced.file.fileId,
+  );
+  assert(discarded.status === "discarded", "a discard is not the member's");
+  assert(
+    discarded.fileIds.join(",") === replaced.file.fileId,
+    "only the named image goes",
+  );
+  assert(
+    repository.records.get(replaced.file.fileId)?.status === "deleted",
+    "the replaced image is deleted",
+  );
+  assert(
+    repository.records.get(kept.file.fileId)?.status === "available",
+    "the other image stays",
+  );
+  assert(storage.objects.size === 1, "and only its bytes");
+  assert(revoked.audit.actions.join(",") === "removed", "the removal is kept");
+
+  const foreign = await revoked.files.discardAvatar(
+    { ...actor, workspaceId: fixtures.uuid(77) },
+    personId,
+    kept.file.fileId,
+  );
+  assert(
+    foreign.status === "discarded" && foreign.fileIds.length === 0,
+    "another workspace discards nothing",
+  );
+  const document = await uploader.files.upload(actor, personId, {
+    bytes: new Uint8Array([1]),
+    filename: "letter.pdf",
+    kind: "document",
+    mimeType: "application/pdf",
+    title: "Letter",
+  });
+  assert(document.status === "created", "a document is stored");
+  const notAvatar = await revoked.files.discardAvatar(
+    actor,
+    personId,
+    document.file.fileId,
+  );
+  assert(
+    notAvatar.status === "discarded" && notAvatar.fileIds.length === 0,
+    "a discard never reaches a listed file",
+  );
+  assert(
+    repository.records.get(document.file.fileId)?.status === "available",
+    "the document stays",
+  );
+});
+
+Deno.test("[REL-056] the images held for review are discarded, and nothing else", async () => {
+  let next = 0;
+  const ids = () => `00000000-0000-4000-8000-00000000020${++next}`;
+  const repository = new MemoryFiles();
+  const storage = new MemoryStorage();
+  const png = {
+    bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    filename: "ada.png",
+    mimeType: "image/png",
+  };
+  const held = await management({
+    ids,
+    repository,
+    scan: "quarantined",
+    storage,
+  }).files.uploadAvatar(actor, personId, png);
+  const context = management({ ids, repository, storage });
+  const linked = await context.files.uploadAvatar(actor, personId, png);
+  assert(held.status === "created" && linked.status === "created", "stored");
+  assert(held.file.status === "quarantined", "the first is held");
+
+  const discarded = await context.files.discardHeldAvatars(actor, personId);
+  assert(
+    discarded.status === "discarded" &&
+      discarded.fileIds.join(",") === held.file.fileId,
+    "only the held image goes",
+  );
+  assert(
+    repository.records.get(linked.file.fileId)?.status === "available",
+    "the linked image stays",
+  );
+  assert(storage.objects.size === 1, "the available image keeps its bytes");
+
+  storage.failRemove = true;
+  const again = await management({
+    ids,
+    repository,
+    scan: "quarantined",
+    storage,
+  }).files.uploadAvatar(actor, personId, png);
+  assert(again.status === "created", "another image is held");
+  const failed = await context.files.discardHeldAvatars(actor, personId);
+  assert(failed.status === "unavailable", "a store failure is explicit");
+  assert(
+    repository.records.get(again.file.fileId)?.status === "quarantined",
+    "and rolls the discard back",
+  );
 });

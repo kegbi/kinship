@@ -6,16 +6,20 @@
  *
  * 1. Lock the person and refuse an archived one before any bytes move.
  * 2. Hand the image to the files facade, which checks, scans, and stores it.
- *    A quarantined image stays with files for an administrator and is never
- *    linked; a refused one never existed.
+ *    A quarantined image stays with files for review until the avatar is
+ *    removed, and is never linked; a refused one never existed.
  * 3. Lock the person again, link the new image, and audit — then discard the
  *    image it replaced. If the link cannot be made (the person was archived
  *    meanwhile, the member was removed, the database failed) the new image is
  *    discarded instead, so nothing is left that no avatar points at.
  *
  * Removal is one transaction that resets the person to their initials and
- * then discards the old image. Discarding is best effort: an image that
- * cannot be removed right now is still no longer anybody's avatar.
+ * then discards the old image, whatever its file status, and every image
+ * held in quarantine for the person, which nothing else lists (REL-056).
+ * Discarding is best effort: an image that cannot be removed right now is
+ * still no longer anybody's avatar. It is also the files module's cleanup,
+ * not the member's request, so it succeeds for a person archived or a member
+ * removed after the image was stored.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -108,6 +112,15 @@ export function createPersonAvatarManagement(
   ): Promise<void> => {
     if (!fileId) return;
     await dependencies.images.discard({ actor, fileId, personId }).catch(
+      () => undefined,
+    );
+  };
+
+  const discardHeld = async (
+    actor: PeopleActor,
+    personId: string,
+  ): Promise<void> => {
+    await dependencies.images.discardHeld({ actor, personId }).catch(
       () => undefined,
     );
   };
@@ -210,6 +223,7 @@ export function createPersonAvatarManagement(
       );
       if (reset.status !== "removed") return reset;
       await discard(actor, personId, reset.previous);
+      await discardHeld(actor, personId);
       return { avatar: record(reset.avatar), status: "removed" };
     },
   };

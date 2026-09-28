@@ -41,6 +41,14 @@ export const AVATAR_MAX_BYTES = 1024 * 1024;
  * person is drawn with; it is never one of their listed photos or documents.
  */
 export type PersonFileKind = "avatar" | "document" | "photo";
+
+/**
+ * The kinds a person's file listing shows, and so the only kinds the generic
+ * removal may take away (REL-056). An avatar leaves only through the avatar,
+ * so the row `person_avatars` points at is never removed from under it; the
+ * generic removal answers an avatar as a file it does not know.
+ */
+export const LISTED_KINDS: readonly PersonFileKind[] = ["document", "photo"];
 export type PersonFileStatus =
   | "available"
   | "deleted"
@@ -119,7 +127,8 @@ export function maximumUploadBytes(kind: PersonFileKind): number {
  *
  * A document or photo is opened on purpose, and who looked is a fact worth
  * keeping. An avatar is drawn on every row a person appears in, so recording
- * each of those would bury the reads that mean something.
+ * each of those would bury the reads that mean something. This is the one
+ * exception to FILES-001's audited reads; the flow records it too.
  */
 export function recordsReads(kind: PersonFileKind): boolean {
   return kind !== "avatar";

@@ -153,6 +153,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       actors: shared.actors,
       audit: personMergeAuditFrom(shared.audit),
       clock: shared.clock,
+      images: ports.avatarImages,
       participants: ports.mergeParticipants,
       publisher: ports.importantDatePublisher,
       repository: new PostgresPersonMergeRepository(),

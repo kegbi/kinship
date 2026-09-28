@@ -10,6 +10,7 @@ import {
   partialDateText,
   peopleConflicts,
   reconcileReferences,
+  unusedAvatarFile,
 } from "./merge_rules.ts";
 
 const primaryId = fixtures.uuid(101);
@@ -410,5 +411,43 @@ Deno.test("[PEOPLE-008] the conflicts digest is stable, ignores order, and moves
   assertEquals(
     await conflictsDigest([]),
     "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  );
+});
+
+Deno.test("[REL-063] the duplicate's avatar image is unused only when the primary keeps its own", () => {
+  const file = (fileId: string) => ({ fileId, source: "file" });
+  const facts = (avatar?: { fileId?: string; source: string }) => ({
+    ...(avatar ? { avatar } : {}),
+    dates: [],
+  });
+  assertEquals(
+    unusedAvatarFile(facts(file("p")), facts(file("d"))),
+    "d",
+    "the primary's own image is kept",
+  );
+  assertEquals(
+    unusedAvatarFile(facts({ source: "generated" }), facts(file("d"))),
+    "d",
+    "a generated avatar is kept too",
+  );
+  assertEquals(
+    unusedAvatarFile(facts({ source: "default" }), facts(file("d"))),
+    undefined,
+    "the duplicate's image replaces the initials",
+  );
+  assertEquals(
+    unusedAvatarFile(facts(), facts(file("d"))),
+    undefined,
+    "and a primary with no avatar at all",
+  );
+  assertEquals(
+    unusedAvatarFile(facts(file("p")), facts({ source: "external" })),
+    undefined,
+    "a duplicate without an image leaves nothing",
+  );
+  assertEquals(
+    unusedAvatarFile(facts(file("same")), facts(file("same"))),
+    undefined,
+    "one image shared by both is still drawn",
   );
 });

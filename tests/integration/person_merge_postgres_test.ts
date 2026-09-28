@@ -930,6 +930,8 @@ Deno.test("[PEOPLE-008] a failing participant rolls the whole merge back", async
       actors: workspaceActors(),
       audit: personMergeAuditFrom(governanceAuditRecorder()),
       clock: { now: () => new Date() },
+      // The merge rolls back, so no image is ever discarded.
+      images: { discard: () => Promise.resolve() },
       participants: [...personMergeParticipants(), failing],
       publisher: personDateReminderPublisher(
         shared,

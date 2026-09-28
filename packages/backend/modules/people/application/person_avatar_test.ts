@@ -38,6 +38,8 @@ function context(
   let archived = options.archived ?? false;
   const stored: string[] = [];
   const discarded: string[] = [];
+  /** Each time the images held for review were discarded, for whom. */
+  const discardedHeld: string[] = [];
   const audited: string[] = [];
   const events: string[] = [];
   let next = 0;
@@ -55,6 +57,10 @@ function context(
     },
     discard: (command) => {
       discarded.push(command.fileId);
+      return Promise.resolve();
+    },
+    discardHeld: (command) => {
+      discardedHeld.push(command.personId);
       return Promise.resolve();
     },
   };
@@ -110,6 +116,7 @@ function context(
     audited,
     avatar: () => avatar,
     discarded,
+    discardedHeld,
     events,
     management,
     stored,
@@ -254,4 +261,36 @@ Deno.test("[PEOPLE-007] a link that fails rolls back and discards the new image"
     "unavailable",
   );
   assertEquals(subject.avatar().fileId, previous);
+});
+
+Deno.test("[REL-056] removing the avatar also discards the images held for review", async () => {
+  const pictured = context({
+    avatar: { fileId: fixtures.uuid(400), source: "file" },
+  });
+  assertEquals(
+    (await pictured.management.remove(actor, personId)).status,
+    "removed",
+  );
+  assertEquals(pictured.discarded, [fixtures.uuid(400)]);
+  assertEquals(pictured.discardedHeld, [personId], "held images go too");
+
+  const initials = context();
+  assertEquals(
+    (await initials.management.remove(actor, personId)).status,
+    "removed",
+  );
+  assertEquals(
+    initials.discardedHeld,
+    [personId],
+    "even when the person is already drawn with their initials",
+  );
+  assertEquals(initials.audited, [], "which changes no avatar");
+
+  const archived = context({ archived: true });
+  await archived.management.remove(actor, personId);
+  assertEquals(
+    archived.discardedHeld,
+    [],
+    "a refused removal discards nothing",
+  );
 });

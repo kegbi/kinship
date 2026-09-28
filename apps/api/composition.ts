@@ -759,9 +759,11 @@ function davPeople(
  * People owns which image a person is drawn with and files owns the bytes, but
  * people may not depend on files, so people names the port it needs and the
  * root fills it with the files facade: the `avatar` upload kind to store, and
- * the ordinary person-file removal to discard.
+ * the avatar discards (REL-056) to remove an image nobody draws, which the
+ * generic person-file removal refuses. Both discards are best effort, so an
+ * answer that they are unavailable is not raised as a failure.
  */
-function avatarImages(files: PersonFileManagement): PersonAvatarImages {
+export function avatarImages(files: PersonFileManagement): PersonAvatarImages {
   return {
     store: async ({ actor, personId, ...image }) => {
       const result = await files.uploadAvatar(actor, personId, image);
@@ -775,7 +777,10 @@ function avatarImages(files: PersonFileManagement): PersonAvatarImages {
         : result;
     },
     discard: async ({ actor, fileId, personId }) => {
-      await files.remove(actor, personId, fileId);
+      await files.discardAvatar(actor, personId, fileId);
+    },
+    discardHeld: async ({ actor, personId }) => {
+      await files.discardHeldAvatars(actor, personId);
     },
   };
 }

@@ -18,6 +18,12 @@
  *    reference counted before was relinked or removed and none remains;
  * 6. audit `people.person-merged` with the per-table counts and read it back.
  *
+ * Once the merge has committed, the duplicate's avatar image the primary does
+ * not use is discarded through the files facade, as an avatar replacement
+ * discards the image it replaced (REL-063). The object store is outside the
+ * transaction, so this is best effort: a discard that fails leaves the image
+ * as it was and never undoes the merge.
+ *
  * There is no undo. The duplicate's rows now belong to the primary and cannot
  * be told apart from the primary's own, which is why the flow and the
  * confirmation both say so.
@@ -75,6 +81,7 @@ import {
   reconcileReferences,
   type ReferenceCounts,
   type ReferenceOutcome,
+  unusedAvatarFile,
 } from "../domain/merge_rules.ts";
 import type { PersonMergeAudit } from "../ports/audit.ts";
 import type {
@@ -82,6 +89,7 @@ import type {
   PeopleTransaction,
   PeopleTransactionRunner,
 } from "../ports/context.ts";
+import type { PersonAvatarImages } from "../ports/avatar.ts";
 import type { ImportantDatePublisher } from "../ports/important_date_repository.ts";
 import type {
   PersonMergeParticipant,
@@ -93,6 +101,8 @@ export interface PersonMergeDependencies {
   readonly actors: ActorRevalidation;
   readonly audit: PersonMergeAudit;
   readonly clock: Clock;
+  /** The files facade's discard, for the duplicate's image nobody draws. */
+  readonly images: Pick<PersonAvatarImages, "discard">;
   /** Every other module's rows that name a person, in relink order. */
   readonly participants: readonly PersonMergeParticipant[];
   /** Planning's side of a date that moves or is dropped. */
@@ -241,7 +251,14 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
     primaryId: string,
     input: MergePeopleInput,
     transaction: PeopleTransaction,
-  ): Promise<MergePeopleResult> => {
+  ): Promise<
+    MergePeopleResult | {
+      readonly merged: Extract<MergePeopleResult, { status: "merged" }>;
+      /** The duplicate's image to discard once the merge commits. */
+      readonly unusedAvatar?: string;
+      readonly status: "committing";
+    }
+  > => {
     const { duplicateId } = input;
     const inspected = await inspectPair(
       actor,
@@ -356,26 +373,41 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
     };
     const auditId = await dependencies.audit.record(auditCommand);
     await dependencies.audit.assertPostcondition({ ...auditCommand, auditId });
+    const unusedAvatar = unusedAvatarFile(
+      inspected.primaryFacts,
+      inspected.duplicateFacts,
+    );
     return {
-      duplicateId,
-      moved: total(outcome.relinked),
-      person,
-      status: "merged",
+      merged: {
+        duplicateId,
+        moved: total(outcome.relinked),
+        person,
+        status: "merged",
+      },
+      ...(unusedAvatar ? { unusedAvatar } : {}),
+      status: "committing",
     };
   };
 
   return {
-    merge: (
+    merge: async (
       actor: PeopleActor,
       primaryId: string,
       input: MergePeopleInput,
     ): Promise<MergePeopleResult> => {
-      if (primaryId === input.duplicateId) {
-        return Promise.resolve({ status: "self-merge" });
-      }
-      return dependencies.transaction.run((transaction) =>
+      if (primaryId === input.duplicateId) return { status: "self-merge" };
+      const result = await dependencies.transaction.run((transaction) =>
         mergeInTransaction(actor, primaryId, input, transaction)
       );
+      if (result.status !== "committing") return result;
+      if (result.unusedAvatar) {
+        await dependencies.images.discard({
+          actor,
+          fileId: result.unusedAvatar,
+          personId: primaryId,
+        }).catch(() => undefined);
+      }
+      return result.merged;
     },
     /**
      * What the merge would keep, discard, and move, from the same decision

@@ -568,7 +568,7 @@ flows:
       - Link it as the person's avatar through the people facade and discard the image it replaced.
       - Draw the same avatar descriptor in the hero, directory rows, people palette rows, and Quick capture's chosen participants.
       - Serve the image only through the authorized person-file download route.
-      - Remove the avatar to return to the person's initials on their colour.
+      - Remove the avatar to return to the person's initials on their colour, also removing any image held for review.
     alternateOutcomes: [
       invalid-type,
       oversized,

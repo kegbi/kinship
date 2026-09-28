@@ -273,6 +273,7 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
       where ${ownedPerson(command)}
         and person.archived_at is null and person.deleted_at is null
         and stored.id = ${command.fileId}::uuid
+        and link.kind = any(${[...command.kinds]}::text[])
       for update of stored
     `.execute(database);
     const row = result.rows[0];
@@ -316,5 +317,54 @@ export class PostgresFileMetadataRepository implements FileMetadataRepository {
         and stored.workspace_id = ${command.workspaceId}::uuid
     `.execute(database);
     return { file: file(row), status: "removed" };
+  }
+
+  /**
+   * The person may be archived or deleted by now: a discard is cleanup of an
+   * image nobody draws, so only the workspace and the person bound it.
+   */
+  async lockAvatarImages(
+    command: Parameters<FileMetadataRepository["lockAvatarImages"]>[0],
+  ): Promise<Awaited<ReturnType<FileMetadataRepository["lockAvatarImages"]>>> {
+    const result = await sql<FileRow>`
+      select ${selectedColumns}
+      from crm.people person
+      join crm.person_file_links link on link.person_id = person.id
+        and link.kind = 'avatar'
+      join crm.files stored on stored.id = link.file_id
+        and stored.workspace_id = person.workspace_id
+        and stored.deleted_at is null
+        and stored.status not in ('deleted', 'processing')
+      where ${ownedPerson(command)}
+        and ${
+      command.fileId
+        ? sql`stored.id = ${command.fileId}::uuid`
+        : sql`stored.status = 'quarantined'`
+    }
+      order by stored.id
+      for update of stored
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map(file);
+  }
+
+  async discardAvatarImages(
+    command: Parameters<FileMetadataRepository["discardAvatarImages"]>[0],
+  ): Promise<void> {
+    const database = databaseFromSession(command.transaction);
+    const fileIds = [...command.fileIds];
+    await sql`
+      delete from crm.person_file_links link
+      where link.person_id = ${command.personId}::uuid
+        and link.kind = 'avatar'
+        and link.file_id = any(${fileIds}::uuid[])
+    `.execute(database);
+    await sql`
+      update crm.files stored set status = 'deleted',
+        deleted_at = ${command.occurredAt}, updated_at = ${command.occurredAt},
+        storage_key = null
+      where stored.id = any(${fileIds}::uuid[])
+        and stored.workspace_id = ${command.workspaceId}::uuid
+        and stored.deleted_at is null
+    `.execute(database);
   }
 }

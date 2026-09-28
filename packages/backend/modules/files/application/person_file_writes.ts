@@ -17,6 +17,7 @@ import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import {
   checksum,
+  LISTED_KINDS,
   type PersonFileRecord,
   type PersonFileUploadInput,
   publicFile,
@@ -177,6 +178,7 @@ export function createPersonFileWrites(
           const reserved = await dependencies.repository.reserveRemoval({
             ...actor,
             fileId,
+            kinds: LISTED_KINDS,
             occurredAt,
             personId,
             transaction,

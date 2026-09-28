@@ -697,7 +697,7 @@ Playwright test carrying its stable flow ID.
       island tests cover each lock; two unit assertions that encoded an
       impossible sequence or the missing lock changed.
 
-- [ ] **REL-056 — Avatar files have gaps in their removal paths.** Found
+- [x] **REL-056 — Avatar files have gaps in their removal paths.** Found
       reviewing GAP-045: - The generic
       `DELETE /people/{personId}/files/{fileId}` removes an avatar-kind file.
       The avatar row keeps pointing at the soft-deleted file, and only
@@ -712,6 +712,21 @@ Playwright test carrying its stable flow ID.
       avatars a removal path, make the discard independent of the person
       state, and record the read exception in the FILES-001 flow or the
       architecture docs.
+
+      Delivered 2026-09-28 with `REL-063`: the generic remove lists only
+      `LISTED_KINDS` (documents and photos) and answers an avatar with the same
+      404 `person_file_not_found` as any unlisted file. The avatar `DELETE`
+      also discards every image held for review, and a linked avatar whose
+      file was later quarantined is removed and audited as
+      `people.avatar-removed`. The files facade's internal `discardAvatar` and
+      `discardHeldAvatars` (no HTTP route) clean up only avatar-kind links of
+      the given person in the actor's workspace, independent of the person's
+      archive state and the member's standing, in one transaction with the
+      object removal, and audit `files.file-removed`. Their only callers run
+      after a check that already passed in the same request.
+      `backend-architecture.md` ("Files and External Effects") records why
+      avatar reads are not audited. Unit and PostgreSQL tests cover each path,
+      including cross-workspace and cross-person discards.
 
 - [ ] **REL-057 — The legal-acceptance spec disturbs concurrent E2E specs.**
       Found in GAP-045's full local E2E run with three workers:
@@ -770,12 +785,16 @@ Playwright test carrying its stable flow ID.
       bound. There is no leak today, because the bound is transaction-scoped.
       Run the parallel check through `connection.db`.
 
-- [ ] **REL-063 — A merged duplicate's unused avatar image is never reclaimed.**
+- [x] **REL-063 — A merged duplicate's unused avatar image is never reclaimed.**
       Found reviewing GAP-049: when the primary keeps its own avatar, the
       duplicate's image stays on the primary as a hidden avatar-kind file link.
       Nothing lists it, so its bytes can never be removed. Discard it after the
       merge commits, through the files facade, as avatar replacement does (see
-      `REL-056`).
+      `REL-056`). Delivered 2026-09-28 with `REL-056`: the pure rule
+      `unusedAvatarFile` mirrors the merge's avatar SQL, and once the merge
+      commits the duplicate's unused image is discarded through the files facade
+      under the primary, where the files participant moved its link. A failed
+      discard never fails the merge.
 
 - [ ] **REL-064 — A false duplicate pair can never be dismissed.** Found
       reviewing GAP-049: two genuinely different people with the same name, or
@@ -947,6 +966,36 @@ Playwright test carrying its stable flow ID.
       a zone opened after the workspace settles announces without a live region.
       Pass `statusRegion(props)` at mount and spread it on the line, as REL-052
       does, with a two-mode island test.
+
+- [ ] **REL-080 — The web UI cannot remove a quarantined or held avatar.** Found
+      reviewing REL-056: `avatar-editor.tsx` shows "Remove avatar" only when the
+      descriptor has an `imageUrl`, which quarantined images never have, so a
+      person drawn with initials who has images held for review, or whose linked
+      avatar was later quarantined, has no Remove button; only the API's avatar
+      `DELETE` clears them. Give the avatar descriptor a "has a stored image"
+      flag and show Remove when it is set (a contract change).
+
+- [ ] **REL-081 — A gift can attach an avatar image and keep a link to it after
+      the image is removed.** Found reviewing REL-056:
+      `gift_attachment_boundary.ts` (`validateForGift`, `attachToGift`) accepts
+      any available file in the workspace, avatar images included. The avatar
+      discard, like the old generic remove, soft-deletes the file and leaves the
+      `crm.gift_file_links` row. Refuse avatar-kind files as gift attachments,
+      or skip files a gift still links.
+
+- [ ] **REL-082 — An archive during an avatar upload's store step leaves an
+      orphan.** Found reviewing REL-056: if the person is archived or the member
+      revoked between `reserveUpload` and `finalizeUpload` in `uploadAvatar`
+      (`person_file_writes.ts`), the upload answers forbidden or not-found and
+      leaves a `processing` row with stored bytes that nothing cleans up.
+      Documents share the path. Discard the reserved upload on that refusal, or
+      sweep stale `processing` rows.
+
+- [ ] **REL-083 — Failed avatar cleanups leave no trace.** Found reviewing
+      REL-056: avatar replacement, avatar removal, and merge swallow a failed
+      discard (`.catch(() => undefined)`), and the composition bridge ignores an
+      `unavailable` answer, so a leftover image is visible only in the database.
+      Emit a redacted structured log or counter through a logger port.
 
 ## Just-In-Time Technical Capabilities
 

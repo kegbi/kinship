@@ -5,6 +5,7 @@ import type { ImportantDateRecord } from "../domain/important_dates/rules.ts";
 import {
   conflictsDigest,
   type MergeCandidate,
+  type PersonMergeFacts,
   type ReferenceCounts,
 } from "../domain/merge_rules.ts";
 import type { PersonMergeAuditCommand } from "../ports/audit.ts";
@@ -78,6 +79,13 @@ function date(
  */
 function context(
   options: {
+    /** Each person's avatar, as `listFacts` reads it. */
+    readonly avatars?: {
+      readonly duplicate?: PersonMergeFacts["avatar"];
+      readonly primary?: PersonMergeFacts["avatar"];
+    };
+    /** The files module fails to discard an image. */
+    readonly discardFails?: boolean;
     readonly duplicate?: MergeCandidate | undefined;
     readonly duplicateDates?: readonly ImportantDateRecord[];
     readonly blocked?: boolean;
@@ -146,12 +154,17 @@ function context(
         updatedAt: "2026-09-27T10:00:00.000000Z",
       });
     },
-    listFacts: (command) =>
-      Promise.resolve({
+    listFacts: (command) => {
+      const avatar = command.personId === primaryId
+        ? options.avatars?.primary
+        : options.avatars?.duplicate;
+      return Promise.resolve({
+        ...(avatar ? { avatar } : {}),
         dates: command.personId === primaryId
           ? options.primaryDates ?? []
           : options.duplicateDates ?? [],
-      }),
+      });
+    },
     lockPair: (command) => {
       events.push(command.forUpdate ? "lock" : "read");
       return Promise.resolve({
@@ -206,6 +219,16 @@ function context(
       },
     },
     clock: fixedClock("2026-09-27T10:00:00.000Z"),
+    images: {
+      discard: (command) => {
+        events.push(
+          `discard:${command.fileId}@${command.personId}:${command.actor.memberId}`,
+        );
+        return options.discardFails
+          ? Promise.reject(new Error("object store down"))
+          : Promise.resolve();
+      },
+    },
     participants: [
       participant("interactions", "crm.notes.person_id"),
       {
@@ -462,5 +485,89 @@ Deno.test("[PEOPLE-008] a merge whose conflicts changed since its preview change
       conflictsDigest: again.conflictsDigest,
     })).status,
     "merged",
+  );
+});
+
+/** The conflicts a pair whose people both have a photo confirms against. */
+async function pictured(
+  primary: PersonMergeFacts["avatar"],
+  duplicate: PersonMergeFacts["avatar"],
+) {
+  const subject = context({ avatars: { duplicate, primary } });
+  const preview = await subject.merge.preview(actor, primaryId, duplicateId);
+  assert(preview.status === "ready", preview.status);
+  return { digest: preview.conflictsDigest, subject };
+}
+
+Deno.test("[REL-063] the duplicate's image the primary does not use is discarded once the merge commits", async () => {
+  const { digest, subject } = await pictured(
+    { fileId: fixtures.uuid(301), source: "file" },
+    { fileId: fixtures.uuid(302), source: "file" },
+  );
+  const result = await subject.merge.merge(actor, primaryId, {
+    duplicateId,
+    ...REVISIONS,
+    conflictsDigest: digest,
+  });
+  assertEquals(result.status, "merged");
+  assertEquals(
+    subject.events.slice(-2),
+    ["remove", `discard:${fixtures.uuid(302)}@${primaryId}:${actor.memberId}`],
+    "after the merge, from the primary the image now belongs to",
+  );
+});
+
+Deno.test("[REL-063] a merge stands when its unused image cannot be discarded", async () => {
+  const subject = context({
+    avatars: {
+      duplicate: { fileId: fixtures.uuid(302), source: "file" },
+      primary: { fileId: fixtures.uuid(301), source: "file" },
+    },
+    discardFails: true,
+  });
+  const preview = await subject.merge.preview(actor, primaryId, duplicateId);
+  assert(preview.status === "ready", preview.status);
+  const result = await subject.merge.merge(actor, primaryId, {
+    duplicateId,
+    ...REVISIONS,
+    conflictsDigest: preview.conflictsDigest,
+  });
+  assertEquals(result.status, "merged", "the discard is best effort");
+  assertEquals(subject.removed(), true);
+});
+
+Deno.test("[REL-063] nothing is discarded when the duplicate's image is used or the merge fails", async () => {
+  const taken = context({
+    avatars: {
+      duplicate: { fileId: fixtures.uuid(302), source: "file" },
+      primary: { source: "default" },
+    },
+  });
+  assertEquals(
+    (await taken.merge.merge(actor, primaryId, { duplicateId, ...REVISIONS }))
+      .status,
+    "merged",
+  );
+  assertEquals(
+    taken.events.some((event) => event.startsWith("discard:")),
+    false,
+    "the duplicate's image becomes the primary's",
+  );
+
+  const { subject } = await pictured(
+    { fileId: fixtures.uuid(301), source: "file" },
+    { fileId: fixtures.uuid(302), source: "file" },
+  );
+  assertEquals(
+    (await subject.merge.merge(actor, primaryId, {
+      duplicateId,
+      ...REVISIONS,
+    })).status,
+    "conflicts-changed",
+  );
+  assertEquals(
+    subject.events.some((event) => event.startsWith("discard:")),
+    false,
+    "a merge that did not happen discards nothing",
   );
 });

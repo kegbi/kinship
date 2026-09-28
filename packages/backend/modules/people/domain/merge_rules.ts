@@ -97,6 +97,27 @@ export interface PersonMergeFacts {
   };
 }
 
+/**
+ * The duplicate's avatar image a merge leaves drawn by nobody (REL-063).
+ *
+ * The primary keeps its own avatar unless it has none, or has the default one
+ * while the duplicate's is not; only then does the duplicate's become the
+ * primary's. Otherwise the duplicate's image, whose link the files
+ * participant moved to the primary, is no longer anybody's avatar and is
+ * discarded once the merge commits. An image both people shared stays.
+ */
+export function unusedAvatarFile(
+  primary: PersonMergeFacts,
+  duplicate: PersonMergeFacts,
+): string | undefined {
+  const fileId = duplicate.avatar?.fileId;
+  if (!fileId || fileId === primary.avatar?.fileId) return undefined;
+  const taken = primary.avatar === undefined ||
+    (primary.avatar.source === "default" &&
+      duplicate.avatar?.source !== "default");
+  return taken ? undefined : fileId;
+}
+
 export type MergeDecision =
   | { readonly status: "archived-write-rejected" }
   | { readonly status: "not-found" }

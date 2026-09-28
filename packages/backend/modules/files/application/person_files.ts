@@ -5,7 +5,9 @@
  * scanned upload with the avatar's own limit and allowlist, filed under the
  * avatar kind so a person's photo and document listing never shows it. Which
  * avatar a person is drawn with is the `people` module's record; this module
- * only keeps the bytes.
+ * only keeps the bytes. `discardAvatar` and `discardHeldAvatars` take those
+ * bytes away again once people no longer draws them (REL-056); the generic
+ * `remove` never reaches an avatar.
  *
  * A person's files are read two ways and written two, and all four share only
  * the context they establish inside each of their own transactions. They are
@@ -16,6 +18,7 @@
  */
 
 import type { PersonFileActor } from "../ports/context.ts";
+import { createAvatarDiscards } from "./avatar_discards.ts";
 import { createPersonFileReads } from "./person_file_reads.ts";
 import { createPersonFileWrites } from "./person_file_writes.ts";
 import type { PersonFileManagementDependencies } from "./person_file_context.ts";
@@ -28,6 +31,7 @@ export function createPersonFileManagement(
 ) {
   const reads = createPersonFileReads(dependencies);
   const writes = createPersonFileWrites(dependencies);
+  const discards = createAvatarDiscards(dependencies);
   return {
     upload: writes.upload,
     uploadAvatar: (
@@ -47,6 +51,8 @@ export function createPersonFileManagement(
     list: reads.list,
     download: reads.download,
     remove: writes.remove,
+    discardAvatar: discards.discardAvatar,
+    discardHeldAvatars: discards.discardHeldAvatars,
   };
 }
 

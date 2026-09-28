@@ -12,7 +12,9 @@
  * The images port stores bytes outside any people transaction, because the
  * object store is not in the database's unit of work: a stored image is
  * linked in a transaction of its own afterwards, and an image that never gets
- * linked is discarded again.
+ * linked is discarded again. A discard is cleanup rather than the member's
+ * request (REL-056): it goes ahead whether or not the person has been
+ * archived or the member removed since, within the actor's own workspace.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
@@ -35,8 +37,8 @@ export interface AvatarImageInput {
 
 export interface PersonAvatarImages {
   /**
-   * Stores, scans, and files the image. A quarantined image is kept for an
-   * administrator to review, and is never linked as the avatar.
+   * Stores, scans, and files the image. A quarantined image is kept for
+   * review until `discardHeld`, and is never linked as the avatar.
    */
   store(
     command: AvatarImageInput & {
@@ -53,10 +55,21 @@ export interface PersonAvatarImages {
       "rejected-media" | "storage-limit" | "validation-error"
     >
   >;
-  /** Removes an image that no longer is, or never became, the avatar. */
+  /**
+   * Removes an image of the person's that no longer is, or never became,
+   * the avatar, whatever the person's state or the member's standing now.
+   */
   discard(command: {
     readonly actor: PeopleActor;
     readonly fileId: string;
+    readonly personId: string;
+  }): Promise<void>;
+  /**
+   * Removes every image of the person's held in quarantine for review. None
+   * of them was ever linked, so none is the avatar.
+   */
+  discardHeld(command: {
+    readonly actor: PeopleActor;
     readonly personId: string;
   }): Promise<void>;
 }
