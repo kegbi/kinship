@@ -6,6 +6,7 @@ import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type { CsvPreview } from "../../domain/contact_import.ts";
 import type {
+  ImportCommitCounts,
   ImportReport,
   ImportSourceSystem,
   ImportSummary,
@@ -188,14 +189,13 @@ export class PostgresImportRepository implements ImportRepository {
     const run = locked.rows[0];
     if (!run) return { status: "not-found" };
     if (run.status === "completed") {
-      const stats = jsonRecord(run.stats) as {
-        readonly peopleCreated?: number;
-        readonly peopleReused?: number;
-      };
+      const stats = jsonRecord(run.stats) as Partial<ImportCommitCounts>;
+      // A run completed before REL-065 has no skipped count; it skipped none.
       return {
         importId,
         peopleCreated: stats.peopleCreated ?? 0,
         peopleReused: stats.peopleReused ?? 0,
+        peopleSkippedDeleted: stats.peopleSkippedDeleted ?? 0,
         status: "completed",
       };
     }
@@ -356,7 +356,7 @@ export class PostgresImportRepository implements ImportRepository {
   async complete(
     actor: ImportActor,
     importId: string,
-    counts: { readonly peopleCreated: number; readonly peopleReused: number },
+    counts: ImportCommitCounts,
     transaction: ImportTransaction,
   ): Promise<void> {
     const database = databaseFromSession(transaction);

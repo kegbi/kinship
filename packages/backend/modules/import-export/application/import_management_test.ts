@@ -1,4 +1,5 @@
 import { createImportManagement, type ImportRepository } from "../public.ts";
+import { assertEquals } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
 
 const actor = fixtures.actor({ role: "admin" });
@@ -24,7 +25,7 @@ const owners = {
   people: {
     addDetails: () => Promise.resolve(),
     create: () => Promise.resolve(),
-    exists: () => Promise.resolve(true),
+    presence: () => Promise.resolve("active" as const),
     linkAvatar: () => Promise.resolve(),
   },
 };
@@ -390,4 +391,93 @@ Deno.test("[IMPORT-001] refuses staging when active admin authority is lost", as
     (await imports.dryRun(actor, source)).status !== "forbidden" ||
     (await imports.commit(actor, ids[0]!, true)).status !== "forbidden"
   ) throw new Error("lost authority not enforced");
+});
+
+Deno.test("[IMPORT-001] a re-import keeps a deleted person deleted and reports them as skipped", async () => {
+  const calls: unknown[] = [];
+  const contact = (key: string, previous: string) => ({
+    archived: false,
+    entityId: `entity-${key}`,
+    givenName: key,
+    isDeceased: false,
+    isPartial: false,
+    isStarred: false,
+    previousTargetPersonId: previous,
+    sourcePrimaryKey: key,
+    targetPersonId: `unused-${key}`,
+  });
+  const repository: ImportRepository = {
+    complete: (_actor, _importId, counts) => {
+      calls.push(["complete", counts]);
+      return Promise.resolve();
+    },
+    get: () => Promise.resolve(undefined),
+    list: () => Promise.resolve([]),
+    prepareCommit: (_actor, importId) =>
+      Promise.resolve({
+        avatars: [{
+          byteSize: 1,
+          fileId: ids[1]!,
+          originalFilename: "avatars/ada.png",
+          personSourcePrimaryKey: "ada",
+        }],
+        contacts: [contact("ada", "deleted"), contact("bob", "kept")],
+        importId,
+        status: "ready" as const,
+      }),
+    retargetContact: (_importId, entityId, target) => {
+      calls.push(["retarget", entityId, target]);
+      return Promise.resolve();
+    },
+    stage: () => Promise.reject(new Error("unexpected staging")),
+  };
+  const standing = new Map([["deleted", "deleted"], ["kept", "active"]]);
+  const imports = createImportManagement({
+    ...owners,
+    files: {
+      representMissing: () => {
+        calls.push(["representMissing"]);
+        return Promise.resolve();
+      },
+    },
+    ids: { next: () => crypto.randomUUID() },
+    people: {
+      addDetails: () => Promise.resolve(),
+      create: (command) => {
+        calls.push(["create", command.person.id]);
+        return Promise.resolve();
+      },
+      linkAvatar: (command) => {
+        calls.push(["linkAvatar", command.personId]);
+        return Promise.resolve();
+      },
+      presence: (command) =>
+        Promise.resolve(
+          (standing.get(command.personId) ?? "absent") as
+            | "absent"
+            | "active"
+            | "deleted",
+        ),
+    },
+    repository,
+    transaction: { run: (work) => work({ opaque: {} }) },
+  });
+  assertEquals(await imports.commit(actor, ids[0]!, true), {
+    importId: ids[0]!,
+    peopleCreated: 0,
+    peopleReused: 1,
+    peopleSkippedDeleted: 1,
+    status: "completed",
+  });
+  // The deleted person keeps the identity, so the next run lands on them
+  // again, but nothing is created for them and their avatar is not linked.
+  assertEquals(calls, [
+    ["retarget", "entity-ada", "deleted"],
+    ["retarget", "entity-bob", "kept"],
+    ["complete", {
+      peopleCreated: 0,
+      peopleReused: 1,
+      peopleSkippedDeleted: 1,
+    }],
+  ]);
 });

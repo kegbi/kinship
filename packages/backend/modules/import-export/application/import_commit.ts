@@ -9,6 +9,13 @@
  * the same person again. An avatar is only represented for a contact that was
  * created, because a reused person already has whatever avatar they have.
  *
+ * A person who is deleted (by a member, or already deleted in the Monica
+ * source) stays deleted (REL-065): the contact is retargeted to them, as a
+ * reused one is, so every later run lands on them again, but nothing is
+ * created and nothing from the row — details, note, or avatar — is written
+ * onto them, and the report counts them as skipped because deleted rather
+ * than as reused. An archived person is reused.
+ *
  * A vCard or CSV contact (GAP-050) brings more than the person: its contact
  * methods, addresses, dates, and work are written through the people
  * boundary and its note through the interactions boundary, all in the same
@@ -55,21 +62,19 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           | Awaited<ReturnType<typeof dependencies.contactTypes.byKind>>
           | undefined;
         const committedContacts = new Map<string, {
-          readonly reused: boolean;
+          readonly outcome: "created" | "deleted" | "reused";
           readonly targetPersonId: string;
         }>();
         for (const contact of prepared.contacts) {
-          const reused = contact.previousTargetPersonId
-            ? await dependencies.people.exists({
+          const presence = contact.previousTargetPersonId
+            ? await dependencies.people.presence({
               actor,
               personId: contact.previousTargetPersonId,
               transaction,
             })
-            : false;
-          const targetPersonId = reused
-            ? contact.previousTargetPersonId!
-            : contact.targetPersonId;
-          if (reused) {
+            : "absent";
+          if (presence !== "absent") {
+            const targetPersonId = contact.previousTargetPersonId!;
             await dependencies.repository.retargetContact(
               importId,
               contact.entityId,
@@ -77,11 +82,12 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               transaction,
             );
             committedContacts.set(contact.sourcePrimaryKey, {
-              reused: true,
+              outcome: presence === "active" ? "reused" : "deleted",
               targetPersonId,
             });
             continue;
           }
+          const targetPersonId = contact.targetPersonId;
           await dependencies.people.create({
             actor,
             occurredAt,
@@ -113,13 +119,13 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             }
           }
           committedContacts.set(contact.sourcePrimaryKey, {
-            reused: false,
+            outcome: "created",
             targetPersonId,
           });
         }
         for (const avatar of prepared.avatars) {
           const person = committedContacts.get(avatar.personSourcePrimaryKey);
-          if (!person || person.reused) continue;
+          if (person?.outcome !== "created") continue;
           await dependencies.files.representMissing({
             actor,
             byteSize: avatar.byteSize,
@@ -135,30 +141,31 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             transaction,
           });
         }
-        const peopleCreated = [...committedContacts.values()].filter(
-          (contact) => !contact.reused,
-        ).length;
-        const peopleReused = prepared.contacts.length - peopleCreated;
+        const outcomes = [...committedContacts.values()].map((contact) =>
+          contact.outcome
+        );
+        const count = (outcome: "created" | "deleted" | "reused") =>
+          outcomes.filter((item) => item === outcome).length;
+        const counts = {
+          peopleCreated: count("created"),
+          peopleReused: count("reused"),
+          peopleSkippedDeleted: count("deleted"),
+        };
         await dependencies.audit.record({
           action: "committed",
           actor,
           importId,
           occurredAt,
-          payload: { peopleCreated, peopleReused },
+          payload: counts,
           transaction,
         });
         await dependencies.repository.complete(
           actor,
           importId,
-          { peopleCreated, peopleReused },
+          counts,
           transaction,
         );
-        return {
-          importId,
-          peopleCreated,
-          peopleReused,
-          status: "completed" as const,
-        };
+        return { importId, ...counts, status: "completed" as const };
       });
     },
   };

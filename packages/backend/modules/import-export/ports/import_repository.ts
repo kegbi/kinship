@@ -11,10 +11,12 @@
  * confirms twice commits once. `retargetContact` is how the commit records
  * that a staged contact landed on a person who was already there, which is
  * what makes re-importing the same file idempotent rather than duplicating
- * everybody.
+ * everybody. A contact whose person was deleted since is retargeted too, so
+ * every later run finds the same deleted person and skips them again.
  */
 
 import type {
+  ImportCommitCounts,
   ImportReport,
   ImportSummary,
   PreparedImportCommit,
@@ -36,7 +38,7 @@ export interface ImportRepository {
   complete(
     actor: ImportActor,
     importId: string,
-    counts: { readonly peopleCreated: number; readonly peopleReused: number },
+    counts: ImportCommitCounts,
     transaction: ImportTransaction,
   ): Promise<void>;
   get(actor: ImportActor, importId: string): Promise<ImportSummary | undefined>;

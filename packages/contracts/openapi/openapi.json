@@ -1325,6 +1325,10 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "peopleSkippedDeleted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "status": {
                       "const": "completed"
                     }
@@ -1333,6 +1337,7 @@
                     "importId",
                     "peopleCreated",
                     "peopleReused",
+                    "peopleSkippedDeleted",
                     "status"
                   ],
                   "additionalProperties": false

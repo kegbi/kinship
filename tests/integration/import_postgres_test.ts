@@ -30,7 +30,7 @@ import {
 import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
   requireDatabaseUrl,
@@ -358,6 +358,166 @@ Deno.test({
     }
   },
 });
+/** Deletes a person as a member does: read the impact, then confirm it. */
+async function deletePerson(fixture: Fixture, personId: string) {
+  const impact = await api.request(
+    fixture,
+    `/api/v1/people/${personId}/deletion-impact`,
+  );
+  const { impact: body } = await impact.json() as {
+    readonly impact: {
+      readonly confirmation: string;
+      readonly person: { readonly updatedAt: string };
+    };
+  };
+  const deleted = await api.request(
+    fixture,
+    `/api/v1/people/${personId}`,
+    "DELETE",
+    {
+      confirmation: body.confirmation,
+      expectedUpdatedAt: body.person.updatedAt,
+    },
+  );
+  assertEquals(deleted.status, 200, "the member deletes the person");
+}
+
+/** Archives a person as a member does. */
+async function archivePerson(fixture: Fixture, personId: string) {
+  const identity = await api.request(fixture, `/api/v1/people/${personId}`);
+  const { person } = await identity.json() as {
+    readonly person: { readonly updatedAt: string };
+  };
+  const archived = await api.request(
+    fixture,
+    `/api/v1/people/${personId}/archive`,
+    "POST",
+    { expectedUpdatedAt: person.updatedAt },
+  );
+  assertEquals(archived.status, 200, "the member archives the person");
+}
+
+Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an archived one, and says so", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(`import-deleted-${suffix}@example.test`);
+  const foreign = await register(
+    `import-deleted-foreign-${suffix}@example.test`,
+  );
+  const twoContacts = {
+    ...source,
+    tables: {
+      contacts: [
+        source.tables.contacts[0],
+        { id: "customer:43", first_name: "Grace", last_name: "Hopper" },
+        // Already deleted in the Monica source: made deleted, then skipped.
+        {
+          id: "customer:44",
+          first_name: "Alan",
+          last_name: "Turing",
+          deleted_at: "2020-01-01T00:00:00Z",
+        },
+      ],
+    },
+  };
+  const importOnce = async (fixture: Fixture) => {
+    const dry = await request(fixture, "/api/v1/imports/dry-runs", "POST", {
+      source: twoContacts,
+    });
+    const { importId } = await dry.json() as { importId: string };
+    const commit = () =>
+      request(fixture, `/api/v1/imports/${importId}/commit`, "POST", {
+        confirmed: true,
+      });
+    const committed = await commit();
+    assertEquals(committed.status, 200);
+    const body = await committed.json() as Record<string, unknown>;
+    // Committing the same run again answers with the same report.
+    assertEquals(await (await commit()).json(), body);
+    const { importId: _, status, ...counts } = body;
+    assertEquals(status, "completed");
+    return counts;
+  };
+  const counts = (created: number, reused: number, deleted: number) => ({
+    peopleCreated: created,
+    peopleReused: reused,
+    peopleSkippedDeleted: deleted,
+  });
+  assertEquals(await importOnce(primary), counts(3, 0, 0));
+  const people = await sql<{ given_name: string; id: string }[]>`
+    select id::text, given_name from crm.people
+    where workspace_id = ${primary.workspaceId}::uuid order by given_name`;
+  const [ada, alan, grace] = people;
+  assert(
+    ada?.given_name === "Ada" && alan?.given_name === "Alan" &&
+      grace?.given_name === "Grace",
+    "three",
+  );
+  await deletePerson(primary, ada.id);
+  await archivePerson(primary, grace.id);
+  const before = await sql<{ files: string }[]>`
+    select count(*)::text as files from crm.files
+    where workspace_id = ${primary.workspaceId}::uuid`;
+
+  for (let run = 0; run < 2; run++) {
+    assertEquals(
+      await importOnce(primary),
+      counts(0, 1, 2),
+      `re-import ${run + 1} keeps both deleted people deleted`,
+    );
+  }
+  const after = await sql<
+    { archived: boolean; deleted: boolean; given_name: string }[]
+  >`
+    select given_name, deleted_at is not null as deleted,
+      archived_at is not null as archived
+    from crm.people where workspace_id = ${primary.workspaceId}::uuid
+    order by given_name`;
+  assertEquals(after, [
+    { given_name: "Ada", deleted: true, archived: false },
+    { given_name: "Alan", deleted: true, archived: false },
+    { given_name: "Grace", deleted: false, archived: true },
+  ]);
+  // Nothing from Ada's row, her avatar included, was represented again.
+  assertEquals(
+    await sql<{ files: string }[]>`
+      select count(*)::text as files from crm.files
+      where workspace_id = ${primary.workspaceId}::uuid`,
+    before,
+  );
+  const [stats] = await sql<{ skipped: string }[]>`
+    select stats->>'peopleSkippedDeleted' as skipped from crm.data_imports
+    where workspace_id = ${primary.workspaceId}::uuid
+    order by completed_at desc limit 1`;
+  assertEquals(stats?.skipped, "2", "the count is kept on the run");
+
+  // The people boundary scopes `presence` by the actor's workspace, so
+  // another workspace's deleted person is absent there.
+  const connection = connectDatabase(databaseUrl);
+  try {
+    const presence = (fixture: Fixture, personId: string) =>
+      new PostgresImportTransaction(connection.db).run((transaction) =>
+        new PostgresPeopleImportBoundary(monicaDates).presence({
+          actor: {
+            memberId: fixture.memberId,
+            role: "owner",
+            userId: fixture.userId,
+            workspaceId: fixture.workspaceId,
+          },
+          personId,
+          transaction,
+        })
+      );
+    assertEquals(await presence(primary, ada.id), "deleted");
+    assertEquals(await presence(primary, grace.id), "active");
+    assertEquals(await presence(foreign, ada.id), "absent");
+  } finally {
+    await connection.destroy();
+  }
+
+  // Another workspace's deleted person decides nothing here.
+  assertEquals(await importOnce(foreign), counts(3, 0, 0));
+});
+
 Deno.test({
   name: "IMPORT-001 PostgreSQL resources close",
   sanitizeOps: false,

@@ -175,6 +175,8 @@ export type NewImportAction =
     readonly importId: string;
     readonly created: number;
     readonly reused: number;
+    /** People a member deleted since an earlier import; they stay deleted. */
+    readonly skippedDeleted: number;
   };
 
 export const initialNewImport: NewImportState = {
@@ -286,7 +288,13 @@ export function newImportReducer(
         committed: action.importId,
         committing: false,
         status:
-          `Import completed: ${action.created} created, ${action.reused} reused.`,
+          `Import completed: ${action.created} created, ${action.reused} reused${
+            action.skippedDeleted === 0
+              ? ""
+              : `, ${action.skippedDeleted} skipped because ${
+                action.skippedDeleted === 1 ? "it was" : "they were"
+              } deleted`
+          }.`,
       };
   }
 }

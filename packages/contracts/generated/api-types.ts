@@ -5455,6 +5455,7 @@ export interface operations {
                         readonly importId: string;
                         readonly peopleCreated: number;
                         readonly peopleReused: number;
+                        readonly peopleSkippedDeleted: number;
                         /** @constant */
                         readonly status: "completed";
                     };

@@ -123,6 +123,8 @@ export const commitImport = defineRoute({
           importId: z.uuid(),
           peopleCreated: z.number().int().min(0),
           peopleReused: z.number().int().min(0),
+          /** People an earlier import made that a member deleted since (REL-065). */
+          peopleSkippedDeleted: z.number().int().min(0),
           status: z.literal("completed"),
         }),
       },

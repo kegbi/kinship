@@ -868,7 +868,7 @@ Playwright test carrying its stable flow ID.
       2026-09-28: store the decision in a workspace-scoped table in the same
       schema v9 as `REL-061`, so every member shares it.
 
-- [ ] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
+- [x] **REL-065 — A re-import reuses a person who was deleted.** Found reviewing
       GAP-050: the Monica, vCard, and CSV commits reuse an earlier import's
       person whenever `PeopleImportBoundary.exists` finds the row, and it does
       not look at `deleted_at`. So a member who deleted an imported person and
@@ -878,6 +878,17 @@ Playwright test carrying its stable flow ID.
       (recreating them) and change all three formats together. Product-owner
       decision 2026-09-28: keep deleted people deleted in all three formats, and
       report them as skipped because they were deleted rather than as reused.
+      Delivered 2026-09-28: the people import boundary's `presence` answers
+      absent, active (archived included), or deleted, in the importing workspace
+      only. In the Monica, vCard, and CSV commits a deleted person is neither
+      recreated nor reused and gets nothing from the source row; the commit
+      reports and stores `peopleSkippedDeleted` beside the created and reused
+      counts, the same on every re-run, and the vCard and CSV dry runs say the
+      contact will be skipped and stay deleted. A contact already deleted in the
+      Monica source counts the same way. The import result line adds "N skipped
+      because they were deleted". PostgreSQL, unit, island, and
+      IMPORT-001/IMPORT-002 E2E tests cover it; the IMPORT-002 spec deletes
+      through the API.
 
 - [x] **REL-066 — The bulk tag picker only lists the tag options already
       loaded.** Found reviewing GAP-051: in a workspace with more than 20 tags,

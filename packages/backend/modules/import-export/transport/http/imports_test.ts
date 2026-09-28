@@ -74,7 +74,7 @@ const imports = createImportManagement({
   people: {
     addDetails: () => Promise.resolve(),
     create: () => Promise.resolve(),
-    exists: () => Promise.resolve(true),
+    presence: () => Promise.resolve("active" as const),
     linkAvatar: () => Promise.resolve(),
   },
   repository,

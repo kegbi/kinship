@@ -103,6 +103,7 @@ describe("IMPORT-001 settings import", () => {
         importId,
         peopleCreated: 1,
         peopleReused: 0,
+        peopleSkippedDeleted: 0,
         status: "completed",
       }),
       [DRY_RUN]: dryRun(),

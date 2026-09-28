@@ -94,7 +94,7 @@ P0 must prove all of the following before broader feature work:
 - reminder delivery is retry-safe and idempotent;
 - missing attachments have an explicit recoverable state;
 - Monica import supports dry-run, atomic commit, complete diagnostics, and an
-  idempotent rerun;
+  idempotent rerun that leaves a person a member deleted deleted;
 - imported legacy credentials never become active.
 
 Before destructive personal or workspace lifecycle work ships, `AUTH-005` and

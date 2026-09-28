@@ -91,12 +91,36 @@ describe("IMPORT-001 import state", () => {
         created: 1,
         importId: "i",
         reused: 2,
+        skippedDeleted: 0,
         type: "committed",
       }),
     ).toMatchObject({
       committed: "i",
       status: "Import completed: 1 created, 2 reused.",
     });
+    // A person a member deleted since stays deleted and is said so (REL-065).
+    expect(
+      newImportReducer(committing, {
+        created: 0,
+        importId: "i",
+        reused: 1,
+        skippedDeleted: 2,
+        type: "committed",
+      }).status,
+    ).toBe(
+      "Import completed: 0 created, 1 reused, 2 skipped because they were deleted.",
+    );
+    expect(
+      newImportReducer(committing, {
+        created: 0,
+        importId: "i",
+        reused: 0,
+        skippedDeleted: 1,
+        type: "committed",
+      }).status,
+    ).toBe(
+      "Import completed: 0 created, 0 reused, 1 skipped because it was deleted.",
+    );
     expect(reduce({ message: "d", type: "detected" }).detection).toBe("d");
     expect(reduce({ message: "s", type: "status" }).status).toBe("s");
     expect(reduce({ type: "member" }).phase).toBe("member");

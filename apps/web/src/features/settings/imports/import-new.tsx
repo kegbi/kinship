@@ -267,6 +267,7 @@ export function NewImport(
       created: result.data.peopleCreated,
       importId: result.data.importId,
       reused: result.data.peopleReused,
+      skippedDeleted: result.data.peopleSkippedDeleted,
       type: "committed",
     });
   };

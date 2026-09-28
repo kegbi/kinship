@@ -1,4 +1,5 @@
 export type {
+  ImportCommitCounts,
   ImportCommitResult,
   ImportListResult,
   ImportReadResult,

@@ -72,6 +72,9 @@ export interface ImportedPersonDetails {
   };
 }
 
+/** Where an earlier import's person stands, as `presence` answers. */
+export type PersonImportPresence = "absent" | "active" | "deleted";
+
 export interface PeopleImportBoundary {
   /**
    * Writes a newly imported person's contact methods, addresses, dates, and
@@ -91,11 +94,17 @@ export interface PeopleImportBoundary {
     readonly person: ImportedPerson;
     readonly transaction: PeopleImportTransaction;
   }): Promise<void>;
-  exists(command: {
+  /**
+   * Where a person an earlier import made stands in the workspace (REL-065):
+   * `absent` when there is no such row, `deleted` when a member deleted them,
+   * and `active` otherwise, archived included. An import reuses an active
+   * person, makes an absent one again, and leaves a deleted one deleted.
+   */
+  presence(command: {
     readonly actor: PeopleImportActor;
     readonly personId: string;
     readonly transaction: PeopleImportTransaction;
-  }): Promise<boolean>;
+  }): Promise<PersonImportPresence>;
   linkAvatar(command: {
     readonly actor: PeopleImportActor;
     readonly fileId: string;

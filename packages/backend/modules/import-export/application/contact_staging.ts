@@ -60,8 +60,9 @@ export function createContactStaging(
       transaction,
       workspaceId: actor.workspaceId,
     });
-    // An earlier person is only reused while they are still there, exactly
-    // as the commit decides; one removed since is imported again.
+    // An earlier person is reused while they are still there, exactly as the
+    // commit decides; one deleted since is skipped and stays deleted
+    // (REL-065), and one removed altogether is imported again.
     const earlier = await dependencies.contacts.history({
       actor,
       fingerprint,
@@ -71,18 +72,19 @@ export function createContactStaging(
     });
     const history = {
       conflicts: 0,
+      deleted: 0,
       fileImportedBefore: earlier.fileImportedBefore,
       reused: 0,
     };
     for (const match of earlier.matches) {
-      if (
-        !(await dependencies.people.exists({
-          actor,
-          personId: match.targetPersonId,
-          transaction,
-        }))
-      ) continue;
-      if (match.changed) history.conflicts++;
+      const presence = await dependencies.people.presence({
+        actor,
+        personId: match.targetPersonId,
+        transaction,
+      });
+      if (presence === "absent") continue;
+      if (presence === "deleted") history.deleted++;
+      else if (match.changed) history.conflicts++;
       else history.reused++;
     }
     return contactImportReport(

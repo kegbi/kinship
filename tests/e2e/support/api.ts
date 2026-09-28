@@ -73,3 +73,31 @@ export async function createPerson(
   expect(response.status()).toBe(201);
   return (await response.json() as { person: { id: string } }).person.id;
 }
+
+/**
+ * Deletes a person in the session's active workspace as a member does: reads
+ * the deletion impact, then confirms it; expects the API's 200. `request` is
+ * the signed-in page's `page.request`.
+ */
+export async function deletePerson(
+  request: APIRequestContext,
+  personId: string,
+): Promise<void> {
+  const impact = await request.get(
+    `${origin}/api/v1/people/${personId}/deletion-impact`,
+  );
+  expect(impact.status()).toBe(200);
+  const { impact: body } = await impact.json() as {
+    readonly impact: {
+      readonly confirmation: string;
+      readonly person: { readonly updatedAt: string };
+    };
+  };
+  expect((await request.delete(`${origin}/api/v1/people/${personId}`, {
+    data: {
+      confirmation: body.confirmation,
+      expectedUpdatedAt: body.person.updatedAt,
+    },
+    headers: { origin },
+  })).status()).toBe(200);
+}

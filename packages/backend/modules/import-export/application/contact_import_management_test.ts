@@ -105,7 +105,7 @@ function harness(
         recorded.calls.push(["create", command.person.id]);
         return Promise.resolve();
       },
-      exists: () => Promise.resolve(true),
+      presence: () => Promise.resolve("active" as const),
       linkAvatar: () => Promise.resolve(),
     },
     transaction: { run: (work) => work({ opaque: {} }) },
@@ -148,7 +148,7 @@ Deno.test("[IMPORT-002] a vCard dry run stages every card and reports what it lo
 });
 
 Deno.test("[IMPORT-002] an earlier import is reused, a changed one is a conflict, and a removed person is imported again", async () => {
-  const exists = new Map([["kept", true], ["changed", true], ["gone", false]]);
+  const standing = new Map([["kept", "active"], ["changed", "active"]]);
   const { imports } = harness({
     contactRepository: {
       history: () =>
@@ -164,8 +164,10 @@ Deno.test("[IMPORT-002] an earlier import is reused, a changed one is a conflict
     people: {
       addDetails: () => Promise.resolve(),
       create: () => Promise.resolve(),
-      exists: (command) =>
-        Promise.resolve(exists.get(command.personId) ?? false),
+      presence: (command) =>
+        Promise.resolve(
+          standing.get(command.personId) === "active" ? "active" : "absent",
+        ),
       linkAvatar: () => Promise.resolve(),
     },
   });
@@ -387,6 +389,7 @@ Deno.test("[IMPORT-002] a committed contact writes its details once, and a reuse
     importId: "run",
     peopleCreated: 1,
     peopleReused: 1,
+    peopleSkippedDeleted: 0,
     status: "completed",
   });
   assertEquals(recorded.calls, [
@@ -399,5 +402,103 @@ Deno.test("[IMPORT-002] a committed contact writes its details once, and a reuse
     }],
     ["addNote", "person-new", "First programmer"],
     ["retarget", "entity-old", "person-old"],
+  ]);
+});
+
+Deno.test("[IMPORT-002] a deleted person is reported as skipped in the dry run and gets nothing on commit", async () => {
+  const standing = new Map<string, "active" | "deleted">([
+    ["kept", "active"],
+    ["deleted", "deleted"],
+  ]);
+  const people = {
+    addDetails: (command: { readonly personId: string }) => {
+      recorded.calls.push(["addDetails", command.personId]);
+      return Promise.resolve();
+    },
+    create: (command: { readonly person: { readonly id: string } }) => {
+      recorded.calls.push(["create", command.person.id]);
+      return Promise.resolve();
+    },
+    linkAvatar: () => Promise.resolve(),
+    presence: (command: { readonly personId: string }) =>
+      Promise.resolve(standing.get(command.personId) ?? ("absent" as const)),
+  };
+  const staged = (key: string, previous: string) => ({
+    archived: false,
+    contact: {
+      addresses: [],
+      dates: [],
+      emails: ["x@example.com"],
+      givenName: key,
+      note: "Kept note",
+      phones: [],
+      urls: [],
+    },
+    entityId: `entity-${key}`,
+    givenName: key,
+    isDeceased: false,
+    isPartial: false,
+    isStarred: false,
+    previousTargetPersonId: previous,
+    sourcePrimaryKey: `entity:${key}`,
+    targetPersonId: `unused-${key}`,
+  });
+  const { imports, recorded } = harness({
+    contactRepository: {
+      history: () =>
+        Promise.resolve({
+          fileImportedBefore: true,
+          matches: [
+            { changed: false, row: 1, targetPersonId: "kept" },
+            { changed: false, row: 2, targetPersonId: "deleted" },
+          ],
+        }),
+    },
+    people,
+    repository: {
+      prepareCommit: (_actor, importId) =>
+        Promise.resolve({
+          avatars: [],
+          contacts: [staged("Ada", "kept"), staged("Bob", "deleted")],
+          importId,
+          status: "ready" as const,
+        }),
+    },
+  });
+  const dryRun = await imports.dryRun(actor, {
+    format: "vcard",
+    text: [ADA_CARD, BOB_CARD].join("\r\n"),
+  });
+  assert(dryRun.status === "dry_run", JSON.stringify(dryRun));
+  // A deleted person is matched, so the file is not said to differ.
+  assertEquals(
+    dryRun.report.diagnostics.filter((item) =>
+      ["already-imported", "deleted-person-skipped", "file-imported-before"]
+        .includes(item.code)
+    ),
+    [{
+      code: "already-imported",
+      message: "1 contact was imported before and will be reused.",
+      severity: "info",
+    }, {
+      code: "deleted-person-skipped",
+      message:
+        "1 contact was imported before and its person was deleted since; it will be skipped and stay deleted.",
+      severity: "skipped",
+    }],
+  );
+  recorded.calls.length = 0;
+  assertEquals(await imports.commit(actor, "run", true), {
+    importId: "run",
+    peopleCreated: 0,
+    peopleReused: 1,
+    peopleSkippedDeleted: 1,
+    status: "completed",
+  });
+  // Neither person is written to, the deleted one's details and note
+  // included; both keep their identity for the next run.
+  assertEquals(recorded.calls, [
+    ["retarget", "entity-Ada", "kept"],
+    ["retarget", "entity-Bob", "deleted"],
   ]);
 });

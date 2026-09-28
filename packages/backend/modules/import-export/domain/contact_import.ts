@@ -125,6 +125,11 @@ export interface ContactImportHistory {
   /** Rows whose identity an earlier import holds with different content. */
   readonly conflicts: number;
   /**
+   * Rows an earlier import brought in whose person a member deleted since;
+   * they are skipped and the person stays deleted (REL-065).
+   */
+  readonly deleted?: number;
+  /**
    * Whether an earlier completed import of the same format read exactly this
    * file; then any row it does not match was edited or mapped differently.
    */
@@ -510,6 +515,20 @@ export function contactImportReport(
       severity: "info",
     });
   }
+  const deleted = history.deleted ?? 0;
+  if (deleted > 0) {
+    diagnostics.push({
+      code: "deleted-person-skipped",
+      message: `${deleted} ${
+        deleted === 1 ? "contact was" : "contacts were"
+      } imported before and ${
+        deleted === 1 ? "its person was" : "their people were"
+      } deleted since; ${
+        deleted === 1 ? "it" : "they"
+      } will be skipped and stay deleted.`,
+      severity: "skipped",
+    });
+  }
   if (history.conflicts > 0) {
     const one = history.conflicts === 1;
     diagnostics.push({
@@ -522,7 +541,7 @@ export function contactImportReport(
       severity: "warning",
     });
   }
-  const unmatched = mapped - history.reused - history.conflicts;
+  const unmatched = mapped - history.reused - history.conflicts - deleted;
   if (history.fileImportedBefore && unmatched > 0) {
     diagnostics.push({
       code: "file-imported-before",

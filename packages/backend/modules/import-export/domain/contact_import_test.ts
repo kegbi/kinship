@@ -249,7 +249,7 @@ Deno.test("[GAP-050] the dry-run report names every loss once and stays quiet ab
     missingTypes: { url: 3 },
     organizationsWithoutTitle: 1,
     skipped: { Birthday: 2 },
-  }, { conflicts: 2, reused: 3 });
+  }, { conflicts: 2, deleted: 2, reused: 3 });
   same(plural.diagnostics.map((diagnostic) => diagnostic.message), [
     "2 CSV values will be skipped: Birthday (2).",
     "1 row with no name, email, or phone will be skipped.",
@@ -257,6 +257,7 @@ Deno.test("[GAP-050] the dry-run report names every loss once and stays quiet ab
     "3 websites will be skipped because the workspace has no url contact type. Add an Email, Phone, or Website contact type in Personalization and set its kind.",
     "1 company without a job title will be skipped.",
     "3 contacts were imported before and will be reused.",
+    "2 contacts were imported before and their people were deleted since; they will be skipped and stay deleted.",
     "2 contacts share an identity with an earlier import but changed since; the existing people are kept unchanged.",
   ]);
 });

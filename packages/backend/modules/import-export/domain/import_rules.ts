@@ -135,10 +135,8 @@ export type PreparedImportCommit =
     readonly importId: string;
     readonly status: "ready";
   }
-  | {
+  | ImportCommitCounts & {
     readonly importId: string;
-    readonly peopleCreated: number;
-    readonly peopleReused: number;
     readonly status: "completed";
   }
   | Failure<"not-found">;
@@ -192,12 +190,22 @@ export type ImportReadResult =
   }
   | Failure<"forbidden" | "not-found">;
 
+/**
+ * What a commit did with each staged contact. A contact an earlier import
+ * made a person of is reused while that person is active, archived included,
+ * and skipped while a member has deleted them (REL-065): a deleted person
+ * stays deleted and nothing from the source row is written onto them.
+ */
+export interface ImportCommitCounts {
+  readonly peopleCreated: number;
+  readonly peopleReused: number;
+  readonly peopleSkippedDeleted: number;
+}
+
 /** How a commit ends. */
 export type ImportCommitResult =
-  | {
+  | ImportCommitCounts & {
     readonly importId: string;
-    readonly peopleCreated: number;
-    readonly peopleReused: number;
     readonly status: "completed";
   }
   | Failure<"forbidden" | "not-found", "confirmation-required">;

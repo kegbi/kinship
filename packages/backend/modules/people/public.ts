@@ -203,6 +203,7 @@ export type {
   PeopleImportActor,
   PeopleImportBoundary,
   PeopleImportTransaction,
+  PersonImportPresence,
 } from "./application/import_people_boundary.ts";
 export type {
   ExportContactMethod,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { registerVerified } from "./support/api.ts";
+import { deletePerson, registerVerified } from "./support/api.ts";
 import { databaseValue, sqlLiteral } from "./support/database.ts";
 import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
@@ -61,7 +61,7 @@ test("[IMPORT-002] imports contacts from vCard and CSV without duplicates", {
       `select count(*)::text from crm.people where workspace_id = '${workspaceId}'::uuid`,
     );
 
-  const importVCard = async (expected: string) => {
+  const importVCard = async (expected: string, diagnostic?: string) => {
     await openNewImport(page, "vCard");
     await page.getByLabel("vCard file").setInputFiles({
       buffer: fixture("contacts.vcf"),
@@ -78,11 +78,30 @@ test("[IMPORT-002] imports contacts from vCard and CSV without duplicates", {
     await expect(page.locator("[data-import-diagnostics]")).toContainText(
       "1 phone number will be skipped",
     );
+    if (diagnostic) {
+      await expect(page.locator("[data-import-diagnostics]")).toContainText(
+        diagnostic,
+      );
+    }
     await commit(page, expected);
   };
   await importVCard("2 created, 0 reused");
   await expectAccessible(page);
   await importVCard("0 created, 2 reused");
+  expect(people()).toBe("2");
+
+  // A person the member deleted stays deleted on the next import and is
+  // reported as skipped (REL-065).
+  await deletePerson(
+    page.request,
+    databaseValue(
+      `select id::text from crm.people where workspace_id = '${workspaceId}'::uuid and given_name = 'Charles'`,
+    ),
+  );
+  await importVCard(
+    "0 created, 1 reused, 1 skipped because it was deleted",
+    "1 contact was imported before and its person was deleted since; it will be skipped and stay deleted.",
+  );
   expect(people()).toBe("2");
 
   const stageCsv = async () => {

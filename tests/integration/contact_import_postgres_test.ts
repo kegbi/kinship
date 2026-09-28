@@ -62,6 +62,7 @@ async function importVCard(fixture: SignedInFixture, text: string) {
     committed: committed.body as {
       peopleCreated: number;
       peopleReused: number;
+      peopleSkippedDeleted: number;
     },
     importId: String(staged.body.importId),
     report: staged.body.report as Report,
@@ -100,6 +101,45 @@ async function contactTypes(fixture: SignedInFixture) {
       .contactKind,
     "phone",
   );
+}
+
+/** Deletes a person as a member does: read the impact, then confirm it. */
+async function deletePerson(fixture: SignedInFixture, personId: string) {
+  const impact = await api.request(
+    fixture,
+    `/api/v1/people/${personId}/deletion-impact`,
+  );
+  const { impact: body } = await impact.json() as {
+    readonly impact: {
+      readonly confirmation: string;
+      readonly person: { readonly updatedAt: string };
+    };
+  };
+  const deleted = await api.request(
+    fixture,
+    `/api/v1/people/${personId}`,
+    "DELETE",
+    {
+      confirmation: body.confirmation,
+      expectedUpdatedAt: body.person.updatedAt,
+    },
+  );
+  assertEquals(deleted.status, 200, "the member deletes the person");
+}
+
+/** Archives a person as a member does. */
+async function archivePerson(fixture: SignedInFixture, personId: string) {
+  const identity = await api.request(fixture, `/api/v1/people/${personId}`);
+  const { person } = await identity.json() as {
+    readonly person: { readonly updatedAt: string };
+  };
+  const archived = await api.request(
+    fixture,
+    `/api/v1/people/${personId}/archive`,
+    "POST",
+    { expectedUpdatedAt: person.updatedAt },
+  );
+  assertEquals(archived.status, 200, "the member archives the person");
 }
 
 const ADA = [
@@ -203,6 +243,66 @@ Deno.test("[IMPORT-002] a vCard import writes each person's details once and re-
         join crm.people person on person.id = method.person_id
         where person.workspace_id = ${primary.workspaceId}::uuid) as methods`;
   assertEquals(counts, { people: "2", notes: "1", methods: "2" });
+});
+
+Deno.test("[IMPORT-002] a re-imported vCard leaves a deleted person deleted and writes nothing onto them", async () => {
+  const primary = await register("vcard-deleted");
+  await contactTypes(primary);
+  const file = `${ADA}\r\n${CHARLES}\r\n`;
+  assertEquals((await importVCard(primary, file)).committed.peopleCreated, 2);
+  const people = await sql<{ given_name: string; id: string }[]>`
+    select id::text, given_name from crm.people
+    where workspace_id = ${primary.workspaceId}::uuid order by given_name`;
+  const [ada, charles] = people;
+  assert(ada?.given_name === "Ada" && charles?.given_name === "Charles", "two");
+  await deletePerson(primary, ada.id);
+  await archivePerson(primary, charles.id);
+  const written = () =>
+    sql<{ dates: string; methods: string; notes: string; people: string }[]>`
+      select
+        (select count(*)::text from crm.people
+          where workspace_id = ${primary.workspaceId}::uuid) as people,
+        (select count(*)::text from crm.notes
+          where workspace_id = ${primary.workspaceId}::uuid) as notes,
+        (select count(*)::text from crm.person_contact_methods
+          where person_id = ${ada.id}::uuid) as methods,
+        (select count(*)::text from crm.person_dates
+          where person_id = ${ada.id}::uuid) as dates`;
+  const before = await written();
+
+  for (let run = 0; run < 2; run++) {
+    const again = await importVCard(primary, file);
+    assertEquals(
+      again.report.diagnostics
+        .filter((item) =>
+          ["already-imported", "deleted-person-skipped"].includes(item.code)
+        )
+        .map((item) => item.message),
+      [
+        "1 contact was imported before and will be reused.",
+        "1 contact was imported before and its person was deleted since; it will be skipped and stay deleted.",
+      ],
+    );
+    assertEquals(
+      again.committed,
+      {
+        importId: again.importId,
+        peopleCreated: 0,
+        peopleReused: 1,
+        peopleSkippedDeleted: 1,
+        status: "completed",
+      } as typeof again.committed,
+    );
+  }
+  assertEquals(await written(), before, "nothing new lands on Ada");
+  const lifecycle = await sql<{ archived: boolean; deleted: boolean }[]>`
+    select deleted_at is not null as deleted, archived_at is not null as archived
+    from crm.people where workspace_id = ${primary.workspaceId}::uuid
+    order by given_name`;
+  assertEquals(lifecycle, [
+    { deleted: true, archived: false },
+    { deleted: false, archived: true },
+  ]);
 });
 
 Deno.test("[IMPORT-002] a card whose UID was imported before but changed is a conflict and updates nothing", async () => {
@@ -530,6 +630,7 @@ Deno.test("[IMPORT-002] a file imported before under another mapping is flagged,
       committed: committed.body as {
         peopleCreated: number;
         peopleReused: number;
+        peopleSkippedDeleted: number;
       },
       messages: (mapped.body.report as Report).diagnostics.map((item) =>
         item.message
@@ -546,10 +647,26 @@ Deno.test("[IMPORT-002] a file imported before under another mapping is flagged,
   );
   assertEquals(remapped.committed.peopleCreated, 1);
 
-  // The Monica behaviour, kept (REL-063): a deleted person is reused.
-  await sql`update crm.people set deleted_at = now()
-    where workspace_id = ${primary.workspaceId}::uuid`;
+  // A person the member deleted stays deleted and is reported as skipped,
+  // in all three formats (REL-065).
+  const [hopper] = await sql<{ id: string }[]>`
+    select id::text from crm.people
+    where workspace_id = ${primary.workspaceId}::uuid
+      and family_name = 'Hopper'`;
+  assert(hopper, "the first mapping made Grace Hopper");
+  await deletePerson(primary, hopper.id);
   const again = await importCsv(["givenName", "familyName"]);
+  assert(
+    again.messages.includes(
+      "1 contact was imported before and its person was deleted since; it will be skipped and stay deleted.",
+    ),
+    again.messages.join("\n"),
+  );
   assertEquals(again.committed.peopleCreated, 0);
-  assertEquals(again.committed.peopleReused, 1);
+  assertEquals(again.committed.peopleReused, 0);
+  assertEquals(again.committed.peopleSkippedDeleted, 1);
+  const [deleted] = await sql<{ deleted: boolean }[]>`
+    select deleted_at is not null as deleted from crm.people
+    where id = ${hopper.id}::uuid`;
+  assertEquals(deleted?.deleted, true);
 });

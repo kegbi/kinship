@@ -66,6 +66,7 @@ export function commitImport(
       readonly importId: string;
       readonly peopleCreated: number;
       readonly peopleReused: number;
+      readonly peopleSkippedDeleted: number;
       readonly status: "completed";
     }
   >

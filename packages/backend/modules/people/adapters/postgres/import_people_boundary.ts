@@ -1,6 +1,9 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import type { PeopleImportBoundary } from "../../application/import_people_boundary.ts";
+import type {
+  PeopleImportBoundary,
+  PersonImportPresence,
+} from "../../application/import_people_boundary.ts";
 import {
   normalizeImportantDate,
   validateImportantDate,
@@ -19,6 +22,9 @@ import { PostgresProfileFactRepository } from "./profile_fact_repository.ts";
  * The import use case revalidates the actor under lock and refuses anyone but
  * an owner or admin before it reaches this boundary (see the
  * `ActorRevalidation` port), so the statements below scope by workspace alone.
+ *
+ * `presence` (REL-065) tells a deleted person from an active one, so an
+ * import leaves a person the member deleted deleted instead of reusing them.
  *
  * `addDetails` (GAP-050) writes a vCard or CSV contact's people-owned rows
  * through the same repositories and rules the profile editors use, and hands
@@ -143,17 +149,18 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
     }
   }
 
-  async exists(
-    command: Parameters<PeopleImportBoundary["exists"]>[0],
-  ): Promise<boolean> {
-    const result = await sql<{ readonly exists: boolean }>`
-      select exists (
-        select 1 from crm.people person
-        where person.id = ${command.personId}::uuid
-          and person.workspace_id = ${command.actor.workspaceId}::uuid
-      ) as exists
+  async presence(
+    command: Parameters<PeopleImportBoundary["presence"]>[0],
+  ): Promise<PersonImportPresence> {
+    const result = await sql<{ readonly deleted: boolean }>`
+      select person.deleted_at is not null as deleted
+      from crm.people person
+      where person.id = ${command.personId}::uuid
+        and person.workspace_id = ${command.actor.workspaceId}::uuid
     `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]?.exists === true;
+    const row = result.rows[0];
+    if (!row) return "absent";
+    return row.deleted ? "deleted" : "active";
   }
 
   async linkAvatar(
