@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PersonLifeEvent } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   CONFIRM_REMOVE,
+  editorOpeningDisabled,
   eventDate,
   eventTitle,
   formValues,
@@ -232,10 +233,13 @@ describe("JOURNAL-002 life-event reducer", () => {
     const refused = lifeEventsReducer(busy, { type: "save-failed" });
     expect(refused.editor?.busy).toBe(false);
     expect(refused.focus?.target).toBe("form-state");
-    const saved = lifeEventsReducer(refused, {
-      event: event({ name: "Moved to Porto" }),
-      type: "saved",
-    });
+    const saved = lifeEventsReducer(
+      lifeEventsReducer(refused, { type: "saving" }),
+      {
+        event: event({ name: "Moved to Porto" }),
+        type: "saved",
+      },
+    );
     expect(saved.editor).toBeUndefined();
     expect(saved.events.map(eventTitle)).toEqual(["Moved to Porto"]);
     expect(saved.focus?.target).toBe("state");
@@ -310,7 +314,7 @@ describe("JOURNAL-002 life-event reducer", () => {
     const saved = lifeEventsReducer(opened, { event: event(), type: "saved" });
     expect(saved.removing).toBe("b");
     expect(rowControlsDisabled(saved, "b")).toEqual({
-      edit: false,
+      edit: true,
       remove: true,
     });
     const removed = lifeEventsReducer(saved, { id: "b", type: "removed" });
@@ -348,6 +352,63 @@ describe("JOURNAL-002 life-event reducer", () => {
       edit: true,
       remove: true,
     });
+  });
+
+  it("REL-055 locks editing the event being removed and no other", () => {
+    const removing = lifeEventsReducer(
+      ready([event(), event({ id: "b" })]),
+      { id: "b", type: "remove" },
+    );
+    expect(rowControlsDisabled(removing, "b").edit).toBe(true);
+    expect(rowControlsDisabled(removing, event().id).edit).toBe(false);
+  });
+
+  it("REL-055 locks opening another editor until the save answers", () => {
+    const opened = lifeEventsReducer(ready(), { type: "open" });
+    expect(editorOpeningDisabled(opened)).toBe(false);
+    const busy = lifeEventsReducer(opened, { type: "saving" });
+    expect(editorOpeningDisabled(busy)).toBe(true);
+    expect(
+      editorOpeningDisabled(lifeEventsReducer(busy, { type: "save-failed" })),
+    ).toBe(false);
+    expect(
+      editorOpeningDisabled(
+        lifeEventsReducer(busy, { event: event(), type: "saved" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("REL-055 a late save answer never closes an editor opened since", () => {
+    const busy = lifeEventsReducer(
+      lifeEventsReducer(ready(), { type: "open" }),
+      { type: "saving" },
+    );
+    // The card fails and recovers while the save is in flight; a new editor
+    // opens because the one that saves is gone.
+    const reopened = lifeEventsReducer(
+      lifeEventsReducer(
+        lifeEventsReducer(
+          lifeEventsReducer(busy, {
+            detail: "x",
+            status: "error",
+            type: "failed",
+          }),
+          { type: "retry" },
+        ),
+        { events: [event()], type: "loaded", types: [] },
+      ),
+      { event: event(), type: "open" },
+    );
+    const late = lifeEventsReducer(reopened, {
+      event: event({ id: "new", name: "Late" }),
+      type: "saved",
+    });
+    expect(late.editor).toBe(reopened.editor);
+    expect(late.focus).toBe(reopened.focus);
+    expect(late.events.map((item) => item.id)).toContain("new");
+    expect(lifeEventsReducer(reopened, { type: "save-failed" })).toBe(
+      reopened,
+    );
   });
 
   it("an archived person closes the editor and a restore reopens editing", () => {

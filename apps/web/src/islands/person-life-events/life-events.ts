@@ -311,15 +311,25 @@ function redrawn(
 }
 
 /**
+ * Whether the controls that open an editor (Add and every row's Edit) are
+ * disabled: while the editor saves, so its answer only ever meets the editor
+ * that asked (REL-055).
+ */
+export function editorOpeningDisabled(state: LifeEventsState): boolean {
+  return state.editor?.busy === true;
+}
+
+/**
  * Whether one row's edit and remove controls are disabled: every row's while
- * the editor saves, and the remove control of an event being removed.
+ * the editor saves, and both controls of an event being removed, so a save
+ * never revives or silently loses an event its removal deletes.
  */
 export function rowControlsDisabled(
   state: LifeEventsState,
   id: string,
 ): { readonly edit: boolean; readonly remove: boolean } {
-  const busy = state.editor?.busy === true;
-  return { edit: busy, remove: busy || state.removing === id };
+  const locked = editorOpeningDisabled(state) || state.removing === id;
+  return { edit: locked, remove: locked };
 }
 
 function withoutEditor(state: LifeEventsState): LifeEventsState {
@@ -372,8 +382,10 @@ export function lifeEventsReducer(
       return state.editor
         ? { ...state, editor: { ...state.editor, busy: true } }
         : state;
+    // A save answers only the busy editor that sent it; an editor opened
+    // after that one closed (a failed read, an archive) is left alone.
     case "save-failed":
-      return state.editor
+      return state.editor?.busy
         ? {
           ...state,
           editor: { ...state.editor, busy: false },
@@ -383,10 +395,13 @@ export function lifeEventsReducer(
     case "saved": {
       const { event } = action;
       const others = state.events.filter((item) => item.id !== event.id);
-      return redrawn(withoutEditor(state), {
-        events: sortLifeEvents([...others, event]),
-        focus: focus(state, "state"),
-      });
+      const events = sortLifeEvents([...others, event]);
+      return state.editor && !state.editor.busy
+        ? redrawn(state, { events })
+        : redrawn(withoutEditor(state), {
+          events,
+          focus: focus(state, "state"),
+        });
     }
     case "confirm":
       return { ...state, confirming: action.id, feedback: CONFIRM_REMOVE };

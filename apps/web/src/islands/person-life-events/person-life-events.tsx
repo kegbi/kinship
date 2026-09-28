@@ -65,6 +65,7 @@ import {
 } from "../core/index.ts";
 import {
   DISCARD_EDIT,
+  editorOpeningDisabled,
   eventDate,
   eventTitle,
   formValues,
@@ -303,6 +304,7 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
         <button
           className={buttonVariants({ className: "profile-section-cta" })}
           data-life-event-add=""
+          disabled={editorOpeningDisabled(state)}
           hidden={!writable}
           onClick={() => open()}
           ref={addButton}

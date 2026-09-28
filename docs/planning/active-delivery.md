@@ -670,12 +670,20 @@ Playwright test carrying its stable flow ID.
       acceptance navigates straight to `/app/compliance?next=…` instead of
       loading Today first, with a unit test; never by lengthening the timeout.
 
-- [ ] **REL-055 — The life-events "Add life event" button stays enabled during a
+- [x] **REL-055 — The life-events "Add life event" button stays enabled during a
       save.** Found reviewing GAP-046: the section header's button sits outside
       the editor form and is not locked by `rowControlsDisabled`. If a member
       opens a new editor while a save is in flight and accepts the discard
       prompt, the late `saved` answer closes the fresh editor. Disable or hide
       the button while `state.editor?.busy`, with a reducer or island test.
+      Delivered 2026-09-28: `editorOpeningDisabled` disables "Add life event"
+      and every row's Edit while a save is in flight, and `rowControlsDisabled`
+      also locks Edit and Remove on the row being removed, so a save can neither
+      revive nor silently lose an event its removal deletes. The reducer applies
+      a `saved` or `save-failed` answer only to a busy editor, so a late answer
+      merges its event without closing an editor opened since. Reducer and
+      island tests cover each lock; two unit assertions that encoded an
+      impossible sequence or the missing lock changed.
 
 - [ ] **REL-056 — Avatar files have gaps in their removal paths.** Found
       reviewing GAP-045: - The generic
@@ -882,6 +890,17 @@ Playwright test carrying its stable flow ID.
       about 0.5 and 0.8 points. Add one test that deep-links to a hidden section
       with focus on a real button before the workspace settles, and asserts
       focus stays there while the notice appears.
+
+- [ ] **REL-076 — An archive and restore during a life-event save allows two
+      saves in flight.** Found reviewing REL-055: save A in flight, the person
+      is archived from another island (the editor closes) and restored, and the
+      member opens Add and submits B. A late `saved` for A then closes B early,
+      and a late `save-failed` for A clears B's busy flag and re-enables the row
+      controls during B's save; if B then fails, its refusal is shown nowhere.
+      Very unlikely. Fix by keeping opening locked through an archive until the
+      pending save answers, or by giving each editor an id that `saved` and
+      `save-failed` must match (the existing `generation` would do if it stopped
+      resetting when the editor closes).
 
 ## Just-In-Time Technical Capabilities
 

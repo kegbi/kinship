@@ -405,6 +405,42 @@ describe("JOURNAL-002 maintaining a person's life events", () => {
     );
   });
 
+  it("REL-055 disables Add life event while a save is in flight", async () => {
+    markup();
+    const release: ((response: Response) => void)[] = [];
+    const pending = () =>
+      new Promise<Response>((resolve) => release.push(resolve));
+    stubApi({ [LIFE_EVENTS]: listed([]), [CREATE]: [pending, pending] });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(add());
+    await user.type(within(form()).getByLabelText("Name"), "Moved");
+    fireEvent.submit(form());
+    await waitFor(() => expect(form().getAttribute("aria-busy")).toBe("true"));
+    expect(add().disabled).toBe(true);
+    expect(add().textContent).toBe("Add life event");
+    await act(async () => {
+      release[0]?.(problemResponse(503, { detail: "Try again." }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(form().hasAttribute("aria-busy")).toBe(false));
+    expect(add().disabled).toBe(false);
+
+    fireEvent.submit(form());
+    await waitFor(() => expect(add().disabled).toBe(true));
+    await act(async () => {
+      release[1]?.(
+        jsonResponse(
+          { event: lifeEvent({ name: "Moved" }), status: "created" },
+          201,
+        ),
+      );
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(editorOpen()).toBe(false));
+    expect(add().disabled).toBe(false);
+  });
+
   it("REL-051 focuses the first field while the opening click is still handled", async () => {
     markup();
     stubApi({ [LIFE_EVENTS]: listed([lifeEvent()]) });
