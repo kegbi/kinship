@@ -102,6 +102,58 @@ describe("PEOPLE-008 duplicate review state", () => {
     ).toBeUndefined();
   });
 
+  it("reads the list again once the last shown pair of a cut-off review is dismissed (REL-090)", () => {
+    const other = { people: [person("c"), person("d")], reasons: pair.reasons };
+    const loaded = (truncated: boolean) =>
+      duplicatesReducer(initialDuplicates(), {
+        context: { nameOrder: "given_family_nickname", workspaceId: "w" },
+        pairs: [pair, other],
+        truncated,
+        type: "loaded",
+      });
+    const dismiss = (state: ReturnType<typeof loaded>, key: string) =>
+      duplicatesReducer(
+        duplicatesReducer(state, {
+          key,
+          names: "Ada",
+          type: "dismiss-started",
+        }),
+        { key, names: "Ada", type: "dismissed" },
+      );
+    // A pair left while others are shown, or the whole review was shown.
+    expect(dismiss(loaded(true), "a:b").refreshing).toBeUndefined();
+    expect(dismiss(dismiss(loaded(false), "a:b"), "c:d").refreshing)
+      .toBeUndefined();
+    let state = dismiss(dismiss(loaded(true), "a:b"), "c:d");
+    expect(state.refreshing).toBe(true);
+    expect(state.pairs).toEqual([]);
+    // No dismissal or merge starts while the list is read again.
+    expect(
+      duplicatesReducer(state, {
+        key: "e:f",
+        names: "Ada",
+        type: "dismiss-started",
+      }).dismissing,
+    ).toBeUndefined();
+    expect(duplicatesReducer(state, { index: 0, type: "merge-opened" }).merging)
+      .toBeUndefined();
+    const failed = duplicatesReducer(state, { type: "failed" });
+    expect(failed.status).toBe("ready");
+    expect(failed.refreshing).toBeUndefined();
+    expect(failed.truncated).toBe(true);
+    expect(failed.announcement).toBe(state.announcement);
+    state = duplicatesReducer(state, {
+      context: { nameOrder: "given_family_nickname", workspaceId: "w" },
+      pairs: [other],
+      truncated: false,
+      type: "loaded",
+    });
+    expect(state.refreshing).toBeUndefined();
+    expect(state.pairs).toEqual([other]);
+    expect(state.truncated).toBe(false);
+    expect(state.expanded).toBe(false);
+  });
+
   it("words the reasons and the count", () => {
     expect(reasonsText(["email", "name", "phone"])).toBe(
       "Same name · same email address · same phone number",
@@ -111,7 +163,14 @@ describe("PEOPLE-008 duplicate review state", () => {
       "1 pair of people may be the same person.",
     );
     expect(duplicatesSummary(20, true)).toBe(
-      "20 pairs of people may be the same person. Showing the first 20; merge some to see more.",
+      "20 pairs of people may be the same person. More are waiting: merge pairs or mark them as not duplicates to see the rest.",
+    );
+    // The last shown pair of a cut-off review left: more exist (REL-090).
+    expect(duplicatesSummary(0, true, true)).toBe(
+      "Looking for more possible duplicates…",
+    );
+    expect(duplicatesSummary(0, true)).toBe(
+      "More possible duplicates may be waiting. Reload the page to review them.",
     );
     expect(duplicatesSummary(0, false)).toBe(
       "No possible duplicates are left to review.",

@@ -221,11 +221,17 @@ A pair the duplicate review offers can instead be marked as not duplicates
 (`people.write`) under lock, which is also what ties `dismissed_by_member_id` to
 the pair's workspace, share-locks both undeleted people inside that workspace,
 stores the pair once in `person_duplicate_dismissals`, lower id first, and
-audits `people.duplicate-dismissed` with the two ids only. Dismissing a
-dismissed pair writes and audits nothing. The `people-directory` read model
-leaves a dismissed pair out of every member's review; a merge relinks the
-duplicate's decisions, and the people workspace-cascade digest includes them.
-There is no undo.
+audits `people.duplicate-dismissed` with the two ids only. That one event is
+filed under the lower-id person (`person_id` and `subject_id`), with both ids in
+its payload, so it appears in the workspace audit and in only that person's
+history; the other person's history does not show it (REL-090). The decision is
+one fact about the pair, and one audit row per decision keeps the workspace
+audit from listing it twice; a person history that names every pair a person
+belongs to would come from `person_duplicate_dismissals` itself, not from a
+second event. Dismissing a dismissed pair writes and audits nothing. The
+`people-directory` read model leaves a dismissed pair out of every member's
+review; a merge relinks the duplicate's decisions, and the people
+workspace-cascade digest includes them. There is no undo.
 
 ### Bulk directory actions
 

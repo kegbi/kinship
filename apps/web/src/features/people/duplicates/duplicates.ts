@@ -10,6 +10,11 @@
  * A pair can be merged or, when the two really are different people, marked
  * as not duplicates (REL-064). One of those runs at a time; a dismissed pair
  * leaves the list at once, and the review's one status line says so.
+ *
+ * A review cut off at its pair limit hides pairs the list never showed. Once
+ * its last shown pair is dismissed, the review reads the list once more
+ * (REL-090) instead of saying nothing is left; if that read fails, it says to
+ * reload the page.
  */
 
 import type { PeopleDuplicatePair } from "../../../../../../packages/contracts/generated/auth-client.ts";
@@ -25,6 +30,11 @@ export interface DuplicatesState {
   readonly merging?: number;
   /** The pair, by `pairKey`, being marked as not duplicates. */
   readonly dismissing?: string;
+  /**
+   * The last shown pair of a cut-off review left, and the list is being read
+   * again.
+   */
+  readonly refreshing?: true;
   /** What the review's status line says about the last dismissal. */
   readonly announcement?: string;
   /** The workspace the pairs were read in, and how the member reads names. */
@@ -67,16 +77,21 @@ export function duplicatesReducer(
   action: DuplicatesAction,
 ): DuplicatesState {
   switch (action.type) {
-    case "loaded":
+    case "loaded": {
+      const { refreshing: _refreshing, ...rest } = state;
       return {
-        ...state,
+        ...rest,
         context: action.context,
         pairs: action.pairs,
         status: "ready",
         truncated: action.truncated,
       };
-    case "failed":
-      return { ...state, status: "unavailable" };
+    }
+    case "failed": {
+      // A failed second read keeps the review, which says to reload.
+      const { refreshing, ...rest } = state;
+      return refreshing ? rest : { ...state, status: "unavailable" };
+    }
     case "toggled":
       return { ...state, expanded: !state.expanded };
     case "merge-opened":
@@ -89,7 +104,8 @@ export function duplicatesReducer(
       return rest;
     }
     case "dismiss-started":
-      return state.merging === undefined && state.dismissing === undefined
+      return state.merging === undefined && state.dismissing === undefined &&
+          !state.refreshing
         ? {
           ...state,
           announcement: `Marking ${action.names} as not duplicates…`,
@@ -98,10 +114,14 @@ export function duplicatesReducer(
         : state;
     case "dismissed": {
       const { dismissing: _dismissing, ...rest } = state;
+      const pairs = state.pairs.filter((pair) => pairKey(pair) !== action.key);
       return {
         ...rest,
         announcement: dismissedAnnouncement(action.names),
-        pairs: state.pairs.filter((pair) => pairKey(pair) !== action.key),
+        pairs,
+        ...(pairs.length === 0 && state.truncated
+          ? { refreshing: true as const }
+          : {}),
       };
     }
     case "dismiss-failed": {
@@ -128,11 +148,27 @@ export function reasonsText(
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function duplicatesSummary(count: number, truncated: boolean): string {
-  if (count === 0) return "No possible duplicates are left to review.";
+/**
+ * What the review says about its pairs. `truncated` means the server held
+ * more than it sent; `refreshing` that the list is being read again after
+ * its last shown pair left.
+ */
+export function duplicatesSummary(
+  count: number,
+  truncated: boolean,
+  refreshing = false,
+): string {
+  if (refreshing) return "Looking for more possible duplicates…";
+  if (count === 0) {
+    return truncated
+      ? "More possible duplicates may be waiting. Reload the page to review them."
+      : "No possible duplicates are left to review.";
+  }
   const pairs = `${count} ${count === 1 ? "pair" : "pairs"}`;
   return `${pairs} of people may be the same person.${
-    truncated ? ` Showing the first ${count}; merge some to see more.` : ""
+    truncated
+      ? " More are waiting: merge pairs or mark them as not duplicates to see the rest."
+      : ""
   }`;
 }
 

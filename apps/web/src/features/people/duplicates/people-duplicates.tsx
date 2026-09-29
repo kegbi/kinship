@@ -14,8 +14,11 @@
  * this never adds a second set.
  *
  * Its state moves through `duplicatesReducer`; it reads once, when it mounts,
- * through the island kit's `settle`, and never reads the list again: a
- * dismissal removes exactly the pair the server confirmed.
+ * through the island kit's `settle`, and a dismissal removes exactly the pair
+ * the server confirmed. The one exception (REL-090): when the last shown pair
+ * of a review cut off at its limit is dismissed, it reads the list once more
+ * through `useLatestRequest`, which drops the answer if the review unmounted.
+ * A merge needs no second read, because it leaves the page.
  */
 
 import {
@@ -35,7 +38,11 @@ import {
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { peopleDuplicateDismissed } from "../../../../../../packages/contracts/schemas/people.ts";
 import { Button } from "@/components/ui/button.tsx";
-import { mountIsland, settle } from "../../../islands/core/index.ts";
+import {
+  mountIsland,
+  settle,
+  useLatestRequest,
+} from "../../../islands/core/index.ts";
 import { displayPersonName } from "../../../lib/person-name.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { MergeDialog } from "../merge/merge-dialog.tsx";
@@ -76,6 +83,7 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
   const opener = useRef<HTMLElement | null>(null);
   const heading = useRef<HTMLHeadingElement | null>(null);
   const settled = useRef(props.onSettled);
+  const request = useLatestRequest();
 
   const load = async (): Promise<void> => {
     const session = await resolveWorkspaceSession();
@@ -142,6 +150,30 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
     heading.current?.focus();
   };
 
+  // The reducer marks the review `refreshing` once the last shown pair of a
+  // cut-off review leaves; this reads what else is there, once.
+  const reread = useEffectEvent(async (): Promise<void> => {
+    const context = state.context;
+    if (!context) return;
+    const again = await request(() =>
+      listPeopleDuplicates(context.workspaceId)
+    );
+    if (!again) return;
+    dispatch(
+      again.data
+        ? {
+          context,
+          pairs: again.data.pairs,
+          truncated: again.data.truncated,
+          type: "loaded",
+        }
+        : { type: "failed" },
+    );
+  });
+  useEffect(() => {
+    if (state.refreshing) void reread();
+  }, [state.refreshing]);
+
   const known = state.context;
   const busy = state.merging !== undefined || state.dismissing !== undefined;
   const nameOrder = known?.nameOrder ?? "given_family_nickname";
@@ -163,7 +195,13 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
         <h2 id="people-duplicates-heading" ref={heading} tabIndex={-1}>
           Possible duplicates
         </h2>
-        <p>{duplicatesSummary(state.pairs.length, state.truncated)}</p>
+        <p>
+          {duplicatesSummary(
+            state.pairs.length,
+            state.truncated,
+            state.refreshing,
+          )}
+        </p>
         <p
           aria-live="polite"
           className="people-duplicates-status"

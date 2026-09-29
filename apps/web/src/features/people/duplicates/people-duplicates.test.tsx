@@ -140,7 +140,7 @@ describe("PEOPLE-008 duplicate review island", () => {
       .toBeTruthy();
     expect(
       region.getByText(
-        "1 pair of people may be the same person. Showing the first 1; merge some to see more.",
+        "1 pair of people may be the same person. More are waiting: merge pairs or mark them as not duplicates to see the rest.",
       ),
     ).toBeTruthy();
     expect(element("#people-duplicates-list").hidden).toBe(true);
@@ -340,6 +340,76 @@ describe("REL-064 not duplicates", () => {
     );
     expect(element("#people-duplicates").hidden).toBe(false);
     expect(element("#people-duplicates-toggle").hidden).toBe(true);
+    expect(region.getByRole("status").textContent).toContain(
+      "are marked as not duplicates.",
+    );
+  });
+
+  it("reads a cut-off review once more after its last shown pair is dismissed (REL-090)", async () => {
+    const reread = deferred<Response>();
+    let reads = 0;
+    stubApi({
+      ...base,
+      [DISMISS]: jsonResponse({
+        personIds: [first, second],
+        status: "dismissed",
+      }),
+      [DUPLICATES]: () => ++reads === 1 ? review([pair], true) : reread.promise,
+    });
+    const settled = deferred<void>();
+    await renderIsland(<PeopleDuplicates onSettled={settled.resolve} />);
+    await act(() => settled.promise);
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    await waitFor(() =>
+      expect(region.getByText("Looking for more possible duplicates…"))
+        .toBeTruthy()
+    );
+    expect(region.queryByText("No possible duplicates are left to review."))
+      .toBeNull();
+    expect(reads).toBe(2);
+    await act(async () => {
+      reread.resolve(review([other]).clone());
+      await reread.promise;
+    });
+    await waitFor(() =>
+      expect(region.getByText("1 pair of people may be the same person."))
+        .toBeTruthy()
+    );
+    // The list stays open on the pairs the second read found.
+    expect(element("#people-duplicates-list").hidden).toBe(false);
+    expect(region.getByRole("button", { name: /^Merge Grace/ }))
+      .toHaveProperty("disabled", false);
+    expect(document.activeElement?.id).toBe("people-duplicates-heading");
+    expect(reads).toBe(2);
+  });
+
+  it("says to reload when the second read of a cut-off review fails", async () => {
+    let reads = 0;
+    stubApi({
+      ...base,
+      [DISMISS]: jsonResponse({
+        personIds: [first, second],
+        status: "dismissed",
+      }),
+      [DUPLICATES]: () =>
+        ++reads === 1 ? review([pair], true) : problemResponse(503),
+    });
+    const settled = deferred<void>();
+    await renderIsland(<PeopleDuplicates onSettled={settled.resolve} />);
+    await act(() => settled.promise);
+    const user = await openReview();
+    const region = within(element("#people-duplicates"));
+    await user.click(region.getByRole("button", { name: NOT_DUPLICATES }));
+    await waitFor(() =>
+      expect(
+        region.getByText(
+          "More possible duplicates may be waiting. Reload the page to review them.",
+        ),
+      ).toBeTruthy()
+    );
+    expect(element("#people-duplicates").hidden).toBe(false);
     expect(region.getByRole("status").textContent).toContain(
       "are marked as not duplicates.",
     );

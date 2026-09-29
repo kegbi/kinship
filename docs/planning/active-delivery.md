@@ -1393,7 +1393,7 @@ Playwright test carrying its stable flow ID.
       disabled, the old test hung and the new one fails in 2 s with "the text
       statement waited on the notes lock past its 40 ms bound".
 
-- [ ] **REL-090 — The duplicates review says nothing is left after a truncated
+- [x] **REL-090 — The duplicates review says nothing is left after a truncated
       list is dismissed.** Found reviewing REL-064: the island never re-reads
       the list, so after dismissing every shown pair of a review cut off at its
       pair limit, `duplicatesSummary(0, truncated)` says "No possible duplicates
@@ -1401,7 +1401,22 @@ Playwright test carrying its stable flow ID.
       some to see more") ignores dismissals. Re-read once after the last shown
       pair goes, or say to reload. Also, the dismissal's audit event is filed
       only under the lower-id person, so it appears in one person's history;
-      document or change that.
+      document or change that. Delivered 2026-09-28: the island read the
+      duplicate list only once, when it mounted, so dismissing every shown pair
+      of a review cut off at its pair limit left
+      `duplicatesSummary(0, truncated)` saying nothing was left while more
+      existed, and the truncation text said only "merge" with a count that
+      dismissals made wrong. `duplicatesReducer` now marks the review
+      `refreshing` when the last shown pair of a truncated list is dismissed and
+      refuses a dismissal while it re-reads; one effect reads the list once more
+      through `useLatestRequest`. A failed second read keeps the review and says
+      to reload the page, and the truncated summary now says to merge pairs or
+      mark them as not duplicates. A merge needs no re-read because it leaves
+      the page. The single-subject filing of `people.duplicate-dismissed` (under
+      the lower-id person, both ids in the payload) is now documented in
+      `backend-architecture.md` instead of writing a second audit row per
+      decision. Reducer and summary tests and two island tests (one second read
+      that shows the new pairs; a failed read says to reload) prove it.
 
 ## Just-In-Time Technical Capabilities
 
