@@ -150,6 +150,21 @@ prerequisite queues.
     statistics, fixed at `0764bba` before anything was pushed.
   - Main CI still starts no jobs for this repository, so CI confirmation stays
     owed. `REL-072` through `REL-090` were found on the way and stay parked.
+- `REL-072` through `REL-090` (all but `REL-078`, delivered with `REL-071`) are
+  integrated up to `a5899e3`, one reviewed candidate per ticket or pair, with
+  review amendments for `REL-082`/`REL-083`, `REL-084`/`REL-089`, `REL-088`, and
+  `REL-090`. `REL-080` and `REL-088` change the API contract; no schema change.
+  - The local checkpoint ran on `0a68d2d` (later commits touch only this file):
+    `test:coverage` with every set at or above its floor (web
+    98.77/95.96/99.51/99.89; the Deno set 1492 passed), `test:integration` 276
+    passed and 0 failed, `check`, `lint`, `contracts:check`, `fmt:check`, and
+    `build` all passed.
+  - Not run: the three-browser E2E suite, the production images, and the schema
+    matrix. The session container has no `pwsh` for `tools/e2e.ts`'s TLS step,
+    and its image builds cannot reach npm through the proxy. The edited
+    `personalization.WORKSPACE-003` and `today.TODAY-001` specs have therefore
+    never run and must pass at the next E2E checkpoint, which stays owed with CI
+    confirmation.
 - Remaining-queue decisions (product owner, 2026-09-28): the optional GAP-038
   visual regression baseline stays unscheduled, and `OPS-001E` and Phase 11 stay
   parked until a named deployment environment exists. The `REL-059`, `REL-061`,
