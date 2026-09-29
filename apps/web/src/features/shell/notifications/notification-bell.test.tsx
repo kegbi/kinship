@@ -2,7 +2,7 @@
 
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
   deferred,
@@ -20,8 +20,20 @@ const UI_STATE = "PATCH /api/v1/member/ui-state";
 const personId = ids.person;
 
 afterEach(() => {
+  vi.useRealTimers();
   sessionStorage.clear();
 });
+
+/**
+ * Puts the bell's refresh interval on a fake clock, so a test decides when
+ * each refresh runs however slowly the machine runs it (REL-087). Timeouts
+ * stay real for Testing Library's waits.
+ */
+const fakeInterval = () =>
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+/** Lets `ms` of the fake clock pass inside `act`. */
+const elapse = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 const item = (index: number, unread: boolean) => ({
   href: `/app/people/${personId}?section=reminders`,
@@ -207,17 +219,19 @@ describe("TODAY-002 notification bell", () => {
 
   it("refreshes the badge on its interval through one slot", async () => {
     markup();
+    fakeInterval();
     const late = deferred<Response>();
-    // The interval keeps reading while the test waits, however slowly the
-    // machine runs it, so every read after the third answers as the third
-    // did (REL-071).
-    const reads = [late.promise, feed([item(1, true)], 1), feed([], 0)];
-    let read = 0;
     const api = stubApi({
-      [FEED]: () => reads[Math.min(read++, reads.length - 1)]!,
+      [FEED]: [late.promise, feed([item(1, true)], 1), feed([], 0)],
       [SESSION]: jsonResponse(workspaceSession()),
     });
+    const reads = () =>
+      api.requests().filter((request) =>
+        request.url.pathname === "/api/v1/notifications"
+      );
     await mount(40);
+    await waitFor(() => expect(reads()).toHaveLength(1));
+    await elapse(40);
     await waitFor(() =>
       expect(bell().getAttribute("aria-label")).toBe(
         "Notifications, 1 unread",
@@ -226,17 +240,15 @@ describe("TODAY-002 notification bell", () => {
     // The first read answers last and is dropped: the latest read won.
     await act(async () => {
       late.resolve(feed([item(1, true), item(2, true)], 2));
-      await Promise.resolve();
+      await late.promise;
     });
     expect(bell().getAttribute("aria-label")).toBe("Notifications, 1 unread");
+    expect(element(".notification-bell-badge").textContent).toBe("1");
+    await elapse(40);
     await waitFor(() =>
       expect(bell().getAttribute("aria-label")).toBe("Notifications")
     );
-    expect(
-      api.requests().filter((request) =>
-        request.url.pathname === "/api/v1/notifications"
-      ).length,
-    ).toBeGreaterThanOrEqual(3);
+    expect(reads()).toHaveLength(3);
   });
 
   it("stays out of a page whose session is gone", async () => {
@@ -267,20 +279,27 @@ describe("TODAY-002 notification bell edges", () => {
       Document.prototype,
       "visibilityState",
     );
+    let hidden = true;
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
-      get: () => "hidden",
+      get: () => hidden ? "hidden" : "visible",
     });
+    const reads = () =>
+      api.requests().filter((request) =>
+        request.url.pathname === "/api/v1/notifications"
+      );
     try {
+      fakeInterval();
       await mount(20);
       await waitFor(() => expect(bell().disabled).toBe(false));
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      expect(
-        api.requests().filter((request) =>
-          request.url.pathname === "/api/v1/notifications"
-        ),
-        "only the first read runs while hidden",
-      ).toHaveLength(1);
+      await elapse(120);
+      expect(reads(), "only the first read runs while hidden").toHaveLength(1);
+      hidden = false;
+      await elapse(20);
+      await waitFor(() =>
+        expect(reads(), "the next tick reads once it is visible")
+          .toHaveLength(2)
+      );
     } finally {
       delete (document as unknown as Record<string, unknown>).visibilityState;
       if (visibility) {
@@ -343,8 +362,9 @@ describe("TODAY-002 notification bell before the session", () => {
       [FEED]: feed([], 0),
       [SESSION]: session.promise,
     });
+    fakeInterval();
     await mount(20);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await elapse(100);
     expect(api.calls()).not.toContain("GET /api/v1/notifications");
     await act(async () => {
       session.resolve(jsonResponse(workspaceSession()));

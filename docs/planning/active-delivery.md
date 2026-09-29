@@ -1326,14 +1326,25 @@ Playwright test carrying its stable flow ID.
       no retry, sleep, or timeout was added. The owning spec still needs its run
       at the next E2E checkpoint.
 
-- [ ] **REL-087 — The notification bell's "latest read wins" test can race its
+- [x] **REL-087 — The notification bell's "latest read wins" test can race its
       interval.** Found reviewing REL-071: with a 40 ms interval on real timers,
       the third read in `notification-bell.test.tsx` (around lines 221–231) can
       land between the `waitFor` that sees "1 unread" and the late answer's
       release, so the check that the badge still reads one unread could fail.
       Drive the interval with fake timers or gate the third answer. The same
       file also sleeps 120 ms and 100 ms on real timers (around lines 272 and
-      342); move those to fake timers too.
+      342); move those to fake timers too. Delivered 2026-09-28: the interval
+      cases ran the bell's 40 ms and 20 ms refresh on real timers, so a slow
+      machine could land the third read between the wait for "1 unread" and the
+      late answer's release (a 60 ms stall there fails the old test), and two
+      cases slept 120 ms and 100 ms. `notification-bell.test.tsx` now fakes only
+      `setInterval`/`clearInterval` and advances each tick inside `act`; the
+      "latest read wins" case makes exactly three reads from a plain
+      three-answer stub, which drops REL-078's answer-repeating workaround, and
+      the hidden-page case also proves a tick reads once the page is visible.
+      The file passed 25 shuffled runs and 20 runs four at a time, and making
+      the component accept a late answer fails the case with "2 unread". Test
+      file only.
 
 - [x] **REL-088 — An undelivered reminder stays in Today's Overdue with no way
       to clear it.** Found reviewing REL-059: failed and `manual_attention` rows
