@@ -22,6 +22,7 @@ import {
   reminderActiveInput,
   reminderCreated,
   reminderCreateInput,
+  reminderOccurrenceAcknowledged,
   reminderSaved,
   taskChanged,
   taskChangeInput,
@@ -109,6 +110,30 @@ export const setReminderActive = defineRoute({
         "Reminder active state changed; safe unattempted work is cancelled when disabled, in-flight delivery is preserved, and future work is regenerated when re-enabled",
       content: {
         "application/json": reminderSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const acknowledgeReminderOccurrence = defineRoute({
+  method: "put",
+  path: "/api/v1/reminder-occurrences/{occurrenceId}/acknowledgement",
+  operationId: "acknowledgeReminderOccurrence",
+  description:
+    "Clears the signed-in member's own undelivered reminder (failed or needing attention) from Today, with the other undelivered channel of the same occurrence. It is never resent; acknowledging it again changes nothing.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      occurrenceId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "The undelivered reminder is acknowledged",
+      content: {
+        "application/json": reminderOccurrenceAcknowledged,
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
@@ -343,6 +368,7 @@ export const PLANNING_ROUTES: readonly RouteDescriptor[] = [
   listPersonReminders,
   createReminder,
   setReminderActive,
+  acknowledgeReminderOccurrence,
   createStayInTouchCadence,
   listTasks,
   createTask,

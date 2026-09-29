@@ -70,6 +70,7 @@ export type { ListTasksResult } from "./application/task_listing.ts";
 export type { ListPersonRemindersInput } from "./application/reminder_definitions.ts";
 export { createReminderManagement } from "./application/reminder_management.ts";
 export type { ReminderManagement } from "./application/reminder_management.ts";
+export type { AcknowledgeOccurrenceResult } from "./application/reminder_occurrences.ts";
 export type {
   ReminderManagementDependencies,
   ReminderMutationResult,

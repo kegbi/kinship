@@ -9,11 +9,12 @@
  * every region still loading (`regions.ts`), so the queue can never stay on
  * its loading status once a read has answered (REL-048).
  *
- * Completing a task is the one write. It is never optimistic about the
- * lists: the row hides while the save is pending, every Complete control is
- * disabled while one completion is pending or confirmed, a refused save puts
- * the row back and says so, and a confirmed one holds the controls until an
- * answer arrives that no longer lists the task.
+ * Completing a task and dismissing an undelivered reminder (REL-088) share
+ * the one write. It is never optimistic about the lists: the row hides while
+ * the save is pending, every Complete and Dismiss control is disabled while
+ * one write is pending or confirmed, a refused save puts the row back and
+ * says so, and a confirmed one holds the controls until an answer arrives
+ * that no longer lists the item.
  */
 
 import type {
@@ -36,8 +37,11 @@ import {
 
 export type AttentionRegion = "attention" | "upcoming";
 
-/** A region's status line, or the Complete control of one task. */
-export type AttentionFocus = AttentionRegion | { readonly taskId: string };
+/** A region's status line, or the Complete or Dismiss control of one item. */
+export type AttentionFocus = AttentionRegion | { readonly itemId: string };
+
+/** Which write the one slot holds: a task's completion or a dismissal. */
+export type AttentionWrite = "acknowledge" | "complete";
 
 type Groups = TodayAttention["attention"];
 
@@ -61,11 +65,15 @@ export interface AttentionState {
   readonly workspaceId?: string | undefined;
   readonly principalId?: string | undefined;
   readonly completion?: {
-    readonly taskId: string;
+    readonly itemId: string;
     readonly phase: "pending" | "confirmed";
+    readonly write: AttentionWrite;
   } | undefined;
-  /** The completion the server refused, until the task leaves the queue. */
-  readonly failure?: { readonly taskId: string } | undefined;
+  /** The write the server refused, until its item leaves the queue. */
+  readonly failure?: {
+    readonly itemId: string;
+    readonly write: AttentionWrite;
+  } | undefined;
   /** Where the read in flight moves focus once it lands. */
   readonly pendingFocus?: AttentionFocus | undefined;
   readonly focus?: FocusRequest<AttentionFocus> | undefined;
@@ -79,6 +87,7 @@ export type AttentionAction =
   }
   | { readonly type: "answered"; readonly answer: AttentionAnswer | undefined }
   | { readonly type: "complete"; readonly taskId: string }
+  | { readonly type: "acknowledge"; readonly occurrenceId: string }
   | { readonly type: "completion-failed" }
   | { readonly type: "completion-confirmed" };
 
@@ -94,11 +103,24 @@ export function completable(item: TodayAttentionItem): boolean {
     !item.person?.unavailable;
 }
 
-/** The tasks the queue offers Complete for, in the order it lists them. */
-export function actionableTaskIds(groups: Groups | undefined): string[] {
+/**
+ * Whether `item` renders a Dismiss control: a reminder occurrence whose
+ * delivery failed or needs attention, which nothing else ever clears
+ * (REL-088). Its person may be archived, as the queue still lists it.
+ */
+export function acknowledgeable(item: TodayAttentionItem): boolean {
+  return item.kind !== "task" && item.kind !== "cadence" &&
+    (item.reminderStatus === "failed" ||
+      item.reminderStatus === "manual_attention") &&
+    !item.person?.unavailable;
+}
+
+/** The items the queue offers Complete or Dismiss for, in its order. */
+export function actionableItemIds(groups: Groups | undefined): string[] {
   if (!groups) return [];
   return [...groups.overdue, ...groups.today, ...groups.nextSevenDays]
-    .filter(completable).map((item) => item.id);
+    .filter((item) => completable(item) || acknowledgeable(item))
+    .map((item) => item.id);
 }
 
 function answered(
@@ -123,7 +145,7 @@ function answered(
     (state.principalId !== undefined &&
       state.principalId !== answer.principalId);
   const attentionRead = moved || state.attention.status === "loading";
-  const listed = actionableTaskIds(snapshot.attention);
+  const listed = actionableItemIds(snapshot.attention);
   const completion = moved ? undefined : state.completion;
   const failure = moved ? undefined : state.failure;
   return {
@@ -133,11 +155,11 @@ function answered(
       ? { status: "ready", value: snapshot.attention }
       : state.attention,
     completion: attentionRead && completion?.phase === "confirmed" &&
-        !listed.includes(completion.taskId)
+        !listed.includes(completion.itemId)
       ? undefined
       : completion,
     date: snapshot.date,
-    failure: attentionRead && failure && !listed.includes(failure.taskId)
+    failure: attentionRead && failure && !listed.includes(failure.itemId)
       ? undefined
       : failure,
     focus,
@@ -170,23 +192,31 @@ export function attentionReducer(
     case "answered":
       return answered(state, action.answer);
     case "complete":
+    case "acknowledge":
       if (state.completion) return state;
       return {
         ...state,
-        completion: { phase: "pending", taskId: action.taskId },
+        completion: action.type === "complete"
+          ? { itemId: action.taskId, phase: "pending", write: "complete" }
+          : {
+            itemId: action.occurrenceId,
+            phase: "pending",
+            write: "acknowledge",
+          },
         failure: undefined,
       };
     case "completion-failed": {
-      const taskId = state.completion?.taskId;
-      if (!taskId) return state;
+      const completion = state.completion;
+      if (!completion) return state;
+      const { itemId, write } = completion;
       return {
         ...state,
         completion: undefined,
-        failure: { taskId },
+        failure: { itemId, write },
         focus: focusRequest(
           state.focus,
-          actionableTaskIds(state.attention.value).includes(taskId)
-            ? { taskId }
+          actionableItemIds(state.attention.value).includes(itemId)
+            ? { itemId }
             : "attention",
         ),
       };
@@ -291,32 +321,51 @@ export interface AttentionView {
   readonly upcomingStatus: string;
   readonly upcomingRetry: boolean;
   readonly onboarding: boolean;
-  readonly completeDisabled: boolean;
-  /** The row a pending completion hides. */
-  readonly hiddenTaskId: string | undefined;
+  /** Every Complete and Dismiss control, while one write is owned. */
+  readonly actionsDisabled: boolean;
+  /** The row a pending write hides. */
+  readonly hiddenItemId: string | undefined;
   readonly date: {
     readonly dateTime: string | undefined;
     readonly text: string;
   };
 }
 
+/** What each write says while it is pending, confirmed, or refused. */
+const WRITE_COPY = {
+  acknowledge: {
+    confirmed: "Reminder dismissal is confirmed",
+    control: "Dismiss",
+    pending: "Dismissing reminder…",
+    refused: "Reminder could not be dismissed.",
+  },
+  complete: {
+    confirmed: "Task completion is confirmed",
+    control: "Complete",
+    pending: "Completing task…",
+    refused: "Task could not be completed.",
+  },
+} as const;
+
 export function attentionView(state: AttentionState): AttentionView {
   const { attention, completion, failure, upcoming } = state;
   const pending = completion?.phase === "pending";
   const attentionLoading = attention.status === "loading";
   const exact = failure !== undefined &&
-    actionableTaskIds(attention.value).includes(failure.taskId);
+    actionableItemIds(attention.value).includes(failure.itemId);
   const attentionStatus = pending
-    ? "Completing task…"
+    ? WRITE_COPY[completion.write].pending
     : attentionLoading
     ? "Loading relationship priorities…"
     : completion
-    ? `${
-      attentionSummary(attention)
-    } Task completion is confirmed; the projection has not caught up.`
+    ? `${attentionSummary(attention)} ${
+      WRITE_COPY[completion.write].confirmed
+    }; the projection has not caught up.`
     : failure
-    ? `${attentionSummary(attention)} Task could not be completed. ${
-      exact ? "Retry Complete." : "Retry the attention projection."
+    ? `${attentionSummary(attention)} ${WRITE_COPY[failure.write].refused} ${
+      exact
+        ? `Retry ${WRITE_COPY[failure.write].control}.`
+        : "Retry the attention projection."
     }`
     : attentionSummary(attention);
   const count = Object.values(attention.value ?? {}).flat().length +
@@ -326,7 +375,7 @@ export function attentionView(state: AttentionState): AttentionView {
       (completion !== undefined || (failure ? !exact : false) ||
         attention.status === "failed"),
     attentionStatus,
-    completeDisabled: completion !== undefined,
+    actionsDisabled: completion !== undefined,
     date: state.date
       ? {
         dateTime: state.date,
@@ -340,7 +389,7 @@ export function attentionView(state: AttentionState): AttentionView {
         dateTime: undefined,
         text: state.answered ? "Date unavailable" : "Loading date…",
       },
-    hiddenTaskId: pending ? completion.taskId : undefined,
+    hiddenItemId: pending ? completion.itemId : undefined,
     onboarding: attention.value !== undefined &&
       upcoming.value !== undefined && count === 0,
     upcomingRetry: !pending && upcoming.status === "failed",

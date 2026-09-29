@@ -1309,7 +1309,7 @@ Playwright test carrying its stable flow ID.
       file also sleeps 120 ms and 100 ms on real timers (around lines 272 and
       342); move those to fake timers too.
 
-- [ ] **REL-088 — An undelivered reminder stays in Today's Overdue with no way
+- [x] **REL-088 — An undelivered reminder stays in Today's Overdue with no way
       to clear it.** Found reviewing REL-059: failed and `manual_attention` rows
       have no date limit in the attention query and planning has no public
       dismiss or retry, so each undelivered email (and, as before, each failed
@@ -1317,7 +1317,27 @@ Playwright test carrying its stable flow ID.
       Add a planning use case to acknowledge or retry an undelivered occurrence,
       with an inline Today action. The query's `DISTINCT ON` subquery also reads
       all of the member's open deliveries before the 30-day filters apply;
-      revisit it with the capacity profile as failed rows accumulate.
+      revisit it with the capacity profile as failed rows accumulate. Delivered
+      2026-09-28: nothing ever moved a `failed` or `manual_attention` occurrence
+      out of those states, and the attention query has no date limit for overdue
+      work, so an undelivered reminder stayed in Overdue for good. Schema v9's
+      existing `skipped` state already represents an acknowledged delivery:
+      Today, the reminders panel and the calendar feed leave it out, and a
+      regenerated window never brings it back, so no schema change was needed;
+      acknowledging was chosen over retrying because an ambiguous delivery must
+      never be resent. Planning now has `acknowledgeOccurrence`, served at
+      `PUT /api/v1/reminder-occurrences/{occurrenceId}/acknowledgement`: it
+      locks the member's own occurrence in the workspace, skips it together with
+      the other undelivered channel of the same occurrence, audits
+      `planning.reminder-acknowledged` once, answers a replay the same way, a
+      pending or sent occurrence with 409 `reminder_occurrence_stale`, and
+      another member's or workspace's with 404. Today's attention island offers
+      Dismiss on those items through the same single write as Complete, and the
+      attention query's `DISTINCT ON` now applies the 30-day bound before
+      sorting.
+      `[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered reminder from Today for good`,
+      the use-case and HTTP tests, and the Today attention reducer and island
+      tests prove it.
 
 - [x] **REL-089 — The search timeout test would hang rather than fail if the
       statement bound broke.** Found reviewing schema v9:

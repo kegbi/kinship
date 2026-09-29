@@ -315,6 +315,8 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
     updatedAt: "2026-08-18T10:00:00.000000Z",
   };
   const reminders = {
+    acknowledgeOccurrence: () =>
+      Promise.resolve({ status: "not-found" as const }),
     createCadence: () =>
       Promise.resolve({ cadence, status: "created" as const }),
     createReminder: () =>
@@ -686,4 +688,89 @@ Deno.test("[GAP-023] HTTP pages a person's reminders and bounds every list", asy
         "task_query_invalid",
     "a task page beyond fifty was accepted",
   );
+});
+
+Deno.test("[PLANNING-003] REL-088 HTTP acknowledges an undelivered reminder and refuses everything else", async () => {
+  const occurrenceId = crypto.randomUUID();
+  const asked: unknown[] = [];
+  let answer: Awaited<ReturnType<ReminderManagement["acknowledgeOccurrence"]>> =
+    { occurrenceId, status: "acknowledged" };
+  const reminders = {
+    acknowledgeOccurrence: (
+      current: { readonly memberId: string; readonly workspaceId: string },
+      id: string,
+    ) => {
+      asked.push([current.memberId, current.workspaceId, id]);
+      return Promise.resolve(answer);
+    },
+  } as unknown as ReminderManagement;
+  const app = createPlanningRoutes({ ...services(), reminders });
+  const path =
+    `http://localhost/api/v1/reminder-occurrences/${occurrenceId}/acknowledgement`;
+  const put = (init: RequestInit = {}, at = path) =>
+    app.request(at, { headers, method: "PUT", ...init });
+  const code = async (response: Response) =>
+    (await response.json() as { readonly code?: string }).code;
+
+  const acknowledged = await put();
+  assertStatus(acknowledged, 200, "an undelivered reminder was acknowledged");
+  assert(
+    JSON.stringify(await acknowledged.json()) ===
+        JSON.stringify({ occurrenceId, status: "acknowledged" }) &&
+      acknowledged.headers.get("Cache-Control") === "private, no-store",
+    "the acknowledgement answer is not the contract's",
+  );
+  assert(
+    JSON.stringify(asked) ===
+      JSON.stringify([[actor.memberId, actor.workspaceId, occurrenceId]]),
+    `the use case was asked ${JSON.stringify(asked)}`,
+  );
+
+  answer = { status: "not-found" };
+  const foreign = await put();
+  assertStatus(foreign, 404, "another member's or workspace's occurrence");
+  assert(await code(foreign) === "reminder_not_found", "and says so");
+
+  answer = { status: "stale" };
+  const stale = await put();
+  assertStatus(stale, 409, "an occurrence that is not undelivered");
+  assert(await code(stale) === "reminder_occurrence_stale", "and says so");
+
+  answer = { status: "forbidden" };
+  const forbidden = await put();
+  assertStatus(forbidden, 403, "a revoked member");
+  assert(await code(forbidden) === "reminders_forbidden", "and says so");
+
+  const calls = asked.length;
+  const badOrigin = await put({
+    headers: { ...headers, origin: "http://attacker.test" },
+  });
+  assertStatus(badOrigin, 403, "a foreign origin");
+  const badId = await put(
+    {},
+    "http://localhost/api/v1/reminder-occurrences/not-a-uuid/acknowledgement",
+  );
+  assertStatus(badId, 400, "an unparsable occurrence");
+  assert(await code(badId) === "reminder_request_invalid", "and says so");
+  assert(asked.length === calls, "a refused request reached the use case");
+
+  const failing = createPlanningRoutes({
+    ...services(),
+    reminders: {
+      acknowledgeOccurrence: () => Promise.reject(new Error("offline")),
+    } as unknown as ReminderManagement,
+  });
+  const outage = await failing.request(path, { headers, method: "PUT" });
+  const missing = await createPlanningRoutes(services()).request(path, {
+    headers,
+    method: "PUT",
+  });
+  for (const response of [outage, missing]) {
+    assertStatus(response, 503, "an unavailable reminders service");
+    assert(
+      (await response.json() as { readonly detail?: string }).detail ===
+        "Nothing was changed.",
+      "and says nothing changed",
+    );
+  }
 });

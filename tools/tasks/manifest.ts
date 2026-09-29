@@ -1207,6 +1207,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/planning/application/reminder_context.ts",
         "packages/backend/modules/planning/application/reminder_definitions.ts",
         "packages/backend/modules/planning/application/reminder_cadences.ts",
+        "packages/backend/modules/planning/application/reminder_occurrences.ts",
         "packages/backend/modules/planning/application/reminder_delivery.ts",
         "packages/backend/modules/planning/application/audit_events.ts",
         "packages/backend/modules/planning/domain",

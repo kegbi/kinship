@@ -93,6 +93,11 @@ export class PostgresTodayAttentionRepository
           -- email row for it. Attention is listed first, then failure, then
           -- in-app. An email row is listed only when it failed or needs
           -- attention (REL-059), since in-app already shows pending work.
+          -- The 30-day bound is applied here, before the sort, so the
+          -- member's window of future occurrences is not ranked only to be
+          -- dropped (REL-088). The copies of one occurrence share their
+          -- delivery time, and a retry's next attempt is later still, so
+          -- the bound never trades a listed winner for a hidden one.
           select distinct on (delivery.reminder_id, delivery.occurs_on,
               coalesce(delivery.lead_time_days, -1)) delivery.*
           from crm.reminder_occurrences delivery
@@ -101,6 +106,8 @@ export class PostgresTodayAttentionRepository
               and delivery.status in ('failed','manual_attention')))
             and delivery.status in ('pending','retry','failed','manual_attention')
             and (delivery.status <> 'retry' or delivery.next_attempt_at is not null)
+            and case when delivery.status = 'retry' then delivery.next_attempt_at
+              else delivery.deliver_at end < ${window.thirtyDaysEnd}
           order by delivery.reminder_id, delivery.occurs_on,
             coalesce(delivery.lead_time_days, -1),
             case delivery.status when 'manual_attention' then 0
@@ -136,7 +143,6 @@ export class PostgresTodayAttentionRepository
             else reminder.target_kind = 'custom' and
               (reminder.person_id is null or (target_person.id is not null and target_person.deleted_at is null))
           end
-          and effective.due_at < ${window.thirtyDaysEnd}
           and not exists (select 1 from crm.stay_in_touch_cadences cadence
             where cadence.reminder_id = reminder.id and cadence.is_active)
         union all

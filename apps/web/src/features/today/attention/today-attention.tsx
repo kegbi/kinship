@@ -13,7 +13,9 @@
  *
  * Complete calls the tasks module's own completion use case, the same one the
  * person and global task surfaces use, and tells them with
- * `TASK_CHANGED_EVENT`. Every control renders with its handler attached.
+ * `TASK_CHANGED_EVENT`. Dismiss calls planning's acknowledgement of an
+ * undelivered reminder (REL-088) through the same single write. Every control
+ * renders with its handler attached.
  */
 
 import {
@@ -26,6 +28,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  acknowledgeReminderOccurrence,
   type ApiResult,
   getTodayAttention,
   setTaskCompletion,
@@ -49,6 +52,8 @@ import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
 import {
+  acknowledgeable,
+  type AttentionAction,
   type AttentionAnswer,
   attentionDestination,
   type AttentionFocus,
@@ -159,10 +164,11 @@ export function TodayAttention(props: TodayAttentionProps) {
     else {
       const control = [
         ...groups.current?.querySelectorAll<HTMLButtonElement>(
-          "button[data-today-complete]",
+          "button[data-today-complete], button[data-today-acknowledge]",
         ) ?? [],
       ].find((button) =>
-        button.dataset.taskId === target.taskId && !button.disabled
+        (button.dataset.taskId ?? button.dataset.occurrenceId) ===
+          target.itemId && !button.disabled
       );
       (control ?? attentionStatus.current)?.focus();
     }
@@ -173,28 +179,42 @@ export function TodayAttention(props: TodayAttentionProps) {
     void read([region], region);
   };
 
-  const complete = async (taskId: string) => {
+  /** The one write: a task's completion or an undelivered reminder's dismissal. */
+  const write = async (
+    action: Extract<AttentionAction, { type: "acknowledge" | "complete" }>,
+    save: () => Promise<ApiResult<unknown>>,
+  ) => {
     if (completing.current || state.completion) return;
     completing.current = true;
-    dispatch({ taskId, type: "complete" });
-    const answer = await settle(() =>
-      setTaskCompletion(taskId, true, state.workspaceId)
-    );
+    dispatch(action);
+    const answer = await settle(save);
     completing.current = false;
     if (answer.status !== "ready") {
       dispatch({ type: "completion-failed" });
       return;
     }
     dispatch({ type: "completion-confirmed" });
-    globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
+    if (action.type === "complete") {
+      globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
+    }
     await read(BOTH, "attention");
   };
+  const complete = (taskId: string) =>
+    write(
+      { taskId, type: "complete" },
+      () => setTaskCompletion(taskId, true, state.workspaceId),
+    );
+  const acknowledge = (occurrenceId: string) =>
+    write(
+      { occurrenceId, type: "acknowledge" },
+      () => acknowledgeReminderOccurrence(occurrenceId, state.workspaceId),
+    );
 
   const preferences: TimePreferences | undefined = state.preferences;
   const attentionRow = (item: TodayAttentionItem) => (
     <li
       className={`attention-item attention-${item.kind}`}
-      hidden={view.hiddenTaskId === item.id}
+      hidden={view.hiddenItemId === item.id}
       key={`${item.kind}:${item.id}`}
     >
       <Title item={item} />
@@ -206,11 +226,26 @@ export function TodayAttention(props: TodayAttentionProps) {
               className={buttonVariants({ variant: "outline" })}
               data-task-id={item.id}
               data-today-complete=""
-              disabled={view.completeDisabled}
+              disabled={view.actionsDisabled}
               onClick={() => void complete(item.id)}
               type="button"
             >
               Complete
+            </button>
+          </div>
+        )
+        : acknowledgeable(item)
+        ? (
+          <div className={formActionsVariants()}>
+            <button
+              className={buttonVariants({ variant: "outline" })}
+              data-occurrence-id={item.id}
+              data-today-acknowledge=""
+              disabled={view.actionsDisabled}
+              onClick={() => void acknowledge(item.id)}
+              type="button"
+            >
+              Dismiss
             </button>
           </div>
         )

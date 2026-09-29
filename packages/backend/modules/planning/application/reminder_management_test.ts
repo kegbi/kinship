@@ -1,5 +1,6 @@
 import * as planning from "../public.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
+import { describeReminderEvent } from "./audit_events.ts";
 
 Deno.test("PLANNING-002 exposes calendar reminder management", () => {
   const publicPlanning = planning as unknown as Record<string, unknown>;
@@ -71,6 +72,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
       summarize: () => Promise.resolve([]),
     },
     repository: {
+      acknowledgeUndelivered: () => Promise.resolve(undefined),
       cancelFutureOccurrences: () => {
         cancellations += 1;
         return Promise.resolve();
@@ -275,4 +277,110 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
       withoutOccurrence,
     }));
   }
+});
+
+Deno.test("[PLANNING-003] REL-088 a member acknowledges their own undelivered reminder once", async () => {
+  const actor = {
+    memberId: crypto.randomUUID(),
+    role: "member" as const,
+    userId: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
+  };
+  const occurrenceId = crypto.randomUUID();
+  let authorized = true;
+  let stored: "acknowledged" | "stale" | "unchanged" | undefined =
+    "acknowledged";
+  const asked: unknown[] = [];
+  const audits: { action: string; subjectId: string }[] = [];
+  const management = planning.createReminderManagement({
+    actors: {
+      revalidate: () =>
+        Promise.resolve(authorized ? "active" as const : "revoked" as const),
+    },
+    audit: {
+      record(command) {
+        audits.push({
+          action: command.action,
+          subjectId: command.subjectId,
+        });
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-09-28T10:00:00.000Z"),
+    people: {} as never,
+    repository: {
+      acknowledgeUndelivered(
+        command: Parameters<
+          planning.ReminderRepository["acknowledgeUndelivered"]
+        >[0],
+      ) {
+        asked.push({
+          id: command.id,
+          memberId: command.memberId,
+          now: command.now.toISOString(),
+          workspaceId: command.workspaceId,
+        });
+        return Promise.resolve(stored);
+      },
+    } as unknown as planning.ReminderRepository,
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+    workspace: {} as never,
+  });
+
+  const acknowledged = await management.acknowledgeOccurrence(
+    actor,
+    occurrenceId.toUpperCase(),
+  );
+  stored = "unchanged";
+  const replayed = await management.acknowledgeOccurrence(actor, occurrenceId);
+  stored = "stale";
+  const stale = await management.acknowledgeOccurrence(actor, occurrenceId);
+  stored = undefined;
+  const missing = await management.acknowledgeOccurrence(actor, occurrenceId);
+  authorized = false;
+  const forbidden = await management.acknowledgeOccurrence(
+    actor,
+    occurrenceId,
+  );
+
+  const outcomes = [acknowledged, replayed, stale, missing, forbidden].map(
+    (result) => result.status,
+  );
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify([
+      "acknowledged",
+      "acknowledged",
+      "stale",
+      "not-found",
+      "forbidden",
+    ])
+  ) throw new Error(`acknowledgement outcomes: ${JSON.stringify(outcomes)}`);
+  if (
+    JSON.stringify(asked[0]) !== JSON.stringify({
+        id: occurrenceId,
+        memberId: actor.memberId,
+        now: "2026-09-28T10:00:00.000Z",
+        workspaceId: actor.workspaceId,
+      }) || asked.length !== 4
+  ) {
+    throw new Error(`the repository was asked: ${JSON.stringify(asked)}`);
+  }
+  // Only the write that changed a row is audited; a replay is not.
+  if (
+    JSON.stringify(audits) !== JSON.stringify([
+      { action: "acknowledged", subjectId: occurrenceId },
+    ])
+  ) throw new Error(`acknowledgement audits: ${JSON.stringify(audits)}`);
+  const event = describeReminderEvent({
+    action: "acknowledged",
+    actor,
+    occurredAt: new Date("2026-09-28T10:00:00.000Z"),
+    subjectId: occurrenceId,
+    transaction: { opaque: "tx" },
+  });
+  if (
+    event.action !== "planning.reminder-acknowledged" ||
+    event.subjectType !== "reminder_occurrence" ||
+    event.actorMemberId !== actor.memberId
+  ) throw new Error(`acknowledgement event: ${JSON.stringify(event)}`);
 });

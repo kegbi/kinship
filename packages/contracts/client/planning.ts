@@ -15,6 +15,7 @@ import type {
   PersonReminders,
   Reminder,
   ReminderCreateInput,
+  ReminderOccurrenceAcknowledged,
   StayInTouchCadence,
   Task,
   TaskChangeInput,
@@ -159,6 +160,25 @@ export function setReminderActive(
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     body: JSON.stringify({ active }),
   });
+}
+
+/**
+ * Clears the signed-in member's own undelivered reminder from Today
+ * (REL-088); a second call answers the same.
+ */
+export function acknowledgeReminderOccurrence(
+  occurrenceId: string,
+  workspaceId?: string,
+): Promise<ApiResult<ReminderOccurrenceAcknowledged>> {
+  return request(
+    `/api/v1/reminder-occurrences/${
+      encodeURIComponent(occurrenceId)
+    }/acknowledgement`,
+    {
+      method: "PUT",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    },
+  );
 }
 
 export function getTodayReminders(

@@ -275,20 +275,24 @@ flows:
     steps:
       - Load overdue, today, and next-seven-day attention items for the active workspace.
       - Show due stay-in-touch people with last-interaction context.
-      - Complete a task or navigate to the owning person section.
+      - Complete a task, dismiss an undelivered reminder, or navigate to the owning person section.
       - Refresh only affected projections while preserving the rest of the page.
+    # Dismiss acknowledges the reader's own reminder occurrence whose delivery
+    # failed or needs manual attention through planning's use case; it becomes
+    # `skipped` and is never resent (REL-088).
     alternateOutcomes: [
       first-workspace-onboarding,
       no-due-work,
       secondary-region-error,
       midnight-boundary,
       daylight-saving-transition,
+      undelivered-reminder-dismissed,
     ]
     result: The member can identify and advance the most important current relationship work.
     auditEffect: only-the-invoked-owning-use-case
     pageIds: [app.today, people.profile, tasks.index]
     moduleIds: [people, interactions, planning, workspaces]
-    permissions: [people.read, tasks.write]
+    permissions: [people.read, tasks.write, reminders.write]
     testLayers: [unit, integration, contract, e2e]
     e2e: {
       required: true,
@@ -917,7 +921,8 @@ flows:
     # the worker claims. The audit event `planning.reminder-delivered` records
     # the channel, and a digest's occurrence count. An email occurrence that
     # ends `failed` or `manual_attention` joins the member's Today attention
-    # queue as an email delivery problem, once per occurrence (REL-059).
+    # queue as an email delivery problem, once per occurrence (REL-059), until
+    # the member dismisses it there (REL-088).
     alternateOutcomes: [
       digest-batches-due-reminders-at-local-digest-time,
       unverified-email-falls-back-to-in-app,

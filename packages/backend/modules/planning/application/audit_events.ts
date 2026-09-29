@@ -30,6 +30,8 @@ export function describeReminderEvent(
     subjectId: command.subjectId,
     subjectType: command.action === "cadence-created"
       ? "stay_in_touch_cadence"
+      : command.action === "acknowledged"
+      ? "reminder_occurrence"
       : "reminder",
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,

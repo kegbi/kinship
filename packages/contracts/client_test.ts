@@ -21,6 +21,7 @@ import { assert } from "../backend/testing/assert.ts";
 const FUNCTIONS: readonly string[] = [
   "acceptLegalDocument",
   "acceptWorkspaceInvitation",
+  "acknowledgeReminderOccurrence",
   "archivePerson",
   "authenticateWorkspaceInvitation",
   "bulkPeople",
@@ -313,6 +314,7 @@ const TYPES: readonly string[] = [
   "Reminder",
   "ReminderCreateInput",
   "ReminderOccurrence",
+  "ReminderOccurrenceAcknowledged",
   "ReminderOccurrenceStatus",
   "ResolvedMemberPreferences",
   "SearchEntityResult",

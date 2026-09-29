@@ -39,6 +39,7 @@ export type ReminderOccurrenceStatus =
 
 /** What `planning` says about a reminder in the audit history. */
 export type ReminderAuditAction =
+  | "acknowledged"
   | "cadence-created"
   | "created"
   | "disabled"

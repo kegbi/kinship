@@ -110,6 +110,12 @@ export const reminderSaved = z.strictObject({
   status: z.literal("saved"),
 }).meta({ id: "ReminderSaved" });
 
+/** An undelivered occurrence the member cleared from Today (REL-088). */
+export const reminderOccurrenceAcknowledged = z.strictObject({
+  occurrenceId: z.uuid(),
+  status: z.literal("acknowledged"),
+}).meta({ id: "ReminderOccurrenceAcknowledged" });
+
 export const taskPerson = z.strictObject({
   archived: z.boolean(),
   id: z.uuid(),

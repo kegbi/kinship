@@ -30,6 +30,7 @@ import type { Notifications } from "../../../../read-models/notifications/public
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import { mountNotificationRoutes } from "./notifications.ts";
 import {
+  acknowledgeReminderOccurrence,
   changeTask,
   createReminder,
   createStayInTouchCadence,
@@ -170,6 +171,12 @@ export const REMINDER_FAILURES: FailureTable = {
       detail: "The reminder or person does not exist in the active workspace.",
       title: "Reminder unavailable",
     },
+    stale: {
+      code: "reminder_occurrence_stale",
+      detail: "Only an undelivered reminder can be dismissed. Refresh Today.",
+      status: 409,
+      title: "Reminder changed",
+    },
   },
 };
 
@@ -238,6 +245,12 @@ const REMINDER_ACTIVE_INVALID: ProblemDefinition = {
   status: 400,
   title: "Invalid reminder",
 };
+const REMINDER_OCCURRENCE_INVALID: ProblemDefinition = {
+  code: "reminder_request_invalid",
+  detail: "Use a canonical reminder occurrence.",
+  status: 400,
+  title: "Invalid reminder",
+};
 const CADENCE_REQUEST_INVALID: ProblemDefinition = {
   code: "cadence_request_invalid",
   detail: "Use a supported calendar interval.",
@@ -292,6 +305,7 @@ export const PLANNING_PROBLEMS: readonly ProblemDefinition[] = [
   CADENCE_REQUEST_INVALID,
   REMINDER_ACTIVE_INVALID,
   REMINDER_CALENDAR_INVALID,
+  REMINDER_OCCURRENCE_INVALID,
   REMINDER_QUERY_INVALID,
   REMINDERS_NOTHING_CHANGED,
   REMINDERS_NOTHING_SAVED,
@@ -434,6 +448,41 @@ export function createPlanningRoutes(
         return definedProblem(context, REMINDERS_NOTHING_CHANGED);
       }
       if (result.status !== "saved") return reminderFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  mount(
+    routes,
+    acknowledgeReminderOccurrence,
+    session,
+    async (context) => {
+      const reminders = services.reminders;
+      if (!reminders) {
+        return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+      }
+      const foreign = rejectForeignOrigin(context, services.browserSecurity);
+      if (foreign) return foreign;
+      const occurrenceId = parseValue(
+        uuid,
+        context.req.param("occurrenceId"),
+      );
+      if ("errors" in occurrenceId) {
+        return definedProblem(context, REMINDER_OCCURRENCE_INVALID);
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await reminders.acknowledgeOccurrence(
+        actor,
+        occurrenceId.data,
+      ).catch(() => undefined);
+      if (!result) {
+        return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+      }
+      if (result.status !== "acknowledged") {
+        return reminderFailure(context, result);
+      }
       context.header("Cache-Control", "private, no-store");
       return context.json(result);
     },

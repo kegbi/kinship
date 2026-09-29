@@ -399,6 +399,49 @@ export class PostgresReminderRepository implements ReminderRepository {
     `.execute(databaseFromSession(command.transaction));
   }
 
+  /**
+   * One statement locks the actor's own occurrence in this workspace and, when
+   * it is undelivered, skips it with every other undelivered channel of the
+   * same occurrence, so a member on `both` whose two copies failed clears the
+   * one queue item once (REL-088). A pending or retrying sibling is left to
+   * the worker.
+   */
+  async acknowledgeUndelivered(
+    command: Parameters<ReminderRepository["acknowledgeUndelivered"]>[0],
+  ): Promise<"acknowledged" | "stale" | "unchanged" | undefined> {
+    const result = await sql<{ readonly status: ReminderOccurrenceStatus }>`
+      with target as (
+        select occurrence.reminder_id, occurrence.member_id,
+          occurrence.occurs_on, occurrence.lead_time_days, occurrence.status
+        from crm.reminder_occurrences occurrence
+        join crm.reminders reminder on reminder.id = occurrence.reminder_id
+        where occurrence.id = ${command.id}::uuid
+          and occurrence.member_id = ${command.memberId}::uuid
+          and reminder.workspace_id = ${command.workspaceId}::uuid
+        for update of occurrence
+      ), acknowledged as (
+        update crm.reminder_occurrences delivery set status = 'skipped',
+          updated_at = ${command.now}
+        from target
+        where target.status in ('failed', 'manual_attention')
+          and delivery.reminder_id = target.reminder_id
+          and delivery.member_id = target.member_id
+          and delivery.occurs_on = target.occurs_on
+          and coalesce(delivery.lead_time_days, -1)
+            = coalesce(target.lead_time_days, -1)
+          and delivery.status in ('failed', 'manual_attention')
+        returning delivery.id
+      )
+      select target.status from target
+    `.execute(databaseFromSession(command.transaction));
+    const status = result.rows[0]?.status;
+    if (!status) return undefined;
+    if (status === "skipped") return "unchanged";
+    return status === "failed" || status === "manual_attention"
+      ? "acknowledged"
+      : "stale";
+  }
+
   async upsertCadence(
     command: Parameters<ReminderRepository["upsertCadence"]>[0],
   ): Promise<StayInTouchCadenceRecord | undefined> {

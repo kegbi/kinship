@@ -64,11 +64,11 @@ modules own those records.
 ## Today And Settings Flow Pattern
 
 `TODAY-001` treats `/app` as an action-oriented projection. Due items retain
-their owning module and canonical detail location: Today may complete a task or
-navigate to a person section through an approved use case, but its read model
-never becomes a cross-module write service. Secondary-region failures are
-isolated from the attention queue, and time-zone boundaries are explicit test
-cases.
+their owning module and canonical detail location: Today may complete a task,
+dismiss an undelivered reminder, or navigate to a person section through an
+approved use case, but its read model never becomes a cross-module write
+service. Secondary-region failures are isolated from the attention queue, and
+time-zone boundaries are explicit test cases.
 
 Settings workflows use category-level page routes from
 [`page-catalog.yaml`](page-catalog.yaml). Related personalization vocabularies

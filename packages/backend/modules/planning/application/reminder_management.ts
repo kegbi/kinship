@@ -12,6 +12,7 @@
 
 import { createReminderCadences } from "./reminder_cadences.ts";
 import { createReminderDefinitions } from "./reminder_definitions.ts";
+import { createReminderOccurrences } from "./reminder_occurrences.ts";
 import type { ReminderManagementDependencies } from "./reminder_context.ts";
 
 export function createReminderManagement(
@@ -19,7 +20,9 @@ export function createReminderManagement(
 ) {
   const definitions = createReminderDefinitions(dependencies);
   const cadences = createReminderCadences(dependencies);
+  const occurrences = createReminderOccurrences(dependencies);
   return {
+    acknowledgeOccurrence: occurrences.acknowledge,
     createReminder: definitions.createReminder,
     createCadence: cadences.createCadence,
     setActive: definitions.setActive,

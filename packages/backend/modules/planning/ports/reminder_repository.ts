@@ -201,6 +201,20 @@ export interface ReminderRepository {
       readonly workspaceId: string;
     },
   ): Promise<void>;
+  /**
+   * Marks the actor's own undelivered occurrence `skipped`, together with
+   * the other undelivered channel of the same occurrence (REL-088):
+   * `unchanged` when it was already acknowledged, `stale` when it is not an
+   * undelivered one, and undefined when it is not the actor's in this
+   * workspace.
+   */
+  acknowledgeUndelivered(
+    command: PlanningActor & {
+      readonly id: string;
+      readonly now: Date;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<"acknowledged" | "stale" | "unchanged" | undefined>;
   listPerson(
     command: PlanningActor & {
       readonly after?: ReminderPageAnchor;

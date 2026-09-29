@@ -4,7 +4,8 @@ import type {
   TodayAttentionItem,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
-  actionableTaskIds,
+  acknowledgeable,
+  actionableItemIds,
   type AttentionAction,
   type AttentionAnswer,
   attentionDestination,
@@ -219,20 +220,20 @@ describe("GAP-033 Today attention reducer", () => {
     expect(attentionView(pending)).toMatchObject({
       attentionRetry: false,
       attentionStatus: "Completing task…",
-      completeDisabled: true,
-      hiddenTaskId: "a",
+      actionsDisabled: true,
+      hiddenItemId: "a",
       upcomingRetry: false,
     });
     const refreshing = attentionReducer(pending, both);
     expect(attentionView(refreshing).attentionStatus).toBe("Completing task…");
     const failed = attentionReducer(pending, { type: "completion-failed" });
-    expect(failed.focus?.target).toEqual({ taskId: "a" });
+    expect(failed.focus?.target).toEqual({ itemId: "a" });
     expect(attentionView(failed)).toMatchObject({
       attentionRetry: false,
       attentionStatus:
         "2 relationship priorities. Task could not be completed. Retry Complete.",
-      completeDisabled: false,
-      hiddenTaskId: undefined,
+      actionsDisabled: false,
+      hiddenItemId: undefined,
     });
     expect(attentionReducer(loaded, { type: "completion-failed" })).toBe(
       loaded,
@@ -255,8 +256,8 @@ describe("GAP-033 Today attention reducer", () => {
     const waiting = confirmed.reduce<AttentionState>(attentionReducer, loaded);
     expect(attentionView(waiting)).toMatchObject({
       attentionStatus: "Loading relationship priorities…",
-      completeDisabled: true,
-      hiddenTaskId: undefined,
+      actionsDisabled: true,
+      hiddenItemId: undefined,
     });
     const stale = attentionReducer(waiting, {
       answer: answer(snapshot([task("a"), task("b")])),
@@ -267,7 +268,7 @@ describe("GAP-033 Today attention reducer", () => {
       attentionRetry: true,
       attentionStatus:
         "2 relationship priorities. Task completion is confirmed; the projection has not caught up.",
-      completeDisabled: true,
+      actionsDisabled: true,
     });
     const upcomingOnly = [
       { regions: ["upcoming"], type: "read" },
@@ -275,7 +276,7 @@ describe("GAP-033 Today attention reducer", () => {
     ] as const;
     expect(
       upcomingOnly.reduce<AttentionState>(attentionReducer, stale).completion,
-    ).toEqual({ phase: "confirmed", taskId: "a" });
+    ).toEqual({ itemId: "a", phase: "confirmed", write: "complete" });
     const caughtUp = [
       { regions: ["attention"], type: "read" },
       { answer: answer(snapshot([task("b")])), type: "answered" },
@@ -285,7 +286,7 @@ describe("GAP-033 Today attention reducer", () => {
     expect(attentionView(done)).toMatchObject({
       attentionRetry: false,
       attentionStatus: "1 relationship priority.",
-      completeDisabled: false,
+      actionsDisabled: false,
     });
   });
 
@@ -307,7 +308,7 @@ describe("GAP-033 Today attention reducer", () => {
         type: "answered",
       }),
     );
-    expect(gone.failure).toEqual({ taskId: "a" });
+    expect(gone.failure).toEqual({ itemId: "a", write: "complete" });
     const settled = failed.reduce<AttentionState>(attentionReducer, loaded);
     expect(settled.failure).toBeUndefined();
     const stillListed = failed.slice(0, 3).reduce<AttentionState>(
@@ -325,7 +326,7 @@ describe("GAP-033 Today attention reducer", () => {
       answer: answer(snapshot([task("a")])),
       type: "answered",
     });
-    expect(inert.failure).toEqual({ taskId: "a" });
+    expect(inert.failure).toEqual({ itemId: "a", write: "complete" });
     const upcomingFailed = [
       { regions: ["upcoming"], type: "read" },
       { answer: undefined, type: "answered" },
@@ -415,7 +416,7 @@ describe("GAP-033 Today attention reducer", () => {
       { type: "completion-failed" },
     ] as const;
     const refused = failed.reduce<AttentionState>(attentionReducer, loaded);
-    expect(refused.failure).toEqual({ taskId: "a" });
+    expect(refused.failure).toEqual({ itemId: "a", write: "complete" });
     const other = [
       { regions: ["upcoming"], type: "read" },
       {
@@ -432,7 +433,7 @@ describe("GAP-033 Today attention reducer", () => {
       { answer: answer(snapshot([task("a")])), type: "answered" },
     ] as const;
     expect(same.reduce<AttentionState>(attentionReducer, refused).failure)
-      .toEqual({ taskId: "a" });
+      .toEqual({ itemId: "a", write: "complete" });
   });
 
   it("focuses what the latest request asked for, and nothing when it asked for nothing", () => {
@@ -555,7 +556,7 @@ describe("GAP-033 Today attention presentation", () => {
 
   it("offers Complete only for an active person's or the workspace's tasks", () => {
     expect(
-      actionableTaskIds({
+      actionableItemIds({
         nextSevenDays: [task("workspace", { person: undefined })],
         overdue: [
           task("a"),
@@ -565,6 +566,108 @@ describe("GAP-033 Today attention presentation", () => {
         today: [{ ...task("r"), kind: "reminder" } as TodayAttentionItem],
       }),
     ).toEqual(["a", "workspace"]);
-    expect(actionableTaskIds(undefined)).toEqual([]);
+    expect(actionableItemIds(undefined)).toEqual([]);
+  });
+});
+
+describe("REL-088 dismissing an undelivered reminder", () => {
+  function undelivered(
+    id: string,
+    overrides: Readonly<Record<string, unknown>> = {},
+  ): TodayAttentionItem {
+    return {
+      channel: "email",
+      dueAt: "2026-08-17T09:00:00.000Z",
+      id,
+      kind: "reminder",
+      occursOn: "2026-08-17",
+      person,
+      reminderStatus: "failed",
+      title: `Reminder ${id}`,
+      ...overrides,
+    } as TodayAttentionItem;
+  }
+
+  it("offers Dismiss only for a reminder whose delivery failed or needs attention", () => {
+    const offered = [
+      undelivered("email-failed"),
+      undelivered("email-unclear", { reminderStatus: "manual_attention" }),
+      undelivered("in-app-failed", { channel: "in_app" }),
+      undelivered("date", { kind: "important-date" }),
+      undelivered("event", { kind: "life-event" }),
+      undelivered("archived", { person: { ...person, archived: true } }),
+      undelivered("personless", { person: undefined }),
+    ];
+    const withheld = [
+      undelivered("pending", { reminderStatus: "pending" }),
+      undelivered("retry", { reminderStatus: "retry" }),
+      undelivered("gone", { person: { ...person, unavailable: true } }),
+      task("task"),
+    ];
+    expect(offered.filter(acknowledgeable)).toEqual(offered);
+    expect(withheld.filter(acknowledgeable)).toEqual([]);
+    expect(
+      actionableItemIds({
+        nextSevenDays: [],
+        overdue: [task("a"), ...offered, ...withheld],
+        today: [],
+      }),
+    ).toEqual(["a", ...offered.map((item) => item.id), "task"]);
+  });
+
+  it("shares the one write with Complete and says what it is doing", () => {
+    const loaded = run(both, {
+      answer: answer(snapshot([undelivered("r"), task("a")])),
+      type: "answered",
+    });
+    const pending = attentionReducer(loaded, {
+      occurrenceId: "r",
+      type: "acknowledge",
+    });
+    expect(attentionReducer(pending, { taskId: "a", type: "complete" })).toBe(
+      pending,
+    );
+    expect(
+      attentionReducer(pending, { occurrenceId: "r", type: "acknowledge" }),
+    ).toBe(pending);
+    expect(attentionView(pending)).toMatchObject({
+      actionsDisabled: true,
+      attentionStatus: "Dismissing reminder…",
+      hiddenItemId: "r",
+    });
+    const failed = attentionReducer(pending, { type: "completion-failed" });
+    expect(failed.focus?.target).toEqual({ itemId: "r" });
+    expect(attentionView(failed)).toMatchObject({
+      actionsDisabled: false,
+      attentionStatus:
+        "2 relationship priorities. Reminder could not be dismissed. Retry Dismiss.",
+      hiddenItemId: undefined,
+    });
+    const waiting = [
+      { occurrenceId: "r", type: "acknowledge" },
+      { type: "completion-confirmed" },
+      { focus: "attention", ...both },
+      {
+        answer: answer(snapshot([undelivered("r"), task("a")])),
+        type: "answered",
+      },
+    ] as const;
+    const stale = waiting.reduce<AttentionState>(attentionReducer, failed);
+    expect(attentionView(stale)).toMatchObject({
+      actionsDisabled: true,
+      attentionRetry: true,
+      attentionStatus:
+        "2 relationship priorities. Reminder dismissal is confirmed; the projection has not caught up.",
+    });
+    const caughtUp = [
+      { regions: ["attention"], type: "read" },
+      { answer: answer(snapshot([task("a")])), type: "answered" },
+    ] as const;
+    const done = caughtUp.reduce<AttentionState>(attentionReducer, stale);
+    expect(done.completion).toBeUndefined();
+    expect(attentionView(done)).toMatchObject({
+      actionsDisabled: false,
+      attentionStatus: "1 relationship priority.",
+    });
   });
 });

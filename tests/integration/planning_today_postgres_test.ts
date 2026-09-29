@@ -683,6 +683,147 @@ Deno.test("PLANNING-002 PostgreSQL validates an archived Today response at runti
   );
 });
 
+Deno.test("[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered reminder from Today for good", async () => {
+  const fixture = await register(
+    `today-acknowledge-${crypto.randomUUID()}@example.test`,
+    "Today acknowledge",
+  );
+  const stranger = await register(
+    `today-acknowledge-stranger-${crypto.randomUUID()}@example.test`,
+    "Today acknowledge stranger",
+  );
+  const personId = await createPerson(fixture, "Undelivered person");
+  const failed = await createReminder(fixture, personId, "Failed both ways");
+  const unclear = await createReminder(fixture, personId, "Email unclear");
+  const pending = await createReminder(fixture, personId, "Still pending");
+  const failedId = failed.nextOccurrence!.id;
+  const unclearId = unclear.nextOccurrence!.id;
+  const pendingId = pending.nextOccurrence!.id;
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+  // `both`: the in-app and the email copy of one occurrence failed.
+  await sql`
+    update crm.reminder_occurrences set status = 'failed', attempt_count = 1,
+      deliver_at = ${yesterday}::timestamptz
+    where id = ${failedId}::uuid
+  `;
+  const [emailCopy] = await sql<{ readonly id: string }[]>`
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+      deliver_at, channel, status, attempt_count, title_snapshot)
+    select reminder_id, member_id, occurs_on, deliver_at, 'email', 'failed',
+      1, title_snapshot
+    from crm.reminder_occurrences where id = ${failedId}::uuid
+    returning id::text
+  `;
+  // Email alone, and the provider may have delivered it.
+  await sql`
+    update crm.reminder_occurrences set channel = 'email',
+      status = 'manual_attention', attempt_count = 1,
+      provider_result_state = 'ambiguous',
+      deliver_at = ${yesterday}::timestamptz
+    where id = ${unclearId}::uuid
+  `;
+  const acknowledge = (who: typeof fixture, id: string) =>
+    request(who, `/api/v1/reminder-occurrences/${id}/acknowledgement`, "PUT");
+  const listed = async () => {
+    const response = await request(fixture, "/api/v1/today/attention");
+    const body = await response.json() as {
+      readonly attention: Readonly<
+        Record<string, readonly { readonly id: string }[]>
+      >;
+      readonly upcoming: readonly { readonly id: string }[];
+    };
+    assert(response.status === 200, "Today attention was refused");
+    return [...Object.values(body.attention).flat(), ...body.upcoming]
+      .map((item) => item.id);
+  };
+  const before = await listed();
+  assert(
+    before.includes(failedId) && before.includes(unclearId) &&
+      before.includes(pendingId),
+    `the undelivered reminders were not listed: ${JSON.stringify(before)}`,
+  );
+
+  const foreign = await acknowledge(stranger, unclearId);
+  const notUndelivered = await acknowledge(fixture, pendingId);
+  const first = await acknowledge(fixture, failedId);
+  const second = await acknowledge(fixture, unclearId);
+  const replay = await acknowledge(fixture, unclearId);
+  assert(
+    foreign.status === 404 &&
+      (await foreign.json() as { code?: string }).code ===
+        "reminder_not_found",
+    "another workspace's member acknowledged the reader's reminder",
+  );
+  assert(
+    notUndelivered.status === 409 &&
+      (await notUndelivered.json() as { code?: string }).code ===
+        "reminder_occurrence_stale",
+    "a pending reminder was acknowledged",
+  );
+  const bodies = await Promise.all(
+    [first, second, replay].map((response) => response.json()),
+  );
+  assert(
+    [first, second, replay].every((response) => response.status === 200) &&
+      JSON.stringify(bodies) === JSON.stringify([
+          { occurrenceId: failedId, status: "acknowledged" },
+          { occurrenceId: unclearId, status: "acknowledged" },
+          { occurrenceId: unclearId, status: "acknowledged" },
+        ]),
+    `acknowledgement answered ${JSON.stringify(bodies)}`,
+  );
+
+  // Pausing and resuming regenerates the window; skipped rows stay skipped.
+  for (const active of [false, true]) {
+    const toggled = await request(
+      fixture,
+      `/api/v1/reminders/${failed.id}/active`,
+      "PUT",
+      { active },
+    );
+    assert(toggled.status === 200, "the reminder could not be toggled");
+  }
+  const rows = await sql<{ readonly id: string; readonly status: string }[]>`
+    select id::text, status from crm.reminder_occurrences
+    where id in (${failedId}::uuid, ${emailCopy!.id}::uuid,
+      ${unclearId}::uuid, ${pendingId}::uuid)
+  `;
+  const status = Object.fromEntries(rows.map((row) => [row.id, row.status]));
+  assert(
+    status[failedId] === "skipped" && status[emailCopy!.id] === "skipped" &&
+      status[unclearId] === "skipped" && status[pendingId] === "pending",
+    `acknowledgement left ${JSON.stringify(status)}`,
+  );
+  const after = await listed();
+  assert(
+    !after.includes(failedId) && !after.includes(emailCopy!.id) &&
+      !after.includes(unclearId) && after.includes(pendingId),
+    `Today still lists an acknowledged reminder: ${JSON.stringify(after)}`,
+  );
+  const audits = await sql<{
+    readonly actor: string;
+    readonly subject: string;
+    readonly type: string;
+  }[]>`
+    select actor_member_id::text as actor, subject_id::text as subject,
+      subject_type as type
+    from crm.audit_events
+    where workspace_id = ${fixture.workspaceId}::uuid
+      and action = 'planning.reminder-acknowledged'
+    order by occurred_at, subject_id
+  `;
+  assert(
+    audits.length === 2 &&
+      audits.every((audit) =>
+        audit.actor === fixture.memberId &&
+        audit.type === "reminder_occurrence"
+      ) &&
+      JSON.stringify(audits.map((audit) => audit.subject).sort()) ===
+        JSON.stringify([failedId, unclearId].sort()),
+    `acknowledgement audit: ${JSON.stringify(audits)}`,
+  );
+});
+
 Deno.test({
   name: "PLANNING-001 PostgreSQL today resources close",
   sanitizeOps: false,

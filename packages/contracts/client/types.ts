@@ -348,6 +348,9 @@ export type ReminderOccurrence = components["schemas"]["ReminderOccurrence"];
 
 export type Reminder = components["schemas"]["Reminder"];
 
+export type ReminderOccurrenceAcknowledged =
+  components["schemas"]["ReminderOccurrenceAcknowledged"];
+
 export type StayInTouchCadence = components["schemas"]["StayInTouchCadence"];
 
 export type ReminderCreateInput = components["schemas"]["ReminderCreateInput"];

@@ -33,6 +33,8 @@ const SESSION = "GET /api/v1/session";
 const PREFERENCES = "GET /api/v1/settings/preferences";
 const ATTENTION = "GET /api/v1/today/attention";
 const COMPLETION = "PUT /api/v1/tasks/:taskId/completion";
+const ACKNOWLEDGEMENT =
+  "PUT /api/v1/reminder-occurrences/:occurrenceId/acknowledgement";
 
 const personId = ids.person;
 const person = { archived: false, id: personId, name: "Ada Lovelace" };
@@ -448,7 +450,96 @@ describe("PLANNING-001 Today attention island", () => {
     expect(row(overdue(), "Unclear").textContent).toContain(
       "Email reminder needs attention · Due",
     );
-    expect(within(overdue()).queryByRole("button")).toBeNull();
+    // Each can be dismissed (REL-088); neither is a task to complete.
+    expect(
+      within(overdue()).getAllByRole("button").map((button) =>
+        button.textContent
+      ),
+    ).toEqual(["Dismiss", "Dismiss"]);
+  });
+
+  it("REL-088 dismisses an undelivered reminder through planning and reads the queue again", async () => {
+    todayShell();
+    const first = deferred<Response>();
+    const reminder = {
+      channel: "email",
+      dueAt: "2026-08-17T09:00:00.000Z",
+      kind: "reminder",
+      occursOn: "2026-08-17",
+      person,
+    };
+    const failed = {
+      ...reminder,
+      id: uuid(1),
+      reminderStatus: "failed",
+      title: "Failed",
+    };
+    const inApp = {
+      ...reminder,
+      channel: "in_app",
+      id: uuid(2),
+      kind: "important-date",
+      reminderStatus: "failed",
+      title: "Birthday",
+    };
+    const pending = {
+      ...reminder,
+      channel: "in_app",
+      id: uuid(3),
+      reminderStatus: "pending",
+      title: "Pending",
+    };
+    const api = routes([
+      attention([failed, inApp, pending, task(4, "Call Ada")]),
+      attention([inApp, pending, task(4, "Call Ada")]),
+    ], {
+      [ACKNOWLEDGEMENT]: [
+        first.promise,
+        jsonResponse({ occurrenceId: uuid(1), status: "acknowledged" }),
+      ],
+    });
+    await mount();
+    const dismiss = (title: string) =>
+      within(row(overdue(), title)).getByRole<HTMLButtonElement>("button", {
+        name: "Dismiss",
+      });
+    expect(within(row(overdue(), "Pending")).queryByRole("button")).toBeNull();
+    const control = dismiss("Failed");
+    const failedRow = control.closest("li")!;
+    expect(control.className).toBe(buttonVariants({ variant: "outline" }));
+    click(control);
+    click(dismiss("Birthday"));
+    click(complete("Call Ada"));
+    expect(completions(api)).toEqual([
+      `PUT /api/v1/reminder-occurrences/${uuid(1)}/acknowledgement`,
+    ]);
+    expect(api.requests().find((request) => request.method === "PUT")?.body)
+      .toBeUndefined();
+    expect(failedRow.hidden).toBe(true);
+    expect(dismiss("Birthday").disabled).toBe(true);
+    expect(complete("Call Ada").disabled).toBe(true);
+    expect(state().textContent).toBe("Dismissing reminder…");
+    await act(async () => {
+      first.resolve(problemResponse(409));
+      await first.promise;
+    });
+    await waitFor(() => expect(control.disabled).toBe(false));
+    expect(failedRow.hidden).toBe(false);
+    expect(state().textContent).toMatch(
+      /could not be dismissed\. Retry Dismiss\./,
+    );
+    expect(document.activeElement).toBe(control);
+    expect(reads(api)).toHaveLength(1);
+
+    click(control);
+    await waitFor(() =>
+      expect(document.body.textContent).not.toContain("Failed")
+    );
+    expect(completions(api)).toHaveLength(2);
+    expect(reads(api)).toHaveLength(2);
+    expect(document.activeElement).toBe(state());
+    expect(state().textContent).toBe("3 relationship priorities.");
+    expect(dismiss("Birthday").disabled).toBe(false);
   });
 
   it("REL-048 settles the queue once its read answers, even when the preferences read fails or a newer read replaced it", async () => {
@@ -866,7 +957,16 @@ describe("PLANNING-001 Today attention island", () => {
 
   it("passes axe with a populated queue", async () => {
     todayShell();
-    routes(attention([task(1, "Call Ada")], [task(2, "Visit")]));
+    routes(attention([task(1, "Call Ada"), {
+      channel: "email",
+      dueAt: "2026-08-17T09:00:00.000Z",
+      id: uuid(3),
+      kind: "reminder",
+      occursOn: "2026-08-17",
+      person,
+      reminderStatus: "failed",
+      title: "Undelivered",
+    }], [task(2, "Visit")]));
     await mount();
     await expectNoAxeViolations(document.body);
   });

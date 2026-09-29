@@ -92,7 +92,11 @@ expand in place without changing route.
   "Email reminder not delivered" or "Email reminder needs attention" and opens
   the person's reminders. An occurrence delivered both ways is listed once:
   `manual_attention` wins over `failed`, which wins over pending work, and
-  in-app wins a tie.
+  in-app wins a tie. A reminder occurrence whose delivery `failed` or needs
+  `manual_attention`, on either channel, offers an inline Dismiss that calls
+  planning's acknowledgement use case: the reader's own undelivered copies of
+  that occurrence become `skipped`, leave the queue, and are never resent or
+  revived by a regenerated window (REL-088).
 - **People to reconnect** shows people whose cadence is due or overdue, with
   last interaction context and direct log-interaction/open-person actions.
 - **Upcoming** previews the next 30 days. It does not initially render three

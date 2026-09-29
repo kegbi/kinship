@@ -140,6 +140,7 @@ Deno.test("PLANNING-002 OpenAPI exposes bounded reminder and cadence contracts",
     const path of [
       "/api/v1/reminders",
       "/api/v1/reminders/{reminderId}/active",
+      "/api/v1/reminder-occurrences/{occurrenceId}/acknowledgement",
       "/api/v1/stay-in-touch-cadences",
       "/api/v1/people/{personId}/reminders",
       "/api/v1/today/reminders",
@@ -151,6 +152,7 @@ Deno.test("PLANNING-002 OpenAPI exposes bounded reminder and cadence contracts",
       "CadenceCreateInput",
       "Reminder",
       "ReminderOccurrence",
+      "ReminderOccurrenceAcknowledged",
       "TodayReminders",
     ]
   ) {
