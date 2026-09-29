@@ -1202,7 +1202,9 @@ Playwright test carrying its stable flow ID.
       PUT/DELETE answers; list readers keep the plain `PersonAvatar`. The
       person-profile read model computes the flag from the person's linked
       avatar file while it is available or quarantined, and from any quarantined
-      avatar-kind image linked to them, which is the set the removal discards.
+      avatar-kind image linked to them, which is the set the removal discards
+      except a linked file whose bytes are `missing`; such a file counts as not
+      stored, as before, though removal or a replacement still clears it.
       `avatar-editor.tsx` shows Remove avatar whenever an image is stored, with
       "An image for this avatar is held for review and is not shown. Remove
       avatar deletes it." when none is drawn, and the hero records an upload
@@ -1411,22 +1413,33 @@ Playwright test carrying its stable flow ID.
       some to see more") ignores dismissals. Re-read once after the last shown
       pair goes, or say to reload. Also, the dismissal's audit event is filed
       only under the lower-id person, so it appears in one person's history;
-      document or change that. Delivered 2026-09-28: the island read the
-      duplicate list only once, when it mounted, so dismissing every shown pair
-      of a review cut off at its pair limit left
-      `duplicatesSummary(0, truncated)` saying nothing was left while more
-      existed, and the truncation text said only "merge" with a count that
-      dismissals made wrong. `duplicatesReducer` now marks the review
-      `refreshing` when the last shown pair of a truncated list is dismissed and
-      refuses a dismissal while it re-reads; one effect reads the list once more
-      through `useLatestRequest`. A failed second read keeps the review and says
-      to reload the page, and the truncated summary now says to merge pairs or
-      mark them as not duplicates. A merge needs no re-read because it leaves
-      the page. The single-subject filing of `people.duplicate-dismissed` (under
-      the lower-id person, both ids in the payload) is now documented in
-      `backend-architecture.md` instead of writing a second audit row per
-      decision. Reducer and summary tests and two island tests (one second read
-      that shows the new pairs; a failed read says to reload) prove it.
+      document or change that. Delivered 2026-09-28: nothing ever moved a
+      `failed` or `manual_attention` occurrence out of those states, and the
+      attention query has no date limit for overdue work, so an undelivered
+      reminder stayed in Overdue for good. Schema v9's existing `skipped` state
+      already represents an acknowledged delivery: Today, the reminders panel
+      and the calendar feed leave it out, and a regenerated window never brings
+      it back, so no schema change was needed; acknowledging was chosen over
+      retrying because an ambiguous delivery must never be resent. Planning now
+      has `acknowledgeOccurrence`, served at
+      `PUT /api/v1/reminder-occurrences/{occurrenceId}/acknowledgement`: it
+      locks the member's own occurrence in the workspace, skips it together with
+      the other undelivered channel of the same occurrence, audits
+      `planning.reminder-acknowledged` once, answers a replay the same way, a
+      pending or sent occurrence with 409 `reminder_occurrence_stale`, and
+      another workspace's occurrence, or another member's in the same workspace,
+      with 404. Today's attention island offers a Dismiss named for its item
+      through the same single write as Complete; a confirmed dismissal sends
+      `REMINDER_ACKNOWLEDGED_EVENT` so the reminders panel reads its reminders
+      again, and a stale refusal reads the queue again instead of offering a
+      retry. The attention query's `DISTINCT ON` now applies the 30-day bound
+      before sorting.
+      `[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered reminder from Today for good`
+      proves it, including a same-workspace colleague check that fails when the
+      member predicate is removed, with the use-case and HTTP tests, the Today
+      attention and reminders island tests, and the extended
+      `today.TODAY-001.spec.ts`, which still needs its first run at the next E2E
+      checkpoint.
 
 ## Just-In-Time Technical Capabilities
 
