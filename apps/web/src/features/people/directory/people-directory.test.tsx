@@ -1429,6 +1429,146 @@ describe("PEOPLE-009 bulk directory actions", () => {
       expect(document.activeElement).toBe(picker);
     });
 
+    it("REL-077 keeps focus on More tags while its page loads, and loads it once", async () => {
+      markup();
+      const next = deferred<Response>();
+      const api = stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: [
+          noTags,
+          jsonResponse({
+            nextCursor: "picker-next",
+            options: [friends],
+            status: "ready",
+          }),
+          next.promise,
+        ],
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      await user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      const more = await waitFor(() =>
+        within(bar()).getByRole("button", { name: "More tags" })
+      );
+      await user.click(more);
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "Loading more tag options…",
+      );
+      // Busy, not disabled: a disabled button can lose focus in some
+      // browsers, so it stays focusable and says it is unavailable.
+      expect(more).toHaveProperty("disabled", false);
+      expect(more.getAttribute("aria-disabled")).toBe("true");
+      expect(more.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(more);
+      const sent = tagRequests(api).length;
+      await user.click(more);
+      await user.keyboard("{Enter}");
+      expect(tagRequests(api)).toHaveLength(sent);
+
+      await act(async () => {
+        next.resolve(
+          jsonResponse({
+            nextCursor: "picker-after",
+            options: [family],
+            status: "ready",
+          }),
+        );
+        await next.promise;
+      });
+      const picker = within(bar()).getByLabelText<HTMLSelectElement>(
+        "Tag to add",
+      );
+      await waitFor(() => expect(picker.options.length).toBe(2));
+      expect(more.hasAttribute("aria-disabled")).toBe(false);
+      expect(more.hasAttribute("aria-busy")).toBe(false);
+      expect(document.activeElement).toBe(more);
+    });
+
+    it("REL-077 drops the reads a closed picker left in flight and shows the reopened one's", async () => {
+      markup();
+      const firstPage = deferred<Response>();
+      const laterPage = deferred<Response>();
+      stubApi({
+        [PEOPLE]: page([ada]),
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [FACET]: noFacet,
+        [TAGS]: [
+          noTags,
+          firstPage.promise,
+          jsonResponse({
+            nextCursor: "picker-next",
+            options: [friends],
+            status: "ready",
+          }),
+          laterPage.promise,
+          jsonResponse({ options: [friends, family], status: "ready" }),
+        ],
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select Ada Lovelace" }),
+      );
+      const open = () =>
+        user.click(within(bar()).getByRole("button", { name: "Add tag…" }));
+      const cancel = () =>
+        user.click(within(bar()).getByRole("button", { name: "Cancel" }));
+      const picker = () =>
+        within(bar()).getByLabelText<HTMLSelectElement>("Tag to add");
+
+      // Closed while its first page is in flight, then reopened.
+      await open();
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "Loading tag options…",
+      );
+      await cancel();
+      await open();
+      await waitFor(() => expect(picker().options.length).toBe(1));
+
+      // Closed while More tags is in flight, then reopened.
+      await user.click(
+        within(bar()).getByRole("button", { name: "More tags" }),
+      );
+      await cancel();
+      await open();
+      await waitFor(() => expect(picker().options.length).toBe(2));
+      const search = within(bar()).getByLabelText("Search tags to add");
+      expect(document.activeElement).toBe(search);
+
+      // The closed picker's answers arrive last and change nothing: not the
+      // options, the status, or the focus a finished More tags would move.
+      await act(async () => {
+        firstPage.resolve(
+          jsonResponse({
+            options: [{ id: family.id, name: "Stale" }],
+            status: "ready",
+          }),
+        );
+        laterPage.resolve(
+          jsonResponse({
+            options: [{ id: family.id, name: "Stale" }],
+            status: "ready",
+          }),
+        );
+        await Promise.all([firstPage.promise, laterPage.promise]);
+      });
+      expect([...picker().options].map((option) => option.text)).toEqual([
+        "Friends",
+        "Family",
+      ]);
+      expect(element("#people-bulk-tag-status").textContent).toBe(
+        "2 tag options shown.",
+      );
+      expect(document.activeElement).toBe(search);
+    });
+
     it("ignores the answer to a picker search a newer one replaced", async () => {
       markup();
       const stale = deferred<Response>();

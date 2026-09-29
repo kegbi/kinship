@@ -963,9 +963,13 @@ function BulkTagPicker(
       </select>
       {picker.cursor
         ? (
+          // Busy rather than disabled while its page loads (REL-077), as
+          // `LoadMore` is: some browsers drop focus from a button that
+          // becomes disabled, so it stays focusable and ignores activation.
           <Button
-            disabled={picker.loading}
-            onClick={() => void load(true)}
+            aria-busy={picker.loading ? "true" : undefined}
+            aria-disabled={picker.loading ? "true" : undefined}
+            onClick={() => picker.loading || void load(true)}
             type="button"
             variant="outline"
           >

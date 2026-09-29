@@ -1131,13 +1131,24 @@ Playwright test carrying its stable flow ID.
       and opening a new editor during a pending save after a failed read still
       works as REL-055 intended.
 
-- [ ] **REL-077 — The bulk tag picker's close-while-loading path has no
+- [x] **REL-077 — The bulk tag picker's close-while-loading path has no
       regression test, and "More tags" can drop focus while it loads.** Found
       reviewing REL-066: closing the picker while a read is in flight and
       reopening it is correct today because `useLatestRequest` aborts on
       unmount, but no component test pins it. "More tags" is disabled while its
       request is in flight, and some browsers move focus off a focused button
-      when it becomes disabled.
+      when it becomes disabled. Delivered 2026-09-28: "More tags" was a disabled
+      button while its page loaded, and some browsers move focus off a focused
+      button when it becomes disabled. It now works like `LoadMore`: while its
+      page is in flight it stays focusable, is marked `aria-busy` and
+      `aria-disabled`, and ignores clicks, so focus stays on it and the page
+      cannot be requested twice. The picker suite asserts focus stays on the
+      button through the load and that a second click or Enter sends no request;
+      that test failed every time before the fix. A second test closes the
+      picker during its first read and during More tags, reopens it, then
+      resolves both stale answers last; the reopened options, status and focus
+      stay as they were, and the test fails if `useLatestRequest` stops aborting
+      on unmount.
 
 - [x] **REL-078 — A person-relationships rail count test failed once under
       full-suite load.** Found in REL-066's coverage run:
