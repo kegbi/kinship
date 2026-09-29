@@ -1301,7 +1301,7 @@ Playwright test carrying its stable flow ID.
       `tools/e2e_test.ts` proves twelve refused spellings and seven allowed
       ones.
 
-- [ ] **REL-086 — The personalization section links can be clicked before they
+- [x] **REL-086 — The personalization section links can be clicked before they
       navigate on Firefox.** Found in the REL-052/REL-056 batch E2E run:
       `personalization.WORKSPACE-003.spec.ts:195` on Firefox clicked the "Tags"
       section link and stayed on `?section=profile-modules` for the whole
@@ -1309,7 +1309,22 @@ Playwright test carrying its stable flow ID.
       change in that batch touched the settings page. It is the REL-039 and
       REL-045 class (a control visible and enabled before its handler is wired);
       audit the personalization page's section navigation and keep each link
-      inert until its handler attaches.
+      inert until its handler attaches. Delivered 2026-09-28: the click did not
+      come before its handler; the page had long hydrated. The spec's "Option
+      updated." wait after `Enable` was already met by the preceding `Disable`,
+      so `Tags` was clicked while the Enable request was still in flight. When
+      its refresh finished, the island focused the status line with a scrolling
+      `focus()`, the page jumped from 3160 to 244, and the sticky section links
+      moved about 90px under the pressed pointer: in a Firefox reproduction the
+      mouseup landed on `Pet categories`, the click fell to the `<nav>`, and the
+      URL stayed on `profile-modules`. A section link clicked before the session
+      is known still makes an ordinary page load. The status line is now focused
+      with `preventScroll` (the REL-039 mechanism), and a unit test proves a
+      change's outcome is announced without scrolling; the heading focus after a
+      section the reader picks still reveals it. The spec now waits for the
+      row's `Disable` to return before clicking `Tags`; no assertion changed and
+      no retry, sleep, or timeout was added. The owning spec still needs its run
+      at the next E2E checkpoint.
 
 - [ ] **REL-087 — The notification bell's "latest read wins" test can race its
       interval.** Found reviewing REL-071: with a 40 ms interval on real timers,

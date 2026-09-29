@@ -1395,3 +1395,26 @@ describe("GAP-047 person-workspace sections", () => {
     expect(button(rowOf("Name for Work"), "Enable")).toBeTruthy();
   });
 });
+
+describe("REL-086 section links under a pending click", () => {
+  it("announces a change's outcome without scrolling the page", async () => {
+    shell("profile-modules");
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const tags = entry({ name: "Tags profile" });
+    stubApi({
+      [LIST]: [
+        listed("profile-modules", [tags]),
+        listed("profile-modules", [{ ...tags, isActive: false }]),
+      ],
+      [SESSION]: session,
+      [UPDATE]: jsonResponse({ entry: tags, status: "saved" }),
+    });
+    await mount();
+    click(button(list(), "Disable"));
+    await waitFor(() => expect(status().textContent).toBe("Option updated."));
+    const onStatus = focus.mock.contexts.flatMap((context, index) =>
+      context === status() ? [focus.mock.calls[index]![0]] : []
+    );
+    expect(onStatus).toEqual([{ preventScroll: true }]);
+  });
+});

@@ -191,6 +191,9 @@ test(
     await expect(page.locator("#personalization-status")).toHaveText(
       "Option updated.",
     );
+    // The status still read "Option updated." from the Disable above.
+    await expect(tagsModule.getByRole("button", { name: "Disable" }))
+      .toBeVisible();
     await page.getByRole("link", { name: "Tags", exact: true }).click();
     await expect(page).toHaveURL(/section=tags/);
     await expect(page.getByRole("heading", { name: "Tags", exact: true }))

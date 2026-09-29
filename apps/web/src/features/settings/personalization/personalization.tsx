@@ -291,8 +291,11 @@ export function Personalization(props: { readonly onSettled?: () => void }) {
   });
   useLayoutEffect(() => rebaseline(), [state.generation, state.createKey]);
 
+  // A change's outcome arrives while the reader may already be clicking
+  // elsewhere: scrolling to it would slide the sticky section links from
+  // under a pressed pointer and lose that click (REL-086).
   useLayoutEffect(() => {
-    if (state.statusFocus > 0) status.current?.focus();
+    if (state.statusFocus > 0) status.current?.focus({ preventScroll: true });
   }, [state.statusFocus]);
   useLayoutEffect(() => {
     if (state.headingFocus > 0) heading.current?.focus();
