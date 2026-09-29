@@ -51,6 +51,7 @@ import {
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
+import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
 import {
   acknowledgeable,
   type AttentionAction,
@@ -189,14 +190,28 @@ export function TodayAttention(props: TodayAttentionProps) {
     dispatch(action);
     const answer = await settle(save);
     completing.current = false;
+    if (
+      answer.status === "problem" &&
+      answer.problem?.code === "reminder_occurrence_stale"
+    ) {
+      // The reminder was delivered or changed meanwhile; a retry cannot
+      // succeed, so the queue reads what it is now.
+      dispatch({ type: "completion-stale" });
+      await read(BOTH, "attention");
+      return;
+    }
     if (answer.status !== "ready") {
       dispatch({ type: "completion-failed" });
       return;
     }
     dispatch({ type: "completion-confirmed" });
-    if (action.type === "complete") {
-      globalThis.dispatchEvent(new CustomEvent(TASK_CHANGED_EVENT));
-    }
+    globalThis.dispatchEvent(
+      new CustomEvent(
+        action.type === "complete"
+          ? TASK_CHANGED_EVENT
+          : REMINDER_ACKNOWLEDGED_EVENT,
+      ),
+    );
     await read(BOTH, "attention");
   };
   const complete = (taskId: string) =>
@@ -224,6 +239,7 @@ export function TodayAttention(props: TodayAttentionProps) {
           <div className={formActionsVariants()}>
             <button
               className={buttonVariants({ variant: "outline" })}
+              aria-label={`Complete ${item.title}`}
               data-task-id={item.id}
               data-today-complete=""
               disabled={view.actionsDisabled}
@@ -239,6 +255,7 @@ export function TodayAttention(props: TodayAttentionProps) {
           <div className={formActionsVariants()}>
             <button
               className={buttonVariants({ variant: "outline" })}
+              aria-label={`Dismiss ${item.title}`}
               data-occurrence-id={item.id}
               data-today-acknowledge=""
               disabled={view.actionsDisabled}

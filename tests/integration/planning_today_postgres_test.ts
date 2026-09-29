@@ -17,8 +17,10 @@ import {
   databaseUrl,
   register,
   request,
+  signInTo,
   sql,
 } from "./planning.test-helper.ts";
+import { addMembership } from "../support/database.ts";
 import { closeResources } from "./planning.test-helper.ts";
 
 Deno.test("TODAY-001 PostgreSQL total-orders cross-kind UUID ties at both bounds", async () => {
@@ -692,6 +694,18 @@ Deno.test("[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered 
     `today-acknowledge-stranger-${crypto.randomUUID()}@example.test`,
     "Today acknowledge stranger",
   );
+  // A second member of the same workspace, who may see the reminder's person
+  // but never the reader's own deliveries.
+  const colleagueEmail =
+    `today-acknowledge-colleague-${crypto.randomUUID()}@example.test`;
+  const colleagueOwner = await register(colleagueEmail, "Colleague's own");
+  await addMembership(
+    sql,
+    colleagueOwner.userId,
+    fixture.workspaceId,
+    "member",
+  );
+  const colleague = await signInTo(colleagueEmail, fixture.workspaceId);
   const personId = await createPerson(fixture, "Undelivered person");
   const failed = await createReminder(fixture, personId, "Failed both ways");
   const unclear = await createReminder(fixture, personId, "Email unclear");
@@ -744,6 +758,10 @@ Deno.test("[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered 
   );
 
   const foreign = await acknowledge(stranger, unclearId);
+  const colleagues = await acknowledge(colleague, unclearId);
+  const [untouched] = await sql<{ readonly status: string }[]>`
+    select status from crm.reminder_occurrences where id = ${unclearId}::uuid
+  `;
   const notUndelivered = await acknowledge(fixture, pendingId);
   const first = await acknowledge(fixture, failedId);
   const second = await acknowledge(fixture, unclearId);
@@ -753,6 +771,13 @@ Deno.test("[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered 
       (await foreign.json() as { code?: string }).code ===
         "reminder_not_found",
     "another workspace's member acknowledged the reader's reminder",
+  );
+  assert(
+    colleagues.status === 404 &&
+      (await colleagues.json() as { code?: string }).code ===
+        "reminder_not_found" &&
+      untouched?.status === "manual_attention",
+    `a colleague in the same workspace acknowledged the reader's reminder: ${colleagues.status} left ${untouched?.status}`,
   );
   assert(
     notUndelivered.status === 409 &&

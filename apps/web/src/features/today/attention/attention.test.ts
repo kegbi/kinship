@@ -615,6 +615,27 @@ describe("REL-088 dismissing an undelivered reminder", () => {
     ).toEqual(["a", ...offered.map((item) => item.id), "task"]);
   });
 
+  it("forgets a dismissal the server found stale without offering a retry", () => {
+    const loaded = run(both, {
+      answer: answer(snapshot([undelivered("r")])),
+      type: "answered",
+    });
+    expect(attentionReducer(loaded, { type: "completion-stale" })).toBe(loaded);
+    const stale = [
+      { occurrenceId: "r", type: "acknowledge" },
+      { type: "completion-stale" },
+    ] as const;
+    const settled = stale.reduce<AttentionState>(attentionReducer, loaded);
+    expect(settled.completion).toBeUndefined();
+    expect(settled.failure).toBeUndefined();
+    expect(settled.focus).toBeUndefined();
+    expect(attentionView(settled)).toMatchObject({
+      actionsDisabled: false,
+      attentionRetry: false,
+      attentionStatus: "1 relationship priority.",
+    });
+  });
+
   it("shares the one write with Complete and says what it is doing", () => {
     const loaded = run(both, {
       answer: answer(snapshot([undelivered("r"), task("a")])),

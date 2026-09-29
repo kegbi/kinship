@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createPerson, registerVerified } from "./support/api.ts";
+import { databaseSql, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";
 import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
@@ -461,6 +462,54 @@ test(
       hasText: "Grace prefers concise written updates.",
     })).toBeVisible();
     await expect(favoriteRetry).toBeHidden();
+
+    // REL-088: an email reminder that was never delivered can be dismissed.
+    const session = await (await page.request.get(`${origin}/api/v1/session`))
+      .json() as { member: { id: string }; workspace: { id: string } };
+    const undeliveredReminderId = crypto.randomUUID();
+    const undeliveredId = crypto.randomUUID();
+    const undeliveredTitle = "Send Ada the conference notes";
+    const undeliveredAt = new Date(Date.now() - 86_400_000).toISOString();
+    databaseSql(
+      `insert into crm.reminders (id, workspace_id, person_id, target_kind, title, anchor_on, created_by_member_id) values (${
+        sqlLiteral(undeliveredReminderId)
+      }::uuid, ${sqlLiteral(session.workspace.id)}::uuid, ${
+        sqlLiteral(adaId)
+      }::uuid, 'person', ${sqlLiteral(undeliveredTitle)}, '${
+        undeliveredAt.slice(0, 10)
+      }', ${sqlLiteral(session.member.id)}::uuid);
+    insert into crm.reminder_occurrences (id, reminder_id, member_id, occurs_on, deliver_at, channel, status, attempt_count, title_snapshot) values (${
+        sqlLiteral(undeliveredId)
+      }::uuid, ${sqlLiteral(undeliveredReminderId)}::uuid, ${
+        sqlLiteral(session.member.id)
+      }::uuid, '${
+        undeliveredAt.slice(0, 10)
+      }', '${undeliveredAt}', 'email', 'failed', 1, ${
+        sqlLiteral(undeliveredTitle)
+      });`,
+    );
+    await page.reload();
+    const undelivered = page.locator("#today-overdue-list li", {
+      hasText: undeliveredTitle,
+    });
+    await expect(undelivered).toContainText("Email reminder not delivered");
+    const acknowledgement = page.waitForResponse((response) =>
+      response.url().endsWith(
+        `/api/v1/reminder-occurrences/${undeliveredId}/acknowledgement`,
+      ) && response.request().method() === "PUT"
+    );
+    await undelivered.getByRole("button", {
+      name: `Dismiss ${undeliveredTitle}`,
+    }).click();
+    expect((await acknowledgement).status()).toBe(200);
+    await expect(undelivered).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator("#today-attention-state")).not.toContainText(
+      "Loading",
+    );
+    await expect(page.locator("#today-overdue-list li", {
+      hasText: undeliveredTitle,
+    })).toHaveCount(0);
     await expectAccessible(page);
   },
 );

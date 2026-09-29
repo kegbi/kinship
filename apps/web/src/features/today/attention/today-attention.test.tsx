@@ -24,6 +24,7 @@ import {
 } from "../../../testing/render.tsx";
 import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
+import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
 import {
   mountTodayAttention,
   TODAY_ATTENTION_ISLAND,
@@ -136,7 +137,7 @@ const row = (list: HTMLElement, title: string) =>
   within(list).getByText(title).closest("li")!;
 const complete = (title: string) =>
   within(row(overdue(), title)).getByRole<HTMLButtonElement>("button", {
-    name: "Complete",
+    name: `Complete ${title}`,
   });
 const completions = (api: ReturnType<typeof stubApi>) =>
   api.calls().filter((call) => call.startsWith("PUT "));
@@ -284,7 +285,7 @@ describe("PLANNING-001 Today attention island", () => {
     );
     // Complete is offered only for active people's and workspace tasks.
     expect(
-      within(overdue()).getAllByRole("button", { name: "Complete" }),
+      within(overdue()).getAllByRole("button", { name: /^Complete / }),
     ).toHaveLength(3);
     const style = document.createElement("style");
     style.textContent = readApplicationStylesheet();
@@ -452,10 +453,11 @@ describe("PLANNING-001 Today attention island", () => {
     );
     // Each can be dismissed (REL-088); neither is a task to complete.
     expect(
-      within(overdue()).getAllByRole("button").map((button) =>
-        button.textContent
-      ),
-    ).toEqual(["Dismiss", "Dismiss"]);
+      within(overdue()).getAllByRole("button").map((button) => [
+        button.textContent,
+        button.getAttribute("aria-label"),
+      ]),
+    ).toEqual([["Dismiss", "Dismiss Failed"], ["Dismiss", "Dismiss Unclear"]]);
   });
 
   it("REL-088 dismisses an undelivered reminder through planning and reads the queue again", async () => {
@@ -501,8 +503,10 @@ describe("PLANNING-001 Today attention island", () => {
     await mount();
     const dismiss = (title: string) =>
       within(row(overdue(), title)).getByRole<HTMLButtonElement>("button", {
-        name: "Dismiss",
+        name: `Dismiss ${title}`,
       });
+    const acknowledged = vi.fn();
+    globalThis.addEventListener(REMINDER_ACKNOWLEDGED_EVENT, acknowledged);
     expect(within(row(overdue(), "Pending")).queryByRole("button")).toBeNull();
     const control = dismiss("Failed");
     const failedRow = control.closest("li")!;
@@ -520,7 +524,7 @@ describe("PLANNING-001 Today attention island", () => {
     expect(complete("Call Ada").disabled).toBe(true);
     expect(state().textContent).toBe("Dismissing reminder…");
     await act(async () => {
-      first.resolve(problemResponse(409));
+      first.resolve(problemResponse(503));
       await first.promise;
     });
     await waitFor(() => expect(control.disabled).toBe(false));
@@ -530,6 +534,7 @@ describe("PLANNING-001 Today attention island", () => {
     );
     expect(document.activeElement).toBe(control);
     expect(reads(api)).toHaveLength(1);
+    expect(acknowledged).not.toHaveBeenCalled();
 
     click(control);
     await waitFor(() =>
@@ -540,6 +545,49 @@ describe("PLANNING-001 Today attention island", () => {
     expect(document.activeElement).toBe(state());
     expect(state().textContent).toBe("3 relationship priorities.");
     expect(dismiss("Birthday").disabled).toBe(false);
+    // The reminder panel reads its own projection again on this event.
+    expect(acknowledged).toHaveBeenCalledTimes(1);
+    globalThis.removeEventListener(REMINDER_ACKNOWLEDGED_EVENT, acknowledged);
+  });
+
+  it("REL-088 reads the queue again instead of offering a retry when the reminder already changed", async () => {
+    todayShell();
+    const reminder = {
+      channel: "email",
+      dueAt: "2026-08-17T09:00:00.000Z",
+      id: uuid(1),
+      kind: "reminder",
+      occursOn: "2026-08-17",
+      person,
+      reminderStatus: "failed",
+      title: "Changed elsewhere",
+    };
+    const api = routes([
+      attention([reminder, task(2, "Call Ada")]),
+      attention([task(2, "Call Ada")]),
+    ], {
+      [ACKNOWLEDGEMENT]: problemResponse(409, {
+        code: "reminder_occurrence_stale",
+      }),
+    });
+    const acknowledged = vi.fn();
+    globalThis.addEventListener(REMINDER_ACKNOWLEDGED_EVENT, acknowledged);
+    await mount();
+    click(
+      within(row(overdue(), "Changed elsewhere")).getByRole("button", {
+        name: "Dismiss Changed elsewhere",
+      }),
+    );
+    await waitFor(() =>
+      expect(document.body.textContent).not.toContain("Changed elsewhere")
+    );
+    expect(completions(api)).toHaveLength(1);
+    expect(reads(api)).toHaveLength(2);
+    expect(state().textContent).toBe("1 relationship priority.");
+    expect(document.activeElement).toBe(state());
+    expect(complete("Call Ada").disabled).toBe(false);
+    expect(acknowledged).not.toHaveBeenCalled();
+    globalThis.removeEventListener(REMINDER_ACKNOWLEDGED_EVENT, acknowledged);
   });
 
   it("REL-048 settles the queue once its read answers, even when the preferences read fails or a newer read replaced it", async () => {

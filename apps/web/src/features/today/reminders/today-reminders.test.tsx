@@ -24,6 +24,7 @@ import {
   mountSettled,
 } from "../../../testing/render.tsx";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
+import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
 import {
   mountTodayReminders,
   TODAY_REMINDERS_ISLAND,
@@ -464,6 +465,35 @@ describe("PLANNING-002 Today reminder regions island", () => {
     expect(cadenceRetry().hidden).toBe(true);
     expect(document.activeElement).toBe(cadenceState());
     assertReminderPreserved();
+  });
+
+  it("REL-088 reads its reminders again when Today dismissed an undelivered one, without moving focus", async () => {
+    todayShell();
+    const api = routes([
+      feed("Undelivered reminder", {
+        reminders: [{
+          attemptCount: 1,
+          deliverAt: "2026-08-18T08:00:00.000Z",
+          id: reminderId,
+          person,
+          status: "failed",
+          title: "Undelivered reminder",
+        }],
+      }),
+      feed("Next reminder"),
+    ]);
+    await mount();
+    expect(reminderList().textContent).toContain("Undelivered reminder");
+    const focused = document.activeElement;
+    act(() => {
+      globalThis.dispatchEvent(new CustomEvent(REMINDER_ACKNOWLEDGED_EVENT));
+    });
+    await waitFor(() =>
+      expect(reminderList().textContent).toContain("Next reminder")
+    );
+    expect(reads(api)).toBe(2);
+    expect(reminderList().textContent).not.toContain("Undelivered reminder");
+    expect(document.activeElement).toBe(focused);
   });
 
   it("lets a reconnect during the first read supersede it and settle both regions", async () => {

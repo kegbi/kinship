@@ -96,7 +96,11 @@ expand in place without changing route.
   `manual_attention`, on either channel, offers an inline Dismiss that calls
   planning's acknowledgement use case: the reader's own undelivered copies of
   that occurrence become `skipped`, leave the queue, and are never resent or
-  revived by a regenerated window (REL-088).
+  revived by a regenerated window (REL-088). Today's reminder panel reads its
+  reminders again, and because the calendar feed leaves skipped occurrences out,
+  a member whose only copy of that day was the dismissed one no longer sees the
+  day in their calendar feed. A dismissal refused because the reminder already
+  changed reads the queue again instead of offering a retry.
 - **People to reconnect** shows people whose cadence is due or overdue, with
   last interaction context and direct log-interaction/open-person actions.
 - **Upcoming** previews the next 30 days. It does not initially render three

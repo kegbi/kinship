@@ -28,7 +28,12 @@ import {
   requireDatabaseUrl,
   revocableActor as revocableActorFor,
 } from "../support/database.ts";
-import { apiSupport, type SignedInFixture } from "../support/api.ts";
+import {
+  apiSupport,
+  sessionCookie,
+  type SignedInFixture,
+  type WorkspaceRole,
+} from "../support/api.ts";
 import { createPerson as createPersonThroughApi } from "../support/fixtures.ts";
 
 export const databaseUrl = requireDatabaseUrl();
@@ -98,6 +103,40 @@ export function register(
     firstName: "Planning",
     lastName: "Tester",
   });
+}
+
+/**
+ * Signs `email` in to `workspaceId`, a workspace the identity was added to
+ * after registering its own, so a test can act as a second member there.
+ */
+export async function signInTo(
+  email: string,
+  workspaceId: string,
+): Promise<Fixture> {
+  const signed = await api.signIn(email, { workspaceId });
+  const cookie = sessionCookie(signed);
+  assert(
+    signed.status === 200 && cookie,
+    `${email} signs in to ${workspaceId}`,
+  );
+  const body = await signed.json() as {
+    readonly member: { readonly id: string; readonly role: WorkspaceRole };
+    readonly workspace: { readonly id: string };
+  };
+  const [user] = await sql<{ readonly id: string }[]>`
+    select id::text from crm.users where email = ${email.toLowerCase()}
+  `;
+  assert(
+    user && body.workspace.id === workspaceId,
+    `${email} acts in ${workspaceId}`,
+  );
+  return {
+    cookie,
+    memberId: body.member.id,
+    role: body.member.role,
+    userId: user.id,
+    workspaceId,
+  };
 }
 
 export function request(

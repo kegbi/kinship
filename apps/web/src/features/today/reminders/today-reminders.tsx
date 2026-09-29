@@ -9,7 +9,10 @@
  * it renders disabled with `data-interaction-capture-ready="false"` and Quick
  * capture enables it once wired (REL-039). When Quick capture saves the
  * reconnect it sends `TODAY_RECONNECT_RECORDED_EVENT`, and this section reads
- * the cadences again and moves focus to their status.
+ * the cadences again and moves focus to their status. When the attention
+ * queue dismisses an undelivered reminder it sends
+ * `REMINDER_ACKNOWLEDGED_EVENT`, and this section reads its reminders again
+ * without moving focus (REL-088).
  */
 
 import {
@@ -28,6 +31,7 @@ import { mountIsland, useLatestRequest } from "../../../islands/core/index.ts";
 import { loadTimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
+import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
 import {
   cadenceLine,
   initialRemindersState,
@@ -92,6 +96,14 @@ export function TodayReminders(props: { readonly onSettled?: () => void }) {
     globalThis.addEventListener(TODAY_RECONNECT_RECORDED_EVENT, listener);
     return () =>
       globalThis.removeEventListener(TODAY_RECONNECT_RECORDED_EVENT, listener);
+  }, []);
+
+  const acknowledged = useEffectEvent(() => void read(["reminder"]));
+  useEffect(() => {
+    const listener = () => acknowledged();
+    globalThis.addEventListener(REMINDER_ACKNOWLEDGED_EVENT, listener);
+    return () =>
+      globalThis.removeEventListener(REMINDER_ACKNOWLEDGED_EVENT, listener);
   }, []);
 
   useLayoutEffect(() => {

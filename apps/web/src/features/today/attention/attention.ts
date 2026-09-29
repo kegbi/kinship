@@ -89,6 +89,8 @@ export type AttentionAction =
   | { readonly type: "complete"; readonly taskId: string }
   | { readonly type: "acknowledge"; readonly occurrenceId: string }
   | { readonly type: "completion-failed" }
+  /** The server said the item already changed: no retry, read it again. */
+  | { readonly type: "completion-stale" }
   | { readonly type: "completion-confirmed" };
 
 export const initialAttentionState: AttentionState = {
@@ -221,6 +223,9 @@ export function attentionReducer(
         ),
       };
     }
+    case "completion-stale":
+      if (!state.completion) return state;
+      return { ...state, completion: undefined };
     case "completion-confirmed":
       if (!state.completion) return state;
       return {

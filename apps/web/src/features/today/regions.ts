@@ -12,6 +12,13 @@
  * that fails never blanks a list the reader was using.
  */
 
+/**
+ * Sent on `globalThis` once planning confirmed that Today's attention queue
+ * dismissed an undelivered reminder (REL-088). Today's reminder panel ranks
+ * undelivered occurrences first, so it reads its reminders again.
+ */
+export const REMINDER_ACKNOWLEDGED_EVENT = "kinship:reminder-acknowledged";
+
 export type RegionStatus = "loading" | "ready" | "failed";
 
 export interface Region<T> {
