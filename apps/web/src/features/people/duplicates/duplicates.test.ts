@@ -5,6 +5,7 @@ import {
   duplicatesSummary,
   initialDuplicates,
   reasonsText,
+  refreshedAnnouncement,
 } from "./duplicates.ts";
 
 const person = (id: string) => ({
@@ -124,7 +125,10 @@ describe("PEOPLE-008 duplicate review state", () => {
     expect(dismiss(loaded(true), "a:b").refreshing).toBeUndefined();
     expect(dismiss(dismiss(loaded(false), "a:b"), "c:d").refreshing)
       .toBeUndefined();
-    let state = dismiss(dismiss(loaded(true), "a:b"), "c:d");
+    let state = dismiss(
+      duplicatesReducer(dismiss(loaded(true), "a:b"), { type: "toggled" }),
+      "c:d",
+    );
     expect(state.refreshing).toBe(true);
     expect(state.pairs).toEqual([]);
     // No dismissal or merge starts while the list is read again.
@@ -141,7 +145,23 @@ describe("PEOPLE-008 duplicate review state", () => {
     expect(failed.status).toBe("ready");
     expect(failed.refreshing).toBeUndefined();
     expect(failed.truncated).toBe(true);
-    expect(failed.announcement).toBe(state.announcement);
+    // The status line adds what the second read found to the dismissal.
+    expect(failed.announcement).toBe(
+      `${
+        dismissedAnnouncement("Ada")
+      } More possible duplicates may be waiting. Reload the page to review them.`,
+    );
+    const empty = duplicatesReducer(state, {
+      context: { nameOrder: "given_family_nickname", workspaceId: "w" },
+      pairs: [],
+      truncated: false,
+      type: "loaded",
+    });
+    expect(empty.announcement).toBe(
+      `${
+        dismissedAnnouncement("Ada")
+      } No possible duplicates are left to review.`,
+    );
     state = duplicatesReducer(state, {
       context: { nameOrder: "given_family_nickname", workspaceId: "w" },
       pairs: [other],
@@ -151,7 +171,15 @@ describe("PEOPLE-008 duplicate review state", () => {
     expect(state.refreshing).toBeUndefined();
     expect(state.pairs).toEqual([other]);
     expect(state.truncated).toBe(false);
-    expect(state.expanded).toBe(false);
+    expect(state.announcement).toBe(
+      `${
+        dismissedAnnouncement("Ada")
+      } 1 more pair of possible duplicates to review.`,
+    );
+    // The list the member opened stays open on the pairs the read found.
+    expect(state.expanded).toBe(true);
+    // A first read says nothing on the status line.
+    expect(loaded(true).announcement).toBeUndefined();
   });
 
   it("words the reasons and the count", () => {
@@ -174,6 +202,9 @@ describe("PEOPLE-008 duplicate review state", () => {
     );
     expect(duplicatesSummary(0, false)).toBe(
       "No possible duplicates are left to review.",
+    );
+    expect(refreshedAnnouncement(2)).toBe(
+      "2 more pairs of possible duplicates to review.",
     );
     expect(dismissedAnnouncement("Ada and Grace")).toBe(
       "Ada and Grace are marked as not duplicates. They will not be suggested again.",

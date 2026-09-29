@@ -377,6 +377,10 @@ describe("REL-064 not duplicates", () => {
       expect(region.getByText("1 pair of people may be the same person."))
         .toBeTruthy()
     );
+    // The status line says what the second read found.
+    expect(region.getByRole("status").textContent).toBe(
+      "Ada Lovelace and Ada Lovelace “Countess” are marked as not duplicates. They will not be suggested again. 1 more pair of possible duplicates to review.",
+    );
     // The list stays open on the pairs the second read found.
     expect(element("#people-duplicates-list").hidden).toBe(false);
     expect(region.getByRole("button", { name: /^Merge Grace/ }))
@@ -410,8 +414,8 @@ describe("REL-064 not duplicates", () => {
       ).toBeTruthy()
     );
     expect(element("#people-duplicates").hidden).toBe(false);
-    expect(region.getByRole("status").textContent).toContain(
-      "are marked as not duplicates.",
+    expect(region.getByRole("status").textContent).toBe(
+      "Ada Lovelace and Ada Lovelace “Countess” are marked as not duplicates. They will not be suggested again. More possible duplicates may be waiting. Reload the page to review them.",
     );
   });
 

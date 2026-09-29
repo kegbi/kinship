@@ -14,7 +14,8 @@
  * A review cut off at its pair limit hides pairs the list never showed. Once
  * its last shown pair is dismissed, the review reads the list once more
  * (REL-090) instead of saying nothing is left; if that read fails, it says to
- * reload the page.
+ * reload the page. Either way the status line adds the outcome to the
+ * dismissal's announcement, so it is heard as well as shown.
  */
 
 import type { PeopleDuplicatePair } from "../../../../../../packages/contracts/generated/auth-client.ts";
@@ -78,9 +79,12 @@ export function duplicatesReducer(
 ): DuplicatesState {
   switch (action.type) {
     case "loaded": {
-      const { refreshing: _refreshing, ...rest } = state;
+      const { refreshing, ...rest } = state;
       return {
         ...rest,
+        ...(refreshing
+          ? { announcement: afterRefresh(state, action.pairs.length) }
+          : {}),
         context: action.context,
         pairs: action.pairs,
         status: "ready",
@@ -90,7 +94,9 @@ export function duplicatesReducer(
     case "failed": {
       // A failed second read keeps the review, which says to reload.
       const { refreshing, ...rest } = state;
-      return refreshing ? rest : { ...state, status: "unavailable" };
+      return refreshing
+        ? { ...rest, announcement: afterRefresh(state) }
+        : { ...state, status: "unavailable" };
     }
     case "toggled":
       return { ...state, expanded: !state.expanded };
@@ -148,6 +154,29 @@ export function reasonsText(
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+const NOTHING_LEFT = "No possible duplicates are left to review.";
+const RELOAD =
+  "More possible duplicates may be waiting. Reload the page to review them.";
+
+/**
+ * What the status line adds once the list was read again (REL-090): how many
+ * pairs the read found, or, without `count`, that it failed.
+ */
+export function refreshedAnnouncement(count?: number): string {
+  if (count === undefined) return RELOAD;
+  if (count === 0) return NOTHING_LEFT;
+  return `${count} more ${
+    count === 1 ? "pair" : "pairs"
+  } of possible duplicates to review.`;
+}
+
+/** The dismissal's announcement, followed by what the second read found. */
+function afterRefresh(state: DuplicatesState, count?: number): string {
+  return [state.announcement, refreshedAnnouncement(count)]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /**
  * What the review says about its pairs. `truncated` means the server held
  * more than it sent; `refreshing` that the list is being read again after
@@ -159,11 +188,7 @@ export function duplicatesSummary(
   refreshing = false,
 ): string {
   if (refreshing) return "Looking for more possible duplicates…";
-  if (count === 0) {
-    return truncated
-      ? "More possible duplicates may be waiting. Reload the page to review them."
-      : "No possible duplicates are left to review.";
-  }
+  if (count === 0) return truncated ? RELOAD : NOTHING_LEFT;
   const pairs = `${count} ${count === 1 ? "pair" : "pairs"}`;
   return `${pairs} of people may be the same person.${
     truncated
