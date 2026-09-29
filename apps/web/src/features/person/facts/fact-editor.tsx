@@ -356,10 +356,12 @@ export function FactEditor<Values extends FieldValues>(
     return { page: loaded, status: "loaded" };
   }, [applyRevision, close, publish, reset, section]);
 
+  // A read's answer is drawn before the read settles, so the page acting on a
+  // settled section finds the add control it shows (REL-074).
   const read = useCallback(
     (): Promise<ReadOutcome> =>
       request(() => listProfileFacts(personId, section, {}, workspaceId)).then(
-        show,
+        (answer) => flushSync(() => show(answer)),
       ),
     [personId, request, section, show, workspaceId],
   );

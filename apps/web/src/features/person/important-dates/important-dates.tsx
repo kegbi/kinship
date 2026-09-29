@@ -157,17 +157,21 @@ export function ImportantDates(props: ImportantDatesProps) {
     void request(() => listImportantDates(personId, workspaceId)).then(
       (answer) => {
         if (!answer) return;
-        if (answer.status === "ready" && answer.data) {
-          dispatch({ dates: answer.data.dates, type: "loaded" });
-          return;
-        }
         const denied = answer.problem?.status === 401 ||
           answer.problem?.status === 403;
-        dispatch({
-          message: problemMessage(answer.problem),
-          status: denied ? "forbidden" : "error",
-          type: "failed",
-        });
+        // The answer is drawn before the read settles, so the page acting on
+        // a settled island finds the add control it shows (REL-074).
+        flushSync(() =>
+          dispatch(
+            answer.status === "ready" && answer.data
+              ? { dates: answer.data.dates, type: "loaded" }
+              : {
+                message: problemMessage(answer.problem),
+                status: denied ? "forbidden" : "error",
+                type: "failed",
+              },
+          )
+        );
       },
     ).finally(() => {
       settled.current?.();

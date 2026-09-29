@@ -1479,6 +1479,79 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     ).toBe(false);
   });
 
+  it.each([
+    {
+      action: "first-meeting",
+      block:
+        `<section id="profile-section-first-meeting" data-profile-section="first-meeting" data-profile-fact-section="first-meeting" data-section-state="loading" tabindex="-1">
+         <header><h3>First meeting</h3><span data-rail-count-slot><span data-profile-rail-count hidden></span></span>
+           <button data-profile-fact-add type="button" aria-label="Add first meeting" hidden>+</button></header>
+         <p data-profile-fact-state></p><ul data-profile-fact-list></ul>
+         <form data-profile-fact-form hidden novalidate></form>
+       </section>`,
+      form: "[data-profile-fact-form]",
+      path: "/facts/first-meeting",
+      read: "GET /api/v1/people/:personId/facts/first-meeting",
+      // The editor offers the people who could have introduced them.
+      routes: {
+        "GET /api/v1/people": jsonResponse({ people: [], status: "ready" }),
+      },
+      answer: () =>
+        jsonResponse({
+          options: [],
+          personUpdatedAt: "2026-08-16T12:00:00.000000Z",
+          records: [],
+          status: "ready",
+        }),
+    },
+    {
+      action: "important-dates",
+      block:
+        `<section id="profile-section-important-dates" data-profile-section="important-dates" data-section-state="loading" tabindex="-1">
+         <header><h3>Important dates</h3><span data-rail-count-slot><span data-profile-rail-count hidden></span></span>
+           <button id="important-date-add" type="button" aria-label="Add important date" hidden>+</button></header>
+         <p id="important-dates-state"></p><ul id="important-dates-list"></ul>
+         <form id="important-date-form" hidden novalidate></form>
+       </section>`,
+      form: "#important-date-form",
+      path: "/dates",
+      read: "GET /api/v1/people/:personId/dates",
+      routes: {},
+      answer: () => jsonResponse({ dates: [], status: "ready" }),
+    },
+  ])(
+    "REL-074 opens the $action editor from its first action clicked while the rail reads",
+    async ({ action, answer, block, form, path, read, routes }) => {
+      markup(`/app/people/${firstRunPersonId}`);
+      document.querySelector("#profile-section-important-dates")?.remove();
+      document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+        "beforeend",
+        block,
+      );
+      const held = deferred<Response>();
+      const api = stubProfile(zeroProfile(), {
+        ...routes,
+        [read]: held.promise,
+        [REST]: recorded,
+      });
+
+      const mounting = mountPersonWorkspace();
+      await vi.waitFor(() => expect(requested(api, path)).toHaveLength(1));
+      document.querySelector<HTMLButtonElement>(
+        `[data-first-run-action="${action}"]`,
+      )!.click();
+      // The island's read answers while the action waits for the rail: the
+      // island's add control, drawn by that answer, opens its editor.
+      held.resolve(answer());
+      await mounting;
+      await vi.waitFor(() =>
+        expect(document.querySelector<HTMLFormElement>(form)?.hidden).toBe(
+          false,
+        )
+      );
+    },
+  );
+
   it("UXD-005B never clicks a hidden or disabled first-action control", async () => {
     markup(`/app/people/${firstRunPersonId}`);
     const controls = firstRunActionMarkup();

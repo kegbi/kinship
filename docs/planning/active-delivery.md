@@ -1080,7 +1080,7 @@ Playwright test carrying its stable flow ID.
       granted and a revocation times out; a correct-clock use replaces a last
       use recorded an hour in the future.
 
-- [ ] **REL-074 — Other person islands report settled before their read is
+- [x] **REL-074 — Other person islands report settled before their read is
       drawn.** Found in REL-049: the fact editor (`facts/fact-editor.tsx`) and
       probably other rail islands resolve their settled callback before React
       commits the read result, so a first-run action such as "Log how you met"
@@ -1089,7 +1089,17 @@ Playwright test carrying its stable flow ID.
       birthday only with stand-in buttons. Apply REL-049's committed busy
       release (or a settle-after-commit contract with a `mountSettled` helper
       that supports it) to each island a first-run action targets, with a test
-      per island.
+      per island. Delivered 2026-09-28: of the three first-run actions, only
+      stay-in-touch already reached an island that draws its read before it
+      settles (REL-049). "Log how you met" targets the fact editor's add control
+      and "Add a birthday" the important-dates island's, and both islands
+      reported settled while their answer was still only queued in React, so the
+      action found its control hidden and did nothing. The fact editor now draws
+      every read's answer inside `flushSync`, which covers every fact section
+      including tags, and the important-dates island does the same for its first
+      read. A workspace test for each island mounts the real island, clicks its
+      first action while that island's read is held, answers the read, and sees
+      the editor form open; both cases failed on the old code.
 
 - [x] **REL-075 — `workspace.ts` coverage flips on one timing-dependent
       branch.** Found reviewing REL-049: `focusSection`'s hidden-section early
