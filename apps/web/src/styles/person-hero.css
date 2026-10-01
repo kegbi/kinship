@@ -32,9 +32,9 @@
   place-items: center;
   color: var(--ink-inverse);
   background: var(--accent);
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: clamp(1.6rem, 4vw, 2.6rem);
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: -.04em;
 }
 
@@ -79,9 +79,9 @@
 .person-profile-heading h1 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 2rem;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.05;
   letter-spacing: -.025em;
 }

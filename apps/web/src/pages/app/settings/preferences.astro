@@ -20,12 +20,11 @@ import {
     <header class="settings-heading"><div><p class="eyebrow">Personal settings</p><h1>Preferences</h1><p>These values apply only to your membership in the active workspace.</p></div></header>
     <section class={cardVariants({ className: "settings-form" })} aria-labelledby="appearance-heading">
       <h2 id="appearance-heading">Appearance</h2>
-      <label for="theme-preference">Theme</label>
-      <select id="theme-preference" name="theme" disabled>
+      <label for="theme-preference">Theme<select id="theme-preference" name="theme" disabled>
         <option value="system">System</option>
         <option value="light">Light</option>
         <option value="dark">Dark</option>
-      </select>
+      </select></label>
       <p id="theme-status" class="section-state" role="status" aria-live="polite">Loading your theme preference…</p>
     </section>
     <div class="contents" data-settings-preferences>

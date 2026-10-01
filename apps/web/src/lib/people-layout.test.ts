@@ -490,13 +490,13 @@ describe("people form layout regressions", () => {
     );
     expect(switcher).not.toMatch(/<h[1-6]\b/);
     expect(applicationStyles).toMatch(
-      /\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*6rem;[^}]*position:\s*sticky;[^}]*top:\s*var\(--person-navigation-top\);[^}]*background:\s*var\(--surface-page\);/s,
+      /\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*calc\(4rem \+ 1px\);[^}]*position:\s*sticky;[^}]*top:\s*var\(--person-navigation-top\);[^}]*background:\s*var\(--surface-page\);/s,
     );
     expect(applicationStyles).toMatch(
       /@media \(max-width: 1050px\)[\s\S]*?\.app-header\s*\{[^}]*position:\s*static;/s,
     );
     expect(applicationStyles).toMatch(
-      /@media \(max-width: 1050px\)[\s\S]*?\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*var\(--space-2\);/s,
+      /@media \(max-width: 1050px\)[\s\S]*?\.person-workspace-navigation\s*\{[^}]*--person-navigation-top:\s*0px;/s,
     );
     expect(applicationStyles).toMatch(
       /\.zone-switcher\s*\{[^}]*overflow-x:\s*auto;/s,

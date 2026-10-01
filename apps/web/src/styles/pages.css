@@ -37,7 +37,6 @@
   display: grid;
   gap: var(--space-4);
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-block: var(--space-4);
 }
 
 .attention-groups h3 {

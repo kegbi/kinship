@@ -20,16 +20,16 @@ describe("GAP-027 Kinship button variants", () => {
           "inline-flex",
           "items-center",
           "justify-center",
-          // 44px touch target, var(--space-3) var(--space-4) padding.
+          // 44px touch target, var(--space-2) var(--space-4) padding.
           "min-h-11",
-          "py-(--space-3)",
+          "py-(--space-2)",
           "px-(--space-4)",
           "border",
-          "rounded-[.65rem]",
+          "rounded-(--radius-sm)",
           "font-semibold",
           "leading-[1.2]",
           "no-underline",
-          "hover:brightness-96",
+          "hover:brightness-95",
           "disabled:opacity-55",
           "disabled:cursor-not-allowed",
           "aria-disabled:opacity-55",
@@ -53,8 +53,8 @@ describe("GAP-027 Kinship button variants", () => {
     );
     expect(classes(buttonVariants({ variant: "destructive" }))).toEqual(
       expect.arrayContaining([
-        "border-(--accent)",
-        "bg-(--accent)",
+        "border-(--danger)",
+        "bg-(--danger)",
         "text-(--ink-inverse)",
       ]),
     );
@@ -63,7 +63,7 @@ describe("GAP-027 Kinship button variants", () => {
   it("gives the former button-link its pill and lets a caller override one utility", () => {
     const pill = classes(buttonVariants({ shape: "pill" }));
     expect(pill).toContain("rounded-full");
-    expect(pill).not.toContain("rounded-[.65rem]");
+    expect(pill).not.toContain("rounded-(--radius-sm)");
     const tighter = classes(buttonVariants({ className: "px-(--space-3)" }));
     expect(tighter).toContain("px-(--space-3)");
     expect(tighter).not.toContain("px-(--space-4)");
@@ -131,7 +131,7 @@ describe("GAP-027 Kinship badge, card, and layout variants", () => {
     expect(chip).not.toContain("text-[.7rem]");
     for (const state of ["error", "forbidden", "unavailable"]) {
       expect(chip).toContain(
-        `in-data-[section-state=${state}]:bg-(--accent-soft)`,
+        `in-data-[section-state=${state}]:bg-(--danger-soft)`,
       );
     }
   });

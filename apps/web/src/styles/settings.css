@@ -1,3 +1,31 @@
+/*
+ * The spacing rules every content card and settings page follows:
+ *
+ * - A card or page section is a vertical stack. Its children carry no margins
+ *   of their own; the stack puts --space-4 between each pair, so a heading,
+ *   its status line, its list, and its actions never touch.
+ * - Inside a heading block, a kicker, a title, and a description sit tighter,
+ *   at --space-1 to --space-2.
+ * - Separate sections of one page stand --space-6 apart.
+ * - A label sits --space-2 above its field, and fields in one form stand
+ *   --space-4 apart.
+ * - Empty lists and empty status lines take no room.
+ */
+.today-section {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.today-section > *,
+.today-section > .contents > * {
+  margin-block: 0;
+}
+
+.today-section :is(.task-list, .interaction-list, .section-state):empty {
+  display: none;
+}
+
 .today-section p {
   color: var(--ink-2);
   line-height: 1.6;
@@ -5,9 +33,19 @@
 
 .section-heading {
   display: flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
   align-items: start;
   justify-content: space-between;
+}
+
+.section-heading > div {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.section-heading > :is(p, span) {
+  flex: none;
 }
 
 .section-heading h2,
@@ -60,11 +98,34 @@
   width: min(var(--application-width, 1180px), calc(100% - 2rem));
 }
 
+/*
+ * A settings page heading: the title block takes the width it needs, and an
+ * optional companion (the overview's search) sits beside it while there is
+ * room, else below it. A heading without a companion uses the full width.
+ */
 .settings-heading {
-  display: grid;
-  grid-template-columns: 1fr minmax(18rem, 27rem);
-  gap: var(--space-6);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
   align-items: end;
+  justify-content: space-between;
+}
+
+.settings-heading > div {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.settings-heading > div > :is(h1, p) {
+  margin-block: 0;
+}
+
+.settings-heading > div > h1 + p {
+  margin-top: var(--space-2);
+}
+
+.settings-heading > .settings-search {
+  flex: 0 1 27rem;
 }
 
 .settings-heading > div > p:not(.eyebrow),
@@ -100,9 +161,45 @@
 }
 
 .settings-content {
+  display: grid;
+  gap: var(--space-5);
   width: 100%;
   max-width: var(--application-width, 55rem);
   min-width: 0;
+  align-content: start;
+}
+
+.settings-content > *,
+.settings-content > .contents > * {
+  min-width: 0;
+  margin-block: 0;
+}
+
+/* A section of a settings page stacks its heading, text, and controls. */
+.settings-content :where(section) {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  align-content: start;
+}
+
+:where(.settings-content section) > :where(h2, h3, p, form, dl, ul, ol) {
+  margin-block: 0;
+}
+
+/* A plain settings form stacks labelled fields and ends with its actions. */
+.settings-content form:not([class]) {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 36rem;
+}
+
+.settings-content form:not([class]) > p {
+  margin: 0;
+}
+
+.settings-content form:not([class]) > button {
+  justify-self: start;
 }
 
 .settings-local-nav {
@@ -180,20 +277,31 @@
 
 .settings-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
   gap: var(--space-3);
 }
 
+/* The card's text shrinks and wraps; its action keeps its size inside it. */
 .settings-card {
   display: flex;
-  gap: var(--space-4);
-  min-height: 7rem;
+  gap: var(--space-3);
+  min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--line-1);
-  border-radius: .75rem;
-  align-items: start;
+  border-radius: var(--radius-md);
+  align-items: center;
   justify-content: space-between;
   background: var(--surface-2);
+}
+
+.settings-card > div {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-card > :is(a, span) {
+  flex: none;
 }
 
 .settings-card h3,
@@ -217,9 +325,9 @@
 }
 
 .settings-card-link {
-  min-height: 44px;
-  align-items: center;
-  text-decoration: none;
+  min-height: 2.5rem;
+  padding-inline: var(--space-3);
+  font-size: .85rem;
 }
 
 .storage-settings-page {
@@ -255,9 +363,10 @@
 
 .api-token-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: var(--space-4);
   max-width: 46rem;
+  align-items: end;
 }
 
 .api-token-form label,
@@ -281,6 +390,23 @@
   margin: 0;
   padding: var(--space-3) 0;
   border: 0;
+}
+
+/* Labels flow inline so "Optional" sits on its label's text row. */
+.api-token-form label:not(.scope-choice) {
+  display: block;
+}
+
+.api-token-form label:not(.scope-choice) > input {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.optional-label {
+  color: var(--ink-3);
+  font-size: .78rem;
+  font-weight: 500;
 }
 
 .api-token-form .scope-choice {
@@ -584,6 +710,38 @@
   font-size: .75rem;
 }
 
+/* The workspace danger zone's current impact: one tile per count. */
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-2);
+}
+
+.impact-grid div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.impact-grid dt {
+  overflow-wrap: anywhere;
+  color: var(--ink-3);
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.impact-grid dt::first-letter {
+  text-transform: uppercase;
+}
+
+.impact-grid dd {
+  margin: var(--space-1) 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
 .members-page {
   max-width: var(--application-width, 72rem);
 }
@@ -660,34 +818,52 @@
   max-width: var(--application-width, 64rem);
 }
 
+/*
+ * The settings navigation already takes the page's side column, so the
+ * personalization sections are a wrapping row of chips above the content,
+ * never a third column.
+ */
 .personalization-layout {
   display: grid;
-  grid-template-columns: minmax(13rem, 16rem) minmax(0, 52rem);
-  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
   align-items: start;
 }
 
 .personalization-nav {
-  position: sticky;
-  top: 1rem;
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .personalization-nav a {
-  min-height: 44px;
-  display: flex;
+  display: inline-flex;
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
   align-items: center;
-  padding: var(--space-3) var(--space-3);
-  border-radius: var(--radius-md);
   color: var(--ink-2);
+  background: var(--surface-1);
+  font-size: .875rem;
+  font-weight: 500;
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.personalization-nav a:hover {
+  color: var(--ink-1);
+  border-color: var(--line-2);
 }
 
 .personalization-nav a[aria-current="page"] {
-  color: var(--ink-1);
-  background: var(--surface-1);
-  box-shadow: inset 3px 0 var(--accent);
+  border-color: var(--accent);
+  color: var(--ink-inverse);
+  background: var(--accent);
+}
+
+.personalization-content > :is(h2, p) {
+  margin-block: 0 var(--space-2);
 }
 
 .personalization-content,
@@ -734,6 +910,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  align-items: center;
 }
 
 .personalization-actions button,
@@ -752,26 +929,60 @@
 .settings-form label {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
+  align-content: start;
   font-size: .82rem;
   font-weight: 600;
 }
 
 .settings-form input,
 .settings-form select {
-  min-height: 48px;
-  padding: var(--space-3) var(--space-3);
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--surface-1);
+  font-size: .95rem;
+  font-weight: 500;
+}
+
+.settings-form select {
+  padding-right: var(--space-6);
+}
+
+/* A form's actions span its width and keep their natural size. */
+.settings-form > :is(button, a, .settings-form-actions) {
+  grid-column: 1 / -1;
+  justify-self: start;
+  align-self: start;
 }
 
 .settings-form .check-label {
   grid-template-columns: auto 1fr;
   align-items: center;
+  align-self: end;
+  min-height: 2.75rem;
 }
 
 .settings-form .check-label input {
+  width: 1rem;
   min-height: 1rem;
+}
+
+.settings-form > h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.settings-form > .section-state {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.settings-form > .section-state:empty {
+  display: none;
 }
 
 .settings-form #settings-errors,
@@ -808,7 +1019,7 @@
   max-width: 54rem;
   margin-top: var(--space-6);
   padding-top: var(--space-6);
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--danger);
 }
 
 .account-lifecycle dl {

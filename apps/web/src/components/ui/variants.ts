@@ -21,16 +21,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils.ts";
 
 const button = cva(
-  "m-0 inline-flex min-h-11 cursor-pointer items-center justify-center border border-solid px-(--space-4) py-(--space-3) text-center leading-[1.2] font-semibold no-underline hover:brightness-96 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-55",
+  "m-0 inline-flex min-h-11 cursor-pointer items-center justify-center gap-(--space-2) border border-solid px-(--space-4) py-(--space-2) text-center leading-[1.2] font-semibold no-underline hover:brightness-95 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-55",
   {
     variants: {
       variant: {
         default: "border-primary bg-primary text-primary-foreground",
         outline: "border-input bg-card text-foreground",
-        destructive: "border-(--accent) bg-(--accent) text-(--ink-inverse)",
+        destructive: "border-(--danger) bg-(--danger) text-(--ink-inverse)",
       },
       shape: {
-        default: "rounded-[.65rem]",
+        default: "rounded-(--radius-sm)",
         pill: "rounded-full",
       },
       // A label that may be long, such as a person's name on Today: it wraps
@@ -82,7 +82,7 @@ const badge = cva(
         // A person section's status chip: calm unless its section card is in
         // trouble.
         status:
-          "bg-muted px-(--space-2) text-[.66rem] whitespace-nowrap text-muted-foreground in-data-[section-state=error]:bg-(--accent-soft) in-data-[section-state=error]:text-(--accent-hover) in-data-[section-state=forbidden]:bg-(--accent-soft) in-data-[section-state=forbidden]:text-(--accent-hover) in-data-[section-state=unavailable]:bg-(--accent-soft) in-data-[section-state=unavailable]:text-(--accent-hover)",
+          "bg-muted px-(--space-2) text-[.66rem] whitespace-nowrap text-muted-foreground in-data-[section-state=error]:bg-(--danger-soft) in-data-[section-state=error]:text-(--danger-strong) in-data-[section-state=forbidden]:bg-(--danger-soft) in-data-[section-state=forbidden]:text-(--danger-strong) in-data-[section-state=unavailable]:bg-(--danger-soft) in-data-[section-state=unavailable]:text-(--danger-strong)",
       },
     },
     defaultVariants: { variant: "default" },
@@ -116,7 +116,7 @@ export function fieldVariants(
   props: { readonly className?: string; readonly multiline?: boolean } = {},
 ): string {
   return cn(
-    "box-border w-full max-w-full min-w-0 rounded-[.65rem] border border-solid border-input bg-card px-(--space-3) py-(--space-3) text-inherit",
+    "box-border w-full max-w-full min-w-0 rounded-(--radius-sm) border border-solid border-input bg-card px-(--space-3) py-(--space-2) text-inherit",
     props.multiline ? "min-h-24 resize-y" : "min-h-11",
     props.className,
   );

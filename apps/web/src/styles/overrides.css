@@ -17,7 +17,7 @@
 
 select:not([multiple]) {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%2320352d' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-image: var(--select-caret);
   background-position: right .7rem center;
   background-repeat: no-repeat;
   background-size: 1rem;

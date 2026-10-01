@@ -76,10 +76,10 @@
 .form-error-summary,
 .duplicate-warning {
   padding: var(--space-4);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--danger);
   border-radius: .75rem;
   color: var(--danger-strong);
-  background: var(--accent-soft);
+  background: var(--danger-soft);
 }
 
 .duplicate-warning h2 {
@@ -269,7 +269,7 @@
 }
 
 .directory-error {
-  border-color: var(--accent-line);
+  border-color: var(--danger);
   background: var(--danger-soft);
 }
 
@@ -405,7 +405,7 @@
 }
 
 .people-bulk-result[data-tone="attention"] {
-  border-color: var(--accent-line);
+  border-color: var(--warning);
   background: var(--warning-soft);
 }
 

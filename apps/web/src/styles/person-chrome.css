@@ -20,9 +20,9 @@
 
 .person-profile-state h1 {
   margin: 0;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 1.75rem;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.15;
   letter-spacing: -.01em;
 }
@@ -92,7 +92,7 @@
 
 .section-state.unavailable {
   padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--warning);
   color: var(--ink-2);
   background: color-mix(in srgb, var(--surface-1) 70%, transparent);
 }
@@ -104,8 +104,12 @@
   align-items: start;
 }
 
+/*
+ * The workspace bar sticks flush beneath the sticky header (4rem and its 1px
+ * rule), so no content shows through a gap above it while the page scrolls.
+ */
 .person-workspace-navigation {
-  --person-navigation-top: 6rem;
+  --person-navigation-top: calc(4rem + 1px);
   position: sticky;
   top: var(--person-navigation-top);
   z-index: 3;
@@ -600,7 +604,7 @@
 
 @media (max-width: 1050px) {
   .person-workspace-navigation {
-    --person-navigation-top: var(--space-2);
+    --person-navigation-top: 0px;
   }
 }
 

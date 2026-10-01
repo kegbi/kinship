@@ -99,7 +99,7 @@ describe("GAP-026 island theme", () => {
   });
 
   it("keeps the design system's own accent token", () => {
-    expect(light.get("--accent")).toBe("#a44730");
+    expect(light.get("--accent")).toBe("#4f46e5");
     expect(shadcn.has("--accent")).toBe(false);
     expect(shadcn.has("--muted")).toBe(false);
     expect(islands).toMatch(/--color-accent:\s*var\(--accent-soft\);/);

@@ -3,8 +3,8 @@
 :root {
   color-scheme: light;
   font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
-  color: var(--ink-1, rgb(32 53 45));
-  background: var(--surface-page, rgb(244 240 231));
+  color: var(--ink-1, rgb(24 24 27));
+  background: var(--surface-page, rgb(246 247 249));
 }
 * {
   box-sizing: border-box;
@@ -18,9 +18,10 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background: radial-gradient(circle at 10% 10%, rgb(164 71 48 / 15%),
-    transparent 28rem), radial-gradient(circle at 90% 90%, rgb(79 112 82 / 16%),
-    transparent 30rem), var(--surface-page, rgb(244 240 231));
+  background: radial-gradient(circle at 10% 10%, rgb(79 70 229 / 15%),
+    transparent 28rem), radial-gradient(circle at 90% 90%, rgb(99 102 241 /
+    16%),
+    transparent 30rem), var(--surface-page, rgb(246 247 249));
 }
 a {
   color: inherit;
@@ -28,7 +29,7 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible {
-  outline: 3px solid var(--focus-ring, rgb(164 71 48));
+  outline: 3px solid var(--focus-ring, rgb(79 70 229));
   outline-offset: 3px;
 }
 .skip-link {
@@ -39,7 +40,7 @@ input:focus-visible {
   padding: .7rem 1rem;
   border-radius: var(--radius-pill, 999px);
   color: white;
-  background: var(--ink-1, rgb(32 53 45));
+  background: var(--ink-1, rgb(24 24 27));
   transform: translateY(-180%);
 }
 .skip-link:focus {
@@ -52,16 +53,16 @@ input:focus-visible {
   padding: 1.35rem 0;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgb(33 51 44 / 16%);
-  color: var(--ink-2, rgb(74 90 82));
+  border-bottom: 1px solid rgb(24 24 27 / 16%);
+  color: var(--ink-2, rgb(82 82 91));
   font-size: .8rem;
 }
 .brand {
   display: inline-flex;
   gap: .65rem;
   align-items: center;
-  color: var(--ink-1, rgb(32 53 45));
-  font-family: Georgia, serif;
+  color: var(--ink-1, rgb(24 24 27));
+  font-family: inherit;
   font-size: 1.25rem;
   font-weight: 700;
   text-decoration: none;
@@ -73,7 +74,7 @@ input:focus-visible {
   place-items: center;
   border-radius: 50%;
   color: white;
-  background: var(--accent, rgb(164 71 48));
+  background: var(--accent, rgb(79 70 229));
   font-family: "Inter Variable", Inter, sans-serif;
   font-size: .85rem;
 }
@@ -89,7 +90,7 @@ input:focus-visible {
 }
 .eyebrow {
   margin: 0 0 1rem;
-  color: var(--accent-hover, rgb(146 61 46));
+  color: var(--accent-hover, rgb(67 56 202));
   font-size: .72rem;
   font-weight: 800;
   letter-spacing: .15em;
@@ -97,15 +98,15 @@ input:focus-visible {
 }
 h1 {
   margin: 0;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: clamp(2.4rem, 5vw, 3.4rem);
-  font-weight: 500;
+  font-weight: 700;
   line-height: .98;
   letter-spacing: -.045em;
 }
 .auth-intro > p:not(.eyebrow),
 .auth-intro li {
-  color: var(--ink-2, rgb(74 90 82));
+  color: var(--ink-2, rgb(82 82 91));
   line-height: 1.65;
 }
 .auth-intro ul {
@@ -117,10 +118,10 @@ h1 {
 .auth-card,
 .transition-card {
   padding: clamp(1.5rem, 4vw, 3rem);
-  border: 1px solid rgb(33 51 44 / 14%);
+  border: 1px solid rgb(24 24 27 / 14%);
   border-radius: 1.4rem;
-  background: rgb(255 253 248 / 88%);
-  box-shadow: 0 2rem 6rem rgb(50 58 49 / 12%);
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 2rem 6rem rgb(16 24 40 / 12%);
 }
 form {
   display: grid;
@@ -135,7 +136,7 @@ label {
 }
 label span,
 .field-help {
-  color: var(--ink-3, rgb(107 122 114));
+  color: var(--ink-3, rgb(103 103 111));
   font-size: .75rem;
   font-weight: 400;
 }
@@ -143,9 +144,9 @@ input {
   width: 100%;
   min-height: 3rem;
   padding: .75rem .9rem;
-  border: 1px solid var(--line-strong, rgb(174 183 174));
+  border: 1px solid var(--line-strong, rgb(161 161 170));
   border-radius: .65rem;
-  color: var(--ink-1, rgb(32 53 45));
+  color: var(--ink-1, rgb(24 24 27));
   background: white;
   font: inherit;
 }
@@ -159,8 +160,8 @@ button,
   border-radius: var(--radius-pill, 999px);
   align-items: center;
   justify-content: center;
-  color: var(--ink-inverse, rgb(255 253 248));
-  background: var(--ink-1, rgb(32 53 45));
+  color: var(--ink-inverse, rgb(255 255 255));
+  background: var(--ink-1, rgb(24 24 27));
   font: inherit;
   font-weight: 750;
   text-decoration: none;
@@ -173,7 +174,7 @@ button:disabled {
 .field-error {
   min-height: 1rem;
   margin: 0;
-  color: var(--danger, rgb(157 44 44));
+  color: var(--danger, rgb(185 28 28));
   font-size: .75rem;
 }
 .field-help {
@@ -189,27 +190,27 @@ button:disabled {
   margin: 0;
 }
 .form-status span {
-  color: var(--ink-2, rgb(74 90 82));
+  color: var(--ink-2, rgb(82 82 91));
 }
 .form-status[data-state="error"] {
   padding: .85rem;
-  border-left: 3px solid var(--accent, rgb(164 71 48));
-  background: var(--danger-soft, rgb(255 241 240));
+  border-left: 3px solid var(--accent, rgb(79 70 229));
+  background: var(--danger-soft, rgb(254 242 242));
 }
 .form-status[data-state="loading"] {
-  color: var(--ink-2, rgb(74 90 82));
+  color: var(--ink-2, rgb(82 82 91));
 }
 .form-status[data-state="success"] {
   padding: .85rem;
-  border-left: 3px solid var(--positive, rgb(53 121 107));
-  background: var(--positive-soft, rgb(232 238 232));
+  border-left: 3px solid var(--positive, rgb(4 120 87));
+  background: var(--positive-soft, rgb(236 253 245));
 }
 .auth-links {
   display: flex;
   gap: 1rem;
   margin: 1.25rem 0 0;
   flex-wrap: wrap;
-  color: var(--ink-2, rgb(74 90 82));
+  color: var(--ink-2, rgb(82 82 91));
   font-size: .82rem;
 }
 .transition-main {
@@ -227,7 +228,7 @@ button:disabled {
 }
 .transition-card [role="status"] {
   margin-top: 1.5rem;
-  color: var(--ink-2, rgb(74 90 82));
+  color: var(--ink-2, rgb(82 82 91));
   font-size: 1.05rem;
   line-height: 1.65;
 }
@@ -243,9 +244,9 @@ button:disabled {
 }
 
 .invitation-actions .secondary-link {
-  border: 1px solid var(--line-strong, rgb(174 183 174));
-  color: var(--ink-1, rgb(32 53 45));
-  background: var(--surface-1, rgb(255 253 248));
+  border: 1px solid var(--line-strong, rgb(161 161 170));
+  color: var(--ink-1, rgb(24 24 27));
+  background: var(--surface-1, rgb(255 255 255));
 }
 @media (max-width: 760px) {
   .auth-main {

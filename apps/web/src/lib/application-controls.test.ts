@@ -216,7 +216,7 @@ const spacingExceptions = [
     path: "apps/web/src/styles/base.css",
     selector: "select",
     property: "padding",
-    value: "var(--space-3) 2.35rem var(--space-3) var(--space-3)",
+    value: "var(--space-2) 2.35rem var(--space-2) var(--space-3)",
     // The second component clears the custom select caret rather than setting rhythm.
   },
   {
@@ -479,12 +479,12 @@ describe("application control presentation", () => {
       Array.from(
         readFileSync(path, "utf8").matchAll(/font-weight:\s*([^;]+);/g),
         (match) => `${path}:${match[1]?.trim()}`,
-      ).filter((entry) => !/:(?:500|600|700)$/.test(entry))
+      ).filter((entry) => !/:(?:400|500|600|700)$/.test(entry))
     );
 
     expect(
       violations,
-      `Found ${violations.length} font weights outside 500, 600, and 700`,
+      `Found ${violations.length} font weights outside 400, 500, 600, and 700`,
     ).toEqual([]);
   });
 
@@ -524,7 +524,7 @@ describe("application control presentation", () => {
     for (const variant of ["default", "outline", "destructive"] as const) {
       const classes = buttonVariants({ variant }).split(" ");
       // A button and a link that names the same variant draw the same box:
-      // a 44px target, 12px by 16px padding, a .65rem radius, semibold text
+      // a 44px target, 8px by 16px padding, the small radius, semibold text
       // on a 1.2 line, never underlined.
       for (
         const token of [
@@ -532,9 +532,9 @@ describe("application control presentation", () => {
           "items-center",
           "justify-center",
           "min-h-11",
-          "py-(--space-3)",
+          "py-(--space-2)",
           "px-(--space-4)",
-          "rounded-[.65rem]",
+          "rounded-(--radius-sm)",
           "font-semibold",
           "leading-[1.2]",
           "no-underline",
@@ -545,13 +545,13 @@ describe("application control presentation", () => {
         ]
       ) expect(classes).toContain(token);
     }
-    // Primary is ink (#20352d) and danger the accent (#a44730).
-    expect(tokensCss).toMatch(/--primary:\s*var\(--ink-1\);/);
-    expect(tokensCss).toMatch(/--ink-1:\s*#20352d;/);
+    // Primary is the indigo accent (#4f46e5) and danger its own red (#b91c1c).
+    expect(tokensCss).toMatch(/--primary:\s*var\(--accent\);/);
+    expect(tokensCss).toMatch(/--accent:\s*#4f46e5;/);
     expect(buttonVariants().split(" ")).toContain("bg-primary");
-    expect(tokensCss).toMatch(/--accent:\s*#a44730;/);
+    expect(tokensCss).toMatch(/--danger:\s*#b91c1c;/);
     expect(buttonVariants({ variant: "destructive" }).split(" ")).toContain(
-      "bg-(--accent)",
+      "bg-(--danger)",
     );
   });
 
@@ -589,9 +589,9 @@ describe("application control presentation", () => {
       expect(computed.minHeight).toBe("44px");
       expect(computed.font).toBe("inherit");
       expect(computed.color).toBe("inherit");
-      expect(computed.backgroundColor).toBe("#fffdf8");
+      expect(computed.backgroundColor).toBe("#ffffff");
       expect(computed.borderTopWidth).toBe("1px");
-      expect(computed.borderRadius).toBe("9.6px");
+      expect(computed.borderRadius).toBe("8px");
       expect(computed.maxWidth).toBe("100%");
       expect(computed.cursor).toBe("pointer");
     }
@@ -644,9 +644,6 @@ describe("application control presentation", () => {
     for (
       const control of [
         ...buttons,
-        input,
-        select,
-        textarea,
         link,
         summary,
         menuButton,
@@ -657,7 +654,18 @@ describe("application control presentation", () => {
       expect(computed.outlineStyle).toBe("solid");
       expect(computed.outlineWidth).toBe("2px");
       expect(computed.outlineOffset).toBe("2px");
-      expect(computed.outlineColor).toBe("#a44730");
+      expect(computed.outlineColor).toBe("#6366f1");
+      expect(computed.boxShadow).not.toContain("inset");
+    }
+    // A text field takes focus as an accent border and a soft halo; its
+    // transparent outline is what forced-colors mode paints.
+    for (const control of [input, select, textarea]) {
+      control.focus();
+      const computed = getComputedStyle(control);
+      expect(computed.outlineStyle).toBe("solid");
+      expect(computed.outlineWidth).toBe("2px");
+      expect(computed.outlineColor).toBe("transparent");
+      expect(computed.boxShadow).toMatch(/^0 0 0 3px /);
       expect(computed.boxShadow).not.toContain("inset");
     }
     status.focus();
@@ -696,17 +704,17 @@ describe("application control presentation", () => {
         )
           .toBe(false);
         const computed = getComputedStyle(control);
-        expect(computed.outlineColor).toBe("#a44730");
+        expect(computed.outlineColor).toBe("transparent");
         expect(computed.outlineStyle).toBe("solid");
         expect(computed.outlineWidth).toBe("2px");
-        expect(computed.outlineOffset).toBe("2px");
-        expect(computed.borderColor).toBe("#9d2c2c");
+        expect(computed.boxShadow).toMatch(/^0 0 0 3px /);
+        expect(computed.borderColor).toBe("#b91c1c");
       }
       const unfocused = document.createElement("input");
       unfocused.setAttribute("aria-invalid", "true");
       form.append(unfocused);
       expect(unfocused.matches(invalidOutlineSelector!)).toBe(true);
-      expect(getComputedStyle(unfocused).borderColor).toBe("#9d2c2c");
+      expect(getComputedStyle(unfocused).borderColor).toBe("#b91c1c");
     },
   );
 
@@ -737,7 +745,7 @@ describe("application control presentation", () => {
       expect(getComputedStyle(destination).boxShadow).not.toContain("inset");
       const cueStyle = getComputedStyle(cue);
       expect(cueStyle.textDecoration).toBe("underline");
-      expect(cueStyle.textDecorationColor).toBe("#a44730");
+      expect(cueStyle.textDecorationColor).toBe("#6366f1");
       expect(cueStyle.getPropertyValue("text-decoration-thickness")).toBe(
         "2px",
       );

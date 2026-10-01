@@ -1,7 +1,11 @@
 ---
 import "../styles/application.css";
 import "../styles/islands.css";
-import { buttonVariants } from "../components/ui/variants.ts";
+import {
+  buttonVariants,
+  skeletonLinesVariants,
+  skeletonVariants,
+} from "../components/ui/variants.ts";
 import {
   ACCESS_FORBIDDEN_TEMPLATE_ID,
   ACCESS_SIGN_IN_TEMPLATE_ID,
@@ -58,8 +62,8 @@ const accessAction = buttonVariants({
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="robots" content="noindex" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f0e7" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121915" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0f12" />
     <script is:inline>
       try {
         const theme = localStorage.getItem("kinship.theme");
@@ -74,6 +78,22 @@ const accessAction = buttonVariants({
   <body data-page-id={pageId}>
     <a class="skip-link" href="#main-content" tabindex="0">Skip to main content</a>
     <section id="access-state" class="access-state" role="status" tabindex="-1" aria-live="polite">
+      {/* While the session resolves, the page keeps the shell's frame: a
+        header in the same place and skeletons where the content will be, so
+        opening a page never flashes a full-screen loader. */}
+      <div class="access-skeleton" aria-hidden="true">
+        <div class="access-skeleton-header">
+          <div class="header-row">
+            <span class="brand"><span class="brand-mark">K</span><span>Kinship</span></span>
+            <span class="access-skeleton-nav"><span class={skeletonVariants({ shape: "chip" })}></span><span class={skeletonVariants({ shape: "chip" })}></span><span class={skeletonVariants({ shape: "chip" })}></span><span class={skeletonVariants({ shape: "chip" })}></span></span>
+          </div>
+        </div>
+        <div class="page-frame access-skeleton-page">
+          <div class={skeletonLinesVariants}><span class={skeletonVariants({ shape: "line-60" })}></span><span class={skeletonVariants({ shape: "line-80" })}></span></div>
+          <div class="access-skeleton-card"><div class={skeletonLinesVariants}><span class={skeletonVariants({ shape: "line-60" })}></span><span class={skeletonVariants()}></span><span class={skeletonVariants({ shape: "line-80" })}></span></div></div>
+          <div class="access-skeleton-card"><div class={skeletonLinesVariants}><span class={skeletonVariants({ shape: "line-60" })}></span><span class={skeletonVariants()}></span><span class={skeletonVariants({ shape: "line-80" })}></span></div></div>
+        </div>
+      </div>
       <div class="access-card">
         <p class="eyebrow">Protected workspace</p>
         <h1>Opening Kinship…</h1>
