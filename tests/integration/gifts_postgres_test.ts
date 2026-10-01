@@ -1,6 +1,7 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import {
   createGiftManagement,
+  createRecurringDebtCharging,
 } from "../../packages/backend/modules/gifts/public.ts";
 import { giftAuditFrom } from "../../packages/backend/modules/gifts/public.ts";
 import {
@@ -14,6 +15,9 @@ import {
 import {
   PostgresGiftRepository,
 } from "../../packages/backend/modules/gifts/adapters/postgres/gift_repository.ts";
+import {
+  PostgresRecurringDebtRepository,
+} from "../../packages/backend/modules/gifts/adapters/postgres/recurring_debt_repository.ts";
 import {
   PostgresGiftAttachmentBoundary,
 } from "../../packages/backend/modules/files/adapters/postgres/gift_attachment_boundary.ts";
@@ -29,6 +33,9 @@ import {
 import {
   PostgresWorkspaceCurrencyBoundary,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/currency_boundary.ts";
+import {
+  PostgresWorkspaceCalendarBoundary,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_calendar.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
@@ -57,7 +64,7 @@ const createPerson = (fixture: Fixture, givenName: string) =>
 function request(
   fixture: Fixture,
   path: string,
-  method: "GET" | "PATCH" | "POST",
+  method: "DELETE" | "GET" | "PATCH" | "POST",
   body?: unknown,
 ) {
   return api.request(fixture, path, method, body);
@@ -321,9 +328,11 @@ Deno.test({
           new PostgresGiftAttachmentTarget(),
         ),
         audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
         clock: { now: () => new Date() },
         currencies: new PostgresWorkspaceCurrencyBoundary(),
         ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
         transaction: new PostgresPeopleTransaction(connection.db),
       });
@@ -591,6 +600,250 @@ Deno.test({
         attached.status === 201 &&
           attachedBody.gift.attachmentFileId === documentFileId,
         `a person's document no longer attaches to a gift: ${attached.status}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+/** The UTC calendar date `months` months from today, on day `day`. */
+function monthsFromToday(months: number, day: number): string {
+  const today = Temporal.Now.plainDateISO("UTC");
+  const month = today.toPlainYearMonth().add({ months });
+  return month.toPlainDate({ day: Math.min(day, month.daysInMonth) })
+    .toString();
+}
+
+Deno.test({
+  name:
+    "[GIFTS-001] PostgreSQL recurring debts charge each period once, catch up, and stay in their workspace",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const suffix = crypto.randomUUID();
+      const primary = await register(
+        `recurring-${suffix}@example.test`,
+        "Recurring primary",
+      );
+      const foreign = await register(
+        `recurring-foreign-${suffix}@example.test`,
+        "Recurring foreign",
+      );
+      const ada = await createPerson(primary, "Ada");
+      const outsider = await createPerson(foreign, "Outsider");
+      const charging = createRecurringDebtCharging({
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date() },
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+      const charged = async (rule: string) =>
+        (await sql<{ readonly on: string }[]>`
+          select occurrence_on::text as on from crm.debts
+          where recurring_debt_id = ${rule}::uuid order by occurrence_on
+        `).map((row) => row.on);
+
+      // A rule that started two months ago charges three periods at once.
+      const startsOn = monthsFromToday(-2, 1);
+      const created = await request(
+        primary,
+        `/api/v1/people/${ada}/recurring-debts`,
+        "POST",
+        {
+          amount: "25.50",
+          currencyCode: "eur",
+          dayOfMonth: 1,
+          direction: "they_owe",
+          intervalMonths: 1,
+          reason: "Shared rent",
+          startsOn,
+        },
+      );
+      const createdBody = await created.json() as {
+        readonly charged: number;
+        readonly recurringDebt: {
+          readonly id: string;
+          readonly nextOccurrenceOn?: string;
+        };
+      };
+      assert(
+        created.status === 201 && createdBody.charged === 3,
+        `a past start did not catch up: ${created.status} ${
+          JSON.stringify(createdBody)
+        }`,
+      );
+      const rule = createdBody.recurringDebt.id;
+      assert(
+        createdBody.recurringDebt.nextOccurrenceOn === monthsFromToday(1, 1),
+        "the rule waits for next month's period",
+      );
+      assert(
+        JSON.stringify(await charged(rule)) ===
+          JSON.stringify([
+            startsOn,
+            monthsFromToday(-1, 1),
+            monthsFromToday(0, 1),
+          ]),
+        "each period is its own debt",
+      );
+
+      // The worker finds nothing more to charge, however often it runs.
+      await charging.chargeDue();
+      await charging.chargeDue();
+      assert((await charged(rule)).length === 3, "the worker charged twice");
+
+      // A worker that was down for months catches up every period, once,
+      // even when two runs overlap.
+      await sql`
+        update crm.recurring_debts
+        set starts_on = ${monthsFromToday(-6, 1)}::date,
+          next_occurrence_on = ${monthsFromToday(-6, 1)}::date
+        where id = ${rule}::uuid
+      `;
+      await Promise.all([charging.chargeDue(), charging.chargeDue()]);
+      const caughtUp = await charged(rule);
+      assert(
+        caughtUp.length === 7 && new Set(caughtUp).size === 7,
+        `catch-up charged ${JSON.stringify(caughtUp)}`,
+      );
+      const [advanced] = await sql<{ readonly next: string }[]>`
+        select next_occurrence_on::text as next from crm.recurring_debts
+        where id = ${rule}::uuid
+      `;
+      assert(
+        advanced?.next === monthsFromToday(1, 1),
+        `catch-up left the rule at ${advanced?.next}`,
+      );
+
+      // The person's section lists the rule, the generated debts, and the
+      // default currency: the workspace's, until the member chooses one.
+      const listed = async () =>
+        await (await request(primary, `/api/v1/people/${ada}/gifts`, "GET"))
+          .json() as {
+            readonly debts: readonly { readonly recurringDebtId?: string }[];
+            readonly defaultCurrencyCode: string;
+            readonly recurringDebts: readonly { readonly id: string }[];
+          };
+      const first = await listed();
+      assert(
+        first.defaultCurrencyCode === "USD" &&
+          first.recurringDebts.map((entry) => entry.id).join() === rule &&
+          first.debts.filter((debt) => debt.recurringDebtId === rule)
+              .length === 7,
+        `the section did not list the rule: ${JSON.stringify(first)}`,
+      );
+      await sql`
+        update crm.workspace_settings set default_currency_code = 'EUR'
+        where workspace_id = ${primary.workspaceId}::uuid
+      `;
+      assert(
+        (await listed()).defaultCurrencyCode === "EUR",
+        "the workspace default currency was not offered",
+      );
+      await sql`
+        insert into crm.member_preferences (member_id, currency_code)
+        values (${primary.memberId}::uuid, 'RSD')
+        on conflict (member_id) do update set currency_code = 'RSD'
+      `;
+      assert(
+        (await listed()).defaultCurrencyCode === "RSD",
+        "the member's preferred currency was not offered",
+      );
+
+      // Another workspace can neither see, change, nor delete the rule, nor
+      // create one for a person it does not own.
+      for (
+        const [method, body] of [
+          ["PATCH", { amount: "1" }],
+          ["DELETE", undefined],
+        ] as const
+      ) {
+        const refused = await request(
+          foreign,
+          `/api/v1/people/${ada}/recurring-debts/${rule}`,
+          method,
+          body,
+        );
+        assert(
+          refused.status === 404,
+          `${method} reached another workspace's rule: ${refused.status}`,
+        );
+      }
+      const foreignCreate = await request(
+        foreign,
+        `/api/v1/people/${ada}/recurring-debts`,
+        "POST",
+        {
+          amount: "1",
+          currencyCode: "EUR",
+          dayOfMonth: 1,
+          direction: "i_owe",
+          intervalMonths: 1,
+          startsOn,
+        },
+      );
+      assert(
+        foreignCreate.status === 404,
+        `a rule was created for another workspace's person: ${foreignCreate.status}`,
+      );
+      const outsiderList = await (await request(
+        foreign,
+        `/api/v1/people/${outsider}/gifts`,
+        "GET",
+      )).json() as { readonly recurringDebts: readonly unknown[] };
+      assert(
+        outsiderList.recurringDebts.length === 0,
+        "another workspace's rule leaked into a list",
+      );
+
+      // A paused rule charges nothing; deleting it keeps every debt.
+      const paused = await request(
+        primary,
+        `/api/v1/people/${ada}/recurring-debts/${rule}`,
+        "PATCH",
+        { active: false },
+      );
+      assert(paused.status === 200, `pause failed: ${paused.status}`);
+      await sql`
+        update crm.recurring_debts
+        set next_occurrence_on = ${monthsFromToday(0, 1)}::date
+        where id = ${rule}::uuid
+      `;
+      await sql`
+        delete from crm.debts
+        where recurring_debt_id = ${rule}::uuid
+          and occurrence_on = ${monthsFromToday(0, 1)}::date
+      `;
+      await charging.chargeDue();
+      assert(
+        (await charged(rule)).length === 6,
+        "a paused rule was charged",
+      );
+      const deleted = await request(
+        primary,
+        `/api/v1/people/${ada}/recurring-debts/${rule}`,
+        "DELETE",
+      );
+      assert(deleted.status === 200, `delete failed: ${deleted.status}`);
+      const [kept] = await sql<{ readonly count: number }[]>`
+        select count(*)::int as count from crm.debts
+        where person_id = ${ada}::uuid and recurring_debt_id is null
+          and occurrence_on is not null
+      `;
+      assert(kept?.count === 6, "deleting the rule removed its debts");
+      const [audits] = await sql<{ readonly count: number }[]>`
+        select count(*)::int as count from crm.audit_events
+        where workspace_id = ${primary.workspaceId}::uuid
+          and action = 'gifts.recurring-debt-created-or-state-changed'
+      `;
+      assert(
+        audits?.count === 3,
+        `rule audits were ${audits?.count}, not create, pause, and delete`,
       );
     } finally {
       await connection.destroy();

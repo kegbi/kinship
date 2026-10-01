@@ -25,12 +25,19 @@ const SITES: readonly PersonReferenceSite[] = [
     touches: true,
     workspaceScoped: true,
   },
+  {
+    column: "person_id",
+    table: "crm.recurring_debts",
+    touches: true,
+    workspaceScoped: true,
+  },
 ];
 
 /**
  * The gifts side of a person merge (GAP-049): the duplicate's gifts, the
- * gifts meant for the duplicate, and the duplicate's debts all become the
- * primary's. None of them can collide, so all of them move.
+ * gifts meant for the duplicate, and the duplicate's debts and recurring debt
+ * rules all become the primary's. None of them can collide, so all of them
+ * move.
  */
 export class PostgresGiftPersonMergeParticipant
   implements PersonMergeParticipant {

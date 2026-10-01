@@ -52,6 +52,8 @@ export function getMemberPreferences(
     {
       readonly status: "ready";
       readonly preferences: ResolvedMemberPreferences;
+      /** The currency codes the currency preference may name. */
+      readonly supportedCurrencyCodes: readonly string[];
     }
   >
 > {
@@ -133,7 +135,12 @@ export function revokeMemberSession(
 export function getWorkspaceSettings(
   workspaceId?: string,
 ): Promise<
-  ApiResult<{ readonly status: "ready"; readonly workspace: WorkspaceSettings }>
+  ApiResult<{
+    readonly status: "ready";
+    /** The currency codes the default currency may name. */
+    readonly supportedCurrencyCodes: readonly string[];
+    readonly workspace: WorkspaceSettings;
+  }>
 > {
   return request("/api/v1/settings/workspace", {
     headers: workspaceHeader(workspaceId),

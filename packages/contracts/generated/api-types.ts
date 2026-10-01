@@ -919,6 +919,41 @@ export interface paths {
         readonly patch: operations["updatePersonLifeEvent"];
         readonly trace?: never;
     };
+    readonly "/api/v1/people/{personId}/recurring-debts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. */
+        readonly post: operations["createRecurringDebt"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own. */
+        readonly delete: operations["deleteRecurringDebt"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. */
+        readonly patch: operations["updateRecurringDebt"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/{personId}/relationships": {
         readonly parameters: {
             readonly query?: never;
@@ -2377,9 +2412,13 @@ export interface components {
             readonly direction: "i_owe" | "they_owe";
             /** Format: uuid */
             readonly id: string;
+            /** Format: date */
+            readonly occurrenceOn?: string;
             /** Format: uuid */
             readonly personId: string;
             readonly reason?: string;
+            /** Format: uuid */
+            readonly recurringDebtId?: string;
             /** Format: date-time */
             readonly settledAt?: string;
             /** @enum {string} */
@@ -2595,9 +2634,11 @@ export interface components {
         };
         readonly GiftDebtList: {
             readonly debts: readonly components["schemas"]["Debt"][];
+            readonly defaultCurrencyCode: string;
             readonly gifts: readonly components["schemas"]["Gift"][];
             readonly nextDebtCursor?: string;
             readonly nextGiftCursor?: string;
+            readonly recurringDebts: readonly components["schemas"]["RecurringDebt"][];
             /** @constant */
             readonly status: "ready";
             readonly supportedCurrencyCodes: readonly string[];
@@ -3817,6 +3858,7 @@ export interface components {
             /** @constant */
             readonly status: "ready";
             readonly preferences: components["schemas"]["ResolvedMemberPreferences"];
+            readonly supportedCurrencyCodes: readonly string[];
         };
         readonly PreferencesInput: {
             /** @enum {string} */
@@ -3918,6 +3960,74 @@ export interface components {
         readonly RecoveryAccepted: {
             /** @constant */
             readonly status: "accepted";
+        };
+        readonly RecurringDebt: {
+            readonly active: boolean;
+            readonly amount: string;
+            /** Format: date-time */
+            readonly createdAt: string;
+            readonly currencyCode: string;
+            readonly dayOfMonth: number;
+            /** @enum {string} */
+            readonly direction: "i_owe" | "they_owe";
+            /** Format: date */
+            readonly endsOn?: string;
+            /** Format: uuid */
+            readonly id: string;
+            readonly intervalMonths: number;
+            /** Format: date */
+            readonly nextOccurrenceOn?: string;
+            /** Format: uuid */
+            readonly personId: string;
+            readonly reason?: string;
+            /** Format: date */
+            readonly startsOn: string;
+            /** Format: date-time */
+            readonly updatedAt: string;
+        };
+        readonly RecurringDebtCreateInput: {
+            readonly amount: string;
+            readonly currencyCode: string;
+            readonly dayOfMonth: number;
+            /** @enum {string} */
+            readonly direction: "i_owe" | "they_owe";
+            /** Format: date */
+            readonly endsOn?: string;
+            readonly intervalMonths: number;
+            readonly reason?: string;
+            /** Format: date */
+            readonly startsOn: string;
+        };
+        readonly RecurringDebtCreated: {
+            readonly charged: number;
+            readonly recurringDebt: components["schemas"]["RecurringDebt"];
+            /** @constant */
+            readonly status: "created";
+        };
+        readonly RecurringDebtDeleted: {
+            /** Format: uuid */
+            readonly recurringDebtId: string;
+            /** @constant */
+            readonly status: "deleted";
+        };
+        readonly RecurringDebtSaved: {
+            readonly charged: number;
+            readonly recurringDebt: components["schemas"]["RecurringDebt"];
+            /** @constant */
+            readonly status: "saved";
+        };
+        readonly RecurringDebtUpdateInput: {
+            readonly active?: boolean;
+            readonly amount?: string;
+            readonly currencyCode?: string;
+            readonly dayOfMonth?: number;
+            /** @enum {string} */
+            readonly direction?: "i_owe" | "they_owe";
+            readonly endsOn?: string | null;
+            readonly intervalMonths?: number;
+            readonly reason?: string | null;
+            /** Format: date */
+            readonly startsOn?: string;
         };
         readonly RegistrationAccepted: {
             /** @constant */
@@ -4628,6 +4738,7 @@ export interface components {
         readonly WorkspaceSettings: {
             /** @constant */
             readonly status: "ready";
+            readonly supportedCurrencyCodes: readonly string[];
             readonly workspace: components["schemas"]["WorkspaceSettingsInput"];
         };
         readonly WorkspaceSettingsInput: {
@@ -9910,6 +10021,250 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PersonLifeEventChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly createRecurringDebt: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RecurringDebtCreateInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Recurring debt created */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RecurringDebtCreated"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteRecurringDebt: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly recurringDebtId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Recurring debt deleted */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RecurringDebtDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateRecurringDebt: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly recurringDebtId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RecurringDebtUpdateInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Recurring debt changed */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RecurringDebtSaved"];
                 };
             };
             /** @description RFC 9457 problem details */

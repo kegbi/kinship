@@ -9,25 +9,35 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v9 migration classifies only exact empty and v1-v9 states", () => {
+Deno.test("schema v10 migration classifies only exact empty and v1-v10 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v9",
-    "empty target applies the full v9 schema",
+      "apply-v10",
+    "empty target applies the full v10 schema",
   );
   for (
-    const version of ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"] as const
+    const version of [
+      "v1",
+      "v2",
+      "v3",
+      "v4",
+      "v5",
+      "v6",
+      "v7",
+      "v8",
+      "v9",
+    ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v9`,
+        `upgrade-${version}-to-v10`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v9" }) ===
-      "verify-v9",
-    "exact v9 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v10" }) ===
+      "verify-v10",
+    "exact v10 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -75,23 +85,23 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v9 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v10 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v9/personal_crm_schema_spec_v9.md",
+    "personal-crm-schema/v10/personal_crm_schema_spec_v10.md",
   );
   assert(
-    specification.includes("SQL tables parsed: **90**") &&
-      specification.includes("SQL columns parsed: **850**") &&
-      specification.includes("Explicit indexes: **154**"),
-    "v9 specification metrics drifted from canonical SQL and validation JSON",
+    specification.includes("SQL tables parsed: **91**") &&
+      specification.includes("SQL columns parsed: **868**") &&
+      specification.includes("Explicit indexes: **156**"),
+    "v10 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v9/personal_crm_schema_v9.sql",
+    "personal-crm-schema/v10/personal_crm_schema_v10.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
       specification.includes("`transactional-failure`"),
-    "v9 omits the redacted post-rollback lifecycle outcome",
+    "v10 omits the redacted post-rollback lifecycle outcome",
   );
   assert(
     sql.includes("reminder_delivery text NOT NULL DEFAULT 'in_app'") &&
@@ -101,7 +111,7 @@ Deno.test("schema v9 specification reports its exact canonical metrics", async (
       sql.includes("  digest_time time,\n") &&
       specification.includes("`reminder_delivery`") &&
       specification.includes("`digest_time`"),
-    "v9 omits the member reminder-delivery preferences",
+    "v10 omits the member reminder-delivery preferences",
   );
   assert(
     sql.includes("CREATE TABLE person_duplicate_dismissals (") &&
@@ -113,7 +123,7 @@ Deno.test("schema v9 specification reports its exact canonical metrics", async (
         "FOREIGN KEY (workspace_id, person_high_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
       ) &&
       specification.includes("### `person_duplicate_dismissals`"),
-    "v9 omits the workspace-shared duplicate dismissals",
+    "v10 omits the workspace-shared duplicate dismissals",
   );
   for (
     const index of [
@@ -126,7 +136,23 @@ Deno.test("schema v9 specification reports its exact canonical metrics", async (
     assert(
       sql.includes(`CREATE INDEX ${index};`) &&
         specification.includes(`CREATE INDEX ${index};`),
-      `v9 omits ${index}`,
+      `v10 omits ${index}`,
     );
   }
+  assert(
+    sql.includes("CREATE TABLE recurring_debts (") &&
+      sql.includes(
+        "CONSTRAINT recurring_debts_person_fk FOREIGN KEY (workspace_id, person_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
+      ) &&
+      sql.includes(
+        "CONSTRAINT recurring_debts_day_ck CHECK (day_of_month BETWEEN 1 AND 31)",
+      ) &&
+      sql.includes(
+        "CONSTRAINT debts_recurring_occurrence_key UNIQUE (recurring_debt_id, occurrence_on)",
+      ) &&
+      sql.includes("ON DELETE SET NULL (recurring_debt_id)") &&
+      specification.includes("### `recurring_debts`") &&
+      specification.includes("debts_recurring_occurrence_key"),
+    "v10 omits the recurring debt rules or their one-debt-per-period key",
+  );
 });

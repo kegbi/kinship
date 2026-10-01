@@ -149,7 +149,10 @@ export function SettingsForm<V>(props: SettingsFormProps<V>) {
   useLayoutEffect(() => {
     if (!form.current) return;
     for (const control of namedControls(form.current)) {
-      if (control instanceof HTMLInputElement) {
+      if (
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement
+      ) {
         control.setCustomValidity(state.errors[control.name] ?? "");
       }
       if (state.invalid.includes(control.name)) {
@@ -184,7 +187,7 @@ export function SettingsForm<V>(props: SettingsFormProps<V>) {
   };
 
   const input = (event: SyntheticEvent<HTMLFormElement>) => {
-    const control = event.target as HTMLInputElement;
+    const control = event.target as HTMLInputElement | HTMLSelectElement;
     if (control.name) {
       control.setCustomValidity?.("");
       dispatch({
@@ -214,7 +217,8 @@ export function SettingsForm<V>(props: SettingsFormProps<V>) {
     const problem = answer.problem;
     const inputs = new Set(
       namedControls(element).filter((control) =>
-        control instanceof HTMLInputElement
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement
       ).map((control) => control.name),
     );
     const errors = props.fieldErrors && problem?.status === 400

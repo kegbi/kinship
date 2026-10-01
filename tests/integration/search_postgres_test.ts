@@ -714,7 +714,7 @@ async function textStatementPlan(
 }
 
 /**
- * Runs `work` on a scratch database holding the canonical v9 DDL and nothing
+ * Runs `work` on a scratch database holding the canonical v10 DDL and nothing
  * else, dropped afterwards. The statistics a plan is costed from are then this
  * suite's own rows, never whatever the other suites left in the shared one.
  */
@@ -729,7 +729,7 @@ async function withScratchCrm(
   try {
     await scratch.unsafe(
       await Deno.readTextFile(
-        "personal-crm-schema/v9/personal_crm_schema_v9.sql",
+        "personal-crm-schema/v10/personal_crm_schema_v10.sql",
       ),
     );
     await work({ sql: scratch, url: url.toString() });

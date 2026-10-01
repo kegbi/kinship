@@ -21,7 +21,7 @@ export interface DatabaseRecoveryPort {
   readonly dump: () => Promise<Uint8Array>;
   readonly objectKeys: () => Promise<readonly string[]>;
   readonly restore: (dump: Uint8Array) => Promise<void>;
-  readonly verifyCanonicalV9: () => Promise<void>;
+  readonly verifyCanonicalV10: () => Promise<void>;
 }
 
 export interface ObjectRecoveryPort {
@@ -158,7 +158,7 @@ export async function createBackup(command: BackupCommand): Promise<void> {
   try {
     ownedDirectory = await claimNewDirectory(command.archiveId);
     await Deno.mkdir(path(ownedDirectory, "objects"));
-    await command.database.verifyCanonicalV9();
+    await command.database.verifyCanonicalV10();
     const [dump, databaseKeys, listedObjects] = await Promise.all([
       command.database.dump(),
       command.database.objectKeys(),
@@ -342,7 +342,7 @@ export async function restoreBackup(
       throw new Error("Object restore failed.");
     });
   }
-  await command.database.verifyCanonicalV9();
+  await command.database.verifyCanonicalV10();
   const [databaseKeys, objectMetadata] = await Promise.all([
     command.database.objectKeys(),
     command.objects.list().catch(() => {
@@ -532,15 +532,15 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
     );
   }
 
-  async verifyCanonicalV9(): Promise<void> {
+  async verifyCanonicalV10(): Promise<void> {
     const sql = postgres(this.databaseUrl, { max: 1 });
     try {
       const [row] = await sql<{ readonly present: boolean }[]>`
-        select to_regclass('crm.person_duplicate_dismissals') is not null
+        select to_regclass('crm.recurring_debts') is not null
           as present
       `;
       if (!row?.present) {
-        throw new Error("Database is not the canonical schema v9.");
+        throw new Error("Database is not the canonical schema v10.");
       }
     } finally {
       await sql.end();
@@ -549,8 +549,8 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
       this.databaseUrl,
       await readCanonicalArtifacts(),
     );
-    if (action !== "verify-v9") {
-      throw new Error("Database is not the canonical schema v9.");
+    if (action !== "verify-v10") {
+      throw new Error("Database is not the canonical schema v10.");
     }
   }
 }

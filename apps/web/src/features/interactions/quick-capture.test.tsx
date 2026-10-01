@@ -51,6 +51,7 @@ const savedPreferences = (
   value: {
     preferences: preferences({ contactNameOrder }),
     status: "ready" as const,
+    supportedCurrencyCodes: [],
   },
 });
 

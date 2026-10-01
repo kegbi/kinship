@@ -16,6 +16,8 @@ DECLARE
   pair_high uuid;
   person_b uuid;
   dismissing_member uuid;
+  rule_id uuid;
+  debtor uuid;
   missing_file uuid;
   import_run uuid;
   created_reminder_id uuid;
@@ -445,6 +447,131 @@ BEGIN
   WHERE workspace_id = workspace_a;
   IF row_count <> 0 THEN
     RAISE EXCEPTION 'deleting a person kept % of its dismissals', row_count;
+  END IF;
+
+  -- Recurring debts (v10): a rule's person is in its own workspace, and a
+  -- rule generates at most one debt per due date.
+  INSERT INTO people (workspace_id, given_name) VALUES (workspace_a, 'Debtor')
+  RETURNING id INTO debtor;
+  INSERT INTO recurring_debts (
+    workspace_id, person_id, direction, amount, currency_code,
+    day_of_month, starts_on
+  ) VALUES (workspace_a, debtor, 'they_owe', 25, 'EUR', 31, '2026-01-31')
+  RETURNING id INTO rule_id;
+  SELECT is_active::text || interval_months::text INTO stored_value
+  FROM recurring_debts WHERE id = rule_id;
+  IF stored_value <> 'true1' THEN
+    RAISE EXCEPTION 'recurring debt defaults changed: %', stored_value;
+  END IF;
+
+  BEGIN
+    INSERT INTO recurring_debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      day_of_month, starts_on
+    ) VALUES (workspace_b, debtor, 'they_owe', 25, 'EUR', 1, '2026-01-01');
+    RAISE EXCEPTION 'a recurring debt named another workspace''s person';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO recurring_debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      day_of_month, starts_on
+    ) VALUES (workspace_a, debtor, 'they_owe', 25, 'EUR', 32, '2026-01-01');
+    RAISE EXCEPTION 'a recurring debt day after the 31st was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO recurring_debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      interval_months, day_of_month, starts_on
+    ) VALUES (workspace_a, debtor, 'they_owe', 25, 'EUR', 0, 1, '2026-01-01');
+    RAISE EXCEPTION 'a recurring debt without an interval was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO recurring_debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      day_of_month, starts_on, ends_on
+    ) VALUES (
+      workspace_a, debtor, 'they_owe', 25, 'EUR', 1, '2026-02-01', '2026-01-01'
+    );
+    RAISE EXCEPTION 'a recurring debt ending before it starts was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO recurring_debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      day_of_month, starts_on
+    ) VALUES (workspace_a, debtor, 'sideways', 25, 'EUR', 1, '2026-01-01');
+    RAISE EXCEPTION 'a recurring debt direction outside the vocabulary was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO debts (
+    workspace_id, person_id, direction, amount, currency_code,
+    recurring_debt_id, occurrence_on
+  ) VALUES (
+    workspace_a, debtor, 'they_owe', 25, 'EUR', rule_id, '2026-02-28'
+  );
+  INSERT INTO debts (
+    workspace_id, person_id, direction, amount, currency_code,
+    recurring_debt_id, occurrence_on
+  ) VALUES (
+    workspace_a, debtor, 'they_owe', 25, 'EUR', rule_id, '2026-02-28'
+  ) ON CONFLICT (recurring_debt_id, occurrence_on) DO NOTHING;
+  SELECT count(*) INTO row_count FROM debts WHERE recurring_debt_id = rule_id;
+  IF row_count <> 1 THEN
+    RAISE EXCEPTION 'a recurring period was charged % times', row_count;
+  END IF;
+
+  BEGIN
+    INSERT INTO debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      recurring_debt_id
+    ) VALUES (workspace_a, debtor, 'they_owe', 25, 'EUR', rule_id);
+    RAISE EXCEPTION 'a generated debt without its due date was accepted';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO debts (
+      workspace_id, person_id, direction, amount, currency_code,
+      recurring_debt_id, occurrence_on
+    ) VALUES (
+      workspace_b, debtor, 'they_owe', 25, 'EUR', rule_id, '2026-03-31'
+    );
+    RAISE EXCEPTION 'a debt named another workspace''s recurring rule';
+  EXCEPTION
+    WHEN foreign_key_violation THEN NULL;
+  END;
+
+  DELETE FROM recurring_debts WHERE id = rule_id;
+  SELECT count(*) INTO row_count FROM debts
+  WHERE person_id = debtor AND recurring_debt_id IS NULL
+    AND occurrence_on = '2026-02-28';
+  IF row_count <> 1 THEN
+    RAISE EXCEPTION 'deleting a recurring rule removed its generated debt';
+  END IF;
+
+  INSERT INTO recurring_debts (
+    workspace_id, person_id, direction, amount, currency_code,
+    day_of_month, starts_on
+  ) VALUES (workspace_a, debtor, 'i_owe', 10, 'EUR', 15, '2026-01-01');
+  DELETE FROM people WHERE id = debtor;
+  SELECT count(*) INTO row_count FROM recurring_debts
+  WHERE workspace_id = workspace_a;
+  IF row_count <> 0 THEN
+    RAISE EXCEPTION 'deleting a person kept % of their recurring debts', row_count;
   END IF;
 
   IF member_b IS NULL OR workspace_b IS NULL THEN

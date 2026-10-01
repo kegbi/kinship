@@ -11,6 +11,12 @@
  * Both cards keep the markup the static shell drew (the section element, its
  * heading, glyph, badge, and state line) and the classes the person
  * stylesheet targets, so the page looks the same before and after hydration.
+ *
+ * The debt card also lists the person's recurring debts (GIFTS-001): rules
+ * that charge the same debt every period. They arrive with every list answer,
+ * and every change to one — create, edit, pause, resume, delete — takes the
+ * same one-at-a-time save slot and the same authoritative refresh, which is
+ * what brings the debts a rule charged into the list beside it.
  */
 
 import {
@@ -23,13 +29,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  type ApiResult,
   changeDebtStatus,
   changeGiftStatus,
   createDebt,
   createGift,
+  createRecurringDebt,
   type Debt,
   type DebtCreateInput,
   type DebtStatus,
+  deleteRecurringDebt,
   type Gift,
   type GiftCreateInput,
   type GiftDebtPageInput,
@@ -37,6 +46,9 @@ import {
   listPeople,
   listPersonFiles,
   listPersonGifts,
+  type RecurringDebt,
+  type RecurringDebtCreateInput,
+  updateRecurringDebt,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -53,7 +65,12 @@ import {
   useDocumentEvent,
   useLatestRequest,
 } from "../core/index.ts";
-import { DebtEditor, GiftEditor, type SaveOutcome } from "./forms.tsx";
+import {
+  DebtEditor,
+  GiftEditor,
+  RecurringDebtEditor,
+  type SaveOutcome,
+} from "./forms.tsx";
 import {
   attachmentChoices,
   countText,
@@ -68,6 +85,9 @@ import {
   giftStatusOptions,
   recipientChoices,
   type RecordType,
+  recurringDebtChange,
+  recurringDebtDetail,
+  recurringDebtTitle,
   SURFACES,
   withoutCursors,
 } from "./records.ts";
@@ -99,7 +119,15 @@ const OPTIONS_LOADING = "Loading gift and debt form options…";
 const OPTIONS_FAILED =
   "Gift and debt form options could not be loaded. Close and reopen the editor to try again.";
 const LIST_UNAVAILABLE = "Gifts and debts are temporarily unavailable.";
+const RECURRING_NOT_SAVED = "The recurring debt could not be saved.";
 const CLOSED: PerSurface<boolean> = { debt: false, gift: false };
+
+/** How many debts a save charged at once, said after the save itself. */
+function chargedText(charged: number): string {
+  return charged === 0
+    ? ""
+    : ` ${charged} ${charged === 1 ? "debt" : "debts"} charged.`;
+}
 
 export function PersonGifts(props: PersonGiftsProps) {
   const { personId, sections, workspaceId } = props;
@@ -109,6 +137,10 @@ export function PersonGifts(props: PersonGiftsProps) {
   const [editors, setEditors] = useState<PerSurface<boolean>>(CLOSED);
   const [options, setOptions] = useState<OptionsState>({ status: "idle" });
   const [notices, setNotices] = useState<Partial<PerSurface<string>>>({});
+  /** The open recurring debt editor: `"new"`, a rule's id, or none. */
+  const [recurringEditor, setRecurringEditor] = useState<string>();
+  /** The rule whose deletion is waiting to be confirmed, if any. */
+  const [confirmingDelete, setConfirmingDelete] = useState<string>();
   const request = useLatestRequest();
   // One save or status change at a time, across both cards.
   const mutating = useRef(false);
@@ -176,6 +208,8 @@ export function PersonGifts(props: PersonGiftsProps) {
       ) return;
       setArchived(detail.archived);
       setEditors(CLOSED);
+      setRecurringEditor(undefined);
+      setConfirmingDelete(undefined);
       setNotices({});
     },
   );
@@ -254,6 +288,116 @@ export function PersonGifts(props: PersonGiftsProps) {
     if (await refresh()) notify(type, "Status changed.");
   };
 
+  /**
+   * One change to a recurring debt, through the same save slot and refresh
+   * as every other write. Answers the problem a refused change carries.
+   */
+  const changeRecurring = async <T,>(
+    pending: string,
+    call: () => Promise<ApiResult<T>>,
+    done: (value: T) => string,
+  ): Promise<SaveOutcome> => {
+    if (mutating.current) return undefined;
+    mutating.current = true;
+    notify("debt", pending);
+    const answer = await settle<T>(call);
+    mutating.current = false;
+    if (answer.status !== "ready") {
+      notify("debt", answer.problem?.detail ?? RECURRING_NOT_SAVED);
+      return answer.problem;
+    }
+    setRecurringEditor(undefined);
+    setConfirmingDelete(undefined);
+    if (await refresh()) notify("debt", done(answer.data as T));
+    return undefined;
+  };
+
+  const saveRecurring = (rule: RecurringDebt | undefined, input: object) =>
+    changeRecurring<{ readonly charged: number }>(
+      "Saving recurring debt…",
+      () =>
+        rule
+          ? updateRecurringDebt(
+            personId,
+            rule.id,
+            recurringDebtChange(input as RecurringDebtCreateInput),
+            workspaceId,
+          )
+          : createRecurringDebt(
+            personId,
+            input as RecurringDebtCreateInput,
+            workspaceId,
+          ),
+      (saved) => `Recurring debt saved.${chargedText(saved.charged)}`,
+    );
+
+  const toggleRecurring = (rule: RecurringDebt) =>
+    void changeRecurring(
+      rule.active ? "Pausing recurring debt…" : "Resuming recurring debt…",
+      () =>
+        updateRecurringDebt(
+          personId,
+          rule.id,
+          { active: !rule.active },
+          workspaceId,
+        ),
+      (saved) =>
+        saved.recurringDebt.active
+          ? `Recurring debt resumed.${chargedText(saved.charged)}`
+          : "Recurring debt paused.",
+    );
+
+  const removeRecurring = (rule: RecurringDebt) =>
+    void changeRecurring(
+      "Deleting recurring debt…",
+      () => deleteRecurringDebt(personId, rule.id, workspaceId),
+      () => "Recurring debt deleted. The debts it charged stay.",
+    );
+
+  const editedRule = records.recurringDebts.find((rule) =>
+    rule.id === recurringEditor
+  );
+  // An editor for a rule the latest answer no longer lists is closed.
+  const openRecurringEditor = recurringEditor === "new" || editedRule
+    ? recurringEditor
+    : undefined;
+  const recurring = (
+    <RecurringDebts
+      archived={archived}
+      confirmingDelete={confirmingDelete}
+      editing={openRecurringEditor}
+      editor={openRecurringEditor !== undefined
+        ? (
+          <RecurringDebtEditor
+            currencies={records.currencies}
+            defaultCurrency={records.defaultCurrency}
+            key={recurringEditor}
+            onCancel={() => setRecurringEditor(undefined)}
+            onSave={(input) => saveRecurring(editedRule, input)}
+            rule={editedRule}
+          />
+        )
+        : null}
+      onAdd={() => {
+        setConfirmingDelete(undefined);
+        setRecurringEditor("new");
+      }}
+      onCancelDelete={() => setConfirmingDelete(undefined)}
+      onConfirmDelete={removeRecurring}
+      onDelete={(rule) => {
+        setRecurringEditor(undefined);
+        setConfirmingDelete(rule.id);
+      }}
+      onEdit={(rule) => {
+        setConfirmingDelete(undefined);
+        setRecurringEditor(rule.id);
+      }}
+      onToggle={toggleRecurring}
+      ready={list.status === "ready"}
+      rules={records.recurringDebts}
+    />
+  );
+
   const surface = (type: RecordType, items: ReactNode, count: number) => (
     <Surface
       archived={archived}
@@ -266,6 +410,7 @@ export function PersonGifts(props: PersonGiftsProps) {
                 ? attachmentChoices(options.value)
                 : []}
               currencies={records.currencies}
+              defaultCurrency={records.defaultCurrency}
               gated={options.status !== "ready"}
               onCancel={() => closeEditor("gift")}
               onSave={(input) => save("gift", input)}
@@ -277,6 +422,7 @@ export function PersonGifts(props: PersonGiftsProps) {
           : (
             <DebtEditor
               currencies={records.currencies}
+              defaultCurrency={records.defaultCurrency}
               gated={options.status !== "ready"}
               onCancel={() => closeEditor("debt")}
               onSave={(input) => save("debt", input)}
@@ -296,6 +442,7 @@ export function PersonGifts(props: PersonGiftsProps) {
           },
         )}
       onRetry={() => void refresh()}
+      recurring={type === "debt" ? recurring : null}
       statusRegion={props.statusRegion}
       type={type}
     >
@@ -348,6 +495,8 @@ function Surface(
     readonly onAdd: () => void;
     readonly onLoadMore: (cursor: string) => Promise<unknown>;
     readonly onRetry: () => void;
+    /** The recurring debts the debt card lists after its own debts. */
+    readonly recurring: ReactNode;
     readonly statusRegion?: StatusRegionProps | undefined;
     readonly type: RecordType;
   },
@@ -434,7 +583,134 @@ function Surface(
         onLoad={props.onLoadMore}
       />
       {props.editor}
+      {props.recurring}
     </>
+  );
+}
+
+/**
+ * The debt card's recurring debts: each rule with what it charges and when,
+ * and the actions a member may take on it. Deleting asks once more, because
+ * it cannot be undone; the debts the rule already charged always stay.
+ */
+function RecurringDebts(
+  props: {
+    readonly archived: boolean;
+    readonly confirmingDelete: string | undefined;
+    readonly editing: string | undefined;
+    readonly editor: ReactNode;
+    readonly onAdd: () => void;
+    readonly onCancelDelete: () => void;
+    readonly onConfirmDelete: (rule: RecurringDebt) => void;
+    readonly onDelete: (rule: RecurringDebt) => void;
+    readonly onEdit: (rule: RecurringDebt) => void;
+    readonly onToggle: (rule: RecurringDebt) => void;
+    /** Whether the list has answered; nothing is offered before it has. */
+    readonly ready: boolean;
+    readonly rules: readonly RecurringDebt[];
+  },
+) {
+  if (!props.ready) return null;
+  return (
+    <section
+      aria-labelledby="profile-section-debts-recurring-heading"
+      data-recurring-debts=""
+    >
+      <h4 id="profile-section-debts-recurring-heading">Recurring</h4>
+      {props.rules.length === 0
+        ? <p className="section-state">No recurring debts.</p>
+        : (
+          <ul
+            aria-label="Recurring debts"
+            className="person-file-list"
+            data-recurring-debt-list=""
+          >
+            {props.rules.map((rule) => (
+              <li data-recurring-debt-id={rule.id} key={rule.id}>
+                <strong>{recurringDebtTitle(rule)}</strong>{" "}
+                {rule.active ? null : <Badge variant="warning">Paused</Badge>}
+                <p>{recurringDebtDetail(rule)}</p>
+                {props.archived || props.editing === rule.id
+                  ? null
+                  : props.confirmingDelete === rule.id
+                  ? (
+                    <div
+                      className={formActionsVariants({
+                        className: "person-file-actions",
+                      })}
+                      role="group"
+                      aria-label={`Delete ${recurringDebtTitle(rule)}`}
+                    >
+                      <span>
+                        Delete this recurring debt? The debts it charged stay.
+                      </span>
+                      <Button
+                        onClick={() => props.onConfirmDelete(rule)}
+                        type="button"
+                        variant="destructive"
+                      >
+                        Delete recurring debt
+                      </Button>
+                      <Button
+                        onClick={props.onCancelDelete}
+                        type="button"
+                        variant="outline"
+                      >
+                        Keep it
+                      </Button>
+                    </div>
+                  )
+                  : (
+                    <div
+                      className={formActionsVariants({
+                        className: "person-file-actions",
+                      })}
+                    >
+                      <Button
+                        aria-label={`${rule.active ? "Pause" : "Resume"} ${
+                          recurringDebtTitle(rule)
+                        }`}
+                        onClick={() => props.onToggle(rule)}
+                        type="button"
+                        variant="outline"
+                      >
+                        {rule.active ? "Pause" : "Resume"}
+                      </Button>
+                      <Button
+                        aria-label={`Edit ${recurringDebtTitle(rule)}`}
+                        onClick={() =>
+                          props.onEdit(rule)}
+                        type="button"
+                        variant="outline"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        aria-label={`Delete ${recurringDebtTitle(rule)}`}
+                        onClick={() =>
+                          props.onDelete(rule)}
+                        type="button"
+                        variant="outline"
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
+              </li>
+            ))}
+          </ul>
+        )}
+      <Button
+        data-recurring-debt-add=""
+        hidden={props.archived || props.editing !== undefined}
+        onClick={props.onAdd}
+        type="button"
+        variant="outline"
+      >
+        Add recurring debt
+      </Button>
+      {props.editor}
+    </section>
   );
 }
 

@@ -4,7 +4,8 @@
  * The rules are the ones `lib/person-gifts.ts` carried before the section
  * became an island (GAP-026): which lifecycle steps a record may take next,
  * how a row reads, what the state line and badge say, and how one answer from
- * the paged list folds into what the section already shows.
+ * the paged list folds into what the section already shows. The recurring
+ * debts of GIFTS-001 add how a rule reads and what its editor sends.
  */
 
 import type {
@@ -16,10 +17,13 @@ import type {
   GiftStatus,
   PeopleDirectoryPerson,
   PersonFile,
+  RecurringDebt,
+  RecurringDebtUpdateInput,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   debtCreateInput,
   giftCreateInput,
+  recurringDebtCreateInput,
 } from "../../../../../packages/contracts/schemas/gifts.ts";
 import { z } from "zod";
 
@@ -29,15 +33,24 @@ export type RecordType = "gift" | "debt";
 export interface GiftDebtRecords {
   readonly currencies: readonly string[];
   readonly debts: readonly Debt[];
+  /** The currency a new debt, gift amount, or recurring debt starts from. */
+  readonly defaultCurrency: string;
   readonly gifts: readonly Gift[];
   readonly nextDebtCursor?: string;
   readonly nextGiftCursor?: string;
+  /** Every recurring debt the person has; each answer carries all of them. */
+  readonly recurringDebts: readonly RecurringDebt[];
 }
+
+/** The currency a money form starts from before the list has answered. */
+export const FALLBACK_CURRENCY = "USD";
 
 export const EMPTY_RECORDS: GiftDebtRecords = {
   currencies: [],
   debts: [],
+  defaultCurrency: FALLBACK_CURRENCY,
   gifts: [],
+  recurringDebts: [],
 };
 
 /** The section, heading, and glyph each record type lives in. */
@@ -80,7 +93,48 @@ export function debtTitle(debt: Debt): string {
 export function debtDetail(debt: Debt): string {
   return `${
     debt.direction === "i_owe" ? "I owe" : "They owe"
-  } · ${debt.amount} ${debt.currencyCode ?? ""} · ${debt.status}`;
+  } · ${debt.amount} ${debt.currencyCode ?? ""} · ${debt.status}${
+    debt.occurrenceOn ? ` · Recurring, due ${debt.occurrenceOn}` : ""
+  }`;
+}
+
+/**
+ * The currency a money form starts with: the default the list named when the
+ * workspace still supports it, else the first supported one.
+ */
+export function startingCurrency(
+  defaultCurrency: string,
+  currencies: readonly string[],
+): string {
+  return currencies.length === 0 || currencies.includes(defaultCurrency)
+    ? defaultCurrency
+    : currencies[0]!;
+}
+
+export function recurringDebtTitle(rule: RecurringDebt): string {
+  return rule.reason ?? "Recurring debt";
+}
+
+/** How often a rule charges, as a person would say it. */
+export function recurrenceText(rule: RecurringDebt): string {
+  return rule.intervalMonths === 1
+    ? `Monthly on day ${rule.dayOfMonth}`
+    : `Every ${rule.intervalMonths} months on day ${rule.dayOfMonth}`;
+}
+
+export function recurringDebtDetail(rule: RecurringDebt): string {
+  const state = !rule.active
+    ? "Paused"
+    : rule.nextOccurrenceOn
+    ? `Next ${rule.nextOccurrenceOn}`
+    : "Ended";
+  return [
+    rule.direction === "i_owe" ? "I owe" : "They owe",
+    `${rule.amount} ${rule.currencyCode}`,
+    recurrenceText(rule),
+    rule.endsOn ? `Until ${rule.endsOn}` : undefined,
+    state,
+  ].filter(Boolean).join(" · ");
 }
 
 /** The state line of a section that has loaded `count` records. */
@@ -122,9 +176,11 @@ export function foldPage(
   return {
     currencies: page.supportedCurrencyCodes,
     debts,
+    defaultCurrency: page.defaultCurrencyCode,
     gifts,
     ...(nextDebtCursor ? { nextDebtCursor } : {}),
     ...(nextGiftCursor ? { nextGiftCursor } : {}),
+    recurringDebts: page.recurringDebts,
   };
 }
 
@@ -133,7 +189,9 @@ export function withoutCursors(records: GiftDebtRecords): GiftDebtRecords {
   return {
     currencies: records.currencies,
     debts: records.debts,
+    defaultCurrency: records.defaultCurrency,
     gifts: records.gifts,
+    recurringDebts: records.recurringDebts,
   };
 }
 
@@ -207,9 +265,27 @@ export interface DebtFormValues {
   status: "open" | "settled" | "cancelled";
 }
 
+/**
+ * The gift editor's values as the create request carries them. The currency
+ * starts filled in, but it describes the amount, so a gift saved without an
+ * amount is saved without a currency too.
+ */
+export function submittedGiftValues(values: unknown): unknown {
+  const submitted = submittedValues(values);
+  if (
+    typeof submitted !== "object" || submitted === null ||
+    "amount" in submitted
+  ) return submitted;
+  const { currencyCode: _currency, ...rest } = submitted as Record<
+    string,
+    unknown
+  >;
+  return rest;
+}
+
 /** Validates the gift editor with the create route's own contract schema. */
 export const giftForm = z.preprocess(
-  submittedValues,
+  submittedGiftValues,
   giftCreateInput,
 ) as unknown as z.ZodType<z.output<typeof giftCreateInput>, GiftFormValues>;
 
@@ -218,3 +294,101 @@ export const debtForm = z.preprocess(
   submittedValues,
   debtCreateInput,
 ) as unknown as z.ZodType<z.output<typeof debtCreateInput>, DebtFormValues>;
+
+/** The recurring debt editor's values, as its fields hold them. */
+export interface RecurringDebtFormValues {
+  amount: string;
+  currencyCode: string;
+  dayOfMonth: string;
+  direction: "i_owe" | "they_owe";
+  endsOn: string;
+  intervalMonths: string;
+  reason: string;
+  startsOn: string;
+}
+
+/**
+ * The recurring debt editor's values as the create request carries them: a
+ * blank field left out, and the two whole numbers read as numbers. A number
+ * field that holds no whole number is passed through as text, so the contract
+ * schema refuses it against its own field.
+ */
+export function submittedRecurringValues(values: unknown): unknown {
+  const submitted = submittedValues(values);
+  if (typeof submitted !== "object" || submitted === null) return submitted;
+  return Object.fromEntries(
+    Object.entries(submitted).map(([name, value]) =>
+      (name === "dayOfMonth" || name === "intervalMonths") &&
+        typeof value === "string" && /^\d+$/.test(value.trim())
+        ? [name, Number(value)]
+        : [name, value]
+    ),
+  );
+}
+
+/** Validates the recurring debt editor with the create route's schema. */
+export const recurringDebtForm = z.preprocess(
+  submittedRecurringValues,
+  recurringDebtCreateInput,
+) as unknown as z.ZodType<
+  z.output<typeof recurringDebtCreateInput>,
+  RecurringDebtFormValues
+>;
+
+/** The editor's starting values: a rule being edited, or a new one. */
+export function recurringDebtFormValues(
+  rule: RecurringDebt | undefined,
+  currency: string,
+  today: string,
+): RecurringDebtFormValues {
+  return rule
+    ? {
+      amount: rule.amount,
+      currencyCode: rule.currencyCode,
+      dayOfMonth: String(rule.dayOfMonth),
+      direction: rule.direction,
+      endsOn: rule.endsOn ?? "",
+      intervalMonths: String(rule.intervalMonths),
+      reason: rule.reason ?? "",
+      startsOn: rule.startsOn,
+    }
+    : {
+      amount: "",
+      currencyCode: currency,
+      dayOfMonth: String(Number(today.slice(8, 10))),
+      direction: "they_owe",
+      endsOn: "",
+      intervalMonths: "1",
+      reason: "",
+      startsOn: today,
+    };
+}
+
+/**
+ * An edited rule as the change request carries it. Every field is sent, and a
+ * cleared end date or reason is sent as `null`, which is how the route clears
+ * it rather than keeping the old value.
+ */
+export function recurringDebtChange(
+  input: z.output<typeof recurringDebtCreateInput>,
+): RecurringDebtUpdateInput {
+  return {
+    amount: input.amount,
+    currencyCode: input.currencyCode,
+    dayOfMonth: input.dayOfMonth,
+    direction: input.direction,
+    endsOn: input.endsOn ?? null,
+    intervalMonths: input.intervalMonths,
+    reason: input.reason ?? null,
+    startsOn: input.startsOn,
+  };
+}
+
+/** Today's date in the browser's own calendar, as a date field holds it. */
+export function localToday(now: Date = new Date()): string {
+  return [
+    String(now.getFullYear()).padStart(4, "0"),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+}

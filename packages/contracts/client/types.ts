@@ -755,6 +755,14 @@ export type DebtCreateInput = components["schemas"]["DebtCreateInput"];
 
 export type GiftDebtList = components["schemas"]["GiftDebtList"];
 
+export type RecurringDebt = components["schemas"]["RecurringDebt"];
+
+export type RecurringDebtCreateInput =
+  components["schemas"]["RecurringDebtCreateInput"];
+
+export type RecurringDebtUpdateInput =
+  components["schemas"]["RecurringDebtUpdateInput"];
+
 export type JournalStoredPost = components["schemas"]["JournalStoredPost"];
 
 export type JournalStoredDayRating =

@@ -1,6 +1,8 @@
 /**
  * The workspace's general settings form (GAP-033): its identity and the
- * defaults every member starts from, for the active workspace only.
+ * defaults every member starts from, for the active workspace only. The
+ * default currency is a choice among the supported codes; new debts and gifts
+ * start in it unless the member chose their own (GIFTS-001).
  */
 
 import {
@@ -13,10 +15,14 @@ import {
   mountSettingsSurface,
   SettingsForm,
 } from "../form/settings-form.tsx";
+import { CurrencyOptions } from "../form/currency-select.tsx";
 
 export const WORKSPACE_SETTINGS_ISLAND = "settings-workspace";
 
-type Workspace = WorkspaceSettings;
+/** The settings as loaded, with the currencies the picker offers. */
+type Workspace = WorkspaceSettings & {
+  readonly currencyChoices: readonly string[];
+};
 
 /** What the form asks the server to save, as the fields hold it. */
 export function workspaceInput(
@@ -88,14 +94,18 @@ export function WorkspaceSettingsForm(
             />
           </label>
           <label>
-            Default currency<input
+            Default currency<select
               aria-describedby="default-currency-error"
               defaultValue={values?.defaultCurrencyCode ?? ""}
               disabled={disabled}
-              maxLength={3}
               name="defaultCurrencyCode"
-              pattern="[A-Za-z]{3}"
-            />
+            >
+              <CurrencyOptions
+                choices={values?.currencyChoices ?? []}
+                empty="None (US dollars)"
+                value={values?.defaultCurrencyCode}
+              />
+            </select>
             <FieldError
               errors={errors}
               id="default-currency-error"
@@ -116,7 +126,15 @@ export function WorkspaceSettingsForm(
       id="workspace-form"
       load={async (workspaceId) => {
         const loaded = await getWorkspaceSettings(workspaceId);
-        return loaded.ok ? { ok: true, value: loaded.value.workspace } : loaded;
+        return loaded.ok
+          ? {
+            ok: true,
+            value: {
+              ...loaded.value.workspace,
+              currencyChoices: loaded.value.supportedCurrencyCodes,
+            },
+          }
+          : loaded;
       }}
       loadFailed={(problem) =>
         problem?.detail ?? "Workspace settings could not be loaded."}

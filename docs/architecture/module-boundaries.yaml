@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v9/personal_crm_schema_v9.sql
+schemaSource: personal-crm-schema/v10/personal_crm_schema_v10.sql
 
 # Beside the categories below, reviewed tickets placed four contracts in the
 # kernel: text and value validation (`validation.ts`, GAP-006), the transaction
@@ -278,10 +278,11 @@ modules:
   - id: gifts
     path: packages/backend/modules/gifts
     kind: core
-    description: Gift ideas/history and debts between a member and a person.
+    description: Gift ideas/history, debts between a member and a person, and recurring debt rules.
     ownsTables:
       - gifts
       - debts
+      - recurring_debts
     publicEntryPoints: [packages/backend/modules/gifts/public.ts]
     allowedModuleDependencies: [files, people, workspaces]
     publishes: [gifts.gift-changed, gifts.debt-changed]

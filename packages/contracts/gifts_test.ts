@@ -14,6 +14,9 @@ Deno.test("[GIFTS-001] generated contract exposes gifts and debts", () => {
       "changeGiftStatus",
       "createDebt",
       "changeDebtStatus",
+      "createRecurringDebt",
+      "updateRecurringDebt",
+      "deleteRecurringDebt",
     ]
   ) {
     assert(
@@ -24,5 +27,15 @@ Deno.test("[GIFTS-001] generated contract exposes gifts and debts", () => {
   assert(
     document.components.schemas.GiftDebtList,
     "gift/debt list schema generated",
+  );
+  assert(
+    document.components.schemas.RecurringDebt &&
+      document.components.schemas.GiftDebtList.required.includes(
+        "recurringDebts",
+      ) &&
+      document.components.schemas.GiftDebtList.required.includes(
+        "defaultCurrencyCode",
+      ),
+    "the list carries the recurring debts and the default currency",
   );
 });

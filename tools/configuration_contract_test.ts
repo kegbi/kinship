@@ -386,8 +386,8 @@ Deno.test("[REL-004] aggregate integration has object-store configuration author
   const reads = INTEGRATION_PERMISSIONS.read;
   assert(
     reads !== undefined && reads !== "all" &&
-      reads.includes("personal-crm-schema/v9"),
-    "aggregate integration must read the canonical v9 schema",
+      reads.includes("personal-crm-schema/v10"),
+    "aggregate integration must read the canonical v10 schema",
   );
   const granted = INTEGRATION_PERMISSIONS.env;
   assert(

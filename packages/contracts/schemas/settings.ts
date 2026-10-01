@@ -383,9 +383,13 @@ export const resolvedMemberPreferences = z.strictObject({
   timezone: z.string().optional(),
 }).meta({ id: "ResolvedMemberPreferences" });
 
+/** The supported currency codes a currency preference may name. */
+const supportedCurrencyCodes = z.array(z.string().regex(/^[A-Z]{3}$/));
+
 export const preferenceSettings = z.strictObject({
   status: z.literal("ready"),
   preferences: resolvedMemberPreferences,
+  supportedCurrencyCodes,
 }).meta({ id: "PreferenceSettings" });
 
 export const preferencesInput = z.strictObject({
@@ -446,5 +450,6 @@ export const workspaceSettingsInput = z.strictObject({
 
 export const workspaceSettings = z.strictObject({
   status: z.literal("ready"),
+  supportedCurrencyCodes,
   workspace: workspaceSettingsInput,
 }).meta({ id: "WorkspaceSettings" });

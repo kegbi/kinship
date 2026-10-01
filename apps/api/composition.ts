@@ -965,6 +965,7 @@ export function createConfiguredApiApp(
   });
   const gifts = composeGifts(shared, {
     attachments: files.giftAttachments,
+    calendar: configuration.calendar,
     currencies: configuration.currencies,
   });
   const transfer = composeImportExport(shared, {

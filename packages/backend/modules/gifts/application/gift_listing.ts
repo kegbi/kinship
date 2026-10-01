@@ -2,8 +2,11 @@
  * One person's gifts and debts, one page of each.
  *
  * The read is lock-free and asks for everything the page needs at once: the
- * rows, the attachment links the files module owns, and the currencies the
- * workspace supports, so a page costs a fixed handful of queries. Joining the
+ * rows, the attachment links the files module owns, the currencies the
+ * workspace supports, the currency a new debt or gift starts from (the
+ * member's preference, else the workspace default, else US dollars), and the
+ * person's recurring debt rules, so a page costs a fixed handful of queries.
+ * The rules are few by rule, so every answer carries all of them. Joining the
  * links onto the gifts is a rule, and it lives in `domain/gift_rules.ts`.
  *
  * The two collections page independently. A caller continuing gifts sends only
@@ -16,6 +19,7 @@
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import { decodeGiftCursor, encodeGiftCursor } from "../domain/cursors.ts";
 import { hydrateGifts } from "../domain/gift_rules.ts";
+import { defaultCurrency } from "../domain/recurring_debts.ts";
 import type { GiftActor } from "../ports/context.ts";
 import { active, type GiftManagementDependencies } from "./gift_context.ts";
 
@@ -83,17 +87,33 @@ export function createGiftListing(dependencies: GiftManagementDependencies) {
             transaction,
           });
           if (records.status !== "ready") return records;
-          const [attachments, supportedCurrencyCodes] = await Promise.all([
+          const [
+            attachments,
+            supportedCurrencyCodes,
+            preferredCurrency,
+            recurringDebts,
+          ] = await Promise.all([
             dependencies.attachments.listForGifts({
               ...actor,
               giftIds: records.gifts.map((gift) => gift.id),
               transaction,
             }),
             dependencies.currencies.listSupported({ transaction }),
+            dependencies.currencies.preferredFor({
+              memberId: actor.memberId,
+              transaction,
+              workspaceId: actor.workspaceId,
+            }),
+            dependencies.recurringDebts.listForPerson({
+              ...actor,
+              personId,
+              transaction,
+            }),
           ]);
           if (attachments.status !== "ready") return attachments;
           return {
             debts: records.debts,
+            defaultCurrencyCode: defaultCurrency(preferredCurrency),
             gifts: hydrateGifts(records.gifts, attachments.links),
             ...(records.nextDebt
               ? {
@@ -115,6 +135,7 @@ export function createGiftListing(dependencies: GiftManagementDependencies) {
                 ),
               }
               : {}),
+            recurringDebts,
             status: "ready" as const,
             supportedCurrencyCodes,
           };

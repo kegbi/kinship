@@ -53,6 +53,7 @@ const V5_UPGRADE_DATABASE = "crm_v5_upgrade_test";
 const V6_UPGRADE_DATABASE = "crm_v6_upgrade_test";
 const V7_UPGRADE_DATABASE = "crm_v7_upgrade_test";
 const V8_UPGRADE_DATABASE = "crm_v8_upgrade_test";
+const V9_UPGRADE_DATABASE = "crm_v9_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -60,10 +61,10 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v9");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v10");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v9_validation.json",
+  "personal_crm_schema_v10_validation.json",
 );
 
 /**
@@ -79,6 +80,7 @@ const IMMUTABLE_BASELINES = [
   ["v6", "personal_crm_schema_v6_validation.json"],
   ["v7", "personal_crm_schema_v7_validation.json"],
   ["v8", "personal_crm_schema_v8_validation.json"],
+  ["v9", "personal_crm_schema_v9_validation.json"],
 ] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
@@ -151,20 +153,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v9 validation status is ${validation.status}`);
+    throw new Error(`Schema v10 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v9 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v10 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v9.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v10.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -189,6 +191,9 @@ async function verifyArtifacts(
       schemaDirectory,
       "migrations/0009_add_search_indexes_and_duplicate_dismissals.sql",
     ),
+  );
+  const v10Migration = await Deno.readTextFile(
+    resolve(schemaDirectory, "migrations/0010_add_recurring_debts.sql"),
   );
   const tableColumns = (table: string): readonly string[] => {
     const body = ddl.match(
@@ -232,6 +237,8 @@ async function verifyArtifacts(
   const deletionColumns = tableColumns("workspace_lifecycle_records");
   const preferenceColumns = tableColumns("member_preferences");
   const dismissalColumns = tableColumns("person_duplicate_dismissals");
+  const recurringDebtColumns = tableColumns("recurring_debts");
+  const debtColumns = tableColumns("debts");
   const contractErrors: string[] = [];
   if (occurrenceColumns.join(",") !== expectedOccurrenceColumns.join(",")) {
     contractErrors.push(
@@ -311,9 +318,39 @@ async function verifyArtifacts(
       contractErrors.push(`${name} is missing from the DDL or migration`);
     }
   }
+  if (
+    recurringDebtColumns.join(",") !==
+      "id,workspace_id,person_id,direction,amount,currency_code,reason,interval_months,day_of_month,starts_on,ends_on,is_active,next_occurrence_on,created_by_member_id,created_at,updated_at"
+  ) {
+    contractErrors.push("recurring debt rule shape is missing");
+  }
+  if (debtColumns.slice(-2).join(",") !== "recurring_debt_id,occurrence_on") {
+    contractErrors.push("debt recurrence columns are missing");
+  }
+  for (
+    const name of [
+      "recurring_debts_workspace_id_id_key",
+      "recurring_debts_person_fk",
+      "recurring_debts_direction_ck",
+      "recurring_debts_amount_ck",
+      "recurring_debts_interval_ck",
+      "recurring_debts_day_ck",
+      "recurring_debts_window_ck",
+      "recurring_debts_next_ck",
+      "recurring_debts_person_idx",
+      "recurring_debts_due_idx",
+      "debts_recurring_debt_fk",
+      "debts_recurrence_ck",
+      "debts_recurring_occurrence_key",
+    ]
+  ) {
+    if (!ddl.includes(name) || !v10Migration.includes(name)) {
+      contractErrors.push(`${name} is missing from the DDL or migration`);
+    }
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v9 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v10 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -436,7 +473,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v9 validation JSON");
+    throw new Error("Invalid schema v10 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -485,20 +522,22 @@ async function assertArtifactCounts(
 ): Promise<void> {
   assertEqual(
     "table mapping rows",
-    await countCsvRows(resolve(schemaDirectory, "monica_table_mapping_v9.csv")),
+    await countCsvRows(
+      resolve(schemaDirectory, "monica_table_mapping_v10.csv"),
+    ),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v9.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v10.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v9.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v10.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -508,7 +547,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v9.sql",
+    "/tmp/personal_crm_schema_v10.sql",
   ], { quiet: true });
 }
 
@@ -523,7 +562,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v9.sql",
+      "/tmp/personal_crm_schema_v10.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -558,6 +597,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V6_UPGRADE_DATABASE,
       V7_UPGRADE_DATABASE,
       V8_UPGRADE_DATABASE,
+      V9_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -591,6 +631,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -611,7 +653,9 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE path='/upgrade-preserved');`,
     ], { quiet: true });
     if (upgraded !== "t") {
-      throw new Error("v1-to-v9 migration did not preserve the exact fixture.");
+      throw new Error(
+        "v1-to-v10 migration did not preserve the exact fixture.",
+      );
     }
 
     await runPsql(V2_UPGRADE_DATABASE, [
@@ -640,6 +684,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -651,7 +697,9 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        WHERE id = '00000000-0000-4000-8000-000000000004';`,
     ], { quiet: true });
     if (v2Upgraded !== "t") {
-      throw new Error("v2-to-v9 migration did not revoke ambiguous authority.");
+      throw new Error(
+        "v2-to-v10 migration did not revoke ambiguous authority.",
+      );
     }
 
     await runPsql(V3_UPGRADE_DATABASE, [
@@ -670,6 +718,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -681,7 +731,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        FROM crm.currencies;`,
     ], { quiet: true });
     if (v3Upgraded !== "t") {
-      throw new Error("v3-to-v9 migration did not seed the exact catalog.");
+      throw new Error("v3-to-v10 migration did not seed the exact catalog.");
     }
 
     await runPsql(V4_UPGRADE_DATABASE, [
@@ -698,6 +748,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -712,7 +764,9 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
        AND (SELECT count(*) = 165 FROM crm.currencies);`,
     ], { quiet: true });
     if (v4Upgraded !== "t") {
-      throw new Error("v4-to-v9 migration did not preserve the exact fixture.");
+      throw new Error(
+        "v4-to-v10 migration did not preserve the exact fixture.",
+      );
     }
 
     await runPsql(V5_UPGRADE_DATABASE, [
@@ -745,6 +799,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -777,7 +833,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
     ], { quiet: true });
     if (v5Upgraded !== "t") {
       throw new Error(
-        "v5-to-v9 migration did not install durable delivery state.",
+        "v5-to-v10 migration did not install durable delivery state.",
       );
     }
 
@@ -794,6 +850,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -808,7 +866,9 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE id='00000000-0000-4000-8000-000000000601');`,
     ], { quiet: true });
     if (v6Upgraded !== "t") {
-      throw new Error("v6-to-v9 migration did not preserve the exact fixture.");
+      throw new Error(
+        "v6-to-v10 migration did not preserve the exact fixture.",
+      );
     }
 
     await runPsql(V7_UPGRADE_DATABASE, [
@@ -828,6 +888,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0008_add_member_reminder_delivery.sql",
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
       "-A",
@@ -845,7 +907,9 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE conname = 'member_preferences_reminder_delivery_ck');`,
     ], { quiet: true });
     if (v7Upgraded !== "t") {
-      throw new Error("v7-to-v9 migration did not preserve the exact fixture.");
+      throw new Error(
+        "v7-to-v10 migration did not preserve the exact fixture.",
+      );
     }
 
     await runPsql(V8_UPGRADE_DATABASE, [
@@ -863,6 +927,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
          ('00000000-0000-4000-8000-000000000802', '00000000-0000-4000-8000-000000000803', 'Kept through the v9 upgrade');`,
       "-f",
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
     ], { quiet: true });
     const v8Upgraded = await runPsql(V8_UPGRADE_DATABASE, [
       "-A",
@@ -880,7 +946,48 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
           WHERE conname = 'people_workspace_id_id_key');`,
     ], { quiet: true });
     if (v8Upgraded !== "t") {
-      throw new Error("v8-to-v9 migration did not preserve the exact fixture.");
+      throw new Error(
+        "v8-to-v10 migration did not preserve the exact fixture.",
+      );
+    }
+
+    await runPsql(V9_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v9.sql",
+      "-c",
+      `INSERT INTO crm.users (id, email) VALUES
+         ('00000000-0000-4000-8000-000000000901', 'v10-upgrade@example.test');
+       INSERT INTO crm.workspaces (id, name, created_by_user_id) VALUES
+         ('00000000-0000-4000-8000-000000000902', 'V10 upgrade', '00000000-0000-4000-8000-000000000901');
+       INSERT INTO crm.people (id, workspace_id, given_name) VALUES
+         ('00000000-0000-4000-8000-000000000903', '00000000-0000-4000-8000-000000000902', 'Ada');
+       INSERT INTO crm.debts (id, workspace_id, person_id, direction, amount, currency_code) VALUES
+         ('00000000-0000-4000-8000-000000000904', '00000000-0000-4000-8000-000000000902', '00000000-0000-4000-8000-000000000903', 'they_owe', 12.5, 'EUR');`,
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
+    ], { quiet: true });
+    const v9Upgraded = await runPsql(V9_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT EXISTS(SELECT 1 FROM crm.debts
+          WHERE id = '00000000-0000-4000-8000-000000000904'
+            AND amount = 12.5 AND recurring_debt_id IS NULL
+            AND occurrence_on IS NULL)
+       AND to_regclass('crm.recurring_debts') IS NOT NULL
+       AND NOT EXISTS(SELECT 1 FROM crm.recurring_debts)
+       AND (SELECT array_agg(attname ORDER BY attnum)::text =
+          '{id,workspace_id,person_id,direction,status,amount,currency_code,reason,settled_at,created_at,updated_at,recurring_debt_id,occurrence_on}'
+          FROM pg_attribute WHERE attrelid = 'crm.debts'::regclass
+            AND attnum > 0 AND NOT attisdropped)
+       AND EXISTS(SELECT 1 FROM pg_constraint
+          WHERE conname = 'debts_recurring_occurrence_key');`,
+    ], { quiet: true });
+    if (v9Upgraded !== "t") {
+      throw new Error(
+        "v9-to-v10 migration did not preserve the exact fixture.",
+      );
     }
 
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
@@ -987,6 +1094,33 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         "failed v8-to-v9 migration did not roll back atomically.",
       );
     }
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
+    ], { quiet: true });
+    await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/0010_add_recurring_debts.sql",
+      "-c",
+      "SELECT 1 / 0",
+    ], { allowFailure: true, quiet: true });
+    const v10RolledBack = await runPsql(MIGRATION_ROLLBACK_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT to_regclass('crm.recurring_debts') IS NULL
+        AND NOT EXISTS(SELECT 1 FROM information_schema.columns
+          WHERE table_schema='crm' AND table_name='debts'
+            AND column_name IN ('recurring_debt_id', 'occurrence_on'));`,
+    ], { quiet: true });
+    if (v10RolledBack !== "t") {
+      throw new Error(
+        "failed v9-to-v10 migration did not roll back atomically.",
+      );
+    }
   } finally {
     for (
       const database of [
@@ -998,6 +1132,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V6_UPGRADE_DATABASE,
         V7_UPGRADE_DATABASE,
         V8_UPGRADE_DATABASE,
+        V9_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -1027,6 +1162,10 @@ async function main(): Promise<void> {
     await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
     started = true;
 
+    await copyFixture(
+      "personal-crm-schema/v10/personal_crm_schema_v10.sql",
+      "/tmp/personal_crm_schema_v10.sql",
+    );
     await copyFixture(
       "personal-crm-schema/v9/personal_crm_schema_v9.sql",
       "/tmp/personal_crm_schema_v9.sql",
@@ -1060,8 +1199,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v9/personal_crm_field_catalog_v9.csv",
-      "/tmp/personal_crm_field_catalog_v9.csv",
+      "personal-crm-schema/v10/personal_crm_field_catalog_v10.csv",
+      "/tmp/personal_crm_field_catalog_v10.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -1100,6 +1239,10 @@ async function main(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
     );
     await copyFixture(
+      "personal-crm-schema/v10/migrations/0010_add_recurring_debts.sql",
+      "/tmp/0010_add_recurring_debts.sql",
+    );
+    await copyFixture(
       "tools/schema/assert_schema.sql",
       "/tmp/assert_schema.sql",
     );
@@ -1120,7 +1263,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

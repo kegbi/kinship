@@ -68,11 +68,16 @@ export function createPreferencesRoutes(
   mount(routes, getMemberPreferences, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const value = await services.settings.getPreferences(actor).catch(
-      () => undefined,
-    );
-    return value
-      ? privateJson(context, { preferences: value, status: "ready" })
+    const [value, supportedCurrencyCodes] = await Promise.all([
+      services.settings.getPreferences(actor),
+      services.settings.listCurrencies(actor),
+    ]).catch(() => [undefined, undefined] as const);
+    return value && supportedCurrencyCodes
+      ? privateJson(context, {
+        preferences: value,
+        status: "ready",
+        supportedCurrencyCodes,
+      })
       : definedProblem(context, PREFERENCES_NOT_LOADED);
   });
 

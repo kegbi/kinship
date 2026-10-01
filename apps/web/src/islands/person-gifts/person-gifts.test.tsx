@@ -35,7 +35,9 @@ const OPTIONS = { [PEOPLE]: NO_PEOPLE, [FILES]: NO_FILES };
 const page = (fields: Record<string, unknown> = {}) =>
   jsonResponse({
     debts: [],
+    defaultCurrencyCode: "EUR",
     gifts: [],
+    recurringDebts: [],
     status: "ready",
     supportedCurrencyCodes: ["EUR"],
     ...fields,
@@ -749,7 +751,8 @@ describe("GIFTS-001 person gifts and debts", () => {
     expect(screen.queryAllByRole("button", { name: "Change status" }))
       .toHaveLength(0);
     lifecycle(false);
-    expect(screen.getAllByRole("button", { name: /^Add / })).toHaveLength(2);
+    // Add gift, Add debt, and Add recurring debt come back.
+    expect(screen.getAllByRole("button", { name: /^Add / })).toHaveLength(3);
   });
 });
 
@@ -780,4 +783,260 @@ describe("REL-052 gift and debt status lines", () => {
       expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
     },
   );
+});
+
+describe("GIFTS-001 default currency and recurring debts", () => {
+  const RECURRING = "POST /api/v1/people/:personId/recurring-debts";
+  const RECURRING_ONE =
+    "/api/v1/people/:personId/recurring-debts/:recurringDebtId";
+  const ruleId = "00000000-0000-4000-8000-000000000010";
+  const rent = {
+    ...stamped,
+    active: true,
+    amount: "500.0000",
+    currencyCode: "EUR",
+    dayOfMonth: 31,
+    direction: "they_owe",
+    id: ruleId,
+    intervalMonths: 1,
+    nextOccurrenceOn: "2026-09-30",
+    reason: "Rent share",
+    startsOn: "2026-05-31",
+  };
+  const charged = {
+    ...lunch,
+    id: "00000000-0000-4000-8000-000000000011",
+    occurrenceOn: "2026-08-31",
+    reason: "Rent share",
+    recurringDebtId: ruleId,
+  };
+  const recurringCard = () => within(element("[data-recurring-debts]"));
+
+  it("starts the debt and gift currency on the member's preferred one", async () => {
+    markup();
+    stubApi({
+      [GIFTS]: page({
+        defaultCurrencyCode: "USD",
+        supportedCurrencyCodes: ["EUR", "USD"],
+      }),
+      ...OPTIONS,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(card("debt").getByRole("button", { name: "Add debt" }));
+    expect(
+      card("debt").getByLabelText<HTMLSelectElement>("Currency").value,
+    ).toBe("USD");
+    await user.click(card("gift").getByRole("button", { name: "Add gift" }));
+    expect(
+      card("gift").getByLabelText<HTMLSelectElement>("Currency (with amount)")
+        .value,
+    ).toBe("USD");
+  });
+
+  it("lists rules beside the debts they charged and creates a rule", async () => {
+    markup();
+    const api = stubApi({
+      [GIFTS]: [
+        page({ debts: [charged], recurringDebts: [rent] }),
+        page({ debts: [charged], recurringDebts: [rent] }),
+      ],
+      [RECURRING]: jsonResponse(
+        { charged: 3, recurringDebt: rent, status: "created" },
+        201,
+      ),
+    });
+    await mount();
+    expect(card("debt").getByText(/Recurring, due 2026-08-31/)).toBeTruthy();
+    const rules = recurringCard().getByRole("list", {
+      name: "Recurring debts",
+    });
+    expect(within(rules).getByText("Rent share")).toBeTruthy();
+    expect(
+      within(rules).getByText(
+        "They owe · 500.0000 EUR · Monthly on day 31 · Next 2026-09-30",
+      ),
+    ).toBeTruthy();
+
+    const user = userEvent.setup();
+    await user.click(
+      recurringCard().getByRole("button", { name: "Add recurring debt" }),
+    );
+    const form = within(
+      recurringCard().getByRole("form", { name: "Add recurring debt" }),
+    );
+    expect(form.getByLabelText<HTMLSelectElement>("Currency").value).toBe(
+      "EUR",
+    );
+    expect(
+      element("[data-recurring-debts] [data-recurring-debt-add]").hidden,
+    ).toBe(true);
+    await user.type(form.getByLabelText("Amount"), "40");
+    await user.clear(form.getByLabelText(/^Day of month/));
+    await user.type(form.getByLabelText(/^Day of month/), "31");
+    await user.clear(form.getByLabelText("Starts on"));
+    await user.type(form.getByLabelText("Starts on"), "2026-05-31");
+    await user.type(form.getByLabelText("Reason (optional)"), "Gym");
+    await user.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe(
+        "Recurring debt saved. 3 debts charged.",
+      )
+    );
+    const created = api.requests().find((request) => request.method === "POST");
+    expect(created?.body).toEqual({
+      amount: "40",
+      currencyCode: "EUR",
+      dayOfMonth: 31,
+      direction: "they_owe",
+      intervalMonths: 1,
+      reason: "Gym",
+      startsOn: "2026-05-31",
+    });
+    expect(api.calls().filter((call) => call.includes("/gifts")))
+      .toHaveLength(2);
+    expect(element("[data-recurring-debts]").querySelector("form"))
+      .toBeNull();
+  });
+
+  it("refuses an impossible day before saving and shows a refused save", async () => {
+    markup();
+    const api = stubApi({
+      [GIFTS]: page(),
+      [RECURRING]: problemResponse(409, {
+        code: "recurring_debt_limit_reached",
+        detail: "This person already has 50 recurring debts.",
+        title: "Too many recurring debts",
+        type: "about:blank",
+      }),
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      recurringCard().getByRole("button", { name: "Add recurring debt" }),
+    );
+    const form = within(
+      recurringCard().getByRole("form", { name: "Add recurring debt" }),
+    );
+    await user.type(form.getByLabelText("Amount"), "40");
+    await user.clear(form.getByLabelText(/^Day of month/));
+    await user.type(form.getByLabelText(/^Day of month/), "32");
+    await user.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(
+        form.getByLabelText(/^Day of month/).getAttribute("aria-invalid"),
+      ).toBe("true")
+    );
+    expect(api.requests().some((request) => request.method === "POST"))
+      .toBe(false);
+    await user.clear(form.getByLabelText(/^Day of month/));
+    await user.type(form.getByLabelText(/^Day of month/), "5");
+    await user.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe(
+        "This person already has 50 recurring debts.",
+      )
+    );
+    expect(
+      recurringCard().getByRole("form", { name: "Add recurring debt" }),
+    ).toBeTruthy();
+    await user.click(form.getByRole("button", { name: "Cancel" }));
+    expect(element("[data-recurring-debts]").querySelector("form"))
+      .toBeNull();
+  });
+
+  it("pauses, edits, and deletes a rule through one refresh each", async () => {
+    markup();
+    const paused = { ...rent, active: false };
+    const api = stubApi({
+      [GIFTS]: [
+        page({ recurringDebts: [rent] }),
+        page({ recurringDebts: [paused] }),
+        page({ recurringDebts: [paused] }),
+        page(),
+      ],
+      [`PATCH ${RECURRING_ONE}`]: [
+        jsonResponse({ charged: 0, recurringDebt: paused, status: "saved" }),
+        jsonResponse({ charged: 0, recurringDebt: paused, status: "saved" }),
+      ],
+      [`DELETE ${RECURRING_ONE}`]: jsonResponse({
+        recurringDebtId: ruleId,
+        status: "deleted",
+      }),
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      recurringCard().getByRole("button", { name: "Pause Rent share" }),
+    );
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe("Recurring debt paused.")
+    );
+    expect(api.requests().at(-2)?.body).toEqual({ active: false });
+    expect(recurringCard().getByText("Paused")).toBeTruthy();
+    expect(
+      recurringCard().getByRole("button", { name: "Resume Rent share" }),
+    ).toBeTruthy();
+
+    await user.click(
+      recurringCard().getByRole("button", { name: "Edit Rent share" }),
+    );
+    const form = within(
+      recurringCard().getByRole("form", { name: "Edit recurring debt" }),
+    );
+    expect(form.getByLabelText<HTMLInputElement>("Amount").value).toBe(
+      "500.0000",
+    );
+    await user.clear(form.getByLabelText("Amount"));
+    await user.type(form.getByLabelText("Amount"), "550");
+    await user.clear(form.getByLabelText("Reason (optional)"));
+    await user.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe("Recurring debt saved.")
+    );
+    const edit = api.requests().filter((request) => request.method === "PATCH")
+      .at(-1);
+    expect(edit?.params.recurringDebtId).toBe(ruleId);
+    expect(edit?.body).toEqual({
+      amount: "550",
+      currencyCode: "EUR",
+      dayOfMonth: 31,
+      direction: "they_owe",
+      endsOn: null,
+      intervalMonths: 1,
+      reason: null,
+      startsOn: "2026-05-31",
+    });
+
+    await user.click(
+      recurringCard().getByRole("button", { name: "Delete Rent share" }),
+    );
+    await user.click(recurringCard().getByRole("button", { name: "Keep it" }));
+    expect(api.requests().some((request) => request.method === "DELETE"))
+      .toBe(false);
+    await user.click(
+      recurringCard().getByRole("button", { name: "Delete Rent share" }),
+    );
+    await user.click(
+      recurringCard().getByRole("button", { name: "Delete recurring debt" }),
+    );
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe(
+        "Recurring debt deleted. The debts it charged stay.",
+      )
+    );
+    expect(recurringCard().getByText("No recurring debts.")).toBeTruthy();
+  });
+
+  it("keeps an archived person's rules read-only", async () => {
+    markup();
+    stubApi({ [GIFTS]: page({ recurringDebts: [rent] }) });
+    await mount(true);
+    expect(recurringCard().getByText("Rent share")).toBeTruthy();
+    expect(recurringCard().queryByRole("button", { name: /Rent share/ }))
+      .toBeNull();
+    expect(
+      element("[data-recurring-debts] [data-recurring-debt-add]").hidden,
+    ).toBe(true);
+  });
 });

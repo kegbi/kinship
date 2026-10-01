@@ -6,10 +6,18 @@ import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresGiftPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresGiftAttachmentTarget } from "./adapters/postgres/gift_attachment_target.ts";
 import { PostgresGiftRepository } from "./adapters/postgres/gift_repository.ts";
+import { PostgresRecurringDebtRepository } from "./adapters/postgres/recurring_debt_repository.ts";
 import { PostgresGiftWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
-import { createGiftManagement, giftAuditFrom } from "./public.ts";
+import {
+  createGiftManagement,
+  createRecurringDebtCharging,
+  giftAuditFrom,
+} from "./public.ts";
 import type { GiftAttachmentBoundary } from "../files/public.ts";
-import type { WorkspaceCurrencyBoundary } from "../workspaces/public.ts";
+import type {
+  WorkspaceCalendarBoundary,
+  WorkspaceCurrencyBoundary,
+} from "../workspaces/public.ts";
 
 /**
  * The gift a file may be attached to, as files sees it. Files wraps this into
@@ -22,6 +30,7 @@ export function giftAttachmentTarget(): PostgresGiftAttachmentTarget {
 
 export interface GiftPorts {
   readonly attachments: GiftAttachmentBoundary;
+  readonly calendar: WorkspaceCalendarBoundary;
   readonly currencies: WorkspaceCurrencyBoundary;
 }
 
@@ -31,14 +40,35 @@ export function composeGifts(shared: SharedComposition, ports: GiftPorts) {
       actors: shared.actors,
       attachments: ports.attachments,
       audit: giftAuditFrom(shared.audit),
+      calendar: ports.calendar,
       clock: shared.clock,
       currencies: ports.currencies,
       ids: { next: () => shared.ids.create() },
+      recurringDebts: new PostgresRecurringDebtRepository(),
       repository: new PostgresGiftRepository(),
       transaction: shared.peopleTransaction,
     }),
     lifecycleImpact: PostgresGiftWorkspaceLifecycleImpact,
   };
+}
+
+/**
+ * The worker's half of recurring debts: charging every rule that has fallen
+ * due. It needs no attachment or currency boundary, so the worker root builds
+ * it without composing the rest of the module.
+ */
+export function composeRecurringDebtCharging(
+  shared: SharedComposition,
+  ports: { readonly calendar: WorkspaceCalendarBoundary },
+) {
+  return createRecurringDebtCharging({
+    audit: giftAuditFrom(shared.audit),
+    calendar: ports.calendar,
+    clock: shared.clock,
+    ids: { next: () => shared.ids.create() },
+    recurringDebts: new PostgresRecurringDebtRepository(),
+    transaction: shared.peopleTransaction,
+  });
 }
 
 /**

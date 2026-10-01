@@ -42,6 +42,9 @@ function fixture(
       },
     },
     clock: fixedClock("2026-08-15T10:00:00.000Z"),
+    currencies: {
+      listSupported: () => Promise.resolve(["EUR", "USD"]),
+    },
     identity: {
       getProfile() {
         return Promise.resolve({

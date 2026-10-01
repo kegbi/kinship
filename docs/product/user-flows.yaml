@@ -987,17 +987,19 @@ flows:
       - Validate any recipient or attachment in the active workspace.
       - Save and display the item inside the person workspace.
       - Transition gift or debt state without losing history.
+      - Create, edit, pause, resume, or delete a recurring debt; every due period becomes its own open debt.
     alternateOutcomes: [
       unknown-amount,
       no-recipient,
       missing-attachment,
       invalid-status-transition,
+      recurring-debt-catch-up,
     ]
     result: Practical relationship details remain person-centered.
     auditEffect: gift-or-debt-created-or-updated
     pageIds: [people.profile]
     moduleIds: [people, gifts, files]
-    permissions: [gifts.write]
+    permissions: [gifts.write, recurring-debts.charge]
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [tests/e2e/gifts.GIFTS-001.spec.ts] }
 

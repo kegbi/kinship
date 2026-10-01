@@ -8054,6 +8054,374 @@
         }
       }
     },
+    "/api/v1/people/{personId}/recurring-debts": {
+      "post": {
+        "operationId": "createRecurringDebt",
+        "description": "Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringDebtCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recurring debt created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringDebtCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}": {
+      "patch": {
+        "operationId": "updateRecurringDebt",
+        "description": "Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "recurringDebtId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringDebtUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recurring debt changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringDebtSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRecurringDebt",
+        "description": "Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "recurringDebtId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recurring debt deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringDebtDeleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/relationships": {
       "get": {
         "operationId": "listRelationships",
@@ -17133,6 +17501,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "occurrenceOn": {
+            "type": "string",
+            "format": "date"
+          },
           "personId": {
             "type": "string",
             "format": "uuid"
@@ -17140,6 +17512,10 @@
           "reason": {
             "type": "string",
             "maxLength": 10000
+          },
+          "recurringDebtId": {
+            "type": "string",
+            "format": "uuid"
           },
           "settledAt": {
             "type": "string",
@@ -17871,6 +18247,10 @@
               "$ref": "#/components/schemas/Debt"
             }
           },
+          "defaultCurrencyCode": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
           "gifts": {
             "maxItems": 50,
             "type": "array",
@@ -17883,6 +18263,13 @@
           },
           "nextGiftCursor": {
             "type": "string"
+          },
+          "recurringDebts": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecurringDebt"
+            }
           },
           "status": {
             "const": "ready"
@@ -17897,7 +18284,9 @@
         },
         "required": [
           "debts",
+          "defaultCurrencyCode",
           "gifts",
+          "recurringDebts",
           "status",
           "supportedCurrencyCodes"
         ],
@@ -22491,11 +22880,19 @@
           },
           "preferences": {
             "$ref": "#/components/schemas/ResolvedMemberPreferences"
+          },
+          "supportedCurrencyCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
           }
         },
         "required": [
           "status",
-          "preferences"
+          "preferences",
+          "supportedCurrencyCodes"
         ],
         "additionalProperties": false
       },
@@ -22969,6 +23366,258 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "RecurringDebt": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "i_owe",
+              "they_owe"
+            ]
+          },
+          "endsOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intervalMonths": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "nextOccurrenceOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "startsOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "active",
+          "amount",
+          "createdAt",
+          "currencyCode",
+          "dayOfMonth",
+          "direction",
+          "id",
+          "intervalMonths",
+          "personId",
+          "startsOn",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringDebtCreateInput": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "i_owe",
+              "they_owe"
+            ]
+          },
+          "endsOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "intervalMonths": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "startsOn": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "amount",
+          "currencyCode",
+          "dayOfMonth",
+          "direction",
+          "intervalMonths",
+          "startsOn"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringDebtCreated": {
+        "type": "object",
+        "properties": {
+          "charged": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recurringDebt": {
+            "$ref": "#/components/schemas/RecurringDebt"
+          },
+          "status": {
+            "const": "created"
+          }
+        },
+        "required": [
+          "charged",
+          "recurringDebt",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringDebtDeleted": {
+        "type": "object",
+        "properties": {
+          "recurringDebtId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "recurringDebtId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringDebtSaved": {
+        "type": "object",
+        "properties": {
+          "charged": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recurringDebt": {
+            "$ref": "#/components/schemas/RecurringDebt"
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "required": [
+          "charged",
+          "recurringDebt",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringDebtUpdateInput": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "i_owe",
+              "they_owe"
+            ]
+          },
+          "endsOn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intervalMonths": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startsOn": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
       },
       "RegistrationAccepted": {
         "type": "object",
@@ -25530,12 +26179,20 @@
           "status": {
             "const": "ready"
           },
+          "supportedCurrencyCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          },
           "workspace": {
             "$ref": "#/components/schemas/WorkspaceSettingsInput"
           }
         },
         "required": [
           "status",
+          "supportedCurrencyCodes",
           "workspace"
         ],
         "additionalProperties": false

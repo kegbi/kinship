@@ -146,6 +146,13 @@ permissions:
     roles: [owner, admin, member]
     scope: active-workspace
 
+  # GIFTS-001 recurring debts: members manage a person's rules under
+  # gifts.write; the worker only charges the periods that fell due, one open
+  # debt per rule and due date, in the rule's own workspace.
+  - id: recurring-debts.charge
+    principals: [system-worker]
+    scope: due-recurring-debt-periods
+
   - id: data.import
     roles: [owner, admin]
     scope: active-workspace

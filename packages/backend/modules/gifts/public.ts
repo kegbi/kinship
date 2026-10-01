@@ -9,6 +9,12 @@ export type {
   StoredDebt,
   StoredGift,
 } from "./domain/gift_rules.ts";
+export type {
+  CreateRecurringDebtInput,
+  RecurringDebtChange,
+  RecurringDebtRecord,
+  StoredRecurringDebt,
+} from "./domain/recurring_debts.ts";
 export {
   decodeGiftCursor,
   encodeGiftCursor,
@@ -18,8 +24,17 @@ export type { GiftCursorCollection, GiftPageAnchor } from "./domain/cursors.ts";
 export type { GiftAudit } from "./ports/audit.ts";
 export type { GiftActor, GiftTransaction } from "./ports/context.ts";
 export type { GiftRepository } from "./ports/gift_repository.ts";
+export type {
+  ClaimedRecurringDebt,
+  RecurringDebtRepository,
+} from "./ports/recurring_debt_repository.ts";
 export type { ListGiftsInput } from "./application/gift_listing.ts";
 export { createGiftManagement } from "./application/gift_management.ts";
+export { createRecurringDebtCharging } from "./application/recurring_debts.ts";
+export type {
+  RecurringDebtCharging,
+  RecurringDebtRun,
+} from "./application/recurring_debts.ts";
 export type { GiftManagement } from "./application/gift_management.ts";
 export type {
   GiftManagementDependencies,

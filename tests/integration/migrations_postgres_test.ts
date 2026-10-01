@@ -1,7 +1,7 @@
 /**
  * The migration runner against real PostgreSQL (GAP-037): the path
  * `deno task migration:apply` takes, driven through its exported entry so the
- * refusals and the v1-v8 upgrades are observed on a live catalog rather than on
+ * refusals and the v1-v9 upgrades are observed on a live catalog rather than on
  * the classification alone (`tools/migrations/baseline_test.ts`).
  *
  * Each case owns a scratch database on the disposable server, so the shared
@@ -75,10 +75,11 @@ const priorBaselines = [
   ["v6", artifacts.v6Sql],
   ["v7", artifacts.v7Sql],
   ["v8", artifacts.v8Sql],
+  ["v9", artifacts.v9Sql],
 ] as const;
 
 for (const [version, baselineSql] of priorBaselines) {
-  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v9 catalog`, async () => {
+  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v10 catalog`, async () => {
     await withScratchDatabase(async ({ sql, url }) => {
       await sql.unsafe(baselineSql);
       const userId = crypto.randomUUID();
@@ -88,16 +89,16 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v9`,
+        await runMigration(environment(url)) === `upgrade-${version}-to-v10`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
       const upgraded = await crmTables(sql);
-      const expected = canonicalTableNames(artifacts.v9Sql);
+      const expected = canonicalTableNames(artifacts.v10Sql);
       assert(
         JSON.stringify(upgraded) === JSON.stringify(expected) &&
-          upgraded.length === 90,
-        `the upgraded catalog is not v9: ${
+          upgraded.length === 91,
+        `the upgraded catalog is not v10: ${
           expected.filter((name) => !upgraded.includes(name)).join(", ")
         }`,
       );
@@ -108,11 +109,11 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v9 catalog
+      // The runner verified the structure against a freshly built v10 catalog
       // before it committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v9",
-        `an upgraded ${version} database is not recognised as exact v9`,
+        await runMigration(environment(url)) === "verify-v10",
+        `an upgraded ${version} database is not recognised as exact v10`,
       );
     });
   });
@@ -141,7 +142,7 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v9",
+      await runMigration(environment(url)) === "upgrade-v7-to-v10",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -201,8 +202,8 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v9",
-      "an exact v8 database was not classified for the v8-to-v9 upgrade",
+      await runMigration(environment(url)) === "upgrade-v8-to-v10",
+      "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
       select count(*)::int as found from crm.notes
@@ -231,9 +232,91 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
   });
 });
 
-Deno.test("[GAP-037] the migration runner refuses a drifted catalog and leaves it untouched", async () => {
+Deno.test("[GIFTS-001] the v9-to-v10 upgrade keeps hand-recorded debts and charges a period once", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v9Sql);
+    const [userId, workspaceId, otherWorkspaceId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    const [ada, stranger, debtId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await sql`insert into crm.users (id, email) values (${userId}, 'v9-owner@example.test')`;
+    await sql`
+      insert into crm.workspaces (id, name, created_by_user_id) values
+        (${workspaceId}, 'V9 upgrade', ${userId}),
+        (${otherWorkspaceId}, 'V9 other', ${userId})
+    `;
+    await sql`
+      insert into crm.people (id, workspace_id, given_name) values
+        (${ada}, ${workspaceId}, 'Ada'), (${stranger}, ${otherWorkspaceId}, 'Ada')
+    `;
+    await sql`
+      insert into crm.debts (id, workspace_id, person_id, direction, amount, currency_code)
+      values (${debtId}, ${workspaceId}, ${ada}, 'they_owe', 12.5, 'EUR')
+    `;
+
+    assert(
+      await runMigration(environment(url)) === "upgrade-v9-to-v10",
+      "an exact v9 database was not classified for the v9-to-v10 upgrade",
+    );
+    const [kept] = await sql<
+      { readonly amount: string; readonly rule: string | null }[]
+    >`
+      select amount::text, recurring_debt_id::text as rule from crm.debts
+      where id = ${debtId}
+    `;
+    assert(
+      kept?.amount === "12.5000" && kept.rule === null,
+      "the upgrade changed a hand-recorded debt",
+    );
+    const [rule] = await sql<{ readonly id: string }[]>`
+      insert into crm.recurring_debts (
+        workspace_id, person_id, direction, amount, currency_code,
+        day_of_month, starts_on
+      ) values (${workspaceId}, ${ada}, 'they_owe', 30, 'EUR', 31, '2026-01-31')
+      returning id::text
+    `;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await sql`
+        insert into crm.debts (
+          workspace_id, person_id, direction, amount, currency_code,
+          recurring_debt_id, occurrence_on
+        ) values (
+          ${workspaceId}, ${ada}, 'they_owe', 30, 'EUR', ${rule!.id},
+          '2026-02-28'
+        ) on conflict (recurring_debt_id, occurrence_on) do nothing
+      `;
+    }
+    const [charged] = await sql<{ readonly found: number }[]>`
+      select count(*)::int as found from crm.debts
+      where recurring_debt_id = ${rule!.id}
+    `;
+    assert(charged?.found === 1, "a recurring period was charged twice");
+    const refused = await refusal(() =>
+      sql`
+        insert into crm.recurring_debts (
+          workspace_id, person_id, direction, amount, currency_code,
+          day_of_month, starts_on
+        ) values (
+          ${workspaceId}, ${stranger}, 'they_owe', 30, 'EUR', 1, '2026-01-01'
+        )
+      `
+    );
+    assert(
+      refused.includes("recurring_debts_person_fk"),
+      `a rule across workspaces was stored: ${refused}`,
+    );
+  });
+});
+
+Deno.test("[GAP-037] the migration runner refuses a drifted catalog and leaves it untouched", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v10Sql);
     await sql`alter table crm.users add column drifted_note text`;
 
     const message = await refusal(() => runMigration(environment(url)));
@@ -269,19 +352,19 @@ Deno.test("[GAP-037] the migration runner refuses a crm schema that matches no b
 
 Deno.test("[GAP-037] the migration runner refuses a changed immutable artifact before connecting", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
-    await sql.unsafe(artifacts.v8Sql);
+    await sql.unsafe(artifacts.v9Sql);
     const message = await refusal(() =>
       applyCanonicalSchema(url, {
         ...artifacts,
-        migrationV8ToV9: `${artifacts.migrationV8ToV9}\n-- drifted`,
+        migrationV9ToV10: `${artifacts.migrationV9ToV10}\n-- drifted`,
       })
     );
     assert(
-      message.startsWith("Schema v8-to-v9 migration checksum mismatch"),
+      message.startsWith("Schema v9-to-v10 migration checksum mismatch"),
       `a changed migration was not refused by checksum: ${message}`,
     );
     const [table] = await sql<{ readonly present: boolean }[]>`
-      select to_regclass('crm.person_duplicate_dismissals') is not null
+      select to_regclass('crm.recurring_debts') is not null
         as present
     `;
     assert(

@@ -44,6 +44,7 @@ import type {
   SettingsPlanningPublisher,
   WorkspaceSettingsRepository,
 } from "../ports/settings_repository.ts";
+import type { WorkspaceCurrencyBoundary } from "../ports/currency_boundary.ts";
 import type {
   IdentityAccountSettingsFacade,
   IdentityProfile,
@@ -81,6 +82,8 @@ function memberSession(session: IdentitySessionSummary): MemberSessionSummary {
 export interface SettingsManagementDependencies {
   readonly audit: SettingsAudit;
   readonly clock: Clock;
+  /** The currencies a preference or workspace default may name. */
+  readonly currencies: Pick<WorkspaceCurrencyBoundary, "listSupported">;
   readonly identity: IdentityAccountSettingsFacade;
   readonly identityDisplay: SettingsIdentityDirectory;
   readonly planningPublisher?: SettingsPlanningPublisher;
@@ -147,6 +150,14 @@ export function createSettingsManagement(
     getPreferences: (actor: SettingsActor) =>
       dependencies.transaction.run((transaction) =>
         dependencies.workspace.getPreferences({ ...actor, transaction })
+      ),
+    /**
+     * The currency codes a preference or workspace default may name, which is
+     * what the settings forms offer to choose from.
+     */
+    listCurrencies: (_actor: SettingsActor) =>
+      dependencies.transaction.run((transaction) =>
+        dependencies.currencies.listSupported({ transaction })
       ),
     updatePreferences: (
       actor: SettingsActor,

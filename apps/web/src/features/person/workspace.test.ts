@@ -75,7 +75,11 @@ beforeEach(async () => {
   );
   vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
     ok: true,
-    value: { status: "ready", preferences: preferences() },
+    value: {
+      status: "ready",
+      preferences: preferences(),
+      supportedCurrencyCodes: [],
+    },
   });
 });
 
@@ -106,7 +110,9 @@ const noReminders = jsonResponse({
 const noGifts = (supportedCurrencyCodes: readonly string[] = ["USD"]) =>
   jsonResponse({
     debts: [],
+    defaultCurrencyCode: "USD",
     gifts: [],
+    recurringDebts: [],
     status: "ready",
     supportedCurrencyCodes,
   });
@@ -519,6 +525,7 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
     ok: true,
     value: {
       status: "ready",
+      supportedCurrencyCodes: [],
       preferences: preferences({
         contactNameOrder: "family_given_nickname",
         contactSortOrder: "family_name_asc",

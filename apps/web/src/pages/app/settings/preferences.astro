@@ -34,7 +34,7 @@ import {
       <label>Time zone<input name="timezone" maxlength="100" placeholder="Europe/Belgrade" aria-describedby="timezone-error" disabled /><small id="timezone-error" data-field-error="timezone"></small></label>
       <label>Temperature<select name="temperatureScale" required disabled><option value="celsius">Celsius</option><option value="fahrenheit">Fahrenheit</option></select></label>
       <label>Measurements<select name="measurementSystem" required disabled><option value="metric">Metric</option><option value="imperial">Imperial</option></select></label>
-      <label>Currency<input name="currencyCode" maxlength="3" pattern="[A-Za-z]{3}" placeholder="EUR" aria-describedby="currency-error" disabled /><small id="currency-error" data-field-error="currencyCode"></small></label>
+      <label>Currency<select name="currencyCode" aria-describedby="currency-error" disabled><option value="">Workspace default</option></select><small id="currency-error" data-field-error="currencyCode"></small></label>
       <label>Contact sorting<select name="contactSortOrder" required disabled><option value="given_name_asc">Given name</option><option value="family_name_asc">Family name</option></select></label>
       <label>Name display<select name="contactNameOrder" required disabled><option value="given_family_nickname">Given then family</option><option value="family_given_nickname">Family then given</option></select></label>
       <label class="check-label"><input name="fluidLayout" type="checkbox" disabled /> Use fluid layout</label>

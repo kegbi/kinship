@@ -1,16 +1,20 @@
 /**
- * The gift and debt editors.
+ * The gift, debt, and recurring debt editors.
  *
  * Each validates with the create route's own contract schema before it asks
  * the island to save, and puts the fields a refused save names back on those
  * fields. The labels, field names, and native `<select>`s are the ones the
  * vanilla editors had, so keyboard, mobile pickers, and the GIFTS-001 journey
- * behave as before.
+ * behave as before. Every currency picker starts on the member's preferred
+ * currency, else the workspace default, else US dollars.
  */
 
 import type { ReactNode } from "react";
 import type { FieldError } from "react-hook-form";
-import type { ProblemDetails } from "../../../../../packages/contracts/generated/auth-client.ts";
+import type {
+  ProblemDetails,
+  RecurringDebt,
+} from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
@@ -21,6 +25,10 @@ import {
   type DebtFormValues,
   giftForm,
   type GiftFormValues,
+  localToday,
+  recurringDebtForm,
+  recurringDebtFormValues,
+  startingCurrency,
 } from "./records.ts";
 
 /** A save the island ran: the problem that refused it, if any. */
@@ -38,6 +46,13 @@ function fieldError(
     control: { "aria-describedby": id, "aria-invalid": true },
     message: <small id={id} data-field-error="">{error.message}</small>,
   };
+}
+
+/** The supported currencies, as a picker's options. */
+function CurrencyOptions(props: { readonly currencies: readonly string[] }) {
+  return props.currencies.map((code) => (
+    <option key={code} value={code}>{code}</option>
+  ));
 }
 
 function EditorActions(
@@ -67,6 +82,8 @@ export function GiftEditor(
   props: {
     readonly attachments: readonly Choice[];
     readonly currencies: readonly string[];
+    /** The currency an amount starts in. */
+    readonly defaultCurrency: string;
     /** True until the recipient and attachment choices have loaded. */
     readonly gated: boolean;
     readonly onCancel: () => void;
@@ -79,7 +96,7 @@ export function GiftEditor(
       amount: "",
       attachmentFileId: "",
       comment: "",
-      currencyCode: "",
+      currencyCode: startingCurrency(props.defaultCurrency, props.currencies),
       eventAt: "",
       name: "",
       recipientPersonId: "",
@@ -153,9 +170,7 @@ export function GiftEditor(
             disabled={props.gated}
           >
             <option value="">Select currency</option>
-            {props.currencies.map((code) => (
-              <option key={code} value={code}>{code}</option>
-            ))}
+            <CurrencyOptions currencies={props.currencies} />
           </select>
           {currency.message}
         </label>
@@ -210,6 +225,8 @@ export function GiftEditor(
 export function DebtEditor(
   props: {
     readonly currencies: readonly string[];
+    /** The currency the debt starts in. */
+    readonly defaultCurrency: string;
     readonly gated: boolean;
     readonly onCancel: () => void;
     readonly onSave: (input: object) => Promise<SaveOutcome>;
@@ -218,7 +235,7 @@ export function DebtEditor(
   const form = useContractForm(debtForm, {
     defaultValues: {
       amount: "",
-      currencyCode: props.currencies[0] ?? "",
+      currencyCode: startingCurrency(props.defaultCurrency, props.currencies),
       direction: "they_owe",
       reason: "",
       status: "open",
@@ -277,9 +294,7 @@ export function DebtEditor(
             disabled={props.gated}
             required
           >
-            {props.currencies.map((code) => (
-              <option key={code} value={code}>{code}</option>
-            ))}
+            <CurrencyOptions currencies={props.currencies} />
           </select>
           {currency.message}
         </label>
@@ -296,6 +311,152 @@ export function DebtEditor(
         {reason.message}
       </label>
       <EditorActions disabled={props.gated} onCancel={props.onCancel} />
+    </form>
+  );
+}
+
+/**
+ * A recurring debt: the same debt charged every N months on a day of the
+ * month, from a start date until an optional end. It edits an existing rule
+ * when one is given and creates one otherwise; a new rule starts today, on
+ * today's day of the month, in the preferred currency.
+ */
+export function RecurringDebtEditor(
+  props: {
+    readonly currencies: readonly string[];
+    readonly defaultCurrency: string;
+    readonly onCancel: () => void;
+    readonly onSave: (input: object) => Promise<SaveOutcome>;
+    /** The rule being edited, if this is not a new one. */
+    readonly rule?: RecurringDebt | undefined;
+    /** Today, as a date field holds it; the browser's own by default. */
+    readonly today?: string;
+  },
+) {
+  const form = useContractForm(recurringDebtForm, {
+    defaultValues: recurringDebtFormValues(
+      props.rule,
+      startingCurrency(props.defaultCurrency, props.currencies),
+      props.today ?? localToday(),
+    ),
+  });
+  const { errors } = form.formState;
+  const amount = fieldError("recurring-amount-error", errors.amount);
+  const currency = fieldError("recurring-currency-error", errors.currencyCode);
+  const interval = fieldError(
+    "recurring-interval-error",
+    errors.intervalMonths,
+  );
+  const day = fieldError("recurring-day-error", errors.dayOfMonth);
+  const starts = fieldError("recurring-starts-error", errors.startsOn);
+  const ends = fieldError("recurring-ends-error", errors.endsOn);
+  const reason = fieldError("recurring-reason-error", errors.reason);
+  const submit = form.handleSubmit(async (input) => {
+    const problem = await props.onSave(input);
+    if (problem) form.applyProblem(problem);
+  });
+  return (
+    <form
+      aria-label={props.rule ? "Edit recurring debt" : "Add recurring debt"}
+      className="profile-fact-form"
+      data-recurring-debt-form=""
+      method="post"
+      noValidate
+      onSubmit={(event) => void submit(event)}
+    >
+      <div className="form-grid">
+        <label>
+          Direction
+          <select {...form.register("direction")}>
+            <option value="they_owe">They owe me</option>
+            <option value="i_owe">I owe them</option>
+          </select>
+        </label>
+        <label>
+          Amount{" "}
+          <Input
+            {...form.register("amount")}
+            {...amount.control}
+            inputMode="decimal"
+            pattern="\d{1,15}(\.\d{1,4})?"
+            required
+          />
+          {amount.message}
+        </label>
+        <label>
+          Currency{" "}
+          <select
+            {...form.register("currencyCode")}
+            {...currency.control}
+            required
+          >
+            <CurrencyOptions currencies={props.currencies} />
+          </select>
+          {currency.message}
+        </label>
+        <label>
+          Every (months){" "}
+          <Input
+            {...form.register("intervalMonths")}
+            {...interval.control}
+            inputMode="numeric"
+            max={120}
+            min={1}
+            required
+            type="number"
+          />
+          {interval.message}
+        </label>
+        <label>
+          Day of month{" "}
+          <Input
+            {...form.register("dayOfMonth")}
+            {...day.control}
+            aria-describedby={day.message
+              ? "recurring-day-hint recurring-day-error"
+              : "recurring-day-hint"}
+            inputMode="numeric"
+            max={31}
+            min={1}
+            required
+            type="number"
+          />
+          {day.message}
+        </label>
+        <label>
+          Starts on{" "}
+          <Input
+            {...form.register("startsOn")}
+            {...starts.control}
+            required
+            type="date"
+          />
+          {starts.message}
+        </label>
+        <label>
+          Ends on (optional){" "}
+          <Input
+            {...form.register("endsOn")}
+            {...ends.control}
+            type="date"
+          />
+          {ends.message}
+        </label>
+      </div>
+      <p id="recurring-day-hint">
+        A month without that day is charged on its last day.
+      </p>
+      <label>
+        Reason (optional){" "}
+        <Textarea
+          {...form.register("reason")}
+          {...reason.control}
+          maxLength={10000}
+          rows={2}
+        />
+        {reason.message}
+      </label>
+      <EditorActions disabled={false} onCancel={props.onCancel} />
     </form>
   );
 }

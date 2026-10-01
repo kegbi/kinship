@@ -83,14 +83,19 @@ export function createWorkspaceRoutes(
   mount(routes, getWorkspaceSettings, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const result = await services.settings.getWorkspace(actor).catch(
-      () => undefined,
-    );
+    const [result, supportedCurrencyCodes] = await Promise.all([
+      services.settings.getWorkspace(actor),
+      services.settings.listCurrencies(actor),
+    ]).catch(() => [undefined, undefined] as const);
     if (result === "forbidden") {
       return definedProblem(context, WORKSPACE_FORBIDDEN);
     }
-    return result
-      ? privateJson(context, { status: "ready", workspace: result })
+    return result && supportedCurrencyCodes
+      ? privateJson(context, {
+        status: "ready",
+        supportedCurrencyCodes,
+        workspace: result,
+      })
       : definedProblem(context, WORKSPACE_NOT_LOADED);
   });
 

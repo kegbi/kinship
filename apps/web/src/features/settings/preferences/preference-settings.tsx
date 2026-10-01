@@ -1,7 +1,8 @@
 /**
  * The member's preferences form (GAP-033): locale, regional formats, contact
  * naming, the fluid layout, and where reminders are delivered (PLANNING-003),
- * for this membership only. A saved layout tells the application shell
+ * for this membership only. The currency is a choice among the supported
+ * codes; it is the one new debts and gifts start in (GIFTS-001). A saved layout tells the application shell
  * through `MEMBER_LAYOUT_SAVED_EVENT`, so the page frame follows at once.
  */
 
@@ -19,11 +20,16 @@ import {
   mountSettingsSurface,
   SettingsForm,
 } from "../form/settings-form.tsx";
+import { CurrencyOptions } from "../form/currency-select.tsx";
 
 export const PREFERENCE_SETTINGS_ISLAND = "settings-preferences";
 
 type Preferences = ResolvedMemberPreferences;
 type PreferencesInput = Parameters<typeof updateMemberPreferences>[0];
+/** The preferences as loaded, with the currencies the picker offers. */
+type PreferenceValues = Preferences & {
+  readonly currencyChoices: readonly string[];
+};
 
 /** What the form asks the server to save, as the fields hold it. */
 export function preferencesInput(form: HTMLFormElement): PreferencesInput {
@@ -61,7 +67,7 @@ export function PreferenceSettingsForm(
   props: { readonly onSettled?: () => void },
 ) {
   return (
-    <SettingsForm<Preferences>
+    <SettingsForm<PreferenceValues>
       fieldErrors
       fields={({ disabled, errors, values }) => (
         <>
@@ -109,15 +115,18 @@ export function PreferenceSettingsForm(
             </select>
           </label>
           <label>
-            Currency<input
+            Currency<select
               aria-describedby="currency-error"
               defaultValue={values?.currencyCode ?? ""}
               disabled={disabled}
-              maxLength={3}
               name="currencyCode"
-              pattern="[A-Za-z]{3}"
-              placeholder="EUR"
-            />
+            >
+              <CurrencyOptions
+                choices={values?.currencyChoices ?? []}
+                empty="Workspace default"
+                value={values?.currencyCode}
+              />
+            </select>
             <FieldError
               errors={errors}
               id="currency-error"
@@ -195,7 +204,13 @@ export function PreferenceSettingsForm(
       load={async (workspaceId) => {
         const loaded = await getMemberPreferences(workspaceId);
         return loaded.ok
-          ? { ok: true, value: loaded.value.preferences }
+          ? {
+            ok: true,
+            value: {
+              ...loaded.value.preferences,
+              currencyChoices: loaded.value.supportedCurrencyCodes,
+            },
+          }
           : loaded;
       }}
       loadFailed={() => "Your preferences could not be loaded."}

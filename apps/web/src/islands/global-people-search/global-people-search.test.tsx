@@ -48,6 +48,7 @@ const savedPreferences = (
   value: {
     preferences: preferences({ contactNameOrder }),
     status: "ready" as const,
+    supportedCurrencyCodes: [],
   },
 });
 
@@ -1008,6 +1009,7 @@ describe("SEARCH-001 workspace search groups", () => {
       value: {
         preferences: preferences({ contactSortOrder: "family_name_asc" }),
         status: "ready",
+        supportedCurrencyCodes: [],
       },
     });
     const api = stubPeople();

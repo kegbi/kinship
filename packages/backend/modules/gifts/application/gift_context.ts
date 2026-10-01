@@ -21,9 +21,11 @@ import type {
   GiftTransactionRunner,
 } from "../ports/context.ts";
 import type { GiftRepository } from "../ports/gift_repository.ts";
+import type { RecurringDebtRepository } from "../ports/recurring_debt_repository.ts";
 import type { GiftAttachmentBoundary } from "../../files/public.ts";
 import type {
   ActorRevalidation,
+  WorkspaceCalendarBoundary,
   WorkspaceCurrencyBoundary,
 } from "../../workspaces/public.ts";
 
@@ -31,9 +33,12 @@ export interface GiftManagementDependencies {
   readonly actors: ActorRevalidation;
   readonly attachments: GiftAttachmentBoundary;
   readonly audit: GiftAudit;
+  /** Each workspace's time zone, which decides the day a period is due. */
+  readonly calendar: WorkspaceCalendarBoundary;
   readonly clock: Clock;
   readonly currencies: WorkspaceCurrencyBoundary;
   readonly ids: { next(): string };
+  readonly recurringDebts: RecurringDebtRepository;
   readonly repository: GiftRepository;
   readonly transaction: GiftTransactionRunner;
 }
@@ -45,7 +50,7 @@ export interface GiftManagementDependencies {
  */
 export type GiftMutationFailure = Failure<
   "archived-write-rejected" | "forbidden" | "not-found" | "unavailable",
-  "invalid-transition" | "validation-error"
+  "invalid-transition" | "limit-reached" | "validation-error"
 >;
 
 /** The failure an attachment boundary reports, carried out of a transaction. */

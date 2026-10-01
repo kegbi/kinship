@@ -26,6 +26,7 @@ import {
   PostgresActorRevalidation,
 } from "./adapters/postgres/actor_revalidation.ts";
 import { PostgresWorkspaceCurrencyBoundary } from "./adapters/postgres/currency_boundary.ts";
+import { PostgresWorkspaceCalendarBoundary } from "./adapters/postgres/workspace_calendar.ts";
 import { PostgresInteractionWorkspaceBoundary } from "./adapters/postgres/interaction_workspace_boundary.ts";
 import { PostgresGenderOptionBoundary } from "./adapters/postgres/gender_option_boundary.ts";
 import { PostgresLifeEventWorkspaceBoundary } from "./adapters/postgres/life_event_workspace_boundary.ts";
@@ -158,8 +159,9 @@ export function workspaceTransactionRunner(
  */
 export function composeWorkspaceBoundaries() {
   return {
+    calendar: workspaceCalendar(),
     contactMethodTypes: new PostgresContactMethodTypeCatalog(),
-    currencies: new PostgresWorkspaceCurrencyBoundary(),
+    currencies: workspaceCurrencies(),
     genders: new PostgresGenderOptionBoundary(),
     interactions: new PostgresInteractionWorkspaceBoundary(),
     lifeEvents: new PostgresLifeEventWorkspaceBoundary(),
@@ -168,6 +170,16 @@ export function composeWorkspaceBoundaries() {
     relationships: new PostgresRelationshipWorkspaceBoundary(),
     reminderDelivery: reminderDeliveryPreferences(),
   };
+}
+
+/** The currency catalog and preferences; the worker root builds it alone. */
+export function workspaceCurrencies(): PostgresWorkspaceCurrencyBoundary {
+  return new PostgresWorkspaceCurrencyBoundary();
+}
+
+/** Each workspace's time zone; the worker root builds it alone. */
+export function workspaceCalendar(): PostgresWorkspaceCalendarBoundary {
+  return new PostgresWorkspaceCalendarBoundary();
 }
 
 /**
@@ -287,6 +299,7 @@ export function composeWorkspaces(
     settings: createSettingsManagement({
       audit: settingsAuditFrom(shared.audit),
       clock: shared.clock,
+      currencies: workspaceCurrencies(),
       identity: ports.identity.accountSettings,
       identityDisplay: ports.identity.invitations,
       planningPublisher: ports.planningPublisher,

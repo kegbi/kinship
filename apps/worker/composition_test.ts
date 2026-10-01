@@ -47,6 +47,32 @@ function emptyTick() {
   return Promise.resolve({ claimed: 0, results: [] });
 }
 
+Deno.test("[GIFTS-001] worker charges due recurring debts between cleanup and reminders", async () => {
+  const effects: string[] = [];
+  const worker = createApplicationWorker({
+    tick: ({ owner }) => {
+      effects.push(`reminders:${owner}`);
+      return emptyTick();
+    },
+  }, {
+    reconcilePendingCleanup: () => {
+      effects.push("cleanup");
+      return Promise.resolve({ completed: 0, inspected: 0 });
+    },
+  }, {
+    chargeDue: () => {
+      effects.push("recurring-debts");
+      return Promise.resolve({ charged: 2, failed: 0, rules: 1 });
+    },
+  });
+
+  await worker.tick({ owner: "debt-owner" });
+  assert(
+    effects.join(",") === "cleanup,recurring-debts,reminders:debt-owner",
+    `worker order was ${effects.join(",")}`,
+  );
+});
+
 Deno.test("[WORKSPACE-002] worker reconciles pending object cleanup before reminders", async () => {
   const effects: string[] = [];
   const worker = createApplicationWorker({

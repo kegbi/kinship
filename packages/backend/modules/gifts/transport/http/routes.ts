@@ -1,7 +1,7 @@
 /**
  * Gifts and debts over HTTP.
  *
- * What is left in this file is the part that is about gifts: the five routes,
+ * What is left in this file is the part that is about gifts: the eight routes,
  * the shapes they accept, and the prose each refusal carries. The problem
  * responder, the session cookie, the origin check, and the kernel status map
  * came from `packages/http-kit`, where every route file's copy of them was collapsed into
@@ -16,14 +16,19 @@ import {
   changeGiftStatus,
   createDebt,
   createGift,
+  createRecurringDebt,
+  deleteRecurringDebt,
   listPersonGiftsAndDebts,
   listPersonGiftsAndDebtsQuery,
+  updateRecurringDebt,
 } from "../../../../../contracts/routes/gifts.ts";
 import {
   debtCreateInput,
   debtStatusInput,
   giftCreateInput,
   giftStatusInput,
+  recurringDebtCreateInput,
+  recurringDebtUpdateInput,
 } from "../../../../../contracts/schemas/gifts.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
@@ -55,9 +60,9 @@ export interface GiftHttpServices {
 /**
  * What a refused gift or debt says.
  *
- * `not-found` covers the person, the recipient, the attachment, the gift, and
- * the debt in one answer on purpose: a workspace learns nothing about which of
- * them exists.
+ * `not-found` covers the person, the recipient, the attachment, the gift, the
+ * debt, and the recurring debt in one answer on purpose: a workspace learns
+ * nothing about which of them exists.
  */
 export const GIFT_FAILURES: FailureTable = {
   fallback: {
@@ -83,10 +88,17 @@ export const GIFT_FAILURES: FailureTable = {
       status: 409,
       title: "Status cannot be changed",
     },
+    "limit-reached": {
+      code: "recurring_debt_limit_reached",
+      detail:
+        "This person already has 50 recurring debts. Delete one before adding another.",
+      status: 409,
+      title: "Too many recurring debts",
+    },
     "not-found": {
       code: "gift_not_found",
       detail:
-        "The person, recipient, attachment, gift, or debt does not exist in the active workspace.",
+        "The person, recipient, attachment, gift, debt, or recurring debt does not exist in the active workspace.",
       title: "Record unavailable",
     },
     "query-invalid": {
@@ -252,6 +264,94 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if (
         result.status !== "saved" && result.status !== "unchanged"
       ) return failure(context, result.status);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  mount(
+    routes,
+    createRecurringDebt,
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const body = await parseJsonBody(context, recurringDebtCreateInput);
+      if ("errors" in personId || "errors" in body) {
+        return failure(context, "validation-error");
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const { endsOn, reason, ...required } = body.data;
+      const result = await services.gifts.createRecurringDebt(
+        actor,
+        personId.data,
+        {
+          ...required,
+          ...(endsOn ? { endsOn } : {}),
+          ...(reason ? { reason } : {}),
+        },
+      );
+      if (result.status !== "created") return failure(context, result.status);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result, 201);
+    },
+  );
+
+  mount(
+    routes,
+    updateRecurringDebt,
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const recurringDebtId = parseValue(
+        uuid,
+        context.req.param("recurringDebtId"),
+      );
+      const body = await parseJsonBody(context, recurringDebtUpdateInput);
+      if (
+        "errors" in personId || "errors" in recurringDebtId || "errors" in body
+      ) return failure(context, "validation-error");
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const change = Object.fromEntries(
+        Object.entries(body.data).filter(([, value]) => value !== undefined),
+      );
+      const result = await services.gifts.changeRecurringDebt(
+        actor,
+        personId.data,
+        recurringDebtId.data,
+        change,
+      );
+      if (result.status !== "saved") return failure(context, result.status);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  mount(
+    routes,
+    deleteRecurringDebt,
+    origin,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      const recurringDebtId = parseValue(
+        uuid,
+        context.req.param("recurringDebtId"),
+      );
+      if ("errors" in personId || "errors" in recurringDebtId) {
+        return failure(context, "not-found");
+      }
+      const actor = await requireActor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.gifts.deleteRecurringDebt(
+        actor,
+        personId.data,
+        recurringDebtId.data,
+      );
+      if (result.status !== "deleted") return failure(context, result.status);
       context.header("Cache-Control", "private, no-store");
       return context.json(result);
     },

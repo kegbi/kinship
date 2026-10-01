@@ -27,6 +27,7 @@ function fixture(
   options: {
     readonly attachmentDisappears?: boolean;
     readonly list?: GiftRepository["list"];
+    readonly preferredCurrency?: string;
   } = {},
 ) {
   const gifts = new Map<string, StoredGift>();
@@ -67,13 +68,21 @@ function fixture(
             : { status: "forbidden" as const },
         ),
     },
-    audit,
+    audit: {
+      record: (command) => audit.record(command),
+      recordCharged: () => Promise.resolve("charged-audit"),
+    },
+    calendar: { timezones: () => Promise.resolve(new Map()) },
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
     currencies: {
       isSupported: ({ code }) => Promise.resolve(code === "EUR"),
       listSupported: () => Promise.resolve(["EUR", "USD"]),
+      preferredFor: () => Promise.resolve(options.preferredCurrency),
     },
     ids: sequentialIds({ prefix: "10000000-0000-4000-8000-", start: 7 }),
+    recurringDebts: {
+      listForPerson: () => Promise.resolve([]),
+    } as unknown as GiftManagementDependencies["recurringDebts"],
     repository: {
       createDebt: (command) => {
         const debt: StoredDebt = {
@@ -198,7 +207,9 @@ Deno.test("GIFTS-001 conceals an attachment removed between validation and linki
   );
   assertEquals(await management.list(actor, personId), {
     debts: [],
+    defaultCurrencyCode: "USD",
     gifts: [],
+    recurringDebts: [],
     status: "ready",
     supportedCurrencyCodes: ["EUR", "USD"],
   });
@@ -329,7 +340,9 @@ Deno.test("GIFTS-001 rejects a missing attachment without saving the gift", asyn
   );
   assertEquals(await management.list(actor, personId), {
     debts: [],
+    defaultCurrencyCode: "USD",
     gifts: [],
+    recurringDebts: [],
     status: "ready",
     supportedCurrencyCodes: ["EUR", "USD"],
   });
@@ -492,6 +505,15 @@ Deno.test("GIFTS-001 contains transaction failures as unavailable", async () => 
     { status: "unavailable" },
   );
   assertEquals((await management.list(actor, personId)).status, "ready");
+});
+
+Deno.test("[GIFTS-001] the list offers the member's preferred currency as the default", async () => {
+  const { management } = fixture({ preferredCurrency: "EUR" });
+  const records = await management.list(actor, personId);
+  assertEquals(
+    records.status === "ready" ? records.defaultCurrencyCode : records.status,
+    "EUR",
+  );
 });
 
 Deno.test("GIFTS-006 the gift event pins the row governance writes", () => {

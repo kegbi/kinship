@@ -175,6 +175,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v7",
   "personal-crm-schema/v8",
   "personal-crm-schema/v9",
+  "personal-crm-schema/v10",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -270,7 +271,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "apps",
     "docs/architecture",
     "packages",
-    "personal-crm-schema/v9",
+    "personal-crm-schema/v10",
     "tools",
   ],
 };
@@ -597,8 +598,8 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v9/personal_crm_schema_spec_v9.md",
-          "personal-crm-schema/v9/personal_crm_schema_v9.sql",
+          "personal-crm-schema/v10/personal_crm_schema_spec_v10.md",
+          "personal-crm-schema/v10/personal_crm_schema_v10.sql",
           "packages/contracts",
           ...OWNERSHIP_BOUNDARY_READS,
           ".tls/e2e",
@@ -830,7 +831,9 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/files/application/person_files_test.ts",
         "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
+        "packages/backend/modules/gifts/domain/recurring_debts_test.ts",
         "packages/backend/modules/gifts/application/gift_management_test.ts",
+        "packages/backend/modules/gifts/application/recurring_debts_test.ts",
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
@@ -1354,7 +1357,9 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/gifts/transport/http/routes_test.ts",
         "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
+        "packages/backend/modules/gifts/domain/recurring_debts_test.ts",
         "packages/backend/modules/gifts/application/gift_management_test.ts",
+        "packages/backend/modules/gifts/application/recurring_debts_test.ts",
         "packages/contracts/gifts_test.ts",
       ],
     },
@@ -1365,7 +1370,9 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/gifts/transport/http/routes_test.ts",
         "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
+        "packages/backend/modules/gifts/domain/recurring_debts_test.ts",
         "packages/backend/modules/gifts/application/gift_management_test.ts",
+        "packages/backend/modules/gifts/application/recurring_debts_test.ts",
       ],
       include: [
         "packages/backend/modules/gifts/transport/http/routes.ts",
@@ -1373,6 +1380,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/gifts/application/gift_context.ts",
         "packages/backend/modules/gifts/application/gift_listing.ts",
         "packages/backend/modules/gifts/application/gift_writes.ts",
+        "packages/backend/modules/gifts/application/recurring_debts.ts",
         "packages/backend/modules/gifts/domain",
       ],
     },
@@ -1390,6 +1398,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/gifts/domain/cursors_test.ts",
         "packages/backend/modules/gifts/domain/gift_rules_test.ts",
+        "packages/backend/modules/gifts/domain/recurring_debts_test.ts",
       ],
       include: ["packages/backend/modules/gifts/domain"],
     },
@@ -2004,7 +2013,7 @@ export const MODULES: readonly TaskModule[] = [
           "docs/architecture",
           "docs/planning/private-production-profile.json",
           "docs/product/user-flows.yaml",
-          "personal-crm-schema/v9",
+          "personal-crm-schema/v10",
           "apps",
           "packages",
           "tools",

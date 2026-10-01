@@ -24,4 +24,23 @@ export class PostgresWorkspaceCurrencyBoundary
     `.execute(databaseFromSession(command.transaction));
     return result.rows.map((row) => row.code);
   }
+
+  async preferredFor(
+    command: Parameters<WorkspaceCurrencyBoundary["preferredFor"]>[0],
+  ): Promise<string | undefined> {
+    const result = await sql<{ readonly code: string | null }>`
+      select coalesce(
+        (select currency.code from crm.member_preferences preference
+          join crm.currencies currency
+            on currency.code = preference.currency_code and currency.is_active
+          where preference.member_id = ${command.memberId}::uuid),
+        (select currency.code from crm.workspace_settings setting
+          join crm.currencies currency
+            on currency.code = setting.default_currency_code
+            and currency.is_active
+          where setting.workspace_id = ${command.workspaceId}::uuid)
+      )::text as code
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]?.code ?? undefined;
+  }
 }

@@ -3,7 +3,8 @@
  *
  * The worker is the second deployable and composes the same modules the API
  * does, through the same per-module `compose*` functions: planning's delivery
- * loop and the workspace cleanup reconciler, over one shared context. Each
+ * loop, the workspace cleanup reconciler, and the recurring debts that have
+ * fallen due (GIFTS-001), over one shared context. Each
  * delivery run is logged as one redacted `worker.job` JSON line on stdout.
  * Reminder email (PLANNING-003) goes through the workspaces SMTP transport,
  * configured from the same `SMTP_*` settings the API sends verification with.
@@ -14,6 +15,7 @@ import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logge
 import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
 import { composeObjectStorage } from "../../packages/backend/modules/files/composition.ts";
+import { composeRecurringDebtCharging } from "../../packages/backend/modules/gifts/composition.ts";
 import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
 import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
 import { composeReminderDelivery } from "../../packages/backend/modules/planning/composition.ts";
@@ -23,6 +25,7 @@ import {
   composeWorkspaceCleanup,
   reminderDeliveryPreferences,
   workspaceActors,
+  workspaceCalendar,
   workspaceTransactionRunner,
 } from "../../packages/backend/modules/workspaces/composition.ts";
 import { resolveObjectStorageConfiguration } from "../api/file_storage_config.ts";
@@ -31,13 +34,22 @@ interface TickWorker {
   tick(command: { readonly owner: string }): Promise<unknown>;
 }
 
+/**
+ * One worker tick: object cleanup, then the recurring debts that have fallen
+ * due, then reminder delivery. Charging debts never throws; a rule that fails
+ * is counted and retried on a later tick, so reminders are always delivered.
+ */
 export function createApplicationWorker(
   reminders: TickWorker,
   cleanup: { reconcilePendingCleanup(): Promise<unknown> },
+  recurringDebts: { chargeDue(): Promise<unknown> } = {
+    chargeDue: () => Promise.resolve(),
+  },
 ): TickWorker {
   return {
     async tick(command) {
       await cleanup.reconcilePendingCleanup();
+      await recurringDebts.chargeDue();
       return await reminders.tick(command);
     },
   };
@@ -74,6 +86,7 @@ export function createConfiguredReminderWorker(
         logger,
       }),
       composeWorkspaceCleanup(shared, { storage }),
+      composeRecurringDebtCharging(shared, { calendar: workspaceCalendar() }),
     ),
   };
 }

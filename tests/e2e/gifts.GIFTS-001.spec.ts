@@ -8,7 +8,7 @@ import { openPersonMenu } from "./support/profile.ts";
 import { submitSignIn } from "./support/sign-in.ts";
 
 test(
-  "[GIFTS-001] manages person gifts, attachments, and debts",
+  "[GIFTS-001] manages person gifts, attachments, debts, and recurring debts",
   {
     annotation: [
       { type: "flow", description: "GIFTS-001" },
@@ -125,10 +125,38 @@ test(
       "settled",
     );
 
+    // A recurring debt that started two months ago charges each period at
+    // once, every charge its own open debt, and pausing stops further ones.
+    const start = new Date();
+    start.setUTCDate(1);
+    start.setUTCMonth(start.getUTCMonth() - 2);
+    const recurring = debts.locator("[data-recurring-debts]");
+    await recurring.getByRole("button", { name: "Add recurring debt" })
+      .click();
+    const rule = recurring.getByRole("form", { name: "Add recurring debt" });
+    await rule.getByLabel("Amount").fill("30");
+    await rule.getByLabel("Currency").selectOption("EUR");
+    await rule.getByLabel("Day of month").fill("1");
+    await rule.getByLabel("Starts on").fill(start.toISOString().slice(0, 10));
+    await rule.getByLabel("Reason (optional)").fill("Gym membership");
+    await rule.getByRole("button", { name: "Save" }).click();
+    await expect(debts.locator("[data-gift-state]")).toHaveText(
+      "Recurring debt saved. 3 debts charged.",
+    );
+    await expect(
+      debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),
+    ).toHaveCount(3);
+    await recurring.getByRole("button", { name: "Pause Gym membership" })
+      .click();
+    await expect(recurring.getByText("Paused", { exact: true })).toBeVisible();
+
     await openPersonMenu(page);
     await page.getByRole("button", { name: "Archive person" }).click();
     await expect(gifts.getByRole("button", { name: "Add gift" })).toBeHidden();
     await expect(debts.getByRole("button", { name: "Add debt" })).toBeHidden();
+    await expect(
+      recurring.getByRole("button", { name: "Add recurring debt" }),
+    ).toBeHidden();
     await expectAccessible(page);
   },
 );

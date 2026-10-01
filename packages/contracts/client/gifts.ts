@@ -15,6 +15,9 @@ import type {
   GiftCreateInput,
   GiftDebtList,
   GiftStatus,
+  RecurringDebt,
+  RecurringDebtCreateInput,
+  RecurringDebtUpdateInput,
 } from "./types.ts";
 
 /**
@@ -110,6 +113,75 @@ export function changeDebtStatus(
       method: "PATCH",
       headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
       body: JSON.stringify({ status }),
+    },
+  );
+}
+
+/**
+ * A rule that charges the person the same debt every period. The answer says
+ * how many periods already due it charged at once.
+ */
+export function createRecurringDebt(
+  personId: string,
+  input: RecurringDebtCreateInput,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{
+    readonly charged: number;
+    readonly recurringDebt: RecurringDebt;
+    readonly status: "created";
+  }>
+> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/recurring-debts`,
+    {
+      method: "POST",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Changes a rule; `{ active: false }` pauses it and `{ active: true }` resumes it. */
+export function updateRecurringDebt(
+  personId: string,
+  recurringDebtId: string,
+  input: RecurringDebtUpdateInput,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{
+    readonly charged: number;
+    readonly recurringDebt: RecurringDebt;
+    readonly status: "saved";
+  }>
+> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/recurring-debts/${
+      encodeURIComponent(recurringDebtId)
+    }`,
+    {
+      method: "PATCH",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Deletes a rule; the debts it already charged stay. */
+export function deleteRecurringDebt(
+  personId: string,
+  recurringDebtId: string,
+  workspaceId?: string,
+): Promise<
+  ApiResult<{ readonly recurringDebtId: string; readonly status: "deleted" }>
+> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/recurring-debts/${
+      encodeURIComponent(recurringDebtId)
+    }`,
+    {
+      method: "DELETE",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     },
   );
 }

@@ -385,6 +385,14 @@ async function seedEveryReference(
       values (${workspaceId}, ${personId}, 'they_owe', 10)
     `;
     await transaction`
+      insert into crm.recurring_debts (
+        workspace_id, person_id, direction, amount, currency_code,
+        day_of_month, starts_on
+      ) values (
+        ${workspaceId}, ${personId}, 'they_owe', 10, 'EUR', 1, '2026-01-01'
+      )
+    `;
+    await transaction`
       insert into crm.dav_address_books (id, workspace_id, owner_member_id, name)
       values (${book}, ${workspaceId}, ${owner.memberId}, 'Contacts')
     `;

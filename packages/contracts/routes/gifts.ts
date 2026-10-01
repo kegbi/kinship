@@ -24,6 +24,11 @@ import {
   giftDebtList,
   giftSaved,
   giftStatusInput,
+  recurringDebtCreated,
+  recurringDebtCreateInput,
+  recurringDebtDeleted,
+  recurringDebtSaved,
+  recurringDebtUpdateInput,
 } from "../schemas/gifts.ts";
 import { pageCursor, pageLimit, uuid } from "../schemas/shared.ts";
 
@@ -178,6 +183,92 @@ export const changeGiftStatus = defineRoute({
   },
 });
 
+export const createRecurringDebt = defineRoute({
+  method: "post",
+  path: "/api/v1/people/{personId}/recurring-debts",
+  operationId: "createRecurringDebt",
+  description:
+    "Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": recurringDebtCreateInput,
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Recurring debt created",
+      content: {
+        "application/json": recurringDebtCreated,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const updateRecurringDebt = defineRoute({
+  method: "patch",
+  path: "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}",
+  operationId: "updateRecurringDebt",
+  description:
+    "Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+      recurringDebtId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": recurringDebtUpdateInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Recurring debt changed",
+      content: {
+        "application/json": recurringDebtSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteRecurringDebt = defineRoute({
+  method: "delete",
+  path: "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}",
+  operationId: "deleteRecurringDebt",
+  description:
+    "Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      personId: uuid,
+      recurringDebtId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "Recurring debt deleted",
+      content: {
+        "application/json": recurringDebtDeleted,
+      },
+    },
+    ...problemResponses(401, 403, 404, 409, 503),
+  },
+});
+
 /** Every gifts route, in the order the surface mounts them. */
 export const GIFTS_ROUTES: readonly RouteDescriptor[] = [
   createDebt,
@@ -185,4 +276,7 @@ export const GIFTS_ROUTES: readonly RouteDescriptor[] = [
   listPersonGiftsAndDebts,
   createGift,
   changeGiftStatus,
+  createRecurringDebt,
+  updateRecurringDebt,
+  deleteRecurringDebt,
 ];

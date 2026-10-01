@@ -51,8 +51,12 @@ export interface DebtRecord {
   readonly currencyCode?: string;
   readonly direction: DebtDirection;
   readonly id: string;
+  /** The due date of the period a recurring rule charged this debt for. */
+  readonly occurrenceOn?: string;
   readonly personId: string;
   readonly reason?: string;
+  /** The recurring rule that charged this debt, while the rule exists. */
+  readonly recurringDebtId?: string;
   readonly settledAt?: string;
   readonly status: DebtStatus;
   readonly updatedAt: string;

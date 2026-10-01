@@ -93,7 +93,7 @@ telemetry or add CRM identifiers to labels.
    deno task ops recovery restore <last-valid-archive-id>
    ```
 
-6. Promote a restored target only when the command exits zero, canonical v9
+6. Promote a restored target only when the command exits zero, canonical v10
    verification passes, object reconciliation is exact, and RPO/RTO are met.
    Otherwise discard only that isolated target and try the prior valid archive.
 7. After service recovers, verify gateway readiness, sign-in/MFA, one ordinary

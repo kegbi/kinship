@@ -131,6 +131,10 @@ export type {
   WorkspaceCurrencyBoundary,
 } from "./ports/currency_boundary.ts";
 export type {
+  WorkspaceCalendarBoundary,
+  WorkspaceCalendarTransaction,
+} from "./ports/workspace_calendar.ts";
+export type {
   MemberReminderDelivery,
   ReminderDeliveryPreferences,
   ReminderDeliveryPreferencesTransaction,

@@ -29,7 +29,7 @@
  * be told apart from the primary's own, which is why the flow and the
  * confirmation both say so.
  *
- * ## Foreign-key inventory (canonical schema v9)
+ * ## Foreign-key inventory (canonical schema v10)
  *
  * Every column that references the people table, its owner, and its rule. The
  * `person_merge_postgres_test.ts` guard reads `pg_constraint` and fails when a
@@ -62,6 +62,7 @@
  * | `gifts.person_id`                                | gifts         | relink                                                                     |
  * | `gifts.recipient_person_id`                      | gifts         | relink                                                                     |
  * | `debts.person_id`                                | gifts         | relink                                                                     |
+ * | `recurring_debts.person_id`                      | gifts         | relink                                                                     |
  * | `dav_objects.person_id`                          | integrations  | relink                                                                     |
  * | `audit_events.person_id`                         | governance    | relink, so the history stays on the surviving person; rows are not edited  |
  * | `workspace_members.self_person_id`               | workspaces    | relink; refused (409) when both people represent members                   |

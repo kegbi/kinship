@@ -27,6 +27,7 @@ const loaded = (overrides = {}) =>
   jsonResponse({
     preferences: preferences({ timezone: "Europe/Belgrade", ...overrides }),
     status: "ready",
+    supportedCurrencyCodes: ["EUR", "RSD", "USD"],
   });
 
 function shell(): void {
@@ -84,7 +85,7 @@ describe("AUTH-004 personal preferences", () => {
     );
     type(field("Locale"), "sr-Latn");
     type(field("Time zone"), "");
-    type(field("Currency"), "rsd");
+    type(field("Currency"), "RSD");
     act(() => {
       fireEvent.click(field("Use fluid layout"));
       fireEvent.change(field("Temperature"), {
@@ -166,7 +167,7 @@ describe("AUTH-004 personal preferences", () => {
     });
     await mount();
     const currency = field("Currency");
-    type(currency, "ZZZ");
+    type(currency, "USD");
     submit();
     await waitFor(() =>
       expect(currency.getAttribute("aria-invalid")).toBe("true")
@@ -175,6 +176,25 @@ describe("AUTH-004 personal preferences", () => {
       "Choose a supported currency.",
     );
     expect(document.activeElement).toBe(currency);
+  });
+
+  it("[GIFTS-001] chooses a supported currency or the workspace default", async () => {
+    shell();
+    const api = stubApi({
+      [PREFERENCES]: loaded({ currencyCode: "EUR" }),
+      [SAVE]: jsonResponse({ preferences: preferences(), status: "ready" }),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    const currency = screen.getByLabelText<HTMLSelectElement>("Currency");
+    expect([...currency.options].map((option) => option.textContent))
+      .toEqual(["Workspace default", "EUR", "RSD", "USD"]);
+    type(field("Currency"), "");
+    submit();
+    await waitFor(() =>
+      expect(status().textContent).toBe("Preferences saved.")
+    );
+    expect(api.bodies()[0]).not.toHaveProperty("currencyCode");
   });
 
   it("keeps ready saves retryable after server and transport failures", async () => {

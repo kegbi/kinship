@@ -27,7 +27,11 @@ const value = {
   slug: "circle",
 };
 const loaded = (workspace: object = value) =>
-  jsonResponse({ status: "ready", workspace });
+  jsonResponse({
+    status: "ready",
+    supportedCurrencyCodes: ["EUR", "RSD", "USD"],
+    workspace,
+  });
 
 function shell(): void {
   drawShell("<main><div data-settings-workspace></div></main>");
@@ -87,7 +91,7 @@ describe("WORKSPACE-001 workspace settings", () => {
     }]);
   });
 
-  it("sends every optional default it holds, the currency upper-cased", async () => {
+  it("sends every optional default it holds, the currency chosen from the catalog", async () => {
     shell();
     const api = stubApi({
       [SAVE]: loaded(),
@@ -102,7 +106,7 @@ describe("WORKSPACE-001 workspace settings", () => {
     expect(field("Workspace slug").value).toBe("");
     type(field("Workspace slug"), "circle");
     type(field("Default time zone"), "Europe/Belgrade");
-    type(field("Default currency"), "eur");
+    type(field("Default currency"), "EUR");
     submit();
     await waitFor(() =>
       expect(status().textContent).toBe("Workspace settings saved.")
@@ -146,7 +150,7 @@ describe("WORKSPACE-001 workspace settings", () => {
     expect(document.activeElement).toBe(timezone);
     type(timezone, "Europe/Belgrade");
     const currency = field("Default currency");
-    type(currency, "ZZZ");
+    type(currency, "RSD");
     submit();
     await waitFor(() =>
       expect(currency.getAttribute("aria-invalid")).toBe("true")
@@ -155,6 +159,27 @@ describe("WORKSPACE-001 workspace settings", () => {
       "Choose a supported currency.",
     );
     expect(document.activeElement).toBe(currency);
+  });
+
+  it("[GIFTS-001] offers the supported currencies and a none option", async () => {
+    shell();
+    stubApi({
+      [SESSION]: jsonResponse(workspaceSession()),
+      [WORKSPACE]: loaded({ ...value, defaultCurrencyCode: "XAU" }),
+    });
+    await mount();
+    const currency = screen.getByLabelText<HTMLSelectElement>(
+      "Default currency",
+    );
+    expect([...currency.options].map((option) => option.value)).toEqual([
+      "",
+      "EUR",
+      "RSD",
+      "USD",
+      "XAU",
+    ]);
+    expect(currency.options[0]?.textContent).toBe("None (US dollars)");
+    expect(currency.value).toBe("XAU");
   });
 
   it("reports unavailable settings with the server's words and stays disabled", async () => {

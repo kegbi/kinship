@@ -237,26 +237,26 @@ silently resolve it by violating an accepted constraint.
 
 ## Canonical Personal CRM Schema
 
-- [personal-crm-schema/v9/README.md](personal-crm-schema/v9/README.md) is the
+- [personal-crm-schema/v10/README.md](personal-crm-schema/v10/README.md) is the
   starting point and current repository database baseline.
-- [personal-crm-schema/v9/personal_crm_schema_v9.sql](personal-crm-schema/v9/personal_crm_schema_v9.sql)
+- [personal-crm-schema/v10/personal_crm_schema_v10.sql](personal-crm-schema/v10/personal_crm_schema_v10.sql)
   is the canonical PostgreSQL DDL.
-- [personal-crm-schema/v9/personal_crm_schema_spec_v9.md](personal-crm-schema/v9/personal_crm_schema_spec_v9.md)
+- [personal-crm-schema/v10/personal_crm_schema_spec_v10.md](personal-crm-schema/v10/personal_crm_schema_spec_v10.md)
   is the human-readable schema and behavioral contract.
-- [personal-crm-schema/v9/personal_crm_field_catalog_v9.csv](personal-crm-schema/v9/personal_crm_field_catalog_v9.csv)
+- [personal-crm-schema/v10/personal_crm_field_catalog_v10.csv](personal-crm-schema/v10/personal_crm_field_catalog_v10.csv)
   is the field-level catalog.
-- [personal-crm-schema/v9/monica_table_mapping_v9.csv](personal-crm-schema/v9/monica_table_mapping_v9.csv)
+- [personal-crm-schema/v10/monica_table_mapping_v10.csv](personal-crm-schema/v10/monica_table_mapping_v10.csv)
   and
-  [personal-crm-schema/v9/monica_column_mapping_v9.csv](personal-crm-schema/v9/monica_column_mapping_v9.csv)
+  [personal-crm-schema/v10/monica_column_mapping_v10.csv](personal-crm-schema/v10/monica_column_mapping_v10.csv)
   are the complete Monica import mappings.
-- [personal-crm-schema/v9/personal_crm_schema_v9_changes.md](personal-crm-schema/v9/personal_crm_schema_v9_changes.md)
+- [personal-crm-schema/v10/personal_crm_schema_v10_changes.md](personal-crm-schema/v10/personal_crm_schema_v10_changes.md)
   and
-  [personal-crm-schema/v9/personal_crm_schema_v9_validation.json](personal-crm-schema/v9/personal_crm_schema_v9_validation.json)
+  [personal-crm-schema/v10/personal_crm_schema_v10_validation.json](personal-crm-schema/v10/personal_crm_schema_v10_validation.json)
   contain the change rationale and machine validation.
 
-Treat `personal-crm-schema/v9` as one synchronized, versioned unit. Repository
-v1 through v8 remain immutable prior baselines; the external audit does not
-cover the repository-reviewed v2 through v9 deltas. Do not update the SQL,
+Treat `personal-crm-schema/v10` as one synchronized, versioned unit. Repository
+v1 through v9 remain immutable prior baselines; the external audit does not
+cover the repository-reviewed v2 through v10 deltas. Do not update the SQL,
 specification, catalogs, mappings, migration, or validation independently.
 
 The canonical Personal CRM schema is the application's own data model. The

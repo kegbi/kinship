@@ -35,6 +35,7 @@ export function settings(
         profile: { email: "owner@example.test", ...input },
         status: "ready",
       }),
+    listCurrencies: () => Promise.resolve(["EUR", "RSD", "USD"]),
     getPreferences: () =>
       Promise.resolve({
         effectiveTimezone: "Europe/Belgrade",

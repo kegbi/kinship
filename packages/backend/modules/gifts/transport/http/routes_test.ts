@@ -614,3 +614,151 @@ Deno.test("[GAP-023] HTTP pages gifts and debts independently and refuses a malf
     );
   }
 });
+
+Deno.test("[GIFTS-001] HTTP creates, changes, and deletes a recurring debt", async () => {
+  const calls: string[] = [];
+  const recurringDebt = {
+    active: true,
+    amount: "500",
+    createdAt: "now",
+    currencyCode: "EUR",
+    dayOfMonth: 31,
+    direction: "they_owe",
+    id: debtId,
+    intervalMonths: 1,
+    personId: id,
+    startsOn: "2026-05-31",
+    updatedAt: "now",
+  };
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      createRecurringDebt: (
+        _actor: unknown,
+        personId: string,
+        input: Record<string, unknown>,
+      ) => {
+        calls.push(`create:${personId}:${JSON.stringify(input)}`);
+        return Promise.resolve({
+          charged: 3,
+          recurringDebt,
+          status: "created",
+        });
+      },
+      changeRecurringDebt: (
+        _actor: unknown,
+        _personId: string,
+        recurringDebtId: string,
+        change: Record<string, unknown>,
+      ) => {
+        calls.push(`change:${recurringDebtId}:${JSON.stringify(change)}`);
+        return Promise.resolve(
+          recurringDebtId === debtId
+            ? { charged: 0, recurringDebt, status: "saved" }
+            : { status: "not-found" },
+        );
+      },
+      deleteRecurringDebt: (
+        _actor: unknown,
+        _personId: string,
+        recurringDebtId: string,
+      ) =>
+        Promise.resolve(
+          recurringDebtId === debtId
+            ? { recurringDebtId, status: "deleted" }
+            : { status: "limit-reached" },
+        ),
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const headers = {
+    Cookie: "kinship_session=token",
+    Origin: "https://app.test",
+    "Content-Type": "application/json",
+  };
+  const created = await app.request(`/api/v1/people/${id}/recurring-debts`, {
+    body: JSON.stringify({
+      amount: "500",
+      currencyCode: "eur",
+      dayOfMonth: 31,
+      direction: "they_owe",
+      intervalMonths: 1,
+      reason: "Rent share",
+      startsOn: "2026-05-31",
+    }),
+    headers,
+    method: "POST",
+  });
+  assertStatus(created, 201);
+  assert(
+    ((await created.json()) as { charged?: number }).charged === 3,
+    "the answer says how many periods were charged at once",
+  );
+  const invalid = await app.request(`/api/v1/people/${id}/recurring-debts`, {
+    body: JSON.stringify({
+      amount: "500",
+      currencyCode: "EUR",
+      dayOfMonth: 32,
+      direction: "they_owe",
+      intervalMonths: 1,
+      startsOn: "2026-05-31",
+    }),
+    headers,
+    method: "POST",
+  });
+  assertStatus(invalid, 400);
+
+  const paused = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    {
+      body: JSON.stringify({ active: false, endsOn: null }),
+      headers,
+      method: "PATCH",
+    },
+  );
+  assertStatus(paused, 200);
+  const empty = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    { body: JSON.stringify({}), headers, method: "PATCH" },
+  );
+  assertStatus(empty, 400);
+  const missing = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${giftId}`,
+    { body: JSON.stringify({ amount: "1" }), headers, method: "PATCH" },
+  );
+  assertStatus(missing, 404);
+
+  const deleted = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    { headers, method: "DELETE" },
+  );
+  assertStatus(deleted, 200);
+  const limited = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${giftId}`,
+    { headers, method: "DELETE" },
+  );
+  assertStatus(limited, 409);
+  assert(
+    await problemCode(limited) === "recurring_debt_limit_reached",
+    "the limit refusal names itself",
+  );
+  const malformed = await app.request(
+    `/api/v1/people/${id}/recurring-debts/not-a-uuid`,
+    { headers, method: "DELETE" },
+  );
+  assertStatus(malformed, 404);
+  const crossOrigin = await app.request(
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    {
+      headers: { ...headers, Origin: "https://evil.test" },
+      method: "DELETE",
+    },
+  );
+  assertStatus(crossOrigin, 403);
+  assert(
+    calls[0]?.includes('"currencyCode":"eur"') === true &&
+      calls[0]?.includes('"reason":"Rent share"') === true &&
+      calls[1] === `change:${debtId}:{"active":false,"endsOn":null}`,
+    `routes forwarded ${calls.join(" | ")}`,
+  );
+});

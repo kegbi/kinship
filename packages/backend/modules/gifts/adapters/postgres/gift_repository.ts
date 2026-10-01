@@ -39,8 +39,10 @@ interface DebtRow {
   readonly currency_code: string | null;
   readonly direction: StoredDebt["direction"];
   readonly id: string;
+  readonly occurrence_on: string | null;
   readonly person_id: string;
   readonly reason: string | null;
+  readonly recurring_debt_id: string | null;
   readonly settled_at: string | null;
   readonly status: StoredDebt["status"];
   readonly updated_at: string;
@@ -75,7 +77,7 @@ function giftColumns<DB extends { gift: GiftSource }>(
 }
 
 /** The projection every debt query returns, one column per `DebtRow` field. */
-function debtColumns<DB extends { debt: DebtSource }>(
+export function debtColumns<DB extends { debt: DebtSource }>(
   eb: ExpressionBuilder<DB, "debt">,
 ) {
   return [
@@ -89,12 +91,16 @@ function debtColumns<DB extends { debt: DebtSource }>(
     eb.cast<string | null>(eb.ref("debt.settled_at"), "text").as("settled_at"),
     instantOf(eb.ref("debt.created_at")).as("created_at"),
     instantOf(eb.ref("debt.updated_at")).as("updated_at"),
+    eb.cast<string | null>(eb.ref("debt.recurring_debt_id"), "text")
+      .as("recurring_debt_id"),
+    eb.cast<string | null>(eb.ref("debt.occurrence_on"), "text")
+      .as("occurrence_on"),
   ];
 }
 
 /** The text columns the schema constrains to the domain's vocabularies. */
 type GiftVocabulary = { readonly status: GiftStatus };
-type DebtVocabulary = {
+export type DebtVocabulary = {
   readonly direction: DebtDirection;
   readonly status: DebtStatus;
 };
@@ -119,15 +125,20 @@ function gift(row: GiftRow): StoredGift {
   };
 }
 
-function debt(row: DebtRow): StoredDebt {
+export function debt(row: DebtRow): StoredDebt {
   return {
     amount: row.amount,
     createdAt: row.created_at,
     ...pickDefined({ currencyCode: row.currency_code }),
     direction: row.direction,
     id: row.id,
+    ...pickDefined({ occurrenceOn: row.occurrence_on }),
     personId: row.person_id,
-    ...pickDefined({ reason: row.reason, settledAt: row.settled_at }),
+    ...pickDefined({
+      reason: row.reason,
+      recurringDebtId: row.recurring_debt_id,
+      settledAt: row.settled_at,
+    }),
     status: row.status,
     updatedAt: row.updated_at,
   };
@@ -148,11 +159,11 @@ function anchorOf(
 type Session = Parameters<GiftRepository["list"]>[0]["transaction"];
 
 /**
- * The subject of every gift or debt: a person this workspace still owns. The
- * actor's own standing is `ActorRevalidation`'s question, asked by
- * `createGiftManagement` before any of these run.
+ * The subject of every gift, debt, and recurring debt rule: a person this
+ * workspace still owns. The actor's own standing is `ActorRevalidation`'s
+ * question, asked by `createGiftManagement` before any of these run.
  */
-async function personStatus(command: {
+export async function personStatus(command: {
   readonly personId: string;
   readonly transaction: Session;
   readonly workspaceId: string;
@@ -167,6 +178,23 @@ async function personStatus(command: {
     .$if(command.lock === true, (query) => query.forUpdate("person"))
     .executeTakeFirst();
   return row ? (row.archived ? "archived" : "active") : "not-found";
+}
+
+/**
+ * That the row's person is live and not archived, for the worker's reads of
+ * recurring debt rules, which name no single person up front. A rule of an
+ * archived person waits, uncharged, until the person is restored.
+ */
+export function chargeablePerson(
+  personColumn: string,
+  workspaceColumn: string,
+) {
+  return sql<boolean>`exists (
+    select 1 from crm.people person
+    where person.id = ${sql.ref(personColumn)}
+      and person.workspace_id = ${sql.ref(workspaceColumn)}
+      and person.archived_at is null and person.deleted_at is null
+  )`;
 }
 
 /** Whether the intended recipient is a live person of the same workspace. */

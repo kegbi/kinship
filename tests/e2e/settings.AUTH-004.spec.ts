@@ -566,13 +566,13 @@ test(
     await expect(timeZone).toHaveAttribute("aria-invalid", "true");
     await expect(timeZone).toBeFocused();
     await timeZone.fill("Europe/Belgrade");
+    // The currency is a choice among the supported codes (GIFTS-001), so an
+    // unsupported one can no longer be typed.
     const currency = page.getByLabel("Currency");
-    await currency.fill("ZZZ");
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("Choose a supported currency.")).toBeVisible();
-    await expect(currency).toHaveAttribute("aria-invalid", "true");
-    await expect(currency).toBeFocused();
-    await currency.fill("EUR");
+    await expect(currency.locator("option").first()).toHaveText(
+      "Workspace default",
+    );
+    await currency.selectOption("EUR");
     await page.getByLabel("Use fluid layout").check();
     await expect(page.getByText("Unsaved changes.")).toBeVisible();
     await page.getByRole("button", { name: "Save changes" }).click();
@@ -682,14 +682,12 @@ test(
     await page.getByLabel("Default locale").fill("sr-Latn");
     await page.getByLabel("Default time zone").fill("Europe/Belgrade");
     const defaultCurrency = page.getByLabel("Default currency");
-    await defaultCurrency.fill("ZZZ");
+    await expect(defaultCurrency.locator("option").first()).toHaveText(
+      "None (US dollars)",
+    );
+    await defaultCurrency.selectOption("EUR");
     await page.getByLabel("Default reminder time").fill("09:30");
     await expect(page.getByText("Unsaved changes.")).toBeVisible();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("Choose a supported currency.")).toBeVisible();
-    await expect(defaultCurrency).toHaveAttribute("aria-invalid", "true");
-    await expect(defaultCurrency).toBeFocused();
-    await defaultCurrency.fill("EUR");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(
       page.getByRole("status").filter({ hasText: "Workspace settings saved" }),

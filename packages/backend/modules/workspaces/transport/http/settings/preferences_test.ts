@@ -7,7 +7,7 @@
 
 import { createSettingsRoutes } from "../settings.ts";
 import { assert, assertStatus } from "../../../../../testing/assert.ts";
-import { actor, headers, services } from "./settings.test-helper.ts";
+import { actor, headers, services, settings } from "./settings.test-helper.ts";
 
 Deno.test("APR-009 member preference response exposes resolved timezone as read-only", async () => {
   const configuration = services();
@@ -126,5 +126,38 @@ Deno.test("[PLANNING-003] reminder delivery and digest time are saved, cleared, 
   ) {
     const refused = await put({ ...base, ...invalid });
     assertStatus(refused, 400, `${JSON.stringify(invalid)} is refused`);
+  }
+});
+
+Deno.test("[GIFTS-001] the preference and workspace forms receive the supported currencies", async () => {
+  const configuration = services();
+  const app = createSettingsRoutes(configuration);
+  for (const path of ["preferences", "workspace"]) {
+    const read = await app.request(
+      `http://localhost/api/v1/settings/${path}`,
+      { headers },
+    );
+    const body = await read.json() as {
+      readonly supportedCurrencyCodes?: readonly string[];
+    };
+    assert(
+      read.status === 200 &&
+        body.supportedCurrencyCodes?.join(",") === "EUR,RSD,USD",
+      `${path} answered ${read.status} ${JSON.stringify(body)}`,
+    );
+  }
+  const failing = createSettingsRoutes(
+    services(settings({
+      listCurrencies: () => Promise.reject(new Error("offline")),
+    })),
+  );
+  for (const path of ["preferences", "workspace"]) {
+    assertStatus(
+      await failing.request(`http://localhost/api/v1/settings/${path}`, {
+        headers,
+      }),
+      503,
+      `${path} without its currencies is unavailable`,
+    );
   }
 });
