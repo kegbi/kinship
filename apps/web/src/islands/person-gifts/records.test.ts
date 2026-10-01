@@ -5,8 +5,10 @@ import type {
   RecurringDebt,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
+  chargeOrder,
   debtDetail,
   debtForm,
+  displayAmount,
   EMPTY_RECORDS,
   foldPage,
   giftDetail,
@@ -35,10 +37,10 @@ const gift = {
 describe("GIFTS-001 gift and debt records", () => {
   it("reads an amount with or without its currency", () => {
     expect(giftDetail({ ...gift, amount: "3" })).toBe(
-      "idea · 3 · No recipient",
+      "idea · 3.00 · No recipient",
     );
     expect(giftDetail({ ...gift, amount: "3", currencyCode: "EUR" })).toBe(
-      "idea · 3 EUR · No recipient",
+      "idea · 3.00 EUR · No recipient",
     );
   });
 
@@ -174,7 +176,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
       "Recurring debt",
     );
     expect(recurringDebtDetail(rule)).toBe(
-      "They owe · 500.0000 EUR · Monthly on day 31 · Next 2026-09-30",
+      "They owe · 500.00 EUR · Monthly on day 31 · Next 2026-09-30",
     );
     expect(
       recurringDebtDetail({
@@ -184,7 +186,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
         intervalMonths: 3,
       }),
     ).toBe(
-      "I owe · 500.0000 EUR · Every 3 months on day 31 · Until 2027-05-31 · Next 2026-09-30",
+      "I owe · 500.00 EUR · Every 3 months on day 31 · Until 2027-05-31 · Next 2026-09-30",
     );
     expect(recurringDebtDetail({ ...rule, active: false })).toContain(
       "Paused",
@@ -207,7 +209,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
         status: "open",
         updatedAt: rule.updatedAt,
       }),
-    ).toBe("They owe · 500 EUR · open · Recurring, due 2026-08-31");
+    ).toBe("They owe · 500.00 EUR · open · Recurring, due 2026-08-31");
   });
 
   it("starts a new rule today and an edited rule from its own values", () => {
@@ -287,5 +289,33 @@ describe("GIFTS-001 default currency and recurring debts", () => {
         `${field}=${value}`,
       ).toBe(false);
     }
+  });
+});
+
+describe("money and charge order", () => {
+  it("shows a stored amount with at least two decimals and no padding zeros", () => {
+    expect(displayAmount("150.0000")).toBe("150.00");
+    expect(displayAmount("12.5")).toBe("12.50");
+    expect(displayAmount("3.1234")).toBe("3.1234");
+    expect(displayAmount("7")).toBe("7.00");
+    expect(displayAmount("0.0100")).toBe("0.01");
+  });
+
+  it("lists debts charged together newest occurrence first, keeping the page order otherwise", () => {
+    const at = "2026-10-01T12:00:00.000Z";
+    const rows = [
+      { id: "a", createdAt: "2026-10-02T09:00:00.000Z" },
+      { id: "b", createdAt: at, occurrenceOn: "2026-07-01" },
+      { id: "c", createdAt: at, occurrenceOn: "2026-10-01" },
+      { id: "d", createdAt: at, occurrenceOn: "2026-08-01" },
+      { id: "e", createdAt: "2026-09-01T09:00:00.000Z" },
+    ];
+    expect(chargeOrder(rows).map((row) => row.id)).toEqual([
+      "a",
+      "c",
+      "d",
+      "b",
+      "e",
+    ]);
   });
 });

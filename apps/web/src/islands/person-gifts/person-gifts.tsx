@@ -73,6 +73,7 @@ import {
 } from "./forms.tsx";
 import {
   attachmentChoices,
+  chargeOrder,
   countText,
   debtDetail,
   debtStatusOptions,
@@ -467,7 +468,7 @@ export function PersonGifts(props: PersonGiftsProps) {
       {createPortal(
         surface(
           "debt",
-          records.debts.map((debt) => (
+          chargeOrder(records.debts).map((debt) => (
             <DebtItem
               archived={archived}
               debt={debt}

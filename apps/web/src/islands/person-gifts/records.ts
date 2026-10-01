@@ -75,11 +75,47 @@ export function debtStatusOptions(current: DebtStatus): readonly DebtStatus[] {
   return current === "open" ? ["settled", "cancelled"] : [];
 }
 
+/**
+ * A stored decimal amount as people read it: at least two decimals, and no
+ * zeros the database padded on beyond them ("150.0000" reads "150.00").
+ */
+export function displayAmount(amount: string): string {
+  const [whole = "0", fraction = ""] = amount.split(".");
+  const significant = fraction.replace(/0+$/, "");
+  return `${whole}.${significant.padEnd(2, "0")}`;
+}
+
+/**
+ * The page's debts with each batch charged together (one creation instant)
+ * shown newest occurrence first. Everything else keeps the page's order,
+ * which its cursor depends on.
+ */
+export function chargeOrder<
+  T extends { readonly createdAt: string; readonly occurrenceOn?: string },
+>(debts: readonly T[]): T[] {
+  const ordered: T[] = [];
+  let run: T[] = [];
+  const flush = () => {
+    ordered.push(
+      ...run.toSorted((left, right) =>
+        (right.occurrenceOn ?? "").localeCompare(left.occurrenceOn ?? "")
+      ),
+    );
+    run = [];
+  };
+  for (const debt of debts) {
+    if (run.length > 0 && run[0]!.createdAt !== debt.createdAt) flush();
+    run.push(debt);
+  }
+  flush();
+  return ordered;
+}
+
 export function giftDetail(gift: Gift): string {
   return [
     gift.status,
     gift.amount
-      ? `${gift.amount} ${gift.currencyCode ?? ""}`.trim()
+      ? `${displayAmount(gift.amount)} ${gift.currencyCode ?? ""}`.trim()
       : "Amount unknown",
     gift.recipientPersonId ? "Recipient selected" : "No recipient",
     gift.attachmentFileId ? "Attachment linked" : undefined,
@@ -91,9 +127,9 @@ export function debtTitle(debt: Debt): string {
 }
 
 export function debtDetail(debt: Debt): string {
-  return `${
-    debt.direction === "i_owe" ? "I owe" : "They owe"
-  } · ${debt.amount} ${debt.currencyCode ?? ""} · ${debt.status}${
+  return `${debt.direction === "i_owe" ? "I owe" : "They owe"} · ${
+    displayAmount(debt.amount)
+  } ${debt.currencyCode ?? ""} · ${debt.status}${
     debt.occurrenceOn ? ` · Recurring, due ${debt.occurrenceOn}` : ""
   }`;
 }
@@ -130,7 +166,7 @@ export function recurringDebtDetail(rule: RecurringDebt): string {
     : "Ended";
   return [
     rule.direction === "i_owe" ? "I owe" : "They owe",
-    `${rule.amount} ${rule.currencyCode}`,
+    `${displayAmount(rule.amount)} ${rule.currencyCode}`,
     recurrenceText(rule),
     rule.endsOn ? `Until ${rule.endsOn}` : undefined,
     state,

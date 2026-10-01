@@ -557,6 +557,13 @@
   gap: var(--space-2);
 }
 
+/* A form's fields: a label above each, a stack gap between them. */
+.profile-fact-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-4);
+}
+
 /* A lookup's search box with its buttons beside it, wrapping when narrow. */
 .option-search {
   display: flex;
