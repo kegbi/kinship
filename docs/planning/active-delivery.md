@@ -189,6 +189,27 @@ prerequisite queues.
 - **Phase 12 is accepted.** `REL-029` is delivered; `REL-020` and `REL-025`
   remain watches. Phase 11's `OPS-001E` deployment work stays parked until
   explicitly requested.
+- User-directed UI repair and recurring debts (2026-10-01), on
+  `claude/focused-bohr-ul5e5m`:
+  - A neutral and indigo palette in both themes replaces the green and
+    terracotta one; buttons and links keep the 2px focus ring, and text fields
+    take focus as an accent border with a halo. The header keeps one row down to
+    1050px and stays inside the screen at every width. Unstyled controls get a
+    layered baseline, and cards and settings pages follow one documented stack
+    rhythm (`settings.css`). Pages open on a header-and-skeleton frame, and the
+    person workspace bar sticks flush under the header.
+  - Schema v10 adds `recurring_debts`, owned by `gifts`. The worker charges one
+    open debt per rule per occurrence; money forms prefill the personal, then
+    workspace, then `USD` currency.
+  - `tools/e2e.ts` and the gateway log-capture suite make their TLS material
+    in-process (`tools/e2e_tls.ts`), so E2E no longer needs `pwsh`.
+  - Local evidence on a Linux container: `fmt:check`, `lint`, `check`,
+    `contracts:check`, `check:architecture`, and `test:unit` passed. The
+    Chromium E2E project passed 69 of 71, with 1 skip; `INTERACTION-001` missed
+    its Quick capture dialog once and passed alone on the same commit. Image
+    builds trusted the session proxy CA through an uncommitted Dockerfile patch.
+    Firefox and WebKit, `test:coverage`, and `test:integration` on the merged
+    branch stay owed.
 - Also open: **OPS-001E — Deployment rollout, rollback, and post-deploy
   verification** in Phase 11. It neither blocks nor is blocked by Phase 12.
 - Last accepted process checkpoint: `0b82f1a218c95587e82c2d5581b5b688e643f2b0`
