@@ -587,6 +587,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/contracts/people_contract_test.ts",
         "tools/contracts/registration_contract_test.ts",
         "tools/e2e_test.ts",
+        "tools/e2e_tls_test.ts",
         "tools/gateway_contract_test.ts",
         "tools/migrations/baseline_test.ts",
         "tools/postgres_gate_test.ts",
@@ -600,7 +601,10 @@ export const MODULES: readonly TaskModule[] = [
           "personal-crm-schema/v9/personal_crm_schema_v9.sql",
           "packages/contracts",
           ...OWNERSHIP_BOUNDARY_READS,
+          ".tls/e2e",
         ],
+        // `tools/e2e_tls_test.ts` writes and removes one run's TLS material.
+        write: [".tls/e2e"],
         env: ["CI", "READABLE_STREAM"],
         // `tools/e2e_test.ts` drives the launcher's process helpers, which
         // spawn `ps` and `kill` off Windows (REL-040).
@@ -704,7 +708,9 @@ export const MODULES: readonly TaskModule[] = [
           ...SCHEMA_READS,
           // The vCard and CSV parser fixtures (GAP-050).
           "packages/backend/modules/import-export/domain/formats/fixtures",
+          ".tls/e2e",
         ],
+        write: [".tls/e2e"],
         // As in the unit set: `tools/e2e_test.ts` runs here too (REL-040).
         run: E2E_PROCESS_BINARIES,
         // The worker composition suite configures reminder email.
@@ -936,6 +942,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/contracts/planning_contract_test.ts",
         "tools/contracts/registration_contract_test.ts",
         "tools/e2e_test.ts",
+        "tools/e2e_tls_test.ts",
         "tools/gateway_contract_test.ts",
         "tools/migrations/baseline_test.ts",
         "tools/postgres_gate_test.ts",
@@ -1966,8 +1973,10 @@ export const MODULES: readonly TaskModule[] = [
       tests: ["tools/gateway_log_capture_test.ts"],
       permissions: {
         read: ["gateway/nginx.conf", "gateway/security_headers.conf"],
+        // The run-scoped TLS material the gateway mounts (`e2e_tls.ts`).
+        write: [".tls/e2e"],
         net: ["127.0.0.1"],
-        run: ["docker", "pwsh"],
+        run: ["docker"],
       },
     },
   },

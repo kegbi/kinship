@@ -1,3 +1,13 @@
+import {
+  createE2eTls,
+  E2E_TLS_ROOT,
+  type E2eTlsMaterial,
+  removeE2eTls,
+} from "./e2e_tls.ts";
+
+export { createE2eTls, E2E_TLS_ROOT, removeE2eTls };
+export type { E2eTlsMaterial };
+
 export function e2eProjectName(pid: number, now: number): string {
   return `kinship-e2e-${pid}-${now}`;
 }
@@ -139,78 +149,6 @@ export function e2ePlaywrightArgs(
   return args;
 }
 
-export interface E2eTlsMaterial {
-  readonly certificate: string;
-  readonly directory: string;
-  readonly privateKey: string;
-}
-
-export async function createE2eTls(
-  project: string,
-): Promise<E2eTlsMaterial> {
-  if (!/^kinship-e2e-\d+-\d+$/.test(project)) {
-    throw new Error("Refusing to create TLS material for an invalid project.");
-  }
-  const script = `
-$ErrorActionPreference = 'Stop'
-$root = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
-$directory = [IO.Path]::GetFullPath([IO.Path]::Combine($root, '${project}-tls'))
-if ([IO.Path]::GetDirectoryName($directory) -ne $root -or (Test-Path -LiteralPath $directory)) { throw 'Unsafe or existing E2E TLS directory.' }
-[void](New-Item -ItemType Directory -Path $directory)
-try {
-  $rsa = [Security.Cryptography.RSA]::Create(2048)
-  try {
-    $name = [Security.Cryptography.X509Certificates.X500DistinguishedName]::new('CN=127.0.0.1')
-    $request = [Security.Cryptography.X509Certificates.CertificateRequest]::new($name, $rsa, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $san = [Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
-    $san.AddDnsName('localhost')
-    $san.AddIpAddress([Net.IPAddress]::Parse('127.0.0.1'))
-    $request.CertificateExtensions.Add($san.Build())
-    $certificate = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddMinutes(-1), [DateTimeOffset]::UtcNow.AddHours(4))
-    $certificatePath = [IO.Path]::Combine($directory, 'gateway.crt')
-    $privateKeyPath = [IO.Path]::Combine($directory, 'gateway.key')
-    $utf8 = [Text.UTF8Encoding]::new($false)
-    [IO.File]::WriteAllText($certificatePath, $certificate.ExportCertificatePem(), $utf8)
-    [IO.File]::WriteAllText($privateKeyPath, $rsa.ExportPkcs8PrivateKeyPem(), $utf8)
-    @{ certificate = $certificatePath; directory = $directory; privateKey = $privateKeyPath } | ConvertTo-Json -Compress
-  } finally { $rsa.Dispose() }
-} catch {
-  Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
-  throw
-}`;
-  const parsed: unknown = JSON.parse(
-    await commandOutput(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-Command", script],
-      {},
-    ),
-  );
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("E2E TLS generator returned an invalid result.");
-  }
-  const certificate = Reflect.get(parsed, "certificate");
-  const directory = Reflect.get(parsed, "directory");
-  const privateKey = Reflect.get(parsed, "privateKey");
-  if (
-    typeof certificate !== "string" || typeof directory !== "string" ||
-    typeof privateKey !== "string"
-  ) {
-    throw new Error("E2E TLS generator omitted a required path.");
-  }
-  return { certificate, directory, privateKey };
-}
-
-export async function removeE2eTls(
-  material: E2eTlsMaterial,
-): Promise<void> {
-  await command("pwsh", [
-    "-NoProfile",
-    "-NonInteractive",
-    "-Command",
-    `$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar); $directory=[IO.Path]::GetFullPath($env:KINSHIP_E2E_TLS_DIRECTORY); if ([IO.Path]::GetDirectoryName($directory) -ne $root -or [IO.Path]::GetFileName($directory) -notmatch '^kinship-e2e-\\d+-\\d+-tls$') { throw 'Refusing unsafe E2E TLS cleanup.' }; if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }; if (Test-Path -LiteralPath $directory) { throw 'E2E TLS directory remained after cleanup.' }`,
-  ], { KINSHIP_E2E_TLS_DIRECTORY: material.directory });
-}
-
 /** Runs one `docker` command in a run's environment and returns its output. */
 export type E2eDocker = (args: readonly string[]) => Promise<string>;
 
@@ -331,9 +269,10 @@ async function cleanupE2eArtifacts(
 
 /**
  * Every executable this launcher may spawn on either platform: Docker and
- * pnpm for the stack and browsers, `pwsh` for TLS material, `deno` for the
- * Astro child, and `powershell` on Windows or `ps` and `kill` elsewhere to
- * inspect and terminate exact process trees. The `test:e2e` task and every
+ * pnpm for the stack and browsers, `deno` for the Astro child, and
+ * `powershell` on Windows or `ps` and `kill` elsewhere to inspect and
+ * terminate exact process trees. TLS material is made in-process
+ * (`e2e_tls.ts`), so no shell is needed for it. The `test:e2e` task and every
  * test set that runs `tools/e2e_test.ts` grant exactly this list (REL-040).
  */
 export const E2E_PROCESS_BINARIES: readonly string[] = [
@@ -341,7 +280,6 @@ export const E2E_PROCESS_BINARIES: readonly string[] = [
   "pnpm",
   "deno",
   "powershell",
-  "pwsh",
   "ps",
   "kill",
 ];
