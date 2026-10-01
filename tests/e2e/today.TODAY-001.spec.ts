@@ -282,7 +282,8 @@ test(
     await stateFilter.focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Shift+Tab");
-    await expect(stateFilter).toHaveCSS("outline-offset", "2px");
+    // A focused select keeps a flush outline and shows the focus halo.
+    await expect(stateFilter).toHaveCSS("outline-offset", "0px");
     await expect(stateFilter).toHaveCSS("outline-style", "solid");
     expect(
       await stateFilter.evaluate((element) =>

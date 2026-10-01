@@ -21,20 +21,39 @@ async function tabTo(page: Page, target: Locator): Promise<void> {
     .toBe(true);
 }
 
+/**
+ * A focused button or link draws the 2px focus ring 2px outside itself. A
+ * focused text field or select instead keeps its outline flush and
+ * transparent and shows a soft halo, except in forced colours, where the
+ * system paints that outline in Highlight.
+ */
 async function expectControlFocus(target: Locator): Promise<void> {
   await expect(target).toBeFocused();
+  const field = await target.evaluate((element) =>
+    element instanceof HTMLSelectElement ||
+    element instanceof HTMLTextAreaElement ||
+    (element instanceof HTMLInputElement &&
+      !["checkbox", "radio", "range", "color", "file", "submit", "button"]
+        .includes(element.type))
+  );
   await expect(target).toHaveCSS("outline-style", "solid");
   await expect(target).toHaveCSS("outline-width", "2px");
-  await expect(target).toHaveCSS("outline-offset", "2px");
-  expect(
-    await target.evaluate((element) => getComputedStyle(element).boxShadow),
-  )
-    .not.toContain("inset");
-  const expectedColor = await target.evaluate(() => {
+  await expect(target).toHaveCSS("outline-offset", field ? "0px" : "2px");
+  const boxShadow = await target.evaluate((element) =>
+    getComputedStyle(element).boxShadow
+  );
+  expect(boxShadow).not.toContain("inset");
+  const forced = await target.evaluate(() =>
+    matchMedia("(forced-colors: active)").matches
+  );
+  if (field && !forced) expect(boxShadow).toMatch(/ 0px 0px 0px 3px$/);
+  const expectedColor = await target.evaluate((_, transparent) => {
     const probe = document.createElement("span");
     probe.style.forcedColorAdjust = "none";
     probe.style.color = matchMedia("(forced-colors: active)").matches
       ? "Highlight"
+      : transparent
+      ? "transparent"
       : getComputedStyle(document.documentElement).getPropertyValue(
         "--focus-ring",
       );
@@ -42,7 +61,7 @@ async function expectControlFocus(target: Locator): Promise<void> {
     const color = getComputedStyle(probe).color;
     probe.remove();
     return color;
-  });
+  }, field);
   await expect(target).toHaveCSS("outline-color", expectedColor);
 }
 

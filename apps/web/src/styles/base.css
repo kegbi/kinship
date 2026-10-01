@@ -283,7 +283,11 @@ main[tabindex="-1"]:focus-visible h1 {
 }
 
 .access-skeleton-page {
+  display: grid;
   gap: var(--space-5);
+  width: min(1040px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: var(--space-7) 0;
 }
 
 .access-skeleton-card {
