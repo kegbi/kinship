@@ -127,6 +127,11 @@ textarea {
     font-weight: 600;
   }
 
+  /* A field inside its label fills the label, never its own content width. */
+  :where(label) > :where(select, textarea, input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"])) {
+    width: 100%;
+  }
+
   /* A label that wraps a checkbox or radio lines the box up with its text. */
   :where(label):has(> :is(input[type="checkbox"], input[type="radio"])) {
     display: inline-flex;
