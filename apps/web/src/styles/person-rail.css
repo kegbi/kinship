@@ -33,14 +33,14 @@
 }
 
 .profile-rail-block {
-  --rail-tint: color-mix(in srgb, var(--positive-soft) 42%, var(--surface-1));
+  --rail-tint: var(--surface-1);
   position: relative;
   display: grid;
   scroll-margin-top: 10.5rem;
   gap: var(--space-2);
   min-width: 0;
   padding: var(--pad-block);
-  border-color: color-mix(in srgb, var(--positive) 16%, var(--line-hairline));
+  border-color: var(--line-1);
   background: var(--rail-tint);
   box-shadow: none;
 }
@@ -63,7 +63,7 @@
   align-items: center;
   padding-right: var(--space-6);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid color-mix(in srgb, var(--positive) 18%, transparent);
+  border-bottom: 1px solid var(--line-hairline);
 }
 
 .profile-rail-count {
@@ -427,8 +427,8 @@
   padding: var(--space-1);
   box-sizing: border-box;
   border-radius: .5rem;
-  color: var(--positive);
-  background: var(--positive-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .profile-rail-block h3 {

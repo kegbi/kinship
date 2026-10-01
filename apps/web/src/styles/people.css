@@ -45,7 +45,7 @@
 }
 
 .name-grid input {
-  min-height: 48px;
+  min-height: 2.75rem;
   padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -201,7 +201,7 @@
 .people-directory-controls button,
 .directory-pagination button,
 .directory-error button {
-  min-height: 48px;
+  min-height: 2.75rem;
   padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -211,9 +211,9 @@
 .people-directory-controls button,
 .directory-pagination button,
 .directory-error button {
-  border-color: var(--ink-1);
+  border-color: var(--accent);
   color: var(--ink-inverse);
-  background: var(--ink-1);
+  background: var(--accent);
   cursor: pointer;
   font-weight: 600;
 }
@@ -508,9 +508,9 @@
 }
 
 .directory-tag-chip[aria-pressed="true"] {
-  border-color: var(--ink-1);
+  border-color: var(--accent);
   color: var(--ink-inverse);
-  background: var(--ink-1);
+  background: var(--accent);
 }
 
 .directory-tag-count {

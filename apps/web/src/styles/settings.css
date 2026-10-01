@@ -145,7 +145,7 @@
 }
 
 .settings-search input {
-  min-height: 48px;
+  min-height: 2.75rem;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -770,7 +770,7 @@
 .invitation-form input,
 .invitation-form select,
 .invitation-form button {
-  min-height: 48px;
+  min-height: 2.75rem;
   padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -778,9 +778,9 @@
 }
 
 .invitation-form button {
-  border-color: var(--ink-1);
+  border-color: var(--accent);
   color: var(--ink-inverse);
-  background: var(--ink-1);
+  background: var(--accent);
   cursor: pointer;
 }
 
@@ -1060,7 +1060,7 @@
 }
 
 .lifecycle-form input {
-  min-height: 48px;
+  min-height: 2.75rem;
   padding: var(--space-3) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: .5rem;

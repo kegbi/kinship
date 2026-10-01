@@ -23,6 +23,7 @@ import {
 import type { FieldError } from "react-hook-form";
 import type { ProfileFactOption } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { Button } from "@/components/ui/button.tsx";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import type {
@@ -250,31 +251,36 @@ export function OptionSearch(
   const box = useRef<HTMLInputElement>(null);
   const { labels } = props;
   const search = () => box.current?.value.trim() ?? "";
+  // The box and its buttons share one row, so the search button reads as
+  // the box's action rather than as a second field.
   return (
-    <>
+    <div className="option-search">
       <label>
         {labels.label}
         <Input maxLength={200} name={labels.name} ref={box} type="search" />
       </label>
-      <Button
-        {...{ [`data-${labels.markers.search}`]: "" }}
-        disabled={props.busy}
-        onClick={() => props.onSearch(search(), false)}
-        type="button"
-        variant="outline"
-      >
-        {labels.label}
-      </Button>
-      <Button
-        {...{ [`data-${labels.markers.more}`]: "" }}
-        disabled={props.busy}
-        hidden={!props.more}
-        onClick={() => props.onSearch(search(), true)}
-        type="button"
-        variant="outline"
-      >
-        {labels.more}
-      </Button>
-    </>
+      <div className="option-search-actions">
+        <Button
+          {...{ [`data-${labels.markers.search}`]: "" }}
+          disabled={props.busy}
+          onClick={() => props.onSearch(search(), false)}
+          type="button"
+          variant="outline"
+        >
+          <Search aria-hidden="true" className="size-4" />
+          {labels.label}
+        </Button>
+        <Button
+          {...{ [`data-${labels.markers.more}`]: "" }}
+          disabled={props.busy}
+          hidden={!props.more}
+          onClick={() => props.onSearch(search(), true)}
+          type="button"
+          variant="outline"
+        >
+          {labels.more}
+        </Button>
+      </div>
+    </div>
   );
 }

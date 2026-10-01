@@ -429,9 +429,9 @@
 
 .person-workspace .profile-section-cta:hover,
 .person-workspace .profile-section-cta:focus-visible {
-  border-color: var(--ink-1);
+  border-color: var(--accent);
   color: var(--ink-inverse);
-  background: var(--ink-1);
+  background: var(--accent);
   filter: none;
 }
 
@@ -554,7 +554,26 @@
 .profile-fact-form label {
   display: grid;
   font-weight: 700;
-  gap: var(--space-1);
+  gap: var(--space-2);
+}
+
+/* A lookup's search box with its buttons beside it, wrapping when narrow. */
+.option-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.option-search > label {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.option-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .profile-fact-form input,
@@ -576,6 +595,7 @@
   background: var(--surface-1);
   font-family: inherit;
   font-size: inherit;
+  font-weight: 400;
 }
 
 .profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
