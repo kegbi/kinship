@@ -35,12 +35,18 @@ const gift = {
 } satisfies Gift;
 
 describe("GIFTS-001 gift and debt records", () => {
+  it("does not invent decimal places for whole debts or pad entered decimals", () => {
+    expect(displayAmount("56000")).toBe("56000");
+    expect(displayAmount("56000.0000")).toBe("56000");
+    expect(displayAmount("56000.2500")).toBe("56000.25");
+    expect(displayAmount("56000.5")).toBe("56000.5");
+  });
   it("reads an amount with or without its currency", () => {
     expect(giftDetail({ ...gift, amount: "3" })).toBe(
-      "idea · 3.00 · No recipient",
+      "idea · 3 · No recipient",
     );
     expect(giftDetail({ ...gift, amount: "3", currencyCode: "EUR" })).toBe(
-      "idea · 3.00 EUR · No recipient",
+      "idea · 3 EUR · No recipient",
     );
   });
 
@@ -176,7 +182,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
       "Recurring debt",
     );
     expect(recurringDebtDetail(rule)).toBe(
-      "They owe · 500.00 EUR · Monthly on day 31 · Next 2026-09-30",
+      "They owe · 500 EUR · Monthly on day 31 · Next 2026-09-30",
     );
     expect(
       recurringDebtDetail({
@@ -186,7 +192,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
         intervalMonths: 3,
       }),
     ).toBe(
-      "I owe · 500.00 EUR · Every 3 months on day 31 · Until 2027-05-31 · Next 2026-09-30",
+      "I owe · 500 EUR · Every 3 months on day 31 · Until 2027-05-31 · Next 2026-09-30",
     );
     expect(recurringDebtDetail({ ...rule, active: false })).toContain(
       "Paused",
@@ -209,7 +215,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
         status: "open",
         updatedAt: rule.updatedAt,
       }),
-    ).toBe("They owe · 500.00 EUR · open · Recurring, due 2026-08-31");
+    ).toBe("They owe · 500 EUR · open · Recurring, due 2026-08-31");
   });
 
   it("starts a new rule today and an edited rule from its own values", () => {
@@ -293,11 +299,11 @@ describe("GIFTS-001 default currency and recurring debts", () => {
 });
 
 describe("money and charge order", () => {
-  it("shows a stored amount with at least two decimals and no padding zeros", () => {
-    expect(displayAmount("150.0000")).toBe("150.00");
-    expect(displayAmount("12.5")).toBe("12.50");
+  it("shows a stored amount without padding zeros", () => {
+    expect(displayAmount("150.0000")).toBe("150");
+    expect(displayAmount("12.5")).toBe("12.5");
     expect(displayAmount("3.1234")).toBe("3.1234");
-    expect(displayAmount("7")).toBe("7.00");
+    expect(displayAmount("7")).toBe("7");
     expect(displayAmount("0.0100")).toBe("0.01");
   });
 

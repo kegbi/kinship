@@ -48,8 +48,9 @@ export function MonicaChoices(
           <fieldset className="import-review-group">
             <legend>Debt currencies</legend>
             <p className="import-hint">
-              Choose a currency for each existing debt amount. The amount
-              preview uses the selected currency’s decimal precision.
+              Assign a currency to each debt amount. Missing source currencies
+              keep their original amount; selecting a currency does not convert
+              it.
             </p>
             <div className="import-field">
               <label htmlFor="import-bulk-currency">

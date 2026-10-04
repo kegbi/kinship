@@ -557,7 +557,7 @@ describe("GIFTS-001 person gifts and debts", () => {
     ).toBeNull();
     expect(
       section("gift").querySelector(`[data-gift-id$="4"]`)?.textContent,
-    ).toContain("planned · 2.00 EUR · Recipient selected · Attachment linked");
+    ).toContain("planned · 2 EUR · Recipient selected · Attachment linked");
     await user.click(card("gift").getByRole("button", { name: "Cancel" }));
     const ideaStatus = within(
       element(`[data-gift-id="${giftId}"]`, section("gift")),
@@ -581,9 +581,9 @@ describe("GIFTS-001 person gifts and debts", () => {
         row.textContent
       ),
     ).toEqual([
-      "I owe · 3.00  · open",
-      "They owe · 4.00  · settled",
-      "They owe · 5.00  · cancelled",
+      "I owe · 3  · open",
+      "They owe · 4  · settled",
+      "They owe · 5  · cancelled",
     ]);
     const coffee = within(
       element(`[data-debt-id="${records.debts[0]!.id}"]`, section("debt")),
@@ -854,7 +854,7 @@ describe("GIFTS-001 default currency and recurring debts", () => {
     expect(within(rules).getByText("Rent share")).toBeTruthy();
     expect(
       within(rules).getByText(
-        "They owe · 500.00 EUR · Monthly on day 31 · Next 2026-09-30",
+        "They owe · 500 EUR · Monthly on day 31 · Next 2026-09-30",
       ),
     ).toBeTruthy();
 

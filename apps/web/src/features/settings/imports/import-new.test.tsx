@@ -470,15 +470,15 @@ it("requires Monica timezone and per-contact genders, applies bulk currency with
     debts: [{
       sourceKey: "1",
       contactName: "Ada",
-      rawAmount: "9007199254740993",
-      minorUnits: true,
+      rawAmount: "56000",
+      minorUnits: false,
       reason: "Travel",
       direction: "i_owe",
     }, {
       sourceKey: "2",
       contactName: "Ada",
-      rawAmount: "12345",
-      minorUnits: true,
+      rawAmount: "56000.25",
+      minorUnits: false,
       direction: "they_owe",
     }],
     contacts: [{ sourceKey: "1", contactName: "Ada", sourceGender: "999" }, {
@@ -510,11 +510,11 @@ it("requires Monica timezone and per-contact genders, applies bulk currency with
   fireEvent.click(
     screen.getByRole("button", { name: "Apply currency to all debts" }),
   );
-  expect(screen.getByText("90071992547409.93 EUR")).toBeDefined();
+  expect(screen.getByText("56000 EUR")).toBeDefined();
   fireEvent.change(screen.getByLabelText("Ada — debt 2"), {
     target: { value: "KWD" },
   });
-  expect(screen.getByText("12.345 KWD")).toBeDefined();
+  expect(screen.getByText("56000.25 KWD")).toBeDefined();
   fireEvent.change(screen.getByLabelText("Ada — gender"), {
     target: { value: "unspecified" },
   });

@@ -76,13 +76,13 @@ export function debtStatusOptions(current: DebtStatus): readonly DebtStatus[] {
 }
 
 /**
- * A stored decimal amount as people read it: at least two decimals, and no
- * zeros the database padded on beyond them ("150.0000" reads "150.00").
+ * Keep significant decimals without inventing places for whole amounts.
+ * The database pads every amount to four places ("150.0000" reads "150").
  */
 export function displayAmount(amount: string): string {
   const [whole = "0", fraction = ""] = amount.split(".");
   const significant = fraction.replace(/0+$/, "");
-  return `${whole}.${significant.padEnd(2, "0")}`;
+  return significant ? `${whole}.${significant}` : whole;
 }
 
 /**

@@ -1027,7 +1027,7 @@ Deno.test("[IMPORT-001] complete live Monica decisions are validated before conf
   ]);
   assertEquals(records.filter((r) => r.kind === "debt").map((r) => r.amount), [
     "12345",
-    "0.888",
+    "888",
   ]);
   assertEquals(records.find((r) => r.kind === "profile")?.refs, {
     personId: staged!.contacts[0]!.targetPersonId,
@@ -1058,4 +1058,17 @@ Deno.test("[IMPORT-001] complete live Monica decisions are validated before conf
     );
     assertEquals(unavailable.report.counts.unsupported, 0);
   }
+  const knownCurrency = await imports.dryRun(actor, {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name) VALUES(1,'Ada'); INSERT INTO debts(id,contact_id,amount,currency_code,in_debt,status) VALUES(1,1,5600000,'RUB','yes','open');",
+  });
+  if (knownCurrency.status !== "dry_run") {
+    throw new Error("currency review failed");
+  }
+  assertEquals(
+    knownCurrency.report.monicaChoices?.debts[0]?.rawAmount,
+    "56000.00",
+  );
+  assertEquals(knownCurrency.report.monicaChoices?.debts[0]?.minorUnits, false);
 });

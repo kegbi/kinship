@@ -205,15 +205,16 @@ export function createImportStaging(
           ) {
             return e;
           }
-          const source = e.data.source as Readonly<Record<string, unknown>>;
           return {
             ...e,
             data: {
               ...e.data,
               unresolvedCurrency: true,
               currencyCode: null,
-              rawAmount: String(source.amount),
-              minorUnits: parsed.sourceProfile === "sql_export",
+              // The source currency already established the unit scale.
+              // Replacing an unavailable currency keeps that major amount.
+              rawAmount: String(e.data.amount),
+              minorUnits: false,
             },
           };
         });

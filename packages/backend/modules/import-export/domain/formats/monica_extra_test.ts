@@ -1,5 +1,35 @@
 import { assertEquals } from "../../../../testing/assert.ts";
 import { monicaExtra } from "./monica_extra.ts";
+import { applyMonicaChoices } from "../monica_choices.ts";
+
+Deno.test("assigning a missing debt currency preserves the source amount and decimals", () => {
+  for (const rawAmount of ["56000", "56000.25", "56000.00"]) {
+    for (const currencyCode of ["RUB", "USD", "JPY", "KWD"]) {
+      const result = extra({
+        contacts: [{ id: 1 }],
+        debts: [{
+          id: 1,
+          contact_id: 1,
+          amount: rawAmount,
+          currency_id: null,
+          in_debt: "yes",
+          status: "open",
+        }],
+      }, "sql_export");
+      assertEquals(result.unsupportedRows, {});
+      const entity = result.entities[0]!;
+      assertEquals(entity.data.minorUnits, false);
+      assertEquals(
+        applyMonicaChoices([{ ...entity, targetId: "debt" }], {
+          timezone: "UTC",
+          currencies: [{ sourceKey: "1", currencyCode }],
+          genders: [],
+        }, {})[0]?.data.amount,
+        rawAmount,
+      );
+    }
+  }
+});
 
 Deno.test("Monica extra rows preserve money, references, profile context and source timestamps", () => {
   const result = monicaExtra({
@@ -226,7 +256,7 @@ Deno.test("Monica extra reports invalid state and cross-account journal, address
   assertEquals(typeof monicaExtra({ pets: [null] }), "string");
 });
 
-Deno.test("Monica SQL debts without a currency retain raw minor units pending selection", () => {
+Deno.test("Monica SQL debts without a currency retain their source amount pending selection", () => {
   const result = monicaExtra({
     contacts: [{ id: 1 }],
     debts: [{
@@ -855,7 +885,7 @@ Deno.test("unresolved debt currencies and nonnull gender references remain stage
       account_id: 1,
       contact_id: 1,
       currency_id,
-      amount: "9007199254740993",
+      amount: "999999999999999",
       in_debt: "yes",
       status: "open",
     })),
@@ -865,7 +895,7 @@ Deno.test("unresolved debt currencies and nonnull gender references remain stage
     result.entities.filter((e) => e.data.kind === "debt").map((e) =>
       e.data.rawAmount
     ),
-    ["9007199254740993", "9007199254740993"],
+    ["999999999999999", "999999999999999"],
   );
   assertEquals(
     result.entities.find((e) => e.data.kind === "profile")?.data

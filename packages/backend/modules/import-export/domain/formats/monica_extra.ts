@@ -383,18 +383,18 @@ export function monicaExtra(
           : undefined;
       const unresolvedCurrency = table === "debts" && !currencyCode;
       const rawAmount = String(row.amount);
-      const minorUnits = options.sourceProfile === "sql_export";
-      const amount = unresolvedCurrency && minorUnits
-        ? ((typeof row.amount !== "number" ||
-            Number.isSafeInteger(row.amount)) && /^\d{1,19}$/.test(rawAmount)
-          ? null
-          : undefined)
+      // A missing currency has no known scale. Assigning one labels the
+      // reviewed source number; it must not silently divide that number.
+      const minorUnits = options.sourceProfile === "sql_export" &&
+        !unresolvedCurrency;
+      const amount = unresolvedCurrency
+        ? (monicaMoney(row.amount, "", false) === undefined ? undefined : null)
         : (row.amount === null || row.amount === undefined) && table === "gifts"
         ? null
         : monicaMoney(
           row.amount,
           currencyCode ?? "",
-          options.sourceProfile === "sql_export",
+          minorUnits,
         );
       const person = find("contacts", row.contact_id, row);
       if (

@@ -37,14 +37,23 @@ metadata, not attachment bytes.
 | Workspace vocabulary           | Gender options, life-event categories/types and supported profile module visibility. This does not import life-event instances.                                                                                                                                                                                                                                                               |
 | Audit history                  | Historical actions, timestamps, actor name snapshots and safe provenance. Legacy actors are not granted memberships or credentials.                                                                                                                                                                                                                                                           |
 
-Monica SQL money fields contain integer minor units. The importer converts them
-exactly using the known or explicitly selected currency's minor-unit scale.
-Debts with missing or unsupported currencies stay staged with the exact source
-integer until the member chooses a supported currency. The preview shows the
-resulting amount, contact, direction and reason. Apply a currency to all debts,
-then override individual debts as needed. The JSON profile retains decimal
-major-unit amounts. Neither source currency IDs nor a legacy user's preferred
-currency are guessed.
+Monica SQL money fields with a known source currency contain integer minor
+units. The importer converts them exactly using that source currency's
+minor-unit scale. When a debt has no resolvable source currency, its source
+number is preserved as a major-unit amount, including any supplied decimals.
+Selecting a currency labels that number: `56000` becomes `56000 RUB`, with no
+implicit division or exchange. If a known source currency is unavailable in the
+destination, its already converted major-unit amount is preserved when choosing
+a replacement. The preview shows the amount, contact, direction and reason.
+Apply a currency to all debts, then override individual debts as needed. The
+JSON profile retains decimal major-unit amounts. Neither source currency IDs nor
+a legacy user's preferred currency are guessed. Revalidate unfinished imports
+created before this behavior to replace their previously staged unit
+assumptions; completed imports are not automatically rewritten.
+
+Person money displays omit database padding and show whole amounts without a
+decimal suffix. Nonzero decimals retain their precision. The canonical numeric
+storage does not retain how many trailing zeroes a user originally typed.
 
 Each missing nonnull source gender reference requires a per-contact choice: an
 active workspace option, an available source catalog option, a newly named
