@@ -219,11 +219,14 @@ export async function createE2eTls(
     const certificate = new URL("gateway.crt", directoryUrl);
     const privateKey = new URL("gateway.key", directoryUrl);
     await Deno.writeTextFile(certificate, material.certificatePem);
-    // The gateway container reads the key as its own unprivileged user. The
-    // key lives four hours in an ignored, run-scoped directory.
-    await Deno.writeTextFile(privateKey, material.privateKeyPem, {
-      mode: 0o644,
-    });
+    await Deno.writeTextFile(privateKey, material.privateKeyPem);
+    if (Deno.build.os !== "windows") {
+      // The unprivileged gateway must read both throwaway files. Creation
+      // modes are filtered by umask, so set permissions after writing them.
+      // The key lives four hours in an ignored, run-scoped directory.
+      await Deno.chmod(certificate, 0o644);
+      await Deno.chmod(privateKey, 0o644);
+    }
     return {
       certificate: filePath(certificate),
       directory: filePath(directoryUrl).replace(/[\\/]$/, ""),

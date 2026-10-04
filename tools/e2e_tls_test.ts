@@ -156,6 +156,43 @@ Deno.test("a run's TLS directory is created once, under .tls/e2e, and removed ex
   await removeE2eTls(material);
 });
 
+Deno.test({
+  name:
+    "TLS certificate and key remain container-readable regardless of inherited umask",
+  ignore: Deno.build.os === "windows",
+  async fn() {
+    // Changing umask in a child isolates process-wide state and needs no sys
+    // permission in the parent test runner.
+    const output = await new Deno.Command("deno", {
+      args: [
+        "eval",
+        `import { createE2eTls, removeE2eTls } from ${
+          JSON.stringify(new URL("./e2e_tls.ts", import.meta.url).href)
+        };
+        Deno.umask(0o077);
+        const material = await createE2eTls(
+          "kinship-e2e-" + Deno.pid + "-" + Date.now(),
+        );
+        try {
+          for (const path of [material.certificate, material.privateKey]) {
+            const mode = (await Deno.stat(path)).mode;
+            if (mode === null || (mode & 0o777) !== 0o644) {
+              throw new Error(
+                "both throwaway TLS files must be readable by the unprivileged gateway",
+              );
+            }
+          }
+        } finally {
+          await removeE2eTls(material);
+        }`,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assert(output.success, new TextDecoder().decode(output.stderr));
+  },
+});
+
 Deno.test("TLS material refuses a project name that is not a run's", async () => {
   let refused = false;
   await createE2eTls("../escape").catch(() => (refused = true));
