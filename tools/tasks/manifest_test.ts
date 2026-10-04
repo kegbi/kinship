@@ -21,7 +21,9 @@ const ROOT = new URL("../../", import.meta.url);
 
 /** The maximum stable verb vocabulary `deno.json` may expose. */
 // GAP-005 raised the budget from 25 to 26 for `check:architecture`.
-const TASK_BUDGET = 26;
+// The 2026-10-04 approved tooling exception keeps its gate separate from the
+// complete, unfiltered dependency audit report.
+const TASK_BUDGET = 27;
 
 async function repositoryTests(): Promise<string[]> {
   return await listRepositoryTestFiles(ROOT);

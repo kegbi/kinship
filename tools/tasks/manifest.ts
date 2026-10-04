@@ -295,6 +295,7 @@ export const PRODUCTION_ENTRYPOINTS = [
 
 /** Developer and operator entry points the check gate also compiles. */
 export const TOOL_ENTRYPOINTS = [
+  "tools/dependency_audit_gate.ts",
   "tools/dev.ts",
   "tools/e2e.ts",
   "tools/postgres_gate.ts",
@@ -2057,6 +2058,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "tools/tasks/manifest_test.ts",
         "tools/pipeline_contract_test.ts",
+        "tools/dependency_audit_gate_test.ts",
         "tools/source_hygiene_test.ts",
         "tools/architecture/check_boundaries_test.ts",
         "tools/product/flow_traceability_test.ts",
@@ -2070,6 +2072,7 @@ export const MODULES: readonly TaskModule[] = [
           "deno.json",
           "lefthook.yml",
           "package.json",
+          "pnpm-workspace.yaml",
           "vitest.config.ts",
           "compose.yaml",
           "docs/architecture",

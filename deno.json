@@ -70,6 +70,7 @@
     "deps:deno": "DENO_NO_PACKAGE_JSON=1 deno install --frozen --node-modules-dir=none",
     "deps:node": "pnpm install --frozen-lockfile",
     "deps:audit": "DENO_NO_PACKAGE_JSON=1 deno audit",
+    "deps:audit:gate": "DENO_NO_PACKAGE_JSON=1 deno run --allow-run=deno tools/dependency_audit_gate.ts",
     "test": "DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm tools/tasks/run.ts all",
     "test:unit": "DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm tools/tasks/run.ts unit",
     "test:integration": "DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm tools/tasks/run.ts integration",

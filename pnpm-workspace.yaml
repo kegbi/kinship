@@ -6,6 +6,9 @@ saveExact: true
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeExclude:
+  # Approved 2026-10-04 security fix; remove after 2026-10-07 02:56:05 UTC.
+  - http-cache-semantics@4.3.0
 trustLockfile: false
 autoInstallPeers: false
 strictDepBuilds: true

@@ -28,6 +28,7 @@ const REQUIRED_JOBS = [
       "contracts:check",
       "test:contract",
       "deps:audit",
+      "deps:audit:gate",
     ],
   },
   { id: "unit", tasks: ["test:unit", "test:coverage"] },
@@ -416,8 +417,18 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
     "the static job must print the complete advisory report",
   );
   assert(
-    gates.some((command) => command.includes("deps:audit --level=high")),
+    gates.some((command) => command === "deno task deps:audit:gate"),
     "the static job must fail on high and critical advisories",
+  );
+  const tasks = await declaredTasks();
+  assert(
+    tasks["deps:audit"] === "DENO_NO_PACKAGE_JSON=1 deno audit",
+    "the full advisory report must remain unfiltered",
+  );
+  assert(
+    tasks["deps:audit:gate"] ===
+      "DENO_NO_PACKAGE_JSON=1 deno run --allow-run=deno tools/dependency_audit_gate.ts",
+    "the audit gate must apply only the documented tooling exception",
   );
 
   const chromium = jobCommands(
@@ -618,6 +629,25 @@ Deno.test("[GAP-004] the pipeline installs dependencies from frozen lockfiles", 
       `the ${id} job must bootstrap Deno dependencies from the lockfile`,
     );
   }
+});
+
+Deno.test("release-age exemption is limited to the approved security patch", async () => {
+  const settings = asMap(
+    parseYaml(await Deno.readTextFile(new URL("pnpm-workspace.yaml", ROOT))),
+    "pnpm-workspace.yaml",
+  );
+  assert(settings["minimumReleaseAge"] === "4320", "keep the 72-hour hold");
+  assert(
+    settings["minimumReleaseAgeStrict"] === "true" &&
+      settings["minimumReleaseAgeIgnoreMissingTime"] === "false" &&
+      settings["trustLockfile"] === "false",
+    "keep the strict release-age checks",
+  );
+  const excluded = asList(settings["minimumReleaseAgeExclude"], "exemptions");
+  assert(
+    excluded.length === 1 && excluded[0] === "http-cache-semantics@4.3.0",
+    "only the approved exact patch may bypass release age",
+  );
 });
 
 Deno.test("[GAP-004] the workflow pins the toolchain the repository declares", async () => {

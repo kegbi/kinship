@@ -62,7 +62,7 @@ jobs:
         continue-on-error: true
         run: deno task deps:audit
       - name: Dependency audit gate
-        run: deno task deps:audit --level=high
+        run: deno task deps:audit:gate
 
   unit:
     name: Unit suites and coverage
