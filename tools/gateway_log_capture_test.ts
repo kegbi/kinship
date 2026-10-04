@@ -816,3 +816,247 @@ Deno.test({
     }
   },
 });
+
+// BusyBox wget retains encoded bytes; fetch transparently decompresses them.
+async function compressionResponse(
+  container: string,
+  path: string,
+  encoding: string,
+  via = false,
+) {
+  const output = await docker([
+    "exec",
+    container,
+    "sh",
+    "-c",
+    'wget -S -q -O /tmp/compression-body "$@" 2>/tmp/compression-headers && cat /tmp/compression-headers && printf "\\nBODY\\n" && base64 /tmp/compression-body',
+    "sh",
+    "--header",
+    `Accept-Encoding: ${encoding}`,
+    ...(via ? ["--header", "Via: 1.1 edge-proxy"] : []),
+    `http://127.0.0.1:8080${path}`,
+  ]);
+  const [head = "", encoded = ""] = output.split("\nBODY\n");
+  const headers: Record<string, string> = {};
+  for (const line of head.split("\n")) {
+    const match = line.trim().match(/^([^:]+):\s*(.*)$/);
+    if (match) headers[match[1]!.toLowerCase()] = match[2]!;
+  }
+  return {
+    status: Number(head.match(/HTTP\/\S+ (\d+)/)?.[1]),
+    headers,
+    body: Uint8Array.from(
+      atob(encoded.replace(/\s/g, "")),
+      (c) => c.charCodeAt(0),
+    ),
+  };
+}
+
+Deno.test("static gateway compression negotiates behind a proxy without compressing private responses", async () => {
+  const id = `kinship-compression-${Deno.pid}-${Date.now()}`;
+  const tls = await createE2eTls(`kinship-e2e-${Deno.pid}-${Date.now()}`);
+  const fixture = await Deno.makeTempDir({ prefix: `${id}-` });
+  if (Deno.build.os !== "windows") await Deno.chmod(fixture, 0o755);
+  const containers: string[] = [];
+  let networkCreated = false;
+  const image =
+    (await Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)))
+      .match(/^FROM (nginx:[^ ]+) AS gateway$/m)?.[1];
+  assert(image, "the gateway uses its pinned nginx image");
+  const body = "<p>Kinship static profile, people and reminders.</p>\n".repeat(
+    400,
+  );
+  const uuid = "393de041-31ca-47c3-95d4-ae37b7473e2e";
+  const files = [
+    ["index.html", "/"],
+    ["_astro/fixture.css", "/_astro/fixture.css"],
+    ["_astro/fixture.js", "/_astro/fixture.js"],
+    ["internal/person-profile-shell/index.html", `/app/people/${uuid}`],
+    ["internal/person-audit-shell/index.html", `/app/people/${uuid}/audit`],
+    [
+      "internal/activity-report-shell/index.html",
+      `/app/people/${uuid}/activity-report`,
+    ],
+    ["internal/import-report-shell/index.html", `/app/settings/import/${uuid}`],
+    ["internal/journal-item-shell/index.html", `/app/journal/${uuid}`],
+  ] as const;
+  try {
+    for (const [file] of files) {
+      await Deno.mkdir(`${fixture}/${file.split("/").slice(0, -1).join("/")}`, {
+        recursive: true,
+      });
+      await Deno.writeTextFile(`${fixture}/${file}`, body);
+    }
+    await docker(["network", "create", id]);
+    networkCreated = true;
+    const upstream = `${id}-upstream`;
+    const upstreamConfig =
+      `events {} http { server { listen 8000; listen 4321; root /usr/share/nginx/html; default_type text/html; location / { try_files /index.html =404; } } }`;
+    await docker([
+      "run",
+      "--detach",
+      "--name",
+      upstream,
+      "--network",
+      id,
+      "--network-alias",
+      "kinship-private-api",
+      "--network-alias",
+      "kinship-private-web",
+      "--mount",
+      `type=bind,source=${fixture},target=/usr/share/nginx/html,readonly`,
+      "--entrypoint",
+      "sh",
+      image,
+      "-c",
+      `printf '%s' "$1" >/tmp/upstream.conf; exec nginx -c /tmp/upstream.conf -g 'daemon off;'`,
+      "sh",
+      upstreamConfig,
+    ]);
+    containers.push(upstream);
+    const gateway = `${id}-gateway`;
+    await docker([
+      "run",
+      "--detach",
+      "--name",
+      gateway,
+      "--network",
+      id,
+      "--user",
+      "nginx",
+      ...[
+        [await Deno.realPath("gateway/nginx.conf"), "/etc/nginx/nginx.conf"],
+        [
+          await Deno.realPath("gateway/security_headers.conf"),
+          "/etc/nginx/security_headers.conf",
+        ],
+        [tls.certificate, "/run/secrets/gateway_tls_certificate"],
+        [tls.privateKey, "/run/secrets/gateway_tls_private_key"],
+        [fixture, "/usr/share/nginx/html"],
+      ].flatMap((
+        [source, target],
+      ) => ["--mount", `type=bind,source=${source},target=${target},readonly`]),
+      image,
+    ]);
+    containers.push(gateway);
+    const origin = gateway;
+    const deadline = Date.now() + 15_000;
+    while (true) {
+      try {
+        assert(
+          (await compressionResponse(origin, "/", "identity")).status === 200,
+          "gateway ready",
+        );
+        break;
+      } catch (error) {
+        if (Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    for (const [, path] of files) {
+      const identity = await compressionResponse(origin, path, "identity");
+      assert(
+        identity.status === 200 && !identity.headers["content-encoding"],
+        `${path} serves identity`,
+      );
+      assert(
+        new TextDecoder().decode(identity.body) === body,
+        `${path} preserves static bytes`,
+      );
+      for (const via of [false, true]) {
+        const compressed = await compressionResponse(origin, path, "gzip", via);
+        assert(
+          compressed.status === 200 &&
+            compressed.headers["content-encoding"] === "gzip",
+          `${path} negotiates gzip (Via=${via})`,
+        );
+        assert(
+          await new Response(
+            new Blob([compressed.body]).stream().pipeThrough(
+              new DecompressionStream("gzip"),
+            ),
+          ).text() === body,
+          `${path} gzip decodes to identity`,
+        );
+        assert(
+          compressed.body.length < identity.body.length / 2,
+          `${path} reduces transfer bytes`,
+        );
+        if (path === "/" && !via) {
+          console.info(
+            `Static fixture: ${identity.body.length} identity bytes, ${compressed.body.length} gzip bytes`,
+          );
+        }
+        for (const response of [identity, compressed]) {
+          assert(
+            String(response.headers.vary).includes("Accept-Encoding"),
+            `${path} varies by encoding`,
+          );
+          assert(
+            response.headers["content-security-policy"],
+            `${path} preserves CSP`,
+          );
+          assert(
+            response.headers["strict-transport-security"] ===
+              "max-age=31536000",
+            `${path} preserves HSTS`,
+          );
+          assert(
+            response.headers["x-content-type-options"] === "nosniff",
+            `${path} preserves nosniff`,
+          );
+          if (path.startsWith("/_astro/")) {
+            assert(
+              response.headers["cache-control"] ===
+                "public, max-age=31536000, immutable",
+              `${path} preserves immutable cache`,
+            );
+          }
+        }
+      }
+      const refused = await compressionResponse(
+        origin,
+        path,
+        "gzip;q=0, identity",
+      );
+      assert(
+        !refused.headers["content-encoding"],
+        `${path} respects gzip refusal`,
+      );
+    }
+    for (
+      const path of [
+        "/auth/mfa",
+        "/auth/verify-email",
+        "/auth/reset-password",
+        "/invite/fixture",
+        "/app/compliance",
+        "/api/v1/health",
+        "/api/v1/calendar-feeds/fixture.ics",
+      ]
+    ) {
+      const response = await compressionResponse(origin, path, "gzip", true);
+      assert(
+        response.status === 200 && !response.headers["content-encoding"],
+        `${path} stays uncompressed`,
+      );
+      assert(
+        new TextDecoder().decode(response.body) === body,
+        `${path} retains upstream bytes`,
+      );
+      if (!path.startsWith("/api/")) {
+        assert(
+          response.headers["cache-control"] === "private, no-store",
+          `${path} retains renderer cache policy`,
+        );
+      }
+    }
+  } finally {
+    for (const container of containers.reverse()) {
+      await docker(["rm", "--force", container]);
+    }
+    if (networkCreated) await docker(["network", "rm", id]);
+    await removeE2eTls(tls);
+    await Deno.remove(fixture, { recursive: true });
+  }
+});
