@@ -30,9 +30,15 @@ import type {
   PeopleExportBoundary,
   PeopleImportBoundary,
 } from "../people/public.ts";
-import type { ContactMethodTypeCatalog } from "../workspaces/public.ts";
+import type {
+  ContactMethodTypeCatalog,
+  ImportChoicesBoundary,
+  SettingsPlanningPublisher,
+} from "../workspaces/public.ts";
 
 export interface ImportExportPorts {
+  readonly planning?: Pick<SettingsPlanningPublisher, "timezoneChanged">;
+  readonly importChoices?: ImportChoicesBoundary;
   readonly business?: BusinessImportBoundaries;
   readonly exportFiles: ExportFileBoundary;
   readonly exportPeople: PeopleExportBoundary;
@@ -61,6 +67,8 @@ export function composeImportExport(
       transaction: new PostgresExportTransaction(shared.database),
     }),
     imports: createImportManagement({
+      ...(ports.planning ? { planning: ports.planning } : {}),
+      ...(ports.importChoices ? { choices: ports.importChoices } : {}),
       ...(ports.business ? { business: ports.business } : {}),
       actors: shared.actors,
       audit: importAuditFrom(shared.audit),

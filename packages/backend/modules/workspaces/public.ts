@@ -232,3 +232,5 @@ export type {
 } from "./application/business_vocabulary_import.ts";
 
 export type { WorkspaceBusinessImportBoundary } from "./application/import_business_boundary.ts";
+
+export type { ImportChoicesBoundary } from "./ports/import_choices.ts";

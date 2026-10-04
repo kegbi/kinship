@@ -460,3 +460,108 @@ it.each([0, 2])(
     });
   },
 );
+
+it("requires Monica timezone and per-contact genders, applies bulk currency with exact individual overrides, retains retries and clears revalidation", async () => {
+  shell();
+  const monicaChoices = {
+    currencyMinorUnits: { EUR: 2, JPY: 0, KWD: 3 },
+    currencies: ["EUR", "JPY", "KWD"],
+    genders: [{ id: "from-source", name: "Source option", source: true }],
+    debts: [{
+      sourceKey: "1",
+      contactName: "Ada",
+      rawAmount: "9007199254740993",
+      minorUnits: true,
+      reason: "Travel",
+      direction: "i_owe",
+    }, {
+      sourceKey: "2",
+      contactName: "Ada",
+      rawAmount: "12345",
+      minorUnits: true,
+      direction: "they_owe",
+    }],
+    contacts: [{ sourceKey: "1", contactName: "Ada", sourceGender: "999" }, {
+      sourceKey: "2",
+      contactName: "Grace",
+      sourceGender: "888",
+    }],
+  };
+  const api = stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: jsonResponse({
+      importId,
+      report: { ...report, monicaChoices },
+      status: "dry_run",
+    }),
+    [COMMIT]: problemResponse(503, { detail: "Try again." }),
+  });
+  await mount();
+  await choose(monica());
+  submit();
+  const timezone = await screen.findByLabelText("Your timezone");
+  confirm();
+  expect(commit().disabled).toBe(true);
+  fireEvent.change(timezone, { target: { value: "UTC" } });
+  fireEvent.change(screen.getByLabelText("Currency for all debts"), {
+    target: { value: "EUR" },
+  });
+  expect(commit().disabled).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply currency to all debts" }),
+  );
+  expect(screen.getByText("90071992547409.93 EUR")).toBeDefined();
+  fireEvent.change(screen.getByLabelText("Ada — debt 2"), {
+    target: { value: "KWD" },
+  });
+  expect(screen.getByText("12.345 KWD")).toBeDefined();
+  fireEvent.change(screen.getByLabelText("Ada — gender"), {
+    target: { value: "unspecified" },
+  });
+  fireEvent.change(screen.getByLabelText("Grace — gender"), {
+    target: { value: "source:from-source" },
+  });
+  confirm();
+  expect(commit().disabled).toBe(false);
+  fireEvent.click(commit());
+  await waitFor(() => expect(hook("state").textContent).toBe("Try again."));
+  expect((screen.getByLabelText("Your timezone") as HTMLInputElement).value)
+    .toBe("UTC");
+  expect((screen.getByLabelText("Ada — debt 2") as HTMLSelectElement).value)
+    .toBe("KWD");
+  expect(api.requests().find((c) => c.url.pathname.includes("/commit"))?.body)
+    .toEqual({
+      confirmed: true,
+      monicaChoices: {
+        timezone: "UTC",
+        currencies: [{ sourceKey: "1", currencyCode: "EUR" }, {
+          sourceKey: "2",
+          currencyCode: "KWD",
+        }],
+        genders: [{ sourceKey: "1", action: "unspecified" }, {
+          sourceKey: "2",
+          action: "source",
+          genderId: "from-source",
+        }],
+      },
+    });
+  fireEvent.change(screen.getByLabelText("Grace — gender"), {
+    target: { value: "create" },
+  });
+  confirm();
+  expect(commit().disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("New gender option for Grace"), {
+    target: { value: "Custom" },
+  });
+  confirm();
+  expect(commit().disabled).toBe(false);
+  submit();
+  await waitFor(() =>
+    expect((screen.getByLabelText("Your timezone") as HTMLInputElement).value)
+      .toBe("")
+  );
+  expect((screen.getByLabelText("Ada — debt 1") as HTMLSelectElement).value)
+    .toBe("");
+  expect(commit().disabled).toBe(true);
+  await expectNoAxeViolations();
+});

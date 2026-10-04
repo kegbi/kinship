@@ -77,29 +77,21 @@ function timestamp(value: unknown): string | undefined {
   );
   return Number.isFinite(date.valueOf()) ? date.toISOString() : undefined;
 }
-function money(
-  value: unknown,
-  currency: string,
-  sql: boolean,
-): string | undefined {
-  if (
-    typeof value === "number" &&
-    (!Number.isFinite(value) || (sql && !Number.isSafeInteger(value)))
-  ) return undefined;
-  const raw = String(value);
-  if (!sql) return /^\d{1,15}(?:\.\d{1,4})?$/.test(raw) ? raw : undefined;
-  if (!/^\d{1,19}$/.test(raw)) return undefined;
-  const digits = [
+/** Currency precision in the canonical ISO catalog, also sent with choice previews. */
+export function monicaCurrencyScale(currency: string): number {
+  return [
       "BIF",
       "CLP",
       "DJF",
       "GNF",
+      "ISK",
       "JPY",
       "KMF",
       "KRW",
       "PYG",
       "RWF",
       "UGX",
+      "UYI",
       "VND",
       "VUV",
       "XAF",
@@ -112,6 +104,21 @@ function money(
     : ["CLF", "UYW"].includes(currency)
     ? 4
     : 2;
+}
+
+export function monicaMoney(
+  value: unknown,
+  currency: string,
+  sql: boolean,
+): string | undefined {
+  if (
+    typeof value === "number" &&
+    (!Number.isFinite(value) || (sql && !Number.isSafeInteger(value)))
+  ) return undefined;
+  const raw = String(value);
+  if (!sql) return /^\d{1,15}(?:\.\d{1,4})?$/.test(raw) ? raw : undefined;
+  if (!/^\d{1,19}$/.test(raw)) return undefined;
+  const digits = monicaCurrencyScale(currency);
   const padded = BigInt(raw).toString().padStart(digits + 1, "0");
   const result = digits
     ? `${padded.slice(0, -digits)}.${padded.slice(-digits)}`
@@ -300,14 +307,18 @@ export function monicaExtra(
 
     if (find("genders", row.gender_id, row)) {
       refs.genderId = ref("genders", row.gender_id);
-    } else if (sourceId(row.gender_id)) {
-      unsupportedFields["contacts.gender_id"] =
-        (unsupportedFields["contacts.gender_id"] ?? 0) + 1;
     }
+    const unresolvedGender = !refs.genderId
+      ? sourceId(row.gender_id)
+      : undefined;
     if (
-      refs.genderId || timestamp(row.created_at) || timestamp(row.updated_at)
+      refs.genderId || unresolvedGender || timestamp(row.created_at) ||
+      timestamp(row.updated_at)
     ) {
-      add("people", "contacts_extra", "people", row, { kind: "profile" }, refs);
+      add("people", "contacts_extra", "people", row, {
+        kind: "profile",
+        ...(unresolvedGender ? { unresolvedGender } : {}),
+      }, refs);
     }
     const placeText = textValue(row.first_met_where, 10000),
       notes = textValue(row.first_met_additional_info, 10000);
@@ -363,21 +374,32 @@ export function monicaExtra(
   for (const table of ["gifts", "debts"]) {
     for (const row of rows(table)) {
       const currencyRow = find("currencies", row.currency_id, row);
-      const currencyCode =
+      const sourceCurrencyCode =
         textValue(currencyRow?.iso ?? currencyRow?.code ?? row.currency_code)
           ?.toUpperCase() ?? CURRENCIES[sourceId(row.currency_id) ?? ""];
-      const amount =
-        (row.amount === null || row.amount === undefined) && table === "gifts"
+      const currencyCode =
+        sourceCurrencyCode && /^[A-Z]{3}$/.test(sourceCurrencyCode)
+          ? sourceCurrencyCode
+          : undefined;
+      const unresolvedCurrency = table === "debts" && !currencyCode;
+      const rawAmount = String(row.amount);
+      const minorUnits = options.sourceProfile === "sql_export";
+      const amount = unresolvedCurrency && minorUnits
+        ? ((typeof row.amount !== "number" ||
+            Number.isSafeInteger(row.amount)) && /^\d{1,19}$/.test(rawAmount)
           ? null
-          : money(
-            row.amount,
-            currencyCode ?? "",
-            options.sourceProfile === "sql_export",
-          );
+          : undefined)
+        : (row.amount === null || row.amount === undefined) && table === "gifts"
+        ? null
+        : monicaMoney(
+          row.amount,
+          currencyCode ?? "",
+          options.sourceProfile === "sql_export",
+        );
       const person = find("contacts", row.contact_id, row);
       if (
         !person || amount === undefined ||
-        (sourceId(row.currency_id) && !currencyCode)
+        (table !== "debts" && sourceId(row.currency_id) && !currencyCode)
       ) {
         unsupported(table);
         continue;
@@ -407,6 +429,9 @@ export function monicaExtra(
         }
         add("gifts", table, "debts", row, {
           kind: "debt",
+          ...(unresolvedCurrency
+            ? { unresolvedCurrency: true, rawAmount, minorUnits }
+            : {}),
           direction,
           status,
           amount,

@@ -1,3 +1,4 @@
+import { monicaChoiceReport } from "../domain/monica_choices.ts";
 import { businessTargetId } from "../domain/business_entities.ts";
 /**
  * The dry run: read the file, stage what it would do, and tell the member.
@@ -192,7 +193,36 @@ export function createImportStaging(
         const unsupportedDetails =
           Object.values(losses.missingTypes).reduce((sum, count) =>
             sum + count, 0) + losses.organizationsWithoutTitle;
+        const choiceOptions = await dependencies.choices?.options({
+          workspaceId: actor.workspaceId,
+          transaction,
+        });
+        const businessEntities = (parsed.businessEntities ?? []).map((e) => {
+          if (
+            e.data.kind !== "debt" || e.data.unresolvedCurrency ||
+            !choiceOptions ||
+            choiceOptions.currencies.includes(String(e.data.currencyCode))
+          ) {
+            return e;
+          }
+          const source = e.data.source as Readonly<Record<string, unknown>>;
+          return {
+            ...e,
+            data: {
+              ...e.data,
+              unresolvedCurrency: true,
+              currencyCode: null,
+              rawAmount: String(source.amount),
+              minorUnits: parsed.sourceProfile === "sql_export",
+            },
+          };
+        });
         const detailedReport: ImportReport = {
+          monicaChoices: monicaChoiceReport(
+            businessEntities,
+            contacts,
+            choiceOptions ?? { currencies: [], genders: [] },
+          ),
           ...(proposals.length
             ? {
               contactMethodTypes: {
@@ -281,7 +311,7 @@ export function createImportStaging(
             : {}),
           compatibleFingerprints,
           businessEntities: await Promise.all(
-            (parsed.businessEntities ?? []).map(async (entity) => ({
+            businessEntities.map(async (entity) => ({
               ...entity,
               targetId: await businessTargetId(
                 actor.workspaceId,

@@ -59,6 +59,7 @@ export interface ImportRepository {
     counts: ImportCommitCounts,
     transaction: ImportTransaction,
     contactTypeOutcome?: ContactTypeOutcome,
+    choices?: import("../domain/monica_choices.ts").MonicaChoices,
   ): Promise<void>;
   get(actor: ImportActor, importId: string): Promise<ImportSummary | undefined>;
   list(actor: ImportActor): Promise<readonly ImportSummary[]>;

@@ -2667,6 +2667,30 @@ export interface components {
             readonly status: "mapping";
         };
         readonly ImportReport: {
+            readonly monicaChoices?: {
+                readonly currencyMinorUnits: {
+                    readonly [key: string]: number;
+                };
+                readonly debts: readonly {
+                    readonly sourceKey: string;
+                    readonly contactName: string;
+                    readonly rawAmount: string;
+                    readonly minorUnits: boolean;
+                    readonly reason?: string;
+                    readonly direction?: string;
+                }[];
+                readonly contacts: readonly {
+                    readonly sourceKey: string;
+                    readonly contactName: string;
+                    readonly sourceGender: string;
+                }[];
+                readonly currencies: readonly string[];
+                readonly genders: readonly {
+                    readonly id: string;
+                    readonly name: string;
+                    readonly source: boolean;
+                }[];
+            };
             readonly contactMethodTypes?: {
                 readonly proposals: readonly {
                     readonly key: string;
@@ -5622,6 +5646,20 @@ export interface operations {
                 readonly "application/json": {
                     /** @constant */
                     readonly confirmed: true;
+                    readonly monicaChoices?: {
+                        readonly timezone: string;
+                        readonly currencies: readonly {
+                            readonly sourceKey: string;
+                            readonly currencyCode: string;
+                        }[];
+                        readonly genders: readonly {
+                            readonly sourceKey: string;
+                            /** @enum {string} */
+                            readonly action: "map" | "source" | "create" | "unspecified";
+                            readonly genderId?: string;
+                            readonly name?: string;
+                        }[];
+                    };
                     readonly contactMethodTypes?: readonly {
                         readonly sourceKey: string;
                         /** @enum {string} */

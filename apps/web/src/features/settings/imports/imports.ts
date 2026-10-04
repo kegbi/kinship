@@ -133,6 +133,11 @@ export interface PendingMapping {
 }
 
 export interface NewImportState {
+  readonly currencyChoices: Readonly<Record<string, string>>;
+  readonly genderChoices: Readonly<Record<string, string>>;
+  readonly genderNames: Readonly<Record<string, string>>;
+  readonly timezone: string;
+  readonly bulkCurrency: string;
   readonly contactTypeChoices: Readonly<Record<string, string>>;
   readonly phase: "loading" | "ready" | "no-session" | "member";
   readonly source: ImportSource;
@@ -153,6 +158,13 @@ export interface NewImportState {
 }
 
 export type NewImportAction =
+  | {
+    readonly type: "currency-choice" | "gender-choice" | "gender-name";
+    readonly key: string;
+    readonly value: string;
+  }
+  | { readonly type: "timezone" | "bulk-currency"; readonly value: string }
+  | { readonly type: "apply-currency" }
   | {
     readonly type: "contact-type-choice";
     readonly key: string;
@@ -192,6 +204,11 @@ export type NewImportAction =
   };
 
 export const initialNewImport: NewImportState = {
+  currencyChoices: {},
+  genderChoices: {},
+  genderNames: {},
+  timezone: "",
+  bulkCurrency: "",
   contactTypeChoices: {},
   applying: false,
   committed: undefined,
@@ -215,6 +232,11 @@ function withdrawn(state: NewImportState): NewImportState {
   return {
     ...state,
     confirmed: false,
+    currencyChoices: {},
+    genderChoices: {},
+    genderNames: {},
+    timezone: "",
+    bulkCurrency: "",
     contactTypeChoices: {},
     importId: undefined,
     mapping: undefined,
@@ -227,6 +249,41 @@ export function newImportReducer(
   action: NewImportAction,
 ): NewImportState {
   switch (action.type) {
+    case "currency-choice":
+      return {
+        ...state,
+        confirmed: false,
+        currencyChoices: {
+          ...state.currencyChoices,
+          [action.key]: action.value,
+        },
+      };
+    case "gender-choice":
+      return {
+        ...state,
+        confirmed: false,
+        genderChoices: { ...state.genderChoices, [action.key]: action.value },
+      };
+    case "gender-name":
+      return {
+        ...state,
+        confirmed: false,
+        genderNames: { ...state.genderNames, [action.key]: action.value },
+      };
+    case "timezone":
+      return { ...state, confirmed: false, timezone: action.value };
+    case "bulk-currency":
+      return { ...state, bulkCurrency: action.value };
+    case "apply-currency":
+      return {
+        ...state,
+        confirmed: false,
+        currencyChoices: Object.fromEntries(
+          (state.report?.monicaChoices?.debts ?? []).map((
+            d,
+          ) => [d.sourceKey, state.bulkCurrency]),
+        ),
+      };
     case "contact-type-choice":
       return {
         ...state,
@@ -293,6 +350,11 @@ export function newImportReducer(
         importId: action.importId,
         mapping: undefined,
         report: action.report,
+        currencyChoices: {},
+        genderChoices: {},
+        genderNames: {},
+        timezone: "",
+        bulkCurrency: "",
         contactTypeChoices: {},
         confirmed: false,
         status: "Dry run complete. Review the report before committing.",
@@ -477,4 +539,69 @@ export function reportReducer(
 /** The import id a report page's path names, or `undefined`. */
 export function reportImportId(pathname: string): string | undefined {
   return pathname.match(/\/app\/settings\/import\/([0-9a-f-]{36})\/?$/i)?.[1];
+}
+
+/** A commit carries complete choices even when a bulk action filled the debt fields. */
+export function selectedMonicaChoices(state: NewImportState) {
+  const report = state.report?.monicaChoices;
+  if (!report) return undefined;
+  return {
+    timezone: state.timezone.trim(),
+    currencies: report.debts.map((d) => ({
+      sourceKey: d.sourceKey,
+      currencyCode: state.currencyChoices[d.sourceKey]!,
+    })),
+    genders: report.contacts.map((c) => {
+      const value = state.genderChoices[c.sourceKey] ?? "";
+      return value === "unspecified"
+        ? { sourceKey: c.sourceKey, action: "unspecified" as const }
+        : value === "create"
+        ? {
+          sourceKey: c.sourceKey,
+          action: "create" as const,
+          name: state.genderNames[c.sourceKey]?.trim() ?? "",
+        }
+        : {
+          sourceKey: c.sourceKey,
+          action: value.startsWith("source:")
+            ? "source" as const
+            : "map" as const,
+          genderId: value.slice(value.indexOf(":") + 1),
+        };
+    }),
+  };
+}
+export function monicaChoicesComplete(state: NewImportState): boolean {
+  const report = state.report?.monicaChoices;
+  if (!report) return true;
+  if (!state.timezone.trim()) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: state.timezone.trim() }).format();
+  } catch {
+    return false;
+  }
+  return report.debts.every((d) =>
+    report.currencies.includes(state.currencyChoices[d.sourceKey] ?? "")
+  ) && report.contacts.every((c) => {
+    const value = state.genderChoices[c.sourceKey];
+    return value === "unspecified" ||
+      (value === "create" && Boolean(state.genderNames[c.sourceKey]?.trim())) ||
+      report.genders.some((g) =>
+        `${g.source ? "source" : "map"}:${g.id}` === value
+      );
+  });
+}
+/** Decimal string arithmetic keeps source minor units exact above Number.MAX_SAFE_INTEGER. */
+export function debtAmountPreview(
+  raw: string,
+  minorUnits: boolean,
+  currency: string,
+  digits: number,
+): string {
+  if (!minorUnits) return raw;
+  if (!currency) return `${raw} minor units`;
+  const padded = BigInt(raw).toString().padStart(digits + 1, "0");
+  return digits
+    ? `${padded.slice(0, -digits)}.${padded.slice(-digits)}`
+    : padded;
 }

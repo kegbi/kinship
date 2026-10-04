@@ -1296,6 +1296,83 @@
                   "confirmed": {
                     "const": true
                   },
+                  "monicaChoices": {
+                    "type": "object",
+                    "properties": {
+                      "timezone": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "currencies": {
+                        "maxItems": 10000,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "sourceKey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "currencyCode": {
+                              "type": "string",
+                              "pattern": "^[A-Z]{3}$"
+                            }
+                          },
+                          "required": [
+                            "sourceKey",
+                            "currencyCode"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "genders": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "sourceKey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "action": {
+                              "type": "string",
+                              "enum": [
+                                "map",
+                                "source",
+                                "create",
+                                "unspecified"
+                              ]
+                            },
+                            "genderId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "sourceKey",
+                            "action"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "timezone",
+                      "currencies",
+                      "genders"
+                    ],
+                    "additionalProperties": false
+                  },
                   "contactMethodTypes": {
                     "maxItems": 1000,
                     "type": "array",
@@ -18407,6 +18484,112 @@
       "ImportReport": {
         "type": "object",
         "properties": {
+          "monicaChoices": {
+            "type": "object",
+            "properties": {
+              "currencyMinorUnits": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                }
+              },
+              "debts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceKey": {
+                      "type": "string"
+                    },
+                    "contactName": {
+                      "type": "string"
+                    },
+                    "rawAmount": {
+                      "type": "string"
+                    },
+                    "minorUnits": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceKey",
+                    "contactName",
+                    "rawAmount",
+                    "minorUnits"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "contacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceKey": {
+                      "type": "string"
+                    },
+                    "contactName": {
+                      "type": "string"
+                    },
+                    "sourceGender": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceKey",
+                    "contactName",
+                    "sourceGender"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "genders": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "currencyMinorUnits",
+              "debts",
+              "contacts",
+              "currencies",
+              "genders"
+            ],
+            "additionalProperties": false
+          },
           "contactMethodTypes": {
             "type": "object",
             "properties": {

@@ -52,7 +52,10 @@ Deno.test({
         actor,
         `/api/v1/imports/${staged.importId}/commit`,
         "POST",
-        { confirmed: true },
+        {
+          confirmed: true,
+          monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+        },
       );
       const result = await commit.json();
       assertEquals(commit.status, 200, JSON.stringify(result));

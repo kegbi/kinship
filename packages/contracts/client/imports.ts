@@ -65,6 +65,19 @@ export function commitImport(
     readonly action: "create" | "map" | "skip";
     readonly typeId?: string;
   }[],
+  monicaChoices?: {
+    readonly timezone: string;
+    readonly currencies: readonly {
+      readonly sourceKey: string;
+      readonly currencyCode: string;
+    }[];
+    readonly genders: readonly {
+      readonly sourceKey: string;
+      readonly action: "map" | "source" | "create" | "unspecified";
+      readonly genderId?: string;
+      readonly name?: string;
+    }[];
+  },
 ): Promise<
   ApiResult<
     {
@@ -81,6 +94,7 @@ export function commitImport(
     headers: workspaceHeader(workspaceId),
     body: JSON.stringify({
       confirmed: true,
+      ...(monicaChoices ? { monicaChoices } : {}),
       ...(contactMethodTypes?.length ? { contactMethodTypes } : {}),
     }),
   });

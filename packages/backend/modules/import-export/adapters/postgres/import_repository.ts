@@ -99,6 +99,59 @@ export class PostgresImportRepository implements ImportRepository {
     readonly status: "dry_run";
   }> {
     const database = databaseFromSession(command.transaction);
+    const businessEntities: BusinessEntity[] = [];
+    const reusedDebts = new Set<string>(), reusedGenders = new Set<string>();
+    for (const entity of command.businessEntities ?? []) {
+      if (!entity.data.unresolvedCurrency && !entity.data.unresolvedGender) {
+        businessEntities.push(entity);
+        continue;
+      }
+      const prior = await sql<
+        { data: Record<string, unknown> }
+      >`select e.raw_snapshot->'business'->'data' as data from crm.data_import_entities e join crm.data_imports i on i.id=e.import_id where i.workspace_id=${command.actor.workspaceId}::uuid and i.source_system='monica' and i.status='completed' and e.raw_snapshot->'business'->>'targetId'=${entity.targetId} and e.raw_snapshot->'business'->'data'->>'reviewedChoice'='true' order by i.completed_at desc limit 1`
+        .execute(database);
+      if (!prior.rows[0]) {
+        businessEntities.push(entity);
+        continue;
+      }
+      if (entity.data.unresolvedCurrency) {
+        reusedDebts.add(entity.sourcePrimaryKey);
+      }
+      if (entity.data.unresolvedGender) {
+        reusedGenders.add(entity.sourcePrimaryKey);
+      }
+      const {
+        unresolvedCurrency: _currency,
+        unresolvedGender: _gender,
+        ...data
+      } = prior.rows[0].data;
+      businessEntities.push({ ...entity, data });
+    }
+    const pending = command.report.monicaChoices;
+    const stagedReport: ImportReport = pending
+      ? {
+        ...command.report,
+        monicaChoices: {
+          ...pending,
+          debts: pending.debts.filter((d) => !reusedDebts.has(d.sourceKey)),
+          contacts: pending.contacts.filter((c) =>
+            !reusedGenders.has(c.sourceKey)
+          ),
+        },
+        diagnostics: [
+          ...command.report.diagnostics,
+          ...(reusedDebts.size + reusedGenders.size
+            ? [{
+              code: "previous-choices",
+              severity: "info" as const,
+              message:
+                `${reusedDebts.size} debt currency choice(s) and ${reusedGenders.size} gender choice(s) were already reviewed. Their current values are preserved.`,
+            }]
+            : []),
+        ],
+      }
+      : command.report;
+
     await sql`
       insert into crm.data_imports (
         id, workspace_id, requested_by_member_id, source_system,
@@ -112,7 +165,7 @@ export class PostgresImportRepository implements ImportRepository {
       JSON.stringify({
         fingerprint: command.fingerprint,
         compatibleFingerprints: command.compatibleFingerprints ?? [],
-        report: command.report,
+        report: stagedReport,
         contactTypeCatalog: command.contactTypeCatalog ?? [],
       })
     }::text::jsonb,
@@ -177,16 +230,16 @@ export class PostgresImportRepository implements ImportRepository {
         `.execute(database);
       }
     }
-    for (const entity of command.businessEntities ?? []) {
+    for (const entity of businessEntities) {
       await sql`insert into crm.data_import_entities(import_id,source_table,source_primary_key,target_table,target_key,status,warnings,raw_snapshot)
       values(${command.importId}::uuid,${entity.sourceTable},${entity.sourcePrimaryKey},${entity.targetTable},${entity.targetId},'mapped','[]'::jsonb,${
         JSON.stringify({ business: entity })
       }::text::jsonb)`.execute(database);
     }
-    await insertReports(database, command.importId, command.report);
+    await insertReports(database, command.importId, stagedReport);
     return {
       importId: command.importId,
-      report: command.report,
+      report: stagedReport,
       status: "dry_run",
     };
   }
@@ -233,6 +286,27 @@ export class PostgresImportRepository implements ImportRepository {
         importId,
         status: "ready",
       };
+    }
+
+    // A second run may have resolved these identities after this preview was
+    // staged. Reject before any owner or staging writes rather than recording
+    // choices the already-imported records would ignore.
+    const staleChoices = await sql<{ stale: boolean }>`
+      select exists (
+        select 1 from crm.data_import_entities staged
+        join crm.data_import_entities previous
+          on previous.raw_snapshot->'business'->>'targetId' = staged.raw_snapshot->'business'->>'targetId'
+        join crm.data_imports prior on prior.id = previous.import_id
+        where staged.import_id = ${importId}::uuid
+          and prior.workspace_id = ${actor.workspaceId}::uuid
+          and prior.source_system = 'monica' and prior.status = 'completed'
+          and (staged.raw_snapshot->'business'->'data'->>'unresolvedCurrency' = 'true'
+            or staged.raw_snapshot->'business'->'data'->>'unresolvedGender' is not null)
+          and previous.raw_snapshot->'business'->'data'->>'reviewedChoice' = 'true'
+      ) as stale
+    `.execute(database);
+    if (staleChoices.rows[0]?.stale) {
+      return { status: "monica-choices-changed" };
     }
 
     const contacts = await sql<{
@@ -291,9 +365,10 @@ export class PostgresImportRepository implements ImportRepository {
           readonly legacy_notes: readonly string[] | null;
           readonly legacy_started_at: string;
           readonly legacy_completed_at: string;
+          readonly first_completed_at: string;
         }
       >`
-        select entity.target_key,prior.id::text as prior_import_id, entity.raw_snapshot->'notes' as legacy_notes, prior.started_at::text as legacy_started_at, prior.completed_at::text as legacy_completed_at
+        select entity.target_key,prior.id::text as prior_import_id, entity.raw_snapshot->'notes' as legacy_notes, prior.started_at::text as legacy_started_at, prior.completed_at::text as legacy_completed_at, (min(prior.completed_at) over ())::text as first_completed_at
         from crm.data_import_entities entity
         join crm.data_imports prior on prior.id = entity.import_id
         where prior.workspace_id = ${actor.workspaceId}::uuid
@@ -351,11 +426,14 @@ export class PostgresImportRepository implements ImportRepository {
         ...(previous.rows[0]?.target_key
           ? { previousTargetPersonId: previous.rows[0].target_key }
           : {}),
-        ...(previous.rows[0]?.legacy_notes
+        ...(previous.rows[0]
           ? {
-            legacyNotes: previous.rows[0].legacy_notes,
+            ...(previous.rows[0].legacy_notes
+              ? { legacyNotes: previous.rows[0].legacy_notes }
+              : {}),
             legacyStartedAt: previous.rows[0].legacy_started_at,
             legacyCompletedAt: previous.rows[0].legacy_completed_at,
+            repairBefore: previous.rows[0].first_completed_at,
           }
           : {}),
         sourcePrimaryKey: contact.source_primary_key,
@@ -390,8 +468,8 @@ export class PostgresImportRepository implements ImportRepository {
     const businessEntities: BusinessEntity[] = [];
     for (const row of business.rows) {
       const prior = await sql<
-        { target_key: string }
-      >`select e.target_key from crm.data_import_entities e join crm.data_imports i on i.id=e.import_id where i.workspace_id=${actor.workspaceId}::uuid and i.source_system='monica' and i.status='completed' and e.raw_snapshot->'business'->>'targetId'=${row.business.targetId} order by i.completed_at desc limit 1`
+        { target_key: string; completed_at: string; business: BusinessEntity }
+      >`select e.target_key,(min(i.completed_at) over ())::text as completed_at,e.raw_snapshot->'business' as business from crm.data_import_entities e join crm.data_imports i on i.id=e.import_id where i.workspace_id=${actor.workspaceId}::uuid and i.source_system='monica' and i.status='completed' and e.raw_snapshot->'business'->>'targetId'=${row.business.targetId} order by i.completed_at desc limit 1`
         .execute(database);
       let targetId = prior.rows[0]?.target_key ?? row.target_key;
       let legacyFile = false;
@@ -431,7 +509,19 @@ export class PostgresImportRepository implements ImportRepository {
           ? { data: { ...row.business.data, legacyFile: true } }
           : {}),
         targetId,
-        ...(prior.rows.length ? { alreadyImported: true } : {}),
+        ...(prior.rows.length
+          ? ((row.business.data.unresolvedCurrency ||
+              row.business.data.unresolvedGender) &&
+              !prior.rows[0]!.business.data.reviewedChoice
+            ? {
+              data: {
+                ...row.business.data,
+                repairBefore: prior.rows[0]!.completed_at,
+                repairExpected: prior.rows[0]!.business.data,
+              },
+            }
+            : { alreadyImported: true })
+          : {}),
       });
     }
     return {
@@ -451,7 +541,9 @@ export class PostgresImportRepository implements ImportRepository {
     targetId: string,
     transaction: ImportTransaction,
   ): Promise<void> {
-    await sql`update crm.data_import_entities set target_key=${targetId} where import_id=${importId}::uuid and source_table=${entity.sourceTable} and source_primary_key=${entity.sourcePrimaryKey}`
+    await sql`update crm.data_import_entities set target_key=${targetId},raw_snapshot=jsonb_set(raw_snapshot,'{business,data}',${
+      JSON.stringify(entity.data)
+    }::text::jsonb) where import_id=${importId}::uuid and source_table=${entity.sourceTable} and source_primary_key=${entity.sourcePrimaryKey}`
       .execute(databaseFromSession(transaction));
   }
 
@@ -477,6 +569,7 @@ export class PostgresImportRepository implements ImportRepository {
     transaction: ImportTransaction,
     contactTypeOutcome?:
       import("../../ports/import_repository.ts").ContactTypeOutcome,
+    choices?: import("../../domain/monica_choices.ts").MonicaChoices,
   ): Promise<void> {
     const database = databaseFromSession(transaction);
     const locked = await sql<{ readonly stats: unknown }>`
@@ -519,6 +612,47 @@ export class PostgresImportRepository implements ImportRepository {
         }
         : {}),
     };
+    if (choices) {
+      const currentReport =
+        (nextStats.report ?? previousReport) as ImportReport;
+      const { monicaChoices: _pending, ...resolved } = currentReport;
+      nextStats.report = {
+        ...resolved,
+        diagnostics: [
+          ...currentReport.diagnostics,
+          {
+            code: "monica-choice-outcome",
+            severity: "info",
+            message:
+              `Your timezone: ${choices.timezone}. Reviewed ${choices.currencies.length} debt currencies and ${choices.genders.length} contact genders. Existing records changed by a member are preserved.`,
+          },
+          ...choices.currencies.map((c) => ({
+            code: "currency-choice",
+            severity: "info" as const,
+            message: `${
+              previousReport.monicaChoices?.debts.find((d) =>
+                d.sourceKey === c.sourceKey
+              )?.contactName ?? "Contact"
+            } — debt ${c.sourceKey}: ${c.currencyCode} reviewed.`,
+          })),
+          ...choices.genders.map((c) => ({
+            code: "gender-choice",
+            severity: "info" as const,
+            message: `${
+              previousReport.monicaChoices?.contacts.find((p) =>
+                p.sourceKey === c.sourceKey
+              )?.contactName ?? "Contact"
+            }: ${
+              c.action === "unspecified"
+                ? "Unspecified"
+                : c.name ?? previousReport.monicaChoices?.genders.find((g) =>
+                  g.id === c.genderId && g.source === (c.action === "source")
+                )?.name ?? "Selected option"
+            } reviewed.`,
+          })),
+        ],
+      };
+    }
     const completed = await sql<{ readonly id: string }>`
       update crm.data_imports
       set status = 'completed', completed_at = now(), updated_at = now(),

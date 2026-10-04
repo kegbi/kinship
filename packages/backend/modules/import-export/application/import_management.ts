@@ -31,6 +31,7 @@ export interface ImportManagement {
     confirmed: boolean,
     contactMethodTypes?:
       readonly import("../domain/contact_type_mapping.ts").ContactTypeDecision[],
+    choices?: import("../domain/monica_choices.ts").MonicaChoices,
   ): Promise<ImportCommitResult>;
   dryRun(actor: ImportActor, source: unknown): Promise<DryRunResult>;
   get(actor: ImportActor, importId: string): Promise<ImportReadResult>;

@@ -27,6 +27,17 @@ export class PostgresGiftBusinessImportBoundary
       const created = d.createdAt ?? null,
         updated = d.updatedAt ?? d.createdAt ?? null;
       if (d.kind === "debt") {
+        if (d.repairBefore) {
+          const old = d.repairExpected as
+            | Readonly<Record<string, unknown>>
+            | undefined;
+          await sql`update crm.debts set amount=${d.amount}::numeric,currency_code=${d.currencyCode},updated_at=now() where id=${id}::uuid and workspace_id=${workspace}::uuid and person_id=${r.personId}::uuid and currency_code is null and updated_at <= ${d.repairBefore}::timestamptz and amount=${
+            old?.amount ?? null
+          }::numeric and direction=${d.direction} and status=${d.status} and reason is not distinct from ${
+            d.reason ?? null
+          }`.execute(db);
+          continue;
+        }
         await sql`insert into crm.debts (id,workspace_id,person_id,direction,status,amount,currency_code,reason,settled_at,created_at,updated_at) values (${id}::uuid,${workspace}::uuid,${r.personId}::uuid,${d.direction},${d.status},${d.amount}::numeric,${
           d.currencyCode ?? null
         },${d.reason ?? null},${

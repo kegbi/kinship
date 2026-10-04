@@ -95,7 +95,11 @@ export function WorkspaceDanger(
       impactToken: preview.impactToken,
       password: field(form, "password"),
     };
-    const result = await settle(() =>
+    const result = await settle<{
+      readonly cleanupStatus: "pending" | "complete";
+      readonly next: "/auth/sign-in";
+      readonly status: "reset" | "deleted";
+    }>(() =>
       action === "reset"
         ? resetWorkspace(command, workspaceId)
         : deleteWorkspace(command, workspaceId)

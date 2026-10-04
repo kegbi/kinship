@@ -1,3 +1,4 @@
+import { PostgresImportChoicesBoundary } from "../../packages/backend/modules/workspaces/adapters/postgres/import_choices.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -47,6 +48,19 @@ const monicaDates = {
   regenerate: () =>
     Promise.reject(new Error("A Monica import regenerated a reminder.")),
 };
+
+function commitMonica(
+  imports: ReturnType<typeof createImportManagement>,
+  ...args: Parameters<ReturnType<typeof createImportManagement>["commit"]>
+) {
+  return imports.commit(
+    args[0],
+    args[1],
+    args[2],
+    args[3],
+    args[4] ?? { timezone: "UTC", currencies: [], genders: [] },
+  );
+}
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
@@ -127,7 +141,10 @@ Deno.test("[IMPORT-001] PostgreSQL import is tenant-safe, atomic, idempotent, an
       foreign,
       `/api/v1/imports/${dryBody.importId}/commit`,
       "POST",
-      { confirmed: true },
+      {
+        confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+      },
     )).status === 404,
     "foreign commit concealed",
   );
@@ -135,7 +152,10 @@ Deno.test("[IMPORT-001] PostgreSQL import is tenant-safe, atomic, idempotent, an
     primary,
     `/api/v1/imports/${dryBody.importId}/commit`,
     "POST",
-    { confirmed: true },
+    {
+      confirmed: true,
+      monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+    },
   );
   const committedBody = await committed.json() as {
     peopleCreated: number;
@@ -192,7 +212,10 @@ Deno.test("[IMPORT-001] PostgreSQL import is tenant-safe, atomic, idempotent, an
     primary,
     `/api/v1/imports/${rerunBody.importId}/commit`,
     "POST",
-    { confirmed: true },
+    {
+      confirmed: true,
+      monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+    },
   );
   const repeatedBody = await repeated.json() as {
     peopleCreated: number;
@@ -233,6 +256,7 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     },
   };
   const imports = createImportManagement({
+    choices: new PostgresImportChoicesBoundary(),
     actors: new PostgresActorRevalidation(),
     audit,
     contactTypes: new PostgresContactMethodTypeCatalog(),
@@ -258,7 +282,7 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     assert(staged.status === "dry_run", "rollback fixture staged");
     let failed = false;
     try {
-      await imports.commit(actor, staged.importId, true);
+      await commitMonica(imports, actor, staged.importId, true);
     } catch (error) {
       failed = error instanceof Error &&
         error.message === "deterministic import audit failure";
@@ -279,8 +303,15 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
         rolledBack.committed_audits === "0",
       `commit transaction leaked effects: ${JSON.stringify(rolledBack)}`,
     );
+    const [rolledBackPreference] =
+      await sql`select timezone from crm.member_preferences where member_id=${actor.memberId}::uuid`;
+    assertEquals(
+      rolledBackPreference?.timezone ?? null,
+      null,
+      "failed import does not save the timezone",
+    );
     failCommittedAudit = false;
-    const retried = await imports.commit(actor, staged.importId, true);
+    const retried = await commitMonica(imports, actor, staged.importId, true);
     assert(
       retried.status === "completed" && retried.peopleCreated === 1,
       "same dry-run succeeds after owning boundary recovers",
@@ -313,6 +344,7 @@ Deno.test({
         `import-revocation-${crypto.randomUUID()}`,
       );
       const imports = createImportManagement({
+        choices: new PostgresImportChoicesBoundary(),
         actors: new PostgresActorRevalidation(),
         audit: importAuditFrom(new PostgresAuditEventRecorder()),
         contactTypes: new PostgresContactMethodTypeCatalog(),
@@ -339,7 +371,8 @@ Deno.test({
       await revokeMembership(sql, actor.memberId);
 
       const refusedDryRun = await imports.dryRun(actor, source);
-      const refusedCommit = await imports.commit(
+      const refusedCommit = await commitMonica(
+        imports,
         actor,
         allowed.status === "dry_run" ? allowed.importId : crypto.randomUUID(),
         true,
@@ -433,6 +466,7 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
     const commit = () =>
       request(fixture, `/api/v1/imports/${importId}/commit`, "POST", {
         confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
       });
     const committed = await commit();
     assertEquals(committed.status, 200);
@@ -577,6 +611,7 @@ Deno.test("[IMPORT-001] SQL contacts and related details commit once through exi
       "POST",
       {
         confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
         contactMethodTypes: [{ sourceKey: "7:3", action: "create" }],
       },
     );
@@ -629,6 +664,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
   const connection = connectDatabase(databaseUrl);
   let fail = true;
   const imports = createImportManagement({
+    choices: new PostgresImportChoicesBoundary(),
     actors: new PostgresActorRevalidation(),
     audit: {
       record: (command) => {
@@ -669,7 +705,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
       action: type.key === ":4" ? "skip" as const : "create" as const,
     }));
     assertEquals(
-      (await imports.commit(actor, dry.importId, true, [{
+      (await commitMonica(imports, actor, dry.importId, true, [{
         sourceKey: ":1",
         action: "map",
         typeId: foreignType!.id,
@@ -683,7 +719,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     );
     let rolledBack = false;
     try {
-      await imports.commit(actor, dry.importId, true, choices);
+      await commitMonica(imports, actor, dry.importId, true, choices);
     } catch (error) {
       rolledBack = error instanceof Error &&
         error.message === "rollback approved types";
@@ -696,7 +732,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     );
     fail = false;
     assertEquals(
-      (await imports.commit(actor, dry.importId, true, choices)).status,
+      (await commitMonica(imports, actor, dry.importId, true, choices)).status,
       "completed",
     );
     assertEquals(await countTypes(), 3);
@@ -722,7 +758,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
       await sql`select m.value from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${actor.workspaceId}`;
     assertEquals(methods.length, 3);
     assertEquals(
-      (await imports.commit(actor, dry.importId, true, choices)).status,
+      (await commitMonica(imports, actor, dry.importId, true, choices)).status,
       "completed",
     );
     const repeat = await imports.dryRun(actor, source);
@@ -731,10 +767,12 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
       repeat.report.contactMethodTypes?.proposals.map((type) => type.name),
       ["Deferred"],
     );
-    const enriched = await imports.commit(actor, repeat.importId, true, [{
-      sourceKey: ":4",
-      action: "create",
-    }]);
+    const enriched = await commitMonica(imports, actor, repeat.importId, true, [
+      {
+        sourceKey: ":4",
+        action: "create",
+      },
+    ]);
     assert(enriched.status === "completed", "reimport enriches methods");
     assertEquals(enriched.peopleReused, 1);
     assertEquals(
@@ -746,7 +784,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     assert(stable.status === "dry_run", "stable repeat stages");
     assertEquals(stable.report.contactMethodTypes, undefined);
     assertEquals(
-      (await imports.commit(actor, stable.importId, true)).status,
+      (await commitMonica(imports, actor, stable.importId, true)).status,
       "completed",
     );
     assertEquals(
@@ -758,11 +796,11 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     assert(stale.status === "dry_run", "stale repeat stages");
     await sql`update crm.contact_method_types set is_archived=true where workspace_id=${actor.workspaceId} and name='Chat'`;
     assertEquals(
-      (await imports.commit(actor, stale.importId, true)).status,
+      (await commitMonica(imports, actor, stale.importId, true)).status,
       "contact-type-decision-required",
     );
     assertEquals(
-      (await imports.commit(actor, stale.importId, true, [{
+      (await commitMonica(imports, actor, stale.importId, true, [{
         sourceKey: ":3",
         action: "create",
       }])).status,
@@ -770,7 +808,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     );
     assertEquals(await countTypes(), 4);
     assertEquals(
-      (await imports.commit(actor, stale.importId, true, [{
+      (await commitMonica(imports, actor, stale.importId, true, [{
         sourceKey: ":3",
         action: "skip",
       }])).status,
@@ -817,6 +855,7 @@ Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-onl
         "POST",
         {
           confirmed: true,
+          monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
           contactMethodTypes: [{ sourceKey: ":1", action: "create" }, {
             sourceKey: ":2",
             action: "skip",
@@ -845,6 +884,7 @@ Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-onl
       "POST",
       {
         confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
         contactMethodTypes: [{ sourceKey: ":2", action: "create" }],
       },
     );
@@ -876,7 +916,10 @@ Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-onl
         primary,
         `/api/v1/imports/${third.importId}/commit`,
         "POST",
-        { confirmed: true },
+        {
+          confirmed: true,
+          monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+        },
       )).status,
       200,
     );
@@ -892,6 +935,7 @@ Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-onl
       "POST",
       {
         confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
         contactMethodTypes: [{ sourceKey: ":1", action: "create" }, {
           sourceKey: ":2",
           action: "create",
@@ -909,6 +953,7 @@ Deno.test("[IMPORT-001] source catalog metadata persists only on newly created t
   });
   const connection = connectDatabase(databaseUrl);
   const imports = createImportManagement({
+    choices: new PostgresImportChoicesBoundary(),
     actors: new PostgresActorRevalidation(),
     audit: { record: () => Promise.resolve() },
     contactTypes: new PostgresContactMethodTypeCatalog(),
@@ -951,7 +996,7 @@ Deno.test("[IMPORT-001] source catalog metadata persists only on newly created t
       { sourceKey: ":4", action: "map" as const, typeId: existing!.id },
     ];
     assertEquals(
-      (await imports.commit(actor, dry.importId, true, choices)).status,
+      (await commitMonica(imports, actor, dry.importId, true, choices)).status,
       "completed",
     );
     const readTypes = async () =>
@@ -998,7 +1043,8 @@ Deno.test("[IMPORT-001] source catalog metadata persists only on newly created t
     const repeat = await imports.dryRun(actor, source);
     assert(repeat.status === "dry_run", "repeat stages");
     assertEquals(
-      (await imports.commit(actor, repeat.importId, true, choices)).status,
+      (await commitMonica(imports, actor, repeat.importId, true, choices))
+        .status,
       "completed",
     );
     assertEquals(
@@ -1014,6 +1060,393 @@ Deno.test("[IMPORT-001] source catalog metadata persists only on newly created t
   } finally {
     await connection.destroy();
   }
+});
+
+Deno.test("[IMPORT-001] Monica choices enforce complete live selections, save only your timezone and safely repair old unresolved imports", async () => {
+  const owner = await register(`choices-${crypto.randomUUID()}@example.test`);
+  const foreign = await register(
+    `choice-foreign-${crypto.randomUUID()}@example.test`,
+  );
+  const otherMember = crypto.randomUUID();
+  await sql`insert into crm.workspace_members(id,workspace_id,user_id,role,status) values(${otherMember}::uuid,${owner.workspaceId}::uuid,${foreign.userId}::uuid,'member','active')`;
+  await sql`insert into crm.member_preferences(member_id,timezone,locale) values(${otherMember}::uuid,'Asia/Tokyo','fr')`;
+  const [outside] =
+    await sql`insert into crm.gender_options(workspace_id,name) values(${foreign.workspaceId}::uuid,'Outside') returning id`;
+  const [retired] =
+    await sql`insert into crm.gender_options(workspace_id,name,is_archived) values(${owner.workspaceId}::uuid,'Retired',true) returning id`;
+  const source = {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name,gender_id,created_at,updated_at) VALUES(1,'Currency Ada',999,'2020-01-01','2020-01-01'),(2,'Currency Grace',888,'2020-01-01','2020-01-01'); INSERT INTO genders(id,name,type) VALUES(3,'Source custom','O'); INSERT INTO debts(id,contact_id,amount,currency_id,in_debt,status,reason,created_at,updated_at) VALUES(1,1,12345,NULL,'yes','open','Train','2020-01-01','2020-01-01'),(2,2,555,NULL,'no','open','Lunch','2020-01-01','2020-01-01'); INSERT INTO reminders(id,contact_id,title,initial_date,frequency_type,frequency_number,inactive,send_time) VALUES(1,1,'Choice reminder','2030-01-02','year',1,0,'09:00'); INSERT INTO contact_field_types(id,name,type) VALUES(1,'Choice chat','custom');",
+  };
+  const stage = async () => {
+    const response = await api.request(
+      owner,
+      "/api/v1/imports/dry-runs",
+      "POST",
+      { source },
+    );
+    assertEquals(response.status, 201);
+    return await response.json() as {
+      importId: string;
+      report: import("../../packages/contracts/client/types.ts").ImportReport;
+    };
+  };
+  const dry = await stage();
+  assertEquals(dry.report.monicaChoices?.debts.length, 2);
+  assertEquals(dry.report.monicaChoices?.contacts.length, 2);
+  assertEquals(dry.report.counts.unsupported, 0);
+  const choices = {
+    timezone: "America/New_York",
+    currencies: [{ sourceKey: "1", currencyCode: "JPY" }, {
+      sourceKey: "2",
+      currencyCode: "KWD",
+    }],
+    genders: [{ sourceKey: "1", action: "source", genderId: "3" }, {
+      sourceKey: "2",
+      action: "create",
+      name: "Chosen custom",
+    }],
+  };
+  const post = (
+    importId: string,
+    monicaChoices: unknown,
+    contactMethodTypes: unknown = [{ sourceKey: ":1", action: "create" }],
+  ) =>
+    api.request(owner, `/api/v1/imports/${importId}/commit`, "POST", {
+      confirmed: true,
+      contactMethodTypes,
+      ...(monicaChoices === undefined ? {} : { monicaChoices }),
+    });
+  for (
+    const invalid of [
+      undefined,
+      { ...choices, timezone: "No/Zone" },
+      { ...choices, currencies: [] },
+      {
+        ...choices,
+        currencies: [choices.currencies[0], choices.currencies[0]],
+      },
+      {
+        ...choices,
+        currencies: [
+          { sourceKey: "foreign", currencyCode: "JPY" },
+          choices.currencies[1],
+        ],
+      },
+      ...[outside!.id, retired!.id].map((genderId) => ({
+        ...choices,
+        genders: [
+          { sourceKey: "1", action: "map", genderId },
+          choices.genders[1],
+        ],
+      })),
+    ]
+  ) {
+    assertEquals((await post(dry.importId, invalid)).status, 400);
+  }
+  assertEquals((await post(dry.importId, choices, [])).status, 400);
+  assertEquals(
+    (await sql`select timezone from crm.member_preferences where member_id=${owner.memberId}::uuid`)[
+      0
+    ]?.timezone ?? null,
+    null,
+  );
+  assertEquals(
+    (await sql`select count(*)::int as n from crm.contact_method_types where workspace_id=${owner.workspaceId}::uuid and name='Choice chat'`)[
+      0
+    ]?.n,
+    0,
+  );
+  assertEquals(
+    (await sql`select count(*)::int as n from crm.gender_options where workspace_id=${owner.workspaceId}::uuid and name='Chosen custom'`)[
+      0
+    ]?.n,
+    0,
+  );
+  const done = await post(dry.importId, choices);
+  assertEquals(done.status, 200, JSON.stringify(await done.json()));
+  const debts =
+    await sql`select id,amount::text,currency_code,reason from crm.debts where workspace_id=${owner.workspaceId}::uuid order by reason`;
+  assertEquals(debts.map((d) => [d.reason, d.amount, d.currency_code]), [[
+    "Lunch",
+    "0.5550",
+    "KWD",
+  ], ["Train", "12345.0000", "JPY"]]);
+  const people =
+    await sql`select p.id,p.given_name,g.name as gender from crm.people p left join crm.gender_options g on g.id=p.gender_option_id where p.workspace_id=${owner.workspaceId}::uuid order by p.given_name`;
+  assertEquals(people.map((p) => p.gender), ["Source custom", "Chosen custom"]);
+  assertEquals(
+    (await sql`select timezone from crm.member_preferences where member_id=${owner.memberId}::uuid`)[
+      0
+    ]?.timezone,
+    "America/New_York",
+  );
+  assertEquals(
+    (await sql`select timezone,locale from crm.member_preferences where member_id=${otherMember}::uuid`)[
+      0
+    ],
+    { timezone: "Asia/Tokyo", locale: "fr" },
+  );
+  const occurrences =
+    await sql`select o.member_id,extract(hour from o.deliver_at at time zone 'UTC')::int as hour from crm.reminder_occurrences o join crm.reminders r on r.id=o.reminder_id where r.workspace_id=${owner.workspaceId}::uuid and o.occurs_on='2030-01-02' and o.lead_time_days is null`;
+  assert(
+    occurrences.some((o) => o.member_id === owner.memberId && o.hour === 14),
+    "importing member reminder uses selected timezone",
+  );
+  assertEquals(
+    occurrences.some((o) => o.member_id === otherMember),
+    false,
+    "new imported personal reminders belong to the importing member",
+  );
+  const completed = await request(
+    owner,
+    `/api/v1/imports/${dry.importId}`,
+    "GET",
+  );
+  const completedReport = (await completed.json()).report;
+  assertEquals(completedReport.monicaChoices, undefined);
+  assert(
+    JSON.stringify(completedReport).includes("Source custom"),
+    "report shows selected gender name",
+  );
+  const repeated = await stage();
+  assertEquals(repeated.report.monicaChoices?.debts, []);
+  assertEquals(repeated.report.monicaChoices?.contacts, []);
+  assertEquals(
+    (await post(repeated.importId, {
+      timezone: "Europe/Paris",
+      currencies: [],
+      genders: [],
+    }, [])).status,
+    200,
+  );
+  assertEquals(
+    (await sql`select extract(hour from o.deliver_at at time zone 'UTC')::int as hour from crm.reminder_occurrences o join crm.reminders r on r.id=o.reminder_id where r.workspace_id=${owner.workspaceId}::uuid and o.occurs_on='2030-01-02' and o.member_id=${owner.memberId}::uuid and o.status='pending' limit 1`)[
+      0
+    ]?.hour,
+    8,
+    "reimport reschedules existing imported reminders with your new setting",
+  );
+  // Recreate the prior importer’s unresolved state and identity snapshots.
+  await sql`update crm.data_import_entities set raw_snapshot=jsonb_set(raw_snapshot,'{business,data}',(raw_snapshot->'business'->'data') - 'reviewedChoice' - 'unresolvedCurrency' - 'unresolvedGender' - 'selectedGenderId') where import_id in (${dry.importId}::uuid,${repeated.importId}::uuid) and raw_snapshot ? 'business'`;
+  await sql`update crm.data_import_entities set raw_snapshot=jsonb_set(raw_snapshot,'{business,data,amount}',to_jsonb(case source_primary_key when '1' then '123.45' else '5.55' end)) where import_id in (${dry.importId}::uuid,${repeated.importId}::uuid) and source_table='debts'`;
+  await sql`update crm.people set gender_option_id=null,updated_at='2020-01-01' where workspace_id=${owner.workspaceId}::uuid`;
+  await sql`update crm.debts set currency_code=null,amount=case reason when 'Train' then 123.45 else 5.55 end,updated_at='2020-01-01' where workspace_id=${owner.workspaceId}::uuid`;
+  await sql`update crm.people set updated_at=(select first.completed_at + (last.completed_at-first.completed_at)/2 from crm.data_imports first,crm.data_imports last where first.id=${dry.importId}::uuid and last.id=${repeated.importId}::uuid) where id=${
+    people[1]!.id
+  }::uuid`;
+  await sql`update crm.debts set amount=99,updated_at=(select first.completed_at + (last.completed_at-first.completed_at)/2 from crm.data_imports first,crm.data_imports last where first.id=${dry.importId}::uuid and last.id=${repeated.importId}::uuid) where reason='Lunch' and workspace_id=${owner.workspaceId}::uuid`;
+  // People without source timestamps were created with an application instant;
+  // PostgreSQL now() used by the old completion record is its transaction start.
+  await sql`update crm.people set created_at=(select completed_at+interval '1 millisecond' from crm.data_imports where id=${dry.importId}::uuid),updated_at=(select completed_at+interval '1 millisecond' from crm.data_imports where id=${dry.importId}::uuid) where id=${
+    people[0]!.id
+  }::uuid`;
+  const repair = await stage();
+  assertEquals(repair.report.monicaChoices?.debts.length, 2);
+  assertEquals(
+    (await post(repair.importId, {
+      ...choices,
+      genders: [{
+        sourceKey: "1",
+        action: "map",
+        genderId:
+          (await sql`select id from crm.gender_options where workspace_id=${owner.workspaceId}::uuid and name='Source custom'`)[
+            0
+          ]!.id,
+      }, {
+        sourceKey: "2",
+        action: "map",
+        genderId:
+          (await sql`select id from crm.gender_options where workspace_id=${owner.workspaceId}::uuid and name='Chosen custom'`)[
+            0
+          ]!.id,
+      }],
+    }, [])).status,
+    200,
+  );
+  assertEquals(
+    (await sql`select amount::text,currency_code from crm.debts where reason='Train' and workspace_id=${owner.workspaceId}::uuid`)[
+      0
+    ],
+    { amount: "12345.0000", currency_code: "JPY" },
+  );
+  assertEquals(
+    (await sql`select amount::text,currency_code from crm.debts where reason='Lunch' and workspace_id=${owner.workspaceId}::uuid`)[
+      0
+    ],
+    { amount: "99.0000", currency_code: null },
+  );
+  assert(
+    (await sql`select gender_option_id from crm.people where id=${
+      people[0]!.id
+    }::uuid`)[0]?.gender_option_id,
+    "unchanged unresolved gender repaired",
+  );
+  assertEquals(
+    (await sql`select gender_option_id from crm.people where id=${
+      people[1]!.id
+    }::uuid`)[0]?.gender_option_id,
+    null,
+    "later user edit preserved",
+  );
+});
+
+Deno.test("[IMPORT-001] Monica choices insert a newly supported debt for a reused contact without a prior debt identity", async () => {
+  const owner = await register(`new-debt-${crypto.randomUUID()}@example.test`);
+  const contacts =
+    "INSERT INTO contacts(id,uuid,first_name) VALUES(1,'11111111-1111-4111-8111-111111111111','Debt upgrade');";
+  const debt =
+    "INSERT INTO debts(id,contact_id,amount,currency_id,in_debt,status,reason) VALUES(1,1,12345,999,'yes','open','Previously skipped currency');";
+  const stage = async (text: string) => {
+    const response = await api.request(
+      owner,
+      "/api/v1/imports/dry-runs",
+      "POST",
+      { source: { format: "monica-sql", text } },
+    );
+    assertEquals(response.status, 201);
+    return await response.json() as {
+      importId: string;
+      report: import("../../packages/contracts/client/types.ts").ImportReport;
+    };
+  };
+  const commit = (
+    importId: string,
+    currencies: readonly { sourceKey: string; currencyCode: string }[],
+  ) =>
+    api.request(owner, `/api/v1/imports/${importId}/commit`, "POST", {
+      confirmed: true,
+      monicaChoices: { timezone: "UTC", currencies, genders: [] },
+    });
+  const baseline = await stage(contacts);
+  assertEquals((await commit(baseline.importId, [])).status, 200);
+  const upgrade = await stage(contacts + debt);
+  assertEquals(upgrade.report.monicaChoices?.debts.length, 1);
+  const committed = await commit(upgrade.importId, [{
+    sourceKey: "1",
+    currencyCode: "JPY",
+  }]);
+  assertEquals(committed.status, 200);
+  assertEquals((await committed.json()).peopleReused, 1);
+  const readDebts = () =>
+    sql`select amount::text,currency_code from crm.debts where workspace_id=${owner.workspaceId}::uuid`;
+  assertEquals(await readDebts(), [{
+    amount: "12345.0000",
+    currency_code: "JPY",
+  }], "a reused contact does not turn a new debt into an update-only repair");
+  const repeat = await stage(contacts + debt);
+  assertEquals(repeat.report.monicaChoices?.debts, []);
+  assertEquals((await commit(repeat.importId, [])).status, 200);
+  assertEquals(await readDebts(), [{
+    amount: "12345.0000",
+    currency_code: "JPY",
+  }], "new debt identity remains idempotent");
+});
+
+Deno.test("[IMPORT-001] Monica choices reject a stale staged run after another run resolves the same source identities", async () => {
+  const owner = await register(
+    `stale-choices-${crypto.randomUUID()}@example.test`,
+  );
+  const source = {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name,gender_id) VALUES(1,'Concurrent import',999); INSERT INTO debts(id,contact_id,amount,currency_id,in_debt,status) VALUES(1,1,12345,NULL,'yes','open');",
+  };
+  const stage = async () => {
+    const response = await api.request(
+      owner,
+      "/api/v1/imports/dry-runs",
+      "POST",
+      { source },
+    );
+    assertEquals(response.status, 201);
+    return await response.json() as {
+      importId: string;
+      report: import("../../packages/contracts/client/types.ts").ImportReport;
+    };
+  };
+  const first = await stage(), stale = await stage();
+  const commit = (
+    importId: string,
+    currencyCode: string,
+    name: string,
+    timezone: string,
+  ) =>
+    api.request(owner, `/api/v1/imports/${importId}/commit`, "POST", {
+      confirmed: true,
+      monicaChoices: {
+        timezone,
+        currencies: [{ sourceKey: "1", currencyCode }],
+        genders: [{ sourceKey: "1", action: "create", name }],
+      },
+    });
+  assertEquals(
+    (await commit(first.importId, "EUR", "First resolution", "UTC")).status,
+    200,
+  );
+  const rejected = await commit(
+    stale.importId,
+    "USD",
+    "Stale resolution",
+    "Asia/Tokyo",
+  );
+  assertEquals(
+    rejected.status,
+    400,
+    "a stale preview must be revalidated before any second set of choices is applied or recorded",
+  );
+  const problem = await rejected.json();
+  assertEquals(problem.code, "import_monica_choices_changed");
+  assert(
+    problem.detail.includes("Validate the source again"),
+    "stale choice response explains recovery",
+  );
+  assertEquals(
+    (await sql`select timezone from crm.member_preferences where member_id=${owner.memberId}::uuid`)[
+      0
+    ]?.timezone,
+    "UTC",
+  );
+  assertEquals(
+    (await sql`select count(*)::int as count from crm.gender_options where workspace_id=${owner.workspaceId}::uuid and name='Stale resolution'`)[
+      0
+    ]?.count,
+    0,
+  );
+  assertEquals(
+    (await sql`select currency_code from crm.debts where workspace_id=${owner.workspaceId}::uuid`)[
+      0
+    ]?.currency_code,
+    "EUR",
+  );
+  assertEquals(
+    (await sql`select g.name from crm.people p join crm.gender_options g on g.id=p.gender_option_id where p.workspace_id=${owner.workspaceId}::uuid`)[
+      0
+    ]?.name,
+    "First resolution",
+  );
+  assertEquals(
+    (await sql`select count(*)::int as count from crm.data_import_entities where import_id=${stale.importId}::uuid and raw_snapshot->'business'->'data'->>'reviewedChoice'='true'`)[
+      0
+    ]?.count,
+    0,
+  );
+  const refreshed = await stage();
+  assertEquals(refreshed.report.monicaChoices?.debts, []);
+  assertEquals(refreshed.report.monicaChoices?.contacts, []);
+  assertEquals(
+    (await api.request(
+      owner,
+      `/api/v1/imports/${refreshed.importId}/commit`,
+      "POST",
+      {
+        confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+      },
+    )).status,
+    200,
+  );
 });
 
 Deno.test({

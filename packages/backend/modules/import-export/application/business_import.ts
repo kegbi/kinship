@@ -55,6 +55,7 @@ export async function commitBusinessEntities(command: {
     {
       readonly targetPersonId: string;
       readonly outcome: string;
+      readonly repairBefore?: string;
       readonly legacyNotes?: readonly string[];
       readonly legacyStartedAt?: string;
       readonly legacyCompletedAt?: string;
@@ -110,6 +111,14 @@ export async function commitBusinessEntities(command: {
         : undefined;
       const data: Readonly<Record<string, unknown>> = {
         ...entity.data,
+        ...(entity.owner === "people" && entity.data.kind === "profile" &&
+            entity.data.reviewedChoice && person?.outcome === "reused" &&
+            !entity.data.repairBefore
+          ? {
+            repairBefore: person.repairBefore ?? person.legacyCompletedAt ??
+              "1970-01-01T00:00:00Z",
+          }
+          : {}),
         excludedLegacyIds: [...consumedLegacyNotes],
         preserveTimestamps: person?.outcome === "created",
         reconcileLegacy: person?.outcome === "reused",
@@ -124,7 +133,14 @@ export async function commitBusinessEntities(command: {
         id: entity.targetId,
         data,
         references: Object.fromEntries(
-          refs.map(([name, r]) => [name, identities.get(key(r.table, r.key))!]),
+          [
+            ...refs.map((
+              [name, r],
+            ) => [name, identities.get(key(r.table, r.key))!]),
+            ...(typeof entity.data.selectedGenderId === "string"
+              ? [["genderId", entity.data.selectedGenderId]]
+              : []),
+          ],
         ),
       };
       const context = {
@@ -164,7 +180,9 @@ export async function commitBusinessEntities(command: {
       if (entity.data.kind === "note" && id !== entity.targetId) {
         consumedLegacyNotes.push(id);
       }
-      if (id !== entity.targetId) await command.retarget(entity, id);
+      if (id !== entity.targetId || entity.data.reviewedChoice) {
+        await command.retarget(entity, id);
+      }
       identities.set(key(entity.sourceTable, entity.sourcePrimaryKey), id);
       progressed = true;
     }

@@ -439,3 +439,70 @@ Deno.test("[IMPORT-001] unused catalog proposals satisfy the strict response con
     throw new Error("unused type proposal missing");
   }
 });
+
+Deno.test("[IMPORT-001] HTTP carries Monica choices and exposes missing, duplicate and foreign-choice refusals", async () => {
+  const seen: unknown[] = [];
+  const target = createImportRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    imports: {
+      ...imports,
+      commit: (_a, _id, _confirmed, _types, choices) => {
+        seen.push(choices);
+        return Promise.resolve({ status: "monica-choice-required" });
+      },
+    },
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({
+          ...actor,
+          workspaceName: "Import",
+          accessibleWorkspaces: [],
+        }),
+    },
+  });
+  for (
+    const monicaChoices of [undefined, {
+      timezone: "UTC",
+      currencies: [{ sourceKey: "1", currencyCode: "EUR" }, {
+        sourceKey: "1",
+        currencyCode: "EUR",
+      }],
+      genders: [],
+    }, {
+      timezone: "UTC",
+      currencies: [],
+      genders: [{
+        sourceKey: "1",
+        action: "map",
+        genderId: crypto.randomUUID(),
+      }],
+    }]
+  ) {
+    const result = await request(
+      target,
+      `/api/v1/imports/${crypto.randomUUID()}/commit`,
+      "POST",
+      { confirmed: true, ...(monicaChoices ? { monicaChoices } : {}) },
+    );
+    if (
+      result.status !== 400 ||
+      (await result.json()).code !== "import_monica_choice_required"
+    ) throw new Error("choice refusal was not published");
+  }
+  const result = await request(
+    target,
+    `/api/v1/imports/${crypto.randomUUID()}/commit`,
+    "POST",
+    {
+      confirmed: true,
+      monicaChoices: {
+        timezone: "UTC",
+        currencies: [{ sourceKey: "1", currencyCode: "eur" }],
+        genders: [],
+      },
+    },
+  );
+  if (result.status !== 400 || seen.length !== 3) {
+    throw new Error("invalid shape reached use case");
+  }
+});

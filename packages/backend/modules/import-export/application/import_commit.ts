@@ -1,3 +1,8 @@
+import {
+  applyMonicaChoices,
+  type MonicaChoices,
+  validMonicaChoices,
+} from "../domain/monica_choices.ts";
 import { commitBusinessEntities } from "./business_import.ts";
 /**
  * The commit: turn the staged rows into people, once.
@@ -49,6 +54,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
       importId: string,
       confirmed: boolean,
       contactMethodTypes: readonly ContactTypeDecision[] = [],
+      choices?: MonicaChoices,
     ): Promise<ImportCommitResult> => {
       if (!confirmed) return { status: "confirmation-required" };
       if (!mayImport(actor.role)) return { status: "forbidden" };
@@ -81,6 +87,51 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
         if (plan.status !== "ready") {
           return { status: "contact-type-decision-required" as const };
         }
+        let businessEntities = prepared.businessEntities;
+        if (businessEntities !== undefined) {
+          const options = await dependencies.choices?.options({
+            workspaceId: actor.workspaceId,
+            transaction,
+          }) ?? { currencies: [], genders: [] };
+          if (!validMonicaChoices(businessEntities, options, choices)) {
+            return { status: "monica-choice-required" as const };
+          }
+          if (!dependencies.choices) {
+            throw new Error("Missing workspace import choices boundary.");
+          }
+          const created: Record<string, string> = {};
+          for (
+            const choice of choices.genders.filter((c) => c.action === "create")
+          ) {
+            const id = dependencies.ids.next();
+            const owner = dependencies.business?.workspaces;
+            if (!owner) throw new Error("Missing workspace import boundary.");
+            const result = await owner.importRecords({
+              actor,
+              transaction,
+              records: [{
+                id,
+                data: { kind: "gender", name: choice.name!.trim() },
+                references: {},
+              }],
+            });
+            created[choice.sourceKey] = result?.[id] ?? id;
+          }
+          businessEntities = applyMonicaChoices(
+            businessEntities,
+            choices,
+            created,
+          );
+          await dependencies.choices.setTimezone({
+            workspaceId: actor.workspaceId,
+            memberId: actor.memberId,
+            timezone: choices.timezone,
+            transaction,
+          });
+          await dependencies.planning?.timezoneChanged(actor, transaction);
+        } else if (choices !== undefined) {
+          return { status: "monica-choice-required" as const };
+        }
         for (const type of plan.create) {
           plan.mapping[type.key] = await dependencies.contactTypes
             .createForImport({
@@ -106,6 +157,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
         const committedContacts = new Map<string, {
           readonly outcome: "created" | "deleted" | "reused";
           readonly targetPersonId: string;
+          readonly repairBefore?: string;
           readonly legacyNotes?: readonly string[];
           readonly legacyStartedAt?: string;
           readonly legacyCompletedAt?: string;
@@ -120,17 +172,6 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             : "absent";
           if (presence !== "absent") {
             const targetPersonId = contact.previousTargetPersonId!;
-            if (presence === "active" && contact.contact?.contactMethods) {
-              await dependencies.people.addContactMethods({
-                actor,
-                personId: targetPersonId,
-                occurredAt,
-                transaction,
-                methods:
-                  personDetails(contact.contact, {}, plan.mapping).details
-                    .contactMethods,
-              });
-            }
             await dependencies.repository.retargetContact(
               importId,
               contact.entityId,
@@ -138,9 +179,14 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               transaction,
             );
             committedContacts.set(contact.sourcePrimaryKey, {
-              ...(contact.legacyNotes
+              ...(contact.repairBefore
+                ? { repairBefore: contact.repairBefore }
+                : {}),
+              ...(contact.legacyCompletedAt
                 ? {
-                  legacyNotes: contact.legacyNotes,
+                  ...(contact.legacyNotes
+                    ? { legacyNotes: contact.legacyNotes }
+                    : {}),
                   legacyStartedAt: contact.legacyStartedAt!,
                   legacyCompletedAt: contact.legacyCompletedAt!,
                 }
@@ -219,11 +265,11 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             transaction,
           });
         }
-        if (prepared.businessEntities?.length) {
+        if (businessEntities?.length) {
           await commitBusinessEntities({
             actor,
             transaction,
-            entities: prepared.businessEntities,
+            entities: businessEntities,
             contacts: committedContacts,
             boundaries: dependencies.business ?? {},
             retarget: async (entity, id) => {
@@ -235,6 +281,20 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               );
             },
           });
+        }
+        // Repair unresolved profile fields before additive contact methods can touch a person's update timestamp.
+        for (const contact of prepared.contacts) {
+          const person = committedContacts.get(contact.sourcePrimaryKey);
+          if (person?.outcome === "reused" && contact.contact?.contactMethods) {
+            await dependencies.people.addContactMethods({
+              actor,
+              personId: person.targetPersonId,
+              occurredAt,
+              transaction,
+              methods: personDetails(contact.contact, {}, plan.mapping).details
+                .contactMethods,
+            });
+          }
         }
         const outcomes = [...committedContacts.values()].map((contact) =>
           contact.outcome
@@ -273,6 +333,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               ).reduce((sum, type) => sum + type.count, 0),
             }
             : undefined,
+          choices,
         );
         return { importId, ...counts, status: "completed" as const };
       });

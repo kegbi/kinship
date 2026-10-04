@@ -89,13 +89,19 @@ export class PostgresPeopleBusinessImportBoundary
               );
             }
           }
+          // Legacy creation can be slightly later than PostgreSQL's transaction-start
+          // completion instant. Equal creation/update timestamps still mean unedited.
           await sql`update crm.people set gender_option_id=coalesce(gender_option_id,${
             r.genderId ?? null
           }::uuid), created_at=coalesce(${
             d.preserveTimestamps === true ? created : null
           }::timestamptz,created_at), updated_at=coalesce(${
             d.preserveTimestamps === true ? updated : null
-          }::timestamptz,updated_at) where id=${r.personId}::uuid and workspace_id=${workspace}::uuid`
+          }::timestamptz,updated_at) where id=${r.personId}::uuid and workspace_id=${workspace}::uuid and (${
+            d.repairBefore ?? null
+          }::timestamptz is null or (gender_option_id is null and (updated_at = created_at or updated_at <= ${
+            d.repairBefore ?? null
+          }::timestamptz)))`
             .execute(db);
           identities[id] = r.personId!;
           break;

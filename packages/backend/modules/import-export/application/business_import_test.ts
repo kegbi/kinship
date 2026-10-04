@@ -148,3 +148,51 @@ Deno.test("source reminder rules are all imported before reminder scheduling reg
     "reminder-two",
   ]);
 });
+
+Deno.test("only reviewed profiles inherit a reused contact's repair guard; new debts are inserted", async () => {
+  const written: Readonly<Record<string, unknown>>[] = [];
+  const boundary = {
+    importRecords: (
+      c: {
+        readonly records: readonly {
+          readonly data: Readonly<Record<string, unknown>>;
+        }[];
+      },
+    ) => {
+      written.push(...c.records.map((r) => r.data));
+      return Promise.resolve();
+    },
+  };
+  const entity = { ...note, data: { kind: "debt", reviewedChoice: true } };
+  await commitBusinessEntities({
+    actor,
+    transaction,
+    entities: [
+      { ...entity, owner: "gifts", sourcePrimaryKey: "new-debt" },
+      {
+        ...entity,
+        owner: "gifts",
+        sourcePrimaryKey: "existing-debt",
+        data: { ...entity.data, repairBefore: "2020-01-01" },
+      },
+      {
+        ...entity,
+        owner: "people",
+        sourcePrimaryKey: "profile",
+        data: { kind: "profile", reviewedChoice: true },
+      },
+    ],
+    contacts: new Map([["1", {
+      outcome: "reused",
+      targetPersonId: "person",
+      repairBefore: "2019-01-01",
+    }]]),
+    boundaries: { gifts: boundary, people: boundary },
+    retarget: () => Promise.resolve(),
+  });
+  assertEquals(written.map((r) => r.repairBefore ?? null), [
+    null,
+    "2020-01-01",
+    "2019-01-01",
+  ]);
+});

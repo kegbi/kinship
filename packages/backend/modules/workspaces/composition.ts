@@ -1,3 +1,4 @@
+import { PostgresImportChoicesBoundary } from "./adapters/postgres/import_choices.ts";
 import { PostgresWorkspaceBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
 import { PostgresVocabularyBusinessImportBoundary } from "./adapters/postgres/business_vocabulary_import.ts";
 /**
@@ -161,6 +162,7 @@ export function workspaceTransactionRunner(
  */
 export function composeWorkspaceBoundaries() {
   return {
+    importChoices: new PostgresImportChoicesBoundary(),
     businessImportBoundary: new PostgresWorkspaceBusinessImportBoundary(),
     vocabularyImportBoundary: new PostgresVocabularyBusinessImportBoundary(),
     calendar: workspaceCalendar(),

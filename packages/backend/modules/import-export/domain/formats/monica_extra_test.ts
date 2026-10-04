@@ -68,7 +68,7 @@ Deno.test("Monica extra rows preserve money, references, profile context and sou
   );
 });
 
-Deno.test("Monica extra rows reject cross-account references and unknown money instead of guessing", () => {
+Deno.test("Monica extra rows reject cross-account references and stage unknown money for review", () => {
   const result = monicaExtra({
     contacts: [{ id: 1, account_id: 1 }],
     pets: [{ id: 2, account_id: 2, contact_id: 1 }],
@@ -84,10 +84,11 @@ Deno.test("Monica extra rows reject cross-account references and unknown money i
   });
   if (typeof result === "string") throw new Error(result);
   assertEquals(
-    result.entities.filter((e) => ["pets", "debts"].includes(e.sourceTable)),
-    [],
+    result.entities.filter((e) => ["pets", "debts"].includes(e.sourceTable))
+      .map((e) => e.data.unresolvedCurrency),
+    [true],
   );
-  assertEquals(result.unsupportedRows, { pets: 1, debts: 1 });
+  assertEquals(result.unsupportedRows, { pets: 1 });
 });
 
 Deno.test("Monica extra money keeps JSON decimal strings exact and refuses unsafe SQL numbers", () => {
@@ -225,7 +226,7 @@ Deno.test("Monica extra reports invalid state and cross-account journal, address
   assertEquals(typeof monicaExtra({ pets: [null] }), "string");
 });
 
-Deno.test("Monica SQL debts without a currency preserve Monica default minor-unit convention", () => {
+Deno.test("Monica SQL debts without a currency retain raw minor units pending selection", () => {
   const result = monicaExtra({
     contacts: [{ id: 1 }],
     debts: [{
@@ -240,7 +241,7 @@ Deno.test("Monica SQL debts without a currency preserve Monica default minor-uni
   if (typeof result === "string") throw new Error(result);
   assertEquals(
     result.entities.find((e) => e.data.kind === "debt")?.data.amount,
-    "123.45",
+    null,
   );
   assertEquals(
     result.entities.find((e) => e.data.kind === "debt")?.data.currencyCode,
@@ -578,7 +579,6 @@ Deno.test("Monica profile references report dangling identities and retain optio
     }],
   });
   assertEquals(result.unsupportedFields, {
-    "contacts.gender_id": 2,
     "contacts.first_met_through_contact_id": 2,
     "pets.pet_category_id": 3,
   });
@@ -845,4 +845,33 @@ Deno.test("legacy profile module keys control canonical sections and consolidate
     result.unsupportedFields["modules.relationship_visibility_consolidated"],
     3,
   );
+});
+
+Deno.test("unresolved debt currencies and nonnull gender references remain staged for explicit review", () => {
+  const result = monicaExtra({
+    contacts: [{ id: 1, account_id: 1, gender_id: 999 }],
+    debts: [null, 999].map((currency_id, index) => ({
+      id: index + 1,
+      account_id: 1,
+      contact_id: 1,
+      currency_id,
+      amount: "9007199254740993",
+      in_debt: "yes",
+      status: "open",
+    })),
+  }, { sourceProfile: "sql_export" });
+  if (typeof result === "string") throw new Error(result);
+  assertEquals(
+    result.entities.filter((e) => e.data.kind === "debt").map((e) =>
+      e.data.rawAmount
+    ),
+    ["9007199254740993", "9007199254740993"],
+  );
+  assertEquals(
+    result.entities.find((e) => e.data.kind === "profile")?.data
+      .unresolvedGender,
+    "999",
+  );
+  assertEquals(result.unsupportedFields?.["contacts.gender_id"], undefined);
+  assertEquals(result.unsupportedRows?.debts, undefined);
 });

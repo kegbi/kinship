@@ -1,7 +1,7 @@
 import { monicaAudit } from "./monica_audit.ts";
 import type { UnstagedBusinessEntity } from "../business_entities.ts";
 import { monicaBusiness } from "./monica_business.ts";
-import { monicaExtra } from "./monica_extra.ts";
+import { monicaExtra, monicaMoney } from "./monica_extra.ts";
 /**
  * Monica JSON envelopes and SQL data exports normalized into one source.
  *
@@ -577,7 +577,7 @@ export function parseMonicaSource(
     attachments.set(key, attachment);
   }
 
-  return {
+  const result: ParsedMonicaSource = {
     attachments,
     contacts,
     details: detailMap,
@@ -603,5 +603,25 @@ export function parseMonicaSource(
     unsupported: Object.values(unsupportedRows).reduce((a, b) => a + b, 0) +
       Object.values(unsupportedFields).reduce((a, b) => a + b, 0),
     userCount: Array.isArray(users) ? users.length : 0,
+  };
+  const previousUnsupported = result.unsupported +
+    allEntities.filter((e) => e.data.unresolvedGender).length +
+    allEntities.filter((e) => {
+      if (!e.data.unresolvedCurrency) return false;
+      const row = (Array.isArray(tables.debts)
+        ? tables.debts as Record<string, unknown>[]
+        : []).find((r) =>
+          sourceId(r.id) === e.sourcePrimaryKey
+        );
+      return sourceId(row?.currency_id) !== undefined ||
+        monicaMoney(e.data.rawAmount, "", e.data.minorUnits === true) ===
+          undefined;
+    }).length;
+  return {
+    ...result,
+    compatibleSources: [...(result.compatibleSources ?? []), {
+      ...result,
+      unsupported: previousUnsupported,
+    }],
   };
 }

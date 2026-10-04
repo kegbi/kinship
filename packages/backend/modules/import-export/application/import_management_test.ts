@@ -10,6 +10,14 @@ const ids = [
   "00000000-0000-4000-8000-000000000013",
 ];
 const owners = {
+  choices: {
+    options: () =>
+      Promise.resolve({
+        currencies: ["EUR", "USD", "JPY", "KWD"],
+        genders: [],
+      }),
+    setTimezone: () => Promise.resolve(),
+  },
   actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
   contactTypes: {
@@ -568,7 +576,7 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
     (await imports.commit(actor, dry.importId, true, [{
       sourceKey: ":4",
       action: "skip",
-    }])).status,
+    }], { timezone: "UTC", currencies: [], genders: [] })).status,
     "completed",
   );
   assertEquals(bodies, ["One", "Two"]);
@@ -874,5 +882,180 @@ Deno.test("[IMPORT-001] unused source catalog is staged and all choices resolve 
         "2021-02-03T04:05:06.000Z",
       ]);
     }
+  }
+});
+
+Deno.test("[IMPORT-001] complete live Monica decisions are validated before configuration writes and committed transactionally", async () => {
+  let staged: Parameters<ImportRepository["stage"]>[0];
+  const writes: string[] = [];
+  const records: Readonly<Record<string, unknown>>[] = [];
+  const transaction = { opaque: {} };
+  const repository: ImportRepository = {
+    stage: (c) => {
+      staged = c;
+      return Promise.resolve({
+        status: "dry_run",
+        importId: c.importId,
+        report: c.report,
+      });
+    },
+    prepareCommit: (_actor, importId) =>
+      Promise.resolve({
+        status: "ready",
+        importId,
+        contacts: staged.contacts.map((c) => ({
+          ...c,
+          entityId: c.targetPersonId,
+        })),
+        avatars: [],
+        businessEntities: staged.businessEntities!,
+        contactTypeCatalog: staged.contactTypeCatalog!,
+      }),
+    complete: () => {
+      writes.push("complete");
+      return Promise.resolve();
+    },
+    get: () => Promise.resolve(undefined),
+    list: () => Promise.resolve([]),
+    retargetContact: () => Promise.resolve(),
+    retargetBusinessEntity: () => Promise.resolve(),
+  };
+  const imports = createImportManagement({
+    ...owners,
+    repository,
+    ids: { next: () => crypto.randomUUID() },
+    transaction: { run: (work) => work(transaction) },
+    contactTypes: {
+      ...owners.contactTypes,
+      createForImport: () => {
+        writes.push("type");
+        return Promise.resolve("type");
+      },
+    },
+    choices: {
+      options: () =>
+        Promise.resolve({ currencies: ["JPY", "KWD"], genders: [] }),
+      setTimezone: (c) => {
+        assertEquals(c.transaction, transaction);
+        writes.push(c.timezone);
+        return Promise.resolve();
+      },
+    },
+    planning: {
+      timezoneChanged: (_actor, tx) => {
+        assertEquals(tx, transaction);
+        writes.push("reschedule");
+        return Promise.resolve();
+      },
+    },
+    business: {
+      workspaces: {
+        importRecords: (c) => {
+          writes.push("gender");
+          return Promise.resolve(
+            Object.fromEntries(c.records.map((r) => [r.id, "created-gender"])),
+          );
+        },
+      },
+      people: {
+        importRecords: (c) => {
+          records.push(
+            ...c.records.map((r) => ({ ...r.data, refs: r.references })),
+          );
+          return Promise.resolve();
+        },
+      },
+      gifts: {
+        importRecords: (c) => {
+          records.push(...c.records.map((r) => r.data));
+          return Promise.resolve();
+        },
+      },
+    },
+  });
+  const dry = await imports.dryRun(actor, {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name,gender_id) VALUES(1,'Ada',999); INSERT INTO debts(id,contact_id,amount,currency_id,in_debt,status) VALUES(1,1,12345,NULL,'yes','open'),(2,1,888,999,'no','open'); INSERT INTO contact_field_types(id,name,type) VALUES(1,'Chat','custom');",
+  });
+  if (dry.status !== "dry_run") throw new Error("dry-run failed");
+  assertEquals(dry.report.monicaChoices?.debts.length, 2);
+  assertEquals(dry.report.monicaChoices?.contacts.length, 1);
+  const types = [{ sourceKey: ":1", action: "create" as const }];
+  const choices = {
+    timezone: "Asia/Tokyo",
+    currencies: [{ sourceKey: "1", currencyCode: "JPY" }, {
+      sourceKey: "2",
+      currencyCode: "KWD",
+    }],
+    genders: [{ sourceKey: "1", action: "create" as const, name: "Custom" }],
+  };
+  for (
+    const invalid of [undefined, { ...choices, currencies: [] }, {
+      ...choices,
+      currencies: [choices.currencies[0]!, choices.currencies[0]!],
+    }, {
+      ...choices,
+      genders: [{
+        sourceKey: "1",
+        action: "map" as const,
+        genderId: "foreign",
+      }],
+    }]
+  ) {
+    assertEquals(
+      (await imports.commit(actor, dry.importId, true, types, invalid)).status,
+      "monica-choice-required",
+    );
+    assertEquals(writes, []);
+  }
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true, [], choices)).status,
+    "contact-type-decision-required",
+  );
+  assertEquals(writes, []);
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true, types, choices)).status,
+    "completed",
+  );
+  assertEquals(writes, [
+    "gender",
+    "Asia/Tokyo",
+    "reschedule",
+    "type",
+    "complete",
+  ]);
+  assertEquals(records.filter((r) => r.kind === "debt").map((r) => r.amount), [
+    "12345",
+    "0.888",
+  ]);
+  assertEquals(records.find((r) => r.kind === "profile")?.refs, {
+    personId: staged!.contacts[0]!.targetPersonId,
+    genderId: "created-gender",
+  });
+  for (const currency_code of ["EUR", "ZZZ"]) {
+    const unavailable = await imports.dryRun(actor, {
+      format: "monica-json",
+      version: 1,
+      tables: {
+        contacts: [{ id: 1, first_name: "Ada" }],
+        debts: [{
+          id: 1,
+          contact_id: 1,
+          amount: "12.345",
+          currency_code,
+          in_debt: "yes",
+          status: "open",
+        }],
+      },
+    });
+    if (unavailable.status !== "dry_run") {
+      throw new Error("currency review failed");
+    }
+    assertEquals(
+      unavailable.report.monicaChoices?.debts[0]?.rawAmount,
+      "12.345",
+    );
+    assertEquals(unavailable.report.counts.unsupported, 0);
   }
 });

@@ -107,6 +107,20 @@ export const IMPORT_HISTORY_FAILURES: FailureTable = {
 export const IMPORT_WRITE_FAILURES: FailureTable = {
   fallback: CONFIRMATION_REQUIRED,
   statuses: {
+    "monica-choices-changed": {
+      code: "import_monica_choices_changed",
+      detail:
+        "Another import has already resolved these choices. Validate the source again to reuse the saved resolutions before committing.",
+      status: 400,
+      title: "Import choices changed",
+    },
+    "monica-choice-required": {
+      code: "import_monica_choice_required",
+      detail:
+        "Choose your timezone, a supported currency for every unresolved debt, and an active gender option or Unspecified for every unresolved contact. Validate again if available options changed.",
+      status: 400,
+      title: "Import choices required",
+    },
     "contact-type-decision-required": {
       code: "import_contact_type_decision_required",
       detail:
@@ -286,6 +300,7 @@ export function createImportRoutes(
         importId.data,
         true,
         body.data.contactMethodTypes,
+        body.data.monicaChoices,
       );
       if (result.status !== "completed") return writeFailure(context, result);
       return context.json(result);

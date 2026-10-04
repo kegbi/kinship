@@ -18,12 +18,52 @@ export const contactTypeDecision = z.strictObject({
   action: z.enum(["create", "map", "skip"]),
   typeId: z.uuid().optional(),
 });
+export const monicaChoices = z.strictObject({
+  timezone: z.string().min(1).max(100),
+  currencies: z.array(
+    z.strictObject({
+      sourceKey: z.string().min(1).max(100),
+      currencyCode: z.string().regex(/^[A-Z]{3}$/),
+    }),
+  ).max(10000),
+  genders: z.array(z.strictObject({
+    sourceKey: z.string().min(1).max(100),
+    action: z.enum(["map", "source", "create", "unspecified"]),
+    genderId: z.string().min(1).max(100).optional(),
+    name: z.string().trim().min(1).max(100).optional(),
+  })).max(500),
+});
 export const importCommit = z.strictObject({
   confirmed: z.literal(true),
+  monicaChoices: monicaChoices.optional(),
   contactMethodTypes: z.array(contactTypeDecision).max(1000).optional(),
 });
 
 export const importReport = z.strictObject({
+  monicaChoices: z.strictObject({
+    currencyMinorUnits: z.record(z.string(), z.number().int().min(0).max(4)),
+    debts: z.array(
+      z.strictObject({
+        sourceKey: z.string(),
+        contactName: z.string(),
+        rawAmount: z.string(),
+        minorUnits: z.boolean(),
+        reason: z.string().optional(),
+        direction: z.string().optional(),
+      }),
+    ),
+    contacts: z.array(
+      z.strictObject({
+        sourceKey: z.string(),
+        contactName: z.string(),
+        sourceGender: z.string(),
+      }),
+    ),
+    currencies: z.array(z.string()),
+    genders: z.array(
+      z.strictObject({ id: z.string(), name: z.string(), source: z.boolean() }),
+    ),
+  }).optional(),
   contactMethodTypes: z.strictObject({
     proposals: z.array(z.strictObject({
       key: z.string(),

@@ -1015,6 +1015,8 @@ export function createConfiguredApiApp(
       vocabulary: configuration.vocabularyImportBoundary,
     },
     importContactTypes: configuration.contactMethodTypes,
+    importChoices: configuration.importChoices,
+    planning: planning.reminders,
     importFiles: files.importBoundary,
     importNotes: interactions.importBoundary,
     importPeople: people.importBoundary,

@@ -17,6 +17,8 @@ import type { PeopleImportBoundary } from "../../people/public.ts";
 import type {
   ActorRevalidation,
   ContactMethodTypeCatalog,
+  ImportChoicesBoundary,
+  SettingsPlanningPublisher,
 } from "../../workspaces/public.ts";
 import type { ContactImportRepository } from "../ports/contact_import_repository.ts";
 import type { ImportRepository } from "../ports/import_repository.ts";
@@ -27,6 +29,8 @@ import type {
 } from "../ports/context.ts";
 
 export interface ImportManagementDependencies {
+  readonly planning?: Pick<SettingsPlanningPublisher, "timezoneChanged">;
+  readonly choices?: ImportChoicesBoundary;
   readonly business?: BusinessImportBoundaries;
   readonly audit: ImportAudit;
   /** How a vCard or CSV run is stored beside a Monica one (GAP-050). */

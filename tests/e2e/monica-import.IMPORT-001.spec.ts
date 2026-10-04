@@ -13,8 +13,26 @@ const source = {
       id: 42,
       uuid: "00000000-0000-4000-8000-000000000042",
       first_name: "Ada",
+      gender_id: 999,
       last_name: "Lovelace",
       avatar_file_name: "avatars/ada.png",
+    }],
+    debts: [{
+      id: 1,
+      contact_id: 42,
+      amount: "12.34",
+      currency_id: null,
+      in_debt: "yes",
+      status: "open",
+      reason: "Train ticket",
+    }, {
+      id: 2,
+      contact_id: 42,
+      amount: "4.5",
+      currency_id: 999,
+      in_debt: "no",
+      status: "open",
+      reason: "Lunch",
     }],
     users: [{
       id: 7,
@@ -37,7 +55,7 @@ const uploads = [
     name: "monica.sql",
     mimeType: "application/sql",
     text:
-      "# Synthetic export\nSET FOREIGN_KEY_CHECKS=0;\nINSERT IGNORE INTO contacts (id,uuid,first_name,last_name,avatar_file_name,description,job,company) VALUES (42,'00000000-0000-4000-8000-000000000042','Ada','Lovelace','avatars/ada.png','SQL contact','Engineer','Example Co'); INSERT INTO contact_field_types (id,name,type,protocol) VALUES (1,'Chat handle','custom','chat'),(2,'Mapped handle','custom','chat'),(3,'Skipped handle','custom','chat'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (42,1,'synthetic-chat'),(42,2,'synthetic-mapped'),(42,3,'synthetic-skipped'); INSERT INTO notes (id,contact_id,body) VALUES (1,42,'SQL note'); INSERT INTO contacts (id,uuid,first_name,last_name) VALUES (43,'00000000-0000-4000-8000-000000000043','Grace','Hopper'); INSERT INTO relationship_types (id,name,name_reverse_relationship) VALUES (1,'friend','friend'); INSERT INTO relationships (id,contact_is,of_contact,relationship_type_id) VALUES (1,42,43,1); INSERT INTO activities (id,summary,happened_at) VALUES (1,'Imported park walk','2020-01-02 12:00:00'); INSERT INTO activity_contact (activity_id,contact_id) VALUES (1,42),(1,43); INSERT INTO reminders (id,contact_id,title,initial_date,frequency_type,frequency_number,inactive) VALUES (1,42,'Imported annual reminder','2020-01-02','year',1,0); INSERT INTO tags (id,name,name_slug) VALUES (1,'Imported friend','imported-friend'); INSERT INTO contact_tag (contact_id,tag_id) VALUES (42,1);  INSERT INTO users (id,password,google2fa_secret) VALUES (7,'legacy-hash','legacy-totp'); SET FOREIGN_KEY_CHECKS=1;",
+      "# Synthetic export\nSET FOREIGN_KEY_CHECKS=0;\nINSERT IGNORE INTO contacts (id,uuid,first_name,last_name,avatar_file_name,description,job,company,gender_id) VALUES (42,'00000000-0000-4000-8000-000000000042','Ada','Lovelace','avatars/ada.png','SQL contact','Engineer','Example Co',999); INSERT INTO debts(id,contact_id,amount,currency_id,in_debt,status,reason) VALUES (1,42,12345,NULL,'yes','open','Train ticket'),(2,42,555,999,'no','open','Lunch'); INSERT INTO contact_field_types (id,name,type,protocol) VALUES (1,'Chat handle','custom','chat'),(2,'Mapped handle','custom','chat'),(3,'Skipped handle','custom','chat'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (42,1,'synthetic-chat'),(42,2,'synthetic-mapped'),(42,3,'synthetic-skipped'); INSERT INTO notes (id,contact_id,body) VALUES (1,42,'SQL note'); INSERT INTO contacts (id,uuid,first_name,last_name) VALUES (43,'00000000-0000-4000-8000-000000000043','Grace','Hopper'); INSERT INTO relationship_types (id,name,name_reverse_relationship) VALUES (1,'friend','friend'); INSERT INTO relationships (id,contact_is,of_contact,relationship_type_id) VALUES (1,42,43,1); INSERT INTO activities (id,summary,happened_at) VALUES (1,'Imported park walk','2020-01-02 12:00:00'); INSERT INTO activity_contact (activity_id,contact_id) VALUES (1,42),(1,43); INSERT INTO reminders (id,contact_id,title,initial_date,frequency_type,frequency_number,inactive) VALUES (1,42,'Imported annual reminder','2020-01-02','year',1,0); INSERT INTO tags (id,name,name_slug) VALUES (1,'Imported friend','imported-friend'); INSERT INTO contact_tag (contact_id,tag_id) VALUES (42,1);  INSERT INTO users (id,password,google2fa_secret) VALUES (7,'legacy-hash','legacy-totp'); SET FOREIGN_KEY_CHECKS=1;",
     detected: "Monica SQL export detected. Validate to review supported data.",
   },
 ];
@@ -128,6 +146,25 @@ for (const upload of uploads) {
         await page.getByLabel("Skipped handle (1 methods)").selectOption(
           "skip",
         );
+      }
+      await page.getByLabel("Your timezone").fill("Europe/Paris");
+      if (firstImport) {
+        await page.getByLabel("I confirm this validated import").check();
+        await expect(page.getByRole("button", { name: "Commit import" }))
+          .toBeDisabled();
+        await page.getByLabel("Currency for all debts").selectOption("EUR");
+        await page.getByRole("button", { name: "Apply currency to all debts" })
+          .click();
+        await page.getByLabel("Ada Lovelace — debt 2").selectOption("JPY");
+        await expect(page.locator("output").last()).toHaveText(
+          upload.name === "monica.sql" ? "555 JPY" : "4.5 JPY",
+        );
+        await page.getByLabel("Ada Lovelace — gender").selectOption(
+          "unspecified",
+        );
+      } else {
+        await expect(page.getByLabel("Currency for all debts")).toHaveCount(0);
+        await expect(page.getByLabel("Ada Lovelace — gender")).toHaveCount(0);
       }
       await page.getByLabel("I confirm this validated import").check();
       await page.getByRole("button", { name: "Commit import" }).click();

@@ -40,6 +40,7 @@ const SOURCE_UUID =
 
 /** What a dry run counts, and what it tells the member about each count. */
 export interface ImportReport {
+  readonly monicaChoices?: import("./monica_choices.ts").MonicaChoiceReport;
   readonly contactMethodTypes?: {
     readonly proposals:
       readonly (import("./contact_type_mapping.ts").SourceContactType & {
@@ -110,6 +111,7 @@ export interface StagedContact {
 
 /** A staged contact the repository has handed back to be committed. */
 export interface PreparedImportContact {
+  readonly repairBefore?: string;
   readonly legacyNotes?: readonly string[];
   readonly legacyStartedAt?: string;
   readonly legacyCompletedAt?: string;
@@ -161,7 +163,7 @@ export type PreparedImportCommit =
     readonly importId: string;
     readonly status: "completed";
   }
-  | Failure<"not-found">;
+  | Failure<"not-found", "monica-choices-changed">;
 
 /**
  * Whether this role may import, or read what an import did.
@@ -232,7 +234,10 @@ export type ImportCommitResult =
   }
   | Failure<
     "forbidden" | "not-found",
-    "confirmation-required" | "contact-type-decision-required"
+    | "confirmation-required"
+    | "contact-type-decision-required"
+    | "monica-choice-required"
+    | "monica-choices-changed"
   >;
 
 /** The person a committed contact becomes. */

@@ -1,3 +1,4 @@
+import { MonicaChoices } from "./monica-choices.tsx";
 /**
  * The new-import page (GAP-033): choosing a Monica JSON export, validating
  * it as a bounded dry run, reviewing the report, and committing it once
@@ -40,10 +41,12 @@ import {
   IMPORT_SOURCES,
   type ImportSource,
   initialNewImport,
+  monicaChoicesComplete,
   newImportReducer,
   recognizeContactFile,
   recognizeSource,
   resumedImportId,
+  selectedMonicaChoices,
   TOO_LARGE,
   withinStagingLimit,
 } from "./imports.ts";
@@ -264,7 +267,12 @@ export function NewImport(
       },
     );
     const result = await settle(() =>
-      commitImport(importId, workspaceId, decisions)
+      commitImport(
+        importId,
+        workspaceId,
+        decisions,
+        selectedMonicaChoices(state),
+      )
     );
     if (result.status !== "ready" || !result.data) {
       dispatch({
@@ -433,6 +441,7 @@ export function NewImport(
             </fieldset>
           )
           : null}
+        <MonicaChoices state={state} dispatch={dispatch} />
         <label className="confirmation-control">
           <input
             checked={state.confirmed}
@@ -463,6 +472,7 @@ export function NewImport(
             <button
               data-import-commit=""
               disabled={!state.confirmed || !state.importId ||
+                !monicaChoicesComplete(state) ||
                 state.committing ||
                 (state.report?.contactMethodTypes?.proposals ?? []).some((
                   type,

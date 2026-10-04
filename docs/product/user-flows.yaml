@@ -1120,7 +1120,8 @@ flows:
     steps:
       - Detect and parse the bounded source format into staging.
       - Produce a dry-run report with counts, orphans, unsupported data, and missing files.
-      - Commit only after explicit confirmation and complete validation.
+      - Choose Create, Map, or Skip for unresolved contact method types; choose each unresolved debt currency individually or apply a bulk currency with overrides, choose each unresolved contact gender or Unspecified, and choose your personal timezone for reminder schedules.
+      - Commit only after explicit confirmation and complete server-side validation of every required selection.
       - Re-run the same source without duplicating canonical entities or recreating a person a member deleted.
       - Keep all legacy credentials inactive.
     alternateOutcomes: [

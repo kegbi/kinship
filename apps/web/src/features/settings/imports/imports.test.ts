@@ -6,6 +6,7 @@ import type {
 import {
   CHOOSE_CONTACTS,
   CHOOSE_EXPORT,
+  debtAmountPreview,
   DETECTED,
   historyLine,
   historyReducer,
@@ -13,6 +14,7 @@ import {
   importHref,
   importStatus,
   initialNewImport,
+  monicaChoicesComplete,
   type NewImportAction,
   newImportReducer,
   NOT_UTF8,
@@ -22,6 +24,7 @@ import {
   reportReducer,
   reportStatus,
   resumedImportId,
+  selectedMonicaChoices,
   withinStagingLimit,
 } from "./imports.ts";
 
@@ -283,4 +286,74 @@ it("IMPORT-001 recognizes a Monica SQL data export for server validation", () =>
     message: "Monica SQL export detected. Validate to review supported data.",
     source: { format: "monica-sql", text },
   });
+});
+
+it("Monica choices validate timezone and use exact previews without changing JSON amounts", () => {
+  const report: ImportReport = {
+    counts: {
+      contacts: 1,
+      missingFiles: 0,
+      legacyCredentialsDiscarded: 0,
+      orphans: 0,
+      unsupported: 0,
+    },
+    diagnostics: [],
+    monicaChoices: {
+      currencyMinorUnits: { JPY: 0 },
+      currencies: ["JPY"],
+      genders: [{ id: "active", name: "Custom", source: false }],
+      debts: [{
+        sourceKey: "1",
+        contactName: "Ada",
+        rawAmount: "12345",
+        minorUnits: true,
+      }],
+      contacts: [{ sourceKey: "1", contactName: "Ada", sourceGender: "999" }],
+    },
+  };
+  let state = newImportReducer(initialNewImport, {
+    type: "dry-run",
+    report,
+    importId: "run",
+  });
+  expect(monicaChoicesComplete(state)).toBe(false);
+  state = {
+    ...state,
+    timezone: "Not/AZone",
+    currencyChoices: { "1": "JPY" },
+    genderChoices: { "1": "map:active" },
+  };
+  expect(monicaChoicesComplete(state)).toBe(false);
+  state = { ...state, timezone: "UTC" };
+  expect(monicaChoicesComplete(state)).toBe(true);
+  expect(selectedMonicaChoices(state)?.genders).toEqual([{
+    sourceKey: "1",
+    action: "map",
+    genderId: "active",
+  }]);
+  expect(
+    selectedMonicaChoices({
+      ...state,
+      genderChoices: { "1": "create" },
+      genderNames: { "1": " New " },
+    })?.genders,
+  ).toEqual([{ sourceKey: "1", action: "create", name: "New" }]);
+  expect(debtAmountPreview("9007199254740993", true, "KWD", 3)).toBe(
+    "9007199254740.993",
+  );
+  expect(debtAmountPreview("12345", true, "MGA", 2)).toBe("123.45");
+  expect(debtAmountPreview("12345", true, "JPY", 0)).toBe("12345");
+  expect(debtAmountPreview("1.2345", false, "JPY", 0)).toBe("1.2345");
+  for (
+    const action of [{ type: "detecting" }, { type: "validating" }, {
+      type: "source",
+      source: "csv",
+    }] as const
+  ) {
+    const cleared = newImportReducer(state, action);
+    expect(cleared.timezone).toBe("");
+    expect(cleared.genderChoices).toEqual({});
+    expect(cleared.currencyChoices).toEqual({});
+  }
+  expect(selectedMonicaChoices(initialNewImport)).toBeUndefined();
 });

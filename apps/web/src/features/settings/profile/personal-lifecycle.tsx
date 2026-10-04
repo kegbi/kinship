@@ -215,7 +215,7 @@ export function PersonalLifecycle(
         submit="Leave workspace"
         title="Leave this workspace"
       >
-        Your other memberships remain active. Type{" "}
+        {"Your other memberships remain active. Type "}
       </LifecycleForm>
       <LifecycleForm
         confirmation={preview?.confirmations.deleteIdentity}
@@ -228,7 +228,7 @@ export function PersonalLifecycle(
         title="Delete personal identity"
         trailer=" exactly, then reauthenticate."
       >
-        This signs you out everywhere and ends every membership. Type{" "}
+        {"This signs you out everywhere and ends every membership. Type "}
       </LifecycleForm>
       <p aria-live="polite" id="lifecycle-status" role="status">
         {state.status}
