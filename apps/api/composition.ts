@@ -942,6 +942,7 @@ export function createConfiguredApiApp(
     ),
     mergeParticipants: personMergeParticipants(),
     profileFactWorkspace: configuration.profileFacts,
+    importContactTypes: configuration.contactMethodTypes,
   });
   const planning = composePlanning(shared, {
     cursorKeyset: subjectKeyset,

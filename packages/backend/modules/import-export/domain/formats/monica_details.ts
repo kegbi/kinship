@@ -29,7 +29,7 @@ const FIELDS: Readonly<Record<string, readonly string[]>> = {
     "contact_field_type_id",
     "data",
   ],
-  contact_field_types: ["id", "account_id", "type"],
+  contact_field_types: ["id", "account_id", "type", "name", "protocol"],
   addresses: ["id", "account_id", "contact_id", "place_id"],
   places: [
     "id",
@@ -55,6 +55,7 @@ const FIELDS: Readonly<Record<string, readonly string[]>> = {
 export function monicaDetails(
   tables: Readonly<Record<string, unknown>>,
   maxAttachmentBytes: number,
+  legacyBasicTypes = false,
 ): MonicaDetails | string {
   const contacts = (tables.contacts as Row[]).map((row) => ({ ...row }));
   const details = new Map<string, ImportedContact>();
@@ -81,7 +82,12 @@ export function monicaDetails(
   const mark = (table: string, row: Row) => {
     used.add(row);
     for (const [field, value] of Object.entries(row)) {
-      if (value === null || value === "" || FIELDS[table]?.includes(field)) {
+      if (
+        value === null || value === "" ||
+        (FIELDS[table]?.includes(field) &&
+          !(legacyBasicTypes && table === "contact_field_types" &&
+            ["name", "protocol"].includes(field)))
+      ) {
         continue;
       }
       const key = `${table}.${field}`;
@@ -104,6 +110,9 @@ export function monicaDetails(
     const key = sourceId(contact.id);
     if (!key) continue;
     const emails: string[] = [], phones: string[] = [], urls: string[] = [];
+    const contactMethods: NonNullable<
+      ImportedContact["contactMethods"]
+    >[number][] = [];
     for (
       const row of rows("contact_fields").filter((row) => matches(row, contact))
     ) {
@@ -117,11 +126,56 @@ export function monicaDetails(
         kind === "email" ? 320 : kind === "phone" ? 64 : 2048,
       );
       if (
-        !type || !value || !["email", "phone", "url"].includes(kind as string)
+        !type || !value || !sourceId(type.id)
       ) continue;
-      (kind === "email" ? emails : kind === "phone" ? phones : urls).push(
-        kind === "email" ? value.toLowerCase() : value,
-      );
+      if (
+        legacyBasicTypes && !["email", "phone", "url"].includes(kind as string)
+      ) continue;
+      if (!legacyBasicTypes) {
+        const broadKind =
+          ["email", "phone", "url", "social", "im", "username", "custom"]
+              .includes(kind as string)
+            ? kind as NonNullable<
+              ImportedContact["contactMethods"]
+            >[number]["sourceType"]["kind"]
+            : "custom";
+        if (
+          (type.name !== undefined && type.name !== null && type.name !== "" &&
+            !textValue(type.name, 120)) ||
+          (type.protocol !== undefined && type.protocol !== null &&
+            type.protocol !== "" && !textValue(type.protocol, 100))
+        ) {
+          return "A Monica contact method type exceeds the supported text limit.";
+        }
+        const name = textValue(type.name, 120) ??
+          (kind === "email"
+            ? "Email"
+            : kind === "phone"
+            ? "Phone"
+            : kind === "url"
+            ? "Website"
+            : textValue(kind, 120) ?? "Custom");
+        const protocol = textValue(type.protocol, 100);
+        contactMethods.push({
+          sourceType: {
+            key: `${encodeURIComponent(sourceId(type.account_id) ?? "")}:${
+              encodeURIComponent(sourceId(type.id)!)
+            }`,
+            name,
+            kind: broadKind,
+            ...(typeof kind === "string" && kind !== broadKind
+              ? { sourceKind: kind }
+              : {}),
+            ...(protocol ? { protocol } : {}),
+          },
+          value: kind === "email" ? value.toLowerCase() : value,
+        });
+      }
+      if (["email", "phone", "url"].includes(kind as string)) {
+        (kind === "email" ? emails : kind === "phone" ? phones : urls).push(
+          kind === "email" ? value.toLowerCase() : value,
+        );
+      }
       mark("contact_fields", row);
       if (!used.has(type)) mark("contact_field_types", type);
     }
@@ -229,11 +283,12 @@ export function monicaDetails(
     ) return "A Monica occupation exceeds the supported text limit.";
     if (
       addresses.length || dates.length || emails.length || phones.length ||
-      urls.length || jobTitle || organization
+      urls.length || contactMethods.length || jobTitle || organization
     ) {
       details.set(key, {
         addresses,
         dates,
+        ...(contactMethods.length ? { contactMethods } : {}),
         emails: [...new Set(emails)],
         phones: [...new Set(phones)],
         urls: [...new Set(urls)],

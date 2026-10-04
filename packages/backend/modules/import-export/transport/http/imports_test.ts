@@ -60,7 +60,11 @@ const repository: ImportRepository = {
 const imports = createImportManagement({
   actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
-  contactTypes: { byKind: () => Promise.resolve({}) },
+  contactTypes: {
+    forImport: () => Promise.resolve([]),
+    createForImport: () => Promise.resolve("created-type"),
+    byKind: () => Promise.resolve({}),
+  },
   contacts: {
     history: () => Promise.resolve({ fileImportedBefore: false, matches: [] }),
     lockPendingCsv: () => Promise.resolve(undefined),
@@ -72,6 +76,7 @@ const imports = createImportManagement({
   ids: { next: () => crypto.randomUUID() },
   notes: { addNote: () => Promise.resolve() },
   people: {
+    addContactMethods: () => Promise.resolve(),
     addDetails: () => Promise.resolve(),
     create: () => Promise.resolve(),
     presence: () => Promise.resolve("active" as const),
@@ -347,5 +352,59 @@ Deno.test("[GAP-050] the mapping targets the domain applies are the ones the con
         JSON.stringify(CSV_COLUMN_TARGETS)
       }`,
     );
+  }
+});
+
+Deno.test("[IMPORT-001] commit validates explicit contact-type choices and reports stale mappings", async () => {
+  const calls: unknown[] = [];
+  const target = createImportRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    imports: {
+      ...imports,
+      commit: (_actor, _id, _confirmed, choices) => {
+        calls.push(choices);
+        return Promise.resolve({
+          status: "contact-type-decision-required" as const,
+        });
+      },
+    },
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({
+          ...actor,
+          workspaceName: "Import",
+          accessibleWorkspaces: [],
+        }),
+    },
+  });
+  const importId = crypto.randomUUID();
+  const response = await request(
+    target,
+    `/api/v1/imports/${importId}/commit`,
+    "POST",
+    {
+      confirmed: true,
+      contactMethodTypes: [{ sourceKey: "7:2", action: "create" }],
+    },
+  );
+  if (
+    response.status !== 400 ||
+    (await response.json()).code !== "import_contact_type_decision_required"
+  ) throw new Error("type-choice refusal was not surfaced");
+  if (
+    JSON.stringify(calls) !==
+      JSON.stringify([[{ sourceKey: "7:2", action: "create" }]])
+  ) throw new Error("approved type choices did not reach the use case");
+  const malformed = await request(
+    target,
+    `/api/v1/imports/${importId}/commit`,
+    "POST",
+    {
+      confirmed: true,
+      contactMethodTypes: [{ sourceKey: "7:2", action: "invent" }],
+    },
+  );
+  if (malformed.status !== 400 || calls.length !== 1) {
+    throw new Error("invalid type choice reached the use case");
   }
 });

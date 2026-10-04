@@ -30,9 +30,16 @@ export interface StageImportCommand {
   readonly actor: ImportActor;
   readonly contacts: readonly StagedContact[];
   readonly fingerprint: string;
+  readonly compatibleFingerprints?: readonly string[];
   readonly importId: string;
   readonly report: ImportReport;
   readonly transaction: ImportTransaction;
+}
+
+export interface ContactTypeOutcome {
+  readonly createdTypes: number;
+  readonly mappedMethods: number;
+  readonly skippedMethods: number;
 }
 
 export interface ImportRepository {
@@ -41,6 +48,7 @@ export interface ImportRepository {
     importId: string,
     counts: ImportCommitCounts,
     transaction: ImportTransaction,
+    contactTypeOutcome?: ContactTypeOutcome,
   ): Promise<void>;
   get(actor: ImportActor, importId: string): Promise<ImportSummary | undefined>;
   list(actor: ImportActor): Promise<readonly ImportSummary[]>;

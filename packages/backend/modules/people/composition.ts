@@ -13,6 +13,7 @@
  * be able to build it before it composes anything.
  */
 
+import type { ContactMethodTypeCatalog } from "../workspaces/public.ts";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
@@ -96,6 +97,7 @@ export interface PeoplePorts {
   readonly logger?: Logger;
   /** The workspace vocabulary a profile fact is validated against. */
   readonly profileFactWorkspace: ProfileFactWorkspaceBoundary;
+  readonly importContactTypes: ContactMethodTypeCatalog;
 }
 
 export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
@@ -156,6 +158,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     exportBoundary: new PostgresPeopleExportBoundary(),
     importBoundary: new PostgresPeopleImportBoundary(
       ports.importantDatePublisher,
+      ports.importContactTypes,
     ),
     importantDates: createImportantDateManagement({
       actors: shared.actors,

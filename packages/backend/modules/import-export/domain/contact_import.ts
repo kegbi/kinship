@@ -51,7 +51,26 @@ export type ImportedDate = PartialDateComponents & {
 };
 
 /** A contact normalized for staging, fingerprinting, and commit. */
+export interface ImportedContactMethodType {
+  readonly key: string;
+  readonly name: string;
+  readonly kind:
+    | "email"
+    | "phone"
+    | "url"
+    | "social"
+    | "im"
+    | "username"
+    | "custom";
+  readonly sourceKind?: string;
+  readonly protocol?: string;
+}
+
 export interface ImportedContact {
+  readonly contactMethods?: readonly {
+    readonly sourceType: ImportedContactMethodType;
+    readonly value: string;
+  }[];
   readonly addresses: readonly SourceAddress[];
   readonly dates: readonly ImportedDate[];
   readonly emails: readonly string[];
@@ -223,6 +242,7 @@ export function importedContact(
 export function personDetails(
   contact: ImportedContact,
   types: ContactTypeChoices,
+  sourceTypes: Readonly<Record<string, string>> = {},
 ): {
   readonly details: {
     readonly addresses: readonly SourceAddress[];
@@ -245,11 +265,17 @@ export function personDetails(
   return {
     details: {
       addresses: contact.addresses,
-      contactMethods: [
-        ...methods("email", contact.emails),
-        ...methods("phone", contact.phones),
-        ...methods("url", contact.urls),
-      ],
+      contactMethods: contact.contactMethods
+        ? contact.contactMethods.flatMap(({ sourceType, value }) =>
+          sourceTypes[sourceType.key]
+            ? [{ typeId: sourceTypes[sourceType.key]!, value }]
+            : []
+        )
+        : [
+          ...methods("email", contact.emails),
+          ...methods("phone", contact.phones),
+          ...methods("url", contact.urls),
+        ],
       dates: contact.dates,
       ...(contact.jobTitle
         ? {

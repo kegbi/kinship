@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import type { ContactMethodTypeCatalog } from "../../../workspaces/public.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
   PeopleImportBoundary,
@@ -35,7 +36,10 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   readonly #dates = new PostgresImportantDateRepository();
   readonly #facts = new PostgresProfileFactRepository();
 
-  constructor(private readonly publisher: ImportantDatePublisher) {}
+  constructor(
+    private readonly publisher: ImportantDatePublisher,
+    private readonly contactTypes: Pick<ContactMethodTypeCatalog, "forImport">,
+  ) {}
 
   async addDetails(
     command: Parameters<PeopleImportBoundary["addDetails"]>[0],
@@ -60,16 +64,10 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
       });
       if (!saved) throw new Error(`Imported ${section} value was not saved.`);
     };
-    const primaries = new Set<string>();
-    for (const method of command.details.contactMethods) {
-      await save("contact-methods", {
-        isPrimary: !primaries.has(method.typeId),
-        labelIds: [],
-        typeId: method.typeId,
-        value: method.value,
-      });
-      primaries.add(method.typeId);
-    }
+    await this.addContactMethods({
+      ...command,
+      methods: command.details.contactMethods,
+    });
     for (const [index, address] of command.details.addresses.entries()) {
       await save("addresses", {
         ...address,
@@ -103,6 +101,70 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
         after,
         occurredAt: command.occurredAt,
       });
+    }
+  }
+
+  async addContactMethods(
+    command: Parameters<PeopleImportBoundary["addContactMethods"]>[0],
+  ): Promise<void> {
+    if (!command.methods.length) return;
+    const database = databaseFromSession(command.transaction);
+    const person = await sql<
+      { deleted: boolean }
+    >`select deleted_at is not null as deleted from crm.people where id=${command.personId}::uuid and workspace_id=${command.actor.workspaceId}::uuid for update`
+      .execute(database);
+    if (!person.rows[0]) {
+      throw new Error("Imported contact method person is unavailable.");
+    }
+    if (person.rows[0].deleted) return;
+    const types = await this.contactTypes.forImport({
+      workspaceId: command.actor.workspaceId,
+      transaction: command.transaction,
+      lock: false,
+    });
+    for (const method of command.methods) {
+      const type = types.find((type) =>
+        type.id === method.typeId && !type.archived
+      );
+      if (!type) {
+        throw new Error("Imported contact method type is unavailable.");
+      }
+      const normalize = (value: string) =>
+        type.kind === "email"
+          ? value.trim().toLowerCase()
+          : type.kind === "phone"
+          ? value.replace(/[^0-9+a-z]/gi, "").toLowerCase()
+          : value.trim();
+      const existing = await sql<
+        { value: string }
+      >`select value from crm.person_contact_methods where person_id=${command.personId}::uuid and type_id=${method.typeId}::uuid`
+        .execute(database);
+      if (
+        existing.rows.some((row) =>
+          normalize(row.value) === normalize(method.value)
+        )
+      ) continue;
+      const value = normalizeProfileFact("contact-methods", {
+        typeId: method.typeId,
+        value: method.value,
+        isPrimary: existing.rows.length === 0,
+        labelIds: [],
+      });
+      if (
+        Object.keys(
+          validateProfileFact("contact-methods", value, command.personId),
+        ).length
+      ) throw new Error("Imported contact method value is invalid.");
+      const saved = await this.#facts.save({
+        ...command.actor,
+        transaction: command.transaction,
+        personId: command.personId,
+        occurredAt: command.occurredAt,
+        id: crypto.randomUUID(),
+        section: "contact-methods",
+        value,
+      });
+      if (!saved) throw new Error("Imported contact method was not saved.");
     }
   }
 

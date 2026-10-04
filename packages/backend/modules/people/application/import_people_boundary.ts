@@ -78,6 +78,14 @@ export interface ImportedPersonDetails {
 export type PersonImportPresence = "absent" | "active" | "deleted";
 
 export interface PeopleImportBoundary {
+  /** Add missing Monica methods to an active imported person without changing existing facts. */
+  addContactMethods(command: {
+    readonly actor: PeopleImportActor;
+    readonly methods: ImportedPersonDetails["contactMethods"];
+    readonly occurredAt: Date;
+    readonly personId: string;
+    readonly transaction: PeopleImportTransaction;
+  }): Promise<void>;
   /**
    * Writes a newly imported person's contact methods, addresses, dates, and
    * occupation, in the commit's transaction. A value the people rules refuse

@@ -133,6 +133,7 @@ export interface PendingMapping {
 }
 
 export interface NewImportState {
+  readonly contactTypeChoices: Readonly<Record<string, string>>;
   readonly phase: "loading" | "ready" | "no-session" | "member";
   readonly source: ImportSource;
   /** The CSV run whose columns the reader is mapping, if there is one. */
@@ -152,6 +153,11 @@ export interface NewImportState {
 }
 
 export type NewImportAction =
+  | {
+    readonly type: "contact-type-choice";
+    readonly key: string;
+    readonly value: string;
+  }
   | { readonly type: "ready" }
   | { readonly type: "source"; readonly source: ImportSource }
   | {
@@ -186,6 +192,7 @@ export type NewImportAction =
   };
 
 export const initialNewImport: NewImportState = {
+  contactTypeChoices: {},
   applying: false,
   committed: undefined,
   committing: false,
@@ -208,6 +215,7 @@ function withdrawn(state: NewImportState): NewImportState {
   return {
     ...state,
     confirmed: false,
+    contactTypeChoices: {},
     importId: undefined,
     mapping: undefined,
     report: undefined,
@@ -219,6 +227,15 @@ export function newImportReducer(
   action: NewImportAction,
 ): NewImportState {
   switch (action.type) {
+    case "contact-type-choice":
+      return {
+        ...state,
+        confirmed: false,
+        contactTypeChoices: {
+          ...state.contactTypeChoices,
+          [action.key]: action.value,
+        },
+      };
     case "ready":
       return { ...state, phase: "ready" };
     case "source":
@@ -276,6 +293,8 @@ export function newImportReducer(
         importId: action.importId,
         mapping: undefined,
         report: action.report,
+        contactTypeChoices: {},
+        confirmed: false,
         status: "Dry run complete. Review the report before committing.",
       };
     case "confirm":

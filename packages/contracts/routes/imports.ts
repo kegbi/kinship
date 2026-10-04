@@ -16,6 +16,7 @@ import {
 } from "./common.ts";
 import {
   csvColumnMapping,
+  importCommit,
   importDryRun,
   importMappingRequired,
   importSummary,
@@ -109,9 +110,7 @@ export const commitImport = defineRoute({
     body: {
       required: true,
       content: {
-        "application/json": z.strictObject({
-          confirmed: z.literal(true),
-        }),
+        "application/json": importCommit,
       },
     },
   },

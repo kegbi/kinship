@@ -399,3 +399,57 @@ describe("IMPORT-001 settings import", () => {
     );
   });
 });
+
+it("requires an explicit contact type choice and sends creation only on confirmed commit", async () => {
+  shell();
+  const api = stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: jsonResponse({
+      importId,
+      status: "dry_run",
+      report: {
+        ...report,
+        contactMethodTypes: {
+          proposals: [{
+            key: "7:2",
+            name: "Chat handle",
+            kind: "custom",
+            protocol: "chat",
+            count: 2,
+            canCreate: true,
+          }],
+          existingTypes: [],
+        },
+      },
+    }),
+    [COMMIT]: jsonResponse({
+      importId,
+      status: "completed",
+      peopleCreated: 1,
+      peopleReused: 0,
+      peopleSkippedDeleted: 0,
+    }),
+  });
+  await mount();
+  await choose(monica());
+  submit();
+  const choice = await screen.findByLabelText("Chat handle (2 methods)");
+  confirm();
+  expect(commit().disabled).toBe(true);
+  fireEvent.change(choice, { target: { value: "create" } });
+  expect(commit().disabled).toBe(true);
+  confirm();
+  expect(commit().disabled).toBe(false);
+  fireEvent.click(commit());
+  await waitFor(() =>
+    expect(api.calls().filter((call) => call.includes("/commit"))).toHaveLength(
+      1,
+    )
+  );
+  expect(
+    api.requests().find((call) => call.url.pathname.includes("/commit"))?.body,
+  ).toEqual({
+    confirmed: true,
+    contactMethodTypes: [{ sourceKey: "7:2", action: "create" }],
+  });
+});

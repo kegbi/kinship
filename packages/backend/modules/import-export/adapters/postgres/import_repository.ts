@@ -109,6 +109,7 @@ export class PostgresImportRepository implements ImportRepository {
         now(), ${
       JSON.stringify({
         fingerprint: command.fingerprint,
+        compatibleFingerprints: command.compatibleFingerprints ?? [],
         report: command.report,
       })
     }::text::jsonb,
@@ -279,10 +280,14 @@ export class PostgresImportRepository implements ImportRepository {
         join crm.data_imports prior on prior.id = entity.import_id
         where prior.workspace_id = ${actor.workspaceId}::uuid
           and prior.source_system = 'monica' and prior.status = 'completed'
-          and prior.stats->>'fingerprint' = (
-            select current.stats->>'fingerprint'
-            from crm.data_imports current
-            where current.id = ${importId}::uuid
+          and (
+            (entity.source_uuid is not null and entity.source_uuid = ${contact.source_uuid}::uuid)
+            or exists (
+              select 1 from crm.data_imports current
+              where current.id = ${importId}::uuid
+                and (prior.stats->>'fingerprint' = current.stats->>'fingerprint'
+                  or jsonb_exists(coalesce(current.stats->'compatibleFingerprints', '[]'::jsonb), prior.stats->>'fingerprint'))
+            )
           )
           and prior.id <> ${importId}::uuid
           and entity.source_table = 'contacts'
@@ -375,6 +380,8 @@ export class PostgresImportRepository implements ImportRepository {
     importId: string,
     counts: ImportCommitCounts,
     transaction: ImportTransaction,
+    contactTypeOutcome?:
+      import("../../ports/import_repository.ts").ContactTypeOutcome,
   ): Promise<void> {
     const database = databaseFromSession(transaction);
     const locked = await sql<{ readonly stats: unknown }>`
@@ -385,9 +392,37 @@ export class PostgresImportRepository implements ImportRepository {
     `.execute(database);
     const run = locked.rows[0];
     if (!run) throw new Error("Import completion context is invalid.");
+    const previousReport = report(run.stats);
+    const { contactMethodTypes: _proposals, ...reportWithoutProposals } =
+      previousReport;
     const nextStats = {
       ...jsonRecord(run.stats),
       ...counts,
+      ...(contactTypeOutcome
+        ? {
+          report: {
+            ...reportWithoutProposals,
+            counts: {
+              ...previousReport.counts,
+              unsupported: previousReport.counts.unsupported +
+                contactTypeOutcome.skippedMethods,
+            },
+            diagnostics: [
+              ...previousReport.diagnostics.filter((item) =>
+                item.code !== "contact-type-decisions"
+              ),
+              {
+                code: "contact-type-outcome",
+                severity: contactTypeOutcome.skippedMethods
+                  ? "skipped"
+                  : "info",
+                message:
+                  `${contactTypeOutcome.mappedMethods} source contact method(s) mapped; ${contactTypeOutcome.skippedMethods} explicitly skipped. ${contactTypeOutcome.createdTypes} contact method type(s) created.`,
+              },
+            ],
+          },
+        }
+        : {}),
     };
     const completed = await sql<{ readonly id: string }>`
       update crm.data_imports

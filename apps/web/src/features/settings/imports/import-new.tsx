@@ -255,7 +255,17 @@ export function NewImport(
     const workspaceId = workspace.current!;
     const importId = state.importId!;
     dispatch({ type: "committing" });
-    const result = await settle(() => commitImport(importId, workspaceId));
+    const decisions = (state.report?.contactMethodTypes?.proposals ?? []).map(
+      (type): NonNullable<Parameters<typeof commitImport>[2]>[number] => {
+        const choice = state.contactTypeChoices[type.key]!;
+        return choice === "create" || choice === "skip"
+          ? { sourceKey: type.key, action: choice }
+          : { sourceKey: type.key, action: "map" as const, typeId: choice };
+      },
+    );
+    const result = await settle(() =>
+      commitImport(importId, workspaceId, decisions)
+    );
     if (result.status !== "ready" || !result.data) {
       dispatch({
         message: result.problem?.detail ?? "The import could not be committed.",
@@ -367,6 +377,57 @@ export function NewImport(
       >
         <h2 id="import-report-heading">Dry-run report</h2>
         {state.report ? <ReportCounts report={state.report} /> : null}
+        {state.report?.contactMethodTypes
+          ? (
+            <fieldset disabled={state.committing || Boolean(state.committed)}>
+              <legend>Contact method types</legend>
+              <p>
+                Choose how to import each unmatched type. Creating a type also
+                makes it available in Settings → Personalization. Types are
+                created only when you confirm and commit.
+              </p>
+              {state.report.contactMethodTypes.proposals.map((type) => (
+                <div key={type.key}>
+                  <label htmlFor={`contact-type-${type.key}`}>
+                    {type.name} ({type.count} methods)
+                  </label>
+                  <p>
+                    {type.kind}
+                    {type.protocol ? ` · ${type.protocol}` : ""}
+                    {!type.canCreate
+                      ? " · This name already exists; choose an active type or skip."
+                      : ""}
+                  </p>
+                  <select
+                    id={`contact-type-${type.key}`}
+                    value={state.contactTypeChoices[type.key] ?? ""}
+                    onChange={(event) =>
+                      dispatch({
+                        type: "contact-type-choice",
+                        key: type.key,
+                        value: event.currentTarget.value,
+                      })}
+                  >
+                    <option value="">Choose an action</option>
+                    {type.canCreate
+                      ? <option value="create">Create {type.name}</option>
+                      : null}
+                    {state.report!.contactMethodTypes!.existingTypes.map((
+                      existing,
+                    ) => (
+                      <option key={existing.id} value={existing.id}>
+                        Use {existing.name}
+                      </option>
+                    ))}
+                    <option value="skip">
+                      Skip these {type.count} methods
+                    </option>
+                  </select>
+                </div>
+              ))}
+            </fieldset>
+          )
+          : null}
         <label className="confirmation-control">
           <input
             checked={state.confirmed}
@@ -397,7 +458,10 @@ export function NewImport(
             <button
               data-import-commit=""
               disabled={!state.confirmed || !state.importId ||
-                state.committing}
+                state.committing ||
+                (state.report?.contactMethodTypes?.proposals ?? []).some((
+                  type,
+                ) => !state.contactTypeChoices[type.key])}
               onClick={() => void commit()}
               type="button"
             >

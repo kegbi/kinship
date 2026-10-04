@@ -27,6 +27,11 @@
  * `confirmation-required` before anything is read.
  */
 
+import {
+  type ContactTypeDecision,
+  contactTypePlan,
+  sourceContactTypes,
+} from "../domain/contact_type_mapping.ts";
 import { personDetails } from "../domain/contact_import.ts";
 import {
   type ImportCommitResult,
@@ -42,6 +47,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
       actor: ImportActor,
       importId: string,
       confirmed: boolean,
+      contactMethodTypes: readonly ContactTypeDecision[] = [],
     ): Promise<ImportCommitResult> => {
       if (!confirmed) return { status: "confirmation-required" };
       if (!mayImport(actor.role)) return { status: "forbidden" };
@@ -55,6 +61,32 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           transaction,
         );
         if (prepared.status !== "ready") return prepared;
+        const sourceTypes = sourceContactTypes(prepared.contacts);
+        const workspaceTypes = sourceTypes.length
+          ? await dependencies.contactTypes.forImport({
+            transaction,
+            workspaceId: actor.workspaceId,
+            lock: true,
+          })
+          : [];
+        const plan = contactTypePlan(
+          sourceTypes,
+          workspaceTypes,
+          contactMethodTypes,
+        );
+        if (plan.status !== "ready") {
+          return { status: "contact-type-decision-required" as const };
+        }
+        for (const type of plan.create) {
+          plan.mapping[type.key] = await dependencies.contactTypes
+            .createForImport({
+              transaction,
+              workspaceId: actor.workspaceId,
+              name: type.name,
+              kind: type.kind,
+              ...(type.protocol ? { protocol: type.protocol } : {}),
+            });
+        }
         const occurredAt = new Date();
         // A vCard or CSV run files its contact methods under the workspace's
         // types, asked once, and only when a contact is actually created.
@@ -75,6 +107,17 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             : "absent";
           if (presence !== "absent") {
             const targetPersonId = contact.previousTargetPersonId!;
+            if (presence === "active" && contact.contact?.contactMethods) {
+              await dependencies.people.addContactMethods({
+                actor,
+                personId: targetPersonId,
+                occurredAt,
+                transaction,
+                methods:
+                  personDetails(contact.contact, {}, plan.mapping).details
+                    .contactMethods,
+              });
+            }
             await dependencies.repository.retargetContact(
               importId,
               contact.entityId,
@@ -99,7 +142,11 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               transaction,
               workspaceId: actor.workspaceId,
             });
-            const { details, note } = personDetails(contact.contact, types);
+            const { details, note } = personDetails(
+              contact.contact,
+              types,
+              plan.mapping,
+            );
             await dependencies.people.addDetails({
               actor,
               details,
@@ -166,7 +213,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           actor,
           importId,
           occurredAt,
-          payload: counts,
+          payload: { ...counts, contactMethodTypesCreated: plan.create.length },
           transaction,
         });
         await dependencies.repository.complete(
@@ -174,6 +221,20 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           importId,
           counts,
           transaction,
+          sourceTypes.length
+            ? {
+              createdTypes: new Set(plan.create.map((type) =>
+                type.name.trim().toLowerCase()
+              )).size,
+              mappedMethods: sourceTypes.filter((type) =>
+                plan.mapping[type.key]
+              ).reduce((sum, type) =>
+                sum + type.count, 0),
+              skippedMethods: sourceTypes.filter((type) =>
+                !plan.mapping[type.key]
+              ).reduce((sum, type) => sum + type.count, 0),
+            }
+            : undefined,
         );
         return { importId, ...counts, status: "completed" as const };
       });

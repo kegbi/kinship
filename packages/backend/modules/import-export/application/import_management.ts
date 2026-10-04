@@ -29,6 +29,8 @@ export interface ImportManagement {
     actor: ImportActor,
     importId: string,
     confirmed: boolean,
+    contactMethodTypes?:
+      readonly import("../domain/contact_type_mapping.ts").ContactTypeDecision[],
   ): Promise<ImportCommitResult>;
   dryRun(actor: ImportActor, source: unknown): Promise<DryRunResult>;
   get(actor: ImportActor, importId: string): Promise<ImportReadResult>;

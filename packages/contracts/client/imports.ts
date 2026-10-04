@@ -60,6 +60,11 @@ export function mapImportColumns(
 export function commitImport(
   importId: string,
   workspaceId?: string,
+  contactMethodTypes?: readonly {
+    readonly sourceKey: string;
+    readonly action: "create" | "map" | "skip";
+    readonly typeId?: string;
+  }[],
 ): Promise<
   ApiResult<
     {
@@ -74,6 +79,9 @@ export function commitImport(
   return request(`/api/v1/imports/${encodeURIComponent(importId)}/commit`, {
     method: "POST",
     headers: workspaceHeader(workspaceId),
-    body: JSON.stringify({ confirmed: true }),
+    body: JSON.stringify({
+      confirmed: true,
+      ...(contactMethodTypes?.length ? { contactMethodTypes } : {}),
+    }),
   });
 }

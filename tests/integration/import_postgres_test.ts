@@ -240,7 +240,10 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     files: new PostgresFileImportBoundary(),
     ids: { next: () => crypto.randomUUID() },
     notes: new PostgresInteractionImportBoundary(),
-    people: new PostgresPeopleImportBoundary(monicaDates),
+    people: new PostgresPeopleImportBoundary(
+      monicaDates,
+      new PostgresContactMethodTypeCatalog(),
+    ),
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),
   });
@@ -317,7 +320,10 @@ Deno.test({
         files: new PostgresFileImportBoundary(),
         ids: { next: () => crypto.randomUUID() },
         notes: new PostgresInteractionImportBoundary(),
-        people: new PostgresPeopleImportBoundary(monicaDates),
+        people: new PostgresPeopleImportBoundary(
+          monicaDates,
+          new PostgresContactMethodTypeCatalog(),
+        ),
         repository: new PostgresImportRepository(connection.db),
         transaction: new PostgresImportTransaction(connection.db),
       });
@@ -496,7 +502,10 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
   try {
     const presence = (fixture: Fixture, personId: string) =>
       new PostgresImportTransaction(connection.db).run((transaction) =>
-        new PostgresPeopleImportBoundary(monicaDates).presence({
+        new PostgresPeopleImportBoundary(
+          monicaDates,
+          new PostgresContactMethodTypeCatalog(),
+        ).presence({
           actor: {
             memberId: fixture.memberId,
             role: "owner",
@@ -566,7 +575,10 @@ Deno.test("[IMPORT-001] SQL contacts and related details commit once through exi
       primary,
       `/api/v1/imports/${staged.importId}/commit`,
       "POST",
-      { confirmed: true },
+      {
+        confirmed: true,
+        contactMethodTypes: [{ sourceKey: "7:3", action: "create" }],
+      },
     );
     assertEquals(committed.status, 200);
     const result = await committed.json() as {
@@ -586,7 +598,7 @@ Deno.test("[IMPORT-001] SQL contacts and related details commit once through exi
     assertEquals(counts, {
       people: 2,
       notes: 2,
-      methods: 2,
+      methods: 3,
       addresses: 1,
       dates: 2,
       occupations: 1,
@@ -600,6 +612,294 @@ Deno.test("[IMPORT-001] SQL contacts and related details commit once through exi
       !JSON.stringify(entities).includes("synthetic-"),
       "credential values never reach staging",
     );
+  }
+});
+
+Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-safe and idempotent", async () => {
+  const actor = await revocableActor(sql, `types-${crypto.randomUUID()}`, {
+    role: "owner",
+  });
+  const foreign = await revocableActor(
+    sql,
+    `foreign-types-${crypto.randomUUID()}`,
+    { role: "owner" },
+  );
+  const [foreignType] =
+    await sql`insert into crm.contact_method_types(workspace_id,name,kind) values (${foreign.workspaceId},'Foreign','custom') returning id`;
+  const connection = connectDatabase(databaseUrl);
+  let fail = true;
+  const imports = createImportManagement({
+    actors: new PostgresActorRevalidation(),
+    audit: {
+      record: (command) => {
+        if (fail && command.action === "committed") {
+          throw new Error("rollback approved types");
+        }
+        return Promise.resolve();
+      },
+    },
+    contactTypes: new PostgresContactMethodTypeCatalog(),
+    contacts: new PostgresContactImportRepository(),
+    files: new PostgresFileImportBoundary(),
+    ids: { next: () => crypto.randomUUID() },
+    notes: new PostgresInteractionImportBoundary(),
+    people: new PostgresPeopleImportBoundary(
+      monicaDates,
+      new PostgresContactMethodTypeCatalog(),
+    ),
+    repository: new PostgresImportRepository(connection.db),
+    transaction: new PostgresImportTransaction(connection.db),
+  });
+  const source = {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name) VALUES (1,'Synthetic'); INSERT INTO contact_field_types(id,name,type,protocol) VALUES (1,'Email','email','mailto'),(2,'Phone','phone','tel'),(3,'Chat','custom','chat'),(4,'Deferred','custom','chat'); INSERT INTO contact_fields(contact_id,contact_field_type_id,data) VALUES (1,1,'synthetic@example.test'),(1,2,'5550100'),(1,3,'synthetic-handle'),(1,4,'deferred-handle');",
+  };
+  const countTypes = async () =>
+    (await sql`select count(*)::int as count from crm.contact_method_types where workspace_id=${actor.workspaceId}`)[
+      0
+    ]!.count;
+  try {
+    const dry = await imports.dryRun(actor, source);
+    assert(dry.status === "dry_run", "types source stages");
+    assertEquals(dry.report.contactMethodTypes?.proposals.length, 4);
+    assertEquals(await countTypes(), 0, "dry run never creates configuration");
+    const choices = dry.report.contactMethodTypes!.proposals.map((type) => ({
+      sourceKey: type.key,
+      action: type.key === ":4" ? "skip" as const : "create" as const,
+    }));
+    assertEquals(
+      (await imports.commit(actor, dry.importId, true, [{
+        sourceKey: ":1",
+        action: "map",
+        typeId: foreignType!.id,
+      }, ...choices.slice(1)])).status,
+      "contact-type-decision-required",
+    );
+    assertEquals(
+      await countTypes(),
+      0,
+      "foreign mappings fail before any creation",
+    );
+    let rolledBack = false;
+    try {
+      await imports.commit(actor, dry.importId, true, choices);
+    } catch (error) {
+      rolledBack = error instanceof Error &&
+        error.message === "rollback approved types";
+    }
+    assert(rolledBack, "forced failure rolls back");
+    assertEquals(
+      await countTypes(),
+      0,
+      "later import failure rolls back vocabulary",
+    );
+    fail = false;
+    assertEquals(
+      (await imports.commit(actor, dry.importId, true, choices)).status,
+      "completed",
+    );
+    assertEquals(await countTypes(), 3);
+    const completedReport = await imports.get(actor, dry.importId);
+    assert(completedReport.status === "ready", "completed report is available");
+    assertEquals(completedReport.import.report.contactMethodTypes, undefined);
+    assertEquals(completedReport.import.report.counts.unsupported, 1);
+    assert(
+      completedReport.import.report.diagnostics.some((item) =>
+        item.code === "contact-type-outcome" &&
+        item.message.includes("1 explicitly skipped")
+      ),
+      "report records choices",
+    );
+    const types =
+      await sql`select name,kind,protocol from crm.contact_method_types where workspace_id=${actor.workspaceId} order by name`;
+    assertEquals(types.map((type) => ({ ...type })), [
+      { name: "Chat", kind: "custom", protocol: "chat" },
+      { name: "Email", kind: "email", protocol: "mailto" },
+      { name: "Phone", kind: "phone", protocol: "tel" },
+    ]);
+    const methods =
+      await sql`select m.value from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${actor.workspaceId}`;
+    assertEquals(methods.length, 3);
+    assertEquals(
+      (await imports.commit(actor, dry.importId, true, choices)).status,
+      "completed",
+    );
+    const repeat = await imports.dryRun(actor, source);
+    assert(repeat.status === "dry_run", "repeat source stages");
+    assertEquals(
+      repeat.report.contactMethodTypes?.proposals.map((type) => type.name),
+      ["Deferred"],
+    );
+    const enriched = await imports.commit(actor, repeat.importId, true, [{
+      sourceKey: ":4",
+      action: "create",
+    }]);
+    assert(enriched.status === "completed", "reimport enriches methods");
+    assertEquals(enriched.peopleReused, 1);
+    assertEquals(
+      (await sql`select m.id from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${actor.workspaceId}`)
+        .length,
+      4,
+    );
+    const stable = await imports.dryRun(actor, source);
+    assert(stable.status === "dry_run", "stable repeat stages");
+    assertEquals(stable.report.contactMethodTypes, undefined);
+    assertEquals(
+      (await imports.commit(actor, stable.importId, true)).status,
+      "completed",
+    );
+    assertEquals(
+      (await sql`select m.id from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${actor.workspaceId}`)
+        .length,
+      4,
+    );
+    const stale = await imports.dryRun(actor, source);
+    assert(stale.status === "dry_run", "stale repeat stages");
+    await sql`update crm.contact_method_types set is_archived=true where workspace_id=${actor.workspaceId} and name='Chat'`;
+    assertEquals(
+      (await imports.commit(actor, stale.importId, true)).status,
+      "contact-type-decision-required",
+    );
+    assertEquals(
+      (await imports.commit(actor, stale.importId, true, [{
+        sourceKey: ":3",
+        action: "create",
+      }])).status,
+      "contact-type-decision-required",
+    );
+    assertEquals(await countTypes(), 4);
+    assertEquals(
+      (await imports.commit(actor, stale.importId, true, [{
+        sourceKey: ":3",
+        action: "skip",
+      }])).status,
+      "completed",
+    );
+  } finally {
+    await connection.destroy();
+  }
+});
+
+Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-only imports safely", async () => {
+  for (const hasUuid of [false, true]) {
+    const primary = await register(
+      `upgrade-${hasUuid}-${crypto.randomUUID()}@example.test`,
+    );
+    const foreign = await register(
+      `foreign-upgrade-${hasUuid}-${crypto.randomUUID()}@example.test`,
+    );
+    const source = {
+      format: "monica-sql",
+      text: `INSERT INTO contacts(id,first_name${
+        hasUuid ? ",uuid" : ""
+      }) VALUES (1,'Upgrade'${
+        hasUuid ? ",'00000000-0000-4000-8000-000000000001'" : ""
+      }),(2,'Deleted'${
+        hasUuid ? ",'00000000-0000-4000-8000-000000000002'" : ""
+      }); INSERT INTO contact_field_types(id,name,type,protocol) VALUES (1,'Email','email','mailto'),(2,'Chat','custom','chat'); INSERT INTO contact_fields(contact_id,contact_field_type_id,data) VALUES (1,1,'upgrade@example.test'),(2,1,'deleted@example.test'),(1,2,'upgrade-handle'),(2,2,'deleted-handle');`,
+    };
+    const stage = async (fixture = primary) => {
+      const response = await request(
+        fixture,
+        "/api/v1/imports/dry-runs",
+        "POST",
+        { source },
+      );
+      assertEquals(response.status, 201);
+      return await response.json() as { importId: string };
+    };
+    const first = await stage();
+    assertEquals(
+      (await request(
+        primary,
+        `/api/v1/imports/${first.importId}/commit`,
+        "POST",
+        {
+          confirmed: true,
+          contactMethodTypes: [{ sourceKey: ":1", action: "create" }, {
+            sourceKey: ":2",
+            action: "skip",
+          }],
+        },
+      )).status,
+      200,
+    );
+    const [prior] =
+      await sql`select stats->>'fingerprint' as current, stats->'compatibleFingerprints'->>0 as legacy from crm.data_imports where id=${first.importId}`;
+    assert(
+      prior?.legacy && prior.legacy !== prior.current,
+      "upgrade hashes differ from old normalizer",
+    );
+    // Model an a95770c completed import: its original fingerprint and detail
+    // snapshot contain only basic methods, with no compatibility metadata.
+    await sql`update crm.data_imports set stats=jsonb_set(stats-'compatibleFingerprints','{fingerprint}',to_jsonb(${prior.legacy}::text)) where id=${first.importId}`;
+    await sql`update crm.data_import_entities set raw_snapshot=jsonb_set(raw_snapshot,'{contact}',(raw_snapshot->'contact')-'contactMethods') where import_id=${first.importId} and source_table='contacts'`;
+    const [deleted] =
+      await sql`select target_key from crm.data_import_entities where import_id=${first.importId} and source_primary_key='2' and source_table='contacts'`;
+    await deletePerson(primary, deleted!.target_key);
+    const second = await stage();
+    const response = await request(
+      primary,
+      `/api/v1/imports/${second.importId}/commit`,
+      "POST",
+      {
+        confirmed: true,
+        contactMethodTypes: [{ sourceKey: ":2", action: "create" }],
+      },
+    );
+    assertEquals(response.status, 200);
+    const result = await response.json();
+    assertEquals([
+      result.peopleCreated,
+      result.peopleReused,
+      result.peopleSkippedDeleted,
+    ], [0, 1, 1]);
+    assertEquals(
+      (await sql`select id from crm.people where workspace_id=${primary.workspaceId}`)
+        .length,
+      2,
+    );
+    assertEquals(
+      (await sql`select m.id from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${primary.workspaceId} and m.value='upgrade-handle'`)
+        .length,
+      1,
+    );
+    assertEquals(
+      (await sql`select m.id from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${primary.workspaceId} and m.value='deleted-handle'`)
+        .length,
+      0,
+    );
+    const third = await stage();
+    assertEquals(
+      (await request(
+        primary,
+        `/api/v1/imports/${third.importId}/commit`,
+        "POST",
+        { confirmed: true },
+      )).status,
+      200,
+    );
+    assertEquals(
+      (await sql`select m.id from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${primary.workspaceId} and m.value='upgrade-handle'`)
+        .length,
+      1,
+    );
+    const foreignRun = await stage(foreign);
+    const foreignCommit = await request(
+      foreign,
+      `/api/v1/imports/${foreignRun.importId}/commit`,
+      "POST",
+      {
+        confirmed: true,
+        contactMethodTypes: [{ sourceKey: ":1", action: "create" }, {
+          sourceKey: ":2",
+          action: "create",
+        }],
+      },
+    );
+    assertEquals(foreignCommit.status, 200);
+    assertEquals((await foreignCommit.json()).peopleCreated, 2);
   }
 });
 

@@ -2667,6 +2667,24 @@ export interface components {
             readonly status: "mapping";
         };
         readonly ImportReport: {
+            readonly contactMethodTypes?: {
+                readonly proposals: readonly {
+                    readonly key: string;
+                    readonly name: string;
+                    /** @enum {string} */
+                    readonly kind: "email" | "phone" | "url" | "social" | "im" | "username" | "custom";
+                    readonly sourceKind?: string;
+                    readonly protocol?: string;
+                    readonly count: number;
+                    readonly canCreate: boolean;
+                }[];
+                readonly existingTypes: readonly {
+                    /** Format: uuid */
+                    readonly id: string;
+                    readonly name: string;
+                    readonly kind: string;
+                }[];
+            };
             readonly counts: {
                 readonly contacts: number;
                 readonly legacyCredentialsDiscarded: number;
@@ -5604,6 +5622,13 @@ export interface operations {
                 readonly "application/json": {
                     /** @constant */
                     readonly confirmed: true;
+                    readonly contactMethodTypes?: readonly {
+                        readonly sourceKey: string;
+                        /** @enum {string} */
+                        readonly action: "create" | "map" | "skip";
+                        /** Format: uuid */
+                        readonly typeId?: string;
+                    }[];
                 };
             };
         };

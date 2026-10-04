@@ -13,7 +13,39 @@
 
 import { z } from "zod";
 
+export const contactTypeDecision = z.strictObject({
+  sourceKey: z.string().min(1).max(650),
+  action: z.enum(["create", "map", "skip"]),
+  typeId: z.uuid().optional(),
+});
+export const importCommit = z.strictObject({
+  confirmed: z.literal(true),
+  contactMethodTypes: z.array(contactTypeDecision).max(1000).optional(),
+});
+
 export const importReport = z.strictObject({
+  contactMethodTypes: z.strictObject({
+    proposals: z.array(z.strictObject({
+      key: z.string(),
+      name: z.string(),
+      kind: z.enum([
+        "email",
+        "phone",
+        "url",
+        "social",
+        "im",
+        "username",
+        "custom",
+      ]),
+      sourceKind: z.string().optional(),
+      protocol: z.string().optional(),
+      count: z.number().int().min(1),
+      canCreate: z.boolean(),
+    })),
+    existingTypes: z.array(
+      z.strictObject({ id: z.uuid(), name: z.string(), kind: z.string() }),
+    ),
+  }).optional(),
   counts: z.strictObject({
     contacts: z.number().int().min(0),
     legacyCredentialsDiscarded: z.number().int().min(0),

@@ -8,6 +8,36 @@ import type {
 
 export class PostgresContactMethodTypeCatalog
   implements ContactMethodTypeCatalog {
+  async forImport(
+    command: Parameters<ContactMethodTypeCatalog["forImport"]>[0],
+  ) {
+    const database = databaseFromSession(command.transaction);
+    if (command.lock) {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, 23))`
+        .execute(database);
+    }
+    return (await sql<
+      { id: string; name: string; kind: string; archived: boolean }
+    >`select id::text, name, kind, is_archived as archived from crm.contact_method_types where workspace_id = ${command.workspaceId}::uuid order by sort_order, lower(name), id`
+      .execute(database)).rows;
+  }
+  async createForImport(
+    command: Parameters<ContactMethodTypeCatalog["createForImport"]>[0],
+  ) {
+    const database = databaseFromSession(command.transaction);
+    // Multiple source IDs can name the same newly approved vocabulary entry.
+    const existing = await sql<
+      { id: string }
+    >`select id::text from crm.contact_method_types where workspace_id = ${command.workspaceId}::uuid and lower(name) = lower(${command.name}) and kind = ${command.kind} and not is_archived`
+      .execute(database);
+    if (existing.rows[0]) return existing.rows[0].id;
+    const inserted = await sql<
+      { id: string }
+    >`insert into crm.contact_method_types (workspace_id, name, kind, protocol) values (${command.workspaceId}::uuid, ${command.name}, ${command.kind}, ${
+      command.protocol ?? null
+    }) returning id::text`.execute(database);
+    return inserted.rows[0]!.id;
+  }
   async byKind(
     command: Parameters<ContactMethodTypeCatalog["byKind"]>[0],
   ): Promise<

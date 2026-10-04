@@ -95,6 +95,8 @@ export interface MonicaAttachment {
 
 /** A source that has been read but not yet judged contact by contact. */
 export interface ParsedMonicaSource {
+  /** Prior normalization, used only to match imports created before type support. */
+  readonly legacySource?: ParsedMonicaSource;
   readonly attachments: ReadonlyMap<string, MonicaAttachment>;
   readonly contacts: readonly Record<string, unknown>[];
   readonly userCount: number;
@@ -266,31 +268,41 @@ export function parseMonicaSource(
   }
   const related = monicaDetails(tables, limits.maxAttachmentBytes);
   if (typeof related === "string") return related;
-  const unsupportedFields = { ...related.unsupportedFields };
-  for (const contact of tables.contacts as Record<string, unknown>[]) {
-    for (const key of Object.keys(contact)) {
-      if (!SUPPORTED_CONTACT_FIELDS.has(key)) {
-        const field = `contacts.${key}`;
-        unsupportedFields[field] = (unsupportedFields[field] ?? 0) + 1;
+  // The prior normalizer shares the bounded table reader and all non-type
+  // rules. Its projection is never persisted or exposed as the dry-run report.
+  const legacyRelated = monicaDetails(tables, limits.maxAttachmentBytes, true);
+  if (typeof legacyRelated === "string") return legacyRelated;
+  const project = (
+    related: Exclude<ReturnType<typeof monicaDetails>, string>,
+  ): ParsedMonicaSource => {
+    const unsupportedFields = { ...related.unsupportedFields };
+    for (const contact of tables.contacts as Record<string, unknown>[]) {
+      for (const key of Object.keys(contact)) {
+        if (!SUPPORTED_CONTACT_FIELDS.has(key)) {
+          const field = `contacts.${key}`;
+          unsupportedFields[field] = (unsupportedFields[field] ?? 0) + 1;
+        }
       }
     }
-  }
-  for (const [key, attachment] of related.attachments) {
-    attachments.set(key, attachment);
-  }
+    const projectedAttachments = new Map(attachments);
+    for (const [key, attachment] of related.attachments) {
+      projectedAttachments.set(key, attachment);
+    }
 
-  return {
-    attachments,
-    contacts: related.contacts,
-    details: related.details,
-    notes: related.notes,
-    orphans: related.orphans,
-    sourceProfile,
-    unsupportedRows: related.unsupportedRows,
-    unsupportedFields,
-    unsupported:
-      Object.values(related.unsupportedRows).reduce((a, b) => a + b, 0) +
-      Object.values(unsupportedFields).reduce((a, b) => a + b, 0),
-    userCount: Array.isArray(users) ? users.length : 0,
+    return {
+      attachments: projectedAttachments,
+      contacts: related.contacts,
+      details: related.details,
+      notes: related.notes,
+      orphans: related.orphans,
+      sourceProfile,
+      unsupportedRows: related.unsupportedRows,
+      unsupportedFields,
+      unsupported:
+        Object.values(related.unsupportedRows).reduce((a, b) => a + b, 0) +
+        Object.values(unsupportedFields).reduce((a, b) => a + b, 0),
+      userCount: Array.isArray(users) ? users.length : 0,
+    };
   };
+  return { ...project(related), legacySource: project(legacyRelated) };
 }

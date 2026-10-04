@@ -38,6 +38,17 @@ const SOURCE_UUID =
 
 /** What a dry run counts, and what it tells the member about each count. */
 export interface ImportReport {
+  readonly contactMethodTypes?: {
+    readonly proposals:
+      readonly (import("./contact_type_mapping.ts").SourceContactType & {
+        readonly canCreate: boolean;
+      })[];
+    readonly existingTypes: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly kind: string;
+    }[];
+  };
   readonly counts: {
     readonly contacts: number;
     readonly legacyCredentialsDiscarded: number;
@@ -212,7 +223,10 @@ export type ImportCommitResult =
     readonly importId: string;
     readonly status: "completed";
   }
-  | Failure<"forbidden" | "not-found", "confirmation-required">;
+  | Failure<
+    "forbidden" | "not-found",
+    "confirmation-required" | "contact-type-decision-required"
+  >;
 
 /** The person a committed contact becomes. */
 export interface ImportedPersonValues {

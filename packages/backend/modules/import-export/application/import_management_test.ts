@@ -12,7 +12,11 @@ const ids = [
 const owners = {
   actors: { revalidate: () => Promise.resolve("active" as const) },
   audit: { record: () => Promise.resolve() },
-  contactTypes: { byKind: () => Promise.resolve({}) },
+  contactTypes: {
+    forImport: () => Promise.resolve([]),
+    createForImport: () => Promise.resolve("created-type"),
+    byKind: () => Promise.resolve({}),
+  },
   contacts: {
     history: () => Promise.resolve({ fileImportedBefore: false, matches: [] }),
     lockPendingCsv: () => Promise.resolve(undefined),
@@ -23,6 +27,7 @@ const owners = {
   files: { representMissing: () => Promise.resolve() },
   notes: { addNote: () => Promise.resolve() },
   people: {
+    addContactMethods: () => Promise.resolve(),
     addDetails: () => Promise.resolve(),
     create: () => Promise.resolve(),
     presence: () => Promise.resolve("active" as const),
@@ -442,6 +447,7 @@ Deno.test("[IMPORT-001] a re-import keeps a deleted person deleted and reports t
     },
     ids: { next: () => crypto.randomUUID() },
     people: {
+      addContactMethods: () => Promise.resolve(),
       addDetails: () => Promise.resolve(),
       create: (command) => {
         calls.push(["create", command.person.id]);
@@ -529,12 +535,12 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
   const dry = await imports.dryRun(actor, source);
   if (dry.status !== "dry_run") throw new Error("SQL dry run failed");
   assertEquals(staged?.sourceProfile, "sql_export");
-  assertEquals(dry.report.counts.unsupported, 5);
+  assertEquals(dry.report.counts.unsupported, 4);
   for (
     const code of [
       "unsupported-table",
       "unsupported-field",
-      "missing-contact-type",
+      "contact-type-decisions",
       "note-metadata",
       "age-based-date",
       "organization-without-title",
@@ -549,11 +555,216 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
   assertEquals(
     dry.report.diagnostics.find((item) => item.code === "unsupported-data")
       ?.message,
-    "5 unsupported row(s) or field value(s) will be skipped.",
+    "4 unsupported row(s) or field value(s) will be skipped.",
   );
   assertEquals(
-    (await imports.commit(actor, dry.importId, true)).status,
+    (await imports.commit(actor, dry.importId, true, [{
+      sourceKey: ":4",
+      action: "skip",
+    }])).status,
     "completed",
   );
   assertEquals(bodies, ["One", "Two"]);
+});
+
+Deno.test("[IMPORT-001] missing default and custom types require approval before any writes", async () => {
+  let staged: Parameters<ImportRepository["stage"]>[0] | undefined;
+  const vocabulary: {
+    id: string;
+    name: string;
+    kind: string;
+    archived: boolean;
+  }[] = [];
+  const writes: string[] = [];
+  const methods: unknown[] = [];
+  const repository: ImportRepository = {
+    complete: () => Promise.resolve(),
+    get: () => Promise.resolve(undefined),
+    list: () => Promise.resolve([]),
+    retargetContact: () => Promise.resolve(),
+    stage: (command) => {
+      staged = command;
+      return Promise.resolve({
+        importId: command.importId,
+        report: command.report,
+        status: "dry_run",
+      });
+    },
+    prepareCommit: (_actor, importId) =>
+      Promise.resolve({
+        status: "ready",
+        importId,
+        avatars: [],
+        contacts: staged!.contacts.map((row) => ({
+          ...row,
+          entityId: "entity",
+        })),
+      }),
+  };
+  const imports = createImportManagement({
+    ...owners,
+    repository,
+    ids: { next: () => crypto.randomUUID() },
+    transaction: { run: (work) => work({ opaque: {} }) },
+    contactTypes: {
+      byKind: () => Promise.resolve({}),
+      forImport: () => Promise.resolve(vocabulary),
+      createForImport: (command) => {
+        writes.push(command.name);
+        vocabulary.push({
+          id: command.name,
+          name: command.name,
+          kind: command.kind,
+          archived: false,
+        });
+        return Promise.resolve(command.name);
+      },
+    },
+    people: {
+      ...owners.people,
+      create: () => {
+        writes.push("person");
+        return Promise.resolve();
+      },
+      addDetails: (command) => {
+        methods.push(...command.details.contactMethods);
+        return Promise.resolve();
+      },
+    },
+  });
+  const dry = await imports.dryRun(actor, {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts (id,first_name) VALUES (1,'Example'); INSERT INTO contact_field_types (id,name,type,protocol) VALUES (1,'Email','email','mailto'),(2,'Phone','phone','tel'),(3,'Chat','custom','chat'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (1,1,'example@example.test'),(1,2,'5550100'),(1,3,'example-chat');",
+  });
+  if (dry.status !== "dry_run") throw new Error("dry run failed");
+  assertEquals(
+    dry.report.contactMethodTypes?.proposals.map((type) => type.name),
+    ["Email", "Phone", "Chat"],
+  );
+  assertEquals(writes, []);
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true)).status,
+    "contact-type-decision-required",
+  );
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true, [{
+      sourceKey: ":1",
+      action: "create",
+    }])).status,
+    "contact-type-decision-required",
+  );
+  assertEquals(writes, []);
+  const choices = dry.report.contactMethodTypes!.proposals.map((type) => ({
+    sourceKey: type.key,
+    action: "create" as const,
+  }));
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true, choices)).status,
+    "completed",
+  );
+  assertEquals(writes, ["Email", "Phone", "Chat", "person"]);
+  assertEquals(methods, [{ typeId: "Email", value: "example@example.test" }, {
+    typeId: "Phone",
+    value: "5550100",
+  }, { typeId: "Chat", value: "example-chat" }]);
+  const repeated = await imports.dryRun(actor, {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts (id,first_name) VALUES (2,'Other'); INSERT INTO contact_field_types (id,name,type) VALUES (3,'Chat','custom'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (2,3,'other-chat');",
+  });
+  if (repeated.status !== "dry_run") throw new Error("repeat failed");
+  assertEquals(repeated.report.contactMethodTypes, undefined);
+  vocabulary[2]!.archived = true;
+  assertEquals(
+    (await imports.commit(actor, repeated.importId, true)).status,
+    "contact-type-decision-required",
+  );
+  assertEquals(
+    (await imports.commit(actor, repeated.importId, true, [{
+      sourceKey: ":3",
+      action: "map",
+      typeId: "foreign-type",
+    }])).status,
+    "contact-type-decision-required",
+  );
+  assertEquals(writes, ["Email", "Phone", "Chat", "person"]);
+});
+
+Deno.test("[IMPORT-001] a reused active Monica person gains newly approved methods without replacing details", async () => {
+  const enriched: unknown[] = [];
+  let deleted = false;
+  const people = {
+    ...owners.people,
+    presence: () =>
+      Promise.resolve(deleted ? "deleted" as const : "active" as const),
+    addContactMethods: (command: { readonly methods: unknown }) => {
+      enriched.push(command.methods);
+      return Promise.resolve();
+    },
+    addDetails: () => {
+      throw new Error("existing details must remain unchanged");
+    },
+  };
+  const imports = createImportManagement({
+    ...owners,
+    people,
+    ids: { next: () => crypto.randomUUID() },
+    transaction: { run: (work) => work({ opaque: {} }) },
+    repository: {
+      complete: () => Promise.resolve(),
+      get: () => Promise.resolve(undefined),
+      list: () => Promise.resolve([]),
+      stage: () => {
+        throw new Error("unused");
+      },
+      retargetContact: () => Promise.resolve(),
+      prepareCommit: (_actor, importId) =>
+        Promise.resolve({
+          status: "ready",
+          importId,
+          avatars: [],
+          contacts: [{
+            entityId: "row",
+            previousTargetPersonId: "person",
+            targetPersonId: "new-person",
+            sourcePrimaryKey: "1",
+            archived: false,
+            givenName: "Example",
+            isDeceased: false,
+            isPartial: false,
+            isStarred: false,
+            contact: {
+              givenName: "Example",
+              addresses: [],
+              dates: [],
+              emails: [],
+              phones: [],
+              urls: [],
+              contactMethods: [{
+                sourceType: { key: ":1", name: "Chat", kind: "custom" },
+                value: "synthetic-handle",
+              }],
+            },
+          }],
+        }),
+    },
+  });
+  assertEquals(
+    (await imports.commit(actor, "run", true, [{
+      sourceKey: ":1",
+      action: "create",
+    }])).status,
+    "completed",
+  );
+  assertEquals(enriched, [[{
+    typeId: "created-type",
+    value: "synthetic-handle",
+  }]]);
+  deleted = true;
+  await imports.commit(actor, "run", true, [{
+    sourceKey: ":1",
+    action: "create",
+  }]);
+  assertEquals(enriched.length, 1);
 });

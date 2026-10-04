@@ -226,3 +226,81 @@ Deno.test("[IMPORT-001] numeric literals in consumed text fields retain their or
   assertEquals(staged.contacts[0]?.avatar?.originalFilename, "00123");
   assertEquals(staged.contacts[0]?.avatar?.byteSize, 100);
 });
+
+Deno.test("[IMPORT-001] Monica custom contact methods retain source type metadata", () => {
+  const parsed = sql(
+    "INSERT INTO contacts (id,account_id,first_name) VALUES (1,7,'Example'); INSERT INTO contact_field_types (id,account_id,name,type,protocol) VALUES (2,7,'Chat handle','custom','chat'),(3,7,'Work mail','email','mailto'); INSERT INTO contact_fields (contact_id,account_id,contact_field_type_id,data) VALUES (1,7,2,'invented-handle'),(1,7,3,'example@example.test');",
+  );
+  assert(typeof parsed !== "string", "source parses");
+  const details = parsed.details?.get("1") as unknown as {
+    contactMethods?: unknown[];
+  };
+  assertEquals(details?.contactMethods, [
+    {
+      sourceType: {
+        key: "7:2",
+        name: "Chat handle",
+        kind: "custom",
+        protocol: "chat",
+      },
+      value: "invented-handle",
+    },
+    {
+      sourceType: {
+        key: "7:3",
+        name: "Work mail",
+        kind: "email",
+        protocol: "mailto",
+      },
+      value: "example@example.test",
+    },
+  ]);
+});
+
+Deno.test("[IMPORT-001] upgrade fingerprint preserves the previous basic-type normalization", async () => {
+  const parsed = parseMonicaSource({
+    format: "monica-json",
+    version: 1,
+    tables: {
+      contacts: [{ id: 1, first_name: "Upgrade" }],
+      contact_field_types: [{
+        id: 1,
+        name: "Email",
+        type: "email",
+        protocol: "mailto",
+      }, {
+        id: 2,
+        name: "Chat",
+        type: "custom",
+        protocol: "chat",
+        extra: "unused",
+      }],
+      contact_fields: [{
+        contact_id: 1,
+        contact_field_type_id: 1,
+        data: "upgrade@example.test",
+      }, {
+        contact_id: 1,
+        contact_field_type_id: 2,
+        data: "invented-handle",
+        extra: "unused",
+      }],
+    },
+  }, limits);
+  assert(typeof parsed !== "string", "synthetic upgrade source parses");
+  const legacy =
+    (parsed as typeof parsed & { legacySource?: typeof parsed }).legacySource;
+  assert(
+    legacy !== undefined,
+    "previous normalization is retained for identity matching",
+  );
+  const staged = stageContacts(legacy, () => "ignored");
+  assert(typeof staged !== "string", "legacy projection stages");
+  assertEquals(legacy.unsupported, 4);
+  const { sourceFingerprint } = await import("../import_rules.ts");
+  // Pinned against the a95770c normalizer, using invented data only.
+  assertEquals(
+    await sourceFingerprint(legacy, staged.contacts),
+    "3dcdb956e7b19046167e2c63da56836a994c90c809397f6135ca61e3ca0545de",
+  );
+});

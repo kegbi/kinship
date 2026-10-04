@@ -25,6 +25,10 @@ import {
   type CsvPreview,
   type StagedSourceContact,
 } from "../domain/contact_import.ts";
+import {
+  matchingContactType,
+  sourceContactTypes,
+} from "../domain/contact_type_mapping.ts";
 import { jsonObject } from "../domain/formats/canonical.ts";
 import { parseMonicaSource } from "../domain/formats/monica_source.ts";
 import {
@@ -96,6 +100,14 @@ export function createImportStaging(
         return { detail: staged, status: "invalid-source" };
       }
       const { contacts, missingFiles } = staged;
+      const legacy = parsed.legacySource
+        ? stageContacts(parsed.legacySource, () => "")
+        : undefined;
+      const compatibleFingerprints =
+        parsed.legacySource && legacy && typeof legacy !== "string"
+          ? [await sourceFingerprint(parsed.legacySource, legacy.contacts)]
+          : [];
+
       const report = importReport({
         contacts: contacts.length,
         legacyCredentialsDiscarded: parsed.userCount,
@@ -126,7 +138,37 @@ export function createImportStaging(
           transaction,
           workspaceId: actor.workspaceId,
         });
-        const losses = contactLosses(detailRows, types, {});
+        const sourceTypes = sourceContactTypes(contacts);
+        const workspaceTypes = sourceTypes.length
+          ? await dependencies.contactTypes.forImport({
+            transaction,
+            workspaceId: actor.workspaceId,
+            lock: false,
+          })
+          : [];
+        const proposals = sourceTypes.filter((type) =>
+          !matchingContactType(type, workspaceTypes)
+        ).map((type) => ({
+          ...type,
+          canCreate: !workspaceTypes.some((existing) =>
+            existing.name.trim().toLowerCase() ===
+              type.name.trim().toLowerCase()
+          ),
+        }));
+        // Monica methods have a separate explicit vocabulary decision, rather
+        // than the portable formats' skip-when-kind-is-missing rule.
+        const losses = contactLosses(
+          detailRows.map((row) =>
+            row.status === "mapped" && row.contact.contactMethods
+              ? {
+                ...row,
+                contact: { ...row.contact, emails: [], phones: [], urls: [] },
+              }
+              : row
+          ),
+          types,
+          {},
+        );
         const detailsReport = contactImportReport("csv", detailRows, losses, {
           reused: 0,
           conflicts: 0,
@@ -135,6 +177,17 @@ export function createImportStaging(
           Object.values(losses.missingTypes).reduce((sum, count) =>
             sum + count, 0) + losses.organizationsWithoutTitle;
         const detailedReport: ImportReport = {
+          ...(proposals.length
+            ? {
+              contactMethodTypes: {
+                proposals,
+                existingTypes: workspaceTypes.filter((type) =>
+                  !type.archived
+                )
+                  .map(({ id, name, kind }) => ({ id, name, kind })),
+              },
+            }
+            : {}),
           counts: {
             ...report.counts,
             unsupported: report.counts.unsupported + unsupportedDetails,
@@ -159,6 +212,15 @@ export function createImportStaging(
               severity: "skipped" as const,
             })),
             ...detailsReport.diagnostics,
+            ...(proposals.length
+              ? [{
+                code: "contact-type-decisions",
+                message: `${
+                  proposals.reduce((sum, type) => sum + type.count, 0)
+                } contact method(s) need a type choice below. Create a type, map to an existing type, or explicitly skip. No types are created by validation.`,
+                severity: "warning" as const,
+              }]
+              : []),
             ...(parsed.notes?.size
               ? [{
                 code: "note-metadata",
@@ -168,9 +230,8 @@ export function createImportStaging(
               }]
               : []),
             ...(detailRows.some((row) =>
-                row.status === "mapped" && row.contact.dates.some((date) =>
-                  date.isYearApproximate
-                )
+                row.status === "mapped" &&
+                row.contact.dates.some((date) => date.isYearApproximate)
               )
               ? [{
                 code: "age-based-date",
@@ -185,6 +246,7 @@ export function createImportStaging(
           actor,
           contacts,
           fingerprint: await sourceFingerprint(parsed, contacts),
+          compatibleFingerprints,
           importId: dependencies.ids.next(),
           report: detailedReport,
           sourceProfile: parsed.sourceProfile ?? "json_export",

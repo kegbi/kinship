@@ -24,7 +24,31 @@ export interface ContactMethodTypeChoice {
   readonly name: string;
 }
 
+export interface ImportContactMethodType {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly archived: boolean;
+}
 export interface ContactMethodTypeCatalog {
+  /** Includes retired names to prevent accidental resurrection or name reuse. */
+  forImport(
+    command: {
+      readonly workspaceId: string;
+      readonly transaction: ContactMethodTypeTransaction;
+      readonly lock: boolean;
+    },
+  ): Promise<readonly ImportContactMethodType[]>;
+  /** Called only after the importer validates all choices under the vocabulary lock. */
+  createForImport(
+    command: {
+      readonly workspaceId: string;
+      readonly transaction: ContactMethodTypeTransaction;
+      readonly name: string;
+      readonly kind: string;
+      readonly protocol?: string;
+    },
+  ): Promise<string>;
   /**
    * The first active type of each kind, by the workspace's own order; a kind
    * with no active type is absent. A workspace whose types predate the kind

@@ -29,7 +29,10 @@ import {
   listImports,
   mapImportColumns,
 } from "../../../../../contracts/routes/imports.ts";
-import { csvColumnMapping } from "../../../../../contracts/schemas/imports.ts";
+import {
+  csvColumnMapping,
+  importCommit,
+} from "../../../../../contracts/schemas/imports.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
@@ -104,6 +107,13 @@ export const IMPORT_HISTORY_FAILURES: FailureTable = {
 export const IMPORT_WRITE_FAILURES: FailureTable = {
   fallback: CONFIRMATION_REQUIRED,
   statuses: {
+    "contact-type-decision-required": {
+      code: "import_contact_type_decision_required",
+      detail:
+        "Choose Create, an active existing type, or Skip for every unmatched contact type. A type may have changed since validation; validate again to refresh the choices.",
+      status: 400,
+      title: "Contact type choice required",
+    },
     "confirmation-required": {
       code: CONFIRMATION_REQUIRED.code,
       detail: CONFIRMATION_REQUIRED.detail,
@@ -262,10 +272,11 @@ export function createImportRoutes(
     session,
     async (context) => {
       const importId = parseValue(uuid, context.req.param("importId"));
-      const body = await context.req.json().catch(() => undefined) as
-        | { readonly confirmed?: unknown }
-        | undefined;
-      if ("errors" in importId || body?.confirmed !== true) {
+      const body = parseValue(
+        importCommit,
+        await context.req.json().catch(() => undefined),
+      );
+      if ("errors" in importId || "errors" in body) {
         return definedProblem(context, CONFIRMATION_REQUIRED);
       }
       const actor = await requireActor(context);
@@ -274,6 +285,7 @@ export function createImportRoutes(
         actor,
         importId.data,
         true,
+        body.data.contactMethodTypes,
       );
       if (result.status !== "completed") return writeFailure(context, result);
       return context.json(result);

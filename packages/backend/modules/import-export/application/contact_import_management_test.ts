@@ -81,6 +81,8 @@ function harness(
       },
     },
     contactTypes: {
+      forImport: () => Promise.resolve([]),
+      createForImport: () => Promise.resolve("created-type"),
       byKind: () =>
         Promise.resolve({
           email: { byName: false, id: "type-email", name: "Email" },
@@ -97,6 +99,7 @@ function harness(
       },
     },
     people: {
+      addContactMethods: () => Promise.resolve(),
       addDetails: (command) => {
         recorded.calls.push(["addDetails", command.personId, command.details]);
         return Promise.resolve();
@@ -162,6 +165,7 @@ Deno.test("[IMPORT-002] an earlier import is reused, a changed one is a conflict
         }),
     },
     people: {
+      addContactMethods: () => Promise.resolve(),
       addDetails: () => Promise.resolve(),
       create: () => Promise.resolve(),
       presence: (command) =>
@@ -411,6 +415,7 @@ Deno.test("[IMPORT-002] a deleted person is reported as skipped in the dry run a
     ["deleted", "deleted"],
   ]);
   const people = {
+    addContactMethods: () => Promise.resolve(),
     addDetails: (command: { readonly personId: string }) => {
       recorded.calls.push(["addDetails", command.personId]);
       return Promise.resolve();

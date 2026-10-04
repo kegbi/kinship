@@ -1295,6 +1295,37 @@
                 "properties": {
                   "confirmed": {
                     "const": true
+                  },
+                  "contactMethodTypes": {
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sourceKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 650
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "create",
+                            "map",
+                            "skip"
+                          ]
+                        },
+                        "typeId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "sourceKey",
+                        "action"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -18376,6 +18407,87 @@
       "ImportReport": {
         "type": "object",
         "properties": {
+          "contactMethodTypes": {
+            "type": "object",
+            "properties": {
+              "proposals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "phone",
+                        "url",
+                        "social",
+                        "im",
+                        "username",
+                        "custom"
+                      ]
+                    },
+                    "sourceKind": {
+                      "type": "string"
+                    },
+                    "protocol": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "canCreate": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name",
+                    "kind",
+                    "count",
+                    "canCreate"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "existingTypes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "proposals",
+              "existingTypes"
+            ],
+            "additionalProperties": false
+          },
           "counts": {
             "type": "object",
             "properties": {
