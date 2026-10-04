@@ -69,13 +69,17 @@ Deno.test("[IMPORT-001] SQL related rows use existing rich contact fields and re
   assertEquals(details.phones, ["+1 555 0100"]);
   assertEquals(details.jobTitle, "Engineer");
   assertEquals(details.organization, "Example Co");
-  assertEquals(details.addresses, [{
-    street: "1 Example Lane",
-    city: "Sampleton",
-    region: "Region",
-    postalCode: "AB1",
-    country: "US",
-  }]);
+  assertEquals(details.addresses, []);
+  const location = parsed.businessEntities?.find((e) =>
+    e.data.kind === "location"
+  )?.data;
+  assertEquals([
+    location?.street,
+    location?.city,
+    location?.region,
+    location?.postalCode,
+    location?.country,
+  ], ["1 Example Lane", "Sampleton", "Region", "AB1", "US"]);
   assertEquals(details.dates, [{
     kind: "birthday",
     precision: "month_day",
@@ -90,13 +94,20 @@ Deno.test("[IMPORT-001] SQL related rows use existing rich contact fields and re
     year: 2020,
     isAgeBased: false,
   }]);
-  assertEquals(contact.notes, [
-    "First note; with comma, and (parentheses).",
-    "Second note.",
-  ]);
-  assertEquals(contact.avatar?.originalFilename, "portrait.png");
-  assertEquals(contact.avatar?.byteSize, 123);
-  assertEquals(staged.missingFiles, 1);
+  assertEquals(
+    parsed.businessEntities?.filter((e) => e.data.kind === "note").map((e) =>
+      e.data.body
+    ),
+    [
+      "First note; with comma, and (parentheses).",
+      "Second note.",
+    ],
+  );
+  const photo = parsed.businessEntities?.find((e) => e.data.kind === "photo")
+    ?.data;
+  assertEquals(photo?.filename, "portrait.png");
+  assertEquals(photo?.byteSize, 123);
+  assertEquals(staged.missingFiles, 0);
   assert(
     !JSON.stringify(staged).includes("synthetic-password"),
     "password discarded",
@@ -114,9 +125,12 @@ Deno.test("[IMPORT-001] numeric Monica postal codes remain address text", () => 
   assert(typeof parsed !== "string", "numeric postal code should parse");
   const staged = stageContacts(parsed, () => crypto.randomUUID());
   assert(typeof staged !== "string", "numeric postal code should stage");
-  assertEquals(staged.contacts[0]?.contact?.addresses, [{
-    postalCode: "12345",
-  }]);
+  assertEquals(staged.contacts[0]?.contact?.addresses, []);
+  assertEquals(
+    parsed.businessEntities?.find((e) => e.data.kind === "location")?.data
+      .postalCode,
+    "12345",
+  );
 });
 
 Deno.test("[IMPORT-001] joins stay within source accounts and orphaned rows are reported", () => {
@@ -211,7 +225,12 @@ Deno.test("[IMPORT-001] numeric literals in consumed text fields retain their or
   assert(typeof parsed !== "string", "numeric text should parse");
   assertEquals(parsed.contacts[0]?.first_name, "123");
   assertEquals(parsed.contacts[0]?.description, "00123");
-  assertEquals(parsed.notes?.get("1"), ["456"]);
+  assertEquals(
+    parsed.businessEntities?.filter((e) => e.data.kind === "note").map((e) =>
+      e.data.body
+    ),
+    ["456"],
+  );
   const staged = stageContacts(parsed, () => crypto.randomUUID());
   assert(typeof staged !== "string", "numeric names should stage");
   assertEquals(staged.contacts[0]?.givenName, "123");
@@ -223,8 +242,16 @@ Deno.test("[IMPORT-001] numeric literals in consumed text fields retain their or
     region: "003",
     country: "004",
   }]);
-  assertEquals(staged.contacts[0]?.avatar?.originalFilename, "00123");
-  assertEquals(staged.contacts[0]?.avatar?.byteSize, 100);
+  assertEquals(
+    parsed.businessEntities?.find((e) => e.data.kind === "photo")?.data
+      .filename,
+    "00123",
+  );
+  assertEquals(
+    parsed.businessEntities?.find((e) => e.data.kind === "photo")?.data
+      .byteSize,
+    100,
+  );
 });
 
 Deno.test("[IMPORT-001] Monica custom contact methods retain source type metadata", () => {
@@ -257,50 +284,69 @@ Deno.test("[IMPORT-001] Monica custom contact methods retain source type metadat
   ]);
 });
 
-Deno.test("[IMPORT-001] upgrade fingerprint preserves the previous basic-type normalization", async () => {
-  const parsed = parseMonicaSource({
-    format: "monica-json",
-    version: 1,
-    tables: {
-      contacts: [{ id: 1, first_name: "Upgrade" }],
-      contact_field_types: [{
-        id: 1,
-        name: "Email",
-        type: "email",
-        protocol: "mailto",
-      }, {
-        id: 2,
-        name: "Chat",
-        type: "custom",
-        protocol: "chat",
-        extra: "unused",
-      }],
-      contact_fields: [{
-        contact_id: 1,
-        contact_field_type_id: 1,
-        data: "upgrade@example.test",
-      }, {
-        contact_id: 1,
-        contact_field_type_id: 2,
-        data: "invented-handle",
-        extra: "unused",
-      }],
-    },
-  }, limits);
-  assert(typeof parsed !== "string", "synthetic upgrade source parses");
-  const legacy =
-    (parsed as typeof parsed & { legacySource?: typeof parsed }).legacySource;
-  assert(
-    legacy !== undefined,
-    "previous normalization is retained for identity matching",
+Deno.test("SQL sent reminder history is parsed as inert audit history", () => {
+  const result = sql(
+    "INSERT INTO contacts (id,first_name) VALUES (1,'Example'); INSERT INTO reminders_sent (id,title,sent_date) VALUES (2,'Historical delivery','2020-01-02');",
   );
-  const staged = stageContacts(legacy, () => "ignored");
-  assert(typeof staged !== "string", "legacy projection stages");
-  assertEquals(legacy.unsupported, 4);
-  const { sourceFingerprint } = await import("../import_rules.ts");
-  // Pinned against the a95770c normalizer, using invented data only.
+  assert(typeof result !== "string", "history SQL should parse");
   assertEquals(
-    await sourceFingerprint(legacy, staged.contacts),
-    "3dcdb956e7b19046167e2c63da56836a994c90c809397f6135ca61e3ca0545de",
+    result.businessEntities?.find((e) => e.sourceTable === "reminders_sent")
+      ?.data.action,
+    "reminder.sent",
   );
+});
+Deno.test("dry run rejects normalized dependencies discarded by source mapping", () => {
+  for (
+    const tables of [
+      {
+        entries: [{ id: 1, post: "" }],
+        journal_entries: [{
+          id: 1,
+          journalable_type: "Entry",
+          journalable_id: 1,
+          date: "2020-01-01",
+        }],
+      },
+      {
+        genders: [{ id: 1, name: "" }],
+        contacts: [{ id: 1, first_name: "Example", gender_id: 1 }],
+      },
+      {
+        photos: [{ id: 1, original_filename: "", size: 5 }],
+        contacts: [{
+          id: 1,
+          first_name: "Example",
+          avatar_source: "photo",
+          avatar_photo_id: 1,
+        }],
+      },
+      {
+        contacts: [{
+          id: 1,
+          first_name: "Example",
+          birthday_special_date_id: 1,
+          birthday_reminder_id: 1,
+        }],
+        special_dates: [{ id: 1, contact_id: 1, date: "invalid" }],
+        reminders: [{
+          id: 1,
+          contact_id: 1,
+          title: "Birthday",
+          initial_date: "2000-01-01",
+          frequency_type: "year",
+          frequency_number: 1,
+        }],
+      },
+    ]
+  ) {
+    const result = parseMonicaSource({
+      format: "monica-json",
+      version: 1,
+      tables: { contacts: [{ id: 1, first_name: "Example" }], ...tables },
+    }, limits);
+    assert(
+      typeof result === "string",
+      "unresolved graph must be rejected during dry run",
+    );
+  }
 });

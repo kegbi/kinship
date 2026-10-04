@@ -50,6 +50,8 @@ export interface ImportedPersonDetails {
   readonly contactMethods: readonly {
     readonly typeId: string;
     readonly value: string;
+    readonly createdAt?: string;
+    readonly updatedAt?: string;
   }[];
   readonly dates: readonly {
     readonly day?: number;
@@ -92,6 +94,7 @@ export interface PeopleImportBoundary {
    * fails the whole commit rather than being half written.
    */
   addDetails(command: {
+    readonly suppressDateReminders?: boolean;
     readonly actor: PeopleImportActor;
     readonly details: ImportedPersonDetails;
     readonly occurredAt: Date;

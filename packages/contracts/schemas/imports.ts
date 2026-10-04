@@ -39,7 +39,7 @@ export const importReport = z.strictObject({
       ]),
       sourceKind: z.string().optional(),
       protocol: z.string().optional(),
-      count: z.number().int().min(1),
+      count: z.number().int().min(0),
       canCreate: z.boolean(),
     })),
     existingTypes: z.array(

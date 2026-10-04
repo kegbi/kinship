@@ -1,3 +1,4 @@
+import { personBoundary } from "../../packages/backend/modules/people/composition.ts";
 /**
  * A person's avatar against PostgreSQL and an object store (GAP-045,
  * PEOPLE-007): the upload is the files module's `avatar` kind, the link is
@@ -545,6 +546,7 @@ Deno.test("[PEOPLE-007] a replacement that cannot be linked is discarded whateve
       workspaceEntry: activeWorkspaceResolver(),
     };
     const files = composeFiles(shared, {
+      importPeople: personBoundary(),
       giftTarget: giftAttachmentTarget(),
       objectStore: storage,
     });
@@ -652,6 +654,7 @@ Deno.test("[REL-082] an upload refused once its bytes are stored leaves no proce
     let meanwhile = () => Promise.resolve();
     const keys: string[] = [];
     const files = composeFiles(shared, {
+      importPeople: personBoundary(),
       giftTarget: giftAttachmentTarget(),
       objectStore: {
         bucket: storage.bucket,

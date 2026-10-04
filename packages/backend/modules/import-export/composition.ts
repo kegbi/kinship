@@ -1,3 +1,4 @@
+import type { BusinessImportBoundaries } from "./application/business_import.ts";
 /**
  * Import-export composition. Only a declared composition root imports it.
  *
@@ -32,6 +33,7 @@ import type {
 import type { ContactMethodTypeCatalog } from "../workspaces/public.ts";
 
 export interface ImportExportPorts {
+  readonly business?: BusinessImportBoundaries;
   readonly exportFiles: ExportFileBoundary;
   readonly exportPeople: PeopleExportBoundary;
   /** The workspace types a vCard or CSV contact method is filed under. */
@@ -59,6 +61,7 @@ export function composeImportExport(
       transaction: new PostgresExportTransaction(shared.database),
     }),
     imports: createImportManagement({
+      ...(ports.business ? { business: ports.business } : {}),
       actors: shared.actors,
       audit: importAuditFrom(shared.audit),
       contactTypes: ports.importContactTypes,

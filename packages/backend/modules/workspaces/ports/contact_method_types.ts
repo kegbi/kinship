@@ -47,6 +47,10 @@ export interface ContactMethodTypeCatalog {
       readonly name: string;
       readonly kind: string;
       readonly protocol?: string;
+      readonly icon?: string;
+      readonly canDelete?: boolean;
+      readonly createdAt?: string;
+      readonly updatedAt?: string;
     },
   ): Promise<string>;
   /**

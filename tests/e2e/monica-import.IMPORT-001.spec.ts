@@ -37,7 +37,7 @@ const uploads = [
     name: "monica.sql",
     mimeType: "application/sql",
     text:
-      "# Synthetic export\nSET FOREIGN_KEY_CHECKS=0;\nINSERT IGNORE INTO contacts (id,uuid,first_name,last_name,avatar_file_name,description,job,company) VALUES (42,'00000000-0000-4000-8000-000000000042','Ada','Lovelace','avatars/ada.png','SQL contact','Engineer','Example Co'); INSERT INTO contact_field_types (id,name,type,protocol) VALUES (1,'Chat handle','custom','chat'),(2,'Mapped handle','custom','chat'),(3,'Skipped handle','custom','chat'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (42,1,'synthetic-chat'),(42,2,'synthetic-mapped'),(42,3,'synthetic-skipped'); INSERT INTO notes (id,contact_id,body) VALUES (1,42,'SQL note'); INSERT INTO users (id,password,google2fa_secret) VALUES (7,'legacy-hash','legacy-totp'); SET FOREIGN_KEY_CHECKS=1;",
+      "# Synthetic export\nSET FOREIGN_KEY_CHECKS=0;\nINSERT IGNORE INTO contacts (id,uuid,first_name,last_name,avatar_file_name,description,job,company) VALUES (42,'00000000-0000-4000-8000-000000000042','Ada','Lovelace','avatars/ada.png','SQL contact','Engineer','Example Co'); INSERT INTO contact_field_types (id,name,type,protocol) VALUES (1,'Chat handle','custom','chat'),(2,'Mapped handle','custom','chat'),(3,'Skipped handle','custom','chat'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (42,1,'synthetic-chat'),(42,2,'synthetic-mapped'),(42,3,'synthetic-skipped'); INSERT INTO notes (id,contact_id,body) VALUES (1,42,'SQL note'); INSERT INTO contacts (id,uuid,first_name,last_name) VALUES (43,'00000000-0000-4000-8000-000000000043','Grace','Hopper'); INSERT INTO relationship_types (id,name,name_reverse_relationship) VALUES (1,'friend','friend'); INSERT INTO relationships (id,contact_is,of_contact,relationship_type_id) VALUES (1,42,43,1); INSERT INTO activities (id,summary,happened_at) VALUES (1,'Imported park walk','2020-01-02 12:00:00'); INSERT INTO activity_contact (activity_id,contact_id) VALUES (1,42),(1,43); INSERT INTO reminders (id,contact_id,title,initial_date,frequency_type,frequency_number,inactive) VALUES (1,42,'Imported annual reminder','2020-01-02','year',1,0); INSERT INTO tags (id,name,name_slug) VALUES (1,'Imported friend','imported-friend'); INSERT INTO contact_tag (contact_id,tag_id) VALUES (42,1);  INSERT INTO users (id,password,google2fa_secret) VALUES (7,'legacy-hash','legacy-totp'); SET FOREIGN_KEY_CHECKS=1;",
     detected: "Monica SQL export detected. Validate to review supported data.",
   },
 ];
@@ -87,7 +87,7 @@ for (const upload of uploads) {
       expect(saved.status()).toBe(200);
       existingTypeId = (await saved.json()).entry.id;
     }
-    const uploadAndCommit = async (expected: string) => {
+    const uploadAndCommit = async (expected: string, firstImport: boolean) => {
       await page.goto("/app/settings/import/new");
       await expect(page.locator("body")).toHaveAttribute(
         "data-page-id",
@@ -102,12 +102,14 @@ for (const upload of uploads) {
         .toBeVisible();
       await page.getByRole("button", { name: "Validate dry run" }).click();
       await expect(page.getByText("Dry run complete.")).toBeVisible();
-      await expect(page.locator("[data-import-contacts]")).toHaveText("1");
+      await expect(page.locator("[data-import-contacts]")).toHaveText(
+        upload.name === "monica.sql" ? "2" : "1",
+      );
       await expect(page.locator("[data-import-missing]")).toHaveText("1");
       await expect(page.locator("[data-import-credentials]")).toHaveText("1");
       if (upload.name === "monica.sql") {
         const create = page.getByLabel("Chat handle (1 methods)");
-        if (expected.startsWith("1 created")) {
+        if (firstImport) {
           await expect(create).toBeVisible();
           await page.getByLabel("I confirm this validated import").check();
           await expect(page.getByRole("button", { name: "Commit import" }))
@@ -131,8 +133,18 @@ for (const upload of uploads) {
       await page.getByRole("button", { name: "Commit import" }).click();
       await expect(page.getByText(expected)).toBeVisible();
     };
-    await uploadAndCommit("1 created, 0 reused");
-    await uploadAndCommit("0 created, 1 reused");
+    await uploadAndCommit(
+      upload.name === "monica.sql"
+        ? "2 created, 0 reused"
+        : "1 created, 0 reused",
+      true,
+    );
+    await uploadAndCommit(
+      upload.name === "monica.sql"
+        ? "0 created, 2 reused"
+        : "0 created, 1 reused",
+      false,
+    );
 
     const reportLink = page.getByRole("link", { name: "Open import report" });
     const reportPath = await reportLink.getAttribute("href");
@@ -157,5 +169,35 @@ for (const upload of uploads) {
       headers: { origin },
     })).status()).toBe(401);
     await expectAccessible(page);
+    if (upload.name === "monica.sql") {
+      const directory = await page.request.get(`${origin}/api/v1/people`);
+      expect(directory.status()).toBe(200);
+      const listed = await directory.json() as {
+        people: { id: string; displayName?: string; givenName?: string }[];
+      };
+      expect(listed.people).toHaveLength(2);
+      const ada = listed.people.find((person) =>
+        JSON.stringify(person).includes("Ada")
+      )!;
+      const relationships = await page.request.get(
+        `${origin}/api/v1/people/${ada.id}/relationships`,
+      );
+      expect(relationships.status()).toBe(200);
+      expect(JSON.stringify(await relationships.json())).toContain("Grace");
+      const activities = await page.request.get(
+        `${origin}/api/v1/people/${ada.id}/activity-report`,
+      );
+      expect(activities.status()).toBe(200);
+      expect(JSON.stringify(await activities.json())).toContain(
+        "Imported park walk",
+      );
+      const reminders = await page.request.get(
+        `${origin}/api/v1/people/${ada.id}/reminders`,
+      );
+      expect(reminders.status()).toBe(200);
+      expect(JSON.stringify(await reminders.json())).toContain(
+        "Imported annual reminder",
+      );
+    }
   });
 }

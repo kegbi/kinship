@@ -1,3 +1,4 @@
+import { commitBusinessEntities } from "./business_import.ts";
 /**
  * The commit: turn the staged rows into people, once.
  *
@@ -61,7 +62,10 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           transaction,
         );
         if (prepared.status !== "ready") return prepared;
-        const sourceTypes = sourceContactTypes(prepared.contacts);
+        const sourceTypes = sourceContactTypes(
+          prepared.contacts,
+          prepared.contactTypeCatalog,
+        );
         const workspaceTypes = sourceTypes.length
           ? await dependencies.contactTypes.forImport({
             transaction,
@@ -85,6 +89,12 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               name: type.name,
               kind: type.kind,
               ...(type.protocol ? { protocol: type.protocol } : {}),
+              ...(type.icon !== undefined ? { icon: type.icon } : {}),
+              ...(type.canDelete !== undefined
+                ? { canDelete: type.canDelete }
+                : {}),
+              ...(type.createdAt ? { createdAt: type.createdAt } : {}),
+              ...(type.updatedAt ? { updatedAt: type.updatedAt } : {}),
             });
         }
         const occurredAt = new Date();
@@ -96,6 +106,9 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
         const committedContacts = new Map<string, {
           readonly outcome: "created" | "deleted" | "reused";
           readonly targetPersonId: string;
+          readonly legacyNotes?: readonly string[];
+          readonly legacyStartedAt?: string;
+          readonly legacyCompletedAt?: string;
         }>();
         for (const contact of prepared.contacts) {
           const presence = contact.previousTargetPersonId
@@ -125,6 +138,13 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               transaction,
             );
             committedContacts.set(contact.sourcePrimaryKey, {
+              ...(contact.legacyNotes
+                ? {
+                  legacyNotes: contact.legacyNotes,
+                  legacyStartedAt: contact.legacyStartedAt!,
+                  legacyCompletedAt: contact.legacyCompletedAt!,
+                }
+                : {}),
               outcome: presence === "active" ? "reused" : "deleted",
               targetPersonId,
             });
@@ -148,6 +168,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               plan.mapping,
             );
             await dependencies.people.addDetails({
+              suppressDateReminders: prepared.businessEntities !== undefined,
               actor,
               details,
               occurredAt,
@@ -196,6 +217,23 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
             fileId: avatar.fileId,
             personId: person.targetPersonId,
             transaction,
+          });
+        }
+        if (prepared.businessEntities?.length) {
+          await commitBusinessEntities({
+            actor,
+            transaction,
+            entities: prepared.businessEntities,
+            contacts: committedContacts,
+            boundaries: dependencies.business ?? {},
+            retarget: async (entity, id) => {
+              await dependencies.repository.retargetBusinessEntity?.(
+                importId,
+                entity,
+                id,
+                transaction,
+              );
+            },
           });
         }
         const outcomes = [...committedContacts.values()].map((contact) =>

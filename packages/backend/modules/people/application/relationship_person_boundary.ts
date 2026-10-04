@@ -26,3 +26,14 @@ export interface RelationshipPersonBoundary {
     },
   ): Promise<readonly RelationshipPersonSummary[]>;
 }
+
+/** Import restores historical children even when the source person is soft deleted. */
+export interface ImportedPersonReference {
+  existsForImport(
+    command: {
+      readonly workspaceId: string;
+      readonly personIds: readonly string[];
+      readonly transaction: PeopleTransaction;
+    },
+  ): Promise<boolean>;
+}

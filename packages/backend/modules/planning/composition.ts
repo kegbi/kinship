@@ -1,3 +1,4 @@
+import { PostgresPlanningBusinessImportBoundary } from "./adapters/postgres/business_import_boundary.ts";
 /**
  * Planning composition.
  *
@@ -48,6 +49,12 @@ export function personDateReminderPublisher(
 }
 
 export interface PlanningPorts {
+  readonly importPeople: ConstructorParameters<
+    typeof PostgresPlanningBusinessImportBoundary
+  >[2];
+  readonly importDateReference: ConstructorParameters<
+    typeof PostgresPlanningBusinessImportBoundary
+  >[3];
   /** The keyset the task list's opaque cursors are sealed with. */
   readonly cursorKeyset: TaskCursorKeyset;
   /** What members chose about reminder delivery, read from `workspaces`. */
@@ -60,6 +67,12 @@ export function composePlanning(
   ports: PlanningPorts,
 ) {
   return {
+    businessImportBoundary: new PostgresPlanningBusinessImportBoundary(
+      shared.actors,
+      ports.deliveryPreferences,
+      ports.importPeople,
+      ports.importDateReference,
+    ),
     lifecycleImpact: PostgresPlanningWorkspaceLifecycleImpact,
     personalizationReferences: new PostgresReminderRulePersonalization(),
     reminders: createReminderManagement({

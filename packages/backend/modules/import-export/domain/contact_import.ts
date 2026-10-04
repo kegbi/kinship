@@ -64,12 +64,18 @@ export interface ImportedContactMethodType {
     | "custom";
   readonly sourceKind?: string;
   readonly protocol?: string;
+  readonly icon?: string;
+  readonly canDelete?: boolean;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
 }
 
 export interface ImportedContact {
   readonly contactMethods?: readonly {
     readonly sourceType: ImportedContactMethodType;
     readonly value: string;
+    readonly createdAt?: string;
+    readonly updatedAt?: string;
   }[];
   readonly addresses: readonly SourceAddress[];
   readonly dates: readonly ImportedDate[];
@@ -249,6 +255,8 @@ export function personDetails(
     readonly contactMethods: readonly {
       readonly typeId: string;
       readonly value: string;
+      readonly createdAt?: string;
+      readonly updatedAt?: string;
     }[];
     readonly dates: readonly ImportedDate[];
     readonly occupation?: {
@@ -266,9 +274,9 @@ export function personDetails(
     details: {
       addresses: contact.addresses,
       contactMethods: contact.contactMethods
-        ? contact.contactMethods.flatMap(({ sourceType, value }) =>
+        ? contact.contactMethods.flatMap(({ sourceType, value, ...metadata }) =>
           sourceTypes[sourceType.key]
-            ? [{ typeId: sourceTypes[sourceType.key]!, value }]
+            ? [{ typeId: sourceTypes[sourceType.key]!, value, ...metadata }]
             : []
         )
         : [

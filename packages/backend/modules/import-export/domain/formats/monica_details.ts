@@ -1,6 +1,10 @@
 /** Resolves Monica's related rows into the existing contact import vocabulary. */
 import { parsePartialDateText } from "../../../../shared-kernel/partial_date.ts";
-import type { ImportedContact, ImportedDate } from "../contact_import.ts";
+import type {
+  ImportedContact,
+  ImportedContactMethodType,
+  ImportedDate,
+} from "../contact_import.ts";
 import {
   booleanValue,
   safePath,
@@ -10,8 +14,11 @@ import {
 } from "./monica_source.ts";
 import type { MonicaAttachment } from "./monica_source.ts";
 
+import { monicaContactType, monicaTimestamps } from "./monica_contact_types.ts";
+
 type Row = Record<string, unknown>;
 export interface MonicaDetails {
+  readonly contactTypeCatalog?: readonly ImportedContactMethodType[];
   readonly contacts: readonly Row[];
   readonly details: ReadonlyMap<string, ImportedContact>;
   readonly notes: ReadonlyMap<string, readonly string[]>;
@@ -56,6 +63,7 @@ export function monicaDetails(
   tables: Readonly<Record<string, unknown>>,
   maxAttachmentBytes: number,
   legacyBasicTypes = false,
+  legacyCatalog = false,
 ): MonicaDetails | string {
   const contacts = (tables.contacts as Row[]).map((row) => ({ ...row }));
   const details = new Map<string, ImportedContact>();
@@ -64,6 +72,8 @@ export function monicaDetails(
   const unsupportedRows: Record<string, number> = Object.create(null);
   const unsupportedFields: Record<string, number> = {};
   const used = new Set<Row>();
+  const preserveCatalog = !legacyBasicTypes && !legacyCatalog;
+  const catalog = new Map<Row, ImportedContactMethodType>();
   const rows = (table: string): Row[] =>
     Array.isArray(tables[table]) ? tables[table] as Row[] : [];
   const sameAccount = (a: Row, b: Row) =>
@@ -84,6 +94,11 @@ export function monicaDetails(
     for (const [field, value] of Object.entries(row)) {
       if (
         value === null || value === "" ||
+        (preserveCatalog &&
+          ((["contact_fields", "contact_field_types"].includes(table) &&
+            ["created_at", "updated_at"].includes(field)) ||
+            (table === "contact_field_types" &&
+              ["fontawesome_icon", "delible"].includes(field)))) ||
         (FIELDS[table]?.includes(field) &&
           !(legacyBasicTypes && table === "contact_field_types" &&
             ["name", "protocol"].includes(field)))
@@ -104,6 +119,20 @@ export function monicaDetails(
         ))
     ) {
       return "Every related Monica table must contain objects.";
+    }
+  }
+  if (preserveCatalog) {
+    const keys = new Set<string>();
+    for (const row of rows("contact_field_types")) {
+      const type = monicaContactType(row);
+      if (typeof type === "string") return type;
+      if (!type) continue;
+      if (keys.has(type.key)) {
+        return "The Monica contact type catalog has duplicate source keys.";
+      }
+      keys.add(type.key);
+      catalog.set(row, type);
+      mark("contact_field_types", row);
     }
   }
   for (const contact of contacts) {
@@ -156,8 +185,11 @@ export function monicaDetails(
             ? "Website"
             : textValue(kind, 120) ?? "Custom");
         const protocol = textValue(type.protocol, 100);
+        const timestamps = preserveCatalog ? monicaTimestamps(row) : {};
+        if (typeof timestamps === "string") return timestamps;
         contactMethods.push({
-          sourceType: {
+          ...timestamps,
+          sourceType: catalog.get(type) ?? {
             key: `${encodeURIComponent(sourceId(type.account_id) ?? "")}:${
               encodeURIComponent(sourceId(type.id)!)
             }`,
@@ -345,6 +377,7 @@ export function monicaDetails(
     }
   }
   return {
+    ...(preserveCatalog ? { contactTypeCatalog: [...catalog.values()] } : {}),
     contacts,
     details,
     notes,

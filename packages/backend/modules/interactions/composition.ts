@@ -1,3 +1,4 @@
+import { PostgresInteractionBusinessImportBoundary } from "./adapters/postgres/business_import_boundary.ts";
 /**
  * Interactions composition. Only a declared composition root imports it.
  *
@@ -33,6 +34,12 @@ export function journalActivityBoundary(): PostgresJournalActivityBoundary {
 }
 
 export interface InteractionPorts {
+  readonly importPeople: ConstructorParameters<
+    typeof PostgresInteractionBusinessImportBoundary
+  >[0];
+  readonly importVocabulary: ConstructorParameters<
+    typeof PostgresInteractionBusinessImportBoundary
+  >[1];
   readonly people: InteractionPersonBoundary;
   /** Planning's hook: recording an interaction settles a stay-in-touch. */
   readonly publisher: InteractionRecordedPublisher;
@@ -54,6 +61,10 @@ export function composeInteractions(
     workspace: ports.workspace,
   };
   return {
+    businessImportBoundary: new PostgresInteractionBusinessImportBoundary(
+      ports.importPeople,
+      ports.importVocabulary,
+    ),
     importBoundary: new PostgresInteractionImportBoundary(),
     interactions: {
       ...createInteractionManagement({

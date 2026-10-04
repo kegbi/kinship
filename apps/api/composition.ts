@@ -57,6 +57,7 @@ import {
   auditPersonMergeParticipant,
   composeGovernance,
   governanceAuditRecorder,
+  historicalAuditImportBoundary,
 } from "../../packages/backend/modules/governance/composition.ts";
 import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
 import {
@@ -928,11 +929,17 @@ export function createConfiguredApiApp(
   const configuration = composeWorkspaceBoundaries();
   const persons = personBoundary();
   const files = composeFiles(shared, {
+    importPeople: persons,
     giftTarget: giftAttachmentTarget(),
     ...(logger ? { logger } : {}),
     objectStore,
   });
   const people = composePeople(shared, {
+    importReferences: {
+      vocabulary: (c) =>
+        configuration.businessImportBoundary.referenceExists(c),
+      file: (c) => files.businessImportBoundary.fileExists(c),
+    },
     avatarImages: avatarImages(files.files),
     ...(logger ? { logger } : {}),
     genderOptions: configuration.genders,
@@ -945,16 +952,25 @@ export function createConfiguredApiApp(
     importContactTypes: configuration.contactMethodTypes,
   });
   const planning = composePlanning(shared, {
+    importPeople: persons,
+    importDateReference: (c) =>
+      people.businessImportBoundary.dateBelongsToPerson(c),
     cursorKeyset: subjectKeyset,
     deliveryPreferences: configuration.reminderDelivery,
     people: persons,
   });
   const relationships = composeRelationships(shared, {
+    importPeople: persons,
+    importVocabulary: (c) =>
+      configuration.businessImportBoundary.referenceExists(c),
     people: persons,
     peopleCreation: people.people,
     workspace: configuration.relationships,
   });
   const interactions = composeInteractions(shared, {
+    importPeople: persons,
+    importVocabulary: (c) =>
+      configuration.businessImportBoundary.referenceExists(c),
     people: persons,
     publisher: planning.reminders,
     workspace: configuration.interactions,
@@ -965,6 +981,7 @@ export function createConfiguredApiApp(
     workspace: configuration.lifeEvents,
   });
   const gifts = composeGifts(shared, {
+    importPeople: persons,
     attachments: files.giftAttachments,
     calendar: configuration.calendar,
     currencies: configuration.currencies,
@@ -972,6 +989,31 @@ export function createConfiguredApiApp(
   const transfer = composeImportExport(shared, {
     exportFiles: files.exportBoundary,
     exportPeople: people.exportBoundary,
+    business: {
+      people: people.businessImportBoundary,
+      gifts: gifts.businessImportBoundary,
+      journal: journal.businessImportBoundary,
+      files: files.businessImportBoundary,
+      workspaces: configuration.businessImportBoundary,
+      governance: historicalAuditImportBoundary(shared, {
+        personExists: async (c) =>
+          await people.importBoundary.presence({
+            actor: c.actor,
+            personId: c.personId,
+            transaction: c.transaction,
+          }) !== "absent",
+        reminderExists: (c) =>
+          planning.businessImportBoundary.assertReminder({
+            workspaceId: c.actor.workspaceId,
+            reminderId: c.reminderId,
+            transaction: c.transaction,
+          }),
+      }),
+      relationships: relationships.businessImportBoundary,
+      interactions: interactions.businessImportBoundary,
+      planning: planning.businessImportBoundary,
+      vocabulary: configuration.vocabularyImportBoundary,
+    },
     importContactTypes: configuration.contactMethodTypes,
     importFiles: files.importBoundary,
     importNotes: interactions.importBoundary,

@@ -1,3 +1,4 @@
+import { businessTargetId } from "../domain/business_entities.ts";
 /**
  * The dry run: read the file, stage what it would do, and tell the member.
  *
@@ -100,18 +101,25 @@ export function createImportStaging(
         return { detail: staged, status: "invalid-source" };
       }
       const { contacts, missingFiles } = staged;
-      const legacy = parsed.legacySource
-        ? stageContacts(parsed.legacySource, () => "")
-        : undefined;
-      const compatibleFingerprints =
-        parsed.legacySource && legacy && typeof legacy !== "string"
-          ? [await sourceFingerprint(parsed.legacySource, legacy.contacts)]
-          : [];
-
+      const compatibleFingerprints: string[] = [];
+      for (
+        const source of parsed.compatibleSources ??
+          (parsed.legacySource ? [parsed.legacySource] : [])
+      ) {
+        const legacy = stageContacts(source, () => "");
+        if (typeof legacy !== "string") {
+          compatibleFingerprints.push(
+            await sourceFingerprint(source, legacy.contacts),
+          );
+        }
+      }
       const report = importReport({
         contacts: contacts.length,
         legacyCredentialsDiscarded: parsed.userCount,
-        missingFiles,
+        missingFiles: missingFiles +
+          (parsed.businessEntities ?? []).filter((e) =>
+            e.owner === "files" && e.data.kind === "photo"
+          ).length,
         // Related rows must resolve to contacts in their source account.
         orphans: parsed.orphans ?? 0,
         unsupported: parsed.unsupported,
@@ -138,7 +146,10 @@ export function createImportStaging(
           transaction,
           workspaceId: actor.workspaceId,
         });
-        const sourceTypes = sourceContactTypes(contacts);
+        const sourceTypes = sourceContactTypes(
+          contacts,
+          parsed.contactTypeCatalog,
+        );
         const workspaceTypes = sourceTypes.length
           ? await dependencies.contactTypes.forImport({
             transaction,
@@ -149,7 +160,12 @@ export function createImportStaging(
         const proposals = sourceTypes.filter((type) =>
           !matchingContactType(type, workspaceTypes)
         ).map((type) => ({
-          ...type,
+          key: type.key,
+          name: type.name,
+          kind: type.kind,
+          count: type.count,
+          ...(type.sourceKind ? { sourceKind: type.sourceKind } : {}),
+          ...(type.protocol ? { protocol: type.protocol } : {}),
           canCreate: !workspaceTypes.some((existing) =>
             existing.name.trim().toLowerCase() ===
               type.name.trim().toLowerCase()
@@ -197,6 +213,14 @@ export function createImportStaging(
               ...report.counts,
               unsupported: report.counts.unsupported + unsupportedDetails,
             }).diagnostics,
+            ...Object.entries(parsed.excludedRows ?? {}).map((
+              [table, count],
+            ) => ({
+              code: "excluded-table",
+              message:
+                `${table}: ${count} source row(s) excluded; credentials, cached counters and historical deliveries are not activated.`,
+              severity: "warning" as const,
+            })),
             ...Object.entries(parsed.unsupportedRows ?? {}).map((
               [table, count],
             ) => ({
@@ -212,23 +236,30 @@ export function createImportStaging(
               severity: "skipped" as const,
             })),
             ...detailsReport.diagnostics,
+            ...Object.entries(
+              (parsed.businessEntities ?? []).reduce<Record<string, number>>(
+                (counts, e) => {
+                  counts[e.sourceTable] = (counts[e.sourceTable] ?? 0) + 1;
+                  return counts;
+                },
+                {},
+              ),
+            ).map(([table, count]) => ({
+              code: "business-records",
+              message:
+                `${table}: ${count} business record(s) staged for import.`,
+              severity: "info" as const,
+            })),
             ...(proposals.length
               ? [{
                 code: "contact-type-decisions",
                 message: `${
                   proposals.reduce((sum, type) => sum + type.count, 0)
-                } contact method(s) need a type choice below. Create a type, map to an existing type, or explicitly skip. No types are created by validation.`,
+                } contact method(s) across ${proposals.length} type(s) need a choice below, including unused catalog types. Create a type, map to an existing type, or explicitly skip. No types are created by validation.`,
                 severity: "warning" as const,
               }]
               : []),
-            ...(parsed.notes?.size
-              ? [{
-                code: "note-metadata",
-                message:
-                  "Note bodies are imported separately. Original note dates, favorites, and authors are not preserved.",
-                severity: "warning" as const,
-              }]
-              : []),
+
             ...(detailRows.some((row) =>
                 row.status === "mapped" &&
                 row.contact.dates.some((date) => date.isYearApproximate)
@@ -245,8 +276,21 @@ export function createImportStaging(
         const run = await dependencies.repository.stage({
           actor,
           contacts,
-          fingerprint: await sourceFingerprint(parsed, contacts),
+          ...(parsed.contactTypeCatalog
+            ? { contactTypeCatalog: parsed.contactTypeCatalog }
+            : {}),
           compatibleFingerprints,
+          businessEntities: await Promise.all(
+            (parsed.businessEntities ?? []).map(async (entity) => ({
+              ...entity,
+              targetId: await businessTargetId(
+                actor.workspaceId,
+                entity,
+                parsed.businessNamespace ?? "",
+              ),
+            })),
+          ),
+          fingerprint: await sourceFingerprint(parsed, contacts),
           importId: dependencies.ids.next(),
           report: detailedReport,
           sourceProfile: parsed.sourceProfile ?? "json_export",

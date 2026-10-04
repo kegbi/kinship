@@ -56,3 +56,5 @@ export type {
   ExportFileBoundaryDependencies,
 } from "./application/export_file_boundary.ts";
 export { fileAuditFrom } from "./application/audit_events.ts";
+
+export type { FileBusinessImportBoundary } from "./application/import_business_boundary.ts";

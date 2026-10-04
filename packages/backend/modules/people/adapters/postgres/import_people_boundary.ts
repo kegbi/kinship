@@ -96,11 +96,13 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
         value,
       });
       if (!after) throw new Error("Imported date was not saved.");
-      await this.publisher.regenerate({
-        ...actor,
-        after,
-        occurredAt: command.occurredAt,
-      });
+      if (!command.suppressDateReminders) {
+        await this.publisher.regenerate({
+          ...actor,
+          after,
+          occurredAt: command.occurredAt,
+        });
+      }
     }
   }
 
@@ -155,16 +157,25 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
           validateProfileFact("contact-methods", value, command.personId),
         ).length
       ) throw new Error("Imported contact method value is invalid.");
+      const methodId = crypto.randomUUID();
       const saved = await this.#facts.save({
         ...command.actor,
         transaction: command.transaction,
         personId: command.personId,
         occurredAt: command.occurredAt,
-        id: crypto.randomUUID(),
+        id: methodId,
         section: "contact-methods",
         value,
       });
       if (!saved) throw new Error("Imported contact method was not saved.");
+      if (method.createdAt || method.updatedAt) {
+        await sql`update crm.person_contact_methods set created_at=coalesce(${
+          method.createdAt ?? null
+        }::timestamptz, created_at), updated_at=coalesce(${
+          method.updatedAt ?? null
+        }::timestamptz, updated_at) where id=${methodId}::uuid and person_id=${command.personId}::uuid`
+          .execute(database);
+      }
     }
   }
 

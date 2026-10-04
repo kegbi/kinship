@@ -79,7 +79,7 @@ Deno.test("contact type plans support explicit mappings and skips without creati
     "decision-required",
   );
   assertEquals(
-    contactTypePlan([{ key: "url", name: "Site", kind: "url", count: 1 }], [{
+    contactTypePlan([{ key: "url", name: "Website", kind: "url", count: 1 }], [{
       id: "url-type",
       name: "Website",
       kind: "custom",
@@ -88,17 +88,48 @@ Deno.test("contact type plans support explicit mappings and skips without creati
     { url: "url-type" },
   );
   assertEquals(
-    contactTypePlan([{ key: "email", name: "Work", kind: "email", count: 1 }], [
-      { id: "email-type", name: "Email", kind: "custom", archived: false },
-    ], []).mapping,
+    contactTypePlan(
+      [{ key: "email", name: "Email", kind: "email", count: 1 }],
+      [
+        { id: "email-type", name: "Email", kind: "custom", archived: false },
+      ],
+      [],
+    ).mapping,
     { email: "email-type" },
   );
   assertEquals(
     contactTypePlan(
-      [{ key: "phone", name: "Mobile", kind: "phone", count: 1 }],
+      [{ key: "phone", name: "Phone", kind: "phone", count: 1 }],
       [{ id: "phone-type", name: "Telephone", kind: "phone", archived: false }],
       [],
     ).mapping,
     { phone: "phone-type" },
+  );
+});
+
+Deno.test("named phone catalogs require choices and retain distinct labels", () => {
+  const named = [{
+    key: "work",
+    name: "Work phone",
+    kind: "phone" as const,
+    count: 1,
+  }, { key: "home", name: "Home phone", kind: "phone" as const, count: 0 }];
+  const existing = [{
+    id: "basic",
+    name: "Phone",
+    kind: "phone",
+    archived: false,
+  }];
+  assertEquals(
+    contactTypePlan(named, existing, []).status,
+    "decision-required",
+  );
+  assertEquals(
+    contactTypePlan(
+      named,
+      existing,
+      named.map((s) => ({ sourceKey: s.key, action: "create" as const })),
+    ).create,
+    named,
   );
 });

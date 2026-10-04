@@ -88,3 +88,8 @@ export {
   reminderDeliveryAuditFrom,
   taskAuditFrom,
 } from "./application/audit_events.ts";
+
+export type {
+  PlanningBusinessImportBoundary,
+  PlanningBusinessImportRecord,
+} from "./application/business_import_boundary.ts";

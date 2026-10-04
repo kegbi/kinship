@@ -9,6 +9,20 @@ import type {
 
 export class PostgresRelationshipPersonBoundary
   implements InteractionPersonBoundary {
+  async existsForImport(
+    c: {
+      readonly workspaceId: string;
+      readonly personIds: readonly string[];
+      readonly transaction: { readonly opaque: unknown };
+    },
+  ): Promise<boolean> {
+    const ids = [...new Set(c.personIds)];
+    if (!ids.length) return false;
+    const result =
+      await sql`select id from crm.people where workspace_id=${c.workspaceId}::uuid and id=any(${ids}::uuid[]) order by id for key share`
+        .execute(databaseFromSession(c.transaction));
+    return result.rows.length === ids.length;
+  }
   async describeContactMethods(
     command: Parameters<
       InteractionPersonBoundary["describeContactMethods"]

@@ -1,3 +1,4 @@
+import type { BusinessImportBoundaries } from "./business_import.ts";
 /**
  * What importing needs before it may proceed.
  *
@@ -26,6 +27,7 @@ import type {
 } from "../ports/context.ts";
 
 export interface ImportManagementDependencies {
+  readonly business?: BusinessImportBoundaries;
   readonly audit: ImportAudit;
   /** How a vCard or CSV run is stored beside a Monica one (GAP-050). */
   readonly contacts: ContactImportRepository;

@@ -202,6 +202,7 @@ export type {
   InteractionPersonBoundary,
 } from "./application/interaction_person_boundary.ts";
 export type {
+  ImportedPersonReference,
   RelationshipPersonBoundary,
   RelationshipPersonInspection,
   RelationshipPersonSummary,
@@ -232,3 +233,5 @@ export {
   personStarAuditFrom,
   profileFactAuditFrom,
 } from "./application/audit_events.ts";
+
+export type { PeopleBusinessImportBoundary } from "./application/import_business_boundary.ts";

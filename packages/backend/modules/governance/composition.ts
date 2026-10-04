@@ -11,7 +11,10 @@ import { PostgresAuditPersonMergeParticipant } from "./adapters/postgres/person_
 import { PostgresAuditEventRecorder } from "./adapters/postgres/audit_event_recorder.ts";
 import { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
-import { createLegalAcceptance } from "./public.ts";
+import {
+  createHistoricalAuditImport,
+  createLegalAcceptance,
+} from "./public.ts";
 
 /**
  * The one writer of `crm.audit_events`.
@@ -43,4 +46,16 @@ export function composeGovernance(shared: SharedComposition) {
  */
 export function auditPersonMergeParticipant(): PostgresAuditPersonMergeParticipant {
   return new PostgresAuditPersonMergeParticipant();
+}
+
+/** Built after the public people and planning reference boundaries exist. */
+export function historicalAuditImportBoundary(
+  shared: SharedComposition,
+  references: import("./public.ts").HistoricalAuditReferences,
+) {
+  return createHistoricalAuditImport({
+    actors: shared.actors,
+    recorder: new PostgresAuditEventRecorder(),
+    references,
+  });
 }

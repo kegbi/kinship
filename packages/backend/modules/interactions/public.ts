@@ -41,3 +41,8 @@ export {
   interactionAuditFrom,
 } from "./application/audit_events.ts";
 export type { InteractionImportBoundary } from "./application/import_note_boundary.ts";
+
+export type {
+  InteractionBusinessImportBoundary,
+  InteractionBusinessImportRecord,
+} from "./application/business_import_boundary.ts";

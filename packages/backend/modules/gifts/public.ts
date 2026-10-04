@@ -41,3 +41,5 @@ export type {
   GiftMutationFailure,
 } from "./application/gift_context.ts";
 export { giftAuditFrom } from "./application/audit_events.ts";
+
+export type { GiftBusinessImportBoundary } from "./application/import_business_boundary.ts";

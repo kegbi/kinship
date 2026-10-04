@@ -903,6 +903,119 @@ Deno.test("[IMPORT-001] pre-type-support fingerprints reuse UUID and numeric-onl
   }
 });
 
+Deno.test("[IMPORT-001] source catalog metadata persists only on newly created types and methods", async () => {
+  const actor = await revocableActor(sql, `catalog-${crypto.randomUUID()}`, {
+    role: "owner",
+  });
+  const connection = connectDatabase(databaseUrl);
+  const imports = createImportManagement({
+    actors: new PostgresActorRevalidation(),
+    audit: { record: () => Promise.resolve() },
+    contactTypes: new PostgresContactMethodTypeCatalog(),
+    contacts: new PostgresContactImportRepository(),
+    files: new PostgresFileImportBoundary(),
+    ids: { next: () => crypto.randomUUID() },
+    notes: new PostgresInteractionImportBoundary(),
+    people: new PostgresPeopleImportBoundary(
+      monicaDates,
+      new PostgresContactMethodTypeCatalog(),
+    ),
+    repository: new PostgresImportRepository(connection.db),
+    transaction: new PostgresImportTransaction(connection.db),
+  });
+  const source = {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts(id,first_name) VALUES (1,'Catalog example'); INSERT INTO contact_field_types(id,name,type,fontawesome_icon,delible,created_at,updated_at) VALUES (1,'Chat','custom','fa-chat',0,'2020-01-02 03:04:05','2021-02-03 04:05:06'),(2,'Unused','custom','fa-unused',1,'2018-01-01 00:00:00','2019-01-01 00:00:00'),(3,'Skipped','custom',NULL,1,NULL,NULL),(4,'Mapped','custom','fa-map',0,NULL,NULL); INSERT INTO contact_fields(contact_id,contact_field_type_id,data,created_at,updated_at) VALUES (1,1,'catalog-handle','2022-03-04 05:06:07','2023-04-05 06:07:08');",
+  };
+  try {
+    const [existing] =
+      await sql`insert into crm.contact_method_types(workspace_id,name,kind,icon,can_delete,created_at,updated_at) values (${actor.workspaceId},'Existing','custom','keep',true,'2010-01-01','2011-01-01') returning id`;
+    const dry = await imports.dryRun(actor, source);
+    assert(dry.status === "dry_run", "catalog stages");
+    assertEquals(dry.report.counts.unsupported, 0);
+    assertEquals(
+      dry.report.contactMethodTypes?.proposals.map(({ count }) => count),
+      [1, 0, 0, 0],
+    );
+    assertEquals(
+      (await sql`select count(*)::int as count from crm.contact_method_types where workspace_id=${actor.workspaceId}`)[
+        0
+      ]!.count,
+      1,
+    );
+    const choices = [
+      { sourceKey: ":1", action: "create" as const },
+      { sourceKey: ":2", action: "create" as const },
+      { sourceKey: ":3", action: "skip" as const },
+      { sourceKey: ":4", action: "map" as const, typeId: existing!.id },
+    ];
+    assertEquals(
+      (await imports.commit(actor, dry.importId, true, choices)).status,
+      "completed",
+    );
+    const readTypes = async () =>
+      (await sql`select name,icon,can_delete,created_at,updated_at from crm.contact_method_types where workspace_id=${actor.workspaceId} order by name`)
+        .map((row) => ({
+          ...row,
+          created_at: row.created_at.toISOString(),
+          updated_at: row.updated_at.toISOString(),
+        }));
+    assertEquals(await readTypes(), [
+      {
+        name: "Chat",
+        icon: "fa-chat",
+        can_delete: false,
+        created_at: "2020-01-02T03:04:05.000Z",
+        updated_at: "2021-02-03T04:05:06.000Z",
+      },
+      {
+        name: "Existing",
+        icon: "keep",
+        can_delete: true,
+        created_at: "2010-01-01T00:00:00.000Z",
+        updated_at: "2011-01-01T00:00:00.000Z",
+      },
+      {
+        name: "Unused",
+        icon: "fa-unused",
+        can_delete: true,
+        created_at: "2018-01-01T00:00:00.000Z",
+        updated_at: "2019-01-01T00:00:00.000Z",
+      },
+    ]);
+    const readMethods = () =>
+      sql`select m.id,m.created_at,m.updated_at from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id=${actor.workspaceId}`;
+    const [method] = await readMethods();
+    assertEquals(method!.created_at.toISOString(), "2022-03-04T05:06:07.000Z");
+    assertEquals(method!.updated_at.toISOString(), "2023-04-05T06:07:08.000Z");
+    await sql`update crm.person_contact_methods set created_at='2001-01-01',updated_at='2002-01-01' where id=${
+      method!.id
+    }`;
+    await sql`update crm.contact_method_types set icon='member-edited',updated_at='2003-01-01' where workspace_id=${actor.workspaceId} and name='Chat'`;
+    const beforeTypes = await readTypes();
+    const beforeMethods = await readMethods();
+    const repeat = await imports.dryRun(actor, source);
+    assert(repeat.status === "dry_run", "repeat stages");
+    assertEquals(
+      (await imports.commit(actor, repeat.importId, true, choices)).status,
+      "completed",
+    );
+    assertEquals(
+      await readTypes(),
+      beforeTypes,
+      "existing type metadata never overwritten",
+    );
+    assertEquals(
+      await readMethods(),
+      beforeMethods,
+      "existing method timestamps never overwritten",
+    );
+  } finally {
+    await connection.destroy();
+  }
+});
+
 Deno.test({
   name: "IMPORT-001 PostgreSQL resources close",
   sanitizeOps: false,

@@ -1,3 +1,4 @@
+import type { BusinessEntity } from "../../domain/business_entities.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -7,6 +8,7 @@ import { PostgresTransactionRunner } from "../../../../platform/postgres/transac
 import type {
   CsvPreview,
   ImportedContact,
+  ImportedContactMethodType,
 } from "../../domain/contact_import.ts";
 import type {
   ImportCommitCounts,
@@ -111,6 +113,7 @@ export class PostgresImportRepository implements ImportRepository {
         fingerprint: command.fingerprint,
         compatibleFingerprints: command.compatibleFingerprints ?? [],
         report: command.report,
+        contactTypeCatalog: command.contactTypeCatalog ?? [],
       })
     }::text::jsonb,
         now(), now()
@@ -173,6 +176,12 @@ export class PostgresImportRepository implements ImportRepository {
           )
         `.execute(database);
       }
+    }
+    for (const entity of command.businessEntities ?? []) {
+      await sql`insert into crm.data_import_entities(import_id,source_table,source_primary_key,target_table,target_key,status,warnings,raw_snapshot)
+      values(${command.importId}::uuid,${entity.sourceTable},${entity.sourcePrimaryKey},${entity.targetTable},${entity.targetId},'mapped','[]'::jsonb,${
+        JSON.stringify({ business: entity })
+      }::text::jsonb)`.execute(database);
     }
     await insertReports(database, command.importId, command.report);
     return {
@@ -273,9 +282,18 @@ export class PostgresImportRepository implements ImportRepository {
       PreparedImportCommit,
       { status: "ready" }
     >["contacts"][number][] = [];
+    const previousImports = new Map<string, string>();
     for (const contact of contacts.rows) {
-      const previous = await sql<{ readonly target_key: string }>`
-        select entity.target_key
+      const previous = await sql<
+        {
+          readonly target_key: string;
+          readonly prior_import_id: string;
+          readonly legacy_notes: readonly string[] | null;
+          readonly legacy_started_at: string;
+          readonly legacy_completed_at: string;
+        }
+      >`
+        select entity.target_key,prior.id::text as prior_import_id, entity.raw_snapshot->'notes' as legacy_notes, prior.started_at::text as legacy_started_at, prior.completed_at::text as legacy_completed_at
         from crm.data_import_entities entity
         join crm.data_imports prior on prior.id = entity.import_id
         where prior.workspace_id = ${actor.workspaceId}::uuid
@@ -295,6 +313,12 @@ export class PostgresImportRepository implements ImportRepository {
         order by prior.completed_at desc, prior.id
         limit 1
       `.execute(database);
+      if (previous.rows[0]) {
+        previousImports.set(
+          contact.source_primary_key,
+          previous.rows[0].prior_import_id,
+        );
+      }
       const avatarPresentation = pickDefined({
         backgroundColor: contact.avatar_color,
         externalUrl: contact.avatar_external_url,
@@ -327,6 +351,13 @@ export class PostgresImportRepository implements ImportRepository {
         ...(previous.rows[0]?.target_key
           ? { previousTargetPersonId: previous.rows[0].target_key }
           : {}),
+        ...(previous.rows[0]?.legacy_notes
+          ? {
+            legacyNotes: previous.rows[0].legacy_notes,
+            legacyStartedAt: previous.rows[0].legacy_started_at,
+            legacyCompletedAt: previous.rows[0].legacy_completed_at,
+          }
+          : {}),
         sourcePrimaryKey: contact.source_primary_key,
         targetPersonId: contact.target_key,
       });
@@ -343,7 +374,7 @@ export class PostgresImportRepository implements ImportRepository {
         raw_snapshot->>'originalFilename' as original_filename,
         raw_snapshot->>'personSourcePrimaryKey' as person_source_primary_key
       from crm.data_import_entities
-      where import_id = ${importId}::uuid and source_table = 'photos'
+      where import_id = ${importId}::uuid and source_table = 'photos' and raw_snapshot ? 'personSourcePrimaryKey'
       order by created_at, id
     `.execute(database);
     const preparedAvatars = avatars.rows.map((avatar) => ({
@@ -352,12 +383,76 @@ export class PostgresImportRepository implements ImportRepository {
       originalFilename: avatar.original_filename,
       personSourcePrimaryKey: avatar.person_source_primary_key,
     }));
+    const business = await sql<
+      { business: BusinessEntity; target_key: string }
+    >`select raw_snapshot->'business' as business,target_key from crm.data_import_entities where import_id=${importId}::uuid and raw_snapshot ? 'business' order by id`
+      .execute(database);
+    const businessEntities: BusinessEntity[] = [];
+    for (const row of business.rows) {
+      const prior = await sql<
+        { target_key: string }
+      >`select e.target_key from crm.data_import_entities e join crm.data_imports i on i.id=e.import_id where i.workspace_id=${actor.workspaceId}::uuid and i.source_system='monica' and i.status='completed' and e.raw_snapshot->'business'->>'targetId'=${row.business.targetId} order by i.completed_at desc limit 1`
+        .execute(database);
+      let targetId = prior.rows[0]?.target_key ?? row.target_key;
+      let legacyFile = false;
+      if (
+        !prior.rows.length && row.business.owner === "files" &&
+        row.business.data.kind === "photo"
+      ) {
+        const avatar = business.rows.find((a) =>
+          a.business.data.kind === "avatar" &&
+          a.business.references?.fileId?.table === "photos" &&
+          a.business.references.fileId.key === row.business.sourcePrimaryKey
+        )?.business;
+        const personKey = avatar?.references?.personId?.key;
+        const previousImport = personKey
+          ? previousImports.get(personKey)
+          : undefined;
+        if (previousImport) {
+          const previousFile = await sql<
+            { target_key: string }
+          >`select target_key from crm.data_import_entities where import_id=${previousImport}::uuid and source_table='photos' and raw_snapshot->>'personSourcePrimaryKey'=${personKey} order by id limit 1`
+            .execute(database);
+          if (previousFile.rows[0]) {
+            targetId = previousFile.rows[0].target_key;
+            legacyFile = true;
+            await this.retargetBusinessEntity(
+              importId,
+              row.business,
+              targetId,
+              transaction,
+            );
+          }
+        }
+      }
+      businessEntities.push({
+        ...row.business,
+        ...(legacyFile
+          ? { data: { ...row.business.data, legacyFile: true } }
+          : {}),
+        targetId,
+        ...(prior.rows.length ? { alreadyImported: true } : {}),
+      });
+    }
     return {
+      businessEntities,
       avatars: preparedAvatars,
       contacts: preparedContacts,
+      contactTypeCatalog: (jsonRecord(run.stats).contactTypeCatalog ??
+        []) as readonly ImportedContactMethodType[],
       importId,
       status: "ready",
     };
+  }
+
+  async retargetBusinessEntity(
+    importId: string,
+    entity: BusinessEntity,
+    targetId: string,
+    transaction: ImportTransaction,
+  ): Promise<void> {
+    await sql`update crm.data_import_entities set target_key=${targetId} where import_id=${importId}::uuid and source_table=${entity.sourceTable} and source_primary_key=${entity.sourcePrimaryKey}`
+      .execute(databaseFromSession(transaction));
   }
 
   async retargetContact(

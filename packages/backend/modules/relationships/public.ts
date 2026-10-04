@@ -25,3 +25,8 @@ export type {
 } from "./application/relationship_writes.ts";
 export type { RelationshipPersonalizationReferences } from "./application/personalization_references.ts";
 export { relationshipAuditFrom } from "./application/audit_events.ts";
+
+export type {
+  RelationshipBusinessImportBoundary,
+  RelationshipBusinessImportRecord,
+} from "./application/business_import_boundary.ts";

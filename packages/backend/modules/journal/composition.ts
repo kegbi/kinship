@@ -1,3 +1,4 @@
+import { PostgresJournalBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
 /**
  * Journal composition. Only a declared composition root imports it.
  */
@@ -31,6 +32,9 @@ export function composeJournal(
   ports: JournalPorts,
 ) {
   return {
+    businessImportBoundary: new PostgresJournalBusinessImportBoundary(
+      ports.activities,
+    ),
     journal: createJournalManagement({
       activities: ports.activities,
       actors: shared.actors,

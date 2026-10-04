@@ -20,8 +20,11 @@ export interface ContactTypeDecision {
 const normalized = (name: string) => name.trim().toLowerCase();
 export function sourceContactTypes(
   contacts: readonly { readonly contact?: ImportedContact }[],
+  catalog: readonly ImportedContactMethodType[] = [],
 ): SourceContactType[] {
-  const types = new Map<string, SourceContactType>();
+  const types = new Map<string, SourceContactType>(
+    catalog.map((type) => [type.key, { ...type, count: 0 }]),
+  );
   for (const row of contacts) {
     for (const method of row.contact?.contactMethods ?? []) {
       const type = method.sourceType;
@@ -42,7 +45,9 @@ export function matchingContactType(
     normalized(type.name) === normalized(source.name) &&
     type.kind === source.kind
   ) ??
-    (["email", "phone", "url"].includes(source.kind)
+    ((source.kind === "url" ? ["website", "url"] : [source.kind]).includes(
+        normalized(source.name),
+      ) && ["email", "phone", "url"].includes(source.kind)
       ? active.find((type) => type.kind === source.kind) ??
         active.find((type) =>
           type.kind === "custom" &&

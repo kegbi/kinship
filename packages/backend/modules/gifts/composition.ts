@@ -1,3 +1,4 @@
+import { PostgresGiftBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
 /**
  * Gifts composition. Only a declared composition root imports it.
  */
@@ -29,6 +30,9 @@ export function giftAttachmentTarget(): PostgresGiftAttachmentTarget {
 }
 
 export interface GiftPorts {
+  readonly importPeople: ConstructorParameters<
+    typeof PostgresGiftBusinessImportBoundary
+  >[0];
   readonly attachments: GiftAttachmentBoundary;
   readonly calendar: WorkspaceCalendarBoundary;
   readonly currencies: WorkspaceCurrencyBoundary;
@@ -36,6 +40,9 @@ export interface GiftPorts {
 
 export function composeGifts(shared: SharedComposition, ports: GiftPorts) {
   return {
+    businessImportBoundary: new PostgresGiftBusinessImportBoundary(
+      ports.importPeople,
+    ),
     gifts: createGiftManagement({
       actors: shared.actors,
       attachments: ports.attachments,

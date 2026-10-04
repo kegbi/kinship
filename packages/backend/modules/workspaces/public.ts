@@ -225,3 +225,10 @@ export {
   settingsAuditFrom,
   workspaceResetActivityAuditFrom,
 } from "./application/audit_events.ts";
+
+export type {
+  VocabularyBusinessImportBoundary,
+  VocabularyBusinessImportRecord,
+} from "./application/business_vocabulary_import.ts";
+
+export type { WorkspaceBusinessImportBoundary } from "./application/import_business_boundary.ts";

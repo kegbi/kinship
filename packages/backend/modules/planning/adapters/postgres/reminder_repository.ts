@@ -127,7 +127,7 @@ function reminder(row: ReminderRow): ReminderDefinitionRecord {
   };
 }
 
-function leadDeliveryAt(
+export function leadDeliveryAt(
   occursOn: string,
   leadTimeDays: number | null,
   sendTime: string,

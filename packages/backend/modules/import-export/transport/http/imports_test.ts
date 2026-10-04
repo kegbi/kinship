@@ -4,7 +4,10 @@ import {
   CSV_TARGETS,
   type ImportRepository,
 } from "../../public.ts";
-import { CSV_COLUMN_TARGETS } from "../../../../../contracts/schemas/imports.ts";
+import {
+  CSV_COLUMN_TARGETS,
+  importReport,
+} from "../../../../../contracts/schemas/imports.ts";
 
 const actor = {
   memberId: crypto.randomUUID(),
@@ -406,5 +409,33 @@ Deno.test("[IMPORT-001] commit validates explicit contact-type choices and repor
   );
   if (malformed.status !== 400 || calls.length !== 1) {
     throw new Error("invalid type choice reached the use case");
+  }
+});
+
+Deno.test("[IMPORT-001] unused catalog proposals satisfy the strict response contract", async () => {
+  const response = await request(app(), "/api/v1/imports/dry-runs", "POST", {
+    source: {
+      format: "monica-json",
+      version: 1,
+      tables: {
+        contacts: [],
+        contact_field_types: [{
+          id: 1,
+          name: "Unused",
+          type: "custom",
+          fontawesome_icon: "fa-unused",
+          delible: 0,
+          created_at: "2020-01-01 00:00:00",
+        }],
+      },
+    },
+  });
+  if (response.status !== 201) {
+    throw new Error("unused catalog response failed");
+  }
+  const body = await response.json();
+  const report = importReport.parse(body.report);
+  if (report.contactMethodTypes?.proposals[0]?.count !== 0) {
+    throw new Error("unused type proposal missing");
   }
 });

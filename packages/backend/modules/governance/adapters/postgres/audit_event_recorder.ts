@@ -1,3 +1,4 @@
+import type { HistoricalAuditRecorder } from "../../application/historical_audit_import.ts";
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import {
@@ -16,7 +17,38 @@ import {
  * payload `auditPayload` builds, so an event's request correlation lands in
  * `payload.requestId` the same way on every path.
  */
-export class PostgresAuditEventRecorder implements AuditEventRecorder {
+export class PostgresAuditEventRecorder
+  implements AuditEventRecorder, HistoricalAuditRecorder {
+  async recordImported(
+    command: Parameters<HistoricalAuditRecorder["recordImported"]>[0],
+  ): Promise<void> {
+    const data = command.data;
+    const result = await sql<{ readonly id: string }>`
+      insert into crm.audit_events (
+        id, workspace_id, actor_member_id, actor_name_snapshot, person_id,
+        subject_type, subject_id, action, payload, occurred_at,
+        visible_on_dashboard, created_at
+      ) values (
+        ${command.id}::uuid, ${command.workspaceId}::uuid, null,
+        ${data.actorNameSnapshot}, ${command.personId ?? null}::uuid,
+        ${
+      command.reminderId
+        ? "reminder"
+        : command.personId
+        ? "person"
+        : "monica_audit_log"
+    },
+        ${command.reminderId ?? command.personId ?? null}::uuid,
+        ${data.action}, ${JSON.stringify(data.payload)}::text::jsonb,
+        ${data.occurredAt}::timestamptz, ${data.visibleOnDashboard},
+        ${data.createdAt}::timestamptz
+      ) returning id::text
+    `.execute(databaseFromSession(command.transaction));
+    if (result.rows[0]?.id !== command.id) {
+      throw new Error("Historical audit event was not stored.");
+    }
+  }
+
   async record(command: AuditEventWrite): Promise<string> {
     const event: AuditEvent = command.event;
     const result = await sql<{ readonly id: string }>`

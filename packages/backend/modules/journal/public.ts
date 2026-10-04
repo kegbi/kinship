@@ -40,3 +40,5 @@ export type {
   LifeEventUpdateResult,
 } from "./application/life_events.ts";
 export { lifeEventAuditFrom } from "./application/audit_events.ts";
+
+export type { JournalBusinessImportBoundary } from "./application/import_business_boundary.ts";

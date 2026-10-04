@@ -389,7 +389,10 @@ export function NewImport(
               {state.report.contactMethodTypes.proposals.map((type) => (
                 <div key={type.key}>
                   <label htmlFor={`contact-type-${type.key}`}>
-                    {type.name} ({type.count} methods)
+                    {type.name}{" "}
+                    ({type.count === 0
+                      ? "unused type"
+                      : `${type.count} methods`})
                   </label>
                   <p>
                     {type.kind}
@@ -420,7 +423,9 @@ export function NewImport(
                       </option>
                     ))}
                     <option value="skip">
-                      Skip these {type.count} methods
+                      {type.count === 0
+                        ? "Skip this unused type"
+                        : `Skip these ${type.count} methods`}
                     </option>
                   </select>
                 </div>

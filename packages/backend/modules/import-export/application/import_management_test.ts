@@ -252,7 +252,7 @@ Deno.test("[IMPORT-001] canonical UUID identities reject case-variant duplicates
   }
 });
 
-Deno.test("[IMPORT-001] reports Monica introducer references as explicitly skipped", async () => {
+Deno.test("[IMPORT-001] stages Monica introducer references as business records", async () => {
   let unsupported = -1;
   const repository: ImportRepository = {
     complete: () => Promise.resolve(),
@@ -288,12 +288,8 @@ Deno.test("[IMPORT-001] reports Monica introducer references as explicitly skipp
       ],
     },
   });
-  if (
-    result.status !== "dry_run" || unsupported !== 1 ||
-    !result.report.diagnostics.some((item) =>
-      item.code === "unsupported-data" && item.severity === "skipped"
-    )
-  ) throw new Error("dropped introducer was falsely declared supported");
+  assertEquals(result.status, "dry_run");
+  assertEquals(unsupported, 0);
 });
 
 Deno.test("[IMPORT-001] reports unsupported fields while concealing admin reads from members", async () => {
@@ -507,6 +503,7 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
     prepareCommit: (_actor, importId) =>
       Promise.resolve({
         avatars: [],
+        businessEntities: staged!.businessEntities ?? [],
         contacts: staged!.contacts.map((contact) => ({
           ...contact,
           entityId: crypto.randomUUID(),
@@ -518,6 +515,17 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
   const imports = createImportManagement({
     ...owners,
     ids: { next: () => crypto.randomUUID() },
+    business: {
+      people: { importRecords: () => Promise.resolve() },
+      interactions: {
+        importRecords: (command) => {
+          for (const r of command.records) {
+            if (r.data.kind === "note") bodies.push(String(r.data.body));
+          }
+          return Promise.resolve();
+        },
+      },
+    },
     notes: {
       addNote: (command) => {
         bodies.push(command.body);
@@ -535,13 +543,12 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
   const dry = await imports.dryRun(actor, source);
   if (dry.status !== "dry_run") throw new Error("SQL dry run failed");
   assertEquals(staged?.sourceProfile, "sql_export");
-  assertEquals(dry.report.counts.unsupported, 4);
+  assertEquals(dry.report.counts.unsupported, 2);
   for (
     const code of [
       "unsupported-table",
-      "unsupported-field",
       "contact-type-decisions",
-      "note-metadata",
+
       "age-based-date",
       "organization-without-title",
     ]
@@ -555,7 +562,7 @@ Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separat
   assertEquals(
     dry.report.diagnostics.find((item) => item.code === "unsupported-data")
       ?.message,
-    "4 unsupported row(s) or field value(s) will be skipped.",
+    "2 unsupported row(s) or field value(s) will be skipped.",
   );
   assertEquals(
     (await imports.commit(actor, dry.importId, true, [{
@@ -767,4 +774,105 @@ Deno.test("[IMPORT-001] a reused active Monica person gains newly approved metho
     action: "create",
   }]);
   assertEquals(enriched.length, 1);
+});
+
+Deno.test("[IMPORT-001] unused source catalog is staged and all choices resolve without people", async () => {
+  for (const action of ["create", "map", "skip"] as const) {
+    let staged: Parameters<ImportRepository["stage"]>[0] | undefined;
+    const created: unknown[] = [];
+    const repository: ImportRepository = {
+      complete: () => Promise.resolve(),
+      get: () => Promise.resolve(undefined),
+      list: () => Promise.resolve([]),
+      retargetContact: () => Promise.resolve(),
+      stage: (command) => {
+        staged = command;
+        return Promise.resolve({
+          status: "dry_run",
+          importId: command.importId,
+          report: command.report,
+        });
+      },
+      prepareCommit: (_actor, importId) =>
+        Promise.resolve({
+          status: "ready",
+          importId,
+          contacts: [],
+          avatars: [],
+          contactTypeCatalog: staged!.contactTypeCatalog!,
+        }),
+    };
+    const imports = createImportManagement({
+      ...owners,
+      repository,
+      ids: { next: () => crypto.randomUUID() },
+      transaction: { run: (work) => work({ opaque: {} }) },
+      contactTypes: {
+        ...owners.contactTypes,
+        forImport: () =>
+          Promise.resolve([{
+            id: "existing",
+            name: "Other",
+            kind: "custom",
+            archived: false,
+          }]),
+        createForImport: (command) => {
+          created.push(command);
+          return Promise.resolve("created");
+        },
+      },
+      people: {
+        ...owners.people,
+        create: () => {
+          throw new Error("catalog must not invent a person");
+        },
+      },
+    });
+    const actual = await imports.dryRun(actor, {
+      format: "monica-json",
+      version: 1,
+      tables: {
+        contacts: [],
+        contact_field_types: [{
+          id: 1,
+          name: "Unused",
+          type: "custom",
+          fontawesome_icon: "fa-chat",
+          delible: 0,
+          created_at: "2020-01-02 03:04:05",
+          updated_at: "2021-02-03 04:05:06",
+        }],
+      },
+    });
+    if (actual.status !== "dry_run") throw new Error("catalog dry run failed");
+    assertEquals(actual.report.contactMethodTypes?.proposals[0]?.count, 0);
+    assertEquals(created, []);
+    assertEquals(
+      (await imports.commit(actor, actual.importId, true)).status,
+      "contact-type-decision-required",
+    );
+    assertEquals(
+      (await imports.commit(actor, actual.importId, true, [{
+        sourceKey: ":1",
+        action,
+        ...(action === "map" ? { typeId: "existing" } : {}),
+      }])).status,
+      "completed",
+    );
+    assertEquals(created.length, action === "create" ? 1 : 0);
+    if (action === "create") {
+      const command = created[0] as Record<string, unknown>;
+      assertEquals([
+        command.icon,
+        command.canDelete,
+        command.createdAt,
+        command.updatedAt,
+      ], [
+        "fa-chat",
+        false,
+        "2020-01-02T03:04:05.000Z",
+        "2021-02-03T04:05:06.000Z",
+      ]);
+    }
+  }
 });

@@ -1,3 +1,4 @@
+import { PostgresRelationshipBusinessImportBoundary } from "./adapters/postgres/business_import_boundary.ts";
 /**
  * Relationships composition. Only a declared composition root imports it.
  */
@@ -18,6 +19,12 @@ import type {
 import type { RelationshipWorkspaceBoundary } from "../workspaces/public.ts";
 
 export interface RelationshipPorts {
+  readonly importPeople: ConstructorParameters<
+    typeof PostgresRelationshipBusinessImportBoundary
+  >[0];
+  readonly importVocabulary: ConstructorParameters<
+    typeof PostgresRelationshipBusinessImportBoundary
+  >[1];
   readonly people: RelationshipPersonBoundary;
   /** Creating the other side of a relationship creates a person. */
   readonly peopleCreation: TransactionalPeopleCreation;
@@ -29,6 +36,10 @@ export function composeRelationships(
   ports: RelationshipPorts,
 ) {
   return {
+    businessImportBoundary: new PostgresRelationshipBusinessImportBoundary(
+      ports.importPeople,
+      ports.importVocabulary,
+    ),
     lifecycleImpact: PostgresRelationshipWorkspaceLifecycleImpact,
     personalizationReferences: PostgresRelationshipPersonalizationReferences,
     relationships: createRelationshipManagement({

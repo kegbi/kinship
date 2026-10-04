@@ -1,3 +1,4 @@
+import { PostgresFileBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
 /**
  * Files composition. Only a declared composition root imports it.
  *
@@ -66,6 +67,9 @@ export function composeObjectStorage(
 }
 
 export interface FilePorts {
+  readonly importPeople: ConstructorParameters<
+    typeof PostgresFileBusinessImportBoundary
+  >[0];
   /** The gift a file may be attached to, composed by gifts. */
   readonly giftTarget: GiftAttachmentTarget;
   /**
@@ -83,6 +87,9 @@ export function composeFiles(shared: SharedComposition, ports: FilePorts) {
     storage: ports.objectStore,
   };
   return {
+    businessImportBoundary: new PostgresFileBusinessImportBoundary(
+      ports.importPeople,
+    ),
     exportBoundary: new PostgresExportFileBoundary(shared.database, objects),
     files: createPersonFileManagement({
       actors: shared.actors,

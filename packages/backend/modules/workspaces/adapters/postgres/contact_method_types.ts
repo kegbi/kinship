@@ -33,9 +33,13 @@ export class PostgresContactMethodTypeCatalog
     if (existing.rows[0]) return existing.rows[0].id;
     const inserted = await sql<
       { id: string }
-    >`insert into crm.contact_method_types (workspace_id, name, kind, protocol) values (${command.workspaceId}::uuid, ${command.name}, ${command.kind}, ${
+    >`insert into crm.contact_method_types (workspace_id, name, kind, protocol, icon, can_delete, created_at, updated_at) values (${command.workspaceId}::uuid, ${command.name}, ${command.kind}, ${
       command.protocol ?? null
-    }) returning id::text`.execute(database);
+    }, ${command.icon ?? null}, ${command.canDelete ?? true}, coalesce(${
+      command.createdAt ?? null
+    }::timestamptz, now()), coalesce(${
+      command.updatedAt ?? null
+    }::timestamptz, now())) returning id::text`.execute(database);
     return inserted.rows[0]!.id;
   }
   async byKind(

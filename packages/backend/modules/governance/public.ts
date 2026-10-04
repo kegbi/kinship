@@ -29,3 +29,9 @@ export {
   type LegalAcceptance,
   type LegalAcceptanceDependencies,
 } from "./application/legal_acceptance.ts";
+export type { HistoricalAuditImport } from "./application/historical_audit_import.ts";
+export { createHistoricalAuditImport } from "./application/historical_audit_import.ts";
+export type {
+  HistoricalAuditRecorder,
+  HistoricalAuditReferences,
+} from "./application/historical_audit_import.ts";

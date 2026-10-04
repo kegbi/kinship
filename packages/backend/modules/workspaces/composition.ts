@@ -1,3 +1,5 @@
+import { PostgresWorkspaceBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
+import { PostgresVocabularyBusinessImportBoundary } from "./adapters/postgres/business_vocabulary_import.ts";
 /**
  * Workspaces composition. Only a declared composition root imports it.
  *
@@ -159,6 +161,8 @@ export function workspaceTransactionRunner(
  */
 export function composeWorkspaceBoundaries() {
   return {
+    businessImportBoundary: new PostgresWorkspaceBusinessImportBoundary(),
+    vocabularyImportBoundary: new PostgresVocabularyBusinessImportBoundary(),
     calendar: workspaceCalendar(),
     contactMethodTypes: new PostgresContactMethodTypeCatalog(),
     currencies: workspaceCurrencies(),
@@ -231,6 +235,7 @@ export function composeWorkspaces(
     workspace: new PostgresWorkspaceRegistration(),
   };
   return {
+    vocabularyImportBoundary: new PostgresVocabularyBusinessImportBoundary(),
     invitations: createWorkspaceInvitationCoordinator({
       audit: invitationAuditFrom(shared.audit),
       clock: shared.clock,

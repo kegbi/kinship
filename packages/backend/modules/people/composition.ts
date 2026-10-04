@@ -1,3 +1,4 @@
+import { PostgresPeopleBusinessImportBoundary } from "./adapters/postgres/import_business_boundary.ts";
 /**
  * People composition.
  *
@@ -79,6 +80,9 @@ export function personBoundary(): PostgresRelationshipPersonBoundary {
 }
 
 export interface PeoplePorts {
+  readonly importReferences: ConstructorParameters<
+    typeof PostgresPeopleBusinessImportBoundary
+  >[0];
   /** The files module's avatar uploads, which the avatar is stored with. */
   readonly avatarImages: PersonAvatarImages;
   /** The workspace gender vocabulary an edited identity refers to. */
@@ -129,6 +133,9 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     workspace: ports.profileFactWorkspace,
   });
   return {
+    businessImportBoundary: new PostgresPeopleBusinessImportBoundary(
+      ports.importReferences,
+    ),
     avatars: createPersonAvatarManagement({
       actors: shared.actors,
       audit: personAvatarAuditFrom(shared.audit),

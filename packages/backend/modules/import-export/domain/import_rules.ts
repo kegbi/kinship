@@ -1,3 +1,5 @@
+import type { ImportedContactMethodType } from "./contact_import.ts";
+import type { BusinessEntity } from "./business_entities.ts";
 /**
  * What an import is, and what a source contact has to say for itself.
  *
@@ -108,6 +110,9 @@ export interface StagedContact {
 
 /** A staged contact the repository has handed back to be committed. */
 export interface PreparedImportContact {
+  readonly legacyNotes?: readonly string[];
+  readonly legacyStartedAt?: string;
+  readonly legacyCompletedAt?: string;
   readonly notes?: readonly string[];
   readonly archived: boolean;
   /**
@@ -145,6 +150,8 @@ export interface PreparedImportAvatar {
 /** What the repository answers when a commit is prepared. */
 export type PreparedImportCommit =
   | {
+    readonly contactTypeCatalog?: readonly ImportedContactMethodType[];
+    readonly businessEntities?: readonly BusinessEntity[];
     readonly avatars: readonly PreparedImportAvatar[];
     readonly contacts: readonly PreparedImportContact[];
     readonly importId: string;
@@ -513,6 +520,9 @@ export function sourceFingerprint(
   ];
   return sha256Hex(canonicalJson({
     attachments,
+    ...(parsed.contactTypeCatalog?.length
+      ? { contactTypeCatalog: parsed.contactTypeCatalog }
+      : {}),
     contacts: contacts.map((contact) => ({
       rawSnapshot: contact.rawSnapshot,
       ...(contact.contact ? { contact: contact.contact } : {}),

@@ -1,3 +1,5 @@
+import type { ImportedContactMethodType } from "../domain/contact_import.ts";
+import type { BusinessEntity } from "../domain/business_entities.ts";
 /**
  * How the module stores an import run.
  *
@@ -26,11 +28,13 @@ import type { ImportActor, ImportTransaction } from "./context.ts";
 
 /** Everything one dry run produced, written in a single statement. */
 export interface StageImportCommand {
+  readonly contactTypeCatalog?: readonly ImportedContactMethodType[];
+  readonly compatibleFingerprints?: readonly string[];
+  readonly businessEntities?: readonly BusinessEntity[];
   readonly sourceProfile?: "json_export" | "sql_export";
   readonly actor: ImportActor;
   readonly contacts: readonly StagedContact[];
   readonly fingerprint: string;
-  readonly compatibleFingerprints?: readonly string[];
   readonly importId: string;
   readonly report: ImportReport;
   readonly transaction: ImportTransaction;
@@ -43,6 +47,12 @@ export interface ContactTypeOutcome {
 }
 
 export interface ImportRepository {
+  retargetBusinessEntity?(
+    importId: string,
+    entity: BusinessEntity,
+    targetId: string,
+    transaction: ImportTransaction,
+  ): Promise<void>;
   complete(
     actor: ImportActor,
     importId: string,
