@@ -1265,7 +1265,10 @@ Deno.test("[PEOPLE-008] re-importing the same Monica export after a merge stays 
       owner,
       `/api/v1/imports/${importId}/commit`,
       "POST",
-      { confirmed: true },
+      {
+        confirmed: true,
+        monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+      },
     );
     assertEquals(committed.status, 200);
     const body = await committed.json() as {

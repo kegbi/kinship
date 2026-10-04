@@ -465,6 +465,9 @@ Deno.test("[GAP-020] the refusals imports.ts answers are unchanged", () => {
   assertEquals(
     pinned(IMPORT_WRITE_FAILURES),
     [
+      "monica-choices-changed | 400 | import_monica_choices_changed | Import choices changed | Another import has already resolved these choices. Validate the source again to reuse the saved resolutions before committing.",
+      "monica-choice-required | 400 | import_monica_choice_required | Import choices required | Choose your timezone, a supported currency for every unresolved debt, and an active gender option or Unspecified for every unresolved contact. Validate again if available options changed.",
+      "contact-type-decision-required | 400 | import_contact_type_decision_required | Contact type choice required | Choose Create, an active existing type, or Skip for every unmatched contact type. A type may have changed since validation; validate again to refresh the choices.",
       "confirmation-required | 400 | import_confirmation_required | Confirmation required | Confirm the validated dry-run before committing it.",
       "forbidden | 403 | import_forbidden | Import unavailable | Workspace import is available to owners and administrators only.",
       "not-found | 404 | import_not_found | Import unavailable | This validated import does not exist in the active workspace.",
