@@ -1477,6 +1477,26 @@ Playwright test carrying its stable flow ID.
       `today.TODAY-001.spec.ts`, which still needs its first run at the next E2E
       checkpoint.
 
+- [ ] **REL-091 — Cold browser-image builds fail during dependency downloads.**
+      Observed on 2026-10-04 before the targeted import/settings/people browser
+      tests started: the frozen Deno install failed reading the response body
+      for `typescript@5.9.3`; the concurrent pnpm install reported repeated
+      download error 23. Docker had ample free disk space. No manifest or
+      lockfile changed in the application candidate. Diagnose registry transport
+      and bounded cache reuse separately; do not weaken frozen installs or alter
+      dependency pins to accept a retry. A cached-runtime test with current
+      source and freshly built frontend output does not prove a cold image
+      build.
+
+- [ ] **REL-092 — Windows frontend asset relocation can fail in the synced
+      checkout.** Observed on 2026-10-04: Astro compiled and prerendered the
+      application, then failed with `EPERM` moving `AuthLayout` CSS from
+      `dist/server/_astro` to `dist/client/_astro`. The same candidate built
+      successfully into a fresh nonsynced output directory with access to the
+      same installed dependencies. Diagnose the file-lock/output-directory
+      interaction separately; no application behavior change is required by this
+      observation.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
