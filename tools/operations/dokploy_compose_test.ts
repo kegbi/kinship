@@ -66,6 +66,14 @@ Deno.test("OPS-001E Dokploy keeps storage private and gates application startup 
   assert(output.success, "Dokploy Compose must render successfully");
   const model = JSON.parse(new TextDecoder().decode(output.stdout));
   const { services } = model;
+  for (const name of ["api", "web"]) {
+    assert(
+      services[name].networks?.default?.aliases?.includes(
+        `kinship-private-${name}`,
+      ),
+      `${name} has a distinct private-network DNS alias`,
+    );
+  }
   assert(
     Object.keys(services).length === 9,
     "six application services plus storage, initialization and preflight",

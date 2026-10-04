@@ -315,8 +315,8 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
   );
   assert(
     gateway.includes("resolver 127.0.0.11") &&
-      gateway.includes("set $api_upstream http://api:8000") &&
-      gateway.includes("set $web_upstream http://web:4321"),
+      gateway.includes("set $api_upstream http://kinship-private-api:8000") &&
+      gateway.includes("set $web_upstream http://kinship-private-web:4321"),
     "gateway resolves private upstreams after container startup and recreation",
   );
   assert(

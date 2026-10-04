@@ -81,6 +81,132 @@ async function docker(
   return [stdout, stderr].filter(Boolean).join("\n");
 }
 
+Deno.test("Dokploy gateway ignores generic upstream names on its shared edge network", async () => {
+  const id = `kinship-dns-${Deno.pid}-${Date.now()}`;
+  const privateNetwork = `${id}-private`;
+  const sharedNetwork = `${id}-edge`;
+  const gateway = `${id}-gateway`;
+  const upstream = `${id}-upstream`;
+  const otherApp = `${id}-other`;
+  const tls = await createE2eTls(`kinship-e2e-${Deno.pid}-${Date.now()}`);
+  const containers: string[] = [];
+  const networks: string[] = [];
+  try {
+    for (const network of [privateNetwork, sharedNetwork]) {
+      await docker(["network", "create", network]);
+      networks.push(network);
+    }
+    for (
+      const [name, network, aliases, body] of [
+        [upstream, privateNetwork, [
+          "kinship-private-api",
+          "kinship-private-web",
+        ], "kinship-private"],
+        [
+          otherApp,
+          sharedNetwork,
+          ["api", "web"],
+          "unrelated-shared-application",
+        ],
+      ] as const
+    ) {
+      const config =
+        `events {} http { server { listen 8000; listen 4321; location / { return 200 '${body}'; } } }`;
+      await docker([
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--network",
+        network,
+        ...aliases.flatMap((alias) => ["--network-alias", alias]),
+        "--entrypoint",
+        "sh",
+        NGINX_IMAGE,
+        "-c",
+        `printf '%s' "$1" >/tmp/upstream.conf; exec nginx -c /tmp/upstream.conf -g 'daemon off;'`,
+        "sh",
+        config,
+      ]);
+      containers.push(name);
+    }
+    await docker([
+      "create",
+      "--name",
+      gateway,
+      "--network",
+      sharedNetwork,
+      "--user",
+      "nginx",
+      "--mount",
+      `type=bind,source=${await Deno.realPath(
+        "gateway/nginx.conf",
+      )},target=/etc/nginx/nginx.conf,readonly`,
+      "--mount",
+      `type=bind,source=${await Deno.realPath(
+        "gateway/security_headers.conf",
+      )},target=/etc/nginx/security_headers.conf,readonly`,
+      "--mount",
+      `type=bind,source=${tls.certificate},target=/run/secrets/gateway_tls_certificate,readonly`,
+      "--mount",
+      `type=bind,source=${tls.privateKey},target=/run/secrets/gateway_tls_private_key,readonly`,
+      NGINX_IMAGE,
+    ]);
+    containers.push(gateway);
+    await docker(["network", "connect", privateNetwork, gateway]);
+    await docker(["start", gateway]);
+    const request = (path: string) =>
+      docker([
+        "exec",
+        gateway,
+        "wget",
+        "-q",
+        "-O",
+        "-",
+        `http://127.0.0.1:8080${path}`,
+      ]);
+    const deadline = Date.now() + 15_000;
+    while (true) {
+      try {
+        await request("/");
+        break;
+      } catch {
+        if (Date.now() >= deadline) {
+          throw new Error("DNS fixture gateway did not start");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    const collision = await docker([
+      "exec",
+      gateway,
+      "wget",
+      "-q",
+      "-O",
+      "-",
+      "http://web:4321/auth/mfa",
+    ]);
+    assert(
+      collision === "unrelated-shared-application",
+      "generic web resolves to the unrelated shared application",
+    );
+    for (const path of ["/auth/mfa", "/api/v1/health", "/gateway-health"]) {
+      assert(
+        await request(path) === "kinship-private",
+        `${path} must route to the private Kinship service despite shared aliases`,
+      );
+    }
+  } finally {
+    for (const name of containers.reverse()) {
+      await docker(["rm", "--force", name]);
+    }
+    for (const name of networks.reverse()) {
+      await docker(["network", "rm", name]);
+    }
+    await removeE2eTls(tls);
+  }
+});
+
 async function waitForContainerHealth(
   container: string,
   expected: "healthy" | "unhealthy",
