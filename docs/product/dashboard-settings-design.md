@@ -28,6 +28,14 @@ The shell must preserve the same semantic order on desktop and mobile. A mobile
 sheet may expose navigation, but search, the current page, and the primary
 action remain reachable without scrolling through a complete settings menu.
 
+Time-zone fields in import choices, personal preferences, and workspace defaults
+provide searchable IANA suggestions with keyboard and pointer selection.
+Existing saved IANA aliases and field validation remain supported. Import
+commits show a modal indeterminate progress indicator until the request settles,
+then the shared dismissible notification stack announces completion counts or
+the error. Focus returns to the report link on success or the retry action after
+a failure.
+
 ## Today
 
 ### Route And Purpose

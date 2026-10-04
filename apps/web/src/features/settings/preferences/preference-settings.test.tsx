@@ -149,7 +149,14 @@ describe("AUTH-004 personal preferences", () => {
     expect(element("#settings-errors").textContent).toMatch(/review/i);
     expect(status().textContent).toBe("Review the preference values.");
     expect(document.activeElement).toBe(timezone);
-    type(timezone, "Europe/Belgrade");
+    fireEvent.input(timezone, {
+      target: { value: "Belgrade" },
+      inputType: "insertText",
+    });
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Europe/Belgrade" }),
+    );
+    await waitFor(() => expect(timezone.value).toBe("Europe/Belgrade"));
     expect(timezone.hasAttribute("aria-invalid")).toBe(false);
     expect(element("#timezone-error").textContent).toBe("");
     expect(timezone.validationMessage).toBe("");

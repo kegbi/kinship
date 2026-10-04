@@ -21,6 +21,7 @@ import {
   SettingsForm,
 } from "../form/settings-form.tsx";
 import { CurrencyOptions } from "../form/currency-select.tsx";
+import { TimezoneSelect } from "@/components/ui/timezone-select.tsx";
 
 export const PREFERENCE_SETTINGS_ISLAND = "settings-preferences";
 
@@ -81,17 +82,17 @@ export function PreferenceSettingsForm(
               required
             />
           </label>
-          <label>
-            Time zone<input
+          <div className="grid content-start gap-(--space-1)">
+            <label htmlFor="preference-timezone">Time zone</label>
+            <TimezoneSelect
+              id="preference-timezone"
               aria-describedby="timezone-error"
               defaultValue={values?.timezone ?? ""}
               disabled={disabled}
-              maxLength={100}
               name="timezone"
-              placeholder="Europe/Belgrade"
             />
             <FieldError errors={errors} id="timezone-error" name="timezone" />
-          </label>
+          </div>
           <label>
             Temperature<select
               defaultValue={values?.temperatureScale ?? "celsius"}

@@ -16,6 +16,7 @@ import {
   SettingsForm,
 } from "../form/settings-form.tsx";
 import { CurrencyOptions } from "../form/currency-select.tsx";
+import { TimezoneSelect } from "@/components/ui/timezone-select.tsx";
 
 export const WORKSPACE_SETTINGS_ISLAND = "settings-workspace";
 
@@ -79,12 +80,13 @@ export function WorkspaceSettingsForm(
               required
             />
           </label>
-          <label>
-            Default time zone<input
+          <div className="grid content-start gap-(--space-1)">
+            <label htmlFor="workspace-timezone">Default time zone</label>
+            <TimezoneSelect
+              id="workspace-timezone"
               aria-describedby="default-timezone-error"
               defaultValue={values?.defaultTimezone ?? ""}
               disabled={disabled}
-              maxLength={100}
               name="defaultTimezone"
             />
             <FieldError
@@ -92,7 +94,7 @@ export function WorkspaceSettingsForm(
               id="default-timezone-error"
               name="defaultTimezone"
             />
-          </label>
+          </div>
           <label>
             Default currency<select
               aria-describedby="default-currency-error"

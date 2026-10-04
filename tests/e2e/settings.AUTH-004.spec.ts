@@ -259,7 +259,14 @@ test(
     const setPreferences = async (locale: string, timezone: string) => {
       await page.goto("/app/settings/preferences");
       await page.locator('[name="locale"]').fill(locale);
-      await page.locator('[name="timezone"]').fill(timezone);
+      const zone = page.getByRole("combobox", { name: "Time zone" });
+      await zone.fill(timezone);
+      if (timezone) {
+        await page.getByRole("option", { name: timezone, exact: true }).click();
+      } else {
+        await zone.press("Tab");
+      }
+      await expect(zone).toHaveValue(timezone);
       await page.getByRole("button", { name: "Save changes" }).click();
       await expect(
         page.getByRole("status").filter({ hasText: "Preferences saved" }),
@@ -558,14 +565,18 @@ test(
 
     await page.goto("/app/settings/preferences");
     await page.getByLabel("Locale").fill("sr-Latn");
-    const timeZone = page.getByLabel("Time zone");
+    const timeZone = page.getByRole("combobox", { name: "Time zone" });
     await timeZone.fill("Not/AZone");
+    await timeZone.press("Tab");
+    await expect(timeZone).toHaveValue("Not/AZone");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByRole("alert")).toContainText("Review");
     await expect(page.getByText("Enter a valid IANA time zone.")).toBeVisible();
     await expect(timeZone).toHaveAttribute("aria-invalid", "true");
     await expect(timeZone).toBeFocused();
-    await timeZone.fill("Europe/Belgrade");
+    await timeZone.fill("Belgrade");
+    await page.getByRole("option", { name: "Europe/Belgrade" }).click();
+    await expect(timeZone).toHaveValue("Europe/Belgrade");
     // The currency is a choice among the supported codes (GIFTS-001), so an
     // unsupported one can no longer be typed.
     const currency = page.getByLabel("Currency");
@@ -680,7 +691,12 @@ test(
       `trusted-${browserName}-${Date.now()}`,
     );
     await page.getByLabel("Default locale").fill("sr-Latn");
-    await page.getByLabel("Default time zone").fill("Europe/Belgrade");
+    const defaultZone = page.getByRole("combobox", {
+      name: "Default time zone",
+    });
+    await defaultZone.fill("Belgrade");
+    await page.getByRole("option", { name: "Europe/Belgrade" }).click();
+    await expect(defaultZone).toHaveValue("Europe/Belgrade");
     const defaultCurrency = page.getByLabel("Default currency");
     await expect(defaultCurrency.locator("option").first()).toHaveText(
       "None (US dollars)",

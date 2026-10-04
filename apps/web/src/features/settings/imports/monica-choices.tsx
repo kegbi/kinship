@@ -1,5 +1,6 @@
 import type { Dispatch } from "react";
 import { buttonVariants } from "@/components/ui/variants.ts";
+import { TimezoneSelect } from "@/components/ui/timezone-select.tsx";
 import {
   debtAmountPreview,
   type NewImportAction,
@@ -34,13 +35,12 @@ export function MonicaChoices(
           reminders in this timezone, including future reminders. Other members
           keep their settings.
         </p>
-        <input
+        <TimezoneSelect
           id="import-timezone"
           aria-describedby="import-timezone-help"
-          placeholder="Europe/Paris or UTC"
+          disabled={state.committing || Boolean(state.committed)}
           value={state.timezone}
-          onChange={(e) =>
-            dispatch({ type: "timezone", value: e.currentTarget.value })}
+          onValueChange={(value) => dispatch({ type: "timezone", value })}
         />
       </div>
       {report.debts.length > 0

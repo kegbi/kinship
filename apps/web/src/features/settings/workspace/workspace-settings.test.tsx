@@ -44,7 +44,10 @@ const field = (label: string) => screen.getByLabelText<HTMLInputElement>(label);
 
 function type(input: HTMLInputElement, text: string): void {
   act(() => {
-    fireEvent.input(input, { target: { value: text } });
+    fireEvent.input(input, {
+      target: { value: text },
+      inputType: "insertText",
+    });
   });
 }
 
@@ -57,6 +60,33 @@ function submit(): void {
 afterEach(() => sessionStorage.clear());
 
 describe("WORKSPACE-001 workspace settings", () => {
+  it("searches time zones and saves the selected value with the existing dirty and validation behavior", async () => {
+    shell();
+    const api = stubApi({
+      [SAVE]: loaded(),
+      [SESSION]: jsonResponse(workspaceSession()),
+      [WORKSPACE]: loaded(),
+    });
+    await mount();
+    const timezone = screen.getByRole<HTMLInputElement>("combobox", {
+      name: "Default time zone",
+    });
+    act(() => timezone.focus());
+    type(timezone, "moscow");
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Europe/Moscow" }),
+    );
+    expect(timezone.value).toBe("Europe/Moscow");
+    expect(new FormData(form()).getAll("defaultTimezone")).toEqual([
+      "Europe/Moscow",
+    ]);
+    expect(document.body.textContent).toContain("Unsaved");
+    submit();
+    await waitFor(() =>
+      expect(status().textContent).toBe("Workspace settings saved.")
+    );
+    expect(api.bodies()[0]).toMatchObject({ defaultTimezone: "Europe/Moscow" });
+  });
   it("does nothing when the form is absent", async () => {
     drawShell("<p>Other page</p>");
     const api = stubApi();

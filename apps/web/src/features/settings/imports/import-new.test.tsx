@@ -17,6 +17,8 @@ import {
   mountSettled,
 } from "../../../testing/render.tsx";
 import { IMPORT_NEW_ISLAND, mountNewImport } from "./import-new.tsx";
+import { TOAST_REGION } from "../../../testing/shell.ts";
+import { clearToasts } from "../../shell/toasts/toasts.ts";
 
 const SESSION = "GET /api/v1/session";
 const DRY_RUN = "POST /api/v1/imports/dry-runs";
@@ -85,7 +87,84 @@ function confirm(): void {
   });
 }
 
-afterEach(() => sessionStorage.clear());
+afterEach(() => {
+  sessionStorage.clear();
+  clearToasts();
+});
+
+it("shows commit progress, prevents duplicate commits, and announces dismissible completion counts", async () => {
+  shell();
+  document.body.insertAdjacentHTML("beforeend", TOAST_REGION);
+  const pending = deferred<Response>();
+  const api = stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: dryRun(),
+    [COMMIT]: pending.promise,
+  });
+  await mount();
+  await choose(monica());
+  submit();
+  await waitFor(() => expect(hook("contacts").textContent).toBe("1"));
+  confirm();
+  const button = commit();
+  act(() => {
+    fireEvent.click(button);
+    fireEvent.click(button);
+  });
+  expect(screen.getByRole("dialog", { name: "Importing your data" }))
+    .toBeDefined();
+  expect(
+    screen.getByRole("progressbar", { name: "Import in progress" })
+      .hasAttribute("aria-valuenow"),
+  ).toBe(false);
+  expect(input().disabled).toBe(true);
+  await act(() =>
+    pending.resolve(jsonResponse({
+      importId,
+      peopleCreated: 2,
+      peopleReused: 1,
+      peopleSkippedDeleted: 3,
+      status: "completed",
+    }))
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("link", { name: "Open import report" }),
+    )
+  );
+  expect(api.calls().filter((call) => call.endsWith("/commit"))).toHaveLength(
+    1,
+  );
+  expect(element("#app-toasts").textContent).toContain(
+    "2 created, 1 reused, 3 skipped",
+  );
+  expect(element("#app-toasts > li").dataset.tone).toBe("success");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+  expect(element("#app-toasts").children).toHaveLength(0);
+});
+
+it("closes commit progress and shows a dismissible error without announcing completion", async () => {
+  shell();
+  document.body.insertAdjacentHTML("beforeend", TOAST_REGION);
+  stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: dryRun(),
+    [COMMIT]: problemResponse(503, { detail: "Try again." }),
+  });
+  await mount();
+  await choose(monica());
+  submit();
+  await waitFor(() => expect(hook("contacts").textContent).toBe("1"));
+  confirm();
+  fireEvent.click(commit());
+  await waitFor(() => expect(hook("state").textContent).toBe("Try again."));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(element("#app-toasts > li").dataset.tone).toBe("error");
+  expect(element("#app-toasts").textContent).toContain("Try again.");
+  expect(commit().disabled).toBe(false);
+  await waitFor(() => expect(document.activeElement).toBe(commit()));
+});
 
 describe("IMPORT-001 settings import", () => {
   it("does nothing without its region", async () => {
@@ -502,7 +581,15 @@ it("requires Monica timezone and per-contact genders, applies bulk currency with
   const timezone = await screen.findByLabelText("Your timezone");
   confirm();
   expect(commit().disabled).toBe(true);
-  fireEvent.change(timezone, { target: { value: "UTC" } });
+  expect(timezone.getAttribute("role")).toBe("combobox");
+  act(() => timezone.focus());
+  fireEvent.input(timezone, {
+    target: { value: "UT" },
+    inputType: "insertText",
+  });
+  fireEvent.click(
+    await screen.findByRole("option", { name: "UTC" }),
+  );
   fireEvent.change(screen.getByLabelText("Currency for all debts"), {
     target: { value: "EUR" },
   });

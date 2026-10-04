@@ -30,7 +30,17 @@ import {
   mapImportColumns,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
-import { settle, useLatestRequest } from "../../../islands/core/index.ts";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.tsx";
+import {
+  settle,
+  toast,
+  useLatestRequest,
+} from "../../../islands/core/index.ts";
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
 import { useHeldSubmit } from "../shared/hooks.ts";
@@ -76,9 +86,12 @@ export function NewImport(
   const reading = useRef<Promise<void> | undefined>(undefined);
   const validating = useRef(false);
   const applying = useRef(false);
+  const committing = useRef(false);
   // The source kind the chosen file is read as, which the file field names.
   const kind = useRef<ImportSource>("monica");
   const fileInput = useRef<HTMLInputElement>(null);
+  const commitButton = useRef<HTMLButtonElement>(null);
+  const reportLink = useRef<HTMLAnchorElement>(null);
 
   const detect = async (file: File | undefined) => {
     chosen.current = file;
@@ -178,7 +191,7 @@ export function NewImport(
 
   const validate = async () => {
     const workspaceId = workspace.current!;
-    if (validating.current) return;
+    if (validating.current || committing.current) return;
     validating.current = true;
     // Held from here, including while the chosen file is still being read,
     // which is the one this validation is for.
@@ -255,6 +268,8 @@ export function NewImport(
 
   // Commit is enabled only for a confirmed dry run, and not while it runs.
   const commit = async () => {
+    if (committing.current) return;
+    committing.current = true;
     const workspaceId = workspace.current!;
     const importId = state.importId!;
     dispatch({ type: "committing" });
@@ -275,19 +290,26 @@ export function NewImport(
       )
     );
     if (result.status !== "ready" || !result.data) {
+      committing.current = false;
+      const message = result.problem?.detail ??
+        "The import could not be committed.";
       dispatch({
-        message: result.problem?.detail ?? "The import could not be committed.",
+        message,
         type: "commit-refused",
       });
+      toast(message, "error");
       return;
     }
-    dispatch({
+    committing.current = false;
+    const completed = {
       created: result.data.peopleCreated,
       importId: result.data.importId,
       reused: result.data.peopleReused,
       skippedDeleted: result.data.peopleSkippedDeleted,
-      type: "committed",
-    });
+      type: "committed" as const,
+    };
+    dispatch(completed);
+    toast(newImportReducer(state, completed).status, "success");
   };
 
   const stateLine = (
@@ -306,6 +328,21 @@ export function NewImport(
   )!;
   return (
     <>
+      <Dialog open={state.committing}>
+        <DialogContent
+          finalFocus={() => reportLink.current ?? commitButton.current}
+        >
+          <DialogTitle>Importing your data</DialogTitle>
+          <DialogDescription>
+            Your validated data is being saved. Keep this page open until the
+            import finishes.
+          </DialogDescription>
+          <progress
+            aria-label="Import in progress"
+            className="w-full accent-primary"
+          />
+        </DialogContent>
+      </Dialog>
       <form
         className="import-form"
         data-import-form=""
@@ -318,7 +355,8 @@ export function NewImport(
             <label key={option.id}>
               <input
                 checked={state.source === option.id}
-                disabled={state.validating || state.applying}
+                disabled={state.validating || state.applying ||
+                  state.committing}
                 name="sourceKind"
                 onChange={() => pick(option.id)}
                 type="radio"
@@ -349,7 +387,7 @@ export function NewImport(
           <label htmlFor="import-source">{chosenSource.field}</label>
           <input
             accept={chosenSource.accept}
-            disabled={state.validating}
+            disabled={state.validating || state.committing}
             id="import-source"
             name="source"
             onChange={choose}
@@ -366,7 +404,7 @@ export function NewImport(
             {state.detection}
           </p>
         </div>
-        <button disabled={state.validating} type="submit">
+        <button disabled={state.validating || state.committing} type="submit">
           Validate dry run
         </button>
       </form>
@@ -451,6 +489,7 @@ export function NewImport(
         <label className="confirmation-control">
           <input
             checked={state.confirmed}
+            disabled={state.committing || Boolean(state.committed)}
             data-import-confirm=""
             onChange={(event) =>
               dispatch({
@@ -470,6 +509,7 @@ export function NewImport(
                 variant: "outline",
               })}
               href={`/app/settings/import/${state.committed}`}
+              ref={reportLink}
             >
               Open import report
             </a>
@@ -478,6 +518,7 @@ export function NewImport(
             <button
               className={buttonVariants({ className: "import-action" })}
               data-import-commit=""
+              ref={commitButton}
               disabled={!state.confirmed || !state.importId ||
                 !monicaChoicesComplete(state) ||
                 state.committing ||

@@ -1126,6 +1126,7 @@ flows:
       - Produce a dry-run report with counts, orphans, unsupported data, and missing files.
       - Choose Create, Map, or Skip for unresolved contact method types; choose each unresolved debt currency individually or apply a bulk currency with overrides, choose each unresolved contact gender or Unspecified, and choose your personal timezone for reminder schedules.
       - Commit only after explicit confirmation and complete server-side validation of every required selection.
+      - Search and select an IANA timezone by keyboard or pointer; show indeterminate progress while committing and a dismissible completion or failure notification with final counts on success.
       - Re-run the same source without duplicating canonical entities or recreating a person a member deleted.
       - Keep all legacy credentials inactive.
     alternateOutcomes: [
