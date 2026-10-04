@@ -69,6 +69,8 @@ export interface ImportedAvatarPresentation {
 
 /** One contact as it is staged, before anything is written to people. */
 export interface StagedContact {
+  readonly contact?: ImportedContact;
+  readonly notes?: readonly string[];
   readonly avatarPresentation?: ImportedAvatarPresentation;
   readonly avatar?: {
     readonly byteSize: number;
@@ -95,10 +97,12 @@ export interface StagedContact {
 
 /** A staged contact the repository has handed back to be committed. */
 export interface PreparedImportContact {
+  readonly notes?: readonly string[];
   readonly archived: boolean;
   /**
-   * What a vCard or CSV contact carries beyond the person (GAP-050): contact
-   * methods, addresses, dates, work, and a note. A Monica contact has none.
+   * What an imported contact carries beyond the person: contact methods,
+   * addresses, dates, work, and an optional portable-format note. Monica
+   * notes remain separate bodies in `notes`.
    */
   readonly contact?: ImportedContact;
   /** The staging row, which a reused contact is retargeted by. */
@@ -169,7 +173,7 @@ export interface ImportSummary {
   /** A CSV run awaiting its column mapping carries what the member maps. */
   readonly preview?: CsvPreview;
   readonly report: ImportReport;
-  readonly sourceProfile: "csv" | "json_export" | "vcf";
+  readonly sourceProfile: "csv" | "json_export" | "sql_export" | "vcf";
   readonly sourceSystem: ImportSourceSystem;
   readonly status: "completed" | "dry_run" | "failed" | "pending";
 }
@@ -327,7 +331,7 @@ export function stageContacts(
   for (const contact of parsed.contacts) {
     const sourcePrimaryKey = sourceId(contact.id);
     const givenName = textValue(contact.first_name);
-    const sourceUuid = contact.uuid === undefined
+    const sourceUuid = (contact.uuid === null || contact.uuid === undefined)
       ? undefined
       : textValue(contact.uuid, 36)?.toLowerCase();
     const deletedAt = contact.deleted_at;
@@ -346,7 +350,7 @@ export function stageContacts(
       !validOptionalBoolean(contact.is_dead) ||
       !validOptionalBoolean(contact.is_partial) ||
       !validOptionalBoolean(contact.is_starred) ||
-      (contact.uuid !== undefined &&
+      ((contact.uuid !== null && contact.uuid !== undefined) &&
         (!sourceUuid || !SOURCE_UUID.test(sourceUuid))) ||
       (sourceUuid !== undefined && uniqueUuids.has(sourceUuid)) ||
       (deletedAt !== undefined && deletedAt !== null &&
@@ -356,10 +360,14 @@ export function stageContacts(
     }
     uniqueIds.add(sourcePrimaryKey);
     if (sourceUuid) uniqueUuids.add(sourceUuid);
-    const avatarPath = contact.avatar_file_name === undefined
+    const avatarPath = (contact.avatar_file_name === null ||
+        contact.avatar_file_name === undefined)
       ? undefined
       : safePath(contact.avatar_file_name);
-    if (contact.avatar_file_name !== undefined && !avatarPath) {
+    if (
+      (contact.avatar_file_name !== null &&
+        contact.avatar_file_name !== undefined) && !avatarPath
+    ) {
       return "A contact avatar path is unsafe.";
     }
     const attachment = avatarPath
@@ -370,13 +378,19 @@ export function stageContacts(
     if (sourceUuid) rawSnapshot.uuid = sourceUuid;
     const avatarPresentation = importedAvatarPresentation(contact);
     contacts.push({
+      ...(parsed.details?.get(sourcePrimaryKey)
+        ? { contact: parsed.details.get(sourcePrimaryKey)! }
+        : {}),
+      ...(parsed.notes?.get(sourcePrimaryKey)
+        ? { notes: parsed.notes.get(sourcePrimaryKey)! }
+        : {}),
       ...(avatarPresentation ? { avatarPresentation } : {}),
       ...(avatarPath
         ? {
           avatar: {
             byteSize: attachment?.byteSize ?? 0,
             fileId: nextId(),
-            originalFilename: avatarPath,
+            originalFilename: attachment?.path ?? avatarPath,
             present: attachment?.present ?? false,
           },
         }
@@ -459,7 +473,7 @@ export function importReport(counts: ImportCounts): ImportReport {
         ? [{
           code: "unsupported-data",
           message:
-            `${counts.unsupported} unsupported record(s) will be skipped.`,
+            `${counts.unsupported} unsupported row(s) or field value(s) will be skipped.`,
           severity: "skipped" as const,
         }]
         : []),
@@ -487,6 +501,8 @@ export function sourceFingerprint(
     attachments,
     contacts: contacts.map((contact) => ({
       rawSnapshot: contact.rawSnapshot,
+      ...(contact.contact ? { contact: contact.contact } : {}),
+      ...(contact.notes ? { notes: contact.notes } : {}),
       sourcePrimaryKey: contact.sourcePrimaryKey,
       sourceUuid: contact.sourceUuid,
     })),

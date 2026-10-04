@@ -4,7 +4,7 @@ import SettingsNavigation from "../../../../components/SettingsNavigation.astro"
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
 export const prerender = true;
 ---
-<ApplicationLayout current="settings" description="Validate and commit a Monica JSON export, a vCard file, or a CSV file." pageId="settings.import-new" title="New import — Kinship">
+<ApplicationLayout current="settings" description="Validate and commit a Monica JSON or SQL export, a vCard file, or a CSV file." pageId="settings.import-new" title="New import — Kinship">
   <main id="main-content" class="page-frame settings-page" tabindex="-1" data-requires-workspace-admin data-import-new>
     <div class="settings-layout">
       <SettingsNavigation currentPage="settings.import-new" />
@@ -14,11 +14,11 @@ export const prerender = true;
       { href: "/app/settings/import", label: "Import" },
       { label: "New import" },
     ]} />
-    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON export version 1, vCard 3.0 or 4.0, or CSV.</p></div></header>
+    <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON version 1 or SQL data export, vCard 3.0 or 4.0, or CSV.</p></div></header>
     <div class="contents" data-import-new-surface>
     <form method="post" data-import-form class="import-form">
-      <label for="import-source">Monica JSON export</label>
-      <input id="import-source" name="source" type="file" accept="application/json,.json" required />
+      <label for="import-source">Monica JSON or SQL export</label>
+      <input id="import-source" name="source" type="file" accept="application/json,application/sql,text/plain,.json,.sql" required />
       <p data-import-detection class="section-state" role="status" aria-live="polite">Choose an export to detect its format.</p>
       <button type="submit">Validate dry run</button>
     </form>

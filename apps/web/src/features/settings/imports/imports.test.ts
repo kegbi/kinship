@@ -275,3 +275,12 @@ describe("IMPORT-002 contact import state", () => {
     expect(resumedImportId("")).toBeUndefined();
   });
 });
+
+it("IMPORT-001 recognizes a Monica SQL data export for server validation", () => {
+  const text =
+    "# Monica export\nSET FOREIGN_KEY_CHECKS=0;\nINSERT IGNORE INTO `contacts` (`id`,`first_name`) VALUES (1,'Ada');";
+  expect(recognizeSource(text)).toEqual({
+    message: "Monica SQL export detected. Validate to review supported data.",
+    source: { format: "monica-sql", text },
+  });
+});

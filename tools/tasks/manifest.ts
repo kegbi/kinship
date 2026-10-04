@@ -395,7 +395,10 @@ export const OPERATOR_SCRIPTS: readonly OperatorScript[] = [
  * its own pinned RustFS container.
  */
 export const INTEGRATION_PERMISSIONS: Permissions = {
-  read: [...SCHEMA_READS],
+  read: [
+    ...SCHEMA_READS,
+    "packages/backend/modules/import-export/domain/formats/fixtures/monica.sql",
+  ],
   env: [...APPLICATION_DATABASE_ENV],
   net: "all",
   run: ["docker"],
@@ -837,6 +840,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_sql_test.ts",
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
@@ -1666,6 +1670,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/transport/http/imports_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_sql_test.ts",
         "packages/backend/modules/import-export/domain/formats/contact_source_test.ts",
         "packages/backend/modules/import-export/domain/formats/csv_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_parse_test.ts",
@@ -1682,6 +1687,8 @@ export const MODULES: readonly TaskModule[] = [
         // one measures the import half beside the HTTP surface that uses it.
         "packages/backend/modules/import-export/domain/formats/canonical.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_sql.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_details.ts",
         // The vCard and CSV sources beside it (GAP-050).
         "packages/backend/modules/import-export/domain/formats/contact_source.ts",
         "packages/backend/modules/import-export/domain/formats/csv.ts",
@@ -1755,6 +1762,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_sql_test.ts",
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",
@@ -1784,6 +1792,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/domain/export_rules_test.ts",
         "packages/backend/modules/import-export/domain/formats/canonical_test.ts",
         "packages/backend/modules/import-export/domain/formats/monica_source_test.ts",
+        "packages/backend/modules/import-export/domain/formats/monica_sql_test.ts",
         "packages/backend/modules/import-export/domain/formats/portable_json_test.ts",
         "packages/backend/modules/import-export/domain/formats/vcard_test.ts",
         "packages/backend/modules/import-export/domain/import_rules_test.ts",

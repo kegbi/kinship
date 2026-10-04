@@ -87,7 +87,7 @@ export const importSummary = z.strictObject({
     description: "Present while a CSV import awaits its column mapping.",
   }),
   report: importReport,
-  sourceProfile: z.enum(["csv", "json_export", "vcf"]),
+  sourceProfile: z.enum(["csv", "json_export", "sql_export", "vcf"]),
   sourceSystem: z.enum(["csv", "monica", "vcard"]),
   status: z.enum(["completed", "dry_run", "failed", "pending"]),
 }).meta({ id: "ImportSummary" });

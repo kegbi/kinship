@@ -18,9 +18,12 @@
 
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { PERSON_FILE_MAX_BYTES } from "../../files/public.ts";
-import type {
-  ContactSourceSystem,
-  CsvPreview,
+import {
+  contactImportReport,
+  contactLosses,
+  type ContactSourceSystem,
+  type CsvPreview,
+  type StagedSourceContact,
 } from "../domain/contact_import.ts";
 import { jsonObject } from "../domain/formats/canonical.ts";
 import { parseMonicaSource } from "../domain/formats/monica_source.ts";
@@ -97,22 +100,94 @@ export function createImportStaging(
         contacts: contacts.length,
         legacyCredentialsDiscarded: parsed.userCount,
         missingFiles,
-        // Nothing this profile stages refers to a contact it did not also
-        // stage, so an orphan is impossible today; the count is reported so a
-        // profile that can produce one does not have to change the report.
-        orphans: 0,
+        // Related rows must resolve to contacts in their source account.
+        orphans: parsed.orphans ?? 0,
         unsupported: parsed.unsupported,
       });
       return await dependencies.transaction.run(async (transaction) => {
         if (!(await active(dependencies, actor, transaction))) {
           return { status: "forbidden" as const };
         }
+        const detailRows: StagedSourceContact[] = contacts.flatMap((
+          row,
+          index,
+        ) =>
+          row.contact
+            ? [{
+              contact: row.contact,
+              fingerprint: "",
+              row: index + 1,
+              status: "mapped" as const,
+              targetPersonId: row.targetPersonId,
+            }]
+            : []
+        );
+        const types = await dependencies.contactTypes.byKind({
+          transaction,
+          workspaceId: actor.workspaceId,
+        });
+        const losses = contactLosses(detailRows, types, {});
+        const detailsReport = contactImportReport("csv", detailRows, losses, {
+          reused: 0,
+          conflicts: 0,
+        });
+        const unsupportedDetails =
+          Object.values(losses.missingTypes).reduce((sum, count) =>
+            sum + count, 0) + losses.organizationsWithoutTitle;
+        const detailedReport: ImportReport = {
+          counts: {
+            ...report.counts,
+            unsupported: report.counts.unsupported + unsupportedDetails,
+          },
+          diagnostics: [
+            ...importReport({
+              ...report.counts,
+              unsupported: report.counts.unsupported + unsupportedDetails,
+            }).diagnostics,
+            ...Object.entries(parsed.unsupportedRows ?? {}).map((
+              [table, count],
+            ) => ({
+              code: "unsupported-table",
+              message: `${table}: ${count} row(s) are not imported.`,
+              severity: "skipped" as const,
+            })),
+            ...Object.entries(parsed.unsupportedFields ?? {}).map((
+              [field, count],
+            ) => ({
+              code: "unsupported-field",
+              message: `${field}: ${count} field value(s) are not imported.`,
+              severity: "skipped" as const,
+            })),
+            ...detailsReport.diagnostics,
+            ...(parsed.notes?.size
+              ? [{
+                code: "note-metadata",
+                message:
+                  "Note bodies are imported separately. Original note dates, favorites, and authors are not preserved.",
+                severity: "warning" as const,
+              }]
+              : []),
+            ...(detailRows.some((row) =>
+                row.status === "mapped" && row.contact.dates.some((date) =>
+                  date.isYearApproximate
+                )
+              )
+              ? [{
+                code: "age-based-date",
+                message:
+                  "Age-based dates are imported as approximate years without an invented month or day.",
+                severity: "warning" as const,
+              }]
+              : []),
+          ],
+        };
         const run = await dependencies.repository.stage({
           actor,
           contacts,
           fingerprint: await sourceFingerprint(parsed, contacts),
           importId: dependencies.ids.next(),
-          report,
+          report: detailedReport,
+          sourceProfile: parsed.sourceProfile ?? "json_export",
           transaction,
         });
         const occurredAt = new Date();
@@ -121,7 +196,7 @@ export function createImportStaging(
           actor,
           importId: run.importId,
           occurredAt,
-          payload: { sourceProfile: "json_export" },
+          payload: { sourceProfile: parsed.sourceProfile ?? "json_export" },
           transaction,
         });
         await dependencies.audit.record({

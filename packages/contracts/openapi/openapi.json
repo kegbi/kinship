@@ -18471,6 +18471,7 @@
             "enum": [
               "csv",
               "json_export",
+              "sql_export",
               "vcf"
             ]
           },

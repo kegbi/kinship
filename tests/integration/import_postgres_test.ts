@@ -518,6 +518,91 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
   assertEquals(await importOnce(foreign), counts(3, 0, 0));
 });
 
+Deno.test("[IMPORT-001] SQL contacts and related details commit once through existing boundaries", async () => {
+  const primary = await register(
+    `sql-import-${crypto.randomUUID()}@example.test`,
+  );
+  for (const kind of ["email", "phone"]) {
+    const created = await request(
+      primary,
+      "/api/v1/settings/personalization/contact-method-types",
+      "POST",
+      { name: kind, contactKind: kind },
+    );
+    assertEquals(created.status, 200);
+  }
+  const source = {
+    format: "monica-sql",
+    text: await Deno.readTextFile(
+      new URL(
+        "../../packages/backend/modules/import-export/domain/formats/fixtures/monica.sql",
+        import.meta.url,
+      ),
+    ),
+  };
+  for (let run = 0; run < 2; run++) {
+    const dry = await request(primary, "/api/v1/imports/dry-runs", "POST", {
+      source,
+    });
+    assertEquals(dry.status, 201);
+    const staged = await dry.json() as {
+      importId: string;
+      report: {
+        counts: { contacts: number; missingFiles: number; orphans: number };
+        diagnostics: { code: string; message: string }[];
+      };
+    };
+    assertEquals(staged.report.counts.contacts, 2);
+    assertEquals(staged.report.counts.missingFiles, 1);
+    assertEquals(staged.report.counts.orphans, 1);
+    assert(
+      staged.report.diagnostics.some((item) =>
+        item.code === "unsupported-table" &&
+        item.message.startsWith("relationships:")
+      ),
+      "unsupported relationships are disclosed",
+    );
+    const committed = await request(
+      primary,
+      `/api/v1/imports/${staged.importId}/commit`,
+      "POST",
+      { confirmed: true },
+    );
+    assertEquals(committed.status, 200);
+    const result = await committed.json() as {
+      peopleCreated: number;
+      peopleReused: number;
+    };
+    assertEquals(result.peopleCreated, run === 0 ? 2 : 0);
+    assertEquals(result.peopleReused, run === 0 ? 0 : 2);
+    const [counts] = await sql`
+      select
+        (select count(*)::int from crm.people where workspace_id = ${primary.workspaceId}::uuid) as people,
+        (select count(*)::int from crm.notes where workspace_id = ${primary.workspaceId}::uuid) as notes,
+        (select count(*)::int from crm.person_contact_methods m join crm.people p on p.id=m.person_id where p.workspace_id = ${primary.workspaceId}::uuid) as methods,
+        (select count(*)::int from crm.person_addresses a join crm.people p on p.id=a.person_id where p.workspace_id = ${primary.workspaceId}::uuid) as addresses,
+        (select count(*)::int from crm.person_dates d join crm.people p on p.id=d.person_id where p.workspace_id = ${primary.workspaceId}::uuid) as dates,
+        (select count(*)::int from crm.person_occupations o join crm.people p on p.id=o.person_id where p.workspace_id = ${primary.workspaceId}::uuid) as occupations`;
+    assertEquals(counts, {
+      people: 2,
+      notes: 2,
+      methods: 2,
+      addresses: 1,
+      dates: 2,
+      occupations: 1,
+    });
+    const [runRow] =
+      await sql`select source_profile from crm.data_imports where id=${staged.importId}::uuid`;
+    assertEquals(runRow?.source_profile, "sql_export");
+    const entities =
+      await sql`select raw_snapshot from crm.data_import_entities where import_id=${staged.importId}::uuid`;
+    assert(
+      !JSON.stringify(entities).includes("synthetic-"),
+      "credential values never reach staging",
+    );
+  }
+});
+
 Deno.test({
   name: "IMPORT-001 PostgreSQL resources close",
   sanitizeOps: false,

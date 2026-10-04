@@ -35,6 +35,12 @@ export function withinStagingLimit(size: number): boolean {
 export function recognizeSource(
   text: string,
 ): { readonly source?: unknown; readonly message: string } {
+  if (/^\s*(?:#|--|\/\*|SET\s|INSERT\s)/i.test(text)) {
+    return {
+      message: "Monica SQL export detected. Validate to review supported data.",
+      source: { format: "monica-sql", text },
+    };
+  }
   try {
     const parsed = JSON.parse(text) as {
       readonly format?: unknown;
@@ -60,8 +66,8 @@ export const IMPORT_SOURCES: readonly {
   readonly label: string;
 }[] = [
   {
-    accept: "application/json,.json",
-    field: "Monica JSON export",
+    accept: "application/json,application/sql,text/plain,.json,.sql",
+    field: "Monica JSON or SQL export",
     id: "monica",
     label: "Monica backup",
   },

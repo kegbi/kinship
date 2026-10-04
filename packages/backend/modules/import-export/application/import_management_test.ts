@@ -481,3 +481,79 @@ Deno.test("[IMPORT-001] a re-import keeps a deleted person deleted and reports t
     }],
   ]);
 });
+
+Deno.test("[IMPORT-001] SQL dry-run reports workspace losses and commits separate notes", async () => {
+  let staged: Parameters<ImportRepository["stage"]>[0] | undefined;
+  const bodies: string[] = [];
+  const repository: ImportRepository = {
+    complete: () => Promise.resolve(),
+    get: () => Promise.resolve(undefined),
+    list: () => Promise.resolve([]),
+    retargetContact: () => Promise.resolve(),
+    stage: (command) => {
+      staged = command;
+      return Promise.resolve({
+        importId: command.importId,
+        report: command.report,
+        status: "dry_run",
+      });
+    },
+    prepareCommit: (_actor, importId) =>
+      Promise.resolve({
+        avatars: [],
+        contacts: staged!.contacts.map((contact) => ({
+          ...contact,
+          entityId: crypto.randomUUID(),
+        })),
+        importId,
+        status: "ready",
+      }),
+  };
+  const imports = createImportManagement({
+    ...owners,
+    ids: { next: () => crypto.randomUUID() },
+    notes: {
+      addNote: (command) => {
+        bodies.push(command.body);
+        return Promise.resolve();
+      },
+    },
+    repository,
+    transaction: { run: (work) => work({ opaque: {} }) },
+  });
+  const source = {
+    format: "monica-sql",
+    text:
+      "INSERT INTO contacts (id,first_name,birthday_special_date_id,company) VALUES (1,'Ada',8,'Company without title'); INSERT INTO notes (contact_id,body,created_at) VALUES (1,'One','2020-01-01'),(1,'Two','2020-01-02'); INSERT INTO special_dates (id,contact_id,is_age_based,is_year_unknown,date) VALUES (8,1,1,0,'1980-01-01'); INSERT INTO contact_fields (contact_id,contact_field_type_id,data) VALUES (1,4,'ada@example.test'); INSERT INTO contact_field_types (id,type) VALUES (4,'email'); INSERT INTO relationships (id) VALUES (2);",
+  };
+  const dry = await imports.dryRun(actor, source);
+  if (dry.status !== "dry_run") throw new Error("SQL dry run failed");
+  assertEquals(staged?.sourceProfile, "sql_export");
+  assertEquals(dry.report.counts.unsupported, 5);
+  for (
+    const code of [
+      "unsupported-table",
+      "unsupported-field",
+      "missing-contact-type",
+      "note-metadata",
+      "age-based-date",
+      "organization-without-title",
+    ]
+  ) {
+    assertEquals(
+      dry.report.diagnostics.some((item) => item.code === code),
+      true,
+      code,
+    );
+  }
+  assertEquals(
+    dry.report.diagnostics.find((item) => item.code === "unsupported-data")
+      ?.message,
+    "5 unsupported row(s) or field value(s) will be skipped.",
+  );
+  assertEquals(
+    (await imports.commit(actor, dry.importId, true)).status,
+    "completed",
+  );
+  assertEquals(bodies, ["One", "Two"]);
+});

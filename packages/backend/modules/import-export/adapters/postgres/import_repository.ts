@@ -4,7 +4,10 @@ import type { ApplicationDatabase } from "../../../../platform/postgres/database
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
-import type { CsvPreview } from "../../domain/contact_import.ts";
+import type {
+  CsvPreview,
+  ImportedContact,
+} from "../../domain/contact_import.ts";
 import type {
   ImportCommitCounts,
   ImportReport,
@@ -100,7 +103,9 @@ export class PostgresImportRepository implements ImportRepository {
         source_profile, status, started_at, stats, created_at, updated_at
       ) values (
         ${command.importId}::uuid, ${command.actor.workspaceId}::uuid,
-        ${command.actor.memberId}::uuid, 'monica', 'json_export', 'dry_run',
+        ${command.actor.memberId}::uuid, 'monica', ${
+      command.sourceProfile ?? "json_export"
+    }, 'dry_run',
         now(), ${
       JSON.stringify({
         fingerprint: command.fingerprint,
@@ -120,6 +125,12 @@ export class PostgresImportRepository implements ImportRepository {
           ${contact.sourceUuid ?? null}::uuid, 'people',
           ${contact.targetPersonId}, 'mapped', '[]'::jsonb,
           jsonb_strip_nulls(jsonb_build_object(
+            'contact', ${
+        contact.contact ? JSON.stringify(contact.contact) : null
+      }::text::jsonb,
+            'notes', ${
+        contact.notes ? JSON.stringify(contact.notes) : null
+      }::text::jsonb,
             'first_name', ${contact.givenName}::text,
             'middle_name', ${contact.middleName ?? null}::text,
             'last_name', ${contact.familyName ?? null}::text,
@@ -215,6 +226,8 @@ export class PostgresImportRepository implements ImportRepository {
     }
 
     const contacts = await sql<{
+      readonly contact: ImportedContact | null;
+      readonly notes: readonly string[] | null;
       readonly deleted_at: Date | null;
       readonly description: string | null;
       readonly family_name: string | null;
@@ -235,6 +248,8 @@ export class PostgresImportRepository implements ImportRepository {
       readonly target_key: string;
     }>`
       select id::text, source_primary_key, source_uuid::text, target_key,
+        raw_snapshot->'contact' as contact,
+        raw_snapshot->'notes' as notes,
         raw_snapshot->>'first_name' as given_name,
         raw_snapshot->>'middle_name' as middle_name,
         raw_snapshot->>'last_name' as family_name,
@@ -281,6 +296,8 @@ export class PostgresImportRepository implements ImportRepository {
         source: contact.avatar_source,
       });
       preparedContacts.push({
+        ...(contact.contact ? { contact: contact.contact } : {}),
+        ...(contact.notes ? { notes: contact.notes } : {}),
         archived: !contact.is_active,
         ...(Object.keys(avatarPresentation).length > 0
           ? { avatarPresentation }

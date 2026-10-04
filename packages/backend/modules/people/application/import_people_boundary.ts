@@ -53,7 +53,9 @@ export interface ImportedPersonDetails {
   }[];
   readonly dates: readonly {
     readonly day?: number;
-    readonly kind: "birthday" | "custom" | "deceased";
+    readonly kind: "birthday" | "custom" | "deceased" | "first_met";
+    readonly isAgeBased?: boolean;
+    readonly isYearApproximate?: boolean;
     readonly label?: string;
     readonly month?: number;
     readonly precision:

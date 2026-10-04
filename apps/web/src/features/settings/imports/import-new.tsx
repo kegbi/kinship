@@ -101,7 +101,7 @@ export function NewImport(
     } catch {
       recognized = {
         message: as === "monica"
-          ? "This file is not valid JSON."
+          ? "This export could not be read."
           : "This file could not be read.",
       };
     }
@@ -186,7 +186,7 @@ export function NewImport(
       validating.current = false;
       dispatch({
         message: kind.current === "monica"
-          ? "Choose a supported Monica JSON export first."
+          ? "Choose a supported Monica JSON or SQL export first."
           : "Choose a supported file first.",
         type: "validated",
       });
@@ -310,6 +310,15 @@ export function NewImport(
             </label>
           ))}
         </fieldset>
+        {state.source === "monica"
+          ? (
+            <p className="section-state">
+              Contacts and supported related details are imported. Review
+              skipped tables, fields, credentials, and missing files in the
+              dry-run report before committing.
+            </p>
+          )
+          : null}
         {state.source === "vcard"
           ? (
             <p className="section-state">

@@ -55,7 +55,7 @@ function shell(): void {
 const mount = () => mountSettled(() => mountNewImport());
 const hook = (name: string) => element(`[data-import-${name}]`);
 const input = () =>
-  screen.getByLabelText<HTMLInputElement>("Monica JSON export");
+  screen.getByLabelText<HTMLInputElement>("Monica JSON or SQL export");
 const commit = () =>
   screen.getByRole<HTMLButtonElement>("button", {
     hidden: true,
@@ -252,7 +252,7 @@ describe("IMPORT-001 settings import", () => {
     submit();
     await waitFor(() =>
       expect(hook("state").textContent).toBe(
-        "Choose a supported Monica JSON export first.",
+        "Choose a supported Monica JSON or SQL export first.",
       )
     );
     expect(api.calls()).toEqual([SESSION]);
@@ -283,7 +283,7 @@ describe("IMPORT-001 settings import", () => {
     await choose(unreadable);
     await waitFor(() =>
       expect(hook("detection").textContent).toBe(
-        "This file is not valid JSON.",
+        "This export could not be read.",
       )
     );
     await choose(undefined);

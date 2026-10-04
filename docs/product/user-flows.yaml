@@ -1115,7 +1115,7 @@ flows:
     deliveryStatus: delivered
     priority: P0
     actor: data-admin
-    trigger: The administrator uploads a supported Monica export.
+    trigger: The administrator uploads a bounded Monica SQL data export or Monica JSON version 1 envelope.
     preconditions: [active-admin-membership]
     steps:
       - Detect and parse the bounded source format into staging.

@@ -2692,7 +2692,7 @@ export interface components {
             readonly preview?: components["schemas"]["CsvPreview"];
             readonly report: components["schemas"]["ImportReport"];
             /** @enum {string} */
-            readonly sourceProfile: "csv" | "json_export" | "vcf";
+            readonly sourceProfile: "csv" | "json_export" | "sql_export" | "vcf";
             /** @enum {string} */
             readonly sourceSystem: "csv" | "monica" | "vcard";
             /** @enum {string} */

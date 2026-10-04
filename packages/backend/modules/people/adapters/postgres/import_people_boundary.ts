@@ -83,8 +83,9 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
     for (const date of command.details.dates) {
       const value = normalizeImportantDate({
         ...date,
-        isAgeBased: date.kind === "birthday" && date.year !== undefined,
-        isYearApproximate: false,
+        isAgeBased: date.isAgeBased ??
+          (date.kind === "birthday" && date.year !== undefined),
+        isYearApproximate: date.isYearApproximate ?? false,
       });
       if (Object.keys(validateImportantDate(value)).length > 0) {
         throw new Error("Imported date is invalid.");

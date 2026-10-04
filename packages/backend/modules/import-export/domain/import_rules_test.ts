@@ -302,7 +302,7 @@ Deno.test("[GAP-018] every count that is not zero is explained once", () => {
       },
       {
         code: "unsupported-data",
-        message: "5 unsupported record(s) will be skipped.",
+        message: "5 unsupported row(s) or field value(s) will be skipped.",
         severity: "skipped",
       },
     ],

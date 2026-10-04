@@ -26,6 +26,7 @@ import type { ImportActor, ImportTransaction } from "./context.ts";
 
 /** Everything one dry run produced, written in a single statement. */
 export interface StageImportCommand {
+  readonly sourceProfile?: "json_export" | "sql_export";
   readonly actor: ImportActor;
   readonly contacts: readonly StagedContact[];
   readonly fingerprint: string;

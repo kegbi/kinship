@@ -1,5 +1,5 @@
 /**
- * The one import source profile this module reads today: Monica's JSON export.
+ * Monica JSON envelopes and SQL data exports normalized into one source.
  *
  * Everything about that file format lives here — how large it may be, which
  * tables and which contact fields are understood, what a safe attachment path
@@ -20,6 +20,9 @@
  */
 
 import { optionalText } from "../../../../shared-kernel/validation.ts";
+import { credentialName, type ImportedContact } from "../contact_import.ts";
+import { monicaDetails } from "./monica_details.ts";
+import { parseMonicaSql } from "./monica_sql.ts";
 import { jsonObject } from "./canonical.ts";
 
 /** What the profile refuses outright, before any contact is looked at. */
@@ -61,6 +64,13 @@ const SUPPORTED_CONTACT_FIELDS = new Set([
   "avatar_source",
   "default_avatar_color",
   "gravatar_url",
+  "avatar_photo_id",
+  "account_id",
+  "job",
+  "company",
+  "birthday_special_date_id",
+  "deceased_special_date_id",
+  "first_met_special_date_id",
   "deleted_at",
   "description",
   "first_name",
@@ -76,9 +86,6 @@ const SUPPORTED_CONTACT_FIELDS = new Set([
   "uuid",
 ]);
 
-/** The tables this profile reads; rows in any other table are counted. */
-const SUPPORTED_TABLES = new Set(["contacts", "users"]);
-
 /** An attachment the manifest declares. */
 export interface MonicaAttachment {
   readonly byteSize: number;
@@ -91,6 +98,12 @@ export interface ParsedMonicaSource {
   readonly attachments: ReadonlyMap<string, MonicaAttachment>;
   readonly contacts: readonly Record<string, unknown>[];
   readonly userCount: number;
+  readonly sourceProfile?: "json_export" | "sql_export";
+  readonly details?: ReadonlyMap<string, ImportedContact>;
+  readonly notes?: ReadonlyMap<string, readonly string[]>;
+  readonly unsupportedRows?: Readonly<Record<string, number>>;
+  readonly unsupportedFields?: Readonly<Record<string, number>>;
+  readonly orphans?: number;
   readonly unsupported: number;
 }
 
@@ -174,7 +187,7 @@ export function redacted(
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(source).filter(([key, value]) =>
-      !SECRET_KEYS.has(key) &&
+      !SECRET_KEYS.has(key.toLowerCase()) && !credentialName(key) &&
       (value === null || ["boolean", "number", "string"].includes(typeof value))
     ).map(([key, value]) => [
       key,
@@ -197,7 +210,15 @@ export function parseMonicaSource(
   source: unknown,
   limits: MonicaSourceLimits,
 ): ParsedMonicaSource | string {
-  const root = jsonObject(source);
+  let root = jsonObject(source);
+  const sourceProfile = root?.format === "monica-sql"
+    ? "sql_export"
+    : "json_export";
+  if (sourceProfile === "sql_export") {
+    const sql = parseMonicaSql(root?.text);
+    if (typeof sql === "string") return sql;
+    root = { format: "monica-json", version: 1, tables: sql.tables };
+  }
   if (!root || root.format !== "monica-json" || root.version !== 1) {
     return "Only the version 1 Monica JSON export profile is supported.";
   }
@@ -243,24 +264,33 @@ export function parseMonicaSource(
   ) {
     return "The legacy user list is invalid.";
   }
-  const unsupportedTables = Object.entries(tables).reduce(
-    (count, [name, rows]) =>
-      count +
-      (SUPPORTED_TABLES.has(name) ? 0 : Array.isArray(rows) ? rows.length : 1),
-    0,
-  );
-  const unsupportedFields = (tables.contacts as Record<string, unknown>[])
-    .reduce(
-      (count, contact) =>
-        count +
-        Object.keys(contact).filter((key) => !SUPPORTED_CONTACT_FIELDS.has(key))
-          .length,
-      0,
-    );
+  const related = monicaDetails(tables, limits.maxAttachmentBytes);
+  if (typeof related === "string") return related;
+  const unsupportedFields = { ...related.unsupportedFields };
+  for (const contact of tables.contacts as Record<string, unknown>[]) {
+    for (const key of Object.keys(contact)) {
+      if (!SUPPORTED_CONTACT_FIELDS.has(key)) {
+        const field = `contacts.${key}`;
+        unsupportedFields[field] = (unsupportedFields[field] ?? 0) + 1;
+      }
+    }
+  }
+  for (const [key, attachment] of related.attachments) {
+    attachments.set(key, attachment);
+  }
+
   return {
     attachments,
-    contacts: tables.contacts as Record<string, unknown>[],
-    unsupported: unsupportedTables + unsupportedFields,
+    contacts: related.contacts,
+    details: related.details,
+    notes: related.notes,
+    orphans: related.orphans,
+    sourceProfile,
+    unsupportedRows: related.unsupportedRows,
+    unsupportedFields,
+    unsupported:
+      Object.values(related.unsupportedRows).reduce((a, b) => a + b, 0) +
+      Object.values(unsupportedFields).reduce((a, b) => a + b, 0),
     userCount: Array.isArray(users) ? users.length : 0,
   };
 }

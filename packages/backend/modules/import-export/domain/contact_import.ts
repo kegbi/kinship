@@ -44,7 +44,9 @@ export type ContactMethodKind = "email" | "phone" | "url";
 
 /** A person date as the people module's vocabulary names it. */
 export type ImportedDate = PartialDateComponents & {
-  readonly kind: "birthday" | "custom" | "deceased";
+  readonly kind: "birthday" | "custom" | "deceased" | "first_met";
+  readonly isAgeBased?: boolean;
+  readonly isYearApproximate?: boolean;
   readonly label?: string;
 };
 

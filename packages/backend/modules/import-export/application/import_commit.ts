@@ -118,6 +118,16 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
               });
             }
           }
+          for (const body of contact.notes ?? []) {
+            await dependencies.notes.addNote({
+              actor,
+              body,
+              noteId: dependencies.ids.next(),
+              occurredAt,
+              personId: targetPersonId,
+              transaction,
+            });
+          }
           committedContacts.set(contact.sourcePrimaryKey, {
             outcome: "created",
             targetPersonId,
