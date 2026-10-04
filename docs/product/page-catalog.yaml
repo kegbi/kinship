@@ -226,13 +226,13 @@ pages:
       # GAP-051 (PEOPLE-009): a checkbox per row and one for the page shown.
       # `none` shows no bulk bar; `selected` holds 1 to 100 people; `capped`
       # says the 100-person limit refused more. A new search, tag filter,
-      # sort, page, or view clears the selection.
+      # sort, or view clears the selection. Appending pages preserves it.
       selection:
         - none
         - selected
         - capped
       # The sticky bulk bar while anything is selected: `idle` offers Add
-      # tag…, Remove tag…, Archive, Export vCard, and Clear; `choosing-tag`
+      # tag…, Remove tag…, Archive, Delete, Export vCard, and Clear; `choosing-tag`
       # picks a tag from the loaded tag options; `confirming-archive` asks before archiving; `running` is busy
       # and inert; `reported` shows the done, unchanged, and failed counts
       # with each failed person named, and outlives the one refresh after it;
@@ -242,6 +242,7 @@ pages:
         - idle
         - choosing-tag
         - confirming-archive
+        - confirming-delete
         - running
         - reported
         - refused
@@ -287,7 +288,7 @@ pages:
       - selection
       - bulk-actions
     # GAP-051: the same selection and bulk bar as `people.index`, with Restore
-    # in place of Archive and no confirmation. An archived person is
+    # in place of Archive (without confirmation) and confirmed Delete. An archived person is
     # read-only, so the bar offers no Add tag… or Remove tag… here and has no
     # `choosing-tag` state.
     sectionStates:
@@ -297,6 +298,7 @@ pages:
         - capped
       bulk-actions:
         - idle
+        - confirming-delete
         - running
         - reported
         - refused

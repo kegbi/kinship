@@ -270,8 +270,22 @@ test(
     await page.getByLabel("Sort by").selectOption("given-name");
     await page.getByRole("button", { name: "Find people" }).click();
     await expect(page.locator("#people-directory-list > li")).toHaveCount(20);
-    await page.getByRole("button", { name: "Load more people" }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const count = page.locator("#people-directory-announcement");
+    await expect(count).toHaveCSS("position", "static");
+    await expect(count).toHaveCSS("pointer-events", "auto");
+    const selected = page.getByRole("checkbox", {
+      name: "Select Ada Lovelace “Scientist”",
+      exact: true,
+    });
+    await selected.check();
+    await page.getByRole("button", { name: "Load more people" })
+      .scrollIntoViewIfNeeded();
     await expect(page.locator("#people-directory-list > li")).toHaveCount(22);
+    await expect(selected).toBeChecked();
+    await expect(page.getByRole("toolbar", { name: "Bulk actions" }))
+      .toContainText("1 selected");
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expectAccessible(page);
 
     await page.getByRole("link", { name: "View archived people" }).click();

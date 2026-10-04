@@ -347,7 +347,7 @@ describe("PEOPLE-009 directory selection", () => {
     expect(freed.selectionNotice).toBe("");
   });
 
-  it("clears the selection when the list, filter, sort, or page changes", () => {
+  it("clears the selection when the list, filter, or sort changes", () => {
     const selected = directoryReducer(listed(2), {
       selected: true,
       type: "select-page",
@@ -355,7 +355,6 @@ describe("PEOPLE-009 directory selection", () => {
     for (
       const action of [
         { append: false, type: "loading" },
-        { append: true, type: "loading" },
         { sort: "family-name", type: "sort" },
         { selected: "t", type: "tag" },
       ] as const
@@ -367,6 +366,32 @@ describe("PEOPLE-009 directory selection", () => {
       expect(next.selection).toEqual([]);
       expect(next.selectionNotice).toBe("");
     }
+  });
+
+  it("keeps selection while appending and ignores duplicate people", () => {
+    const selected = directoryReducer(listed(2), {
+      selected: true,
+      type: "select-page",
+    });
+    const loading = directoryReducer(selected, {
+      append: true,
+      type: "loading",
+    });
+    expect(loading.selection).toEqual(["p0", "p1"]);
+    const loaded = directoryReducer(loading, {
+      append: true,
+      filtered: false,
+      lifecycle: "active",
+      nextCursor: undefined,
+      people: people(2, 1),
+      type: "loaded",
+    });
+    expect(loaded.selection).toEqual(["p0", "p1"]);
+    expect(loaded.people.map((person) => person.id)).toEqual([
+      "p0",
+      "p1",
+      "p2",
+    ]);
   });
 
   it("walks the bar through a choice, a run, and a report", () => {
@@ -424,7 +449,6 @@ describe("PEOPLE-009 bulk reports", () => {
 
   it("counts outcomes and names each failed person with a reason", () => {
     expect(bulkReport("archive", {
-      action: "archive",
       results: [
         { outcome: "done", personId: "a" },
         { outcome: "unchanged", personId: "x" },
@@ -443,7 +467,6 @@ describe("PEOPLE-009 bulk reports", () => {
     expect(bulkReport(
       "tag",
       {
-        action: "tag",
         results: [
           { outcome: "done", personId: "a" },
           { outcome: "done", personId: "g" },
@@ -461,7 +484,6 @@ describe("PEOPLE-009 bulk reports", () => {
     const reasons = bulkReport(
       "untag",
       {
-        action: "untag",
         results: [
           "archived_write_rejected",
           "forbidden",
@@ -504,7 +526,6 @@ describe("PEOPLE-009 bulk reports", () => {
     ]);
     expect(
       bulkReport("restore", {
-        action: "restore",
         results: [{ outcome: "done", personId: "a" }],
         summary: { done: 1, failed: 0, skipped: 0, unchanged: 0 },
       }, names).title,

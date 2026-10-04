@@ -308,6 +308,12 @@
   padding-right: var(--space-7);
 }
 
+.directory-count {
+  margin: var(--space-3) 0;
+  color: var(--ink-2);
+  font-size: .9rem;
+}
+
 .directory-selection {
   display: flex;
   margin-bottom: var(--space-3);

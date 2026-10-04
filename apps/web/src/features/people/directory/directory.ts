@@ -9,8 +9,8 @@
  * bounded while every tag remains reachable by continuation or refinement.
  *
  * GAP-051 (PEOPLE-009) adds a selection to the same reducer: a checkbox per
- * row and one for the page shown, capped at 100 people, cleared whenever the
- * list it was made from changes. The bulk bar that acts on it moves through
+ * row and one for the page shown, capped at 100 people, kept across appended pages and cleared when the
+ * search, filter, sort, or lifecycle changes. The bulk bar that acts on it moves through
  * one choice at a time and is inert while its request runs; its report
  * outlives the refresh that follows, so a member reads what happened after
  * the list has moved on.
@@ -191,10 +191,21 @@ export interface BulkReport {
   readonly tone: "attention" | "done";
 }
 
-export type BulkKind = "archive" | "export" | "restore" | "tag" | "untag";
+export type BulkKind =
+  | "archive"
+  | "delete"
+  | "export"
+  | "restore"
+  | "tag"
+  | "untag";
 
 /** The one choice the bar is waiting on, if any. */
-export type BulkStep = "confirm-archive" | "idle" | "tag" | "untag";
+export type BulkStep =
+  | "confirm-archive"
+  | "confirm-delete"
+  | "idle"
+  | "tag"
+  | "untag";
 
 export interface BulkState {
   readonly step: BulkStep;
@@ -220,12 +231,14 @@ const REASONS: Readonly<Record<string, string>> = {
 /** What a finished bulk action reports, naming each person it could not change. */
 export function bulkReport(
   kind: Exclude<BulkKind, "export">,
-  answer: PeopleBulkResult,
+  answer: Pick<PeopleBulkResult, "results" | "summary">,
   names: ReadonlyMap<string, string>,
   tagName = "",
 ): BulkReport {
   const { done, failed, skipped, unchanged } = answer.summary;
-  const title = kind === "archive"
+  const title = kind === "delete"
+    ? `Deleted ${people(done)}.`
+    : kind === "archive"
     ? `Archived ${people(done)}.`
     : kind === "restore"
     ? `Restored ${people(done)}.`
@@ -527,14 +540,20 @@ export function directoryReducer(
       };
     case "loading":
       return {
-        ...unselected(state),
+        ...(action.append ? state : unselected(state)),
         appending: action.append,
         loading: true,
         status: action.append ? state.status : "loading",
       };
     case "loaded": {
       const people = action.append
-        ? [...state.people, ...action.people]
+        ? [
+          ...new Map(
+            [...state.people, ...action.people].map((
+              person,
+            ) => [person.id, person]),
+          ).values(),
+        ]
         : action.people;
       return {
         ...state,

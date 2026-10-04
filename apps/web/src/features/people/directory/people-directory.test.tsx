@@ -2,7 +2,7 @@
 
 import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
   deferred,
@@ -115,6 +115,184 @@ const heading = (selector: string) =>
   element(selector).querySelector("h2")?.textContent;
 
 describe("PEOPLE-002 people directory island", () => {
+  it("keeps count inline and preserves selection when loading another page", async () => {
+    markup();
+    stubApi({
+      [PEOPLE]: [
+        page([person()], { nextCursor: "next" }),
+        page([person({ id: "other", givenName: "Grace" })]),
+      ],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: noTags,
+      [FACET]: noFacet,
+    });
+    await mount();
+    expect(
+      element("#people-directory-announcement").classList.contains("sr-status"),
+    ).toBe(false);
+    const user = userEvent.setup();
+    await user.click(region().getByRole("checkbox", { name: "Select Ada" }));
+    await user.click(
+      region().getByRole("button", { name: "Load more people" }),
+    );
+    await waitFor(() =>
+      expect(region().getByRole("checkbox", { name: "Select Grace" }))
+        .toBeTruthy()
+    );
+    expect(region().getByRole("checkbox", { name: "Select Ada" }))
+      .toHaveProperty("checked", true);
+    expect(region().getByRole("toolbar").textContent).toContain("1 selected");
+  });
+
+  it.each(["active", "archived"] as const)(
+    "previews Delete in %s, requires explicit confirmation, reports failures, and refreshes once",
+    async (lifecycle) => {
+      markup(lifecycle);
+      const api = stubApi({
+        [PEOPLE]: [
+          page([person(), person({ id: "grace", givenName: "Grace" })]),
+          page([person({ id: "grace", givenName: "Grace" })]),
+        ],
+        [PREFERENCES]: savedPreferences(),
+        [SESSION]: session,
+        [TAGS]: noTags,
+        [FACET]: noFacet,
+        "GET /api/v1/people/:id/deletion-impact": ({ params }) =>
+          jsonResponse({
+            status: "ready",
+            impact: {
+              confirmation: "Ada",
+              dependentRecordPolicy: "retained",
+              person: { id: params.id, updatedAt: "2026-10-04T00:00:00Z" },
+            },
+          }),
+        [`DELETE /api/v1/people/${personId}`]: jsonResponse({
+          status: "deleted",
+          personId,
+        }),
+        "DELETE /api/v1/people/grace": problemResponse(409),
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        region().getByRole("checkbox", { name: "Select all 2 shown" }),
+      );
+      await user.click(
+        region().getByRole("button", { name: "Delete" }),
+      );
+      const dialog = within(document.body).getByRole("dialog", {
+        name: "Delete 2 selected people?",
+      });
+      await waitFor(() =>
+        expect(within(dialog).getByRole("status").textContent).toContain(
+          "2 ready to delete",
+        )
+      );
+      expect(api.requests().filter((r) => r.method === "DELETE")).toHaveLength(
+        0,
+      );
+      expect(within(dialog).getByRole("button", { name: "Delete 2 people" }))
+        .toHaveProperty("disabled", true);
+      await expectNoAxeViolations(dialog);
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(api.requests().filter((r) => r.method === "DELETE")).toHaveLength(
+        0,
+      );
+      await user.click(
+        region().getByRole("button", { name: "Delete" }),
+      );
+      const reopened = within(document.body).getByRole("dialog");
+      await waitFor(() =>
+        expect(within(reopened).getByRole("status").textContent).toContain(
+          "2 ready to delete",
+        )
+      );
+      await user.type(
+        within(reopened).getByLabelText("Type DELETE to confirm"),
+        "DELETE",
+      );
+      await user.click(
+        within(reopened).getByRole("button", { name: "Delete 2 people" }),
+      );
+      await waitFor(() =>
+        expect(element("#people-bulk-result").textContent).toContain(
+          "Deleted 1 person.",
+        )
+      );
+      expect(element("#people-bulk-result").textContent).toContain(
+        "Grace: Changed elsewhere; try again",
+      );
+      await waitFor(() => expect(listRequests(api)).toHaveLength(2));
+      expect(
+        api.requests().filter((r) =>
+          r.url.pathname === "/api/v1/people" && r.method === "GET"
+        ),
+      ).toHaveLength(2);
+    },
+  );
+
+  it("automatically appends once per cursor and keeps the selected people", async () => {
+    let callback: IntersectionObserverCallback;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          callback = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const intersect = () =>
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    markup();
+    const held = deferred<Response>();
+    const api = stubApi({
+      [PEOPLE]: [page([person()], { nextCursor: "next" }), held.promise],
+      [PREFERENCES]: savedPreferences(),
+      [SESSION]: session,
+      [TAGS]: noTags,
+      [FACET]: noFacet,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(region().getByRole("checkbox", { name: "Select Ada" }));
+    await user.type(
+      region().getByLabelText("Search people"),
+      "unsubmitted search",
+    );
+    await act(async () => {
+      intersect();
+      intersect();
+      await Promise.resolve();
+    });
+    expect(listRequests(api)).toHaveLength(2);
+    expect(listRequests(api)[1]!.url.searchParams.get("search")).toBeNull();
+    expect(region().getByRole("checkbox", { name: "Select Ada" }))
+      .toHaveProperty("checked", true);
+    await act(async () => {
+      held.resolve(
+        page([person(), person({ id: "grace", givenName: "Grace" })]),
+      );
+      await held.promise;
+    });
+    expect(element("#people-directory-list").children).toHaveLength(2);
+    expect(region().getByRole("checkbox", { name: "Select Ada" }))
+      .toHaveProperty("checked", true);
+    await act(async () => {
+      intersect();
+      await Promise.resolve();
+    });
+    expect(listRequests(api)).toHaveLength(2);
+  });
+
   it("APR-008 applies saved display and sort order but preserves an explicit given-name URL", async () => {
     for (const query of ["", "?sort=given-name", "?sort=invalid"]) {
       const explicitSort = query === "?sort=given-name";

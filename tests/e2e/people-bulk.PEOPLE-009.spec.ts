@@ -17,7 +17,7 @@ async function openDirectory(page: Page, path: string): Promise<void> {
 }
 
 test(
-  "[PEOPLE-009] tags, archives, restores, and exports several people at once",
+  "[PEOPLE-009] tags, archives, restores, exports, and deletes several people at once",
   {
     annotation: [{ type: "flow", description: "PEOPLE-009" }, {
       type: "leaf",
@@ -156,6 +156,39 @@ test(
     expect(card.match(/BEGIN:VCARD/g)).toHaveLength(2);
     await expect(report).toContainText("Exported 2 people to a vCard.");
     await expect(bar.getByText("2 selected")).toBeVisible();
+    // Deletion previews the selected records, requires confirmation, and uses
+    // the canonical soft-delete boundary for each person.
+    await bar.getByRole("button", { name: "Delete", exact: true }).click();
+    const deletion = page.getByRole("dialog", {
+      name: "Delete 2 selected people?",
+    });
+    await expect(deletion.getByRole("status")).toContainText(
+      "2 ready to delete",
+    );
+    await expect(deletion.getByRole("button", { name: "Delete 2 people" }))
+      .toBeDisabled();
+    await deletion.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator("#people-directory-list > li")).toHaveCount(2);
+    await bar.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(deletion.getByRole("status")).toContainText(
+      "2 ready to delete",
+    );
+    await deletion.getByLabel("Type DELETE to confirm").fill("DELETE");
+    await expectAccessible(page);
+    await deletion.getByRole("button", { name: "Delete 2 people" }).click();
+    await expect(report).toContainText("Deleted 2 people.");
+    await expect(report).toContainText("2 done · 0 unchanged · 0 failed");
+    await expect(page.getByRole("heading", { name: "No people yet" }))
+      .toBeVisible();
+    expect(
+      databaseValue(
+        `select count(*)::text from crm.people where id in (${
+          sqlLiteral(ada)
+        }::uuid, ${sqlLiteral(alan)}::uuid) and deleted_at is not null`,
+      ),
+    ).toBe("2");
+    await report.getByRole("button", { name: "Dismiss" }).click();
+    await expect(report).toHaveCount(0);
     expect(violations).toEqual([]);
   },
 );

@@ -69,6 +69,12 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
+import { DeleteConfirmation } from "./delete-confirmation.tsx";
+import {
+  deleteSelection,
+  type DeletionPreview,
+  previewDeletionSelection,
+} from "./delete-selection.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import {
   mountIsland,
@@ -93,6 +99,7 @@ import {
   bulkReport,
   directoryInput,
   directoryLocation,
+  type DirectoryQuery,
   directoryReducer,
   emptyCopy,
   errorCopy,
@@ -175,6 +182,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const listRequest = useLatestRequest();
   const tagRequest = useLatestRequest();
   const search = useRef<HTMLInputElement>(null);
+  const more = useRef<HTMLButtonElement>(null);
   const tagSearch = useRef<HTMLInputElement>(null);
   const error = useRef<HTMLElement>(null);
   const bulkTagSearch = useRef<HTMLInputElement>(null);
@@ -187,6 +195,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const context = useRef<Context | undefined>(undefined);
   // What the next read asks for, as the reader last left it.
   const reading = useRef({
+    applied: undefined as DirectoryQuery | undefined,
     sort: state.sort,
     starred: state.starred,
     starredFirst: state.starredFirst,
@@ -200,15 +209,23 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const load = async (append: boolean): Promise<void> => {
     const known = context.current;
     if (!known) return;
+    if (
+      append &&
+      (state.loading || state.bulk.running || state.bulk.step !== "idle" ||
+        !state.nextCursor)
+    ) return;
     const cursor = append ? state.nextCursor : undefined;
-    const current = {
-      search: search.current?.value ?? "",
-      sort: reading.current.sort,
-      starred: reading.current.starred,
-      starredFirst: reading.current.starredFirst,
-      tagId: reading.current.tagId,
-    };
-    dispatch({ append, type: "loading" });
+    const current = append && reading.current.applied
+      ? reading.current.applied
+      : {
+        search: search.current?.value ?? "",
+        sort: reading.current.sort,
+        starred: reading.current.starred,
+        starredFirst: reading.current.starredFirst,
+        tagId: reading.current.tagId,
+      };
+    // Flush the reducer before an observer or double activation can ask again.
+    flushSync(() => dispatch({ append, type: "loading" }));
     const answer = await listRequest(() =>
       listPeople(directoryInput(lifecycle, current, cursor), known.workspaceId)
     );
@@ -228,6 +245,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     }
     const page = answer.data!;
     if (!append) {
+      reading.current.applied = current;
       globalThis.history.replaceState(
         {},
         "",
@@ -360,7 +378,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     );
 
   const runBulk = async (
-    kind: Exclude<BulkKind, "export">,
+    kind: Exclude<BulkKind, "export" | "delete">,
     tag?: { readonly id: string; readonly name: string },
   ): Promise<void> => {
     // The bar is drawn only over a loaded list and is inert while a run is
@@ -395,6 +413,24 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     await Promise.all([load(false), loadTags(false, true)]);
   };
 
+  const runDelete = async (
+    previews: readonly DeletionPreview[],
+  ): Promise<void> => {
+    const names = shownNames();
+    lastRun.current = [...state.selection];
+    dispatch({ kind: "delete", type: "bulk-start" });
+    const answer = await deleteSelection(
+      previews,
+      context.current!.workspaceId,
+    );
+    dispatch({
+      clearSelection: true,
+      report: bulkReport("delete", answer, names),
+      type: "bulk-finished",
+    });
+    await Promise.all([load(false), loadTags(false, true)]);
+  };
+
   const exportSelection = async (): Promise<void> => {
     // The bar is drawn only over a loaded list and is inert while a run is
     // in flight, so the workspace is known and nothing else is running.
@@ -422,11 +458,13 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
 
   // A choice opens inside its click, so its first control takes focus while
   // the click is still being handled (REL-051).
-  const openStep = (step: "confirm-archive" | "tag" | "untag") => {
+  const openStep = (
+    step: "confirm-archive" | "confirm-delete" | "tag" | "untag",
+  ) => {
     opener.current = step;
     flushSync(() => dispatch({ step, type: "bulk-step" }));
     // The tag choice opens on its search, the first of its controls.
-    if (step !== "confirm-archive") bulkTagSearch.current?.focus();
+    if (step === "tag" || step === "untag") bulkTagSearch.current?.focus();
   };
 
   const closeStep = () => {
@@ -500,6 +538,19 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const failure = errorCopy(state.forbidden);
   const listShown = status === "ready" ||
     (status === "loading" && state.appending);
+
+  const continueList = useEffectEvent(() => void load(true));
+  useEffect(() => {
+    if (
+      !state.nextCursor || busy || state.bulk.step !== "idle" ||
+      !globalThis.IntersectionObserver
+    ) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) continueList();
+    }, { rootMargin: "160px" });
+    observer.observe(more.current!);
+    return () => observer.disconnect();
+  }, [state.nextCursor, busy, state.bulk.step]);
 
   return (
     <>
@@ -632,7 +683,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
 
       <p
         aria-live="polite"
-        className="sr-status"
+        className="directory-count"
         id="people-directory-announcement"
         role="status"
       >
@@ -698,6 +749,10 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
         </div>
       </section>
 
+      <p aria-live="polite" role="status">
+        {state.bulk.running === "delete" ? "Deleting selected people…" : ""}
+      </p>
+
       {state.bulk.report
         ? (
           <BulkResult
@@ -761,6 +816,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
         <button
           disabled={busy}
           hidden={!state.nextCursor || !listShown}
+          ref={more}
           id="people-directory-more"
           onClick={() => void load(true)}
           type="button"
@@ -776,7 +832,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             aria-label="Bulk actions"
             className="people-bulk-bar"
             id="people-bulk-bar"
-            inert={running}
+            inert={busy}
             role="toolbar"
           >
             <p className="people-bulk-count">
@@ -840,6 +896,14 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
                       </Button>
                     )}
                   <Button
+                    data-bulk-opener="confirm-delete"
+                    onClick={() => openStep("confirm-delete")}
+                    type="button"
+                    variant="destructive"
+                  >
+                    Delete
+                  </Button>
+                  <Button
                     onClick={() => void exportSelection()}
                     type="button"
                     variant="outline"
@@ -856,6 +920,24 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
                 </div>
               )}
           </div>
+        )
+        : null}
+
+      {state.bulk.step === "confirm-delete"
+        ? (
+          <DeleteConfirmation
+            personIds={state.selection}
+            names={shownNames()}
+            read={(signal, progress) =>
+              previewDeletionSelection(
+                state.selection,
+                context.current!.workspaceId,
+                signal,
+                progress,
+              )}
+            onCancel={closeStep}
+            onConfirm={(previews) => void runDelete(previews)}
+          />
         )
         : null}
 

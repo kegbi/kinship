@@ -394,6 +394,7 @@ flows:
     steps:
       - Query only the active workspace.
       - Apply search, tag, archive, and sort criteria.
+      - Append more results automatically near the end, with a Load more people fallback and an inline accessible count.
       - Open the selected person workspace.
     alternateOutcomes: [empty-result, archived-result, not-found, stale-cursor]
     result: Results never reveal another workspace's people.
@@ -702,22 +703,25 @@ flows:
     preconditions: [active-membership]
     steps:
       - Select people on the directory, one row at a time or the whole visible page, up to 100.
-      - Choose an action from the bulk bar - add or remove a tag, archive or restore, or export a vCard.
-      - Confirm the action; archiving asks first.
+      - Keep selected people when another page is appended; clear selection when search, filter, sort, or lifecycle changes.
+      - Choose an action from the bulk bar - add or remove a tag, archive or restore, delete, or export a vCard.
+      - Confirm the action; archiving asks first, while deletion previews the people and requires typing DELETE before using each previewed revision.
       - Review the results - how many were done, unchanged, and failed, with each failed person named and why - while the directory refreshes once.
     alternateOutcomes: [
       partial-failure,
       selection-cap,
       selection-cleared-on-filter-change,
       already-archived-unchanged,
+      deletion-preview-unavailable,
+      deletion-stale,
       cross-workspace-tag-refused,
       export-skipped-count,
     ]
-    result: Every selected person in the workspace is tagged, archived, restored, or exported through the single-person use case, and the member sees exactly who was not.
-    auditEffect: per-person-archived-restored-profile-fact-updated-or-downloaded
+    result: Every selected person in the workspace is tagged, archived, restored, deleted, or exported through the single-person use case, and the member sees exactly who was not.
+    auditEffect: per-person-archived-restored-deleted-profile-fact-updated-or-downloaded
     pageIds: [people.index, people.archived]
     moduleIds: [people, import-export, governance, workspaces]
-    permissions: [people.write, people.vcard.export]
+    permissions: [people.write, people.delete, people.vcard.export]
     testLayers: [unit, integration, e2e]
     e2e: {
       required: true,
