@@ -197,7 +197,13 @@ test(
     expect(dryRunBody.report.counts.contacts).toBe(portablePeople);
     const committed = await page.request.post(
       `${origin}/api/v1/imports/${dryRunBody.importId}/commit`,
-      { data: { confirmed: true }, headers: { origin } },
+      {
+        data: {
+          confirmed: true,
+          monicaChoices: { timezone: "UTC", currencies: [], genders: [] },
+        },
+        headers: { origin },
+      },
     );
     expect(committed.status()).toBe(200);
     expect(performance.now() - importStartedAt).toBeLessThanOrEqual(

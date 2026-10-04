@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { STREAM_ZONES } from "../features/person/sections.ts";
 
@@ -319,6 +319,9 @@ describe("stylesheet ownership", () => {
 });
 
 describe("Tailwind source coverage", () => {
+  // Tailwind globs use forward slashes on every host.
+  const sourceRelative = (path: string): string =>
+    relative(root, path).split(sep).join("/");
   const islands = readFileSync(join(stylesDirectory, "islands.css"), "utf8");
   const rules = [...islands.matchAll(/^@source\s+(not\s+)?"([^"]+)";/gm)]
     .map(([, not, path]) => ({ exclude: not !== undefined, path: path! }));
@@ -326,7 +329,7 @@ describe("Tailwind source coverage", () => {
   const pattern = (glob: string): RegExp =>
     new RegExp(
       "^" +
-        relative(root, resolve(stylesDirectory, glob)).split("/").map((part) =>
+        sourceRelative(resolve(stylesDirectory, glob)).split("/").map((part) =>
           part === "**" ? "(?:.+/)?" : part.replace(/[.]/g, "\\.")
             .replace(/\*/g, "[^/]*") + "/"
         ).join("").replace(/\/$/, "") + "(?:/.*)?$",
@@ -338,13 +341,13 @@ describe("Tailwind source coverage", () => {
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
       entry.isDirectory()
         ? everyFile(join(directory, entry.name))
-        : [relative(root, join(directory, entry.name))]
+        : [sourceRelative(join(directory, entry.name))]
     );
 
   it("scans every top-level source directory with production files", () => {
     const directories = [
       ...new Set(
-        sourceFiles(root).map((path) => relative(root, path))
+        sourceFiles(root).map(sourceRelative)
           .filter((file) => file.includes("/"))
           .map((file) => file.slice(0, file.indexOf("/"))),
       ),
@@ -352,13 +355,13 @@ describe("Tailwind source coverage", () => {
     expect(directories.length).toBeGreaterThan(0);
     const unscanned = directories.filter((directory) =>
       !rules.some((rule) =>
-        !rule.exclude && relative(root, resolve(stylesDirectory, rule.path)) ===
+        !rule.exclude && sourceRelative(resolve(stylesDirectory, rule.path)) ===
           directory
       )
     );
     expect(unscanned).toEqual([]);
     expect(
-      sourceFiles(root).map((path) => relative(root, path)).filter((file) =>
+      sourceFiles(root).map(sourceRelative).filter((file) =>
         !scanned(file) && file.includes("/")
       ),
     ).toEqual([]);
