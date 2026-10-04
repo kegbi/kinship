@@ -523,10 +523,14 @@ async function processRows(): Promise<
         : [];
     });
   } else {
-    const output = await commandOutput("ps", ["-eo", "pid=,ppid="], {});
+    const output = await commandOutput("ps", ["-eo", "pid=,ppid=,stat="], {});
     rows = output.split(/\r?\n/).flatMap((line) => {
-      const match = line.trim().match(/^(\d+)\s+(\d+)$/);
-      return match ? [{ pid: Number(match[1]), parent: Number(match[2]) }] : [];
+      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)$/);
+      // Zombies have already exited and cannot be killed; only their parent
+      // (or the host's init) can reap the remaining process-table entry.
+      return match && !match[3]?.startsWith("Z")
+        ? [{ pid: Number(match[1]), parent: Number(match[2]) }]
+        : [];
     });
   }
   return rows;

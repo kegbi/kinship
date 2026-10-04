@@ -668,6 +668,77 @@ Deno.test("failed exact termination is accepted only after PID absence proof", a
   );
 });
 
+Deno.test({
+  name:
+    "POSIX cleanup accepts an unreaped zombie and preserves its live parent",
+  ignore: Deno.build.os === "windows",
+  fn: async () => {
+    const parent = new Deno.Command("deno", {
+      args: [
+        "eval",
+        `const child = new Deno.Command("deno", {
+          args: ["eval", "setInterval(() => {}, 1000)"],
+          stdout: "null", stderr: "null",
+        }).spawn();
+        console.log(child.pid);
+        await child.status;`,
+      ],
+      stdout: "piped",
+      stderr: "null",
+    }).spawn();
+    const reader = parent.stdout.getReader();
+    let childPid: number | undefined;
+    const signal = (pid: number, name: string) =>
+      new Deno.Command("kill", {
+        args: [name, String(pid)],
+        stdout: "null",
+        stderr: "null",
+      }).output();
+    try {
+      const first = await reader.read();
+      childPid = Number(new TextDecoder().decode(first.value).trim());
+      assert(Number.isInteger(childPid) && childPid > 0, "fixture reports PID");
+      assert(
+        (await exactProcessTree(parent.pid)).includes(childPid),
+        "the fixture owns the descendant before it exits",
+      );
+      assert((await signal(parent.pid, "-STOP")).success, "parent pauses");
+      assert((await signal(childPid, "-KILL")).success, "child exits");
+      let state = "";
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const output = await new Deno.Command("ps", {
+          args: ["-o", "stat=", "-p", String(childPid)],
+          stdout: "piped",
+        }).output();
+        state = new TextDecoder().decode(output.stdout).trim();
+        if (state.startsWith("Z")) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert(state.startsWith("Z"), "paused parent holds a real zombie");
+      assert(
+        await waitForProcessAbsence([childPid]),
+        "an unreaped zombie is no longer a live cleanup target",
+      );
+      await terminateExactProcesses([childPid]);
+      assert(
+        !(await waitForProcessAbsence([parent.pid, childPid])),
+        "a live owned PID still prevents absence proof beside a zombie",
+      );
+      assert(
+        (await signal(parent.pid, "-0")).success,
+        "cleaning the exact child PID preserves its live parent",
+      );
+    } finally {
+      await signal(parent.pid, "-CONT");
+      if (childPid) await signal(childPid, "-KILL");
+      else await signal(parent.pid, "-KILL");
+      await parent.status;
+      await reader.cancel();
+      reader.releaseLock();
+    }
+  },
+});
+
 Deno.test("root coverage passes portable production include arguments", async () => {
   const api = moduleById("api");
   assert(api?.coverage, "the task manifest declares an api coverage set");
