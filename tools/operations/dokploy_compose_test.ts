@@ -1,0 +1,160 @@
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function renderCompose(overrides: Record<string, string> = {}) {
+  return new Deno.Command("docker", {
+    args: [
+      "compose",
+      "-f",
+      "compose.dokploy.yaml",
+      "config",
+      "--format",
+      "json",
+    ],
+    env: {
+      POSTGRES_PASSWORD: "compose-validation-only",
+      POSTGRES_DB: "kinship",
+      POSTGRES_USER: "kinship",
+      PUBLIC_WEB_ORIGIN: "https://kinship.example.test",
+      GATEWAY_TLS_CERTIFICATE_PATH: "../files/gateway.crt",
+      GATEWAY_TLS_PRIVATE_KEY_PATH: "../files/gateway.key",
+      RUSTFS_ADMIN_ACCESS_KEY: "validation-admin",
+      RUSTFS_ADMIN_SECRET_KEY: "validation-admin-secret",
+      OBJECT_STORAGE_ACCESS_KEY: "validation-app",
+      OBJECT_STORAGE_SECRET_KEY: "validation-app-secret",
+      OBJECT_STORAGE_BUCKET: "kinship-files",
+      OBJECT_STORAGE_HOST: "kinship-storage",
+      SMTP_PORT: "465",
+      SMTP_SECURITY: "tls",
+      ...overrides,
+    },
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+}
+
+Deno.test("OPS-001E Dokploy requires explicit SMTP settings shared by preflight and both runtimes", async () => {
+  for (const name of ["SMTP_PORT", "SMTP_SECURITY"]) {
+    const output = await renderCompose({ [name]: "" });
+    assert(
+      !output.success,
+      `${name} must be explicitly configured before deployment`,
+    );
+    assert(
+      new TextDecoder().decode(output.stderr).includes(name),
+      `${name} refusal identifies the missing setting`,
+    );
+  }
+  const output = await renderCompose();
+  assert(output.success, "explicit SMTP settings must render");
+  const { services } = JSON.parse(new TextDecoder().decode(output.stdout));
+  for (const name of ["preflight", "api", "worker"]) {
+    assert(
+      services[name].environment.SMTP_PORT === "465",
+      `${name} uses configured SMTP port`,
+    );
+    assert(
+      services[name].environment.SMTP_SECURITY === "tls",
+      `${name} uses configured SMTP security`,
+    );
+  }
+});
+
+Deno.test("OPS-001E Dokploy keeps storage private and gates application startup on scoped initialization", async () => {
+  const output = await renderCompose();
+  assert(output.success, "Dokploy Compose must render successfully");
+  const model = JSON.parse(new TextDecoder().decode(output.stdout));
+  const { services } = model;
+  assert(
+    Object.keys(services).length === 9,
+    "six application services plus storage, initialization and preflight",
+  );
+  for (
+    const [name, service] of Object.entries(services) as [
+      string,
+      { ports?: unknown[]; networks?: Record<string, unknown> },
+    ][]
+  ) {
+    if (name !== "gateway") {
+      assert(!service.ports?.length, `${name} has no published ports`);
+      assert(
+        !("dokploy-network" in (service.networks ?? {})),
+        `${name} has no proxy network access`,
+      );
+    }
+  }
+  assert(
+    "dokploy-network" in services.gateway.networks,
+    "only gateway joins Dokploy edge network",
+  );
+  assert(
+    model.networks["dokploy-network"].external,
+    "edge network is externally managed",
+  );
+  for (const name of ["api", "worker"]) {
+    const service = services[name];
+    assert(
+      service.environment.OBJECT_STORAGE_HOST === "kinship-storage",
+      `${name} uses private storage`,
+    );
+    assert(
+      service.environment.OBJECT_STORAGE_USE_SSL === "true",
+      `${name} verifies storage TLS`,
+    );
+    assert(
+      service.environment.DENO_CERT === "/run/secrets/storage_ca",
+      `${name} trusts only supplied additional CA`,
+    );
+    assert(
+      !service.environment.RUSTFS_ADMIN_SECRET_KEY,
+      `${name} has no storage administrator secret`,
+    );
+    assert(
+      service.depends_on["storage-init"].condition ===
+        "service_completed_successfully",
+      `${name} waits for scoped identity`,
+    );
+    assert(
+      service.depends_on.migrate.condition === "service_completed_successfully",
+      `${name} still waits for migrations`,
+    );
+  }
+  const storage = services["kinship-storage"];
+  assert(
+    storage.image.includes("1.0.0-beta.12@sha256:"),
+    "RustFS stays pinned",
+  );
+  assert(
+    storage.environment.RUSTFS_TLS_PATH === "/run/secrets/storage",
+    "storage serves TLS",
+  );
+  assert(
+    storage.environment.RUSTFS_CONSOLE_ENABLE === "false",
+    "storage console is disabled",
+  );
+  assert(
+    storage.volumes.some((v: { type: string; target: string }) =>
+      v.type === "volume" && v.target === "/data"
+    ),
+    "object bytes use a named volume",
+  );
+  assert(
+    storage.healthcheck.test.includes("--cacert"),
+    "storage health verifies CA",
+  );
+  const gateway = await Deno.readTextFile("gateway/nginx.conf");
+  const proxy = await Deno.readTextFile("gateway/dokploy-proxy.conf");
+  assert(
+    gateway.includes("include /etc/nginx/trusted-proxy.d/*.conf;"),
+    "proxy trust is opt-in",
+  );
+  assert(
+    proxy.includes("set_real_ip_from 10.0.1.40;"),
+    "trust the observed Traefik address only",
+  );
+  assert(
+    !proxy.includes("/0") && !proxy.includes("/8") && !proxy.includes("/16"),
+    "never trust a broad network",
+  );
+});

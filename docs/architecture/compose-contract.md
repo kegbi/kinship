@@ -28,6 +28,9 @@ They may have different Deno permissions and environment allowlists.
 The implementation uses:
 
 - `compose.yaml` for the production-like base;
+- `compose.dokploy.yaml` as the standalone owner-operated Dokploy deployment,
+  extending the base services, with a blocking configuration preflight and
+  private TLS RustFS plus bucket-scoped application identity initialization;
 - `compose.dev.yaml` for source mounts and developer services;
 - `compose.test.yaml` for isolated test settings and disposable storage;
 - `compose.support.yaml` for the local `mailpit` and `object-store` services,
@@ -37,13 +40,23 @@ The implementation uses:
   publishes only the Mailpit API on a Docker-assigned port and keeps objects in
   a tmpfs. Production-like `compose.yaml` never loads it.
 
-Images come from two Dockerfiles. `Dockerfile.api` builds the Deno image that
+Application images come from two Dockerfiles. `Dockerfile.api` builds the Deno image that
 `migrate`, `api`, and `worker` share. `Dockerfile.web` has one `build` stage
 that installs the frozen pnpm lockfile and runs the Astro build once, and two
 targets that copy from it: `web`, the private Node renderer, and `gateway`,
 nginx serving the static client output. Compose selects each with `target:`,
 so the images keep their per-service names. Node images use the exact
 `nodejs` version in `.tool-versions`, pinned by digest.
+
+`Dockerfile.storage-init` is separate administrative tooling for the Dokploy
+one-shot initializer. It uses the pinned Deno runtime and a SHA-256-verified
+official `mc` release; the client binary is absent from application images.
+The Dokploy edge terminates Let's Encrypt TLS at gateway's private HTTP port,
+and the optional trusted-proxy include allows only its verified exact address.
+Only gateway joins the external edge network. Storage credentials and private
+CA trust stay in the owning private services. See the private-production
+runbook for file mounts, rollout, rollback, and the explicitly temporary backup
+waiver, which does not change ordinary preflight or production acceptance.
 
 The existing schema validation Compose file remains a narrow independent harness
 until the application stack supersedes none of its checks.

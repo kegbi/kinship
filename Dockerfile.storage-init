@@ -1,0 +1,9 @@
+# Administrative tooling is isolated from the API/worker runtime.
+FROM denoland/deno:debian-2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463 AS download
+RUN deno eval 'const r=await fetch("https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z");if(!r.ok)throw Error("download failed");const b=new Uint8Array(await r.arrayBuffer());const h=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",b))).map(x=>x.toString(16).padStart(2,"0")).join("");if(h!=="01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891")throw Error("checksum mismatch");await Deno.writeFile("/tmp/mc",b);'
+
+FROM denoland/deno:debian-2.9.5@sha256:b429777c3dcff34a6488f365a1537db1640b2d48379b60f5e6206be034472463
+COPY --from=download --chmod=0555 /tmp/mc /usr/local/bin/mc
+COPY tools/operations/dokploy_storage_init.ts /app/init.ts
+USER deno
+CMD ["deno", "run", "--no-config", "--allow-env=OBJECT_STORAGE_BUCKET,OBJECT_STORAGE_ACCESS_KEY,OBJECT_STORAGE_SECRET_KEY,RUSTFS_ADMIN_ACCESS_KEY,RUSTFS_ADMIN_SECRET_KEY", "--allow-read=/run/secrets/storage_ca", "--allow-write=/tmp", "--allow-run=/usr/local/bin/mc", "/app/init.ts"]

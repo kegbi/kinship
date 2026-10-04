@@ -40,10 +40,110 @@ secret values must never be pasted into commands, tickets, or logs.
 
 ## Release And Abort
 
-OPS-001E supplies the deployment-provider-specific rollout and rollback
-commands. Apply those commands only after the checks above, with API and worker
-writes still stopped during migration. Resume writes only after migrate exits
-zero and gateway readiness is healthy.
+Use the Dokploy procedure below after the checks above, with API and worker
+writes stopped during migration. Resume writes only after migrate exits zero and
+gateway readiness is healthy.
+
+### Dokploy: kinship.homelaboss.com
+
+The GitHub source uses `compose.dokploy.yaml` as a standalone Compose file. It
+extends the six base services and adds a preflight, a private RustFS service,
+and a one-shot bucket/user initializer. Retain the same Dokploy Compose project
+name on every rollout: its PostgreSQL and object named volumes are durable. Do
+not use `down --volumes`, Docker prune, or a fresh project name to redeploy.
+
+Configure the domain with HTTPS and Let's Encrypt, targeting `gateway:8080`.
+Only gateway joins external `dokploy-network`; API, renderer, database, and
+storage have no public ports. The inherited gateway TLS listener on loopback
+8443 remains available. Mount the reviewed `gateway/dokploy-proxy.conf` through
+Dokploy File Mounts at `../files/dokploy-proxy.conf`. It trusts only the
+observed Traefik address `10.0.1.40`; reverify that address when recreating the
+proxy. Do not replace it with a Docker subnet or accept client-supplied
+forwarding headers from other peers.
+
+Use Dokploy File Mounts for `../files/runtime.env`, `../files/ca.crt`,
+`../files/gateway.crt`, `../files/gateway.key`,
+`../files/storage/rustfs_cert.pem`, and `../files/storage/rustfs_key.pem`. Give
+the non-root service users read access to their mounted certificates and keys.
+The private storage certificate must include DNS SAN `kinship-storage`. API and
+worker use `DENO_CERT` to trust the private CA; neither disables certificate
+verification. Keep private keys and the independently recoverable CA key outside
+source control.
+
+`runtime.env` supplies the generated PostgreSQL/authentication/storage values,
+`APP_ENV=production`, `PUBLIC_WEB_ORIGIN=https://kinship.homelaboss.com`,
+`OBJECT_STORAGE_HOST=kinship-storage`, `OBJECT_STORAGE_PORT=9000`,
+`OBJECT_STORAGE_USE_SSL=true`, and the two gateway certificate paths above. Keep
+the owner's SMTP variables in Dokploy's existing service environment (`.env`),
+including explicit `SMTP_PORT` and `SMTP_SECURITY=tls`; Compose refuses missing
+or empty values so preflight and both mail-sending processes receive the same
+settings. Project variables are not implicitly inherited. Do not print either
+environment file or resolved `docker compose config` output.
+
+In the service checkout, use this exact argument order, replacing only the
+project placeholder with the existing Dokploy project name:
+
+```text
+docker compose -p <existing-project> --project-directory . --env-file ../files/runtime.env --env-file .env -f compose.dokploy.yaml up -d --build --remove-orphans
+```
+
+Dokploy's custom command uses the same arguments after its Docker executable.
+Dokploy first adds the reviewed domain labels to `compose.dokploy.yaml` in
+place; use that converted file. Do not bypass domain conversion with another
+unlabelled Compose file. The environment files supply interpolation only;
+containers retain explicit per-service variable lists.
+
+For updates, first stop writers with the same Compose prefix and
+`stop api
+worker`. Take the required quiesced backup, select the reviewed Git
+revision in Dokploy, and deploy. Preflight must exit zero before migrations or
+storage provisioning proceed. API and worker wait for both successful migration
+and storage initialization; web and gateway retain their readiness dependencies.
+The initializer uses checksum-pinned official `mc` tooling only in its separate
+image, reads administrator secrets from environment and new-user secrets from
+stdin, and suppresses tool diagnostics. It creates the named bucket and a
+separate application identity with only bucket-scoped object/list permissions.
+Root storage credentials never reach API or worker. Re-running initialization
+with unchanged credentials is safe; credential rotation needs the independent
+rotation procedure, including retirement of the old user.
+
+After deployment, inspect service exit/health states, then run:
+
+```text
+deno task ops probe https://kinship.homelaboss.com
+```
+
+Verify HTTPS, public authentication links, sign-in/MFA, one person read, one
+attachment upload/read/delete, authenticated SMTP delivery, a worker reminder
+cycle, and DAV only if enabled. Verify unauthenticated file access is denied.
+These are operational acceptance checks, not claims that deployment has passed.
+
+For an application-only rollback with unchanged schema compatibility, stop API
+and worker, select the last healthy reviewed Git revision, retain the same
+project/volumes/secrets, and deploy with the command above. Rerun preflight and
+the post-deployment checks before accepting rollback. Never downgrade the schema
+in place. If a release changed persisted data incompatibly, keep writes stopped
+and use the isolated restore procedure before promoting a compatible revision.
+Retain the failed revision and safe failure codes in Dokploy release history.
+
+### Temporary owner-authorized backup exception
+
+The initial deployment to `kinship.homelaboss.com` has an explicit temporary
+owner waiver while an external encrypted recovery destination is unavailable.
+Set `KINSHIP_ALLOW_NO_BACKUP=true` only for that authorized period, and set
+`PRIVATE_PRODUCTION_SECRET_STORE_READY=true` only after verifying the actual
+Dokploy secret store. Leave both archive attestations false. The deployment
+preflight prints the original `state: blocked` result and a distinct
+`operator.backup_waiver` event with `productionAccepted: false`; it continues
+only if `archive-encryption` is the sole issue. Every other preflight failure
+still blocks deployment. The ordinary `deno task ops preflight` remains blocked.
+
+This exception does not prove backups, restore, RPO/RTO, rollback, or Phase 11
+acceptance. A named volume is not a recovery archive. A destructive or
+incompatible-data release has no restore path until backup is available and must
+not proceed under this exception. Provision the encrypted external destination,
+independently recover its key, complete backup and isolated restore, then remove
+the waiver and require ordinary preflight readiness.
 
 Abort before resuming writes when any of these occurs:
 

@@ -307,6 +307,8 @@ export const TOOL_ENTRYPOINTS = [
   "tools/operations/private_production_preflight.ts",
   "tools/operations/private_production_probe.ts",
   "tools/operations/private_production_recovery.ts",
+  "tools/operations/dokploy_preflight.ts",
+  "tools/operations/dokploy_storage_init.ts",
 ] as const;
 
 // --- Operator scripts ----------------------------------------------------
@@ -2114,6 +2116,8 @@ export const MODULES: readonly TaskModule[] = [
         "tools/operations/private_production_probe_test.ts",
         "tools/operations/private_production_recovery_test.ts",
         "tools/operations/private_production_preflight_test.ts",
+        "tools/operations/dokploy_preflight_test.ts",
+        "tools/operations/dokploy_storage_init_test.ts",
       ],
       permissions: {
         env: ["READABLE_STREAM"],
@@ -2132,9 +2136,10 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: [
         "tools/operations/private_production_compose_test.ts",
+        "tools/operations/dokploy_compose_test.ts",
         "tools/operations/object_storage_compose_test.ts",
       ],
-      permissions: { run: ["docker"] },
+      permissions: { run: ["docker"], read: ["gateway"] },
     },
   },
   {

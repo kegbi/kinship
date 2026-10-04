@@ -1,0 +1,134 @@
+# Standalone Dokploy entry point. Supply interpolation values with:
+# --env-file ../files/runtime.env --env-file .env
+services:
+  postgres:
+    extends: { file: compose.yaml, service: postgres }
+    restart: unless-stopped
+  migrate:
+    extends: { file: compose.yaml, service: migrate }
+    depends_on:
+      preflight:
+        condition: service_completed_successfully
+  preflight:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: [
+      "deno",
+      "run",
+      "--allow-env=READABLE_STREAM,APP_ENV,AUTH_MFA_ENCRYPTION_KEYSET,AUTH_MINIMUM_RESPONSE_MS,AUTH_THROTTLE_SUBJECT_KEYSET,DATABASE_URL,GATEWAY_TLS_CERTIFICATE_PATH,GATEWAY_TLS_PRIVATE_KEY_PATH,INTEGRATIONS_DAV_ENABLED,INTEGRATIONS_ENCRYPTION_KEYSET,OBJECT_STORAGE_ACCESS_KEY,OBJECT_STORAGE_BUCKET,OBJECT_STORAGE_HOST,OBJECT_STORAGE_PORT,OBJECT_STORAGE_REQUEST_TIMEOUT_MS,OBJECT_STORAGE_SECRET_KEY,OBJECT_STORAGE_USE_SSL,POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER,PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST,PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED,PRIVATE_PRODUCTION_SECRET_STORE_READY,PUBLIC_WEB_ORIGIN,SMTP_FROM,SMTP_HOST,SMTP_PASSWORD,SMTP_PORT,SMTP_SECURITY,SMTP_USERNAME,KINSHIP_ALLOW_NO_BACKUP",
+      "--allow-read=/app/docs/planning/private-production-profile.json,/app/docs/planning/mvp-capacity-profile.json",
+      "tools/operations/dokploy_preflight.ts",
+    ]
+    healthcheck:
+      disable: true
+    restart: "no"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:?Set HTTPS public origin}
+      AUTH_MFA_ENCRYPTION_KEYSET: ${AUTH_MFA_ENCRYPTION_KEYSET:-}
+      AUTH_THROTTLE_SUBJECT_KEYSET: ${AUTH_THROTTLE_SUBJECT_KEYSET:-}
+      AUTH_MINIMUM_RESPONSE_MS: ${AUTH_MINIMUM_RESPONSE_MS:-250}
+      INTEGRATIONS_DAV_ENABLED: ${INTEGRATIONS_DAV_ENABLED:-true}
+      INTEGRATIONS_ENCRYPTION_KEYSET: ${INTEGRATIONS_ENCRYPTION_KEYSET:-}
+      OBJECT_STORAGE_HOST: ${OBJECT_STORAGE_HOST:?Set kinship-storage}
+      OBJECT_STORAGE_PORT: ${OBJECT_STORAGE_PORT:-9000}
+      OBJECT_STORAGE_USE_SSL: ${OBJECT_STORAGE_USE_SSL:-true}
+      OBJECT_STORAGE_REQUEST_TIMEOUT_MS: ${OBJECT_STORAGE_REQUEST_TIMEOUT_MS:-30000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:?Set SMTP_PORT explicitly}
+      SMTP_SECURITY: ${SMTP_SECURITY:?Set SMTP_SECURITY explicitly}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      GATEWAY_TLS_CERTIFICATE_PATH: ${GATEWAY_TLS_CERTIFICATE_PATH:?Set certificate path}
+      GATEWAY_TLS_PRIVATE_KEY_PATH: ${GATEWAY_TLS_PRIVATE_KEY_PATH:?Set key path}
+      PRIVATE_PRODUCTION_SECRET_STORE_READY: ${PRIVATE_PRODUCTION_SECRET_STORE_READY:-false}
+      PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST: ${PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST:-false}
+      PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED: ${PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED:-false}
+      KINSHIP_ALLOW_NO_BACKUP: ${KINSHIP_ALLOW_NO_BACKUP:-false}
+    read_only: true
+  api:
+    extends: { file: compose.yaml, service: api }
+    restart: unless-stopped
+    environment:
+      DENO_CERT: /run/secrets/storage_ca
+    volumes:
+      - ../files/ca.crt:/run/secrets/storage_ca:ro
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+  worker:
+    extends: { file: compose.yaml, service: worker }
+    environment:
+      DENO_CERT: /run/secrets/storage_ca
+    volumes:
+      - ../files/ca.crt:/run/secrets/storage_ca:ro
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+  web:
+    extends: { file: compose.yaml, service: web }
+    restart: unless-stopped
+  gateway:
+    extends: { file: compose.yaml, service: gateway }
+    restart: unless-stopped
+    networks: [default, dokploy-network]
+    volumes:
+      - ../files/dokploy-proxy.conf:/etc/nginx/trusted-proxy.d/dokploy.conf:ro
+  kinship-storage:
+    extends: { file: compose.support.yaml, service: object-store }
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ADMIN_ACCESS_KEY:?Set storage admin access key}
+      RUSTFS_SECRET_KEY: ${RUSTFS_ADMIN_SECRET_KEY:?Set storage admin secret key}
+      RUSTFS_TLS_PATH: /run/secrets/storage
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - object-storage-data:/data
+      - ../files/storage:/run/secrets/storage:ro
+      - ../files/ca.crt:/run/secrets/storage_ca:ro
+    healthcheck:
+      test: [
+        "CMD",
+        "curl",
+        "--fail",
+        "--silent",
+        "--cacert",
+        "/run/secrets/storage_ca",
+        "https://kinship-storage:9000/health",
+      ]
+  storage-init:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.storage-init
+    environment:
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?Set application bucket}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?Set application access key}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?Set application secret key}
+      RUSTFS_ADMIN_ACCESS_KEY: ${RUSTFS_ADMIN_ACCESS_KEY}
+      RUSTFS_ADMIN_SECRET_KEY: ${RUSTFS_ADMIN_SECRET_KEY}
+    depends_on:
+      kinship-storage:
+        condition: service_healthy
+      preflight:
+        condition: service_completed_successfully
+    volumes:
+      - ../files/ca.crt:/run/secrets/storage_ca:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    restart: "no"
+volumes:
+  postgres-data:
+  object-storage-data:
+networks:
+  dokploy-network:
+    external: true
