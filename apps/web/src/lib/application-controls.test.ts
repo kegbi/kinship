@@ -254,6 +254,13 @@ const spacingExceptions = [
     value: "calc(-1 * var(--space-1))",
     // Compensates the matching focus-outline clearance padding inside its scrollport.
   },
+  {
+    path: "apps/web/src/styles/settings.css",
+    selector: ".import-review > legend + p, .import-review-group > legend + p",
+    property: "margin-top",
+    value: "calc(var(--space-2) - var(--space-4))",
+    // Reduces the grid's space-4 gap to the space-2 heading-description rhythm.
+  },
 ] as const;
 
 function withoutForcedColorsBlocks(stylesheet: string): string {
