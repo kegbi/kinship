@@ -330,7 +330,7 @@ export function NewImport(
         </fieldset>
         {state.source === "monica"
           ? (
-            <p className="section-state">
+            <p className="import-hint">
               Contacts and supported related details are imported. Review
               skipped tables, fields, credentials, and missing files in the
               dry-run report before committing.
@@ -339,31 +339,33 @@ export function NewImport(
           : null}
         {state.source === "vcard"
           ? (
-            <p className="section-state">
+            <p className="import-hint">
               Photos and properties the importer cannot map are listed as
               skipped in the dry run.
             </p>
           )
           : null}
-        <label htmlFor="import-source">{chosenSource.field}</label>
-        <input
-          accept={chosenSource.accept}
-          disabled={state.validating}
-          id="import-source"
-          name="source"
-          onChange={choose}
-          ref={fileInput}
-          required
-          type="file"
-        />
-        <p
-          aria-live="polite"
-          className="section-state"
-          data-import-detection=""
-          role="status"
-        >
-          {state.detection}
-        </p>
+        <div className="import-field">
+          <label htmlFor="import-source">{chosenSource.field}</label>
+          <input
+            accept={chosenSource.accept}
+            disabled={state.validating}
+            id="import-source"
+            name="source"
+            onChange={choose}
+            ref={fileInput}
+            required
+            type="file"
+          />
+          <p
+            aria-live="polite"
+            className="section-state"
+            data-import-detection=""
+            role="status"
+          >
+            {state.detection}
+          </p>
+        </div>
         <button disabled={state.validating} type="submit">
           Validate dry run
         </button>
@@ -387,28 +389,32 @@ export function NewImport(
         {state.report ? <ReportCounts report={state.report} /> : null}
         {state.report?.contactMethodTypes
           ? (
-            <fieldset disabled={state.committing || Boolean(state.committed)}>
+            <fieldset
+              className="import-review"
+              disabled={state.committing || Boolean(state.committed)}
+            >
               <legend>Contact method types</legend>
-              <p>
+              <p className="import-hint">
                 Choose how to import each unmatched type. Creating a type also
                 makes it available in Settings → Personalization. Types are
                 created only when you confirm and commit.
               </p>
               {state.report.contactMethodTypes.proposals.map((type) => (
-                <div key={type.key}>
-                  <label htmlFor={`contact-type-${type.key}`}>
-                    {type.name}{" "}
-                    ({type.count === 0
-                      ? "unused type"
-                      : `${type.count} methods`})
-                  </label>
-                  <p>
-                    {type.kind}
-                    {type.protocol ? ` · ${type.protocol}` : ""}
-                    {!type.canCreate
-                      ? " · This name already exists; choose an active type or skip."
-                      : ""}
-                  </p>
+                <div className="import-choice" key={type.key}>
+                  <div>
+                    <label htmlFor={`contact-type-${type.key}`}>
+                      {type.name} ({type.count === 0
+                        ? "unused type"
+                        : `${type.count} methods`})
+                    </label>
+                    <p className="import-hint">
+                      {type.kind}
+                      {type.protocol ? ` · ${type.protocol}` : ""}
+                      {!type.canCreate
+                        ? " · This name already exists; choose an active type or skip."
+                        : ""}
+                    </p>
+                  </div>
                   <select
                     id={`contact-type-${type.key}`}
                     value={state.contactTypeChoices[type.key] ?? ""}
@@ -459,7 +465,7 @@ export function NewImport(
           ? (
             <a
               className={buttonVariants({
-                className: "secondary-link mt-(--space-4)",
+                className: "import-action",
                 shape: "pill",
                 variant: "outline",
               })}
@@ -470,6 +476,7 @@ export function NewImport(
           )
           : (
             <button
+              className={buttonVariants({ className: "import-action" })}
               data-import-commit=""
               disabled={!state.confirmed || !state.importId ||
                 !monicaChoicesComplete(state) ||
@@ -477,7 +484,8 @@ export function NewImport(
                 (state.report?.contactMethodTypes?.proposals ?? []).some((
                   type,
                 ) => !state.contactTypeChoices[type.key])}
-              onClick={() => void commit()}
+              onClick={() =>
+                void commit()}
               type="button"
             >
               Commit import

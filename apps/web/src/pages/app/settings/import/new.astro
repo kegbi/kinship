@@ -2,6 +2,7 @@
 import Breadcrumb from "../../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../../layouts/ApplicationLayout.astro";
+import { buttonVariants } from "../../../../components/ui/variants.ts";
 export const prerender = true;
 ---
 <ApplicationLayout current="settings" description="Validate and commit a Monica JSON or SQL export, a vCard file, or a CSV file." pageId="settings.import-new" title="New import — Kinship">
@@ -17,18 +18,20 @@ export const prerender = true;
     <header class="settings-heading"><div><p class="eyebrow">Data settings</p><h1>New import</h1><p>Monica JSON version 1 or SQL data export, vCard 3.0 or 4.0, or CSV.</p></div></header>
     <div class="contents" data-import-new-surface>
     <form method="post" data-import-form class="import-form">
-      <label for="import-source">Monica JSON or SQL export</label>
-      <input id="import-source" name="source" type="file" accept="application/json,application/sql,text/plain,.json,.sql" required />
-      <p data-import-detection class="section-state" role="status" aria-live="polite">Choose an export to detect its format.</p>
+      <div class="import-field">
+        <label for="import-source">Monica JSON or SQL export</label>
+        <input id="import-source" name="source" type="file" accept="application/json,application/sql,text/plain,.json,.sql" required />
+        <p data-import-detection class="section-state" role="status" aria-live="polite">Choose an export to detect its format.</p>
+      </div>
       <button type="submit">Validate dry run</button>
     </form>
     <p data-import-state class="section-state" role="status" aria-live="polite"></p>
     <section data-import-report hidden aria-labelledby="import-report-heading">
       <h2 id="import-report-heading">Dry-run report</h2>
       <dl class="import-counts"><div><dt>Contacts</dt><dd data-import-contacts></dd></div><div><dt>Orphans</dt><dd data-import-orphans></dd></div><div><dt>Missing files</dt><dd data-import-missing></dd></div><div><dt>Legacy identities discarded</dt><dd data-import-credentials></dd></div><div><dt>Unsupported records</dt><dd data-import-unsupported></dd></div></dl>
-      <ul data-import-diagnostics></ul>
+      <ul data-import-diagnostics class="import-diagnostics"></ul>
       <label class="confirmation-control"><input data-import-confirm type="checkbox" /> I confirm this validated import</label>
-      <button data-import-commit type="button" disabled>Commit import</button>
+      <button data-import-commit class={buttonVariants({ className: "import-action" })} type="button" disabled>Commit import</button>
     </section>
     </div>
       </div>

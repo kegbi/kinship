@@ -52,7 +52,7 @@ export function ReportCounts(props: { readonly report: ImportReport }) {
           <dd data-import-unsupported="">{counts.unsupported}</dd>
         </div>
       </dl>
-      <ul data-import-diagnostics="">
+      <ul className="import-diagnostics" data-import-diagnostics="">
         {diagnostics.map((diagnostic, index) => (
           <li data-severity={diagnostic.severity} key={index}>
             {diagnostic.message}

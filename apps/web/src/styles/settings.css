@@ -470,25 +470,104 @@
   color: var(--ink-3);
 }
 
+/*
+ * The import pages follow the settings spacing rules above. A field groups
+ * its label, hint, control, and status at --space-2; the dry-run review
+ * panels are cards whose rows put a choice's text beside its control while
+ * there is room, and stack them on a narrow screen.
+ */
 .import-page {
   max-width: var(--application-width, 58rem);
 }
+
+.import-page :is(.contents > .section-state, .import-field > .section-state):empty {
+  display: none;
+}
+
+.import-page .contents > button {
+  justify-self: start;
+}
+
 .import-form {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   max-width: 42rem;
 }
+
+.import-mapping .import-form {
+  max-width: none;
+}
+
+.import-form > button,
+.import-action {
+  justify-self: start;
+}
+
+.import-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  justify-items: start;
+}
+
+.import-field > * {
+  margin: 0;
+}
+
+.import-field > :is(label, .import-hint, .section-state) {
+  justify-self: stretch;
+}
+
 .import-form label,
+.import-review label,
 .confirmation-control {
   font-weight: 600;
 }
+
+.import-hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .875rem;
+  line-height: 1.5;
+}
+
+.import-field > input:not([type="file"]) {
+  width: min(100%, 20rem);
+}
+
+/* The file picker's button is drawn as the design system's outline button. */
+.import-field > input[type="file"] {
+  color: var(--ink-2);
+}
+
+.import-field > input[type="file"]::file-selector-button {
+  min-height: 2.75rem;
+  margin-right: var(--space-3);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-1);
+  background: var(--surface-1);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.import-field > input[type="file"]::file-selector-button:hover {
+  background: var(--surface-3);
+}
+
 .import-counts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
   gap: var(--space-4);
-  margin: var(--space-4) 0;
+  margin: 0;
 }
+
 .import-counts div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   padding: var(--space-3) 0;
   border-bottom: 1px solid color-mix(
     in srgb,
@@ -496,22 +575,151 @@
     transparent
   );
 }
+
 .import-counts dt {
+  flex: 1 0 auto;
   color: var(--ink-3);
   font-size: .78rem;
   font-weight: 700;
+  line-height: 1.35;
 }
+
 .import-counts dd {
   margin: var(--space-1) 0 0;
   font-size: 1.05rem;
   font-weight: 700;
 }
-.import-history {
+
+/* Each diagnostic is a row marked with its severity's colour. */
+.import-diagnostics {
   display: grid;
-  gap: 0;
+  gap: var(--space-2);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
+
+.import-diagnostics:empty {
+  display: none;
+}
+
+.import-diagnostics li {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--ink-2);
+  background: var(--surface-1);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.import-diagnostics li[data-severity="warning"] {
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.import-diagnostics li[data-severity="info"] {
+  border-left-color: var(--accent);
+}
+
+.import-review {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  padding: var(--pad-card);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+/* A floated legend is laid out as an ordinary row of the panel's grid. */
+.import-review legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.import-review > p,
+.import-review-group > p {
+  margin: 0;
+}
+
+/* A panel's description sits under its legend like a heading's. */
+.import-review > legend + p,
+.import-review-group > legend + p {
+  margin-top: calc(var(--space-2) - var(--space-4));
+}
+
+.import-review-group {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.import-review-group legend {
+  font-size: 1rem;
+}
+
+.import-inline-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+}
+
+/* A choice's text keeps a readable width; its control wraps below it first. */
+.import-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-hairline);
+}
+
+.import-choice > :is(div, label) {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.import-choice > div:not(.import-choice-detail) {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.import-choice p {
+  margin: 0;
+}
+
+.import-choice > select {
+  flex: 1 1 12rem;
+  max-width: 16rem;
+}
+
+.import-choice > .import-choice-detail {
+  flex-basis: 100%;
+}
+
+.import-history {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.import-history:empty {
+  display: none;
+}
+
 .import-history li {
   display: flex;
   justify-content: space-between;
@@ -523,15 +731,18 @@
     transparent
   );
 }
+
 .import-history span {
   color: var(--ink-3);
 }
+
 .confirmation-control {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  margin: var(--space-5) 0 var(--space-3);
+  margin: var(--space-2) 0 0;
 }
+
 /* GAP-050: the import source and export format choices, and the CSV
    column-mapping preview, which scrolls sideways inside itself so a wide
    file never widens the page. */
@@ -544,11 +755,17 @@
   padding: 0;
   border: 0;
 }
+
+.import-sources {
+  margin: 0;
+}
+
 .import-sources legend,
 .export-formats legend {
   margin-bottom: var(--space-2);
   font-weight: 700;
 }
+
 .import-sources label,
 .export-formats label {
   display: inline-flex;
@@ -557,44 +774,65 @@
   align-items: baseline;
   font-weight: 600;
 }
+
 .export-format {
   display: grid;
   gap: var(--space-1);
   max-width: 16rem;
 }
+
 .export-formats .field-hint {
   color: var(--ink-3);
   font-size: .85rem;
   font-weight: 500;
 }
-.import-mapping {
-  margin: var(--space-5) 0;
-}
+
 .import-preview {
   max-width: 100%;
   overflow-x: auto;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
 }
+
 .import-preview table {
+  min-width: 100%;
   border-collapse: collapse;
   font-size: .9rem;
 }
+
 .import-preview th,
 .import-preview td {
   padding: var(--space-2) var(--space-3);
   text-align: start;
   vertical-align: top;
-  border-bottom: 1px solid color-mix(
-    in srgb,
-    var(--ink-1) 16%,
-    transparent
-  );
+  border-bottom: 1px solid var(--line-1);
 }
+
+.import-preview tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.import-preview th {
+  min-width: 11rem;
+  padding-block: var(--space-3);
+  vertical-align: bottom;
+  background: var(--surface-2);
+}
+
 .import-preview th label {
   display: block;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--space-2);
 }
+
+.import-preview th select {
+  width: 100%;
+  font-weight: 400;
+}
+
 .import-preview td {
   max-width: 16rem;
+  color: var(--ink-2);
   overflow-wrap: anywhere;
 }
 
@@ -1191,13 +1429,19 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .import-counts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .import-history li {
+    gap: var(--space-1);
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .import-choice > select {
+    max-width: none;
+  }
+
+  .import-form > button,
+  .import-action {
+    justify-self: stretch;
   }
 
   .storage-search-form > div,
