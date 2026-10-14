@@ -276,6 +276,7 @@ flows:
       - Load overdue, today, and next-seven-day attention items for the active workspace.
       - Show due stay-in-touch people with last-interaction context.
       - Complete a task, dismiss an undelivered reminder, or navigate to the owning person section.
+      - Open each Recent activity participant or note author's canonical person workspace from their name.
       - Refresh only affected projections while preserving the rest of the page.
     # Dismiss acknowledges the reader's own reminder occurrence whose delivery
     # failed or needs manual attention through planning's use case; it becomes

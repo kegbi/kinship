@@ -120,7 +120,10 @@ expand in place without changing route.
 - **Recent activity** is one chronological projection with type and person
   filters. Calls, notes, debts, and tasks are not mixed as mutually exclusive
   tabs. A debt appears here only according to its normal activity semantics;
-  sensitive aggregate debt totals are not shown by default.
+  sensitive aggregate debt totals are not shown by default. Every visible
+  activity participant and note author links by name to their canonical
+  `/app/people/:personId` workspace. Entries with no visible person retain their
+  details without a profile link.
 - Workspace lifetime counters and product changelog entries are excluded from
   Today. Future analytics require a separate product decision and route.
 

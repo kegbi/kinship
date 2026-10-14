@@ -55,6 +55,10 @@ test(
       givenName: "Grace",
       familyName: "Hopper",
     });
+    const katherineId = await createPerson(page.request, {
+      givenName: "Katherine",
+      familyName: "Johnson",
+    });
     const viewRecorded = page.waitForResponse((response) =>
       response.url() === `${origin}/api/v1/people/${adaId}/view` &&
       response.request().method() === "POST"
@@ -134,7 +138,7 @@ test(
       data: {
         happenedAt: new Date(now - 60_000).toISOString(),
         kind: "activity",
-        participantIds: [graceId],
+        participantIds: [graceId, katherineId],
         requestId: crypto.randomUUID(),
         summary: "Reviewed Grace's compiler notes",
       },
@@ -199,6 +203,29 @@ test(
     await expect(recentPerson).toBeVisible();
     await expect(favorite).toBeVisible();
     await expect(seedActivity).toBeVisible();
+    await expect(favorite.getByRole("link", { name: "Grace Hopper" }))
+      .toHaveAttribute("href", `/app/people/${graceId}`);
+    const recentNote = page.locator("#today-recent-activity li", {
+      hasText: "Grace prefers concise written updates.",
+    });
+    await expect(recentNote.getByRole("link", { name: "Grace Hopper" }))
+      .toHaveAttribute("href", `/app/people/${graceId}`);
+    for (
+      const [name, id] of [
+        ["Grace Hopper", graceId],
+        ["Katherine Johnson", katherineId],
+      ] as const
+    ) {
+      const participant = seedActivity.getByRole("link", { name, exact: true });
+      await expect(participant).toHaveAttribute("href", `/app/people/${id}`);
+      await participant.click();
+      await expect(page).toHaveURL(`/app/people/${id}`);
+      await expect(page.getByRole("heading", { name, exact: true }))
+        .toBeVisible();
+      await page.goBack();
+      await expect(page).toHaveURL(/\/app$/);
+      await expect(seedActivity).toBeVisible();
+    }
 
     const openAllTasks = page.getByRole("link", { name: "Open all tasks" });
     const openAllPresentation = await openAllTasks.evaluate((element) => {

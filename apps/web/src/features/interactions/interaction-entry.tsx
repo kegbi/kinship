@@ -5,6 +5,7 @@
  * timeline instead.
  */
 
+import { Fragment } from "react";
 import type { ActivityOrNoteInteraction } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   formatInstant,
@@ -12,10 +13,9 @@ import {
 } from "../../lib/time-presentation.ts";
 
 /** The line under an entry's heading: who, what kind, how it felt, details. */
-export function interactionDetail(entry: ActivityOrNoteInteraction): string {
+export function interactionDetail(entry: ActivityOrNoteInteraction) {
   if (entry.kind === "activity") {
-    return [
-      entry.participants.map((participant) => participant.name).join(", "),
+    const details = [
       entry.activityType ? `Category: ${entry.activityType}` : "",
       entry.emotions?.length > 0
         ? `Emotions: ${
@@ -24,10 +24,27 @@ export function interactionDetail(entry: ActivityOrNoteInteraction): string {
         : "",
       entry.description,
     ].filter(Boolean).join(" · ");
+    return (
+      <>
+        {entry.participants.map((participant, index) => (
+          <Fragment key={participant.id}>
+            {index > 0 && ", "}
+            <a href={`/app/people/${participant.id}`}>{participant.name}</a>
+          </Fragment>
+        ))}
+        {entry.participants.length > 0 && details && " · "}
+        {details}
+      </>
+    );
   }
-  return `${
-    entry.participants?.[0]?.name ?? entry.person?.name ?? "Person"
-  } · ${entry.body}`;
+  const person = entry.participants?.[0] ?? entry.person;
+  return (
+    <>
+      {person
+        ? <a href={`/app/people/${person.id}`}>{person.name}</a>
+        : "Person"} · {entry.body}
+    </>
+  );
 }
 
 export function InteractionEntry(

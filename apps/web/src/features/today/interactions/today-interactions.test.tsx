@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
@@ -122,6 +122,54 @@ function click(target: HTMLElement): void {
 afterEach(() => sessionStorage.clear());
 
 describe("INTERACTION-001 Today projections", () => {
+  it("links each recent activity participant and note author to their person workspace", async () => {
+    todayShell();
+    const graceId = uuid();
+    routes(
+      items(note("Pinned context")),
+      items(
+        activity("Shared lunch", {
+          activityType: "Collaboration",
+          description: "Compared notes",
+          emotions: [{ id: "joy", name: "Joy" }],
+          participants: [
+            { id: personId, name: "Ada Lovelace" },
+            { id: graceId, name: "Grace Hopper" },
+          ],
+        }),
+        note("Prefers written updates", {
+          participants: [{ id: graceId, name: "Grace Hopper" }],
+        }),
+      ),
+    );
+    await mount();
+    const [activityRow, noteRow] = Array.from(recent().children);
+    expect(activityRow!.querySelector("p")?.textContent).toBe(
+      "Ada Lovelace, Grace Hopper · Category: Collaboration · Emotions: Joy · Compared notes",
+    );
+    expect(
+      within(activityRow as HTMLElement).getByRole("link", {
+        name: "Ada Lovelace",
+      }).getAttribute("href"),
+    ).toBe(`/app/people/${personId}`);
+    expect(
+      within(activityRow as HTMLElement).getByRole("link", {
+        name: "Grace Hopper",
+      }).getAttribute("href"),
+    ).toBe(`/app/people/${graceId}`);
+    expect(
+      within(noteRow as HTMLElement).getByRole("link", {
+        name: "Grace Hopper",
+      }).getAttribute("href"),
+    ).toBe(`/app/people/${graceId}`);
+    expect(
+      within(favorites()).getByRole("link", {
+        name: "Ada Lovelace",
+      }).getAttribute("href"),
+    ).toBe(`/app/people/${personId}`);
+    await expectNoAxeViolations(document.body);
+  });
+
   it("does nothing when an interaction projection is absent from the page", async () => {
     drawShell("");
     await mount();
@@ -261,6 +309,8 @@ describe("INTERACTION-001 Today projections", () => {
     expect(text).not.toContain("undefined");
     expect(text).toContain("Ada · Emotions: Joy, Calm · Slow walk");
     expect(favorites().textContent).toContain("Person · Without a participant");
+    expect(recent().children[0]?.querySelector("a")).toBeNull();
+    expect(favorites().querySelector("a")).toBeNull();
     const time = favorites().querySelector("time")!;
     expect(time.dateTime).toBe("2026-08-17T12:30:00.000Z");
     expect(time.textContent).toBe("Aug 17, 2026, 12:30 PM");
