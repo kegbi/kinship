@@ -149,6 +149,44 @@ afterEach(() => {
 });
 
 describe("JOURNAL-001 journal island", () => {
+  it.each(["timeline", "detail"])(
+    "links every activity participant on the %s",
+    async (surface) => {
+      const participants = [{ id: ids.person, name: "Ada Lovelace" }, {
+        id: "00000000-0000-4000-8000-000000000099",
+        name: "Grace Hopper",
+      }];
+      const activity = {
+        activity: { id: item.id, participants, summary: "Shared a walk" },
+        id: item.id,
+        occurredAt: item.occurredAt,
+        type: "activity",
+      };
+      if (surface === "detail") {
+        itemShell();
+        history.replaceState({}, "", `/app/journal/${item.id}`);
+        routes({ [ITEM]: jsonResponse({ item: activity, status: "ready" }) });
+      } else {
+        timelineShell();
+        routes({ [LIST]: timeline([activity]) });
+      }
+      await mount();
+      const walk = entry("Shared a walk");
+      for (const person of participants) {
+        expect(
+          within(walk).getByRole("link", { name: person.name }).getAttribute(
+            "href",
+          ),
+        )
+          .toBe(`/app/people/${person.id}`);
+      }
+      expect(walk.textContent).toContain("With: Ada Lovelace, Grace Hopper");
+      expect(walk.textContent).not.toContain(
+        "Activity linked to this timeline.",
+      );
+    },
+  );
+
   it("does nothing when the journal surface is absent", async () => {
     drawShell("<p>Other page</p>");
     await mount();
@@ -310,7 +348,7 @@ describe("JOURNAL-001 journal island", () => {
   it("renders every timeline item type and exposes retry and mutation failures", async () => {
     timelineShell();
     const activity = {
-      activity: { id: item.id, summary: "Shared a walk" },
+      activity: { id: item.id, participants: [], summary: "Shared a walk" },
       id: "00000000-0000-4000-8000-000000000011",
       occurredAt: item.occurredAt,
       type: "activity",
@@ -348,6 +386,9 @@ describe("JOURNAL-001 journal island", () => {
     expect(retry.hidden).toBe(true);
     expect(list().textContent).toContain("Day rating: 5/5");
     expect(list().textContent).toContain("Journal post");
+    expect(entry("Shared a walk").textContent).toContain(
+      "Activity linked to this timeline.",
+    );
     expect(
       list().querySelector('[data-journal-item-type="day-rating"] time')
         ?.getAttribute("datetime"),

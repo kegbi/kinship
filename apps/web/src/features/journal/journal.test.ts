@@ -38,7 +38,7 @@ const rating = {
   type: "day-rating",
 } as JournalTimelineItem;
 const activity = {
-  activity: { id: "a", summary: "Shared a walk" },
+  activity: { id: "a", participants: [], summary: "Shared a walk" },
   id: "00000000-0000-4000-8000-000000000011",
   occurredAt: "2026-08-23T10:00:00.000Z",
   type: "activity",

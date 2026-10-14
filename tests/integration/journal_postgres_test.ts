@@ -51,6 +51,88 @@ function request(
   return api.request(fixture, path, method, body);
 }
 
+Deno.test("[JOURNAL-001] activity participants are named on timeline and detail without exposing other workspaces or deleted people", async () => {
+  const suffix = crypto.randomUUID();
+  const primary = await register(`journal-people-${suffix}@example.test`);
+  const foreign = await register(
+    `journal-people-foreign-${suffix}@example.test`,
+  );
+  const activityId = crypto.randomUUID();
+  const emptyId = crypto.randomUUID();
+  const ada = crypto.randomUUID();
+  const archived = crypto.randomUUID();
+  const nickname = crypto.randomUUID();
+  const unnamed = crypto.randomUUID();
+  const deleted = crypto.randomUUID();
+  const foreignPerson = crypto.randomUUID();
+  await sql`insert into crm.people (id, workspace_id, given_name, family_name, nickname, archived_at, deleted_at) values
+    (${ada}, ${primary.workspaceId}, 'Ada', 'Lovelace', null, null, null),
+    (${archived}, ${primary.workspaceId}, 'Grace', 'Hopper', null, now(), null),
+    (${nickname}, ${primary.workspaceId}, '', null, 'Lin', null, null),
+    (${unnamed}, ${primary.workspaceId}, '', null, null, null, null),
+    (${deleted}, ${primary.workspaceId}, 'Deleted person', null, null, null, now()),
+    (${foreignPerson}, ${foreign.workspaceId}, 'Foreign person', null, null, null, null)`;
+  await sql`insert into crm.activities (id, workspace_id, summary, happened_at) values
+    (${activityId}, ${primary.workspaceId}, 'Lunch together', '2026-08-22T12:00:00Z'),
+    (${emptyId}, ${primary.workspaceId}, 'Solo walk', '2026-08-21T12:00:00Z')`;
+  // The canonical link has individual FKs; defend the projection even when an
+  // imported or malformed link points at a person from a different workspace.
+  for (
+    const personId of [ada, archived, nickname, unnamed, deleted, foreignPerson]
+  ) {
+    await sql`insert into crm.activity_participants (activity_id, person_id) values (${activityId}, ${personId})`;
+  }
+  const linked = await request(primary, "/api/v1/journal/activities", "POST", {
+    activityId,
+  });
+  const linkedBody = await linked.json() as { id: string };
+  assert(linked.status === 201, "activity linked");
+  const empty = await request(primary, "/api/v1/journal/activities", "POST", {
+    activityId: emptyId,
+  });
+  const emptyBody = await empty.json() as { id: string };
+  assert(empty.status === 201, "participant-free activity linked");
+  const expected = [
+    { id: ada, name: "Ada Lovelace" },
+    { id: archived, name: "Grace Hopper" },
+    { id: nickname, name: "Lin" },
+    { id: unnamed, name: "Unnamed person" },
+  ];
+  interface Item {
+    id: string;
+    activity: { participants: typeof expected };
+  }
+  const timeline = await request(primary, "/api/v1/journal", "GET");
+  const page = await timeline.json() as { items: Item[] };
+  assert(
+    timeline.status === 200 && JSON.stringify(
+          page.items.find((item) => item.id === linkedBody.id)?.activity
+            .participants,
+        ) === JSON.stringify(expected),
+    "timeline must expose sorted live same-workspace participants, including archived and fallback names",
+  );
+  for (
+    const [id, participants] of [[linkedBody.id, expected], [
+      emptyBody.id,
+      [],
+    ]] as const
+  ) {
+    const detail = await request(primary, `/api/v1/journal/items/${id}`, "GET");
+    const body = await detail.json() as { item: Item };
+    assert(
+      detail.status === 200 &&
+        JSON.stringify(body.item.activity.participants) ===
+          JSON.stringify(participants),
+      "detail must expose the same participants or an empty list",
+    );
+  }
+  assert(
+    (await request(foreign, `/api/v1/journal/items/${linkedBody.id}`, "GET"))
+      .status === 404,
+    "foreign workspace cannot read participants through journal detail",
+  );
+});
+
 Deno.test("[JOURNAL-001] PostgreSQL journal ordering, update, audit, and tenant isolation", async () => {
   const suffix = crypto.randomUUID();
   const primary = await register(`journal-${suffix}@example.test`);

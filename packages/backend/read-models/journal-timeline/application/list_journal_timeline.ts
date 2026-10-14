@@ -41,7 +41,14 @@ export interface JournalLinkableActivity {
 
 export type JournalTimelineItem =
   | {
-    readonly activity: { readonly id: string; readonly summary: string };
+    readonly activity: {
+      readonly id: string;
+      readonly participants: readonly {
+        readonly id: string;
+        readonly name: string;
+      }[];
+      readonly summary: string;
+    };
     readonly id: string;
     readonly occurredAt: string;
     readonly type: "activity";

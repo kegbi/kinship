@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { interactionParticipant } from "./interactions.ts";
 import { oneOf } from "./shared.ts";
 
 /**
@@ -28,6 +29,7 @@ export const journalActivityInput = z.strictObject({
 export const journalActivityItem = z.strictObject({
   activity: z.strictObject({
     id: z.uuid(),
+    participants: z.array(interactionParticipant),
     summary: z.string(),
   }),
   id: z.uuid(),

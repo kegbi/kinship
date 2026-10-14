@@ -1,5 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
+import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
@@ -9,6 +11,10 @@ import type {
 
 interface Row {
   activity_id: string | null;
+  activity_participants: readonly {
+    readonly id: string;
+    readonly name: string;
+  }[];
   activity_summary: string | null;
   body: string | null;
   comment: string | null;
@@ -44,11 +50,26 @@ export class PostgresJournalTimelineRepository
         ${instantColumn("item.occurred_at")} as occurred_at,
         ${instantColumn("item.created_at")} as created_at,
         item.activity_id::text, activity.summary as activity_summary,
+        coalesce(participants.value, '[]'::jsonb) as activity_participants,
         item.journal_post_id::text, post.title, post.body,
         ${instantColumn("post.updated_at")} as updated_at,
         item.day_rating_id::text, rating.rated_on::text, rating.rating, rating.comment
       from crm.journal_items item
       left join crm.activities activity on activity.id = item.activity_id and activity.workspace_id = item.workspace_id
+      left join lateral (
+        select jsonb_agg(jsonb_build_object('id', selected.id::text,
+          'name', selected.name) order by lower(selected.name), selected.id) as value
+        from (
+          select person.id, ${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    } as name
+          from crm.activity_participants link
+          join crm.people person on person.id = link.person_id
+            and person.workspace_id = item.workspace_id
+            and person.deleted_at is null
+          where link.activity_id = activity.id
+        ) selected
+      ) participants on true
       left join crm.journal_posts post on post.id = item.journal_post_id and post.workspace_id = item.workspace_id
       left join crm.journal_day_ratings rating on rating.id = item.day_rating_id and rating.workspace_id = item.workspace_id
       where item.workspace_id = ${actor.workspaceId}::uuid
@@ -126,6 +147,7 @@ export class PostgresJournalTimelineRepository
         return {
           activity: {
             id: row.activity_id!,
+            participants: row.activity_participants,
             summary: row.activity_summary ?? "Activity unavailable",
           },
           id: row.id,

@@ -29,11 +29,17 @@ test("[JOURNAL-001] maintains the personal journal", {
   });
   const personId =
     (await person.json() as { person: { id: string } }).person.id;
+  const companion = await page.request.post(`${origin}/api/v1/people`, {
+    data: { givenName: "Grace", isPartial: false },
+    headers: { origin },
+  });
+  const companionId =
+    (await companion.json() as { person: { id: string } }).person.id;
   const activity = await page.request.post(`${origin}/api/v1/interactions`, {
     data: {
       happenedAt: "2026-08-22T12:00:00.000Z",
       kind: "activity",
-      participantIds: [personId],
+      participantIds: [personId, companionId],
       requestId: crypto.randomUUID(),
       summary: "Shared a walk",
     },
@@ -101,6 +107,42 @@ test("[JOURNAL-001] maintains the personal journal", {
   await expect(
     page.locator("[data-journal-list] li", { hasText: "Shared a walk" }),
   ).toBeVisible();
+
+  const linkedActivity = page.locator("[data-journal-list] li", {
+    hasText: "Shared a walk",
+  });
+  for (const [name, id] of [["Ada", personId], ["Grace", companionId]]) {
+    await expect(linkedActivity.getByRole("link", { name, exact: true }))
+      .toHaveAttribute("href", `/app/people/${id}`);
+  }
+  const activityLink = linkedActivity.getByRole("link", {
+    name: "Shared a walk",
+  });
+  const activityPath = await activityLink.getAttribute("href");
+  if (process.env.E2E_DEV_SHELL === "1" && activityPath) {
+    await page.route(
+      `**${activityPath}`,
+      async (route) =>
+        route.fulfill({
+          response: await request.get(`${origin}/internal/journal-item-shell`),
+        }),
+    );
+  }
+  await activityLink.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-page-id",
+    "journal.item",
+  );
+  for (const [name, id] of [["Ada", personId], ["Grace", companionId]]) {
+    await expect(
+      page.locator("[data-journal-list]").getByRole("link", {
+        name,
+        exact: true,
+      }),
+    )
+      .toHaveAttribute("href", `/app/people/${id}`);
+  }
+  await page.goto("/app/journal");
 
   const postLink = page.locator("[data-journal-list] li", { hasText: "Today" })
     .getByRole("link", { name: "Today" });

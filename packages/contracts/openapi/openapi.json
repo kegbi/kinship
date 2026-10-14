@@ -19345,12 +19345,19 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "participants": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/InteractionParticipant"
+                }
+              },
               "summary": {
                 "type": "string"
               }
             },
             "required": [
               "id",
+              "participants",
               "summary"
             ],
             "additionalProperties": false

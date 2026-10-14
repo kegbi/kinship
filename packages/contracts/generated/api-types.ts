@@ -2873,6 +2873,7 @@ export interface components {
             readonly activity: {
                 /** Format: uuid */
                 readonly id: string;
+                readonly participants: readonly components["schemas"]["InteractionParticipant"][];
                 readonly summary: string;
             };
             /** Format: uuid */

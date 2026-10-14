@@ -351,7 +351,19 @@ export function Journal(props: JournalProps) {
                 <a href={`/app/journal/${item.id}`}>{journalHeading(item)}</a>
               </h2>
               <time dateTime={when.dateTime}>{when.text}</time>
-              <p>{journalBody(item)}</p>
+              {item.type === "activity" && item.activity.participants.length > 0
+                ? (
+                  <p>
+                    With:{" "}
+                    {item.activity.participants.map((person, index) => (
+                      <span key={person.id}>
+                        {index > 0 ? ", " : ""}
+                        <a href={`/app/people/${person.id}`}>{person.name}</a>
+                      </span>
+                    ))}
+                  </p>
+                )
+                : <p>{journalBody(item)}</p>}
               <div className={formActionsVariants()}>
                 {item.type === "post" && !detail
                   ? (

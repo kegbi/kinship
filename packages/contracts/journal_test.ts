@@ -10,6 +10,21 @@ function sameMembers(
     JSON.stringify([...expected].sort());
 }
 
+Deno.test("[JOURNAL-001] journal activity contract requires participant names and person identifiers", async () => {
+  const document = JSON.parse(
+    await Deno.readTextFile("packages/contracts/openapi/openapi.json"),
+  );
+  const activity =
+    document.components.schemas.JournalActivityItem.properties.activity;
+  assert(
+    sameMembers(activity.required, ["id", "participants", "summary"]) &&
+      activity.properties.participants.type === "array" &&
+      activity.properties.participants.items.$ref ===
+        "#/components/schemas/InteractionParticipant",
+    "journal activities must carry the shared person identifier/display-name contract",
+  );
+});
+
 Deno.test("[JOURNAL-001] generated contract exposes journal routes and client", async () => {
   const document = JSON.parse(
     await Deno.readTextFile("packages/contracts/openapi/openapi.json"),

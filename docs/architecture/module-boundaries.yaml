@@ -459,6 +459,7 @@ readModels:
 
   - id: journal-timeline
     path: packages/backend/read-models/journal-timeline
+    # Activity participants project live same-workspace people; archived people remain linkable.
     sourceModules: [interactions, journal, people, workspaces]
     consumers: [apps/api]
     writeAccess: false

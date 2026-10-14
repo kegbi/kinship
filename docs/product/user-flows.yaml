@@ -1019,6 +1019,7 @@ flows:
       - Select a calendar date and item type.
       - Save text, rating, or an allowed linked activity.
       - Display the chronological journal without crossing workspaces.
+      - Show linked activity participants by name on the timeline and item detail, with canonical person profile links.
     alternateOutcomes: [
       partial-linked-event,
       deleted-linked-activity,

@@ -465,6 +465,7 @@ pages:
     owner: journal
     flowIds: [JOURNAL-001]
     sections: [composer, chronological-timeline]
+    # Linked activities show live workspace participants and canonical person links.
 
   - id: journal.item
     path: /app/journal/:journalItemId
@@ -473,6 +474,7 @@ pages:
     owner: journal
     flowIds: [JOURNAL-001]
     sections: [item-detail]
+    # Activity detail retains the same participant names and person links as the timeline.
 
   - id: settings.index
     path: /app/settings
