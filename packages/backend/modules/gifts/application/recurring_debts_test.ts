@@ -246,6 +246,66 @@ function fixture(
   };
 }
 
+Deno.test("[GIFTS-001] resuming preserves a deleted latest charge and an ended rule", async () => {
+  for (const endsOn of [undefined, "2026-10-14"]) {
+    const { debts, management, charging } = fixture({
+      now: "2026-10-14T10:00:00.000Z",
+    });
+    const created = await management.createRecurringDebt(actor, personId, {
+      ...monthlyRent,
+      dayOfMonth: 14,
+      startsOn: "2026-09-14",
+      ...(endsOn ? { endsOn } : {}),
+    });
+    if (created.status !== "created") throw new Error(created.status);
+    assertEquals(debts.map((debt) => debt.occurrenceOn), [
+      "2026-09-14",
+      "2026-10-14",
+    ]);
+    // Permanent removal leaves the rule's advanced cursor, but changes MAX(occurrence_on).
+    debts.splice(
+      debts.findIndex((debt) => debt.occurrenceOn === "2026-10-14"),
+      1,
+    );
+    const id = created.recurringDebt.id;
+    for (let retry = 0; retry < 2; retry++) {
+      await management.changeRecurringDebt(actor, personId, id, {
+        active: false,
+      });
+      const resumed = await management.changeRecurringDebt(
+        actor,
+        personId,
+        id,
+        { active: true },
+      );
+      if (resumed.status !== "saved") throw new Error(resumed.status);
+      assertEquals(resumed.charged, 0);
+      assertEquals(
+        resumed.recurringDebt.nextOccurrenceOn,
+        endsOn ? undefined : "2026-11-14",
+      );
+      await charging.chargeDue();
+      assertEquals(debts.map((debt) => debt.occurrenceOn), ["2026-09-14"]);
+    }
+    if (endsOn) {
+      await management.changeRecurringDebt(actor, personId, id, {
+        active: false,
+      });
+      const extended = await management.changeRecurringDebt(
+        actor,
+        personId,
+        id,
+        { active: true, endsOn: "2026-12-14" },
+      );
+      assertEquals(
+        extended.status === "saved" ? extended.charged : extended.status,
+        1,
+        "an explicit schedule extension may regenerate a removed period",
+      );
+    }
+  }
+});
+
 Deno.test("[GIFTS-001] a rule that started in the past charges every missed period at once", async () => {
   const { audits, debts, management } = fixture();
   const created = await management.createRecurringDebt(

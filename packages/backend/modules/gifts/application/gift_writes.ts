@@ -38,6 +38,33 @@ import {
 
 export function createGiftWrites(dependencies: GiftManagementDependencies) {
   return {
+    deleteDebt: async (actor: GiftActor, personId: string, id: string) => {
+      const occurredAt = dependencies.clock.now();
+      return await runOrUnavailable(
+        dependencies.transaction,
+        async (transaction) => {
+          if (!await active(dependencies, actor, transaction, true)) {
+            return { status: "forbidden" as const };
+          }
+          const deleted = await dependencies.repository.deleteDebt({
+            ...actor,
+            id,
+            personId,
+            transaction,
+          });
+          if (deleted.status !== "deleted") return deleted;
+          await dependencies.audit.record({
+            action: "deleted",
+            actor,
+            occurredAt,
+            record: deleted.debt,
+            recordType: "debt",
+            transaction,
+          });
+          return { debtId: deleted.debt.id, status: "deleted" as const };
+        },
+      );
+    },
     createGift: async (
       actor: GiftActor,
       personId: string,

@@ -124,6 +124,28 @@ test(
     await expect(debts.locator("li", { hasText: "Lunch" })).toContainText(
       "settled",
     );
+    await lunch.getByRole("button", { name: "Reopen Lunch" }).click();
+    await expect(lunch).toContainText("open");
+    const lunchId = await lunch.getAttribute("data-debt-id");
+    const reopenedList = await page.request.get(
+      `${origin}/api/v1/people/${personId}/gifts`,
+    );
+    const reopenedDebts = await reopenedList.json() as {
+      debts: { id: string; settledAt?: string }[];
+    };
+    expect(reopenedDebts.debts.find((debt) => debt.id === lunchId)?.settledAt)
+      .toBeUndefined();
+    await lunch.getByRole("button", { name: "Delete Lunch" }).click();
+    await expect(lunch).toContainText("Permanently delete this debt?");
+    await lunch.getByRole("button", { name: "Keep it" }).click();
+    await expect(lunch).toBeVisible();
+    await lunch.getByLabel("Next status for Lunch").selectOption("settled");
+    await lunch.getByRole("button", { name: "Change status" }).click();
+    await expect(lunch).toContainText("settled");
+    await lunch.getByRole("button", { name: "Delete Lunch" }).click();
+    await lunch.getByRole("button", { name: "Delete debt permanently" })
+      .click();
+    await expect(lunch).toHaveCount(0);
 
     // A recurring debt that started two months ago charges each period at
     // once, every charge its own open debt, and pausing stops further ones.
@@ -165,6 +187,18 @@ test(
     await expect(
       debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),
     ).toHaveCount(5);
+    const charge = debts.locator("[data-gift-list] li", {
+      hasText: "Recurring, due",
+    }).first();
+    await charge.getByRole("button", { name: "Delete Gym membership" }).click();
+    await expect(charge).toContainText(
+      "The recurring schedule continues; future charges stay.",
+    );
+    await charge.getByRole("button", { name: "Delete debt permanently" })
+      .click();
+    await expect(
+      debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),
+    ).toHaveCount(4);
     await recurring.getByRole("button", { name: "Pause Gym membership" })
       .click();
     await expect(recurring.getByText("Paused", { exact: true })).toBeVisible();

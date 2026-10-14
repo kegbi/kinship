@@ -84,6 +84,14 @@ function fixture(
       listForPerson: () => Promise.resolve([]),
     } as unknown as GiftManagementDependencies["recurringDebts"],
     repository: {
+      deleteDebt: (command) => {
+        const debt = debts.get(command.id);
+        if (!debt || debt.personId !== command.personId) {
+          return Promise.resolve({ status: "not-found" });
+        }
+        debts.delete(command.id);
+        return Promise.resolve({ debt, status: "deleted" });
+      },
       createDebt: (command) => {
         const debt: StoredDebt = {
           amount: command.amount,
@@ -146,8 +154,9 @@ function fixture(
         })),
       saveDebt: (command) => {
         const current = debts.get(command.id)!;
+        const { settledAt: _previousSettlement, ...unsettled } = current;
         const debt = {
-          ...current,
+          ...unsettled,
           ...(command.settledAt
             ? { settledAt: command.settledAt.toISOString() }
             : {}),
@@ -187,12 +196,120 @@ function fixture(
   return {
     attachments,
     audit,
+    dependencies,
     management: createGiftManagement(dependencies),
     setAttachmentListingAvailable: (available: boolean) => {
       attachmentListingAvailable = available;
     },
   };
 }
+
+Deno.test("[GIFTS-001] reopening clears settlement and stays idempotent", async () => {
+  const { audit, dependencies, management } = fixture();
+  const created = await management.createDebt(actor, personId, {
+    amount: "12",
+    currencyCode: "EUR",
+    direction: "i_owe",
+    status: "settled",
+  });
+  if (created.status !== "created") throw new Error("debt expected");
+  const reopened = await management.changeDebtStatus(
+    actor,
+    personId,
+    created.debt.id,
+    "open",
+  );
+  if (reopened.status !== "saved") throw new Error("reopened debt expected");
+  assertEquals(reopened.debt.settledAt, undefined);
+  assertEquals(reopened.debt.status, "open");
+  assertEquals(
+    await management.changeDebtStatus(actor, personId, created.debt.id, "open"),
+    { debt: reopened.debt, status: "unchanged" },
+  );
+  assertEquals(audit.commands.map((command) => command.action), [
+    "created",
+    "changed",
+  ]);
+  const later = createGiftManagement({
+    ...dependencies,
+    clock: fixedClock("2026-08-24T12:00:00.000Z"),
+  });
+  const settled = await later.changeDebtStatus(
+    actor,
+    personId,
+    created.debt.id,
+    "settled",
+  );
+  if (settled.status !== "saved") throw new Error("resettled debt expected");
+  assertEquals(settled.debt.settledAt, "2026-08-24T12:00:00.000Z");
+});
+
+Deno.test("[GIFTS-001] permanent debt removal covers every status and repeats without an audit", async () => {
+  const { audit, management } = fixture();
+  for (const status of ["open", "settled", "cancelled"] as const) {
+    const created = await management.createDebt(actor, personId, {
+      amount: "12",
+      currencyCode: "EUR",
+      direction: "i_owe",
+      status,
+    });
+    if (created.status !== "created") throw new Error("debt expected");
+    assertEquals(
+      await management.deleteDebt(actor, recipientPersonId, created.debt.id),
+      { status: "not-found" },
+    );
+    assertEquals(
+      await management.deleteDebt(actor, personId, created.debt.id),
+      { debtId: created.debt.id, status: "deleted" },
+    );
+    assertEquals(
+      await management.deleteDebt(actor, personId, created.debt.id),
+      { status: "not-found" },
+    );
+  }
+  const records = await management.list(actor, personId);
+  if (records.status !== "ready") throw new Error("list expected");
+  assertEquals(records.debts, []);
+  assertEquals(audit.commands.map((command) => command.action), [
+    "created",
+    "deleted",
+    "created",
+    "deleted",
+    "created",
+    "deleted",
+  ]);
+});
+
+Deno.test("[GIFTS-001] deletion revalidates membership and rolls back an audit failure", async () => {
+  const { dependencies, management } = fixture();
+  const created = await management.createDebt(actor, personId, {
+    amount: "12",
+    currencyCode: "EUR",
+    direction: "i_owe",
+    status: "open",
+  });
+  if (created.status !== "created") throw new Error("debt expected");
+  const forbidden = createGiftManagement({
+    ...dependencies,
+    actors: { revalidate: () => Promise.resolve("revoked" as const) },
+  });
+  assertEquals(await forbidden.deleteDebt(actor, personId, created.debt.id), {
+    status: "forbidden",
+  });
+  const unavailable = createGiftManagement({
+    ...dependencies,
+    audit: {
+      ...dependencies.audit,
+      record: () => Promise.reject(new Error("audit unavailable")),
+    },
+  });
+  assertEquals(await unavailable.deleteDebt(actor, personId, created.debt.id), {
+    status: "unavailable",
+  });
+  const records = await management.list(actor, personId);
+  if (records.status !== "ready") throw new Error("list expected");
+  assertEquals(records.debts, [created.debt]);
+});
 
 Deno.test("GIFTS-001 conceals an attachment removed between validation and linking", async () => {
   const { management } = fixture({ attachmentDisappears: true });

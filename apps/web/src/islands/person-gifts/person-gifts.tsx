@@ -38,6 +38,7 @@ import {
   type Debt,
   type DebtCreateInput,
   type DebtStatus,
+  deleteDebt,
   deleteRecurringDebt,
   type Gift,
   type GiftCreateInput,
@@ -142,6 +143,7 @@ export function PersonGifts(props: PersonGiftsProps) {
   const [recurringEditor, setRecurringEditor] = useState<string>();
   /** The rule whose deletion is waiting to be confirmed, if any. */
   const [confirmingDelete, setConfirmingDelete] = useState<string>();
+  const [confirmingDebtDelete, setConfirmingDebtDelete] = useState<string>();
   const request = useLatestRequest();
   // One save or status change at a time, across both cards.
   const mutating = useRef(false);
@@ -211,6 +213,7 @@ export function PersonGifts(props: PersonGiftsProps) {
       setEditors(CLOSED);
       setRecurringEditor(undefined);
       setConfirmingDelete(undefined);
+      setConfirmingDebtDelete(undefined);
       setNotices({});
     },
   );
@@ -355,6 +358,28 @@ export function PersonGifts(props: PersonGiftsProps) {
       () => "Recurring debt deleted. The debts it charged stay.",
     );
 
+  const removeDebt = async (debt: Debt) => {
+    if (mutating.current) return;
+    mutating.current = true;
+    notify("debt", "Deleting debt…");
+    try {
+      const answer = await settle(() =>
+        deleteDebt(personId, debt.id, workspaceId)
+      );
+      if (answer.status !== "ready") {
+        notify(
+          "debt",
+          answer.problem?.detail ?? "The debt could not be deleted.",
+        );
+        return;
+      }
+      setConfirmingDebtDelete(undefined);
+      if (await refresh()) notify("debt", "Debt permanently deleted.");
+    } finally {
+      mutating.current = false;
+    }
+  };
+
   const editedRule = records.recurringDebts.find((rule) =>
     rule.id === recurringEditor
   );
@@ -472,8 +497,12 @@ export function PersonGifts(props: PersonGiftsProps) {
             <DebtItem
               archived={archived}
               debt={debt}
+              confirmingDelete={confirmingDebtDelete === debt.id}
               key={debt.id}
+              onCancelDelete={() => setConfirmingDebtDelete(undefined)}
               onChange={(next) => changeStatus("debt", debt.id, next)}
+              onConfirmDelete={() => void removeDebt(debt)}
+              onDelete={() => setConfirmingDebtDelete(debt.id)}
             />
           )),
           records.debts.length,
@@ -802,8 +831,12 @@ function GiftItem(
 function DebtItem(
   props: {
     readonly archived: boolean;
+    readonly confirmingDelete: boolean;
     readonly debt: Debt;
+    readonly onCancelDelete: () => void;
     readonly onChange: (next: string) => Promise<void>;
+    readonly onConfirmDelete: () => void;
+    readonly onDelete: () => void;
   },
 ) {
   const { debt } = props;
@@ -812,7 +845,20 @@ function DebtItem(
     <li data-debt-id={debt.id}>
       <strong>{debtTitle(debt)}</strong>
       <p>{debtDetail(debt)}</p>
-      {!props.archived && options.length > 0
+      {!props.archived && !props.confirmingDelete && debt.status === "settled"
+        ? (
+          <Button
+            aria-label={`Reopen ${debtTitle(debt)}`}
+            onClick={() => void props.onChange("open")}
+            type="button"
+            variant="outline"
+          >
+            Reopen
+          </Button>
+        )
+        : null}
+      {!props.archived && !props.confirmingDelete &&
+          debt.status !== "settled" && options.length > 0
         ? (
           <StatusChange
             key={debt.status}
@@ -824,6 +870,47 @@ function DebtItem(
           />
         )
         : null}
+      {props.archived ? null : props.confirmingDelete
+        ? (
+          <div
+            className={formActionsVariants({
+              className: "person-file-actions",
+            })}
+            role="group"
+            aria-label={`Delete ${debtTitle(debt)}`}
+          >
+            <span>
+              Permanently delete this debt? This cannot be
+              undone.{debt.recurringDebtId
+                ? " The recurring schedule continues; future charges stay. Changing the schedule later may charge deleted periods again."
+                : ""}
+            </span>
+            <Button
+              onClick={props.onConfirmDelete}
+              type="button"
+              variant="destructive"
+            >
+              Delete debt permanently
+            </Button>
+            <Button
+              onClick={props.onCancelDelete}
+              type="button"
+              variant="outline"
+            >
+              Keep it
+            </Button>
+          </div>
+        )
+        : (
+          <Button
+            aria-label={`Delete ${debtTitle(debt)}`}
+            onClick={props.onDelete}
+            type="button"
+            variant="outline"
+          >
+            Delete
+          </Button>
+        )}
     </li>
   );
 }

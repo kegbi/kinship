@@ -6,6 +6,7 @@
  */
 
 import type { ApiResult } from "./request.ts";
+import type { components } from "../generated/api-types.ts";
 import { pageQuery, request } from "./request.ts";
 import type {
   Debt,
@@ -138,6 +139,23 @@ export function createRecurringDebt(
       method: "POST",
       headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
       body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Permanently removes one debt, leaving a recurring schedule running. */
+export function deleteDebt(
+  personId: string,
+  debtId: string,
+  workspaceId?: string,
+): Promise<ApiResult<components["schemas"]["DebtDeleted"]>> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/debts/${
+      encodeURIComponent(debtId)
+    }`,
+    {
+      method: "DELETE",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     },
   );
 }

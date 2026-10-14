@@ -61,6 +61,328 @@ const register = (email: string, workspaceName: string) =>
 const createPerson = (fixture: Fixture, givenName: string) =>
   createPersonThroughApi(api, fixture, givenName);
 
+Deno.test({
+  name:
+    "[GIFTS-001] PostgreSQL reopens and permanently removes debts with scoped atomic audit",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const suffix = crypto.randomUUID();
+      const primary = await register(
+        `debt-actions-${suffix}@example.test`,
+        "Debt actions",
+      );
+      const foreign = await register(
+        `debt-actions-foreign-${suffix}@example.test`,
+        "Foreign debts",
+      );
+      const person = await createPerson(primary, "Debt owner");
+      const otherPerson = await createPerson(primary, "Other person");
+      const debtPath = `/api/v1/people/${person}/debts`;
+      const auditCount = async (id: string) => {
+        const [row] = await sql<
+          { count: number }[]
+        >`select count(*)::int as count from crm.audit_events where workspace_id = ${primary.workspaceId}::uuid and subject_id = ${id}::uuid and subject_type = 'debt'`;
+        return row?.count;
+      };
+      for (const status of ["open", "settled", "cancelled"] as const) {
+        const created = await request(primary, debtPath, "POST", {
+          amount: "14.5",
+          currencyCode: "EUR",
+          direction: "they_owe",
+          status,
+        });
+        assertEquals(created.status, 201);
+        const body = await created.json() as { debt: { id: string } };
+        const id = body.debt.id;
+        if (status === "settled") {
+          const reopened = await request(
+            primary,
+            `${debtPath}/${id}/status`,
+            "PATCH",
+            { status: "open" },
+          );
+          assertEquals(reopened.status, 200);
+          const opened = await reopened.json() as {
+            debt: { status: string; settledAt?: string };
+          };
+          assertEquals(opened.debt.status, "open");
+          assertEquals(opened.debt.settledAt, undefined);
+          const [row] = await sql<
+            { settled_at: Date | null }[]
+          >`select settled_at from crm.debts where id = ${id}::uuid`;
+          assertEquals(row?.settled_at, null);
+          const before = await auditCount(id);
+          const repeated = await request(
+            primary,
+            `${debtPath}/${id}/status`,
+            "PATCH",
+            { status: "open" },
+          );
+          assertEquals(
+            (await repeated.json() as { status: string }).status,
+            "unchanged",
+          );
+          assertEquals(await auditCount(id), before);
+          const resettled = await request(
+            primary,
+            `${debtPath}/${id}/status`,
+            "PATCH",
+            { status: "settled" },
+          );
+          assertEquals(resettled.status, 200);
+          assert(
+            (await resettled.json() as { debt: { settledAt?: string } }).debt
+              .settledAt,
+            "settling again stamps its new settlement",
+          );
+        }
+        if (status === "cancelled") {
+          assertEquals(
+            (await request(primary, `${debtPath}/${id}/status`, "PATCH", {
+              status: "open",
+            })).status,
+            409,
+          );
+        }
+        for (
+          const [who, path] of [[foreign, `${debtPath}/${id}`], [
+            primary,
+            `/api/v1/people/${otherPerson}/debts/${id}`,
+          ]] as const
+        ) {
+          assertEquals((await request(who, path, "DELETE")).status, 404);
+          assertEquals(
+            (await request(who, `${path}/status`, "PATCH", { status: "open" }))
+              .status,
+            404,
+          );
+        }
+        await sql`update crm.people set archived_at = now() where id = ${person}::uuid`;
+        assertEquals(
+          (await request(primary, `${debtPath}/${id}`, "DELETE")).status,
+          409,
+        );
+        assertEquals(
+          (await request(primary, `${debtPath}/${id}/status`, "PATCH", {
+            status: "open",
+          })).status,
+          409,
+        );
+        await sql`update crm.people set archived_at = null where id = ${person}::uuid`;
+        const before = await auditCount(id);
+        const deleted = await request(primary, `${debtPath}/${id}`, "DELETE");
+        assertEquals(deleted.status, 200);
+        assertEquals(await deleted.json(), { debtId: id, status: "deleted" });
+        assertEquals(await auditCount(id), (before ?? 0) + 1);
+        assertEquals(
+          (await request(primary, `${debtPath}/${id}`, "DELETE")).status,
+          404,
+        );
+        assertEquals(await auditCount(id), (before ?? 0) + 1);
+        const [deletedAudit] = await sql<
+          { payload: { action: string } }[]
+        >`select payload from crm.audit_events where subject_id = ${id}::uuid and payload->>'action' = 'deleted'`;
+        assertEquals(deletedAudit?.payload.action, "deleted");
+        const rows = await sql`select id from crm.debts where id = ${id}::uuid`;
+        assertEquals(rows.length, 0);
+      }
+
+      const created = await request(primary, debtPath, "POST", {
+        amount: "3",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        status: "open",
+      });
+      const { debt: { id } } = await created.json() as { debt: { id: string } };
+      const brokenAudit = createGiftManagement({
+        actors: new PostgresActorRevalidation(),
+        attachments: new PostgresGiftAttachmentBoundary(
+          new PostgresGiftAttachmentTarget(),
+        ),
+        audit: {
+          record: () => Promise.reject(new Error("audit unavailable")),
+          recordCharged: () => Promise.reject(new Error("unused")),
+        },
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date() },
+        currencies: new PostgresWorkspaceCurrencyBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        repository: new PostgresGiftRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+      const actor = {
+        memberId: primary.memberId,
+        userId: primary.userId,
+        role: primary.role,
+        workspaceId: primary.workspaceId,
+      };
+      assertEquals(await brokenAudit.deleteDebt(actor, person, id), {
+        status: "unavailable",
+      });
+      assertEquals(
+        (await sql`select id from crm.debts where id = ${id}::uuid`).length,
+        1,
+      );
+      const recurring = await request(
+        primary,
+        `/api/v1/people/${person}/recurring-debts`,
+        "POST",
+        {
+          amount: "8",
+          currencyCode: "EUR",
+          dayOfMonth: 1,
+          direction: "they_owe",
+          intervalMonths: 1,
+          startsOn: monthsFromToday(-1, 1),
+        },
+      );
+      const recurringBody = await recurring.json() as {
+        charged: number;
+        recurringDebt: { id: string; nextOccurrenceOn: string };
+      };
+      assertEquals(recurringBody.charged, 2);
+      const ruleId = recurringBody.recurringDebt.id;
+      const [selectedCharge] = await sql<
+        { id: string }[]
+      >`select id::text from crm.debts where recurring_debt_id = ${ruleId}::uuid order by occurrence_on limit 1`;
+      assert(selectedCharge, "generated charge expected");
+      assertEquals(
+        (await request(primary, `${debtPath}/${selectedCharge.id}`, "DELETE"))
+          .status,
+        200,
+      );
+      const charging = createRecurringDebtCharging({
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date() },
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+      await charging.chargeDue();
+      await charging.chargeDue();
+      assertEquals(
+        (await sql`select id from crm.debts where recurring_debt_id = ${ruleId}::uuid`)
+          .length,
+        1,
+      );
+      const [ruleAfter] = await sql<
+        { next: string; active: boolean }[]
+      >`select next_occurrence_on::text as next, is_active as active from crm.recurring_debts where id = ${ruleId}::uuid`;
+      assertEquals(
+        ruleAfter?.next,
+        recurringBody.recurringDebt.nextOccurrenceOn,
+      );
+      assertEquals(ruleAfter?.active, true);
+      await sql`update crm.people set deleted_at = now() where id = ${person}::uuid`;
+      assertEquals(
+        (await request(primary, `${debtPath}/${id}`, "DELETE")).status,
+        404,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[GIFTS-001] PostgreSQL ordinary resume preserves a removed latest charge and finished rules",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `debt-resume-${crypto.randomUUID()}`,
+      );
+      const dependencies = {
+        actors: new PostgresActorRevalidation(),
+        attachments: new PostgresGiftAttachmentBoundary(
+          new PostgresGiftAttachmentTarget(),
+        ),
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date("2026-10-14T10:00:00.000Z") },
+        currencies: new PostgresWorkspaceCurrencyBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        repository: new PostgresGiftRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      };
+      const gifts = createGiftManagement(dependencies);
+      const charging = createRecurringDebtCharging(dependencies);
+      for (const endsOn of [undefined, "2026-10-14"]) {
+        const created = await gifts.createRecurringDebt(actor, actor.personId, {
+          amount: "8",
+          currencyCode: "EUR",
+          dayOfMonth: 14,
+          direction: "they_owe",
+          intervalMonths: 1,
+          startsOn: "2026-09-14",
+          ...(endsOn ? { endsOn } : {}),
+        });
+        if (created.status !== "created") throw new Error(created.status);
+        assertEquals(created.charged, 2);
+        const id = created.recurringDebt.id;
+        const [latest] = await sql<
+          { id: string }[]
+        >`select id::text from crm.debts where recurring_debt_id = ${id}::uuid and occurrence_on = '2026-10-14'`;
+        assert(latest, "today's generated charge expected");
+        assertEquals(await gifts.deleteDebt(actor, actor.personId, latest.id), {
+          debtId: latest.id,
+          status: "deleted",
+        });
+        for (let retry = 0; retry < 2; retry++) {
+          await gifts.changeRecurringDebt(actor, actor.personId, id, {
+            active: false,
+          });
+          const resumed = await gifts.changeRecurringDebt(
+            actor,
+            actor.personId,
+            id,
+            { active: true },
+          );
+          if (resumed.status !== "saved") throw new Error(resumed.status);
+          assertEquals(resumed.charged, 0);
+          assertEquals(
+            resumed.recurringDebt.nextOccurrenceOn,
+            endsOn ? undefined : "2026-11-14",
+          );
+          assertEquals((await charging.chargeDue()).charged, 0);
+          const charged = await sql<
+            { on: string }[]
+          >`select occurrence_on::text as on from crm.debts where recurring_debt_id = ${id}::uuid order by occurrence_on`;
+          assertEquals(charged.map((row) => row.on), ["2026-09-14"]);
+        }
+        if (endsOn) {
+          await gifts.changeRecurringDebt(actor, actor.personId, id, {
+            active: false,
+          });
+          const extended = await gifts.changeRecurringDebt(
+            actor,
+            actor.personId,
+            id,
+            { active: true, endsOn: "2026-12-14" },
+          );
+          assertEquals(
+            extended.status === "saved" ? extended.charged : extended.status,
+            1,
+            "explicit rescheduling may regenerate the removed period",
+          );
+        }
+      }
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
 function request(
   fixture: Fixture,
   path: string,
@@ -343,6 +665,14 @@ Deno.test({
       });
       assert(allowed.status === "created", "an active member creates a gift");
 
+      const allowedDebt = await gifts.createDebt(actor, actor.personId, {
+        amount: "10",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        status: "settled",
+      });
+      assert(allowedDebt.status === "created", "active member creates debt");
+
       await revokeMembership(sql, actor.memberId);
 
       const refusedGift = await gifts.createGift(actor, actor.personId, {
@@ -362,10 +692,23 @@ Deno.test({
         "archived",
       );
       const refusedList = await gifts.list(actor, actor.personId);
+      const refusedReopen = await gifts.changeDebtStatus(
+        actor,
+        actor.personId,
+        allowedDebt.debt.id,
+        "open",
+      );
+      const refusedDelete = await gifts.deleteDebt(
+        actor,
+        actor.personId,
+        allowedDebt.debt.id,
+      );
       assert(
         refusedGift.status === "forbidden" &&
           refusedDebt.status === "forbidden" &&
           refusedChange.status === "forbidden" &&
+          refusedReopen.status === "forbidden" &&
+          refusedDelete.status === "forbidden" &&
           refusedList.status === "forbidden",
         "a revoked member still reached gifts or debts",
       );

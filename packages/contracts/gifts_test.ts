@@ -14,6 +14,7 @@ Deno.test("[GIFTS-001] generated contract exposes gifts and debts", () => {
       "changeGiftStatus",
       "createDebt",
       "changeDebtStatus",
+      "deleteDebt",
       "createRecurringDebt",
       "updateRecurringDebt",
       "deleteRecurringDebt",

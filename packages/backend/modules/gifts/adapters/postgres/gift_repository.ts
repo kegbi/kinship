@@ -214,6 +214,31 @@ async function recipientExists(command: {
 }
 
 export class PostgresGiftRepository implements GiftRepository {
+  async deleteDebt(
+    command: Parameters<GiftRepository["deleteDebt"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["deleteDebt"]>>> {
+    const status = await personStatus({ ...command, lock: true });
+    if (status !== "active") {
+      return {
+        status: status === "archived" ? "archived-write-rejected" : "not-found",
+      };
+    }
+    // Only this charge is removed. The recurring rule and its cursor stay put.
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("deleted", (database) =>
+        database.deleteFrom("crm.debts")
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("deleted as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .executeTakeFirst();
+    return row
+      ? { debt: debt(row), status: "deleted" }
+      : { status: "not-found" };
+  }
   async createGift(
     command: Parameters<GiftRepository["createGift"]>[0],
   ): Promise<Awaited<ReturnType<GiftRepository["createGift"]>>> {

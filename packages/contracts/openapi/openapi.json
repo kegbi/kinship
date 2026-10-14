@@ -5952,6 +5952,119 @@
         }
       }
     },
+    "/api/v1/people/{personId}/debts/{debtId}": {
+      "delete": {
+        "operationId": "deleteDebt",
+        "description": "Permanently removes one debt. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again.",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "debtId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Debt permanently deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebtDeleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/debts/{debtId}/status": {
       "patch": {
         "operationId": "changeDebtStatus",
@@ -17705,6 +17818,23 @@
         },
         "required": [
           "debt",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "DebtDeleted": {
+        "type": "object",
+        "properties": {
+          "debtId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "debtId",
           "status"
         ],
         "additionalProperties": false

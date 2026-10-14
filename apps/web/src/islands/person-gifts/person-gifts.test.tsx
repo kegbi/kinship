@@ -86,6 +86,190 @@ const stateLine = (type: "gift" | "debt") =>
 const mount = (archived = false) =>
   mountSettled(() => mountGiftsIsland(sectionProps({ archived })));
 
+describe("GIFTS-001 debt reopening and permanent removal", () => {
+  it("explains recurring charge deletion, reports refusals, and keeps the shared save slot through refresh", async () => {
+    markup();
+    const deleting = deferred<Response>();
+    const refreshing = deferred<Response>();
+    const api = stubApi({
+      [GIFTS]: [
+        page({
+          debts: [{ ...lunch, recurringDebtId: giftId }],
+          gifts: [firstGift("Book")],
+        }),
+        refreshing.promise,
+      ],
+      "DELETE /api/v1/people/:personId/debts/:debtId": [
+        problemResponse(409, { detail: "Restore the person first." }),
+        unreachable,
+        deleting.promise,
+      ],
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", { name: "Delete Lunch" }),
+    );
+    expect(
+      card("debt").getByText(
+        /recurring schedule continues.*Changing the schedule later/,
+      ),
+    ).toBeTruthy();
+    const remove = card("debt").getByRole("button", {
+      name: "Delete debt permanently",
+    });
+    await user.click(remove);
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe("Restore the person first.")
+    );
+    expect(card("debt").getByText("Lunch")).toBeTruthy();
+    await user.click(remove);
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe("The debt could not be deleted.")
+    );
+    await user.click(remove);
+    await user.click(remove);
+    await user.click(
+      card("gift").getByRole("button", { name: "Change status" }),
+    );
+    expect(api.requests()).toHaveLength(4);
+    await act(async () =>
+      deleting.resolve(jsonResponse({ debtId: lunch.id, status: "deleted" }))
+    );
+    await waitFor(() => expect(api.requests()).toHaveLength(5));
+    await user.click(
+      card("gift").getByRole("button", { name: "Change status" }),
+    );
+    expect(api.requests()).toHaveLength(5);
+    await act(async () =>
+      refreshing.resolve(page({ gifts: [firstGift("Book")] }))
+    );
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe("Debt permanently deleted.")
+    );
+  });
+
+  it("clears deletion confirmation and hides reopen/delete after archiving", async () => {
+    markup();
+    const api = stubApi({
+      [GIFTS]: page({ debts: [{ ...lunch, status: "settled" }] }),
+    });
+    await mount();
+    await userEvent.setup().click(
+      card("debt").getByRole("button", { name: "Delete Lunch" }),
+    );
+    act(() =>
+      document.dispatchEvent(
+        new CustomEvent("person-lifecycle-changed", {
+          detail: { personId, archived: true },
+        }),
+      )
+    );
+    expect(
+      card("debt").queryByRole("button", { name: "Delete debt permanently" }),
+    ).toBeNull();
+    expect(card("debt").queryByRole("button", { name: "Reopen Lunch" }))
+      .toBeNull();
+    act(() =>
+      document.dispatchEvent(
+        new CustomEvent("person-lifecycle-changed", {
+          detail: { personId, archived: false },
+        }),
+      )
+    );
+    expect(card("debt").getByRole("button", { name: "Delete Lunch" }))
+      .toBeTruthy();
+    expect(api.requests()).toHaveLength(1);
+  });
+
+  it("leaves a refresh failure visible after successful deletion", async () => {
+    markup();
+    stubApi({
+      [GIFTS]: [
+        page({ debts: [lunch] }),
+        problemResponse(503, { detail: "Refresh unavailable." }),
+      ],
+      "DELETE /api/v1/people/:personId/debts/:debtId": jsonResponse({
+        debtId: lunch.id,
+        status: "deleted",
+      }),
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", { name: "Delete Lunch" }),
+    );
+    await user.click(
+      card("debt").getByRole("button", { name: "Delete debt permanently" }),
+    );
+    await waitFor(() => expect(stateLine("debt")).toBe("Refresh unavailable."));
+  });
+
+  it("reopens a settled debt and refreshes its authoritative state", async () => {
+    markup();
+    const api = stubApi({
+      [GIFTS]: [
+        page({
+          debts: [{
+            ...lunch,
+            status: "settled",
+            settledAt: stamped.createdAt,
+          }],
+        }),
+        page({ debts: [lunch] }),
+      ],
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": jsonResponse({
+        status: "saved",
+      }),
+    });
+    await mount();
+    await userEvent.setup().click(
+      card("debt").getByRole("button", { name: "Reopen Lunch" }),
+    );
+    await waitFor(() => expect(stateLine("debt")).toBe("Status changed."));
+    expect(api.requests()[1]?.body).toEqual({ status: "open" });
+    expect(card("debt").getByText(/They owe.*open/)).toBeTruthy();
+  });
+
+  it.each(["open", "settled", "cancelled"])(
+    "confirms permanent deletion of a %s debt and permits keeping it",
+    async (status) => {
+      markup();
+      const api = stubApi({
+        [GIFTS]: [page({ debts: [{ ...lunch, status }] }), page()],
+        "DELETE /api/v1/people/:personId/debts/:debtId": jsonResponse({
+          debtId: lunch.id,
+          status: "deleted",
+        }),
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        card("debt").getByRole("button", { name: "Delete Lunch" }),
+      );
+      expect(card("debt").getByText(/Permanently delete this debt/))
+        .toBeTruthy();
+      expect(api.requests()).toHaveLength(1);
+      await user.click(card("debt").getByRole("button", { name: "Keep it" }));
+      expect(api.requests()).toHaveLength(1);
+      await user.click(
+        card("debt").getByRole("button", { name: "Delete Lunch" }),
+      );
+      await user.click(
+        card("debt").getByRole("button", { name: "Delete debt permanently" }),
+      );
+      await waitFor(() =>
+        expect(stateLine("debt")).toBe("Debt permanently deleted.")
+      );
+      expect(card("debt").queryByText("Lunch")).toBeNull();
+      expect(api.requests()[1]?.method).toBe("DELETE");
+      expect(api.requests()[1]?.headers.get("X-Workspace-Id")).toBe(
+        workspaceId,
+      );
+    },
+  );
+});
+
 describe("GAP-023 gift and debt paging", () => {
   it("extends one card without disturbing the other", async () => {
     markup();

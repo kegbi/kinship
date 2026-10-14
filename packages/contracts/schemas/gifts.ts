@@ -55,6 +55,11 @@ export const debtSaved = z.strictObject({
   status: z.enum(["saved", "unchanged"]),
 }).meta({ id: "DebtSaved" });
 
+export const debtDeleted = z.strictObject({
+  debtId: z.uuid(),
+  status: z.literal("deleted"),
+}).meta({ id: "DebtDeleted" });
+
 export const debtStatusInput = z.strictObject({
   status: z.enum(["open", "settled", "cancelled"]),
 }).meta({ id: "DebtStatusInput" });

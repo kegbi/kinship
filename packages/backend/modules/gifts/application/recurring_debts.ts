@@ -274,6 +274,9 @@ export function createRecurringDebtWrites(
               transaction,
             })
           ) return { status: "validation-error" as const };
+          const scheduledNext = scheduleChanged(current, values)
+            ? changedNextOccurrence(current, values, found.lastChargedOn)
+            : current.nextOccurrenceOn;
           const next = values.active && !current.active
             ? resumedNextOccurrence(
               values,
@@ -284,10 +287,9 @@ export function createRecurringDebtWrites(
                 transaction,
               ),
               found.lastChargedOn,
+              scheduledNext,
             )
-            : scheduleChanged(current, values)
-            ? changedNextOccurrence(current, values, found.lastChargedOn)
-            : current.nextOccurrenceOn;
+            : scheduledNext;
           const saved = await dependencies.recurringDebts.save({
             ...actor,
             ...values,

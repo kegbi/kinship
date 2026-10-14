@@ -17,6 +17,7 @@ import {
 import {
   debtCreated,
   debtCreateInput,
+  debtDeleted,
   debtSaved,
   debtStatusInput,
   giftCreated,
@@ -86,6 +87,26 @@ export const changeDebtStatus = defineRoute({
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteDebt = defineRoute({
+  method: "delete",
+  path: "/api/v1/people/{personId}/debts/{debtId}",
+  operationId: "deleteDebt",
+  description:
+    "Permanently removes one debt. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({ personId: uuid, debtId: uuid }),
+    headers: originAndWorkspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "Debt permanently deleted",
+      content: { "application/json": debtDeleted },
+    },
+    ...problemResponses(401, 403, 404, 409, 503),
   },
 });
 
@@ -273,6 +294,7 @@ export const deleteRecurringDebt = defineRoute({
 export const GIFTS_ROUTES: readonly RouteDescriptor[] = [
   createDebt,
   changeDebtStatus,
+  deleteDebt,
   listPersonGiftsAndDebts,
   createGift,
   changeGiftStatus,

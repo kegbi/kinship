@@ -7,6 +7,84 @@ const giftId = uuid(200);
 const debtId = uuid(300);
 const actor = memberActor();
 
+Deno.test("[GIFTS-001] HTTP permanently deletes a debt privately", async () => {
+  const calls: string[] = [];
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      deleteDebt: (_actor: unknown, personId: string, selected: string) => {
+        calls.push(`${personId}:${selected}`);
+        return Promise.resolve({ debtId: selected, status: "deleted" });
+      },
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const response = await app.request(`/api/v1/people/${id}/debts/${debtId}`, {
+    method: "DELETE",
+    headers: { Cookie: "kinship_session=token", Origin: "https://app.test" },
+  });
+  assertStatus(response, 200);
+  assert(
+    response.headers.get("Cache-Control") === "private, no-store",
+    "private deletion",
+  );
+  assert(calls.join() === `${id}:${debtId}`, "scoped debt forwarded");
+});
+
+Deno.test("[GIFTS-001] HTTP guards debt deletion and maps concealed failures", async () => {
+  const headers = {
+    Cookie: "kinship_session=token",
+    Origin: "https://app.test",
+  };
+  for (
+    const [status, expected, code] of [
+      ["not-found", 404, "gift_not_found"],
+      ["archived-write-rejected", 409, "archived_write_rejected"],
+      ["forbidden", 403, "gifts_forbidden"],
+      ["unavailable", 503, "gifts_unavailable"],
+    ] as const
+  ) {
+    let calls = 0;
+    const app = createGiftRoutes({
+      browserSecurity: { origin: "https://app.test", secureCookie: true },
+      gifts: {
+        deleteDebt: () => {
+          calls++;
+          return Promise.resolve({ status });
+        },
+      } as never,
+      protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+    });
+    const response = await app.request(`/api/v1/people/${id}/debts/${debtId}`, {
+      headers,
+      method: "DELETE",
+    });
+    assertStatus(response, expected);
+    assert(await problemCode(response) === code, "deletion refusal code");
+    for (
+      const [path, checkedHeaders, checkedStatus] of [
+        [`/api/v1/people/${id}/debts/${debtId}`, {
+          ...headers,
+          Origin: "https://evil.test",
+        }, 403],
+        [
+          `/api/v1/people/${id}/debts/${debtId}`,
+          { Origin: "https://app.test" },
+          401,
+        ],
+        [`/api/v1/people/not-a-uuid/debts/${debtId}`, headers, 404],
+        [`/api/v1/people/${id}/debts/not-a-uuid`, headers, 404],
+      ] as const
+    ) {
+      assertStatus(
+        await app.request(path, { headers: checkedHeaders, method: "DELETE" }),
+        checkedStatus,
+      );
+    }
+    assert(calls === 1, "guards stopped deletion");
+  }
+});
+
 /** The problem `code` a guarded route reports, as the contract spells it. */
 async function problemCode(response: Response): Promise<string | undefined> {
   return ((await response.json()) as { readonly code?: string }).code;

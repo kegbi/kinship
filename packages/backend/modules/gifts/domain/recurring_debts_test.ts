@@ -139,22 +139,32 @@ Deno.test("[GIFTS-001] resuming skips the periods that passed while paused", () 
     startsOn: "2026-01-10",
   };
   assertEquals(
-    resumedNextOccurrence(schedule, "2026-06-11", "2026-02-10"),
+    resumedNextOccurrence(schedule, "2026-06-11", "2026-02-10", "2026-03-10"),
     "2026-07-10",
   );
   assertEquals(
-    resumedNextOccurrence(schedule, "2026-06-10", "2026-02-10"),
+    resumedNextOccurrence(schedule, "2026-06-10", "2026-02-10", "2026-03-10"),
     "2026-06-10",
     "a period due on the resume day is still charged",
   );
   assertEquals(
-    resumedNextOccurrence(schedule, "2026-01-01", undefined),
+    resumedNextOccurrence(schedule, "2026-01-01", undefined, "2026-01-10"),
     "2026-01-10",
   );
   assertEquals(
-    resumedNextOccurrence(schedule, "2026-02-01", "2026-02-10"),
+    resumedNextOccurrence(schedule, "2026-02-01", "2026-02-10", "2026-03-10"),
     "2026-03-10",
     "a period already charged is never charged again",
+  );
+  assertEquals(
+    resumedNextOccurrence(schedule, "2026-06-10", "2026-04-10", "2026-07-10"),
+    "2026-07-10",
+    "deleting the latest charge does not rewind a retained cursor",
+  );
+  assertEquals(
+    resumedNextOccurrence(schedule, "2026-06-10", "2026-04-10", undefined),
+    undefined,
+    "a finished rule stays finished on ordinary resume",
   );
 });
 

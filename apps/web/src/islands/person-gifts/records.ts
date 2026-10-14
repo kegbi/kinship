@@ -72,7 +72,11 @@ export function giftStatusOptions(current: GiftStatus): readonly GiftStatus[] {
 
 /** The lifecycle steps a debt may still take. */
 export function debtStatusOptions(current: DebtStatus): readonly DebtStatus[] {
-  return current === "open" ? ["settled", "cancelled"] : [];
+  return current === "open"
+    ? ["settled", "cancelled"]
+    : current === "settled"
+    ? ["open"]
+    : [];
 }
 
 /**

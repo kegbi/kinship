@@ -14,7 +14,7 @@ export { deletePersonalIdentity, getPersonalLifecyclePreview, leaveCurrentWorksp
 export { deleteWorkspace, getWorkspaceLifecyclePreview, resetWorkspace } from "../client/workspace_lifecycle.ts";
 export { getStorageSettings, listPersonFiles, personFileContentUrl, removePersonFile, uploadPersonFile } from "../client/files.ts";
 export type { GiftDebtPageInput } from "../client/gifts.ts";
-export { changeDebtStatus, changeGiftStatus, createDebt, createGift, createRecurringDebt, deleteRecurringDebt, listPersonGifts, updateRecurringDebt } from "../client/gifts.ts";
+export { changeDebtStatus, changeGiftStatus, createDebt, createGift, createRecurringDebt, deleteDebt, deleteRecurringDebt, listPersonGifts, updateRecurringDebt } from "../client/gifts.ts";
 export { createJournalPost, deleteJournalItem, getJournalItem, linkJournalActivity, listJournal, saveJournalDayRating, updateJournalPost } from "../client/journal.ts";
 export { commitImport, createImportDryRun, getImportReport, listImports, mapImportColumns } from "../client/imports.ts";
 export { createExportDownload, createWorkspaceExport, exportPeopleVCards, listExports } from "../client/exports.ts";

@@ -1,7 +1,7 @@
 /**
  * Gifts and debts over HTTP.
  *
- * What is left in this file is the part that is about gifts: the eight routes,
+ * What is left in this file is the part that is about gifts: the routes,
  * the shapes they accept, and the prose each refusal carries. The problem
  * responder, the session cookie, the origin check, and the kernel status map
  * came from `packages/http-kit`, where every route file's copy of them was collapsed into
@@ -17,6 +17,7 @@ import {
   createDebt,
   createGift,
   createRecurringDebt,
+  deleteDebt,
   deleteRecurringDebt,
   listPersonGiftsAndDebts,
   listPersonGiftsAndDebtsQuery,
@@ -297,6 +298,24 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       return context.json(result, 201);
     },
   );
+
+  mount(routes, deleteDebt, origin, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const debtId = parseValue(uuid, context.req.param("debtId"));
+    if ("errors" in personId || "errors" in debtId) {
+      return failure(context, "not-found");
+    }
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.gifts.deleteDebt(
+      actor,
+      personId.data,
+      debtId.data,
+    );
+    if (result.status !== "deleted") return failure(context, result.status);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
 
   mount(
     routes,

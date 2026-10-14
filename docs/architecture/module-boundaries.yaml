@@ -278,7 +278,7 @@ modules:
   - id: gifts
     path: packages/backend/modules/gifts
     kind: core
-    description: Gift ideas/history, debts between a member and a person, and recurring debt rules.
+    description: Gift ideas/history, debts with settlement reversal and audited permanent removal, and recurring debt rules whose schedules survive individual charge removal.
     ownsTables:
       - gifts
       - debts

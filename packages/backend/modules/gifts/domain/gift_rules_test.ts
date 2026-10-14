@@ -54,11 +54,11 @@ Deno.test("[GAP-017] a gift moves forward and archives, and never comes back", (
   }
 });
 
-Deno.test("[GAP-017] a debt is settled or cancelled once and then finished", () => {
+Deno.test("[GIFTS-001] a settled debt can reopen while cancelled stays terminal", () => {
   const allowed: Readonly<Record<DebtStatus, readonly DebtStatus[]>> = {
     cancelled: [],
     open: ["cancelled", "settled"],
-    settled: [],
+    settled: ["open"],
   };
   const every: readonly DebtStatus[] = ["cancelled", "open", "settled"];
   for (const from of every) {

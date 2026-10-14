@@ -743,6 +743,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/people/{personId}/debts/{debtId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Permanently removes one debt. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again. */
+        readonly delete: operations["deleteDebt"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/{personId}/debts/{debtId}/status": {
         readonly parameters: {
             readonly query?: never;
@@ -2439,6 +2456,12 @@ export interface components {
             readonly debt: components["schemas"]["Debt"];
             /** @constant */
             readonly status: "created";
+        };
+        readonly DebtDeleted: {
+            /** Format: uuid */
+            readonly debtId: string;
+            /** @constant */
+            readonly status: "deleted";
         };
         readonly DebtSaved: {
             readonly debt: components["schemas"]["Debt"];
@@ -8682,6 +8705,79 @@ export interface operations {
                 };
                 content: {
                     readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteDebt: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly debtId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Debt permanently deleted */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DebtDeleted"];
                 };
             };
             /** @description RFC 9457 problem details */

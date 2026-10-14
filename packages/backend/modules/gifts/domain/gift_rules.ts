@@ -4,7 +4,7 @@
  * Both are small records with a status, and the status is the whole of the
  * rule: an idea may become a plan, a plan may be given or received, and
  * anything may be archived, but nothing comes back out of `archived`, and a
- * debt that was settled or cancelled is finished. Those two tables are the
+ * settled debt may reopen, while a cancelled debt is finished. Those tables are the
  * reason this file exists — they used to sit above a use case that was already
  * three hundred lines of orchestration, where nothing could reach them.
  *
@@ -120,7 +120,7 @@ const DEBT_TRANSITIONS: Readonly<Record<DebtStatus, ReadonlySet<DebtStatus>>> =
   {
     cancelled: new Set(),
     open: new Set(["cancelled", "settled"]),
-    settled: new Set(),
+    settled: new Set(["open"]),
   };
 
 /** Whether a gift may move from one status to another. */

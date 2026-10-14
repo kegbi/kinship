@@ -24,6 +24,16 @@ import type {
 import type { GiftActor, GiftTransaction } from "./context.ts";
 
 export interface GiftRepository {
+  deleteDebt(
+    command: GiftActor & {
+      readonly id: string;
+      readonly personId: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly debt: StoredDebt; readonly status: "deleted" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
   createGift(
     command: GiftActor & {
       readonly amount?: string;

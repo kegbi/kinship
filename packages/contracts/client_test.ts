@@ -54,6 +54,7 @@ const FUNCTIONS: readonly string[] = [
   "createWorkspaceExport",
   "createWorkspaceInvitation",
   "deleteImportantDate",
+  "deleteDebt",
   "deleteJournalItem",
   "deletePerson",
   "deletePersonLifeEvent",

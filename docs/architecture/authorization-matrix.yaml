@@ -143,6 +143,8 @@ permissions:
     scope: active-workspace
 
   - id: gifts.write
+    # Includes reopening settled debts and permanently removing individual
+    # debts, audited atomically; archived people remain read-only.
     roles: [owner, admin, member]
     scope: active-workspace
 

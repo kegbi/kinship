@@ -23,6 +23,7 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
     createDebt: writes.createDebt,
     changeGiftStatus: writes.changeGiftStatus,
     changeDebtStatus: writes.changeDebtStatus,
+    deleteDebt: writes.deleteDebt,
     createRecurringDebt: recurring.createRecurringDebt,
     changeRecurringDebt: recurring.changeRecurringDebt,
     deleteRecurringDebt: recurring.deleteRecurringDebt,

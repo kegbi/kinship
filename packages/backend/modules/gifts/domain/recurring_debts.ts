@@ -200,18 +200,21 @@ function later(first: string, second: string | undefined): string {
 
 /**
  * Where a resumed rule continues: the first period on or after the day it
- * resumes, and never one already charged. The periods that passed while it
- * was paused are skipped, which is what pausing means.
+ * resumes, no earlier than its retained pending cursor or last charged month.
+ * Removing a charge does not rewind that cursor. An absent cursor means the
+ * rule has finished. Periods that passed while paused are skipped.
  */
 export function resumedNextOccurrence(
   schedule: RecurringDebtSchedule,
   today: string,
   lastCharged: string | undefined,
+  pendingNext: string | undefined,
 ): string | undefined {
+  if (pendingNext === undefined) return undefined;
   return firstOccurrenceOnOrAfter(
     schedule,
     later(
-      later(schedule.startsOn, today),
+      later(later(schedule.startsOn, today), pendingNext),
       lastCharged === undefined ? undefined : nextMonthStart(lastCharged),
     ),
   );

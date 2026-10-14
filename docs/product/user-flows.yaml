@@ -992,6 +992,8 @@ flows:
       - Validate any recipient or attachment in the active workspace.
       - Save and display the item inside the person workspace.
       - Transition gift or debt state without losing history.
+      - Reopen a settled debt, clearing its settlement time; cancelled debts remain terminal.
+      - Confirm permanent removal of an individual debt in any state. Removing one recurring charge leaves its schedule and future charges intact. Ordinary pause/resume preserves removal, including ended rules; later explicit schedule changes may charge deleted periods again.
       - Create, edit, pause, resume, or delete a recurring debt; every due period becomes its own open debt.
       - Moving a recurring debt's start earlier backfills uncharged due months while preserving existing debts, including when its scheduled day changes.
     alternateOutcomes: [
@@ -1002,7 +1004,7 @@ flows:
       recurring-debt-catch-up,
     ]
     result: Practical relationship details remain person-centered.
-    auditEffect: gift-or-debt-created-or-updated
+    auditEffect: gift-or-debt-created-updated-or-deleted
     pageIds: [people.profile]
     moduleIds: [people, gifts, files]
     permissions: [gifts.write, recurring-debts.charge]
