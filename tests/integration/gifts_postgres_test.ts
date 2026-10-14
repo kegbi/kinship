@@ -9,6 +9,8 @@ import {
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import { PostgresGiftBusinessImportBoundary } from "../../packages/backend/modules/gifts/adapters/postgres/import_business_boundary.ts";
+import { personBoundary } from "../../packages/backend/modules/people/composition.ts";
 import {
   PostgresGiftAttachmentTarget,
 } from "../../packages/backend/modules/gifts/adapters/postgres/gift_attachment_target.ts";
@@ -1353,6 +1355,246 @@ Deno.test({
     } finally {
       await connection.destroy();
     }
+  },
+});
+
+Deno.test({
+  name:
+    "[GIFTS-001] permanent settlement history is atomic, paged with microsecond precision, image-scoped and import-idempotent",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const suffix = crypto.randomUUID();
+    const owner = await register(
+      `settlements-${suffix}@example.test`,
+      "Settlements",
+    );
+    const foreign = await register(
+      `settlements-foreign-${suffix}@example.test`,
+      "Foreign settlements",
+    );
+    const person = await createPerson(owner, "Debtor");
+    const other = await createPerson(owner, "Other person");
+    const outsider = await createPerson(foreign, "Outsider");
+    const path = `/api/v1/people/${person}/debts`;
+    const created = await request(owner, path, "POST", {
+      amount: "15.25",
+      currencyCode: "EUR",
+      direction: "they_owe",
+      reason: "Dinner",
+      status: "open",
+    });
+    assertEquals(created.status, 201);
+    const { debt: { id } } = await created.json() as { debt: { id: string } };
+    const statusPath = `${path}/${id}/status`;
+    const historyPath = `${path}/${id}/settlements`;
+    const seedPhoto = async (
+      workspace: string,
+      linkedPerson: string,
+      kind = "photo",
+      status = "available",
+      mime = "image/png",
+    ) => {
+      const fileId = crypto.randomUUID();
+      await sql`insert into crm.files (id,workspace_id,original_filename,mime_type,status) values (${fileId}::uuid,${workspace}::uuid,'paid.png',${mime},${status})`;
+      await sql`insert into crm.person_file_links (person_id,file_id,kind) values (${linkedPerson}::uuid,${fileId}::uuid,${kind})`;
+      return fileId;
+    };
+    const validPhoto = await seedPhoto(owner.workspaceId, person);
+    for (
+      const invalidPhoto of [
+        await seedPhoto(owner.workspaceId, other),
+        await seedPhoto(foreign.workspaceId, outsider),
+        await seedPhoto(owner.workspaceId, person, "avatar"),
+        await seedPhoto(
+          owner.workspaceId,
+          person,
+          "document",
+          "available",
+          "application/pdf",
+        ),
+        await seedPhoto(owner.workspaceId, person, "photo", "missing"),
+        await seedPhoto(owner.workspaceId, person, "photo", "quarantined"),
+        await seedPhoto(owner.workspaceId, person, "photo", "processing"),
+      ]
+    ) {
+      assertEquals(
+        (await request(owner, statusPath, "PATCH", {
+          status: "settled",
+          settlementPhotoFileId: invalidPhoto,
+        })).status,
+        404,
+      );
+    }
+    const [stillOpen] = await sql<
+      { status: string; count: number }[]
+    >`select debt.status,(select count(*)::int from crm.debt_settlements where debt_id=debt.id) as count from crm.debts debt where id=${id}::uuid`;
+    assertEquals(stillOpen, { status: "open", count: 0 });
+    const repeated = await Promise.all([
+      request(owner, statusPath, "PATCH", {
+        status: "settled",
+        settlementReason: "Paid by transfer",
+        settlementPhotoFileId: validPhoto,
+      }),
+      request(owner, statusPath, "PATCH", {
+        status: "settled",
+        settlementReason: "Paid by transfer",
+        settlementPhotoFileId: validPhoto,
+      }),
+    ]);
+    assertEquals(repeated.map((response) => response.status), [200, 200]);
+    let history = await (await request(owner, historyPath, "GET")).json() as {
+      settlements: {
+        id: string;
+        reason?: string;
+        photoAvailable?: boolean;
+        photoFilename?: string;
+        settledAt: string;
+      }[];
+    };
+    assertEquals(history.settlements.length, 1);
+    const first = history.settlements[0]!;
+    assertEquals([first.reason, first.photoAvailable], [
+      "Paid by transfer",
+      true,
+    ]);
+    await request(owner, statusPath, "PATCH", { status: "open" });
+    await request(owner, statusPath, "PATCH", { status: "settled" });
+    history = await (await request(owner, historyPath, "GET")).json();
+    assertEquals(history.settlements.length, 2);
+    assert(
+      history.settlements.some((event) =>
+        event.id === first.id && event.settledAt === first.settledAt &&
+        event.reason === first.reason
+      ),
+      "reopening preserves the original settlement",
+    );
+    for (
+      const [who, url] of [[foreign, historyPath], [
+        owner,
+        `/api/v1/people/${other}/debts/${id}/settlements`,
+      ]] as const
+    ) assertEquals((await request(who, url, "GET")).status, 404);
+    assertEquals(
+      (await request(owner, `${historyPath}?cursor=bad`, "GET")).status,
+      400,
+    );
+    await sql`update crm.people set archived_at=now() where id=${person}::uuid`;
+    assertEquals((await request(owner, historyPath, "GET")).status, 200);
+    assertEquals(
+      (await request(owner, statusPath, "PATCH", { status: "open" })).status,
+      409,
+    );
+    await sql`update crm.people set archived_at=null where id=${person}::uuid`;
+    // Missing and explicitly removed files preserve historical filename/reason/date.
+    await sql`update crm.files set status='missing' where id=${validPhoto}::uuid`;
+    history = await (await request(owner, historyPath, "GET")).json();
+    assertEquals(
+      history.settlements.find((event) => event.id === first.id)
+        ?.photoAvailable,
+      false,
+    );
+    await sql`delete from crm.files where id=${validPhoto}::uuid`;
+    history = await (await request(owner, historyPath, "GET")).json();
+    assertEquals(
+      history.settlements.find((event) => event.id === first.id)?.photoFilename,
+      "paid.png",
+    );
+    // Equal submillisecond timestamps require their full stored precision in the cursor.
+    await sql`delete from crm.debt_settlements where debt_id=${id}::uuid`;
+    const eventIds = [1, 2, 3].map((n) =>
+      `00000000-0000-4000-8000-00000000100${n}`
+    );
+    for (const eventId of eventIds) {
+      await sql`insert into crm.debt_settlements(id,workspace_id,debt_id,settled_at) values (${eventId}::uuid,${owner.workspaceId}::uuid,${id}::uuid,'2026-01-01T12:00:00.123456Z')`;
+    }
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await request(
+        owner,
+        `${historyPath}?limit=1${
+          cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
+        }`,
+        "GET",
+      );
+      assertEquals(response.status, 200);
+      const result = await response.json() as {
+        settlements: { id: string; settledAt: string }[];
+        nextCursor?: string;
+      };
+      seen.push(...result.settlements.map((event) => event.id));
+      assertEquals(
+        result.settlements[0]?.settledAt,
+        "2026-01-01T12:00:00.123456Z",
+      );
+      cursor = result.nextCursor;
+      if (cursor) {
+        assertEquals(
+          (await request(
+            owner,
+            `/api/v1/people/${other}/debts/${id}/settlements?cursor=${
+              encodeURIComponent(cursor)
+            }`,
+            "GET",
+          )).status,
+          400,
+        );
+      }
+    } while (cursor);
+    assertEquals(seen, eventIds);
+    const initial = await request(owner, path, "POST", {
+      amount: "2",
+      currencyCode: "EUR",
+      direction: "i_owe",
+      status: "settled",
+      settlementReason: "Already paid",
+    });
+    const initialId =
+      (await initial.json() as { debt: { id: string } }).debt.id;
+    assertEquals(
+      (await (await request(owner, `${path}/${initialId}/settlements`, "GET"))
+        .json() as { settlements: { reason: string }[] }).settlements[0]
+        ?.reason,
+      "Already paid",
+    );
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const imports = new PostgresGiftBusinessImportBoundary(personBoundary());
+      const importId = crypto.randomUUID();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await connection.db.transaction().execute(async (transaction) => {
+          await imports.importRecords({
+            actor: owner,
+            transaction: { opaque: transaction },
+            records: [{
+              id: importId,
+              references: { personId: person },
+              data: {
+                kind: "debt",
+                amount: "3",
+                currencyCode: "EUR",
+                direction: "i_owe",
+                status: "settled",
+                settledAt: "2025-01-02T03:04:05.654321Z",
+              },
+            }],
+          });
+        });
+      }
+      const [imported] = await sql<
+        { count: number; time: string }[]
+      >`select count(*)::int as count,max(to_char(settled_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) as time from crm.debt_settlements where debt_id=${importId}::uuid`;
+      assertEquals(imported, { count: 1, time: "2025-01-02T03:04:05.654321Z" });
+    } finally {
+      await connection.destroy();
+    }
+    await request(owner, `${path}/${id}`, "DELETE");
+    assertEquals(
+      (await sql`select id from crm.debt_settlements where debt_id=${id}::uuid`)
+        .length,
+      0,
+    );
   },
 });
 

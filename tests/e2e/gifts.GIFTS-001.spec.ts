@@ -200,9 +200,61 @@ test(
     await page.setViewportSize(desktop);
     await lunch.getByLabel("Next status for Lunch").selectOption("settled");
     await lunch.getByRole("button", { name: "Change status" }).click();
+    const settlementDialog = page.getByRole("dialog", {
+      name: "Settle this debt",
+    });
+    await expect(settlementDialog).toBeVisible();
+    await expect(settlementDialog.getByLabel("Settlement reason (optional)"))
+      .toBeFocused();
+    await settlementDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(lunch).toContainText("open");
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: desktop.height });
+      await lunch.getByRole("button", { name: "Change status" }).click();
+      const bounds = await settlementDialog.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.width + bounds!.x).toBeLessThanOrEqual(width);
+      await page.keyboard.press("Escape");
+      await expect(settlementDialog).toBeHidden();
+      await expect(lunch.getByRole("button", { name: "Change status" }))
+        .toBeFocused();
+    }
+    await page.setViewportSize(desktop);
+    await lunch.getByRole("button", { name: "Change status" }).click();
+    await settlementDialog.getByLabel("Settlement reason (optional)").fill(
+      "Repaid by bank transfer",
+    );
+    await settlementDialog.getByLabel("Settlement photo (optional)")
+      .setInputFiles({
+        name: "settlement.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+    await settlementDialog.getByRole("button", { name: "Settle debt" }).click();
+    await expect(settlementDialog).toBeHidden();
     await expect(debts.locator("li", { hasText: "Lunch" })).toContainText(
       "settled",
     );
+    await page.reload();
+    await waitForIsland(page, "person-gifts");
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
+    await expect(lunch).toContainText("Repaid by bank transfer");
+    const settlementPhoto = lunch.getByRole("link", {
+      name: "Open settlement photo: settlement.png",
+    });
+    expect(
+      (await page.request.get((await settlementPhoto.getAttribute("href"))!))
+        .status(),
+    ).toBe(200);
+    const firstSettlementTime = await lunch.locator(
+      "[data-debt-settlement] time",
+    ).getAttribute("datetime");
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
     for (const width of [desktop.width, 375, 320]) {
       await page.setViewportSize({ width, height: desktop.height });
       await expectCompactDebtActions(page, lunch, reference);
@@ -215,7 +267,18 @@ test(
     }
     await page.setViewportSize(desktop);
     await lunch.getByRole("button", { name: "Reopen Lunch" }).click();
-    await expect(lunch).toContainText("open");
+    await expect(lunch.locator(":scope > p")).toContainText("· open");
+    await expect(lunch.getByRole("button", { name: "Reopen Lunch" }))
+      .toBeHidden();
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
+    await expect(lunch).toContainText("Repaid by bank transfer");
+    await expect(lunch.locator("[data-debt-settlement] time")).toHaveAttribute(
+      "datetime",
+      firstSettlementTime!,
+    );
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
     const lunchId = await lunch.getAttribute("data-debt-id");
     const reopenedList = await page.request.get(
       `${origin}/api/v1/people/${personId}/gifts`,
@@ -234,7 +297,16 @@ test(
     await expect(lunch).toBeVisible();
     await lunch.getByLabel("Next status for Lunch").selectOption("settled");
     await lunch.getByRole("button", { name: "Change status" }).click();
+    await settlementDialog.getByRole("button", { name: "Settle debt" }).click();
+    await expect(settlementDialog).toBeHidden();
     await expect(lunch).toContainText("settled");
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
+    await expect(lunch.locator("[data-debt-settlement]")).toHaveCount(2);
+    await expect(lunch).toContainText("Repaid by bank transfer");
+    await expect(lunch).toContainText("No settlement reason supplied.");
+    await lunch.getByRole("button", { name: "Settlement history for Lunch" })
+      .click();
     await lunch.getByRole("button", { name: "Delete Lunch" }).click();
     await page.route(
       `**/api/v1/people/${personId}/debts/${lunchId}`,

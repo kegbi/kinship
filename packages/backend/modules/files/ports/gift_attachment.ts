@@ -23,6 +23,23 @@ export interface GiftAttachmentTarget {
 }
 
 export interface GiftAttachmentBoundary {
+  validateSettlementPhoto(
+    command: PersonFileActor & {
+      readonly fileId: string;
+      readonly personId: string;
+      readonly transaction: PersonFileTransaction;
+    },
+  ): Promise<
+    | { readonly status: "ready"; readonly filename: string }
+    | Failure<"not-found">
+  >;
+  availableSettlementPhotos(
+    command: PersonFileActor & {
+      readonly fileIds: readonly string[];
+      readonly personId: string;
+      readonly transaction: PersonFileTransaction;
+    },
+  ): Promise<readonly string[]>;
   attachToGift(
     command: PersonFileActor & {
       readonly fileId: string;

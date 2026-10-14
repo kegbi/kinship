@@ -6065,6 +6065,128 @@
         }
       }
     },
+    "/api/v1/people/{personId}/debts/{debtId}/settlements": {
+      "get": {
+        "operationId": "listDebtSettlements",
+        "security": [
+          {
+            "kinship_session": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "debtId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permanent settlement history, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebtSettlementList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/debts/{debtId}/status": {
       "patch": {
         "operationId": "changeDebtStatus",
@@ -17769,6 +17891,15 @@
       "DebtCreateInput": {
         "type": "object",
         "properties": {
+          "settlementReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "settlementPhotoFileId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "amount": {
             "type": "string",
             "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
@@ -17859,9 +17990,74 @@
         ],
         "additionalProperties": false
       },
+      "DebtSettlement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "settledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "photoFileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "photoFilename": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "photoAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "settledAt"
+        ],
+        "additionalProperties": false
+      },
+      "DebtSettlementList": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "settlements": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DebtSettlement"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "settlements"
+        ],
+        "additionalProperties": false
+      },
       "DebtStatusInput": {
         "type": "object",
         "properties": {
+          "settlementReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "settlementPhotoFileId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "status": {
             "type": "string",
             "enum": [

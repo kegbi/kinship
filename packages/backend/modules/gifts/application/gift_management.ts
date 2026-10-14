@@ -10,6 +10,7 @@
  */
 
 import { createGiftListing } from "./gift_listing.ts";
+import { createDebtSettlementReads } from "./debt_settlements.ts";
 import { createGiftWrites } from "./gift_writes.ts";
 import { createRecurringDebtWrites } from "./recurring_debts.ts";
 import type { GiftManagementDependencies } from "./gift_context.ts";
@@ -19,6 +20,7 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
   const writes = createGiftWrites(dependencies);
   const recurring = createRecurringDebtWrites(dependencies);
   return {
+    listDebtSettlements: createDebtSettlementReads(dependencies),
     createGift: writes.createGift,
     createDebt: writes.createDebt,
     changeGiftStatus: writes.changeGiftStatus,

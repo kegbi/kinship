@@ -1,18 +1,19 @@
 import postgres from "postgres";
 
 export type SchemaAction =
-  | "apply-v10"
+  | "apply-v11"
   | "reject"
-  | "upgrade-v1-to-v10"
-  | "upgrade-v2-to-v10"
-  | "upgrade-v3-to-v10"
-  | "upgrade-v4-to-v10"
-  | "upgrade-v5-to-v10"
-  | "upgrade-v6-to-v10"
-  | "upgrade-v7-to-v10"
-  | "upgrade-v8-to-v10"
-  | "upgrade-v9-to-v10"
-  | "verify-v10";
+  | "upgrade-v1-to-v11"
+  | "upgrade-v2-to-v11"
+  | "upgrade-v3-to-v11"
+  | "upgrade-v4-to-v11"
+  | "upgrade-v5-to-v11"
+  | "upgrade-v6-to-v11"
+  | "upgrade-v7-to-v11"
+  | "upgrade-v8-to-v11"
+  | "upgrade-v9-to-v11"
+  | "upgrade-v10-to-v11"
+  | "verify-v11";
 
 export const V1_SQL_SHA256 =
   "3d082df6641ddeea9706adee39b41b90656709979a5f980cc93a7d98d1a79e91";
@@ -34,6 +35,11 @@ export const V9_SQL_SHA256 =
   "d84050ffa668e5bffe41c321e1f9b65c9bfd39af3af925d17ab43476c40e7f6f";
 export const V10_SQL_SHA256 =
   "1202621345c18314d0098f46e3d05f134f624ab7e08afdb7f717423ce25e3e8d";
+export const V11_SQL_SHA256 =
+  "ce1af92ab7b66eba326a0914a7eab72f040e8a9d78ec928b6af219b40f313e41";
+export const V10_TO_V11_MIGRATION_SHA256 =
+  "6fa4d95ac63696c544d8d4c5b7bbf62c9c37142349c13dd56fa042316d7c03f9";
+
 export const V1_TO_V2_MIGRATION_SHA256 =
   "6483b51b4d432a265087ccc8e7045dfb42b22b2d0dc5b0e5da548b1966a3cef5";
 export const V2_TO_V3_MIGRATION_SHA256 =
@@ -55,17 +61,18 @@ export const V9_TO_V10_MIGRATION_SHA256 =
 
 /** The index of the first migration each exact-baseline upgrade applies. */
 const UPGRADE_FROM: Readonly<
-  Record<Exclude<SchemaAction, "apply-v10" | "reject" | "verify-v10">, number>
+  Record<Exclude<SchemaAction, "apply-v11" | "reject" | "verify-v11">, number>
 > = {
-  "upgrade-v1-to-v10": 0,
-  "upgrade-v2-to-v10": 1,
-  "upgrade-v3-to-v10": 2,
-  "upgrade-v4-to-v10": 3,
-  "upgrade-v5-to-v10": 4,
-  "upgrade-v6-to-v10": 5,
-  "upgrade-v7-to-v10": 6,
-  "upgrade-v8-to-v10": 7,
-  "upgrade-v9-to-v10": 8,
+  "upgrade-v1-to-v11": 0,
+  "upgrade-v2-to-v11": 1,
+  "upgrade-v3-to-v11": 2,
+  "upgrade-v4-to-v11": 3,
+  "upgrade-v5-to-v11": 4,
+  "upgrade-v6-to-v11": 5,
+  "upgrade-v7-to-v11": 6,
+  "upgrade-v8-to-v11": 7,
+  "upgrade-v9-to-v11": 8,
+  "upgrade-v10-to-v11": 9,
 };
 
 export function canonicalTableNames(sqlText: string): string[] {
@@ -91,27 +98,31 @@ export function decideSchemaAction(state: {
     | "v7"
     | "v8"
     | "v9"
-    | "v10";
+    | "v10"
+    | "v11";
 }): SchemaAction {
-  if (!state.crmSchemaExists && state.state === "empty") return "apply-v10";
+  if (!state.crmSchemaExists && state.state === "empty") return "apply-v11";
   if (state.crmSchemaExists && state.state === "v1") {
-    return "upgrade-v1-to-v10";
+    return "upgrade-v1-to-v11";
   }
   if (state.crmSchemaExists && state.state === "v2") {
-    return "upgrade-v2-to-v10";
+    return "upgrade-v2-to-v11";
   }
   if (state.crmSchemaExists && state.state === "v3") {
-    return "upgrade-v3-to-v10";
+    return "upgrade-v3-to-v11";
   }
-  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v10";
-  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v10";
-  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v10";
-  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v10";
-  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v10";
+  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v11";
+  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v11";
+  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v11";
+  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v11";
+  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v11";
   if (state.crmSchemaExists && state.state === "v9") {
-    return "upgrade-v9-to-v10";
+    return "upgrade-v9-to-v11";
   }
-  if (state.crmSchemaExists && state.state === "v10") return "verify-v10";
+  if (state.crmSchemaExists && state.state === "v10") {
+    return "upgrade-v10-to-v11";
+  }
+  if (state.crmSchemaExists && state.state === "v11") return "verify-v11";
   return "reject";
 }
 
@@ -410,6 +421,8 @@ export interface CanonicalSchemaArtifacts {
   readonly v8Sql: string;
   readonly v9Sql: string;
   readonly v10Sql: string;
+  readonly v11Sql: string;
+  readonly migrationV10ToV11: string;
 }
 
 export async function applyCanonicalSchema(
@@ -473,10 +486,20 @@ export async function applyCanonicalSchema(
       "Schema v9-to-v10 migration",
     ),
   ]);
-  const expectedTables = canonicalTableNames(artifacts.v10Sql);
-  if (expectedTables.length !== 91) {
+  await verifyArtifactChecksum(
+    artifacts.v11Sql,
+    V11_SQL_SHA256,
+    "Schema v11 SQL",
+  );
+  await verifyArtifactChecksum(
+    artifacts.migrationV10ToV11,
+    V10_TO_V11_MIGRATION_SHA256,
+    "Schema v10-to-v11 migration",
+  );
+  const expectedTables = canonicalTableNames(artifacts.v11Sql);
+  if (expectedTables.length !== 92) {
     throw new Error(
-      "Canonical schema v10 does not contain the accepted table catalog.",
+      "Canonical schema v11 does not contain the accepted table catalog.",
     );
   }
   const client = postgres(databaseUrl, {
@@ -513,6 +536,7 @@ export async function applyCanonicalSchema(
     const expectedV8 = await expectedCatalog(artifacts.v8Sql, "v8");
     const expectedV9 = await expectedCatalog(artifacts.v9Sql, "v9");
     const expectedV10 = await expectedCatalog(artifacts.v10Sql, "v10");
+    const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
     return await client.begin(async (transaction) => {
       await transaction`set local lock_timeout = '5s'`;
       await transaction`set local statement_timeout = '120s'`;
@@ -549,6 +573,8 @@ export async function applyCanonicalSchema(
         ? "v9"
         : structuresMatch(actual, expectedV10.structure)
         ? "v10"
+        : structuresMatch(actual, expectedV11.structure)
+        ? "v11"
         : "drift";
       const action = decideSchemaAction({
         crmSchemaExists: state.crm_schema_exists,
@@ -567,10 +593,11 @@ export async function applyCanonicalSchema(
         artifacts.migrationV7ToV8,
         artifacts.migrationV8ToV9,
         artifacts.migrationV9ToV10,
+        artifacts.migrationV10ToV11,
       ];
-      if (action === "apply-v10") {
-        await transaction.unsafe(artifacts.v10Sql);
-      } else if (action !== "verify-v10") {
+      if (action === "apply-v11") {
+        await transaction.unsafe(artifacts.v11Sql);
+      } else if (action !== "verify-v11") {
         // An exact vN target applies every immutable migration from vN onward.
         for (const migration of migrations.slice(UPGRADE_FROM[action])) {
           await transaction.unsafe(migration);
@@ -578,20 +605,20 @@ export async function applyCanonicalSchema(
       }
       await transaction`set local search_path = public`;
       const finalStructure = await catalogStructure(transaction, "crm");
-      if (!structuresMatch(finalStructure, expectedV10.structure)) {
+      if (!structuresMatch(finalStructure, expectedV11.structure)) {
         const mismatch = finalStructure.findIndex((item, index) =>
-          item !== expectedV10.structure[index]
+          item !== expectedV11.structure[index]
         );
         throw new Error(
-          `Canonical schema v10 structural verification failed at ${mismatch}: actual=${
+          `Canonical schema v11 structural verification failed at ${mismatch}: actual=${
             finalStructure[mismatch] ?? "<missing>"
-          }; expected=${expectedV10.structure[mismatch] ?? "<missing>"}.`,
+          }; expected=${expectedV11.structure[mismatch] ?? "<missing>"}.`,
         );
       }
       const actualCurrencies = await currencyCatalog(transaction, "crm");
-      if (!currencyCatalogMatches(actualCurrencies, expectedV10.currencies)) {
+      if (!currencyCatalogMatches(actualCurrencies, expectedV11.currencies)) {
         throw new Error(
-          "Canonical schema v10 currency reference-data verification failed.",
+          "Canonical schema v11 currency reference-data verification failed.",
         );
       }
       return action;

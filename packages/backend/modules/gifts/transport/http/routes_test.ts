@@ -7,6 +7,52 @@ const giftId = uuid(200);
 const debtId = uuid(300);
 const actor = memberActor();
 
+Deno.test("[GIFTS-001] HTTP history is private, scoped, paged, and conceals failures", async () => {
+  const calls: unknown[] = [];
+  let result: unknown = { status: "ready", settlements: [] };
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+    gifts: {
+      listDebtSettlements: (...args: unknown[]) => {
+        calls.push(args);
+        return Promise.resolve(result);
+      },
+    } as never,
+  });
+  const path = `/api/v1/people/${id}/debts/${debtId}/settlements`;
+  const headers = { Cookie: "kinship_session=token" };
+  const response = await app.request(`${path}?limit=2&cursor=next`, {
+    headers,
+  });
+  assertStatus(response, 200);
+  assert(
+    response.headers.get("Cache-Control") === "private, no-store",
+    "history private",
+  );
+  const call = calls[0] as unknown[];
+  assert(
+    call[1] === id && call[2] === debtId &&
+      JSON.stringify(call[3]) === JSON.stringify({ cursor: "next", limit: 2 }),
+    "all scopes forwarded",
+  );
+  for (
+    const [status, code] of [["not-found", 404], ["forbidden", 403], [
+      "unavailable",
+      503,
+    ], ["validation-error", 400]] as const
+  ) {
+    result = { status };
+    assertStatus(await app.request(path, { headers }), code);
+  }
+  assertStatus(await app.request(path), 401);
+  assertStatus(
+    await app.request(path.replace(debtId, "bad"), { headers }),
+    404,
+  );
+  assertStatus(await app.request(`${path}?limit=0`, { headers }), 400);
+});
+
 Deno.test("[GIFTS-001] HTTP permanently deletes a debt privately", async () => {
   const calls: string[] = [];
   const app = createGiftRoutes({

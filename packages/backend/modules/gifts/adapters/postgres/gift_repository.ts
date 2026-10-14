@@ -2,7 +2,11 @@ import { type ExpressionBuilder, type Selectable, sql } from "kysely";
 import type { Database } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { schemaDatabaseFromSession } from "../../../../platform/postgres/session.ts";
-import { instantOf } from "../../../../platform/postgres/timestamps.ts";
+import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  instantColumn,
+  instantOf,
+} from "../../../../platform/postgres/timestamps.ts";
 import type { GiftPageAnchor } from "../../domain/cursors.ts";
 import type {
   DebtDirection,
@@ -214,6 +218,70 @@ async function recipientExists(command: {
 }
 
 export class PostgresGiftRepository implements GiftRepository {
+  async recordSettlement(
+    command: Parameters<GiftRepository["recordSettlement"]>[0],
+  ): Promise<void> {
+    await sql`insert into crm.debt_settlements
+      (id, workspace_id, debt_id, settled_at, reason, photo_file_id, photo_filename, created_by_member_id)
+      values (${command.id}::uuid, ${command.workspaceId}::uuid, ${command.debtId}::uuid,
+        ${command.occurredAt}, ${command.reason ?? null}, ${
+      command.photoFileId ?? null
+    }::uuid,
+        ${command.photoFilename ?? null}, ${command.memberId}::uuid)`
+      .execute(databaseFromSession(command.transaction));
+  }
+
+  async listSettlements(
+    command: Parameters<GiftRepository["listSettlements"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["listSettlements"]>>> {
+    const database = databaseFromSession(command.transaction);
+    const found = await sql`select debt.id from crm.debts debt
+      join crm.people person on person.id = debt.person_id and person.workspace_id = debt.workspace_id
+      where debt.id = ${command.debtId}::uuid and debt.person_id = ${command.personId}::uuid
+        and debt.workspace_id = ${command.workspaceId}::uuid and person.deleted_at is null`
+      .execute(database);
+    if (!found.rows[0]) return { status: "not-found" };
+    const after = command.after;
+    const result = await sql<
+      {
+        id: string;
+        settled_at: string;
+        reason: string | null;
+        photo_file_id: string | null;
+        photo_filename: string | null;
+      }
+    >`
+      select id::text, ${
+      instantColumn("settled_at")
+    } as settled_at, reason, photo_file_id::text, photo_filename
+      from crm.debt_settlements
+      where workspace_id = ${command.workspaceId}::uuid and debt_id = ${command.debtId}::uuid
+      ${
+      after
+        ? sql`and (settled_at < ${after.settledAt}::text::timestamptz or
+        (settled_at = ${after.settledAt}::text::timestamptz and id > ${after.id}::uuid))`
+        : sql``
+    }
+      order by settled_at desc, id limit ${command.limit + 1}
+    `.execute(database);
+    const page = result.rows.slice(0, command.limit);
+    const last = page.at(-1);
+    return {
+      status: "ready",
+      settlements: page.map((row) => ({
+        id: row.id,
+        settledAt: row.settled_at,
+        ...pickDefined({
+          reason: row.reason,
+          photoFileId: row.photo_file_id,
+          photoFilename: row.photo_filename,
+        }),
+      })),
+      ...(result.rows.length > command.limit && last
+        ? { next: { id: last.id, settledAt: last.settled_at } }
+        : {}),
+    };
+  }
   async deleteDebt(
     command: Parameters<GiftRepository["deleteDebt"]>[0],
   ): Promise<Awaited<ReturnType<GiftRepository["deleteDebt"]>>> {

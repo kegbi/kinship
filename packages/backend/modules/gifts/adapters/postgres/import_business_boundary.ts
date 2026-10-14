@@ -38,12 +38,19 @@ export class PostgresGiftBusinessImportBoundary
           }`.execute(db);
           continue;
         }
-        await sql`insert into crm.debts (id,workspace_id,person_id,direction,status,amount,currency_code,reason,settled_at,created_at,updated_at) values (${id}::uuid,${workspace}::uuid,${r.personId}::uuid,${d.direction},${d.status},${d.amount}::numeric,${
+        const inserted = await sql<
+          { readonly id: string }
+        >`insert into crm.debts (id,workspace_id,person_id,direction,status,amount,currency_code,reason,settled_at,created_at,updated_at) values (${id}::uuid,${workspace}::uuid,${r.personId}::uuid,${d.direction},${d.status},${d.amount}::numeric,${
           d.currencyCode ?? null
         },${d.reason ?? null},${
           d.settledAt ?? null
-        }::timestamptz,coalesce(${created}::timestamptz,now()),coalesce(${updated}::timestamptz,now())) on conflict (id) do nothing`
+        }::text::timestamptz,coalesce(${created}::timestamptz,now()),coalesce(${updated}::timestamptz,now())) on conflict (id) do nothing returning id::text`
           .execute(db);
+        if (d.status === "settled" && inserted.rows[0]) {
+          await sql`insert into crm.debt_settlements (id,workspace_id,debt_id,settled_at)
+            values (${id}::uuid,${workspace}::uuid,${id}::uuid,${d.settledAt}::text::timestamptz)
+            on conflict (id) do nothing`.execute(db);
+        }
       } else if (d.kind === "gift") {
         await sql`insert into crm.gifts (id,workspace_id,person_id,recipient_person_id,name,url,comment,status,event_at,amount,currency_code,created_at,updated_at) values (${id}::uuid,${workspace}::uuid,${r.personId}::uuid,${
           r.recipientId ?? null

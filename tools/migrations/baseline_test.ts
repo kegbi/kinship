@@ -9,11 +9,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v10 migration classifies only exact empty and v1-v10 states", () => {
+Deno.test("schema v11 migration classifies only exact empty and v1-v11 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v10",
-    "empty target applies the full v10 schema",
+      "apply-v11",
+    "empty target applies the full v11 schema",
   );
   for (
     const version of [
@@ -26,18 +26,19 @@ Deno.test("schema v10 migration classifies only exact empty and v1-v10 states", 
       "v7",
       "v8",
       "v9",
+      "v10",
     ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v10`,
+        `upgrade-${version}-to-v11`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v10" }) ===
-      "verify-v10",
-    "exact v10 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v11" }) ===
+      "verify-v11",
+    "exact v11 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -85,33 +86,33 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v10 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v11 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v10/personal_crm_schema_spec_v10.md",
+    "personal-crm-schema/v11/personal_crm_schema_spec_v11.md",
   );
   assert(
-    specification.includes("SQL tables parsed: **91**") &&
-      specification.includes("SQL columns parsed: **868**") &&
-      specification.includes("Explicit indexes: **156**"),
-    "v10 specification metrics drifted from canonical SQL and validation JSON",
+    specification.includes("SQL tables parsed: **92**") &&
+      specification.includes("SQL columns parsed: **876**") &&
+      specification.includes("Explicit indexes: **157**"),
+    "v11 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v10/personal_crm_schema_v10.sql",
+    "personal-crm-schema/v11/personal_crm_schema_v11.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
       specification.includes("`transactional-failure`"),
-    "v10 omits the redacted post-rollback lifecycle outcome",
+    "v11 omits the redacted post-rollback lifecycle outcome",
   );
   assert(
     sql.includes("reminder_delivery text NOT NULL DEFAULT 'in_app'") &&
       sql.includes(
         "CHECK (reminder_delivery IN ('in_app', 'email', 'both'))",
       ) &&
-      sql.includes("  digest_time time,\n") &&
+      sql.replaceAll("\r\n", "\n").includes("  digest_time time,\n") &&
       specification.includes("`reminder_delivery`") &&
       specification.includes("`digest_time`"),
-    "v10 omits the member reminder-delivery preferences",
+    "v11 omits the member reminder-delivery preferences",
   );
   assert(
     sql.includes("CREATE TABLE person_duplicate_dismissals (") &&
@@ -123,7 +124,7 @@ Deno.test("schema v10 specification reports its exact canonical metrics", async 
         "FOREIGN KEY (workspace_id, person_high_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
       ) &&
       specification.includes("### `person_duplicate_dismissals`"),
-    "v10 omits the workspace-shared duplicate dismissals",
+    "v11 omits the workspace-shared duplicate dismissals",
   );
   for (
     const index of [
@@ -136,7 +137,7 @@ Deno.test("schema v10 specification reports its exact canonical metrics", async 
     assert(
       sql.includes(`CREATE INDEX ${index};`) &&
         specification.includes(`CREATE INDEX ${index};`),
-      `v10 omits ${index}`,
+      `v11 omits ${index}`,
     );
   }
   assert(
@@ -153,6 +154,6 @@ Deno.test("schema v10 specification reports its exact canonical metrics", async 
       sql.includes("ON DELETE SET NULL (recurring_debt_id)") &&
       specification.includes("### `recurring_debts`") &&
       specification.includes("debts_recurring_occurrence_key"),
-    "v10 omits the recurring debt rules or their one-debt-per-period key",
+    "v11 omits the recurring debt rules or their one-debt-per-period key",
   );
 });

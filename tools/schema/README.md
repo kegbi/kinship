@@ -14,15 +14,15 @@ deno task test:schema --postgres-image postgres:17.10-alpine3.23
 ```
 
 The runner creates a unique Compose project, verifies every immutable v1 through
-v9 artifact hash and every repository-v10 artifact hash, applies clean v10 in
-one transaction, upgrades exact v1 through v9 through `0002` to `0010`, checks
-the live PostgreSQL catalog and currency reference data, proves failed-migration
-rollback, runs database-enforceable behavior tests, proves teardown/reapply, and
-always removes its containers and temporary storage.
+v9 and v10 artifact hashes and every repository-v11 artifact hash, applies clean
+v11 in one transaction, upgrades exact v1 through v10 through `0002` to `0011`,
+checks the live PostgreSQL catalog and currency reference data, proves
+failed-migration rollback, runs database-enforceable behavior tests, proves
+teardown/reapply, and always removes its containers and temporary storage.
 
 The database tests cover:
 
-- v10 table, column, foreign-key, explicit-index, JSONB, and workspace-field
+- v11 table, column, foreign-key, explicit-index, JSONB, and workspace-field
   counts;
 - exact field-catalog table/column membership and nullability;
 - primary keys, comments, valid indexes, validated constraints, extensions, and

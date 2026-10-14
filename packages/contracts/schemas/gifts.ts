@@ -19,6 +19,34 @@ const debtDirection = z.enum(["i_owe", "they_owe"]);
 const dayOfMonth = z.number().int().min(1).max(31);
 /** Months between a recurring debt's charges: one month to ten years. */
 const intervalMonths = z.number().int().min(1).max(120);
+const settlementFields = {
+  settlementReason: z.string().trim().min(1).max(10000).optional(),
+  settlementPhotoFileId: z.uuid().optional(),
+};
+const onlyWhenSettling = (
+  value: {
+    status: string;
+    settlementReason?: string | undefined;
+    settlementPhotoFileId?: string | undefined;
+  },
+) =>
+  value.status === "settled" ||
+  (value.settlementReason === undefined &&
+    value.settlementPhotoFileId === undefined);
+
+export const debtSettlement = z.strictObject({
+  id: z.uuid(),
+  settledAt: z.iso.datetime({ offset: true }),
+  reason: z.string().max(10000).optional(),
+  photoFileId: z.uuid().optional(),
+  photoFilename: z.string().max(500).optional(),
+  photoAvailable: z.boolean().optional(),
+}).meta({ id: "DebtSettlement" });
+export const debtSettlementList = z.strictObject({
+  status: z.literal("ready"),
+  settlements: z.array(debtSettlement).max(50),
+  nextCursor: z.string().optional(),
+}).meta({ id: "DebtSettlementList" });
 
 export const debt = z.strictObject({
   amount: money,
@@ -38,12 +66,15 @@ export const debt = z.strictObject({
 }).meta({ id: "Debt" });
 
 export const debtCreateInput = z.strictObject({
+  ...settlementFields,
   amount: z.string().regex(/^\d{1,15}(?:\.\d{1,4})?$/),
   currencyCode: z.string().regex(/^[A-Za-z]{3}$/),
   direction: z.enum(["i_owe", "they_owe"]),
   reason: z.string().trim().min(1).max(10000).optional(),
   status: z.enum(["open", "settled", "cancelled"]),
-}).meta({ id: "DebtCreateInput" });
+}).refine(onlyWhenSettling, "Settlement details require settled status").meta({
+  id: "DebtCreateInput",
+});
 
 export const debtCreated = z.strictObject({
   debt: debt,
@@ -61,8 +92,11 @@ export const debtDeleted = z.strictObject({
 }).meta({ id: "DebtDeleted" });
 
 export const debtStatusInput = z.strictObject({
+  ...settlementFields,
   status: z.enum(["open", "settled", "cancelled"]),
-}).meta({ id: "DebtStatusInput" });
+}).refine(onlyWhenSettling, "Settlement details require settled status").meta({
+  id: "DebtStatusInput",
+});
 
 export const gift = z.strictObject({
   amount: z.string().regex(/^\d{1,15}(?:\.\d{1,4})?$/).optional(),

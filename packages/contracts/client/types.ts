@@ -748,6 +748,9 @@ export type DebtStatus = "cancelled" | "open" | "settled";
 export type Gift = components["schemas"]["Gift"];
 
 export type Debt = components["schemas"]["Debt"];
+export type DebtSettlement = components["schemas"]["DebtSettlement"];
+export type DebtSettlementList = components["schemas"]["DebtSettlementList"];
+export type DebtStatusInput = components["schemas"]["DebtStatusInput"];
 
 export type GiftCreateInput = components["schemas"]["GiftCreateInput"];
 

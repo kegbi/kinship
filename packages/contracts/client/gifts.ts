@@ -11,11 +11,14 @@ import { pageQuery, request } from "./request.ts";
 import type {
   Debt,
   DebtCreateInput,
+  DebtSettlementList,
   DebtStatus,
+  DebtStatusInput,
   Gift,
   GiftCreateInput,
   GiftDebtList,
   GiftStatus,
+  PageInput,
   RecurringDebt,
   RecurringDebtCreateInput,
   RecurringDebtUpdateInput,
@@ -101,7 +104,7 @@ export function createDebt(
 export function changeDebtStatus(
   personId: string,
   debtId: string,
-  status: DebtStatus,
+  status: DebtStatus | DebtStatusInput,
   workspaceId?: string,
 ): Promise<
   ApiResult<{ readonly debt: Debt; readonly status: "saved" | "unchanged" }>
@@ -113,8 +116,22 @@ export function changeDebtStatus(
     {
       method: "PATCH",
       headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(typeof status === "string" ? { status } : status),
     },
+  );
+}
+
+export function listDebtSettlements(
+  personId: string,
+  debtId: string,
+  workspaceId?: string,
+  input: PageInput = {},
+): Promise<ApiResult<DebtSettlementList>> {
+  return request(
+    `/api/v1/people/${encodeURIComponent(personId)}/debts/${
+      encodeURIComponent(debtId)
+    }/settlements${pageQuery(input)}`,
+    { headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined },
   );
 }
 

@@ -15,6 +15,11 @@
 
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import {
+  type SettlementDetails,
+  settlementDetails,
+} from "../domain/debt_settlements.ts";
+import { recordSettlement } from "./debt_settlements.ts";
+import {
   canTransitionDebt,
   canTransitionGift,
   type CreateDebtInput,
@@ -151,10 +156,14 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
     > => {
       const values = normalizeDebt(input);
       if (!values) return { status: "validation-error" };
+      const details = settlementDetails(input);
+      if (
+        !details ||
+        (values.status !== "settled" && Object.keys(details).length > 0)
+      ) return { status: "validation-error" };
       const occurredAt = dependencies.clock.now();
-      return await runOrUnavailable(
-        dependencies.transaction,
-        async (transaction) => {
+      try {
+        return await dependencies.transaction.run(async (transaction) => {
           if (!await active(dependencies, actor, transaction, true)) {
             return { status: "forbidden" as const };
           }
@@ -174,6 +183,17 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           if (created.status !== "created") return created;
+          if (values.status === "settled") {
+            await recordSettlement(
+              dependencies,
+              actor,
+              personId,
+              created.debt.id,
+              occurredAt,
+              details,
+              transaction,
+            );
+          }
           await dependencies.audit.record({
             action: "created",
             actor,
@@ -183,8 +203,10 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return created;
-        },
-      );
+        });
+      } catch (error) {
+        return mutationFailure(error);
+      }
     },
 
     changeGiftStatus: async (
@@ -247,11 +269,15 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
       personId: string,
       id: string,
       status: DebtStatus,
+      input: SettlementDetails = {},
     ) => {
+      const details = settlementDetails(input);
+      if (
+        !details || (status !== "settled" && Object.keys(details).length > 0)
+      ) return { status: "validation-error" as const };
       const occurredAt = dependencies.clock.now();
-      return await runOrUnavailable(
-        dependencies.transaction,
-        async (transaction) => {
+      try {
+        return await dependencies.transaction.run(async (transaction) => {
           if (!await active(dependencies, actor, transaction, true)) {
             return { status: "forbidden" as const };
           }
@@ -278,6 +304,17 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           if (saved.status !== "saved") return saved;
+          if (status === "settled") {
+            await recordSettlement(
+              dependencies,
+              actor,
+              personId,
+              id,
+              occurredAt,
+              details,
+              transaction,
+            );
+          }
           await dependencies.audit.record({
             action: "changed",
             actor,
@@ -287,8 +324,10 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return saved;
-        },
-      );
+        });
+      } catch (error) {
+        return mutationFailure(error);
+      }
     },
   };
 }

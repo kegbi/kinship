@@ -54,6 +54,7 @@ const V6_UPGRADE_DATABASE = "crm_v6_upgrade_test";
 const V7_UPGRADE_DATABASE = "crm_v7_upgrade_test";
 const V8_UPGRADE_DATABASE = "crm_v8_upgrade_test";
 const V9_UPGRADE_DATABASE = "crm_v9_upgrade_test";
+const V10_UPGRADE_DATABASE = "crm_v10_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -61,10 +62,10 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v10");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v11");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v10_validation.json",
+  "personal_crm_schema_v11_validation.json",
 );
 
 /**
@@ -81,6 +82,7 @@ const IMMUTABLE_BASELINES = [
   ["v7", "personal_crm_schema_v7_validation.json"],
   ["v8", "personal_crm_schema_v8_validation.json"],
   ["v9", "personal_crm_schema_v9_validation.json"],
+  ["v10", "personal_crm_schema_v10_validation.json"],
 ] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
@@ -153,20 +155,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v10 validation status is ${validation.status}`);
+    throw new Error(`Schema v11 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v10 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v11 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v10.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v11.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -348,9 +350,26 @@ async function verifyArtifacts(
       contractErrors.push(`${name} is missing from the DDL or migration`);
     }
   }
+  const settlementMigration = await Deno.readTextFile(
+    resolve(schemaDirectory, "migrations/0011_add_debt_settlements.sql"),
+  );
+  for (
+    const name of [
+      "debt_settlements_debt_fk",
+      "debt_settlements_photo_fk",
+      "debt_settlements_actor_fk",
+      "debt_settlements_reason_ck",
+      "debt_settlements_photo_filename_ck",
+      "debt_settlements_debt_idx",
+    ]
+  ) {
+    if (!ddl.includes(name) || !settlementMigration.includes(name)) {
+      contractErrors.push(`Missing settlement contract ${name}`);
+    }
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v10 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v11 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -473,7 +492,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v10 validation JSON");
+    throw new Error("Invalid schema v11 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -523,21 +542,21 @@ async function assertArtifactCounts(
   assertEqual(
     "table mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_table_mapping_v10.csv"),
+      resolve(schemaDirectory, "monica_table_mapping_v11.csv"),
     ),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v10.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v11.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v10.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v11.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -547,7 +566,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v10.sql",
+    "/tmp/personal_crm_schema_v11.sql",
   ], { quiet: true });
 }
 
@@ -562,7 +581,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v10.sql",
+      "/tmp/personal_crm_schema_v11.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -598,6 +617,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V7_UPGRADE_DATABASE,
       V8_UPGRADE_DATABASE,
       V9_UPGRADE_DATABASE,
+      V10_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -633,6 +653,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -686,6 +708,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -720,6 +744,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -750,6 +776,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -801,6 +829,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -852,6 +882,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -890,6 +922,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
       "-A",
@@ -929,6 +963,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v8Upgraded = await runPsql(V8_UPGRADE_DATABASE, [
       "-A",
@@ -966,6 +1002,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
          ('00000000-0000-4000-8000-000000000904', '00000000-0000-4000-8000-000000000902', '00000000-0000-4000-8000-000000000903', 'they_owe', 12.5, 'EUR');`,
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
     ], { quiet: true });
     const v9Upgraded = await runPsql(V9_UPGRADE_DATABASE, [
       "-A",
@@ -988,6 +1026,53 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       throw new Error(
         "v9-to-v10 migration did not preserve the exact fixture.",
       );
+    }
+
+    await runPsql(V10_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v10.sql",
+      "-c",
+      `
+      INSERT INTO crm.workspaces (id,name) VALUES ('00000000-0000-4000-8000-000000001001','V11 upgrade');
+      INSERT INTO crm.people (id,workspace_id,given_name) VALUES ('00000000-0000-4000-8000-000000001002','00000000-0000-4000-8000-000000001001','Debtor');
+      INSERT INTO crm.debts (id,workspace_id,person_id,direction,status,amount,settled_at) VALUES ('00000000-0000-4000-8000-000000001003','00000000-0000-4000-8000-000000001001','00000000-0000-4000-8000-000000001002','they_owe','settled',12.5,'2026-01-02T03:04:05Z');
+    `,
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
+    ], { quiet: true });
+    const v10Upgraded = await runPsql(V10_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT count(*) = 1 AND bool_and(id = debt_id AND settled_at = '2026-01-02T03:04:05Z'::timestamptz AND reason IS NULL AND photo_file_id IS NULL) FROM crm.debt_settlements;`,
+    ], { quiet: true });
+    if (v10Upgraded !== "t") {
+      throw new Error(
+        "v10-to-v11 did not preserve the known settlement timestamp.",
+      );
+    }
+    await runPsql(V10_UPGRADE_DATABASE, [
+      "-c",
+      "DROP SCHEMA crm CASCADE;",
+      "-f",
+      "/tmp/personal_crm_schema_v10.sql",
+    ], { quiet: true });
+    await runPsql(V10_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
+      "-c",
+      "SELECT 1 / 0;",
+    ], { allowFailure: true, quiet: true });
+    const v11RolledBack = await runPsql(V10_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      "SELECT to_regclass('crm.debt_settlements') IS NULL AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'debts_workspace_id_id_key');",
+    ], { quiet: true });
+    if (v11RolledBack !== "t") {
+      throw new Error("v11 migration did not roll back atomically.");
     }
 
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
@@ -1104,6 +1189,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "BEGIN",
       "-f",
       "/tmp/0010_add_recurring_debts.sql",
+      "-f",
+      "/tmp/0011_add_debt_settlements.sql",
       "-c",
       "SELECT 1 / 0",
     ], { allowFailure: true, quiet: true });
@@ -1133,6 +1220,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V7_UPGRADE_DATABASE,
         V8_UPGRADE_DATABASE,
         V9_UPGRADE_DATABASE,
+        V10_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -1163,8 +1251,8 @@ async function main(): Promise<void> {
     started = true;
 
     await copyFixture(
-      "personal-crm-schema/v10/personal_crm_schema_v10.sql",
-      "/tmp/personal_crm_schema_v10.sql",
+      "personal-crm-schema/v11/personal_crm_schema_v11.sql",
+      "/tmp/personal_crm_schema_v11.sql",
     );
     await copyFixture(
       "personal-crm-schema/v9/personal_crm_schema_v9.sql",
@@ -1199,8 +1287,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v10/personal_crm_field_catalog_v10.csv",
-      "/tmp/personal_crm_field_catalog_v10.csv",
+      "personal-crm-schema/v11/personal_crm_field_catalog_v11.csv",
+      "/tmp/personal_crm_field_catalog_v11.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -1239,8 +1327,16 @@ async function main(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v10/migrations/0010_add_recurring_debts.sql",
+      "personal-crm-schema/v11/migrations/0010_add_recurring_debts.sql",
       "/tmp/0010_add_recurring_debts.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v11/migrations/0011_add_debt_settlements.sql",
+      "/tmp/0011_add_debt_settlements.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v10/personal_crm_schema_v10.sql",
+      "/tmp/personal_crm_schema_v10.sql",
     );
     await copyFixture(
       "tools/schema/assert_schema.sql",
@@ -1263,7 +1359,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

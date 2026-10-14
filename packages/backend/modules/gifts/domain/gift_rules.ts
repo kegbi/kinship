@@ -77,6 +77,8 @@ export interface CreateGiftInput {
 }
 
 export interface CreateDebtInput {
+  readonly settlementReason?: string;
+  readonly settlementPhotoFileId?: string;
   readonly amount: string;
   readonly currencyCode: string;
   readonly direction: DebtDirection;

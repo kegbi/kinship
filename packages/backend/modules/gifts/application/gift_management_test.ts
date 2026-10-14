@@ -32,6 +32,14 @@ function fixture(
 ) {
   const gifts = new Map<string, StoredGift>();
   const debts = new Map<string, StoredDebt>();
+  const settlements: {
+    id: string;
+    debtId: string;
+    settledAt: string;
+    reason?: string;
+    photoFileId?: string;
+    photoFilename?: string;
+  }[] = [];
   const attachments: string[] = [];
   const audit = recordingAudit<{
     readonly action: string;
@@ -41,6 +49,14 @@ function fixture(
   const dependencies: GiftManagementDependencies = {
     actors: { revalidate: () => Promise.resolve("active" as const) },
     attachments: {
+      validateSettlementPhoto: (command) =>
+        Promise.resolve(
+          command.fileId === fileId
+            ? { status: "ready", filename: "payment.png" }
+            : { status: "not-found" },
+        ),
+      availableSettlementPhotos: (command) =>
+        Promise.resolve(command.fileIds.filter((id) => id === fileId)),
       attachToGift: (command) => {
         if (command.fileId !== fileId || options.attachmentDisappears) {
           return Promise.resolve({ status: "not-found" });
@@ -84,6 +100,28 @@ function fixture(
       listForPerson: () => Promise.resolve([]),
     } as unknown as GiftManagementDependencies["recurringDebts"],
     repository: {
+      recordSettlement: (command) => {
+        settlements.push({
+          id: command.id,
+          debtId: command.debtId,
+          settledAt: command.occurredAt.toISOString(),
+          ...(command.reason ? { reason: command.reason } : {}),
+          ...(command.photoFileId
+            ? {
+              photoFileId: command.photoFileId,
+              photoFilename: command.photoFilename!,
+            }
+            : {}),
+        });
+        return Promise.resolve();
+      },
+      listSettlements: (command) =>
+        Promise.resolve({
+          status: "ready",
+          settlements: settlements.filter((event) =>
+            event.debtId === command.debtId
+          ),
+        }),
       deleteDebt: (command) => {
         const debt = debts.get(command.id);
         if (!debt || debt.personId !== command.personId) {
@@ -181,11 +219,13 @@ function fixture(
       run: async (work) => {
         const giftsBefore = new Map(gifts);
         const debtsBefore = new Map(debts);
+        const settlementCount = settlements.length;
         try {
           return await work({} as never);
         } catch (error) {
           gifts.clear();
           debts.clear();
+          settlements.splice(settlementCount);
           for (const [id, gift] of giftsBefore) gifts.set(id, gift);
           for (const [id, debt] of debtsBefore) debts.set(id, debt);
           throw error;
@@ -242,6 +282,108 @@ Deno.test("[GIFTS-001] reopening clears settlement and stays idempotent", async 
   );
   if (settled.status !== "saved") throw new Error("resettled debt expected");
   assertEquals(settled.debt.settledAt, "2026-08-24T12:00:00.000Z");
+});
+
+Deno.test("[GIFTS-001] settlement history retains optional details across reopen and resettle without duplicates", async () => {
+  const { management } = fixture();
+  const created = await management.createDebt(actor, personId, {
+    amount: "12",
+    currencyCode: "EUR",
+    direction: "i_owe",
+    status: "settled",
+    settlementReason: "Paid cash",
+    settlementPhotoFileId: fileId,
+  });
+  if (created.status !== "created") throw new Error("debt expected");
+  const id = created.debt.id;
+  const first = await management.listDebtSettlements(actor, personId, id);
+  if (first.status !== "ready") throw new Error("history expected");
+  assertEquals(
+    first.settlements.map((event) => [event.reason, event.photoAvailable]),
+    [["Paid cash", true]],
+  );
+  await management.changeDebtStatus(actor, personId, id, "settled", {
+    settlementReason: "ignored retry",
+  });
+  await management.changeDebtStatus(actor, personId, id, "open");
+  await management.changeDebtStatus(actor, personId, id, "settled");
+  const history = await management.listDebtSettlements(actor, personId, id);
+  if (history.status !== "ready") throw new Error("history expected");
+  assertEquals(history.settlements.length, 2);
+  assertEquals(history.settlements[0], first.settlements[0]);
+  assertEquals(history.settlements[1]?.reason, undefined);
+});
+
+Deno.test("[GIFTS-001] invalid settlement metadata and missing photo never partially settle or create history", async () => {
+  const { management, dependencies } = fixture();
+  const created = await management.createDebt(actor, personId, {
+    amount: "1",
+    currencyCode: "EUR",
+    direction: "i_owe",
+    status: "open",
+  });
+  if (created.status !== "created") throw new Error("debt expected");
+  const id = created.debt.id;
+  for (
+    const details of [{ settlementReason: " " }, {
+      settlementReason: "x".repeat(10001),
+    }, { settlementPhotoFileId: "bad" }]
+  ) {
+    assertEquals(
+      await management.changeDebtStatus(
+        actor,
+        personId,
+        id,
+        "settled",
+        details,
+      ),
+      { status: "validation-error" },
+    );
+  }
+  assertEquals(
+    await management.changeDebtStatus(actor, personId, id, "open", {
+      settlementReason: "bad",
+    }),
+    { status: "validation-error" },
+  );
+  assertEquals(
+    await management.changeDebtStatus(actor, personId, id, "settled", {
+      settlementPhotoFileId: personId,
+    }),
+    { status: "not-found" },
+  );
+  assertEquals(
+    await management.createDebt(actor, personId, {
+      amount: "1",
+      currencyCode: "EUR",
+      direction: "i_owe",
+      status: "settled",
+      settlementPhotoFileId: personId,
+    }),
+    { status: "not-found" },
+  );
+  const listed = await management.list(actor, personId);
+  if (listed.status !== "ready") throw new Error("list expected");
+  assertEquals(listed.debts.length, 1);
+  assertEquals(listed.debts[0]?.status, "open");
+  dependencies.audit.record = () => Promise.reject(new Error("audit failed"));
+  assertEquals(
+    await management.changeDebtStatus(actor, personId, id, "settled"),
+    { status: "unavailable" },
+  );
+  const history = await management.listDebtSettlements(actor, personId, id);
+  if (history.status !== "ready") throw new Error("history expected");
+  assertEquals(history.settlements.length, 0);
+  assertEquals(
+    await management.listDebtSettlements(actor, personId, id, {
+      cursor: "bad",
+    }),
+    { status: "validation-error" },
+  );
+  dependencies.actors.revalidate = () => Promise.resolve("inactive" as never);
+  assertEquals(await management.listDebtSettlements(actor, personId, id), {
+    status: "forbidden",
+  });
 });
 
 Deno.test("[GIFTS-001] permanent debt removal covers every status and repeats without an audit", async () => {

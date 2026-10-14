@@ -992,6 +992,8 @@ flows:
       - Validate any recipient or attachment in the active workspace.
       - Save and display the item inside the person workspace.
       - Transition gift or debt state without losing history.
+      - Settling a debt opens a viewport-bounded dialog for an optional settlement reason and uploaded JPEG, PNG, or WebP photo. Cancel or Escape makes no debt change; pending save blocks dismissal. Upload failure or quarantine keeps the debt open. Successful settlement saves its original date, reason, and optional photo in paged inline History, surviving reload, reopening, and later settlement. Uploaded photos also appear in Photos; unavailable or explicitly removed photos retain their historical filename and explanation. An uncertain save keeps its uploaded photo for a safe retry.
+      - New debt forms offer open or cancelled; settled creation remains supported through the API/import boundary and records an initial history event, with optional metadata on the API.
       - Reopen a settled debt, clearing its settlement time; cancelled debts remain terminal.
       - Confirm permanent removal of an individual debt in any state through a viewport-bounded modal. Keep it or Escape cancels and returns focus to Delete; pending deletion disables both confirmation actions. Removing one recurring charge leaves its schedule and future charges intact. Ordinary pause/resume preserves removal, including ended rules; later explicit schedule changes may charge deleted periods again.
       - Create, edit, pause, resume, or delete a recurring debt; every due period becomes its own open debt.

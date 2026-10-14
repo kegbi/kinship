@@ -43,3 +43,7 @@ export type {
 export { giftAuditFrom } from "./application/audit_events.ts";
 
 export type { GiftBusinessImportBoundary } from "./application/import_business_boundary.ts";
+export type {
+  DebtSettlement,
+  SettlementDetails,
+} from "./domain/debt_settlements.ts";

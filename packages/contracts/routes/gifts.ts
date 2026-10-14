@@ -19,6 +19,7 @@ import {
   debtCreateInput,
   debtDeleted,
   debtSaved,
+  debtSettlementList,
   debtStatusInput,
   giftCreated,
   giftCreateInput,
@@ -32,6 +33,29 @@ import {
   recurringDebtUpdateInput,
 } from "../schemas/gifts.ts";
 import { pageCursor, pageLimit, uuid } from "../schemas/shared.ts";
+
+export const listDebtSettlementsQuery = z.strictObject({
+  cursor: pageCursor.optional(),
+  limit: pageLimit,
+});
+export const listDebtSettlements = defineRoute({
+  method: "get",
+  path: "/api/v1/people/{personId}/debts/{debtId}/settlements",
+  operationId: "listDebtSettlements",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({ personId: uuid, debtId: uuid }),
+    query: listDebtSettlementsQuery,
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "Permanent settlement history, newest first",
+      content: { "application/json": debtSettlementList },
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
+  },
+});
 
 export const createDebt = defineRoute({
   method: "post",
@@ -292,6 +316,7 @@ export const deleteRecurringDebt = defineRoute({
 
 /** Every gifts route, in the order the surface mounts them. */
 export const GIFTS_ROUTES: readonly RouteDescriptor[] = [
+  listDebtSettlements,
   createDebt,
   changeDebtStatus,
   deleteDebt,

@@ -22,8 +22,38 @@ import type {
   StoredGift,
 } from "../domain/gift_rules.ts";
 import type { GiftActor, GiftTransaction } from "./context.ts";
+import type {
+  DebtSettlement,
+  SettlementAnchor,
+} from "../domain/debt_settlements.ts";
 
 export interface GiftRepository {
+  recordSettlement(
+    command: GiftActor & {
+      readonly id: string;
+      readonly debtId: string;
+      readonly occurredAt: Date;
+      readonly reason?: string;
+      readonly photoFileId?: string;
+      readonly photoFilename?: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<void>;
+  listSettlements(
+    command: GiftActor & {
+      readonly debtId: string;
+      readonly personId: string;
+      readonly after?: SettlementAnchor;
+      readonly limit: number;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    {
+      readonly status: "ready";
+      readonly settlements: readonly DebtSettlement[];
+      readonly next?: SettlementAnchor;
+    } | Failure<"not-found">
+  >;
   deleteDebt(
     command: GiftActor & {
       readonly id: string;

@@ -270,7 +270,6 @@ export function DebtEditor(
           Status
           <select {...form.register("status")} disabled={props.gated}>
             <option value="open">Open</option>
-            <option value="settled">Settled</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </label>

@@ -76,10 +76,11 @@ const priorBaselines = [
   ["v7", artifacts.v7Sql],
   ["v8", artifacts.v8Sql],
   ["v9", artifacts.v9Sql],
+  ["v10", artifacts.v10Sql],
 ] as const;
 
 for (const [version, baselineSql] of priorBaselines) {
-  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v10 catalog`, async () => {
+  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v11 catalog`, async () => {
     await withScratchDatabase(async ({ sql, url }) => {
       await sql.unsafe(baselineSql);
       const userId = crypto.randomUUID();
@@ -89,16 +90,16 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v10`,
+        await runMigration(environment(url)) === `upgrade-${version}-to-v11`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
       const upgraded = await crmTables(sql);
-      const expected = canonicalTableNames(artifacts.v10Sql);
+      const expected = canonicalTableNames(artifacts.v11Sql);
       assert(
         JSON.stringify(upgraded) === JSON.stringify(expected) &&
-          upgraded.length === 91,
-        `the upgraded catalog is not v10: ${
+          upgraded.length === 92,
+        `the upgraded catalog is not v11: ${
           expected.filter((name) => !upgraded.includes(name)).join(", ")
         }`,
       );
@@ -109,11 +110,11 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v10 catalog
+      // The runner verified the structure against a freshly built v11 catalog
       // before it committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v10",
-        `an upgraded ${version} database is not recognised as exact v10`,
+        await runMigration(environment(url)) === "verify-v11",
+        `an upgraded ${version} database is not recognised as exact v11`,
       );
     });
   });
@@ -142,7 +143,7 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v10",
+      await runMigration(environment(url)) === "upgrade-v7-to-v11",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -202,7 +203,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v10",
+      await runMigration(environment(url)) === "upgrade-v8-to-v11",
       "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
@@ -232,7 +233,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
   });
 });
 
-Deno.test("[GIFTS-001] the v9-to-v10 upgrade keeps hand-recorded debts and charges a period once", async () => {
+Deno.test("[GIFTS-001] the v9-to-v11 upgrade keeps hand-recorded debts and charges a period once", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v9Sql);
     const [userId, workspaceId, otherWorkspaceId] = [
@@ -261,8 +262,8 @@ Deno.test("[GIFTS-001] the v9-to-v10 upgrade keeps hand-recorded debts and charg
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v9-to-v10",
-      "an exact v9 database was not classified for the v9-to-v10 upgrade",
+      await runMigration(environment(url)) === "upgrade-v9-to-v11",
+      "an exact v9 database was not classified for the v9-to-v11 upgrade",
     );
     const [kept] = await sql<
       { readonly amount: string; readonly rule: string | null }[]
@@ -360,7 +361,7 @@ Deno.test("[GAP-037] the migration runner refuses a changed immutable artifact b
       })
     );
     assert(
-      message.startsWith("Schema v9-to-v10 migration checksum mismatch"),
+      message.startsWith("Schema v9-to-v11 migration checksum mismatch"),
       `a changed migration was not refused by checksum: ${message}`,
     );
     const [table] = await sql<{ readonly present: boolean }[]>`

@@ -3,5 +3,9 @@ import { workspaceLifecycleImpact } from "../../../../platform/postgres/lifecycl
 /** What a workspace cascade destroys in gifts, table by table. */
 export const PostgresGiftWorkspaceLifecycleImpact = workspaceLifecycleImpact({
   counts: { debts: "crm.debts", gifts: "crm.gifts" },
-  revision: { gifts: "crm.gifts@id", debts: "crm.debts@id" },
+  revision: {
+    gifts: "crm.gifts@id",
+    debts: "crm.debts@id",
+    debtSettlements: "crm.debt_settlements@id",
+  },
 });

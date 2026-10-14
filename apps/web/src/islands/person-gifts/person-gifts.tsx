@@ -44,12 +44,14 @@ import {
   type GiftCreateInput,
   type GiftDebtPageInput,
   type GiftStatus,
+  listDebtSettlements,
   listPeople,
   listPersonFiles,
   listPersonGifts,
   type RecurringDebt,
   type RecurringDebtCreateInput,
   updateRecurringDebt,
+  uploadPersonFile,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -99,6 +101,11 @@ import {
   SURFACES,
   withoutCursors,
 } from "./records.ts";
+import {
+  DebtHistory,
+  type DebtHistoryState,
+  DebtSettlementDialog,
+} from "./debt-settlement.tsx";
 
 export interface PersonGiftsProps {
   readonly archived: boolean;
@@ -151,9 +158,23 @@ export function PersonGifts(props: PersonGiftsProps) {
   const [confirmingDelete, setConfirmingDelete] = useState<string>();
   const [confirmingDebtDelete, setConfirmingDebtDelete] = useState<string>();
   const [deletingDebt, setDeletingDebt] = useState(false);
+  const [settlingDebt, setSettlingDebt] = useState<string>();
+  const [settlementPending, setSettlementPending] = useState(false);
+  const [settlementNotice, setSettlementNotice] = useState<string>();
+  const [history, setHistory] = useState<DebtHistoryState>();
+  const [mutationPending, setMutationPending] = useState(false);
+  const settlementUpload = useRef<
+    { readonly photo: File; readonly id: string } | undefined
+  >(undefined);
   const request = useLatestRequest();
   // One save or status change at a time, across both cards.
   const mutating = useRef(false);
+  // Render the same synchronous operation lock so history never offers an
+  // action while the shared owner is saving or applying its refresh.
+  const setMutating = (pending: boolean) => {
+    mutating.current = pending;
+    setMutationPending(pending);
+  };
   const optionsLoad = useRef<Promise<boolean> | undefined>(undefined);
   const settled = useRef(props.onSettled);
 
@@ -182,6 +203,7 @@ export function PersonGifts(props: PersonGiftsProps) {
             return false;
           }
           const page = answer.data;
+          setHistory(undefined);
           setRecords((current) => foldPage(current, page, continued));
           setList({ status: "ready" });
           return true;
@@ -221,6 +243,8 @@ export function PersonGifts(props: PersonGiftsProps) {
       setRecurringEditor(undefined);
       setConfirmingDelete(undefined);
       setConfirmingDebtDelete(undefined);
+      setSettlingDebt(undefined);
+      setHistory(undefined);
       setNotices({});
     },
   );
@@ -261,42 +285,171 @@ export function PersonGifts(props: PersonGiftsProps) {
     input: object,
   ): Promise<SaveOutcome> => {
     if (mutating.current) return undefined;
-    mutating.current = true;
-    notify(type, type === "gift" ? "Saving gift…" : "Saving debt…");
-    const answer = await settle<unknown>(() =>
-      type === "gift"
-        ? createGift(personId, input as GiftCreateInput, workspaceId)
-        : createDebt(personId, input as DebtCreateInput, workspaceId)
-    );
-    mutating.current = false;
-    if (answer.status !== "ready") {
-      notify(type, answer.problem?.detail ?? "The record could not be saved.");
-      return answer.problem;
+    setMutating(true);
+    try {
+      notify(type, type === "gift" ? "Saving gift…" : "Saving debt…");
+      const answer = await settle<unknown>(() =>
+        type === "gift"
+          ? createGift(personId, input as GiftCreateInput, workspaceId)
+          : createDebt(personId, input as DebtCreateInput, workspaceId)
+      );
+      if (answer.status !== "ready") {
+        notify(
+          type,
+          answer.problem?.detail ?? "The record could not be saved.",
+        );
+        return answer.problem;
+      }
+      closeEditor(type);
+      if (await refresh()) {
+        notify(type, type === "gift" ? "Gift saved." : "Debt saved.");
+      }
+      return undefined;
+    } finally {
+      setMutating(false);
     }
-    closeEditor(type);
-    if (await refresh()) {
-      notify(type, type === "gift" ? "Gift saved." : "Debt saved.");
-    }
-    return undefined;
   };
 
   const changeStatus = async (type: RecordType, id: string, next: string) => {
     if (mutating.current) return;
-    mutating.current = true;
-    const answer = await settle<unknown>(() =>
-      type === "gift"
-        ? changeGiftStatus(personId, id, next as GiftStatus, workspaceId)
-        : changeDebtStatus(personId, id, next as DebtStatus, workspaceId)
-    );
-    mutating.current = false;
-    if (answer.status !== "ready") {
-      notify(
-        type,
-        answer.problem?.detail ?? "The status could not be changed.",
-      );
+    if (type === "debt" && next === "settled") {
+      settlementUpload.current = undefined;
+      setSettlementNotice(undefined);
+      setSettlingDebt(id);
       return;
     }
-    if (await refresh()) notify(type, "Status changed.");
+    setMutating(true);
+    try {
+      const answer = await settle<unknown>(() =>
+        type === "gift"
+          ? changeGiftStatus(personId, id, next as GiftStatus, workspaceId)
+          : changeDebtStatus(personId, id, next as DebtStatus, workspaceId)
+      );
+      if (answer.status !== "ready") {
+        notify(
+          type,
+          answer.problem?.detail ?? "The status could not be changed.",
+        );
+        return;
+      }
+      if (await refresh()) notify(type, "Status changed.");
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const settleDebt = async (reason: string, photo: File | undefined) => {
+    if (mutating.current || !settlingDebt) return;
+    setMutating(true);
+    setSettlementPending(true);
+    setSettlementNotice("Saving settlement…");
+    try {
+      let photoId: string | undefined;
+      if (photo) {
+        if (settlementUpload.current?.photo === photo) {
+          photoId = settlementUpload.current.id;
+        } else {
+          const uploaded = await settle(() =>
+            uploadPersonFile(personId, {
+              file: photo,
+              kind: "photo",
+              title: `Debt settlement: ${photo.name}`.slice(0, 500),
+            }, workspaceId)
+          );
+          if (uploaded.status !== "ready" || !uploaded.data) {
+            setSettlementNotice(
+              uploaded.problem?.detail ??
+                "The photo could not be uploaded. The debt remains open.",
+            );
+            return;
+          }
+          photoId = uploaded.data.file.fileId;
+          settlementUpload.current = { photo, id: photoId };
+          if (uploaded.data.file.status !== "available") {
+            setSettlementNotice(
+              "This photo is unavailable. Choose a supported image or remove it before settling. The debt remains open.",
+            );
+            return;
+          }
+        }
+      }
+      const saved = await settle(() =>
+        changeDebtStatus(personId, settlingDebt, {
+          status: "settled",
+          ...(reason ? { settlementReason: reason } : {}),
+          ...(photoId ? { settlementPhotoFileId: photoId } : {}),
+        }, workspaceId)
+      );
+      if (saved.status !== "ready") {
+        setSettlementNotice(
+          `${
+            saved.problem?.detail ??
+              "The settlement could not be confirmed. Retry to check its status."
+          }${photoId ? " Your uploaded photo stays in Photos." : ""}`,
+        );
+        return;
+      }
+      setSettlingDebt(undefined);
+      settlementUpload.current = undefined;
+      if (await refresh()) {
+        notify(
+          "debt",
+          saved.data?.status === "unchanged"
+            ? "Debt was already settled. Its existing history is unchanged."
+            : "Debt settled. Details saved in settlement history.",
+        );
+      }
+    } finally {
+      setMutating(false);
+      setSettlementPending(false);
+    }
+  };
+
+  const loadHistory = async (debtId: string, cursor?: string) => {
+    if (mutating.current) return;
+    setMutating(true);
+    setHistory((current) => ({
+      debtId,
+      settlements: cursor && current?.debtId === debtId
+        ? current.settlements
+        : [],
+      ...(cursor ? { nextCursor: cursor } : {}),
+      loading: true,
+    }));
+    try {
+      const answer = await settle(() =>
+        listDebtSettlements(
+          personId,
+          debtId,
+          workspaceId,
+          cursor ? { cursor } : {},
+        )
+      );
+      setHistory((current) => {
+        if (current?.debtId !== debtId) return current;
+        if (answer.status !== "ready" || !answer.data) {
+          return {
+            ...current,
+            loading: false,
+            error: answer.problem?.detail ??
+              "Settlement history could not be loaded.",
+          };
+        }
+        return {
+          debtId,
+          loading: false,
+          settlements: [
+            ...(cursor ? current.settlements : []),
+            ...answer.data.settlements,
+          ],
+          ...(answer.data.nextCursor
+            ? { nextCursor: answer.data.nextCursor }
+            : {}),
+        };
+      });
+    } finally {
+      setMutating(false);
+    }
   };
 
   /**
@@ -309,18 +462,21 @@ export function PersonGifts(props: PersonGiftsProps) {
     done: (value: T) => string,
   ): Promise<SaveOutcome> => {
     if (mutating.current) return undefined;
-    mutating.current = true;
-    notify("debt", pending);
-    const answer = await settle<T>(call);
-    mutating.current = false;
-    if (answer.status !== "ready") {
-      notify("debt", answer.problem?.detail ?? RECURRING_NOT_SAVED);
-      return answer.problem;
+    setMutating(true);
+    try {
+      notify("debt", pending);
+      const answer = await settle<T>(call);
+      if (answer.status !== "ready") {
+        notify("debt", answer.problem?.detail ?? RECURRING_NOT_SAVED);
+        return answer.problem;
+      }
+      setRecurringEditor(undefined);
+      setConfirmingDelete(undefined);
+      if (await refresh()) notify("debt", done(answer.data as T));
+      return undefined;
+    } finally {
+      setMutating(false);
     }
-    setRecurringEditor(undefined);
-    setConfirmingDelete(undefined);
-    if (await refresh()) notify("debt", done(answer.data as T));
-    return undefined;
   };
 
   const saveRecurring = (rule: RecurringDebt | undefined, input: object) =>
@@ -367,7 +523,7 @@ export function PersonGifts(props: PersonGiftsProps) {
 
   const removeDebt = async (debt: Debt) => {
     if (mutating.current) return;
-    mutating.current = true;
+    setMutating(true);
     setDeletingDebt(true);
     notify("debt", "Deleting debt…");
     try {
@@ -384,7 +540,7 @@ export function PersonGifts(props: PersonGiftsProps) {
       setConfirmingDebtDelete(undefined);
       if (await refresh()) notify("debt", "Debt permanently deleted.");
     } finally {
-      mutating.current = false;
+      setMutating(false);
       setDeletingDebt(false);
     }
   };
@@ -510,6 +666,23 @@ export function PersonGifts(props: PersonGiftsProps) {
               confirmingDelete={confirmingDebtDelete === debt.id}
               key={debt.id}
               notice={notices.debt}
+              pending={mutationPending}
+              history={history?.debtId === debt.id
+                ? (
+                  <DebtHistory
+                    history={history}
+                    pending={mutationPending}
+                    personId={personId}
+                    onLoad={(cursor) => void loadHistory(debt.id, cursor)}
+                  />
+                )
+                : null}
+              onHistory={() => {
+                if (
+                  history?.debtId === debt.id && !mutating.current
+                ) setHistory(undefined);
+                else void loadHistory(debt.id);
+              }}
               onCancelDelete={() => setConfirmingDebtDelete(undefined)}
               onChange={(next) => changeStatus("debt", debt.id, next)}
               onConfirmDelete={() => void removeDebt(debt)}
@@ -523,6 +696,16 @@ export function PersonGifts(props: PersonGiftsProps) {
         ),
         sections.debt,
       )}
+      <DebtSettlementDialog
+        key={settlingDebt ?? "closed"}
+        open={!archived && settlingDebt !== undefined}
+        pending={settlementPending}
+        notice={settlementNotice}
+        onCancel={() => {
+          if (!settlementPending) setSettlingDebt(undefined);
+        }}
+        onSave={(reason, photo) => void settleDebt(reason, photo)}
+      />
     </>
   );
 }
@@ -861,6 +1044,9 @@ function DebtItem(
     readonly debt: Debt;
     readonly deleting: boolean;
     readonly notice: string | undefined;
+    readonly history: ReactNode;
+    readonly pending: boolean;
+    readonly onHistory: () => void;
     readonly onCancelDelete: () => void;
     readonly onChange: (next: string) => Promise<void>;
     readonly onConfirmDelete: () => void;
@@ -886,6 +1072,15 @@ function DebtItem(
             saveData={{ "data-debt-status-save": debt.id }}
             selectData={{ "data-debt-status": debt.id }}
           >
+            <Button
+              aria-label={`Settlement history for ${debtTitle(debt)}`}
+              disabled={props.pending}
+              onClick={props.onHistory}
+              type="button"
+              variant="outline"
+            >
+              History
+            </Button>
             {debt.status === "settled"
               ? (
                 <Button
@@ -953,6 +1148,20 @@ function DebtItem(
           </div>
         </DialogContent>
       </Dialog>
+      {props.archived
+        ? (
+          <Button
+            aria-label={`Settlement history for ${debtTitle(debt)}`}
+            disabled={props.pending}
+            onClick={props.onHistory}
+            type="button"
+            variant="outline"
+          >
+            History
+          </Button>
+        )
+        : null}
+      {props.history}
     </li>
   );
 }

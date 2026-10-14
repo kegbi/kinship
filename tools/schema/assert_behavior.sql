@@ -601,6 +601,44 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE
+  w uuid; other_w uuid; u uuid; m uuid; p uuid; d uuid; f uuid; event_id uuid;
+BEGIN
+  INSERT INTO workspaces(name) VALUES ('Settlement history') RETURNING id INTO w;
+  INSERT INTO workspaces(name) VALUES ('Foreign settlement') RETURNING id INTO other_w;
+  INSERT INTO users(email) VALUES ('settlement-schema@example.test') RETURNING id INTO u;
+  INSERT INTO workspace_members(workspace_id,user_id,role) VALUES(w,u,'owner') RETURNING id INTO m;
+  INSERT INTO people(workspace_id,given_name) VALUES(w,'Debtor') RETURNING id INTO p;
+  INSERT INTO debts(workspace_id,person_id,direction,amount,status,settled_at) VALUES(w,p,'they_owe',1,'settled','2026-01-02T03:04:05.123456Z') RETURNING id INTO d;
+  INSERT INTO files(workspace_id,original_filename,mime_type) VALUES(w,'paid.png','image/png') RETURNING id INTO f;
+  INSERT INTO debt_settlements(workspace_id,debt_id,settled_at,reason,photo_file_id,photo_filename,created_by_member_id) VALUES(w,d,'2026-01-02T03:04:05.123456Z','Paid cash',f,'paid.png',m) RETURNING id INTO event_id;
+  UPDATE debts SET status='open',settled_at=NULL WHERE id=d;
+  IF NOT EXISTS(SELECT 1 FROM debt_settlements WHERE id=event_id AND reason='Paid cash' AND settled_at='2026-01-02T03:04:05.123456Z') THEN RAISE EXCEPTION 'reopen lost settlement history'; END IF;
+  BEGIN
+    INSERT INTO debt_settlements(workspace_id,debt_id,settled_at) VALUES(other_w,d,now());
+    RAISE EXCEPTION 'foreign debt accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  BEGIN
+    INSERT INTO debt_settlements(workspace_id,debt_id,settled_at,photo_file_id) VALUES(other_w,d,now(),f);
+    RAISE EXCEPTION 'foreign settlement accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+  BEGIN
+    UPDATE files SET workspace_id=other_w WHERE id=f;
+    RAISE EXCEPTION 'foreign photo update accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+END $$;
+DO $$
+DECLARE w uuid; m uuid; d uuid; f uuid; event_id uuid;
+BEGIN
+  SELECT workspace_id,debt_id,photo_file_id,created_by_member_id,id INTO w,d,f,m,event_id FROM debt_settlements WHERE reason='Paid cash';
+  DELETE FROM files WHERE id=f;
+  DELETE FROM workspace_members WHERE id=m;
+  IF NOT EXISTS(SELECT 1 FROM debt_settlements WHERE id=event_id AND workspace_id=w AND photo_file_id IS NULL AND created_by_member_id IS NULL AND photo_filename='paid.png') THEN RAISE EXCEPTION 'photo/actor deletion lost history or workspace'; END IF;
+  DELETE FROM debts WHERE id=d;
+  IF EXISTS(SELECT 1 FROM debt_settlements WHERE id=event_id) THEN RAISE EXCEPTION 'debt deletion retained history'; END IF;
+END $$;
+
 ROLLBACK;
 
 SELECT 'schema_behavior_assertions_passed' AS result;

@@ -760,6 +760,22 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/people/{personId}/debts/{debtId}/settlements": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get: operations["listDebtSettlements"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/{personId}/debts/{debtId}/status": {
         readonly parameters: {
             readonly query?: never;
@@ -2444,6 +2460,9 @@ export interface components {
             readonly updatedAt: string;
         };
         readonly DebtCreateInput: {
+            readonly settlementReason?: string;
+            /** Format: uuid */
+            readonly settlementPhotoFileId?: string;
             readonly amount: string;
             readonly currencyCode: string;
             /** @enum {string} */
@@ -2468,7 +2487,27 @@ export interface components {
             /** @enum {string} */
             readonly status: "saved" | "unchanged";
         };
+        readonly DebtSettlement: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: date-time */
+            readonly settledAt: string;
+            readonly reason?: string;
+            /** Format: uuid */
+            readonly photoFileId?: string;
+            readonly photoFilename?: string;
+            readonly photoAvailable?: boolean;
+        };
+        readonly DebtSettlementList: {
+            /** @constant */
+            readonly status: "ready";
+            readonly settlements: readonly components["schemas"]["DebtSettlement"][];
+            readonly nextCursor?: string;
+        };
         readonly DebtStatusInput: {
+            readonly settlementReason?: string;
+            /** Format: uuid */
+            readonly settlementPhotoFileId?: string;
             /** @enum {string} */
             readonly status: "open" | "settled" | "cancelled";
         };
@@ -8809,6 +8848,80 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly listDebtSettlements: {
+        readonly parameters: {
+            readonly query?: {
+                readonly cursor?: string;
+                readonly limit?: number;
+            };
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+                readonly debtId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Permanent settlement history, newest first */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DebtSettlementList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

@@ -8,6 +8,20 @@ the current phase and deliver it as a complete vertical behavior. The larger
 and [`traceability.md`](traceability.md) remain coverage references, not
 prerequisite queues.
 
+## User-directed debt settlement history (2026-10-14)
+
+`GIFTS-001` now opens a settlement dialog with an optional reason and uploaded
+photo. A dedicated gifts-owned domain history preserves every settlement
+date/reason/photo reference across reload, reopen, and resettle; inline history
+is paged and workspace/person/debt scoped. Initial-settled API/import and v10
+backfill retain compatibility. Schema v11 is additive, immutable v1–v10 are
+retained, and files remains the public image validation/upload/download
+boundary. Explicit debt/person/workspace deletion removes history; explicit
+photo removal preserves the filename/date/reason. Current contact export
+profiles exclude this domain data. Schema PostgreSQL 18.4/17.10 matrix, focused
+gifts backend/API/integration, and dialog/history UI verification cover the
+changed boundary; browser verification uses the existing GIFTS-001 flow.
+
 ## Cursor
 
 - Current phase: **Phase 13 — Person Blocks And Usability Repair**

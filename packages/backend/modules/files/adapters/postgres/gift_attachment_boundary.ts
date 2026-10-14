@@ -33,6 +33,46 @@ function attachableFile(
 export class PostgresGiftAttachmentBoundary implements GiftAttachmentBoundary {
   constructor(private readonly gifts: GiftAttachmentTarget) {}
 
+  async validateSettlementPhoto(
+    command: Parameters<GiftAttachmentBoundary["validateSettlementPhoto"]>[0],
+  ): Promise<
+    Awaited<ReturnType<GiftAttachmentBoundary["validateSettlementPhoto"]>>
+  > {
+    const result = await sql<{ readonly filename: string }>`
+      select coalesce(stored.original_filename, 'Settlement photo') as filename
+      from crm.files stored
+      where stored.id = ${command.fileId}::uuid
+        and stored.workspace_id = ${command.workspaceId}::uuid
+        and stored.status = 'available' and stored.deleted_at is null
+        and stored.mime_type in ('image/jpeg', 'image/png', 'image/webp')
+        and exists (select 1 from crm.person_file_links link
+          where link.person_id = ${command.personId}::uuid
+            and link.file_id = stored.id and link.kind = 'photo')
+        and not exists (select 1 from crm.person_file_links avatar
+          where avatar.file_id = stored.id and avatar.kind = 'avatar')
+      for update of stored
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]
+      ? { status: "ready", filename: result.rows[0].filename }
+      : { status: "not-found" };
+  }
+
+  async availableSettlementPhotos(
+    command: Parameters<GiftAttachmentBoundary["availableSettlementPhotos"]>[0],
+  ): Promise<readonly string[]> {
+    if (command.fileIds.length === 0) return [];
+    const result = await sql<{ readonly id: string }>`
+      select stored.id::text from crm.files stored
+      where stored.id = any(${[...command.fileIds]}::uuid[])
+        and stored.workspace_id = ${command.workspaceId}::uuid
+        and stored.status = 'available' and stored.deleted_at is null
+        and exists (select 1 from crm.person_file_links link
+          where link.person_id = ${command.personId}::uuid
+            and link.file_id = stored.id and link.kind = 'photo')
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map((row) => row.id);
+  }
+
   async listForGifts(
     command: Parameters<GiftAttachmentBoundary["listForGifts"]>[0],
   ): Promise<Awaited<ReturnType<GiftAttachmentBoundary["listForGifts"]>>> {

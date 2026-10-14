@@ -19,6 +19,8 @@ import {
   createRecurringDebt,
   deleteDebt,
   deleteRecurringDebt,
+  listDebtSettlements,
+  listDebtSettlementsQuery,
   listPersonGiftsAndDebts,
   listPersonGiftsAndDebtsQuery,
   updateRecurringDebt,
@@ -123,6 +125,33 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
+
+  mount(routes, listDebtSettlements, session, async (context) => {
+    const person = parseValue(uuid, context.req.param("personId"));
+    const debt = parseValue(uuid, context.req.param("debtId"));
+    if ("errors" in person || "errors" in debt) {
+      return failure(context, "not-found");
+    }
+    const query = parseQuery(context, listDebtSettlementsQuery);
+    if ("errors" in query) return failure(context, "query-invalid");
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.gifts.listDebtSettlements(
+      actor,
+      person.data,
+      debt.data,
+      {
+        ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+        limit: query.data.limit,
+      },
+    );
+    if (result.status === "validation-error") {
+      return failure(context, "query-invalid");
+    }
+    if (result.status !== "ready") return failure(context, result.status);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
 
   mount(routes, listPersonGiftsAndDebts, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
@@ -232,6 +261,12 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
           amount: body.data.amount,
           currencyCode: body.data.currencyCode,
           direction: body.data.direction,
+          ...(body.data.settlementReason
+            ? { settlementReason: body.data.settlementReason }
+            : {}),
+          ...(body.data.settlementPhotoFileId
+            ? { settlementPhotoFileId: body.data.settlementPhotoFileId }
+            : {}),
           ...(body.data.reason ? { reason: body.data.reason } : {}),
           status: body.data.status,
         },
@@ -261,6 +296,14 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
         personId.data,
         debtId.data,
         body.data.status,
+        {
+          ...(body.data.settlementReason
+            ? { settlementReason: body.data.settlementReason }
+            : {}),
+          ...(body.data.settlementPhotoFileId
+            ? { settlementPhotoFileId: body.data.settlementPhotoFileId }
+            : {}),
+        },
       );
       if (
         result.status !== "saved" && result.status !== "unchanged"

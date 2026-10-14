@@ -93,6 +93,284 @@ const mount = (archived = false) =>
   mountSettled(() => mountGiftsIsland(sectionProps({ archived })));
 
 describe("GIFTS-001 debt reopening and permanent removal", () => {
+  it("disables history during reopening and its authoritative refresh, then opens on the next click", async () => {
+    markup();
+    const reopening = deferred<Response>();
+    const refreshing = deferred<Response>();
+    stubApi({
+      [GIFTS]: [
+        page({ debts: [{ ...lunch, status: "settled" }] }),
+        refreshing.promise,
+      ],
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": reopening.promise,
+      "GET /api/v1/people/:personId/debts/:debtId/settlements": jsonResponse({
+        status: "ready",
+        settlements: [{
+          id: giftId,
+          settledAt: stamped.createdAt,
+          reason: "Paid cash",
+        }],
+        nextCursor: "older",
+      }),
+    });
+    await mount();
+    const user = userEvent.setup();
+    const historyButton = () =>
+      card("debt").getByRole("button", {
+        name: "Settlement history for Lunch",
+      });
+    await user.click(historyButton());
+    await screen.findByText("Paid cash");
+    await user.click(
+      card("debt").getByRole("button", { name: "Reopen Lunch" }),
+    );
+    expect(historyButton().hasAttribute("disabled")).toBe(true);
+    expect(
+      card("debt").getByRole("button", { name: "Load older settlements" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await act(async () => {
+      reopening.resolve(jsonResponse({ status: "saved" }));
+    });
+    expect(historyButton().hasAttribute("disabled")).toBe(true);
+    await act(async () => {
+      refreshing.resolve(page({ debts: [lunch] }));
+    });
+    await waitFor(() =>
+      expect(historyButton().hasAttribute("disabled")).toBe(false)
+    );
+    expect(card("debt").queryByRole("button", { name: "Reopen Lunch" }))
+      .toBeNull();
+    await user.click(historyButton());
+    expect(await screen.findByText("Paid cash")).toBeTruthy();
+  });
+  it("reports an already-committed settlement without claiming edited retry details were saved", async () => {
+    markup();
+    stubApi({
+      [GIFTS]: [
+        page({ debts: [lunch] }),
+        page({ debts: [{ ...lunch, status: "settled" }] }),
+      ],
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": [
+        unreachable,
+        jsonResponse({ status: "unchanged" }),
+      ],
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", { name: "Change status" }),
+    );
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Settle this debt" }),
+    );
+    await user.type(
+      dialog.getByLabelText("Settlement reason (optional)"),
+      "Original reason",
+    );
+    await user.click(dialog.getByRole("button", { name: "Settle debt" }));
+    await waitFor(() =>
+      expect(dialog.getByRole("status").textContent).toContain(
+        "could not be confirmed",
+      )
+    );
+    await user.clear(dialog.getByLabelText("Settlement reason (optional)"));
+    await user.type(
+      dialog.getByLabelText("Settlement reason (optional)"),
+      "Edited after uncertain response",
+    );
+    await user.click(dialog.getByRole("button", { name: "Settle debt" }));
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe(
+        "Debt was already settled. Its existing history is unchanged.",
+      )
+    );
+  });
+  it("asks for optional settlement details without changing status on cancel", async () => {
+    markup();
+    const api = stubApi({ [GIFTS]: page({ debts: [lunch] }) });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", { name: "Change status" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Settle this debt",
+    });
+    expect(within(dialog).getByLabelText("Settlement reason (optional)"))
+      .toBeTruthy();
+    expect(within(dialog).getByLabelText("Settlement photo (optional)"))
+      .toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.requests()).toHaveLength(1);
+  });
+  it("uploads once, retains its photo on ambiguous failure, blocks pending dismissal, and saves optional details", async () => {
+    markup();
+    const pending = deferred<Response>();
+    const photoId = giftId;
+    const api = stubApi({
+      [GIFTS]: [
+        page({ debts: [lunch] }),
+        page({ debts: [{ ...lunch, status: "settled" }] }),
+      ],
+      "POST /api/v1/people/:personId/files": jsonResponse({
+        status: "created",
+        file: { fileId: photoId, status: "available" },
+      }),
+      "PATCH /api/v1/people/:personId/debts/:debtId/status": [
+        unreachable,
+        pending.promise,
+      ],
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", { name: "Change status" }),
+    );
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Settle this debt" }),
+    );
+    await user.type(
+      dialog.getByLabelText("Settlement reason (optional)"),
+      "Paid at lunch",
+    );
+    await user.upload(
+      dialog.getByLabelText("Settlement photo (optional)"),
+      new File(["image"], "payment.png", { type: "image/png" }),
+    );
+    await user.click(dialog.getByRole("button", { name: "Settle debt" }));
+    await waitFor(() =>
+      expect(dialog.getByRole("status").textContent).toContain(
+        "Your uploaded photo stays in Photos.",
+      )
+    );
+    expect(api.requests().filter((request) => request.method === "DELETE"))
+      .toHaveLength(0);
+    await user.click(dialog.getByRole("button", { name: "Settle debt" }));
+    expect(
+      dialog.getByRole("button", { name: "Cancel" }).hasAttribute("disabled"),
+    ).toBe(true);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(dialog.getByRole("button", { name: "Settle debt" }));
+    expect(
+      api.requests().filter((request) =>
+        request.url.pathname.endsWith("/files")
+      ),
+    ).toHaveLength(1);
+    expect(api.requests().filter((request) => request.method === "PATCH"))
+      .toHaveLength(2);
+    expect(api.requests()[3]?.body).toEqual({
+      status: "settled",
+      settlementReason: "Paid at lunch",
+      settlementPhotoFileId: photoId,
+    });
+    await act(async () => {
+      pending.resolve(jsonResponse({ status: "saved" }));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(stateLine("debt")).toBe(
+      "Debt settled. Details saved in settlement history.",
+    );
+  });
+
+  it.each(["failed", "quarantined"])(
+    "never settles after a %s photo upload",
+    async (outcome) => {
+      markup();
+      const api = stubApi({
+        [GIFTS]: page({ debts: [lunch] }),
+        "POST /api/v1/people/:personId/files": outcome === "failed"
+          ? unreachable
+          : jsonResponse({
+            file: { fileId: giftId, status: "quarantined" },
+            status: "created",
+          }),
+      });
+      await mount();
+      const user = userEvent.setup();
+      await user.click(
+        card("debt").getByRole("button", { name: "Change status" }),
+      );
+      const dialog = within(await screen.findByRole("dialog"));
+      await user.upload(
+        dialog.getByLabelText("Settlement photo (optional)"),
+        new File(["x"], "photo.png", { type: "image/png" }),
+      );
+      await user.click(dialog.getByRole("button", { name: "Settle debt" }));
+      await waitFor(() =>
+        expect(dialog.getByRole("status").textContent).toContain(
+          "debt remains open",
+        )
+      );
+      expect(api.requests().some((request) => request.method === "PATCH")).toBe(
+        false,
+      );
+    },
+  );
+
+  it("pages persistent history, reports missing photos, and retries failed history reads", async () => {
+    markup();
+    const event = {
+      id: giftId,
+      settledAt: stamped.createdAt,
+      reason: "Paid cash",
+      photoFileId: giftId,
+      photoFilename: "payment.png",
+      photoAvailable: true,
+    };
+    const api = stubApi({
+      [GIFTS]: page({ debts: [lunch] }),
+      "GET /api/v1/people/:personId/debts/:debtId/settlements": [
+        problemResponse(503, { detail: "Try again" }),
+        jsonResponse({
+          status: "ready",
+          settlements: [event],
+          nextCursor: "older",
+        }),
+        jsonResponse({
+          status: "ready",
+          settlements: [{
+            ...event,
+            id: lunch.id,
+            reason: undefined,
+            photoAvailable: false,
+          }],
+        }),
+      ],
+    });
+    await mount(true);
+    const user = userEvent.setup();
+    await user.click(
+      card("debt").getByRole("button", {
+        name: "Settlement history for Lunch",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Retry history" }),
+    );
+    expect(await screen.findByText("Paid cash")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Open settlement photo: payment.png" })
+        .getAttribute("href"),
+    ).toContain(`/files/${giftId}/content`);
+    await user.click(
+      screen.getByRole("button", { name: "Load older settlements" }),
+    );
+    expect(await screen.findByText("No settlement reason supplied."))
+      .toBeTruthy();
+    expect(screen.getByText("Settlement photo unavailable: payment.png"))
+      .toBeTruthy();
+    expect(api.requests().at(-1)?.url.searchParams.get("cursor")).toBe("older");
+    await user.click(
+      card("debt").getByRole("button", {
+        name: "Settlement history for Lunch",
+      }),
+    );
+    expect(screen.queryByText("Paid cash")).toBeNull();
+  });
+
   it("opens a named modal, focuses Keep it, and returns focus after cancellation or Escape", async () => {
     markup();
     const api = stubApi({ [GIFTS]: page({ debts: [lunch] }) });
@@ -838,7 +1116,15 @@ describe("GIFTS-001 person gifts and debts", () => {
         .children,
     ).toHaveLength(2);
     await user.click(coffee.getByRole("button", { name: "Change status" }));
-    await waitFor(() => expect(stateLine("debt")).toBe("Status changed."));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Settle this debt" }))
+        .getByRole("button", { name: "Settle debt" }),
+    );
+    await waitFor(() =>
+      expect(stateLine("debt")).toBe(
+        "Debt settled. Details saved in settlement history.",
+      )
+    );
     expect(api.requests()[5]?.body).toEqual({ status: "settled" });
     expect(card("debt").queryAllByRole("combobox")).toHaveLength(1);
   });
@@ -868,6 +1154,7 @@ describe("GIFTS-001 person gifts and debts", () => {
       card("gift").getByRole("button", { name: "Change status" }),
     );
     await waitFor(() => expect(stateLine("gift")).toBe("Invalid transition"));
+    await user.selectOptions(card("debt").getByRole("combobox"), "cancelled");
     await user.click(
       card("debt").getByRole("button", { name: "Change status" }),
     );

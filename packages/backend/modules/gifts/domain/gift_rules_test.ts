@@ -1,5 +1,67 @@
 import { assert, assertEquals } from "../../../testing/assert.ts";
 import {
+  settlementAnchor,
+  settlementCursor,
+  settlementDetails,
+} from "./debt_settlements.ts";
+
+Deno.test("[GIFTS-001] settlement text validation and history cursors bind all scopes", () => {
+  const anchor = {
+    id: "30000000-0000-4000-8000-000000000001",
+    settledAt: "2026-01-01T00:00:00.000Z",
+  };
+  const cursor = settlementCursor(anchor, "workspace", "person", "debt");
+  assertEquals(settlementAnchor(cursor, "workspace", "person", "debt"), anchor);
+  for (
+    const [value, workspace, person, debt] of [
+      ["bad", "workspace", "person", "debt"],
+      [cursor, "other", "person", "debt"],
+      [cursor, "workspace", "other", "debt"],
+      [cursor, "workspace", "person", "other"],
+      [
+        settlementCursor(
+          { ...anchor, id: "bad" },
+          "workspace",
+          "person",
+          "debt",
+        ),
+        "workspace",
+        "person",
+        "debt",
+      ],
+      [
+        settlementCursor(
+          { ...anchor, settledAt: "bad" },
+          "workspace",
+          "person",
+          "debt",
+        ),
+        "workspace",
+        "person",
+        "debt",
+      ],
+    ]
+  ) {
+    assertEquals(
+      settlementAnchor(value!, workspace!, person!, debt!),
+      undefined,
+    );
+  }
+  assertEquals(settlementDetails({}), {});
+  assertEquals(settlementDetails({ settlementReason: " paid " }), {
+    settlementReason: "paid",
+  });
+  assertEquals(settlementDetails({ settlementPhotoFileId: anchor.id }), {
+    settlementPhotoFileId: anchor.id,
+  });
+  assertEquals(settlementDetails({ settlementPhotoFileId: "bad" }), undefined);
+  assertEquals(settlementDetails({ settlementReason: " " }), undefined);
+  assertEquals(
+    settlementDetails({ settlementReason: "x".repeat(10001) }),
+    undefined,
+  );
+});
+import {
   canTransitionDebt,
   canTransitionGift,
   type DebtStatus,
