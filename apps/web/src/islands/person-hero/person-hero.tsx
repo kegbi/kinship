@@ -605,6 +605,7 @@ export function PersonHero(props: PersonHeroProps) {
           onAuditHistory={requestAuditHistory}
           onDelete={openDeletion}
           onEdit={openEditor}
+          onDismiss={() => dispatch({ type: "menu-closed" })}
           onItem={() => dispatch({ type: "menu-closed" })}
           onMerge={openMerge}
           onToggle={() => dispatch({ type: "menu-toggled" })}

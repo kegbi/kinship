@@ -13,7 +13,13 @@
  * dialog — so the page reads the same before and after it hydrates.
  */
 
-import type { Ref, RefObject, SubmitEvent } from "react";
+import {
+  type Ref,
+  type RefObject,
+  type SubmitEvent,
+  useEffect,
+  useRef,
+} from "react";
 import type { PersonGenderOption } from "../../../../../packages/contracts/generated/auth-client.ts";
 import type { FieldError } from "react-hook-form";
 import type { z } from "zod";
@@ -52,6 +58,7 @@ export interface PersonMenuProps {
   readonly deleteRef: Ref<HTMLButtonElement>;
   readonly mergeRef: Ref<HTMLButtonElement>;
   readonly onToggle: () => void;
+  readonly onDismiss: () => void;
   /** Any item chosen: the menu closes before the item acts. */
   readonly onItem: () => void;
   readonly onEdit: () => void;
@@ -76,6 +83,7 @@ export function PersonMenu(
     onAvatar,
     onAuditHistory,
     onDelete,
+    onDismiss,
     onEdit,
     onItem,
     onMerge,
@@ -84,18 +92,46 @@ export function PersonMenu(
     vcardHref,
   }: PersonMenuProps,
 ) {
+  const container = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const root = container.current;
+    if (!open || !root) return;
+    const document = root.ownerDocument;
+    const outside = (event: PointerEvent) => {
+      if (!event.composedPath().includes(root)) onDismiss();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onDismiss();
+      trigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open, onDismiss]);
   const item = (act: () => void) => () => {
     onItem();
     act();
   };
   return (
-    <div aria-label="Person menu" className="person-menu" role="group">
+    <div
+      aria-label="Person menu"
+      className="person-menu"
+      ref={container}
+      role="group"
+    >
       <Button
         aria-controls="person-menu"
         aria-expanded={open}
         aria-label="Open person menu"
         id="person-menu-toggle"
         onClick={onToggle}
+        ref={trigger}
         type="button"
         variant="outline"
       >

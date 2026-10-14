@@ -1,9 +1,52 @@
 import { expect, test } from "@playwright/test";
 import { settlePersonWorkspace } from "./support/navigation.ts";
-import { registerVerified } from "./support/api.ts";
+import { createPerson, registerVerified } from "./support/api.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu } from "./support/profile.ts";
 import { signIn } from "./support/sign-in.ts";
+
+test(
+  "[PEOPLE-004] dismisses the person menu outside and with Escape",
+  { annotation: { type: "flow", description: "PEOPLE-004" } },
+  async ({ browserName, page, request }) => {
+    const email = `menu-dismiss-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Menu",
+      lastName: "Keeper",
+      workspaceName: "Menu circle",
+    });
+    await signIn(page, email);
+    const personId = await createPerson(page.request, {
+      givenName: "Ada",
+      familyName: "Lovelace",
+    });
+    await page.goto(`/app/people/${personId}`);
+    await settlePersonWorkspace(page);
+    const trigger = page.getByRole("button", { name: "Open person menu" });
+    const menu = page.locator("#person-menu");
+    await openPersonMenu(page);
+    await expect(menu).toBeVisible();
+    await page.getByRole("heading", { level: 1, name: "Ada Lovelace" }).click();
+    await expect(menu).toBeHidden();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await trigger.click();
+    await expect(menu).toBeHidden();
+    await openPersonMenu(page);
+    await page.getByRole("button", { name: "Edit person" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    await openPersonMenu(page);
+    await page.getByRole("button", { name: "Edit person" }).click();
+    await expect(menu).toBeHidden();
+    await expect(page.getByRole("form", { name: "Edit person" })).toBeVisible();
+  },
+);
 
 test(
   "[PEOPLE-004] edits, archives, restores, and explicitly deletes a person",

@@ -463,6 +463,80 @@ describe("PEOPLE-001 person hero island", () => {
     expect(menu.hidden).toBe(true);
   });
 
+  it("dismisses the person menu outside without taking focus from the clicked control", async () => {
+    markup();
+    await mount();
+    const user = userEvent.setup();
+    const menu = element<HTMLElement>("#person-menu");
+    await user.click(menuButton());
+    await user.click(menu);
+    expect(menu.hidden).toBe(false);
+    expect(menuButton().getAttribute("aria-expanded")).toBe("true");
+
+    const outside = screen.getByRole("button", { name: "Log interaction" });
+    await user.click(outside);
+    expect(menu.hidden).toBe(true);
+    expect(menuButton().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(outside);
+
+    await user.click(menuButton());
+    await user.click(screen.getByRole("button", { name: "Edit person" }));
+    expect(menu.hidden).toBe(true);
+    expect(screen.getByRole("form", { name: "Edit person" }).hidden).toBe(
+      false,
+    );
+  });
+
+  it("dismisses the person menu with Escape and returns focus to its trigger", async () => {
+    markup();
+    await mount();
+    const user = userEvent.setup();
+    await user.click(menuButton());
+    const edit = screen.getByRole("button", { name: "Edit person" });
+    edit.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(element<HTMLElement>("#person-menu").hidden).toBe(false);
+    await user.keyboard("{Escape}");
+    expect(element<HTMLElement>("#person-menu").hidden).toBe(true);
+    expect(document.activeElement).toBe(menuButton());
+  });
+
+  it("removes person menu dismissal listeners when closed or unmounted", async () => {
+    markup();
+    const unmount = await mount();
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    try {
+      const user = userEvent.setup();
+      await user.click(menuButton());
+      const listeners = add.mock.calls.filter(([type]) =>
+        type === "pointerdown" || type === "keydown"
+      );
+      expect(listeners.map(([type]) => type)).toEqual([
+        "pointerdown",
+        "keydown",
+      ]);
+      await user.click(menuButton());
+      for (const listener of listeners) {
+        expect(remove).toHaveBeenCalledWith(...listener);
+      }
+      add.mockClear();
+      remove.mockClear();
+      await user.click(menuButton());
+      const reopened = add.mock.calls.filter(([type]) =>
+        type === "pointerdown" || type === "keydown"
+      );
+      expect(reopened).toHaveLength(2);
+      unmount();
+      for (const listener of reopened) {
+        expect(remove).toHaveBeenCalledWith(...listener);
+      }
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
   it("UXD-002A2 asks the section navigation for Audit history and closes the menu", async () => {
     markup();
     await mount();
