@@ -104,6 +104,8 @@
   flex: 0 0 1.85rem;
   min-width: 1.85rem;
   height: 1.85rem;
+  /* Center the plus's visible ink, which sits below its line-box center. */
+  padding-bottom: .15em;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill);
   place-items: center;
@@ -211,7 +213,7 @@
   color: var(--ink-1);
   font-size: .92rem;
   font-weight: 600;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .profile-fact-value a {

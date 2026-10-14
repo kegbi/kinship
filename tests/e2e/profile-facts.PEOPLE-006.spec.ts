@@ -1195,6 +1195,115 @@ test(
 );
 
 test(
+  "[PEOPLE-006] keeps long contact values inside their card and rail add icons centered",
+  { annotation: { type: "flow", description: "PEOPLE-006" } },
+  async ({ browserName, page, request }) => {
+    const email = `contact-layout-${browserName}-${Date.now()}@example.test`;
+    await registerAccount(request, email);
+    await signIn(page, email);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u on u.id = w.created_by_user_id where u.email = ${
+        sqlLiteral(email)
+      }`,
+    );
+    const personId = randomUUID();
+    const steamTypeId = randomUUID();
+    const usernameTypeId = randomUUID();
+    const emailTypeId = randomUUID();
+    const steam = "https://steamcommunity.com/profiles/76561198084319177";
+    const username = "unbrokencontactvalue".repeat(12);
+    const longEmail =
+      "ada.lovelace.correspondence@analytical-engines.example.test";
+    databaseSql(`
+      insert into crm.people (id, workspace_id, given_name)
+      values ('${personId}'::uuid, '${workspaceId}'::uuid, 'Contact layout');
+      insert into crm.contact_method_types (id, workspace_id, name, kind) values
+        ('${steamTypeId}'::uuid, '${workspaceId}'::uuid, 'Steam', 'url'),
+        ('${usernameTypeId}'::uuid, '${workspaceId}'::uuid, 'Username', 'username'),
+        ('${emailTypeId}'::uuid, '${workspaceId}'::uuid, 'Email', 'email');
+      insert into crm.person_contact_methods (person_id, type_id, value, is_primary) values
+        ('${personId}'::uuid, '${steamTypeId}'::uuid, '${steam}', true),
+        ('${personId}'::uuid, '${usernameTypeId}'::uuid, '${username}', true),
+        ('${personId}'::uuid, '${emailTypeId}'::uuid, '${longEmail}', true);
+    `);
+    await page.goto(`/app/people/${personId}`);
+    const contacts = page.locator("#profile-section-contact-methods");
+    await expect(contacts.locator(".profile-fact-value")).toHaveCount(3);
+    await expect(contacts.getByRole("link", { name: longEmail }))
+      .toHaveAttribute(
+        "href",
+        `mailto:${longEmail}`,
+      );
+    for (const width of [1440, 390, 768, 1050]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const value of [steam, username, longEmail]) {
+        const row = contacts.locator("[data-profile-fact-list] > li").filter({
+          has: page.locator(".profile-fact-value", { hasText: value }),
+        });
+        const bounds = await row.locator(".profile-fact-value").evaluate(
+          (element) => {
+            const card = element.closest(".profile-rail-block")!;
+            const cardBounds = card.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            return {
+              cardLeft: cardBounds.left,
+              cardRight: cardBounds.right,
+              fragments: [...range.getClientRects()].map((rect) => ({
+                left: rect.left,
+                right: rect.right,
+              })),
+            };
+          },
+        );
+        for (const fragment of bounds.fragments) {
+          expect.soft(fragment.left, `${width}px: ${value}`)
+            .toBeGreaterThanOrEqual(
+              bounds.cardLeft,
+            );
+          expect.soft(fragment.right, `${width}px: ${value}`)
+            .toBeLessThanOrEqual(
+              bounds.cardRight,
+            );
+        }
+        await expect(row.getByRole("button", { name: `Copy ${value}` }))
+          .toBeVisible();
+        await expect(row.getByRole("button", { name: /^Edit / })).toBeVisible();
+        await expect(row.getByRole("button", { name: /^Delete / }))
+          .toBeVisible();
+      }
+      const add = page.locator("#profile-section-addresses .profile-rail-add");
+      await expect(add).toBeVisible();
+      const icon = await add.locator("span").evaluate((element) => {
+        const circle = element.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const glyph = range.getBoundingClientRect();
+        const context = document.createElement("canvas").getContext("2d")!;
+        const style = getComputedStyle(element);
+        context.font =
+          `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const metrics = context.measureText("+");
+        const inkCenterY = glyph.top + metrics.fontBoundingBoxAscent +
+          (metrics.actualBoundingBoxDescent - metrics.actualBoundingBoxAscent) /
+            2;
+        return {
+          horizontalOffset:
+            (glyph.left + glyph.right - circle.left - circle.right) / 2,
+          verticalOffset: inkCenterY - (circle.top + circle.bottom) / 2,
+        };
+      });
+      expect.soft(Math.abs(icon.horizontalOffset)).toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(icon.verticalOffset)).toBeLessThanOrEqual(1);
+      expect.soft(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      )
+        .toBeLessThanOrEqual(width);
+    }
+  },
+);
+
+test(
   "[PEOPLE-006] PRF-001 scans profile blocks and edits long facts across screen sizes",
   {
     annotation: { type: "flow", description: "PEOPLE-006" },
