@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { waitForIsland } from "./support/islands.ts";
 import { registerVerified } from "./support/api.ts";
 import { origin } from "./support/env.ts";
@@ -6,6 +6,72 @@ import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu } from "./support/profile.ts";
 import { submitSignIn } from "./support/sign-in.ts";
+
+/** The same rendered compact style, including the CSS outside the island. */
+async function actionStyle(button: Locator) {
+  return await button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor,
+      border: style.border,
+      borderRadius: style.borderRadius,
+      color: style.color,
+      font: style.font,
+      height: element.getBoundingClientRect().height,
+      padding: style.padding,
+    };
+  });
+}
+
+async function expectBoundedDebtDialog(page: Page) {
+  const dialog = page.getByRole("dialog", {
+    name: "Permanently delete this debt?",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Keep it" })).toBeFocused();
+  const bounds = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      width: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      viewportWidth: globalThis.innerWidth,
+      viewportHeight: globalThis.innerHeight,
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
+  expect(bounds.top).toBeGreaterThanOrEqual(0);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
+  expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.width);
+  expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
+  for (let step = 0; step < 4; step++) {
+    await page.keyboard.press("Tab");
+    // Base UI's sibling focus guards redirect on the next animation frame.
+    // Wait for the actual control so a guard cannot count as trapped focus.
+    await expect(dialog.getByRole("button", {
+      name: step % 2 === 0 ? "Delete debt permanently" : "Keep it",
+    })).toBeFocused();
+  }
+  return dialog;
+}
+
+async function expectCompactDebtActions(
+  page: Page,
+  row: Locator,
+  reference: Locator,
+) {
+  await page.mouse.move(0, 0);
+  const style = await actionStyle(reference);
+  expect(style.height).toBe(34);
+  for (const button of await row.getByRole("button").all()) {
+    expect(await actionStyle(button)).toEqual(style);
+  }
+}
 
 test(
   "[GIFTS-001] manages person gifts, attachments, debts, and recurring debts",
@@ -119,11 +185,35 @@ test(
     await debts.getByRole("button", { name: "Save" }).click();
     const lunch = debts.locator("li", { hasText: "Lunch" });
     await expect(lunch).toContainText("They owe");
+    const desktop = page.viewportSize()!;
+    const reference = photoBook.getByRole("button", { name: "Change status" });
+    for (const width of [desktop.width, 375, 320]) {
+      await page.setViewportSize({ width, height: desktop.height });
+      await expectCompactDebtActions(page, lunch, reference);
+      await lunch.getByRole("button", { name: "Delete Lunch" }).click();
+      const dialog = await expectBoundedDebtDialog(page);
+      await dialog.getByRole("button", { name: "Keep it" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(lunch.getByRole("button", { name: "Delete Lunch" }))
+        .toBeFocused();
+    }
+    await page.setViewportSize(desktop);
     await lunch.getByLabel("Next status for Lunch").selectOption("settled");
     await lunch.getByRole("button", { name: "Change status" }).click();
     await expect(debts.locator("li", { hasText: "Lunch" })).toContainText(
       "settled",
     );
+    for (const width of [desktop.width, 375, 320]) {
+      await page.setViewportSize({ width, height: desktop.height });
+      await expectCompactDebtActions(page, lunch, reference);
+      await lunch.getByRole("button", { name: "Delete Lunch" }).click();
+      const dialog = await expectBoundedDebtDialog(page);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(lunch.getByRole("button", { name: "Delete Lunch" }))
+        .toBeFocused();
+    }
+    await page.setViewportSize(desktop);
     await lunch.getByRole("button", { name: "Reopen Lunch" }).click();
     await expect(lunch).toContainText("open");
     const lunchId = await lunch.getAttribute("data-debt-id");
@@ -136,15 +226,59 @@ test(
     expect(reopenedDebts.debts.find((debt) => debt.id === lunchId)?.settledAt)
       .toBeUndefined();
     await lunch.getByRole("button", { name: "Delete Lunch" }).click();
-    await expect(lunch).toContainText("Permanently delete this debt?");
-    await lunch.getByRole("button", { name: "Keep it" }).click();
+    const debtDialog = page.getByRole("dialog", {
+      name: "Permanently delete this debt?",
+    });
+    await expect(debtDialog).toBeVisible();
+    await debtDialog.getByRole("button", { name: "Keep it" }).click();
     await expect(lunch).toBeVisible();
     await lunch.getByLabel("Next status for Lunch").selectOption("settled");
     await lunch.getByRole("button", { name: "Change status" }).click();
     await expect(lunch).toContainText("settled");
     await lunch.getByRole("button", { name: "Delete Lunch" }).click();
-    await lunch.getByRole("button", { name: "Delete debt permanently" })
+    await page.route(
+      `**/api/v1/people/${personId}/debts/${lunchId}`,
+      async (route) => {
+        await route.fulfill({
+          status: 409,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            detail: "The debt could not be deleted. Try again.",
+          }),
+        });
+      },
+      { times: 1 },
+    );
+    await debtDialog.getByRole("button", { name: "Delete debt permanently" })
       .click();
+    await expect(debtDialog.getByRole("status")).toHaveText(
+      "The debt could not be deleted. Try again.",
+    );
+    let releaseDeletion!: () => void;
+    const deletionHeld = new Promise<void>((resolve) => {
+      releaseDeletion = resolve;
+    });
+    await page.route(
+      `**/api/v1/people/${personId}/debts/${lunchId}`,
+      async (route) => {
+        await deletionHeld;
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    await debtDialog.getByRole("button", { name: "Delete debt permanently" })
+      .click();
+    try {
+      await expect(
+        debtDialog.getByRole("button", { name: "Delete debt permanently" }),
+      ).toBeDisabled();
+      await expect(debtDialog.getByRole("button", { name: "Keep it" }))
+        .toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(debtDialog).toBeVisible();
+    } finally {
+      releaseDeletion();
+    }
     await expect(lunch).toHaveCount(0);
 
     // A recurring debt that started two months ago charges each period at
@@ -190,11 +324,31 @@ test(
     const charge = debts.locator("[data-gift-list] li", {
       hasText: "Recurring, due",
     }).first();
+    for (const width of [desktop.width, 375, 320]) {
+      await page.setViewportSize({ width, height: desktop.height });
+      await charge.getByRole("button", { name: "Delete Gym membership" })
+        .click();
+      const dialog = await expectBoundedDebtDialog(page);
+      await expect(dialog).toContainText(
+        "The recurring schedule continues; future charges stay.",
+      );
+      await expect(dialog).toContainText(
+        "Changing the schedule later may charge deleted periods again.",
+      );
+      if (width === 320 && browserName === "chromium") {
+        await page.screenshot({
+          path: ".artifacts/local/debt-confirmation-mobile.png",
+        });
+      }
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    }
+    await page.setViewportSize(desktop);
     await charge.getByRole("button", { name: "Delete Gym membership" }).click();
-    await expect(charge).toContainText(
+    await expect(debtDialog).toContainText(
       "The recurring schedule continues; future charges stay.",
     );
-    await charge.getByRole("button", { name: "Delete debt permanently" })
+    await debtDialog.getByRole("button", { name: "Delete debt permanently" })
       .click();
     await expect(
       debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),

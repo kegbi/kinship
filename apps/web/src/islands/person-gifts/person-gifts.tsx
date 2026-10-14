@@ -54,6 +54,12 @@ import {
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.tsx";
+import {
   formActionsVariants,
   skeletonLinesVariants,
   skeletonVariants,
@@ -144,6 +150,7 @@ export function PersonGifts(props: PersonGiftsProps) {
   /** The rule whose deletion is waiting to be confirmed, if any. */
   const [confirmingDelete, setConfirmingDelete] = useState<string>();
   const [confirmingDebtDelete, setConfirmingDebtDelete] = useState<string>();
+  const [deletingDebt, setDeletingDebt] = useState(false);
   const request = useLatestRequest();
   // One save or status change at a time, across both cards.
   const mutating = useRef(false);
@@ -361,6 +368,7 @@ export function PersonGifts(props: PersonGiftsProps) {
   const removeDebt = async (debt: Debt) => {
     if (mutating.current) return;
     mutating.current = true;
+    setDeletingDebt(true);
     notify("debt", "Deleting debt…");
     try {
       const answer = await settle(() =>
@@ -377,6 +385,7 @@ export function PersonGifts(props: PersonGiftsProps) {
       if (await refresh()) notify("debt", "Debt permanently deleted.");
     } finally {
       mutating.current = false;
+      setDeletingDebt(false);
     }
   };
 
@@ -497,12 +506,17 @@ export function PersonGifts(props: PersonGiftsProps) {
             <DebtItem
               archived={archived}
               debt={debt}
+              deleting={deletingDebt}
               confirmingDelete={confirmingDebtDelete === debt.id}
               key={debt.id}
+              notice={notices.debt}
               onCancelDelete={() => setConfirmingDebtDelete(undefined)}
               onChange={(next) => changeStatus("debt", debt.id, next)}
               onConfirmDelete={() => void removeDebt(debt)}
-              onDelete={() => setConfirmingDebtDelete(debt.id)}
+              onDelete={() => {
+                notify("debt", undefined);
+                setConfirmingDebtDelete(debt.id);
+              }}
             />
           )),
           records.debts.length,
@@ -766,6 +780,8 @@ function LoadingState(props: { readonly plural: string }) {
 /** The next-status picker and its button, shown while a step remains. */
 function StatusChange(
   props: {
+    readonly children?: ReactNode;
+    readonly className?: string;
     readonly label: string;
     readonly onChange: (next: string) => Promise<void>;
     readonly options: readonly string[];
@@ -775,26 +791,36 @@ function StatusChange(
 ) {
   const [next, setNext] = useState(props.options[0] ?? "");
   return (
-    <div className={formActionsVariants({ className: "person-file-actions" })}>
-      <select
-        {...props.selectData}
-        aria-label={`Next status for ${props.label}`}
-        onChange={(event) =>
-          setNext(event.target.value)}
-        value={next}
-      >
-        {props.options.map((status) => (
-          <option key={status} value={status}>{status}</option>
-        ))}
-      </select>
-      <Button
-        {...props.saveData}
-        onClick={() => void props.onChange(next)}
-        type="button"
-        variant="outline"
-      >
-        Change status
-      </Button>
+    <div
+      className={formActionsVariants({
+        className: `person-file-actions ${props.className ?? ""}`,
+      })}
+    >
+      {props.options.length > 0
+        ? (
+          <>
+            <select
+              {...props.selectData}
+              aria-label={`Next status for ${props.label}`}
+              onChange={(event) => setNext(event.target.value)}
+              value={next}
+            >
+              {props.options.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <Button
+              {...props.saveData}
+              onClick={() => void props.onChange(next)}
+              type="button"
+              variant="outline"
+            >
+              Change status
+            </Button>
+          </>
+        )
+        : null}
+      {props.children}
     </div>
   );
 }
@@ -833,6 +859,8 @@ function DebtItem(
     readonly archived: boolean;
     readonly confirmingDelete: boolean;
     readonly debt: Debt;
+    readonly deleting: boolean;
+    readonly notice: string | undefined;
     readonly onCancelDelete: () => void;
     readonly onChange: (next: string) => Promise<void>;
     readonly onConfirmDelete: () => void;
@@ -841,76 +869,90 @@ function DebtItem(
 ) {
   const { debt } = props;
   const options = debtStatusOptions(debt.status);
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
   return (
     <li data-debt-id={debt.id}>
       <strong>{debtTitle(debt)}</strong>
       <p>{debtDetail(debt)}</p>
-      {!props.archived && !props.confirmingDelete && debt.status === "settled"
-        ? (
-          <Button
-            aria-label={`Reopen ${debtTitle(debt)}`}
-            onClick={() => void props.onChange("open")}
-            type="button"
-            variant="outline"
-          >
-            Reopen
-          </Button>
-        )
-        : null}
-      {!props.archived && !props.confirmingDelete &&
-          debt.status !== "settled" && options.length > 0
+      {!props.archived
         ? (
           <StatusChange
+            className="person-debt-actions"
             key={debt.status}
             label={debtTitle(debt)}
             onChange={props.onChange}
-            options={options}
+            options={debt.status === "settled" ? [] : options}
             saveData={{ "data-debt-status-save": debt.id }}
             selectData={{ "data-debt-status": debt.id }}
-          />
+          >
+            {debt.status === "settled"
+              ? (
+                <Button
+                  aria-label={`Reopen ${debtTitle(debt)}`}
+                  onClick={() => void props.onChange("open")}
+                  type="button"
+                  variant="outline"
+                >
+                  Reopen
+                </Button>
+              )
+              : null}
+            <Button
+              aria-label={`Delete ${debtTitle(debt)}`}
+              onClick={props.onDelete}
+              ref={deleteButton}
+              type="button"
+              variant="outline"
+            >
+              Delete
+            </Button>
+          </StatusChange>
         )
         : null}
-      {props.archived ? null : props.confirmingDelete
-        ? (
-          <div
-            className={formActionsVariants({
-              className: "person-file-actions",
-            })}
-            role="group"
-            aria-label={`Delete ${debtTitle(debt)}`}
-          >
-            <span>
-              Permanently delete this debt? This cannot be
-              undone.{debt.recurringDebtId
-                ? " The recurring schedule continues; future charges stay. Changing the schedule later may charge deleted periods again."
-                : ""}
-            </span>
+      <Dialog
+        disablePointerDismissal
+        onOpenChange={(next) => {
+          if (!next && !props.deleting) props.onCancelDelete();
+        }}
+        open={!props.archived && props.confirmingDelete}
+      >
+        <DialogContent
+          className="w-[min(30rem,calc(100%-2rem))] min-w-0 wrap-anywhere"
+          finalFocus={deleteButton}
+          initialFocus={cancelButton}
+        >
+          <DialogTitle>Permanently delete this debt?</DialogTitle>
+          <DialogDescription>
+            This cannot be undone.{debt.recurringDebtId
+              ? " The recurring schedule continues; future charges stay. Changing the schedule later may charge deleted periods again."
+              : ""}
+          </DialogDescription>
+          {props.notice
+            ? <p className="m-0" role="status">{props.notice}</p>
+            : null}
+          <div className={formActionsVariants()}>
             <Button
-              onClick={props.onConfirmDelete}
-              type="button"
-              variant="destructive"
-            >
-              Delete debt permanently
-            </Button>
-            <Button
+              disabled={props.deleting}
               onClick={props.onCancelDelete}
+              ref={cancelButton}
               type="button"
               variant="outline"
             >
               Keep it
             </Button>
+            <Button
+              disabled={props.deleting}
+              onClick={props.onConfirmDelete}
+              type="button"
+              variant="destructive"
+              wrap
+            >
+              Delete debt permanently
+            </Button>
           </div>
-        )
-        : (
-          <Button
-            aria-label={`Delete ${debtTitle(debt)}`}
-            onClick={props.onDelete}
-            type="button"
-            variant="outline"
-          >
-            Delete
-          </Button>
-        )}
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }

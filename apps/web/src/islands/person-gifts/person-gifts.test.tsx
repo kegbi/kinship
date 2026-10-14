@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mountGiftsIsland } from "./mount.tsx";
@@ -87,6 +93,48 @@ const mount = (archived = false) =>
   mountSettled(() => mountGiftsIsland(sectionProps({ archived })));
 
 describe("GIFTS-001 debt reopening and permanent removal", () => {
+  it("opens a named modal, focuses Keep it, and returns focus after cancellation or Escape", async () => {
+    markup();
+    const api = stubApi({ [GIFTS]: page({ debts: [lunch] }) });
+    await mount();
+    const user = userEvent.setup();
+    const opener = card("debt").getByRole("button", { name: "Delete Lunch" });
+    await user.click(opener);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Permanently delete this debt?",
+    });
+    expect(section("debt").contains(dialog)).toBe(false);
+    expect(dialog.getAttribute("aria-describedby")).toBeTruthy();
+    const keep = within(dialog).getByRole("button", { name: "Keep it" });
+    await waitFor(() => expect(document.activeElement).toBe(keep));
+    await user.click(keep);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    await user.click(opener);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(api.requests()).toHaveLength(1);
+  });
+
+  it.each(["open", "settled"])(
+    "groups every %s debt action under the compact file-action style",
+    async (status) => {
+      markup();
+      stubApi({ [GIFTS]: page({ debts: [{ ...lunch, status }] }) });
+      await mount();
+      const row = element(`[data-debt-id="${lunch.id}"]`);
+      const actions = row.querySelector(":scope > .person-file-actions");
+      expect(actions).not.toBeNull();
+      expect(
+        Array.from(row.querySelectorAll("button")).every((button) =>
+          button.parentElement === actions
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("explains recurring charge deletion, reports refusals, and keeps the shared save slot through refresh", async () => {
     markup();
     const deleting = deferred<Response>();
@@ -107,42 +155,53 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
     });
     await mount();
     const user = userEvent.setup();
+    const giftStatus = card("gift").getByRole("button", {
+      name: "Change status",
+    });
     await user.click(
       card("debt").getByRole("button", { name: "Delete Lunch" }),
     );
     expect(
-      card("debt").getByText(
+      within(screen.getByRole("dialog")).getByText(
         /recurring schedule continues.*Changing the schedule later/,
       ),
     ).toBeTruthy();
-    const remove = card("debt").getByRole("button", {
+    const remove = within(screen.getByRole("dialog")).getByRole("button", {
       name: "Delete debt permanently",
     });
     await user.click(remove);
     await waitFor(() =>
       expect(stateLine("debt")).toBe("Restore the person first.")
     );
-    expect(card("debt").getByText("Lunch")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByRole("status").textContent)
+      .toBe("Restore the person first.");
     await user.click(remove);
     await waitFor(() =>
       expect(stateLine("debt")).toBe("The debt could not be deleted.")
     );
     await user.click(remove);
     await user.click(remove);
-    await user.click(
-      card("gift").getByRole("button", { name: "Change status" }),
-    );
+    expect(remove.hasAttribute("disabled")).toBe(true);
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Keep it",
+      }).hasAttribute("disabled"),
+    )
+      .toBe(true);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(giftStatus);
     expect(api.requests()).toHaveLength(4);
     await act(async () =>
-      deleting.resolve(jsonResponse({ debtId: lunch.id, status: "deleted" }))
+      await deleting.resolve(
+        jsonResponse({ debtId: lunch.id, status: "deleted" }),
+      )
     );
     await waitFor(() => expect(api.requests()).toHaveLength(5));
-    await user.click(
-      card("gift").getByRole("button", { name: "Change status" }),
-    );
+    fireEvent.click(giftStatus);
     expect(api.requests()).toHaveLength(5);
     await act(async () =>
-      refreshing.resolve(page({ gifts: [firstGift("Book")] }))
+      await refreshing.resolve(page({ gifts: [firstGift("Book")] }))
     );
     await waitFor(() =>
       expect(stateLine("debt")).toBe("Debt permanently deleted.")
@@ -166,7 +225,7 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
       )
     );
     expect(
-      card("debt").queryByRole("button", { name: "Delete debt permanently" }),
+      screen.queryByRole("dialog"),
     ).toBeNull();
     expect(card("debt").queryByRole("button", { name: "Reopen Lunch" }))
       .toBeNull();
@@ -200,7 +259,7 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
       card("debt").getByRole("button", { name: "Delete Lunch" }),
     );
     await user.click(
-      card("debt").getByRole("button", { name: "Delete debt permanently" }),
+      screen.getByRole("button", { name: "Delete debt permanently" }),
     );
     await waitFor(() => expect(stateLine("debt")).toBe("Refresh unavailable."));
   });
@@ -247,16 +306,18 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
       await user.click(
         card("debt").getByRole("button", { name: "Delete Lunch" }),
       );
-      expect(card("debt").getByText(/Permanently delete this debt/))
+      expect(
+        screen.getByRole("dialog", { name: "Permanently delete this debt?" }),
+      )
         .toBeTruthy();
       expect(api.requests()).toHaveLength(1);
-      await user.click(card("debt").getByRole("button", { name: "Keep it" }));
+      await user.click(screen.getByRole("button", { name: "Keep it" }));
       expect(api.requests()).toHaveLength(1);
       await user.click(
         card("debt").getByRole("button", { name: "Delete Lunch" }),
       );
       await user.click(
-        card("debt").getByRole("button", { name: "Delete debt permanently" }),
+        screen.getByRole("button", { name: "Delete debt permanently" }),
       );
       await waitFor(() =>
         expect(stateLine("debt")).toBe("Debt permanently deleted.")

@@ -993,7 +993,7 @@ flows:
       - Save and display the item inside the person workspace.
       - Transition gift or debt state without losing history.
       - Reopen a settled debt, clearing its settlement time; cancelled debts remain terminal.
-      - Confirm permanent removal of an individual debt in any state. Removing one recurring charge leaves its schedule and future charges intact. Ordinary pause/resume preserves removal, including ended rules; later explicit schedule changes may charge deleted periods again.
+      - Confirm permanent removal of an individual debt in any state through a viewport-bounded modal. Keep it or Escape cancels and returns focus to Delete; pending deletion disables both confirmation actions. Removing one recurring charge leaves its schedule and future charges intact. Ordinary pause/resume preserves removal, including ended rules; later explicit schedule changes may charge deleted periods again.
       - Create, edit, pause, resume, or delete a recurring debt; every due period becomes its own open debt.
       - Moving a recurring debt's start earlier backfills uncharged due months while preserving existing debts, including when its scheduled day changes.
     alternateOutcomes: [

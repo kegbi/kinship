@@ -55,6 +55,13 @@
   flex-wrap: nowrap;
 }
 
+/* Debt actions share the compact row, but wrap before widening the card. */
+.person-file-list > li > .person-debt-actions {
+  max-width: 100%;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
 .person-file-list > li > .person-file-actions select {
   min-height: 34px;
   padding: var(--space-1) var(--space-5) var(--space-1) var(--space-2);
