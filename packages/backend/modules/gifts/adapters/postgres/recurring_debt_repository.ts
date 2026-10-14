@@ -276,15 +276,32 @@ export class PostgresRecurringDebtRepository
   ): Promise<Awaited<ReturnType<RecurringDebtRepository["charge"]>>> {
     if (command.dates.length === 0) return [];
     const source = command.recurringDebt;
-    const rows = await schemaDatabaseFromSession(command.transaction)
+    const database = schemaDatabaseFromSession(command.transaction);
+    // The caller holds the rule lock throughout charging. Skip its existing
+    // charged months even when a schedule edit changed the due day.
+    const months = command.dates.map((date) => date.slice(0, 7));
+    const existing = await database.selectFrom("crm.debts as debt")
+      .select(sql<string>`to_char(debt.occurrence_on, 'YYYY-MM')`.as("month"))
+      .where("debt.workspace_id", "=", command.workspaceId)
+      .where("debt.recurring_debt_id", "=", source.id)
+      .where(sql<string>`to_char(debt.occurrence_on, 'YYYY-MM')`, "in", months)
+      .distinct()
+      .execute();
+    const chargedMonths = new Set(existing.map((row) => row.month));
+    const pending = command.dates.map((date, index) => ({
+      date,
+      id: command.ids[index]!,
+    })).filter(({ date }) => !chargedMonths.has(date.slice(0, 7)));
+    if (pending.length === 0) return [];
+    const rows = await database
       .with("inserted", (database) =>
         database.insertInto("crm.debts").values(
-          command.dates.map((date, index) => ({
+          pending.map(({ date, id }) => ({
             amount: source.amount,
             created_at: command.occurredAt,
             currency_code: source.currencyCode,
             direction: source.direction,
-            id: command.ids[index]!,
+            id,
             occurrence_on: date,
             person_id: source.personId,
             reason: source.reason ?? null,

@@ -107,8 +107,9 @@ export interface RecurringDebtRepository {
     readonly transaction: GiftTransaction;
   }): Promise<ClaimedRecurringDebt | undefined>;
   /**
-   * One open debt per date, each with the rule's values. A date the rule
-   * already charged is skipped; only the debts inserted now are returned.
+   * One open debt per due month, each with the rule's values. A month the rule
+   * already charged is skipped even if its due day changed. The caller holds
+   * the rule lock; only the debts inserted now are returned.
    */
   charge(command: {
     readonly dates: readonly string[];

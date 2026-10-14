@@ -218,27 +218,30 @@ export function resumedNextOccurrence(
 }
 
 /**
- * Where an edited rule continues. It never charges a period again: the next
- * charge is after the month last charged. A rule whose start did not move also
- * keeps the month it was waiting for, so an edit never revives the periods a
- * pause skipped; a start moved earlier is the member asking for those periods
- * and charges from it.
+ * Where an edited rule continues. An earlier start requests backfill from the
+ * new start; charging skips months that already have debts. Other edits keep
+ * the pending month, clamped to the new start, including unfinished bounded
+ * backfill, so an edit does not revive periods a pause skipped. A rule with no
+ * pending month continues after the last charged month.
  */
 export function changedNextOccurrence(
   current: StoredRecurringDebt,
   schedule: RecurringDebtSchedule,
   lastCharged: string | undefined,
 ): string | undefined {
-  const waiting = current.startsOn === schedule.startsOn &&
-      current.nextOccurrenceOn !== undefined
+  if (schedule.startsOn < current.startsOn) {
+    return firstOccurrenceOnOrAfter(schedule, schedule.startsOn);
+  }
+  const waiting = current.nextOccurrenceOn !== undefined
     ? Temporal.PlainDate.from(current.nextOccurrenceOn).with({ day: 1 })
       .toString()
     : undefined;
   return firstOccurrenceOnOrAfter(
     schedule,
     later(
-      later(schedule.startsOn, waiting),
-      lastCharged === undefined ? undefined : nextMonthStart(lastCharged),
+      schedule.startsOn,
+      waiting ??
+        (lastCharged === undefined ? undefined : nextMonthStart(lastCharged)),
     ),
   );
 }

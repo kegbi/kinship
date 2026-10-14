@@ -36,7 +36,7 @@ import {
 import {
   PostgresWorkspaceCalendarBoundary,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_calendar.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
   requireDatabaseUrl,
@@ -845,6 +845,168 @@ Deno.test({
         audits?.count === 3,
         `rule audits were ${audits?.count}, not create, pause, and delete`,
       );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[GIFTS-001] PostgreSQL earlier-start edits preserve charged months across due-day changes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `backfill-${crypto.randomUUID()}`,
+      );
+      const dependencies = {
+        actors: new PostgresActorRevalidation(),
+        attachments: new PostgresGiftAttachmentBoundary(
+          new PostgresGiftAttachmentTarget(),
+        ),
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date("2026-10-14T10:00:00.000Z") },
+        currencies: new PostgresWorkspaceCurrencyBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        repository: new PostgresGiftRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      };
+      const management = createGiftManagement(dependencies);
+      const created = await management.createRecurringDebt(
+        actor,
+        actor.personId,
+        {
+          amount: "500",
+          currencyCode: "EUR",
+          dayOfMonth: 14,
+          direction: "they_owe",
+          intervalMonths: 1,
+          reason: "Rent",
+          startsOn: "2026-10-14",
+        },
+      );
+      assert(created.status === "created", "create should charge October");
+      const id = created.recurringDebt.id;
+      await sql`
+        update crm.debts set status = 'settled', settled_at = '2026-10-14T10:00:00Z'
+        where recurring_debt_id = ${id}::uuid
+      `;
+      const snapshot = async () =>
+        await sql`
+        select id::text, amount::text, status, occurrence_on::text,
+          settled_at::text, updated_at::text
+        from crm.debts where recurring_debt_id = ${id}::uuid order by occurrence_on
+      `;
+      const original = (await snapshot())[0];
+      const backfilled = await management.changeRecurringDebt(
+        actor,
+        actor.personId,
+        id,
+        {
+          startsOn: "2026-07-22",
+        },
+      );
+      assert(backfilled.status === "saved", "earlier start should save");
+      assertEquals([
+        backfilled.charged,
+        backfilled.recurringDebt.nextOccurrenceOn,
+      ], [2, "2026-11-14"]);
+      assertEquals(
+        (await snapshot()).at(-1),
+        original,
+        "settled October debt remains unchanged",
+      );
+      const moved = await management.changeRecurringDebt(
+        actor,
+        actor.personId,
+        id,
+        {
+          startsOn: "2026-06-22",
+          dayOfMonth: 1,
+        },
+      );
+      assert(moved.status === "saved", "earlier start and day should save");
+      assertEquals([moved.charged, moved.recurringDebt.nextOccurrenceOn], [
+        1,
+        "2026-11-01",
+      ]);
+      assertEquals((await snapshot()).map((row) => row.occurrence_on), [
+        "2026-07-01",
+        "2026-08-14",
+        "2026-09-14",
+        "2026-10-14",
+      ]);
+      // Retrying an earlier-start edit and overlapping workers cannot charge
+      // an existing month even though its original date differs from the rule.
+      const retry = await management.changeRecurringDebt(
+        actor,
+        actor.personId,
+        id,
+        {
+          startsOn: "2026-06-21",
+        },
+      );
+      assert(retry.status === "saved", "retry should save");
+      assertEquals([retry.charged, retry.recurringDebt.nextOccurrenceOn], [
+        0,
+        "2026-11-01",
+      ]);
+      const worker = createRecurringDebtCharging(dependencies);
+      await Promise.all([worker.chargeDue(), worker.chargeDue()]);
+      assertEquals((await snapshot()).length, 4);
+      assertEquals((await snapshot()).at(-1), original);
+
+      // A finished rule with no first occurrence can still backfill an earlier
+      // start up to its end, without leaving a worker cursor after the end.
+      const finished = await management.createRecurringDebt(
+        actor,
+        actor.personId,
+        {
+          amount: "20",
+          currencyCode: "EUR",
+          dayOfMonth: 14,
+          direction: "i_owe",
+          endsOn: "2026-10-15",
+          intervalMonths: 1,
+          startsOn: "2026-10-15",
+        },
+      );
+      assert(finished.status === "created", "finished rule should save");
+      assertEquals(
+        [finished.charged, finished.recurringDebt.nextOccurrenceOn],
+        [0, undefined],
+      );
+      const endedBackfill = await management.changeRecurringDebt(
+        actor,
+        actor.personId,
+        finished.recurringDebt.id,
+        {
+          startsOn: "2026-07-22",
+          endsOn: "2026-09-30",
+        },
+      );
+      assert(endedBackfill.status === "saved", "ended backfill should save");
+      assertEquals([
+        endedBackfill.charged,
+        endedBackfill.recurringDebt.nextOccurrenceOn,
+      ], [2, undefined]);
+      const endedEdit = await management.changeRecurringDebt(
+        actor,
+        actor.personId,
+        finished.recurringDebt.id,
+        { amount: "25" },
+      );
+      assert(endedEdit.status === "saved", "ended rule remains editable");
+      assertEquals([
+        endedEdit.charged,
+        endedEdit.recurringDebt.nextOccurrenceOn,
+      ], [0, undefined]);
     } finally {
       await connection.destroy();
     }

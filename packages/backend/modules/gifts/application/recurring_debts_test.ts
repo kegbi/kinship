@@ -149,7 +149,7 @@ function memoryRepository(
         if (
           debts.some((debt) =>
             debt.recurringDebtId === command.recurringDebt.id &&
-            debt.occurrenceOn === date
+            debt.occurrenceOn?.slice(0, 7) === date.slice(0, 7)
           )
         ) return;
         const debt: StoredDebt = {
@@ -451,6 +451,188 @@ Deno.test("[GIFTS-001] an edit changes later charges and never repeats a charged
     { status: "not-found" },
     "another workspace cannot reach the rule",
   );
+});
+
+Deno.test("[GIFTS-001] moving a charged rule's start earlier backfills only uncharged months", async () => {
+  const { charging, debts, management } = fixture({
+    now: "2026-10-14T10:00:00.000Z",
+  });
+  const created = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    dayOfMonth: 14,
+    startsOn: "2026-10-14",
+  });
+  if (created.status !== "created") throw new Error(created.status);
+  const original = { ...debts[0]! };
+  const id = created.recurringDebt.id;
+  const backfilled = await management.changeRecurringDebt(actor, personId, id, {
+    startsOn: "2026-07-22",
+  });
+  assertEquals(
+    backfilled.status === "saved"
+      ? [backfilled.charged, backfilled.recurringDebt.nextOccurrenceOn]
+      : backfilled.status,
+    [2, "2026-11-14"],
+  );
+  assertEquals(debts.map((debt) => debt.occurrenceOn).sort(), [
+    "2026-08-14",
+    "2026-09-14",
+    "2026-10-14",
+  ]);
+  assertEquals(debts[0], original, "the existing debt remains unchanged");
+  const earlierDay = await management.changeRecurringDebt(actor, personId, id, {
+    dayOfMonth: 1,
+    startsOn: "2026-06-22",
+  });
+  assertEquals(
+    earlierDay.status === "saved"
+      ? [earlierDay.charged, earlierDay.recurringDebt.nextOccurrenceOn]
+      : earlierDay.status,
+    [1, "2026-11-01"],
+  );
+  assertEquals(debts.map((debt) => debt.occurrenceOn).sort(), [
+    "2026-07-01",
+    "2026-08-14",
+    "2026-09-14",
+    "2026-10-14",
+  ], "a changed due day still skips every previously charged month");
+  assertEquals(await charging.chargeDue(), { charged: 0, failed: 0, rules: 0 });
+});
+
+Deno.test("[GIFTS-001] a bounded backfill keeps its pending months through schedule edits", async () => {
+  const { charging, debts, management } = fixture({
+    now: "2026-10-14T10:00:00.000Z",
+  });
+  const created = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    dayOfMonth: 14,
+    startsOn: "2026-10-14",
+  });
+  if (created.status !== "created") throw new Error(created.status);
+  const id = created.recurringDebt.id;
+  const backfilled = await management.changeRecurringDebt(actor, personId, id, {
+    startsOn: "2000-01-14",
+  });
+  assertEquals(
+    backfilled.status === "saved"
+      ? [backfilled.charged, backfilled.recurringDebt.nextOccurrenceOn]
+      : backfilled.status,
+    [120, "2010-01-14"],
+  );
+  const edited = await management.changeRecurringDebt(actor, personId, id, {
+    dayOfMonth: 1,
+  });
+  assertEquals(
+    edited.status === "saved"
+      ? [edited.charged, edited.recurringDebt.nextOccurrenceOn]
+      : edited.status,
+    [120, "2020-01-01"],
+    "changing the day preserves unfinished backfill before the latest charge",
+  );
+  assertEquals(await charging.chargeDue(), {
+    charged: 81,
+    failed: 0,
+    rules: 1,
+  });
+  assertEquals(debts.length, 322);
+  assertEquals(
+    new Set(debts.map((debt) => debt.occurrenceOn!.slice(0, 7))).size,
+    322,
+  );
+  assertEquals(await charging.chargeDue(), { charged: 0, failed: 0, rules: 0 });
+});
+
+Deno.test("[GIFTS-001] moving the start forward retains unfinished bounded backfill", async () => {
+  const { charging, debts, management } = fixture({
+    now: "2026-10-14T10:00:00.000Z",
+  });
+  const created = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    dayOfMonth: 14,
+    startsOn: "2026-10-14",
+  });
+  if (created.status !== "created") throw new Error(created.status);
+  const id = created.recurringDebt.id;
+  const original = { ...debts[0]! };
+  const backfilled = await management.changeRecurringDebt(actor, personId, id, {
+    startsOn: "2000-01-14",
+  });
+  assertEquals(
+    backfilled.status === "saved"
+      ? [backfilled.charged, backfilled.recurringDebt.nextOccurrenceOn]
+      : backfilled.status,
+    [120, "2010-01-14"],
+  );
+  const moved = await management.changeRecurringDebt(actor, personId, id, {
+    startsOn: "2001-01-14",
+  });
+  assertEquals(
+    moved.status === "saved"
+      ? [moved.charged, moved.recurringDebt.nextOccurrenceOn]
+      : moved.status,
+    [120, "2020-01-14"],
+    "the pending backfill continues even when the start moves forward",
+  );
+  assertEquals(await charging.chargeDue(), {
+    charged: 81,
+    failed: 0,
+    rules: 1,
+  });
+  assertEquals(debts.length, 322);
+  assertEquals(
+    new Set(debts.map((debt) => debt.occurrenceOn!.slice(0, 7))).size,
+    322,
+    "every month is charged once across the edits and worker run",
+  );
+  assertEquals(debts[0], original, "the existing October debt is preserved");
+  assertEquals(await charging.chargeDue(), { charged: 0, failed: 0, rules: 0 });
+});
+
+Deno.test("[GIFTS-001] backfill respects ended rules and edits while paused do not charge on resume", async () => {
+  for (const paused of [false, true]) {
+    const { debts, management } = fixture({ now: "2026-10-14T10:00:00.000Z" });
+    const created = await management.createRecurringDebt(actor, personId, {
+      ...monthlyRent,
+      dayOfMonth: 14,
+      endsOn: "2026-10-14",
+      startsOn: "2026-10-14",
+    });
+    if (created.status !== "created") throw new Error(created.status);
+    const id = created.recurringDebt.id;
+    if (paused) {
+      await management.changeRecurringDebt(actor, personId, id, {
+        active: false,
+      });
+    }
+    const edited = await management.changeRecurringDebt(actor, personId, id, {
+      startsOn: "2026-07-22",
+    });
+    assertEquals(
+      edited.status === "saved" ? edited.charged : edited.status,
+      paused ? 0 : 2,
+    );
+    if (paused) {
+      const resumed = await management.changeRecurringDebt(
+        actor,
+        personId,
+        id,
+        { active: true },
+      );
+      assertEquals(
+        resumed.status === "saved" ? resumed.charged : resumed.status,
+        0,
+      );
+      assertEquals(debts.map((debt) => debt.occurrenceOn), ["2026-10-14"]);
+    } else {
+      assertEquals(
+        edited.status === "saved"
+          ? edited.recurringDebt.nextOccurrenceOn
+          : edited.status,
+        undefined,
+      );
+      assertEquals(debts.length, 3);
+    }
+  }
 });
 
 Deno.test("[GIFTS-001] deleting a rule keeps the debts it charged", async () => {

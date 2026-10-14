@@ -146,6 +146,25 @@ test(
     await expect(
       debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),
     ).toHaveCount(3);
+    // Moving the start earlier charges the two missing months while keeping
+    // the three existing debts, even though the new day differs from theirs.
+    start.setUTCMonth(start.getUTCMonth() - 2);
+    await recurring.getByRole("button", { name: "Edit Gym membership" })
+      .click();
+    const editRule = recurring.getByRole("form", {
+      name: "Edit recurring debt",
+    });
+    await editRule.getByLabel("Starts on").fill(
+      start.toISOString().slice(0, 10),
+    );
+    await editRule.getByLabel("Day of month").fill("2");
+    await editRule.getByRole("button", { name: "Save" }).click();
+    await expect(debts.locator("[data-gift-state]")).toHaveText(
+      "Recurring debt saved. 2 debts charged.",
+    );
+    await expect(
+      debts.locator("[data-gift-list] li", { hasText: "Recurring, due" }),
+    ).toHaveCount(5);
     await recurring.getByRole("button", { name: "Pause Gym membership" })
       .click();
     await expect(recurring.getByText("Paused", { exact: true })).toBeVisible();

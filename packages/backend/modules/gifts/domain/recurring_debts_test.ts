@@ -159,7 +159,11 @@ Deno.test("[GIFTS-001] resuming skips the periods that passed while paused", () 
 });
 
 Deno.test("[GIFTS-001] an edited schedule continues after the last charged period", () => {
-  const current = stored({ dayOfMonth: 5, startsOn: "2026-01-05" });
+  const current = stored({
+    dayOfMonth: 5,
+    nextOccurrenceOn: "2026-10-05",
+    startsOn: "2026-01-05",
+  });
   assertEquals(
     changedNextOccurrence(
       current,
@@ -173,7 +177,7 @@ Deno.test("[GIFTS-001] an edited schedule continues after the last charged perio
     changedNextOccurrence(
       stored({ nextOccurrenceOn: "2026-10-05", startsOn: "2026-01-05" }),
       { dayOfMonth: 3, intervalMonths: 1, startsOn: "2026-01-05" },
-      undefined,
+      "2026-09-05",
     ),
     "2026-10-03",
     "an unchanged start keeps the pending period's month",
@@ -200,6 +204,70 @@ Deno.test("[GIFTS-001] an edited schedule continues after the last charged perio
     ),
     undefined,
     "an end before the next period finishes the rule",
+  );
+});
+
+Deno.test("[GIFTS-001] edited cursors backfill earlier starts and keep later starts after charged months", () => {
+  const current = stored({ startsOn: "2026-10-14", dayOfMonth: 14 });
+  assertEquals(
+    changedNextOccurrence(current, {
+      dayOfMonth: 14,
+      intervalMonths: 1,
+      startsOn: "2026-07-22",
+    }, "2026-10-14"),
+    "2026-08-14",
+  );
+  assertEquals(
+    changedNextOccurrence(current, {
+      dayOfMonth: 14,
+      intervalMonths: 1,
+      startsOn: "2026-11-01",
+    }, "2026-10-14"),
+    "2026-11-14",
+  );
+  const { nextOccurrenceOn: _pending, ...finished } = current;
+  for (
+    const [last, expected] of [
+      [undefined, "2026-10-14"],
+      ["2026-10-14", "2026-11-14"],
+    ] as const
+  ) {
+    assertEquals(changedNextOccurrence(finished, finished, last), expected);
+  }
+});
+
+Deno.test("[GIFTS-001] forward start edits clamp pending backfill and retain pause-skipped months", () => {
+  const current = stored({
+    dayOfMonth: 14,
+    nextOccurrenceOn: "2010-01-14",
+    startsOn: "2000-01-14",
+  });
+  for (
+    const [startsOn, expected] of [
+      ["2001-01-14", "2010-01-14"],
+      ["2011-06-22", "2011-07-14"],
+    ] as const
+  ) {
+    assertEquals(
+      changedNextOccurrence(current, {
+        dayOfMonth: 14,
+        intervalMonths: 1,
+        startsOn,
+      }, "2026-10-14"),
+      expected,
+    );
+  }
+  assertEquals(
+    changedNextOccurrence({
+      ...current,
+      nextOccurrenceOn: "2026-11-14",
+    }, {
+      dayOfMonth: 14,
+      intervalMonths: 1,
+      startsOn: "2001-01-14",
+    }, "2026-10-14"),
+    "2026-11-14",
+    "a forward edit keeps the month reached by resuming",
   );
 });
 
