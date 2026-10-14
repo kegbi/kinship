@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   afterEach,
   beforeEach,
@@ -180,7 +181,14 @@ const form = () => element<HTMLFormElement>("#relationship-form");
 const add = () => element<HTMLButtonElement>("#relationship-add");
 const list = () => element<HTMLUListElement>("#relationships-list");
 const typeSelect = () => element<HTMLSelectElement>("#relationship-type");
-const targetSelect = () => element<HTMLSelectElement>("#relationship-target");
+const targetInput = () => element<HTMLInputElement>("#relationship-target");
+const searchInput = () => byId<HTMLInputElement>("relationship-person-search");
+const searchFor = (value = "Person") =>
+  fireEvent.change(searchInput(), { target: { value } });
+const peopleResults = () =>
+  within(form()).queryByRole("listbox")?.textContent ?? "";
+const choosePerson = (name: string) =>
+  fireEvent.click(within(form()).getByRole("option", { name }));
 const givenName = () =>
   within(form()).getByLabelText<HTMLInputElement>("New person given name");
 const byId = <T extends HTMLElement = HTMLButtonElement>(id: string) =>
@@ -374,11 +382,9 @@ describe("RELATIONSHIP-001 relationships island", () => {
       await mount();
       openWithType();
       if (kind === "existing") {
-        fireEvent.click(byId("relationship-person-search-button"));
-        await waitFor(() =>
-          expect(targetSelect().textContent).toContain("Grace")
-        );
-        fireEvent.change(targetSelect(), { target: { value: targetId } });
+        searchFor();
+        await waitFor(() => expect(peopleResults()).toContain("Grace"));
+        choosePerson("Grace");
       } else {
         fireEvent.input(givenName(), { target: { value: "Grace" } });
       }
@@ -393,7 +399,7 @@ describe("RELATIONSHIP-001 relationships island", () => {
       await waitFor(() => expect(form().inert).toBe(false));
       expect(form().hidden).toBe(false);
       expect(givenName().value).toBe(kind === "new" ? "Grace" : "");
-      expect(targetSelect().value).toBe(kind === "existing" ? targetId : "");
+      expect(targetInput().value).toBe(kind === "existing" ? targetId : "");
       expect(state().textContent).toBe("Try again");
       expect(document.activeElement).toBe(state());
     },
@@ -982,44 +988,144 @@ describe("RELATIONSHIP-001 relationships island", () => {
       "Choose or create another person and select a relationship type.",
     );
     expect(document.activeElement).toBe(state());
-    byId<HTMLInputElement>("relationship-person-search").value = "Mystery";
-    fireEvent.click(byId("relationship-person-search-button"));
-    await waitFor(() =>
-      expect(targetSelect().textContent).toContain("Mystery")
-    );
-    expect(targetSelect().textContent).toContain("Unnamed person");
-    expect(document.activeElement).toBe(targetSelect());
+    searchInput().focus();
+    searchFor("Mystery");
+    await waitFor(() => expect(peopleResults()).toContain("Mystery"));
+    expect(peopleResults()).toContain("Unnamed person");
+    expect(document.activeElement).toBe(searchInput());
     expect(
       Object.fromEntries(reads(api, "/api/v1/people")[0]!.url.searchParams),
     )
       .toEqual({ excludePersonId: personId, limit: "20", search: "Mystery" });
   });
 
+  it("finds people while typing and selects a result directly without navigation", async () => {
+    shell();
+    const api = stubApi(routes({
+      [PEOPLE]: people({
+        givenName: "Charles",
+        familyName: "Babbage",
+        id: targetId,
+      }),
+    }));
+    await mount();
+    fireEvent.click(add());
+    const search = within(form()).getByLabelText<HTMLInputElement>(
+      "Search people",
+    );
+    search.focus();
+    fireEvent.change(search, { target: { value: "Charles" } });
+    expect(reads(api, "/api/v1/people")).toHaveLength(0);
+    const result = await within(form()).findByRole("option", {
+      name: "Charles Babbage",
+    });
+    expect(document.activeElement).toBe(search);
+    expect(within(form()).queryByRole("button", { name: "Search people" }))
+      .toBeNull();
+    fireEvent.click(result);
+    expect(search.value).toBe("Charles Babbage");
+    expect(new FormData(form()).get("targetPersonId")).toBe(targetId);
+    expect(writes(api)).toHaveLength(0);
+  });
+
+  it("selects by keyboard, clears a selection when edited, and resets the picker on close", async () => {
+    shell();
+    const api = stubApi(routes({
+      [PEOPLE]: [people({ givenName: "Grace", id: targetId }), people()],
+    }));
+    await mount();
+    openWithType();
+    searchInput().focus();
+    searchFor("Gra");
+    await within(form()).findByRole("option", { name: "Grace" });
+    await expectNoAxeViolations(section());
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(targetInput().value).toBe(targetId);
+    expect(searchInput().value).toBe("Grace");
+    expect(byId("relationship-people-status").textContent).toBe(
+      "Selected: Grace",
+    );
+    expect(writes(api)).toHaveLength(0);
+    fireEvent.change(typeSelect(), { target: { value: typeId } });
+    expect(targetInput().value).toBe(targetId);
+    searchFor("Nobody");
+    expect(targetInput().value).toBe("");
+    await waitFor(() =>
+      expect(byId("relationship-people-status").textContent).toContain(
+        "No matching people",
+      )
+    );
+    await expectNoAxeViolations(section());
+    searchFor("");
+    expect(byId("relationship-people-status").textContent).toContain(
+      "Type a name",
+    );
+    fireEvent.click(byId("relationship-cancel"));
+    fireEvent.click(add());
+    expect(searchInput().value).toBe("");
+    expect(targetInput().value).toBe("");
+    expect(peopleResults()).toBe("");
+    expect(reads(api, "/api/v1/people")).toHaveLength(2);
+  });
+
+  it("debounces rapid edits and retires a pending answer before the next debounce", async () => {
+    shell();
+    const pending = deferred<Response>();
+    const api = stubApi(
+      routes({ [PEOPLE]: [() => pending.promise, people()] }),
+    );
+    await mount();
+    fireEvent.click(add());
+    searchFor("A");
+    searchFor("Al");
+    searchFor("Alice");
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(1));
+    expect(reads(api, "/api/v1/people")[0]!.url.searchParams.get("search"))
+      .toBe("Alice");
+    searchFor("Bob");
+    await act(async () => {
+      pending.resolve(people({ givenName: "Alice", id: targetId }));
+      await pending.promise;
+    });
+    expect(peopleResults()).not.toContain("Alice");
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(2));
+    await waitFor(() =>
+      expect(byId("relationship-people-status").textContent).toContain(
+        "No matching people",
+      )
+    );
+    searchFor("Canceled query");
+    fireEvent.click(byId("relationship-cancel"));
+    fireEvent.click(add());
+    expect(searchInput().value).toBe("");
+  });
+
   it("keeps only the latest existing-person search response", async () => {
     shell();
     const older = deferred<Response>();
     const newer = deferred<Response>();
-    stubApi(routes({ [PEOPLE]: [() => older.promise, () => newer.promise] }));
+    const api = stubApi(
+      routes({ [PEOPLE]: [() => older.promise, () => newer.promise] }),
+    );
     await mount();
     fireEvent.click(add());
-    const search = byId<HTMLInputElement>("relationship-person-search");
     const submit = within(form()).getByRole<HTMLButtonElement>("button", {
       name: "Save relationship",
     });
-    search.value = "Private Alice";
-    fireEvent.click(byId("relationship-person-search-button"));
-    expect(targetSelect().disabled).toBe(true);
+    searchFor("Private Alice");
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(1));
+    expect(searchInput().disabled).toBe(false);
     expect(submit.disabled).toBe(true);
     expect(givenName().disabled).toBe(true);
     expect(state().textContent).toBe("Searching people…");
     expect(section().dataset.sectionState).toBe("loading");
-    search.value = "Bob";
-    fireEvent.click(byId("relationship-person-search-button"));
+    searchFor("Bob");
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(2));
     await act(async () => {
       newer.resolve(people({ givenName: "Bob", id: targetId }));
       await newer.promise;
     });
-    await waitFor(() => expect(targetSelect().textContent).toContain("Bob"));
+    await waitFor(() => expect(peopleResults()).toContain("Bob"));
     await act(async () => {
       older.resolve(people({
         givenName: "Private Alice",
@@ -1027,9 +1133,9 @@ describe("RELATIONSHIP-001 relationships island", () => {
       }));
       await older.promise;
     });
-    expect(targetSelect().textContent).toContain("Bob");
-    expect(targetSelect().textContent).not.toContain("Private Alice");
-    expect(targetSelect().disabled).toBe(false);
+    expect(peopleResults()).toContain("Bob");
+    expect(peopleResults()).not.toContain("Private Alice");
+    expect(searchInput().disabled).toBe(false);
     expect(submit.disabled).toBe(false);
   });
 
@@ -1043,35 +1149,34 @@ describe("RELATIONSHIP-001 relationships island", () => {
     await mount();
     fireEvent.click(add());
     const search = byId<HTMLInputElement>("relationship-person-search");
-    search.value = "Charles";
-    fireEvent.click(byId("relationship-person-search-button"));
+    search.focus();
+    searchFor("Charles");
     await waitFor(() =>
       expect(state().textContent).toBe(
         "People search is temporarily unavailable. Try again.",
       )
     );
-    expect(document.activeElement).toBe(state());
+    expect(document.activeElement).toBe(search);
     expect(section().dataset.sectionState).toBe("error");
-    expect(targetSelect().disabled).toBe(true);
+    expect(searchInput().disabled).toBe(false);
     expect(search.value).toBe("Charles");
-    fireEvent.click(byId("relationship-person-search-button"));
-    await waitFor(() =>
-      expect(targetSelect().textContent).toContain("Charles")
-    );
+    searchFor("Charle");
+    await waitFor(() => expect(peopleResults()).toContain("Charles"));
     expect(section().dataset.sectionState).toBe("ready");
   });
 
   it("does not repopulate people after an authoritative hidden response", async () => {
     shell();
     const pending = deferred<Response>();
-    stubApi(routes({
+    const api = stubApi(routes({
       [LIST]: [listed([relationship]), listed([], "hidden")],
       [PEOPLE]: () => pending.promise,
       [UPDATE]: changed(),
     }));
     await mount();
     fireEvent.click(add());
-    fireEvent.click(byId("relationship-person-search-button"));
+    searchFor();
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(1));
     fireEvent.click(rowButton("Save relationship with Ada Lovelace"));
     await waitFor(() => expect(section().hidden).toBe(true));
     expect(document.activeElement).toBe(element("#main-content"));
@@ -1082,7 +1187,7 @@ describe("RELATIONSHIP-001 relationships island", () => {
       }));
       await pending.promise;
     });
-    expect(targetSelect().textContent).not.toContain("Hidden identity");
+    expect(peopleResults()).not.toContain("Hidden identity");
     expect(section().hidden).toBe(true);
     expect(summary.railCount("relationships")).toBeUndefined();
     expect(summary.railEmpty("relationships")).toBe(false);
@@ -1091,10 +1196,11 @@ describe("RELATIONSHIP-001 relationships island", () => {
   it("does not let a prior mount's people search reach a fresh editor", async () => {
     shell();
     const pending = deferred<Response>();
-    stubApi(routes({ [PEOPLE]: () => pending.promise }));
+    const api = stubApi(routes({ [PEOPLE]: () => pending.promise }));
     const unmount = await mount();
     fireEvent.click(add());
-    fireEvent.click(byId("relationship-person-search-button"));
+    searchFor();
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(1));
     unmount();
     // The island took the shell over; a new mount starts from a new shell.
     shell();
@@ -1106,7 +1212,7 @@ describe("RELATIONSHIP-001 relationships island", () => {
       }));
       await pending.promise;
     });
-    expect(targetSelect().textContent).not.toContain("Prior mount identity");
+    expect(peopleResults()).not.toContain("Prior mount identity");
   });
 
   it("renders inverse-aware people and locally refreshes create, update, and unlink", async () => {
@@ -1253,11 +1359,9 @@ describe("RELATIONSHIP-001 relationships island", () => {
       ]
     ) {
       openWithType();
-      fireEvent.click(byId("relationship-person-search-button"));
-      await waitFor(() =>
-        expect(targetSelect().textContent).toContain("Charles Babbage")
-      );
-      fireEvent.change(targetSelect(), { target: { value: targetId } });
+      searchFor();
+      await waitFor(() => expect(peopleResults()).toContain("Charles Babbage"));
+      choosePerson("Charles Babbage");
       fireEvent.submit(form());
       await waitFor(() => expect(state().textContent).toBe(notice));
       expect(document.activeElement).toBe(state());
@@ -1313,8 +1417,9 @@ describe("RELATIONSHIP-001 relationships island", () => {
     ).toBeUndefined();
     fireEvent.click(byId("relationship-select-existing"));
     expect(choices.hidden).toBe(true);
-    await waitFor(() => expect(document.activeElement).toBe(targetSelect()));
-    expect(targetSelect().textContent).toContain("Grace");
+    await waitFor(() => expect(peopleResults()).toContain("Grace"));
+    expect(document.activeElement).toBe(searchInput());
+    expect(peopleResults()).toContain("Grace");
     expect(reads(api, "/api/v1/people")[0]?.url.searchParams.get("search"))
       .toBe("Grace");
     fireEvent.submit(form());
@@ -1549,7 +1654,7 @@ describe("RELATIONSHIP-001 relationships island", () => {
     shell();
     const found = deferred<Response>();
     const typePage = deferred<Response>();
-    stubApi({
+    const api = stubApi({
       [TYPES]: [types([parentType]), () => typePage.promise],
       [LIST]: listed([relationship], "ready", {
         nextCursor: "next-relationships",
@@ -1559,7 +1664,8 @@ describe("RELATIONSHIP-001 relationships island", () => {
     await mount();
     fireEvent.click(add());
     givenName().value = "Sensitive draft";
-    fireEvent.click(byId("relationship-person-search-button"));
+    searchFor();
+    await waitFor(() => expect(reads(api, "/api/v1/people")).toHaveLength(1));
     fireEvent.click(byId("relationship-type-search-button"));
 
     archive();
@@ -1705,7 +1811,7 @@ describe("RELATIONSHIP-001 relationships island", () => {
     restore("2026-08-16T12:04:00.000000Z");
     await waitFor(() => expect(section().dataset.sectionState).toBe("ready"));
     fireEvent.click(add());
-    fireEvent.click(byId("relationship-person-search-button"));
+    searchFor();
     add().focus();
     fireEvent.submit(form());
     expect(document.activeElement).toBe(state());

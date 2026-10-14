@@ -68,17 +68,23 @@ test(
         url.searchParams.get("search") === "Charles";
     });
     await section.getByLabel("Search people").fill("Charles");
-    const searchPeople = section.getByRole("button", {
+    expect((await peopleResponse).ok()).toBe(true);
+    const result = section.getByRole("option", {
+      name: "Charles Babbage",
+      exact: true,
+    });
+    await expect(result).toBeVisible();
+    const peoplePicker = section.getByRole("combobox", {
       name: "Search people",
       exact: true,
     });
-    await searchPeople.focus();
-    await searchPeople.press("Enter");
-    expect((await peopleResponse).ok()).toBe(true);
-    await expect(
-      section.locator(`#relationship-target option[value="${targetId}"]`),
-    ).toHaveText("Charles Babbage");
-    await section.getByLabel("Related person").selectOption(targetId);
+    await expect(peoplePicker).toBeFocused();
+    await peoplePicker.press("ArrowDown");
+    await peoplePicker.press("Enter");
+    await expect(peoplePicker).toHaveValue("Charles Babbage");
+    await expect(relationshipForm.locator('[name="targetPersonId"]'))
+      .toHaveValue(targetId);
+    await expect(page).toHaveURL(sourcePath);
     await relationshipType.selectOption({ label: "parent / child" });
     const calls: string[] = [];
     page.on("request", (outgoing) => {

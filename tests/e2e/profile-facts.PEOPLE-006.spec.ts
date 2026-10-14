@@ -588,22 +588,20 @@ test(
 
     await page.route("**/api/v1/people?*", (route) => route.abort("failed"));
     await form.getByLabel("Search people", { exact: true }).fill("Charles");
-    await form.getByRole("button", { name: "Search people", exact: true })
-      .click();
     await expect(feedback).toHaveText(
       "People search is temporarily unavailable. Try again.",
     );
-    await expect(feedback).toBeFocused();
+    await expect(form.getByLabel("Search people", { exact: true }))
+      .toBeFocused();
     await expect(form.getByLabel("Search people", { exact: true })).toHaveValue(
       "Charles",
     );
     await page.unroute("**/api/v1/people?*");
-    await form.getByRole("button", { name: "Search people", exact: true })
-      .click();
-    await form.getByRole("combobox", { name: "Related person", exact: true })
-      .selectOption({
-        label: "Charles",
-      });
+    await form.getByLabel("Search people", { exact: true }).fill("Charle");
+    await form.getByRole("option", { name: "Charles", exact: true }).click();
+    await expect(form.getByLabel("Search people", { exact: true })).toHaveValue(
+      "Charles",
+    );
     await form.getByRole("combobox", { name: "Relationship type", exact: true })
       .selectOption({
         index: 1,
@@ -621,8 +619,7 @@ test(
     );
     await expect(feedback).toBeFocused();
     await page.unroute("**/relationships");
-    await form.getByRole("combobox", { name: "Related person", exact: true })
-      .selectOption("");
+    await form.getByLabel("Search people", { exact: true }).fill("");
     await form.getByLabel("New person given name", { exact: true }).fill(
       "Draft person",
     );

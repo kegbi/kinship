@@ -250,7 +250,6 @@ describe("GAP-031 relationships view", () => {
     expect(
       relationshipsView(reduce(searching, { type: "people-failed" })),
     ).toMatchObject({
-      announce: "state",
       kind: "search-error",
       peopleLocked: true,
       text: PEOPLE_UNAVAILABLE,
@@ -359,7 +358,7 @@ describe("GAP-031 relationships reducer", () => {
       type: "choose",
       typeId,
     });
-    const found = reduce(opened, { type: "people-loading" }, {
+    const found = reduce(opened, { type: "people-query", query: "Grace" }, {
       people: [{ id: "p", name: "Grace" }],
       type: "people-found",
     });
@@ -369,7 +368,7 @@ describe("GAP-031 relationships reducer", () => {
       targetId: "",
       typeId,
     });
-    expect(found.focus?.target).toBe("target");
+    expect(found.focus?.target).toBe(opened.focus?.target);
     expect(reduce(opened, { type: "people-failed" })).toBe(opened);
     const closedWhileSearching = reduce(
       opened,

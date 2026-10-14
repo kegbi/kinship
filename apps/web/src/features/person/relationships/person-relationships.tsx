@@ -34,6 +34,14 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 import {
+  Combobox,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox.tsx";
+import { Search } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar.tsx";
+import {
   createRelatedPersonRelationship,
   createRelationship,
   deleteRelationship,
@@ -58,6 +66,7 @@ import {
   requestRailEditorOpen,
 } from "../../../lib/rail-editors.ts";
 import { saveWithLockedForm } from "../../../lib/unsaved-changes.ts";
+import { nameInitials } from "../../../lib/person-name.ts";
 import { Quiet } from "../facts/fact-list.tsx";
 import { setRailCount, setRailEmpty } from "../profile-summary.ts";
 import { sectionHidden, type SectionMount } from "../section-mounts.ts";
@@ -136,7 +145,6 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
   const familyNameInput = useRef<HTMLInputElement>(null);
   const typeSelect = useRef<HTMLSelectElement>(null);
   const selectExisting = useRef<HTMLButtonElement>(null);
-  const target = useRef<HTMLSelectElement>(null);
   const settled = useRef(props.onSettled);
 
   const typeRequest = (
@@ -252,7 +260,6 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
   };
 
   const findPeople = async (term: string): Promise<void> => {
-    dispatch({ type: "people-loading" });
     const answer = await peopleRequest(() =>
       listPeople(
         { excludePersonId: personId, limit: PAGE, search: term },
@@ -272,6 +279,22 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
       type: "people-found",
     });
   };
+
+  const searchPeople = useEffectEvent((term: string) => findPeople(term));
+  const editorOpen = editorVisible(state);
+  useEffect(() => {
+    // Retire the old answer before the debounce, including when cleared or closed.
+    void peopleRequest(retired);
+    if (!editorOpen || state.targetId || !state.peopleQuery.trim()) return;
+    const timer = setTimeout(
+      () => void searchPeople(state.peopleQuery.trim()),
+      250,
+    );
+    return () => {
+      clearTimeout(timer);
+      void peopleRequest(retired);
+    };
+  }, [editorOpen, peopleRequest, state.peopleQuery, state.targetId]);
 
   // The first read starts in the loading state the island mounted with.
   const first = useEffectEvent(() => readAll());
@@ -323,7 +346,7 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
       list: list.current,
       "select-existing": selectExisting.current,
       state: stateLine.current,
-      target: target.current,
+      target: peopleSearch.current,
       type: typeSelect.current,
     }[focus];
     element?.focus();
@@ -679,42 +702,89 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
       >
         <fieldset disabled={!writable}>
           <legend>Choose an existing person</legend>
-          <label>
-            Search people{" "}
+          <Combobox
+            autoHighlight
+            disabled={!writable}
+            filter={null}
+            inline
+            inputValue={state.peopleQuery}
+            items={state.candidates}
+            itemToStringLabel={(person) => person.name}
+            isItemEqualToValue={(a, b) => a.id === b.id}
+            onInputValueChange={(query, details) => {
+              if (
+                details.reason === "input-change" ||
+                details.reason === "input-clear"
+              ) {
+                dispatch({ query, type: "people-query" });
+              }
+            }}
+            onValueChange={(person) => {
+              if (person) dispatch({ targetId: person.id, type: "choose" });
+            }}
+            open={editorOpen && !state.targetId && !!state.peopleQuery.trim()}
+            value={state.candidates.find((person) =>
+              person.id === state.targetId
+            ) ?? null}
+          >
+            <label htmlFor="relationship-person-search">Search people</label>
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute top-3 left-3 size-4 text-muted-foreground"
+              />
+              <ComboboxInput
+                aria-describedby="relationship-people-status"
+                aria-expanded={editorOpen && !state.targetId &&
+                  state.candidates.length > 0}
+                className="pl-10!"
+                id="relationship-person-search"
+                maxLength={200}
+                placeholder="Search by name…"
+                ref={peopleSearch}
+                type="search"
+              />
+            </div>
             <input
               disabled={!writable}
-              id="relationship-person-search"
-              maxLength={200}
-              ref={peopleSearch}
-              type="search"
-            />
-          </label>
-          <Button
-            disabled={!writable}
-            id="relationship-person-search-button"
-            onClick={() => void findPeople(peopleSearch.current!.value)}
-            type="button"
-            variant="outline"
-          >
-            Search people
-          </Button>
-          <label>
-            Related person{" "}
-            <select
-              disabled={locked}
               id="relationship-target"
               name="targetPersonId"
-              onChange={(event) =>
-                dispatch({ targetId: event.target.value, type: "choose" })}
-              ref={target}
+              type="hidden"
               value={state.targetId}
-            >
-              <option value="">Select existing person</option>
-              {state.candidates.map((person) => (
-                <option key={person.id} value={person.id}>{person.name}</option>
-              ))}
-            </select>
-          </label>
+            />
+            {!state.targetId && state.candidates.length > 0
+              ? (
+                <ComboboxList aria-label="People results">
+                  {(person: { readonly id: string; readonly name: string }) => (
+                    <ComboboxItem key={person.id} value={person}>
+                      <Avatar initials={nameInitials(person.name)} />
+                      <strong className="min-w-0 wrap-anywhere">
+                        {person.name}
+                      </strong>
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              )
+              : null}
+          </Combobox>
+          <p
+            aria-live="polite"
+            className="m-0 text-sm text-muted-foreground"
+            id="relationship-people-status"
+            role="status"
+          >
+            {state.targetId
+              ? `Selected: ${state.peopleQuery}`
+              : state.people === "loading"
+              ? "Searching people…"
+              : state.people === "error"
+              ? "People search is temporarily unavailable. Edit the search to try again."
+              : state.peopleQuery.trim()
+              ? state.candidates.length
+                ? `${state.candidates.length} people found. Use arrow keys and Enter to select.`
+                : "No matching people. Try another name or create a related person below."
+              : "Type a name to find a person in this workspace."}
+          </p>
         </fieldset>
         <fieldset disabled={!writable}>
           <legend>Or create a new related person</legend>
@@ -834,9 +904,13 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
               const draft = state.duplicate;
               if (!draft) return;
               dispatch({ type: "dismiss-duplicate" });
-              void findPeople(
-                [draft.givenName, draft.familyName].filter(Boolean).join(" "),
-              );
+              dispatch({
+                query: [draft.givenName, draft.familyName].filter(Boolean).join(
+                  " ",
+                ),
+                type: "people-query",
+              });
+              peopleSearch.current?.focus();
             }}
             ref={selectExisting}
             type="button"

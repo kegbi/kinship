@@ -774,7 +774,7 @@ flows:
     trigger: The member edits a relationship from a person workspace.
     preconditions: [source-person-in-active-workspace]
     steps:
-      - Select an existing person or create a new related person.
+      - Find an existing person as you type and select a result by pointer or keyboard, or create a new related person.
       - Select a workspace relationship type.
       - Validate both endpoints belong to the active workspace.
       - Create or update the directional relationship and inverse display.

@@ -215,6 +215,7 @@ export interface RelationshipsState {
   readonly typeSearch: string;
   /** The existing people the editor offers, from its last search. */
   readonly candidates: readonly PersonChoice[];
+  readonly peopleQuery: string;
   /** Whether the reader has the editor open. */
   readonly editorOpen: boolean;
   /**
@@ -266,6 +267,7 @@ export type RelationshipsAction =
   }
   | { readonly type: "types-failed"; readonly detail: string | undefined }
   | { readonly type: "people-loading" }
+  | { readonly type: "people-query"; readonly query: string }
   | { readonly type: "people-found"; readonly people: readonly PersonChoice[] }
   | { readonly type: "people-failed" }
   | { readonly type: "open" }
@@ -308,6 +310,7 @@ export function initialRelationshipsState(
     list: "loading",
     listProblem: "",
     people: "idle",
+    peopleQuery: "",
     personStatus: archived ? "archived" : "ready",
     previous: [],
     reserved: false,
@@ -354,6 +357,7 @@ function withoutDraft(state: RelationshipsState): RelationshipsState {
     duplicate: undefined,
     editorOpen: false,
     people: "idle",
+    peopleQuery: "",
     reserved: false,
     selectedTypes: [],
     targetId: "",
@@ -465,8 +469,16 @@ export function relationshipsReducer(
         typeProblem: action.detail ?? TYPES_UNAVAILABLE,
         types: "error",
       };
+    case "people-query":
+      return {
+        ...redrawn(state),
+        candidates: [],
+        people: action.query.trim() ? "loading" : "idle",
+        peopleQuery: action.query,
+        targetId: "",
+      };
     case "people-loading":
-      return { ...redrawn(state), people: "loading" };
+      return { ...redrawn(state), candidates: [], people: "loading" };
     case "people-found":
     case "people-failed": {
       if (state.people !== "loading") return state;
@@ -482,9 +494,7 @@ export function relationshipsReducer(
       return {
         ...redrawn(state),
         candidates: action.people,
-        focus: focus(state, "target"),
         people: "idle",
-        targetId: "",
       };
     }
     case "open":
@@ -494,7 +504,9 @@ export function relationshipsReducer(
         ...state,
         duplicate: undefined,
         editorOpen: false,
-        people: state.people === "loading" ? "idle" as const : state.people,
+        candidates: [],
+        people: "idle" as const,
+        peopleQuery: "",
         reserved: false,
         targetId: "",
         typeId: "",
@@ -504,7 +516,14 @@ export function relationshipsReducer(
     case "choose":
       return {
         ...state,
-        ...(action.targetId !== undefined ? { targetId: action.targetId } : {}),
+        ...(action.targetId !== undefined
+          ? {
+            targetId: action.targetId,
+            peopleQuery:
+              state.candidates.find((person) => person.id === action.targetId)
+                ?.name ?? "",
+          }
+          : {}),
         ...(action.typeId !== undefined ? { typeId: action.typeId } : {}),
       };
     case "notice":
@@ -634,7 +653,6 @@ export function relationshipsView(
   if (state.people === "error") {
     return {
       ...base,
-      announce: "state",
       kind: "search-error",
       peopleLocked: true,
       sectionState: "error",
