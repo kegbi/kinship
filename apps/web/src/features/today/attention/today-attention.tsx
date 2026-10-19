@@ -118,6 +118,31 @@ export interface TodayAttentionProps {
   readonly onSettled?: () => void;
 }
 
+function Metadata(props: {
+  readonly item: TodayAttentionItem;
+  readonly text: string;
+}) {
+  const { item, text } = props;
+  const href = attentionDestination(item);
+  return (
+    <p>
+      {text}
+      {item.person && (
+        <>
+          {" · "}
+          {href
+            ? (
+              <a className="today-touch-target" href={href}>
+                {item.person.name}
+              </a>
+            )
+            : item.person.name}
+        </>
+      )}
+    </p>
+  );
+}
+
 export function TodayAttention(props: TodayAttentionProps) {
   const [state, dispatch] = useReducer(
     attentionReducer,
@@ -233,7 +258,7 @@ export function TodayAttention(props: TodayAttentionProps) {
       key={`${item.kind}:${item.id}`}
     >
       <Title item={item} />
-      <p>{attentionMeta(item, preferences)}</p>
+      <Metadata item={item} text={attentionMeta(item, preferences)} />
       {completable(item)
         ? (
           <div className={formActionsVariants()}>
@@ -373,7 +398,7 @@ export function TodayAttention(props: TodayAttentionProps) {
                 key={`${item.kind}:${item.id}`}
               >
                 <Title item={item} />
-                <p>{upcomingMeta(item, preferences)}</p>
+                <Metadata item={item} text={upcomingMeta(item, preferences)} />
               </li>
             ))}
           </ul>

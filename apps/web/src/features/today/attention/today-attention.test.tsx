@@ -156,6 +156,66 @@ afterEach(() => {
 });
 
 describe("PLANNING-001 Today attention island", () => {
+  it("links the complete person name independently in next-seven-days and upcoming reminders", async () => {
+    todayShell();
+    const named = { ...person, name: "Ada · Lovelace" };
+    const birthday = {
+      channel: "in_app",
+      dueAt: "2026-10-23T09:00:00Z",
+      id: uuid(1),
+      kind: "important-date",
+      occursOn: "2026-11-22",
+      person: named,
+      reminderStatus: "pending",
+      title: "Birthday",
+    };
+    const items = [
+      birthday,
+      {
+        ...birthday,
+        id: uuid(2),
+        title: "Unavailable birthday",
+        person: { ...named, unavailable: true },
+      },
+      {
+        ...birthday,
+        id: uuid(3),
+        title: "Personless birthday",
+        person: undefined,
+      },
+    ];
+    routes(attention([], items, {
+      attention: { nextSevenDays: items, overdue: [], today: [] },
+    }));
+    await mount();
+    for (const list of [element("#today-next-seven-list"), upcomingList()]) {
+      const birthdayRow = row(list, "Birthday");
+      const personLink = within(birthdayRow).getByRole<HTMLAnchorElement>(
+        "link",
+        { name: named.name },
+      );
+      expect(personLink.getAttribute("href")).toBe(
+        `/app/people/${personId}?section=important-dates`,
+      );
+      expect(
+        within(birthdayRow).getByRole("link", {
+          name: "Birthday",
+        }),
+      ).not.toBe(personLink);
+      expect(personLink.tabIndex).toBe(0);
+      expect(personLink.classList).toContain("today-touch-target");
+      expect(birthdayRow.textContent).toContain(
+        "Reminder due Oct 23, 2026, 9:00 AM",
+      );
+      expect(birthdayRow.textContent).toContain("Important date Nov 22, 2026");
+      expect(row(list, "Unavailable birthday").textContent).toContain(
+        named.name,
+      );
+      expect(row(list, "Unavailable birthday").querySelector("a")).toBeNull();
+      expect(row(list, "Personless birthday").querySelector("a")).toBeNull();
+    }
+  });
+
   it("does nothing when the Today regions are absent", async () => {
     drawShell("<p>Other page</p>");
     const unmount = await mount();
@@ -256,7 +316,8 @@ describe("PLANNING-001 Today attention island", () => {
     expect(reads(api)).toHaveLength(1);
     for (const list of [overdue(), upcomingList()]) {
       const link = (title: string) =>
-        within(row(list, title)).getByRole("link").getAttribute("href");
+        within(row(list, title)).getByRole("link", { name: title })
+          .getAttribute("href");
       expect(link("Call Ada")).toBe(`/app/people/${personId}?section=tasks`);
       expect(link("Archived")).toBe(`/app/people/${personId}?section=tasks`);
       expect(row(list, "Unavailable").textContent).toContain("Ada Lovelace");
@@ -303,7 +364,9 @@ describe("PLANNING-001 Today attention island", () => {
       expect(computed.maxInlineSize).toBe("100%");
       expect(computed.width).not.toBe("100%");
     }
-    const longLink = within(row(overdue(), longTitle)).getByRole("link");
+    const longLink = within(row(overdue(), longTitle)).getByRole("link", {
+      name: longTitle,
+    });
     const longStyle = getComputedStyle(longLink);
     expect(longLink.textContent).toHaveLength(500);
     expect(longLink.tabIndex).toBe(0);
@@ -444,12 +507,14 @@ describe("PLANNING-001 Today attention island", () => {
     ]));
     await mount();
     const failed = row(overdue(), "Failed");
-    expect(failed.textContent).toContain("Email reminder not delivered · Due");
+    expect(failed.textContent).toContain(
+      "Email reminder not delivered · Reminder due",
+    );
     expect(
       within(failed).getByRole("link", { name: "Failed" }).getAttribute("href"),
     ).toBe(`/app/people/${personId}?section=reminders`);
     expect(row(overdue(), "Unclear").textContent).toContain(
-      "Email reminder needs attention · Due",
+      "Email reminder needs attention · Reminder due",
     );
     // Each can be dismissed (REL-088); neither is a task to complete.
     expect(

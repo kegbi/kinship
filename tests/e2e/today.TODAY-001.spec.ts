@@ -7,6 +7,89 @@ import { expectAccessible } from "./support/page-checks.ts";
 import { submitSignIn } from "./support/sign-in.ts";
 
 test(
+  "[TODAY-001] distinguishes advance reminder dates and opens their person names",
+  { annotation: [{ type: "flow", description: "TODAY-001" }] },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(90_000);
+    const email = `today-reminder-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Reminder",
+      lastName: "Reviewer",
+      workspaceName: "Reminder dates",
+    }, bareToken);
+    await submitSignIn(page, email);
+    const personId = await createPerson(page.request, {
+      givenName: "Ada ·",
+      familyName: "Lovelace",
+    });
+    // Fix only the clocked projection so these advance reminders remain in
+    // the same visible groups regardless of when this browser regression runs.
+    const reminders = [
+      {
+        dueAt: "2026-10-23T09:00:00Z",
+        occursOn: "2026-11-22",
+        title: "Birthday in November",
+      },
+      {
+        dueAt: "2026-10-21T09:00:00Z",
+        occursOn: "2026-10-28",
+        title: "Birthday in October",
+      },
+    ].map((item) => ({
+      ...item,
+      channel: "in_app",
+      id: crypto.randomUUID(),
+      kind: "important-date",
+      person: { archived: false, id: personId, name: "Ada · Lovelace" },
+      reminderStatus: "pending",
+    }));
+    await page.route("**/api/v1/today/attention", (route) =>
+      route.fulfill({
+        json: {
+          attention: { nextSevenDays: reminders, overdue: [], today: [] },
+          date: "2026-10-19",
+          status: "ready",
+          timezone: "Europe/Belgrade",
+          upcoming: reminders,
+        },
+      }));
+    await page.goto("/app");
+    for (const selector of ["#today-next-seven-list", "#today-upcoming-list"]) {
+      for (
+        const [title, date] of [
+          ["Birthday in November", "Nov 22, 2026"],
+          ["Birthday in October", "Oct 28, 2026"],
+        ] as const
+      ) {
+        const row = page.locator(`${selector} li`, { hasText: title });
+        await expect(row).toContainText("Reminder due Oct");
+        await expect(row).toContainText(`Important date ${date}`);
+        const name = row.getByRole("link", {
+          name: "Ada · Lovelace",
+          exact: true,
+        });
+        await expect(name).toHaveAttribute(
+          "href",
+          `/app/people/${personId}?section=important-dates`,
+        );
+        await name.focus();
+        await page.keyboard.press("Enter");
+        await expect(page).toHaveURL(
+          `/app/people/${personId}?section=important-dates`,
+        );
+        await expect(
+          page.getByRole("heading", { name: "Ada · Lovelace", exact: true }),
+        ).toBeVisible();
+        await page.goBack();
+        await expect(row).toBeVisible();
+      }
+    }
+    await expectAccessible(page);
+  },
+);
+
+test(
   "[TODAY-001] reviews and advances today's relationship priorities",
   {
     annotation: [

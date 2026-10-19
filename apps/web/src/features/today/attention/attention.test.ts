@@ -457,6 +457,59 @@ describe("GAP-033 Today attention reducer", () => {
 });
 
 describe("GAP-033 Today attention presentation", () => {
+  it("distinguishes advance reminder timing from the actual date without timezone shifts", () => {
+    for (const meta of [attentionMeta, upcomingMeta]) {
+      for (
+        const effectiveTimezone of [
+          "UTC",
+          "America/Los_Angeles",
+          "Pacific/Kiritimati",
+        ]
+      ) {
+        for (
+          const [dueAt, occursOn, expected] of [
+            ["2026-10-23T09:00:00Z", "2026-11-22", "Nov 22, 2026"],
+            ["2026-10-21T09:00:00Z", "2026-10-28", "Oct 28, 2026"],
+          ] as const
+        ) {
+          const item: TodayAttentionItem = {
+            channel: "in_app",
+            dueAt,
+            id: "birthday",
+            kind: "important-date",
+            occursOn,
+            person,
+            reminderStatus: "pending",
+            title: "Birthday",
+          };
+          const text = meta(item, { effectiveTimezone, locale: "en" });
+          expect(text).toContain("Reminder due ");
+          expect(text).toContain(`Important date ${expected}`);
+          expect(text).not.toContain(person.name);
+          const retry: TodayAttentionItem = {
+            ...item,
+            dueAt: "2026-11-23T00:30:00Z",
+            reminderStatus: "retry",
+          };
+          expect(meta(retry, { effectiveTimezone, locale: "en" })).toContain(
+            `Important date ${expected}`,
+          );
+        }
+      }
+      expect(meta({
+        channel: "in_app",
+        dueAt: "2026-10-23T09:00:00Z",
+        id: "event",
+        kind: "life-event",
+        occursOn: "2026-11-22",
+        reminderStatus: "pending",
+        title: "Moved home",
+      }, utc)).toBe(
+        "Reminder due Oct 23, 2026, 9:00 AM · Event date Nov 22, 2026",
+      );
+    }
+  });
+
   it("links each kind to the person section that owns it", () => {
     const kinds = [
       ["task", "tasks"],
@@ -488,9 +541,9 @@ describe("GAP-033 Today attention presentation", () => {
     ).toBeUndefined();
   });
 
-  it("describes when an item is due, for whom, and a cadence's last contact", () => {
+  it("describes when an item is due and a cadence's last contact separately from its person", () => {
     const due = "Aug 20, 2026, 9:00 AM";
-    expect(attentionMeta(task("a"), utc)).toBe(`Due ${due} · Ada Lovelace`);
+    expect(attentionMeta(task("a"), utc)).toBe(`Due ${due}`);
     expect(attentionMeta(task("a", { person: undefined }), utc)).toBe(
       `Due ${due}`,
     );
@@ -502,7 +555,7 @@ describe("GAP-033 Today attention presentation", () => {
       title: "Reconnect",
     } as const;
     expect(attentionMeta(cadence, utc)).toBe(
-      `Reconnect by ${due} · Ada Lovelace · No contact recorded`,
+      `Reconnect by ${due} · No contact recorded`,
     );
     expect(
       attentionMeta({
@@ -511,9 +564,9 @@ describe("GAP-033 Today attention presentation", () => {
         person: { ...person, archived: true },
       }, utc),
     ).toBe(
-      `Reconnect by ${due} · Ada Lovelace · Last contact ${due} · archived`,
+      `Reconnect by ${due} · Last contact ${due} · archived`,
     );
-    expect(upcomingMeta(task("a"), utc)).toBe(`${due} · Ada Lovelace`);
+    expect(upcomingMeta(task("a"), utc)).toBe(due);
     expect(upcomingMeta(task("a", { person: undefined }), undefined)).toBe(
       "Time unavailable",
     );
@@ -535,22 +588,22 @@ describe("GAP-033 Today attention presentation", () => {
       title: "Call Ada",
     });
     expect(attentionMeta(reminder("email", "failed"), utc)).toBe(
-      `Email reminder not delivered · Due ${due} · Ada Lovelace`,
+      `Email reminder not delivered · Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
     expect(attentionMeta(reminder("email", "manual_attention"), utc)).toBe(
-      `Email reminder needs attention · Due ${due} · Ada Lovelace`,
+      `Email reminder needs attention · Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
     expect(upcomingMeta(reminder("email", "failed"), utc)).toBe(
-      `Email reminder not delivered · ${due} · Ada Lovelace`,
+      `Email reminder not delivered · Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
     expect(attentionMeta(reminder("in_app", "failed"), utc)).toBe(
-      `Due ${due} · Ada Lovelace`,
+      `Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
     expect(upcomingMeta(reminder("in_app", "pending"), utc)).toBe(
-      `${due} · Ada Lovelace`,
+      `Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
     expect(upcomingMeta(reminder("email", "retry"), utc)).toBe(
-      `${due} · Ada Lovelace`,
+      `Reminder due ${due} · Occurs on Aug 20, 2026`,
     );
   });
 

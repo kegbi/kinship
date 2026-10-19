@@ -108,7 +108,15 @@ expand in place without changing route.
   reminders again, and because the calendar feed leaves skipped occurrences out,
   a member whose only copy of that day was the dismissed one no longer sees the
   day in their calendar feed. A dismissal refused because the reminder already
-  changed reads the queue again instead of offering a retry.
+  changed reads the queue again instead of offering a retry. In both Needs
+  attention and Upcoming, reminder rows label the notification's delivery or
+  retry time as "Reminder due" and show the actual occurrence date separately
+  ("Important date", "Event date", or "Occurs on"). The occurrence remains a
+  calendar date without a display-time-zone shift; advance reminders do not move
+  the birthday or event itself. Each available person's name links independently
+  of the title to the owning section of their canonical person workspace. An
+  unavailable person's name remains plain text, and personless items do not gain
+  a person link.
 - **People to reconnect** shows people whose cadence is due or overdue, with
   last interaction context and direct log-interaction/open-person actions.
 - **Upcoming** previews the next 30 days. It does not initially render three

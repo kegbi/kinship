@@ -235,7 +235,7 @@ export function attentionReducer(
   }
 }
 
-/** Where an item's title leads: the person section that owns it. */
+/** Where an item's title and person name lead: the person section that owns it. */
 export function attentionDestination(
   item: TodayAttentionItem,
 ): string | undefined {
@@ -270,32 +270,49 @@ function deliveryProblem(item: TodayAttentionItem): string {
     : "";
 }
 
-/** The line under a queued item's title. */
+/** Delivery timing is independent of the occurrence's date, including retries. */
+function reminderMeta(
+  item: Exclude<TodayAttentionItem, { kind: "task" | "cadence" }>,
+  preferences: TimePreferences | undefined,
+): string {
+  const dateLabel = item.kind === "important-date"
+    ? "Important date"
+    : item.kind === "life-event"
+    ? "Event date"
+    : "Occurs on";
+  return `${deliveryProblem(item)}Reminder due ${
+    formatInstant(item.dueAt, preferences)
+  } · ${dateLabel} ${
+    formatCalendarDate(item.occursOn, preferences?.locale ?? "en")
+  }`;
+}
+
+/** Timing and context under a queued title; the person renders separately. */
 export function attentionMeta(
   item: TodayAttentionItem,
   preferences: TimePreferences | undefined,
 ): string {
-  const due = `${deliveryProblem(item)}${
-    item.kind === "cadence" ? "Reconnect by" : "Due"
-  } ${formatInstant(item.dueAt, preferences)}`;
-  const who = item.person ? ` · ${item.person.name}` : "";
-  if (item.kind !== "cadence") return `${due}${who}`;
+  if (item.kind !== "task" && item.kind !== "cadence") {
+    return reminderMeta(item, preferences);
+  }
+  const due = `${item.kind === "cadence" ? "Reconnect by" : "Due"} ${
+    formatInstant(item.dueAt, preferences)
+  }`;
+  if (item.kind !== "cadence") return due;
   const contact = item.lastContactedAt
     ? `Last contact ${formatInstant(item.lastContactedAt, preferences)}`
     : "No contact recorded";
-  return `${due}${who} · ${contact}${
-    item.person.archived ? " · archived" : ""
-  }`;
+  return `${due} · ${contact}${item.person.archived ? " · archived" : ""}`;
 }
 
-/** The line under an upcoming item's title. */
+/** Timing under an upcoming title; the person renders separately. */
 export function upcomingMeta(
   item: TodayAttentionItem,
   preferences: TimePreferences | undefined,
 ): string {
-  return `${deliveryProblem(item)}${formatInstant(item.dueAt, preferences)}${
-    item.person ? ` · ${item.person.name}` : ""
-  }`;
+  return item.kind === "task" || item.kind === "cadence"
+    ? formatInstant(item.dueAt, preferences)
+    : reminderMeta(item, preferences);
 }
 
 const ATTENTION_FAILED =
