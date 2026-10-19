@@ -160,13 +160,11 @@ describe("PLANNING-001 Today attention island", () => {
     todayShell();
     const named = { ...person, name: "Ada · Lovelace" };
     const birthday = {
-      channel: "in_app",
-      dueAt: "2026-10-23T09:00:00Z",
+      dueAt: "2026-11-22T00:00:00Z",
       id: uuid(1),
       kind: "important-date",
       occursOn: "2026-11-22",
       person: named,
-      reminderStatus: "pending",
       title: "Birthday",
     };
     const items = [
@@ -204,9 +202,7 @@ describe("PLANNING-001 Today attention island", () => {
       ).not.toBe(personLink);
       expect(personLink.tabIndex).toBe(0);
       expect(personLink.classList).toContain("today-touch-target");
-      expect(birthdayRow.textContent).toContain(
-        "Reminder due Oct 23, 2026, 9:00 AM",
-      );
+      expect(birthdayRow.textContent).not.toContain("Reminder due");
       expect(birthdayRow.textContent).toContain("Important date Nov 22, 2026");
       expect(row(list, "Unavailable birthday").textContent).toContain(
         named.name,
@@ -254,14 +250,16 @@ describe("PLANNING-001 Today attention island", () => {
       task(5, "Workspace", { dueAt, person: undefined }),
       { ...reminder, id: uuid(6), person, title: "Direct reminder" },
       {
-        ...reminder,
+        dueAt,
+        occursOn: "2026-03-08",
         id: uuid(7),
         kind: "important-date",
         person,
         title: "Birthday",
       },
       {
-        ...reminder,
+        dueAt,
+        occursOn: "2026-03-08",
         id: uuid(8),
         kind: "life-event",
         person,
@@ -269,7 +267,8 @@ describe("PLANNING-001 Today attention island", () => {
       },
       { ...reminder, id: uuid(9), title: "Imported personless reminder" },
       {
-        ...reminder,
+        dueAt,
+        occursOn: "2026-03-08",
         id: uuid(10),
         kind: "important-date",
         title: "Imported personless date",
@@ -545,7 +544,7 @@ describe("PLANNING-001 Today attention island", () => {
       ...reminder,
       channel: "in_app",
       id: uuid(2),
-      kind: "important-date",
+      kind: "reminder",
       reminderStatus: "failed",
       title: "Birthday",
     };

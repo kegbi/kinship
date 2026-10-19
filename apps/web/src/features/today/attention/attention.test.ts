@@ -22,6 +22,16 @@ const personId = "00000000-0000-4000-8000-000000000100";
 const person = { archived: false, id: personId, name: "Ada Lovelace" };
 const utc = { effectiveTimezone: "UTC", locale: "en" };
 
+it("shows calendar event dates without notification timing", () => {
+  const item = task("event", {
+    kind: "important-date",
+    occursOn: "2026-11-22",
+    dueAt: "2026-10-23T09:00:00Z",
+  });
+  expect(attentionMeta(item, utc)).toBe("Important date Nov 22, 2026");
+  expect(upcomingMeta(item, utc)).toBe("Important date Nov 22, 2026");
+});
+
 function task(
   id: string,
   overrides: Readonly<Record<string, unknown>> = {},
@@ -457,7 +467,7 @@ describe("GAP-033 Today attention reducer", () => {
 });
 
 describe("GAP-033 Today attention presentation", () => {
-  it("distinguishes advance reminder timing from the actual date without timezone shifts", () => {
+  it("shows actual event dates without notification times or timezone shifts", () => {
     for (const meta of [attentionMeta, upcomingMeta]) {
       for (
         const effectiveTimezone of [
@@ -473,23 +483,20 @@ describe("GAP-033 Today attention presentation", () => {
           ] as const
         ) {
           const item: TodayAttentionItem = {
-            channel: "in_app",
             dueAt,
             id: "birthday",
             kind: "important-date",
             occursOn,
             person,
-            reminderStatus: "pending",
             title: "Birthday",
           };
           const text = meta(item, { effectiveTimezone, locale: "en" });
-          expect(text).toContain("Reminder due ");
+          expect(text).not.toContain("Reminder due ");
           expect(text).toContain(`Important date ${expected}`);
           expect(text).not.toContain(person.name);
           const retry: TodayAttentionItem = {
             ...item,
             dueAt: "2026-11-23T00:30:00Z",
-            reminderStatus: "retry",
           };
           expect(meta(retry, { effectiveTimezone, locale: "en" })).toContain(
             `Important date ${expected}`,
@@ -497,15 +504,13 @@ describe("GAP-033 Today attention presentation", () => {
         }
       }
       expect(meta({
-        channel: "in_app",
         dueAt: "2026-10-23T09:00:00Z",
         id: "event",
         kind: "life-event",
         occursOn: "2026-11-22",
-        reminderStatus: "pending",
         title: "Moved home",
       }, utc)).toBe(
-        "Reminder due Oct 23, 2026, 9:00 AM · Event date Nov 22, 2026",
+        "Event date Nov 22, 2026",
       );
     }
   });
@@ -646,12 +651,12 @@ describe("REL-088 dismissing an undelivered reminder", () => {
       undelivered("email-failed"),
       undelivered("email-unclear", { reminderStatus: "manual_attention" }),
       undelivered("in-app-failed", { channel: "in_app" }),
-      undelivered("date", { kind: "important-date" }),
-      undelivered("event", { kind: "life-event" }),
       undelivered("archived", { person: { ...person, archived: true } }),
       undelivered("personless", { person: undefined }),
     ];
     const withheld = [
+      task("date", { kind: "important-date", occursOn: "2026-08-17" }),
+      task("event", { kind: "life-event", occursOn: "2026-08-17" }),
       undelivered("pending", { reminderStatus: "pending" }),
       undelivered("retry", { reminderStatus: "retry" }),
       undelivered("gone", { person: { ...person, unavailable: true } }),

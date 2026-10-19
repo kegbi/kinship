@@ -10,6 +10,59 @@ import { fixedClock } from "../../../testing/fakes.ts";
 
 const actor = fixtures.actor();
 
+Deno.test("TODAY-001 groups actual event dates instead of advance notification dates", async () => {
+  const items: TodayAttentionItem[] = [
+    {
+      id: "november",
+      kind: "important-date",
+      title: "November birthday",
+      occursOn: "2026-11-22",
+      dueAt: "2026-10-23T09:00:00Z",
+    },
+    {
+      id: "october",
+      kind: "important-date",
+      title: "October birthday",
+      occursOn: "2026-10-28",
+      dueAt: "2026-10-21T09:00:00Z",
+    },
+    {
+      id: "today",
+      kind: "life-event",
+      title: "Today event",
+      occursOn: "2026-10-19",
+      dueAt: "2026-10-12T09:00:00Z",
+    },
+  ];
+  const read = async (now: string) =>
+    await createTodayAttention({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
+      clock: fixedClock(now),
+      repository: {
+        getSnapshot: () =>
+          Promise.resolve({
+            items,
+            status: "ready",
+            timezone: "Europe/Belgrade",
+          }),
+      },
+    }).get(actor);
+  const october = await read("2026-10-18T22:30:00Z");
+  assert(
+    october.status === "ready" && october.attention.today[0]?.id === "today" &&
+      october.attention.nextSevenDays.length === 0 &&
+      october.upcoming.length === 1 && october.upcoming[0]?.id === "october",
+    "October 19 must show October 28 only in Upcoming and exclude November 22",
+  );
+  const seventh = await read("2026-10-21T12:00:00Z");
+  assert(
+    seventh.status === "ready" &&
+      seventh.attention.nextSevenDays[0]?.id === "october",
+    "October 28 enters Next seven days on October 21 regardless of delivery",
+  );
+});
+
 Deno.test("TODAY-001 groups and bounds attention in the member timezone", async () => {
   let query: Parameters<TodayAttentionRepository["getSnapshot"]>[0] | undefined;
   const projection = createTodayAttention({
@@ -34,20 +87,16 @@ Deno.test("TODAY-001 groups and bounds attention in the member timezone", async 
             reminderStatus: "pending",
             title: "Today reminder",
           }, {
-            channel: "in_app",
             dueAt: "2026-03-29T21:58:00.000Z",
             id: "00000000-0000-4000-8000-000000000904",
             kind: "important-date",
             occursOn: "2026-03-29",
-            reminderStatus: "pending",
             title: "Today important date",
           }, {
-            channel: "in_app",
             dueAt: "2026-03-29T21:58:30.000Z",
             id: "00000000-0000-4000-8000-000000000905",
             kind: "life-event",
             occursOn: "2026-03-29",
-            reminderStatus: "pending",
             title: "Today life event",
           }, {
             dueAt: "2026-04-07T22:00:00.000Z",

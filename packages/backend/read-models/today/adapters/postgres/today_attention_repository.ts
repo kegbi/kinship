@@ -49,6 +49,12 @@ export class PostgresTodayAttentionRepository
         const result = await sql<ItemRow>`
       with authorized as (
         select ${command.workspaceId}::uuid as id
+      ), calendar as (
+        -- Calendar events are independent of notification definitions, leads,
+        -- channels and delivery state. Enumerating valid dates also skips Feb 29
+        -- in non-leap years without normalizing it into a different day.
+        select ${window.date}::date + offset_day as occurs_on
+        from generate_series(0, 30) offset_day
       ), projection_source as (
         select task.id, 'task'::text as kind, task.title, task.due_at,
           null::date as occurs_on, null::text as reminder_status,
@@ -68,11 +74,40 @@ export class PostgresTodayAttentionRepository
         where task.status = 'open' and task.deleted_at is null
           and task.due_at is not null and task.due_at < ${window.thirtyDaysEnd}
         union all
+        select person_date.id, 'important-date',
+          coalesce(person_date.label, case person_date.kind
+            when 'birthday' then 'Birthday' when 'deceased' then 'Death anniversary'
+            when 'first_met' then 'First met' when 'anniversary' then 'Anniversary'
+            else 'Important date' end),
+          calendar.occurs_on::timestamp at time zone ${timezone},
+          calendar.occurs_on, null::text, null::text, null::timestamptz,
+          person.id, 0::int, person_date.id, person.archived_at is not null,
+          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
+        from authorized join crm.people person on person.workspace_id = authorized.id
+        join crm.person_dates person_date on person_date.person_id = person.id
+        join calendar on extract(month from calendar.occurs_on) = person_date.month
+          and extract(day from calendar.occurs_on) = person_date.day
+          and (person_date.year is null or person_date.year <= extract(year from calendar.occurs_on))
+        where person.deleted_at is null and person_date.precision in ('full', 'month_day')
+        union all
+        select event.id, 'life-event', coalesce(event.name, 'Life event'),
+          calendar.occurs_on::timestamp at time zone ${timezone},
+          calendar.occurs_on, null::text, null::text, null::timestamptz,
+          person.id, 0::int, event.id, person.archived_at is not null,
+          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
+        from authorized join crm.life_events event on event.workspace_id = authorized.id
+        join crm.people person on person.id = event.person_id
+          and person.workspace_id = authorized.id
+        join calendar on (event.year = extract(year from calendar.occurs_on)
+          and event.month = extract(month from calendar.occurs_on)
+          and event.day = extract(day from calendar.occurs_on))
+          or (event.year is null and event.month is null and event.day is null
+            and (event.happened_at at time zone ${timezone})::date = calendar.occurs_on)
+        where person.deleted_at is null and event.precision = 'full'
+        union all
         select case when reminder.target_kind = 'task' then target_task.id
             else occurrence.id end,
-          case reminder.target_kind when 'task' then 'task'
-            when 'person_date' then 'important-date'
-            when 'life_event' then 'life-event' else 'reminder' end,
+          case reminder.target_kind when 'task' then 'task' else 'reminder' end,
           coalesce(occurrence.title_snapshot, reminder.title,
             target_task.title, target_event.name, target_date.label, 'Reminder'),
           effective.due_at,
@@ -131,6 +166,11 @@ export class PostgresTodayAttentionRepository
           when 'life_event' then event_person.id
           else reminder.person_id end and target_person.workspace_id = authorized.id
         where reminder.is_active and reminder.deleted_at is null
+          -- Event delivery failures remain actionable operational reminders;
+          -- their delivery schedule never populates the calendar previews.
+          and (reminder.target_kind not in ('person_date', 'life_event') or
+            (occurrence.status in ('failed', 'manual_attention')
+              and effective.due_at < ${window.tomorrowStart}))
           and case reminder.target_kind
             when 'task' then target_task.id is not null and target_task.status = 'open'
               and target_task.deleted_at is null
@@ -216,8 +256,20 @@ export class PostgresTodayAttentionRepository
               title: row.title,
             }];
           }
-          return (row.kind === "important-date" || row.kind === "life-event" ||
-              row.kind === "reminder") &&
+          if (
+            (row.kind === "important-date" || row.kind === "life-event") &&
+            row.occurs_on
+          ) {
+            return [{
+              dueAt: row.due_at,
+              id: row.id,
+              kind: row.kind,
+              occursOn: row.occurs_on,
+              ...(person ? { person } : {}),
+              title: row.title,
+            }];
+          }
+          return row.kind === "reminder" &&
               row.occurs_on && row.channel &&
               ["failed", "manual_attention", "pending", "retry"].includes(
                 row.reminder_status ?? "",

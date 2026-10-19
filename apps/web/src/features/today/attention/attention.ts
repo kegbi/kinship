@@ -111,7 +111,7 @@ export function completable(item: TodayAttentionItem): boolean {
  * (REL-088). Its person may be archived, as the queue still lists it.
  */
 export function acknowledgeable(item: TodayAttentionItem): boolean {
-  return item.kind !== "task" && item.kind !== "cadence" &&
+  return item.kind === "reminder" &&
     (item.reminderStatus === "failed" ||
       item.reminderStatus === "manual_attention") &&
     !item.person?.unavailable;
@@ -260,7 +260,7 @@ export function attentionDestination(
  */
 function deliveryProblem(item: TodayAttentionItem): string {
   if (
-    item.kind === "task" || item.kind === "cadence" ||
+    item.kind !== "reminder" ||
     item.channel !== "email"
   ) return "";
   return item.reminderStatus === "manual_attention"
@@ -280,6 +280,11 @@ function reminderMeta(
     : item.kind === "life-event"
     ? "Event date"
     : "Occurs on";
+  if (item.kind !== "reminder") {
+    return `${dateLabel} ${
+      formatCalendarDate(item.occursOn, preferences?.locale ?? "en")
+    }`;
+  }
   return `${deliveryProblem(item)}Reminder due ${
     formatInstant(item.dueAt, preferences)
   } · ${dateLabel} ${

@@ -209,8 +209,6 @@ export const todayImportantDateAttentionItem = z.strictObject({
   kind: z.literal("important-date"),
   person: todayAttentionPerson.optional(),
   occursOn: z.iso.date(),
-  channel: todayAttentionChannel,
-  reminderStatus: z.enum(["failed", "manual_attention", "pending", "retry"]),
   title: z.string(),
 }).meta({ id: "TodayImportantDateAttentionItem" });
 
@@ -220,8 +218,6 @@ export const todayLifeEventAttentionItem = z.strictObject({
   kind: z.literal("life-event"),
   person: todayAttentionPerson.optional(),
   occursOn: z.iso.date(),
-  channel: todayAttentionChannel,
-  reminderStatus: z.enum(["failed", "manual_attention", "pending", "retry"]),
   title: z.string(),
 }).meta({ id: "TodayLifeEventAttentionItem" });
 

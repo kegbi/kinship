@@ -164,7 +164,12 @@ function validTodayAttentionItem(value: unknown): value is TodayAttentionItem {
   }
   if (value.kind === "task") return exactTodayRecord(value, base, ["person"]);
   if (
-    value.kind === "important-date" || value.kind === "life-event" ||
+    value.kind === "important-date" || value.kind === "life-event"
+  ) {
+    return exactTodayRecord(value, [...base, "occursOn"], ["person"]) &&
+      validTodayDate(value.occursOn);
+  }
+  if (
     value.kind === "reminder"
   ) {
     return exactTodayRecord(value, [

@@ -96,7 +96,7 @@ Deno.test("[GAP-022] the Today guards accept the responses the API sends", () =>
         overdue: [{
           ...ATTENTION_ITEM,
           channel: "email",
-          kind: "important-date",
+          kind: "reminder",
           occursOn: "2026-01-01",
           reminderStatus: "failed",
         }],
@@ -116,6 +116,29 @@ Deno.test("[GAP-022] the Today guards accept the responses the API sends", () =>
     }).upcoming.length === 1,
     "a cadence item carries the person it is about",
   );
+  for (const kind of ["important-date", "life-event"]) {
+    assert(
+      parseTodayAttention({
+        ...ATTENTION,
+        upcoming: [{ ...ATTENTION_ITEM, kind, occursOn: "2026-01-02" }],
+      }).upcoming.length === 1,
+      "calendar events have no invented delivery status",
+    );
+    assertThrows(
+      () =>
+        parseTodayAttention({
+          ...ATTENTION,
+          upcoming: [{
+            ...ATTENTION_ITEM,
+            kind,
+            occursOn: "2026-01-02",
+            channel: "in_app",
+            reminderStatus: "pending",
+          }],
+        }),
+      "calendar events reject delivery fields",
+    );
+  }
   assert(
     parseTodayRecentPeople({ people: [PERSON], status: "ready" }).people
       .length === 1,

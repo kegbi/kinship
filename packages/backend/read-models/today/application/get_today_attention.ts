@@ -21,7 +21,12 @@ interface TodayAttentionBase {
 export type TodayAttentionItem =
   | (TodayAttentionBase & { readonly kind: "task" })
   | (TodayAttentionBase & {
-    readonly kind: "important-date" | "life-event" | "reminder";
+    readonly kind: "important-date" | "life-event";
+    /** Actual calendar occurrence, independent of reminder delivery. */
+    readonly occursOn: string;
+  })
+  | (TodayAttentionBase & {
+    readonly kind: "reminder";
     /**
      * The channel of the listed delivery. An email one is listed only when
      * it failed or needs attention (REL-059).
@@ -128,7 +133,16 @@ export function createTodayAttention(dependencies: {
       if (result.status !== "ready") return result;
       const window = todayAttentionWindow(now, result.timezone);
       const seen = new Set<string>();
-      const unique = [...result.items].sort(compare).filter((item) => {
+      const unique = result.items.map((item) =>
+        item.kind === "important-date" || item.kind === "life-event"
+          ? {
+            ...item,
+            dueAt: Temporal.PlainDate.from(item.occursOn).toZonedDateTime(
+              result.timezone,
+            ).toInstant().toString(),
+          }
+          : item
+      ).sort(compare).filter((item) => {
         const key = `${item.kind}:${item.id}`;
         if (seen.has(key)) return false;
         seen.add(key);

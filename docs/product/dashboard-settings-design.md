@@ -108,13 +108,22 @@ expand in place without changing route.
   reminders again, and because the calendar feed leaves skipped occurrences out,
   a member whose only copy of that day was the dismissed one no longer sees the
   day in their calendar feed. A dismissal refused because the reminder already
-  changed reads the queue again instead of offering a retry. In both Needs
-  attention and Upcoming, reminder rows label the notification's delivery or
-  retry time as "Reminder due" and show the actual occurrence date separately
-  ("Important date", "Event date", or "Occurs on"). The occurrence remains a
-  calendar date without a display-time-zone shift; advance reminders do not move
-  the birthday or event itself. Each available person's name links independently
-  of the title to the owning section of their canonical person workspace. An
+  changed reads the queue again instead of offering a retry. Important dates and
+  complete life events are calendar entries: Today is the member's local date,
+  Next seven days is days 1–7, and Upcoming is days 8–30. Their actual
+  occurrence date determines query bounds, grouping and sorting; rows show only
+  "Important date" or "Event date", without a notification time or delivery
+  status. Important dates recur annually when month and day are known (skipping
+  February 29 in non-leap years, and never preceding a known original year).
+  Life events appear once on their complete date; partial dates do not invent
+  anniversaries. Calendar entries remain visible without a notification rule,
+  with email-only delivery, and after an advance reminder is sent. Multiple
+  leads and channels never duplicate an event. Failed event notifications remain
+  separate reminder rows through today, with Dismiss and a link to reminders;
+  they do not populate Next seven days or Upcoming. Ordinary reminders retain
+  "Reminder due" and "Occurs on" metadata. Calendar dates never shift with
+  display timezone. Each available person's name links independently of the
+  title to the owning section of their canonical person workspace. An
   unavailable person's name remains plain text, and personless items do not gain
   a person link.
 - **People to reconnect** shows people whose cadence is due or overdue, with

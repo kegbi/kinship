@@ -26064,22 +26064,6 @@
             "type": "string",
             "format": "date"
           },
-          "channel": {
-            "type": "string",
-            "enum": [
-              "email",
-              "in_app"
-            ]
-          },
-          "reminderStatus": {
-            "type": "string",
-            "enum": [
-              "failed",
-              "manual_attention",
-              "pending",
-              "retry"
-            ]
-          },
           "title": {
             "type": "string"
           }
@@ -26089,8 +26073,6 @@
           "id",
           "kind",
           "occursOn",
-          "channel",
-          "reminderStatus",
           "title"
         ],
         "additionalProperties": false
@@ -26116,22 +26098,6 @@
             "type": "string",
             "format": "date"
           },
-          "channel": {
-            "type": "string",
-            "enum": [
-              "email",
-              "in_app"
-            ]
-          },
-          "reminderStatus": {
-            "type": "string",
-            "enum": [
-              "failed",
-              "manual_attention",
-              "pending",
-              "retry"
-            ]
-          },
           "title": {
             "type": "string"
           }
@@ -26141,8 +26107,6 @@
           "id",
           "kind",
           "occursOn",
-          "channel",
-          "reminderStatus",
           "title"
         ],
         "additionalProperties": false

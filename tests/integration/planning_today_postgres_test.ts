@@ -8,6 +8,8 @@
  */
 
 import postgres from "postgres";
+import { PostgresTodayAttentionRepository } from "../../packages/backend/read-models/today/adapters/postgres/today_attention_repository.ts";
+import { createTodayAttention } from "../../packages/backend/read-models/today/public.ts";
 import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
@@ -15,6 +17,7 @@ import {
   createReminder,
   createTask,
   databaseUrl,
+  deliveryConnection,
   register,
   request,
   signInTo,
@@ -22,6 +25,180 @@ import {
 } from "./planning.test-helper.ts";
 import { addMembership } from "../support/database.ts";
 import { closeResources } from "./planning.test-helper.ts";
+
+Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, channels and state", async () => {
+  const fixture = await register(
+    `today-calendar-${crypto.randomUUID()}@example.test`,
+    "Calendar dates",
+  );
+  const foreign = await register(
+    `today-calendar-foreign-${crypto.randomUUID()}@example.test`,
+    "Foreign dates",
+  );
+  const personId = await createPerson(fixture, "Calendar person");
+  const foreignPerson = await createPerson(foreign, "Foreign event secret");
+  const deletedPerson = await createPerson(fixture, "Deleted event secret");
+  await sql`update crm.people set deleted_at = now() where id = ${deletedPerson}::uuid`;
+  await sql`insert into crm.member_preferences (member_id, timezone) values (${fixture.memberId}::uuid, 'Europe/Belgrade')
+    on conflict (member_id) do update set timezone = excluded.timezone`;
+  const date = async (
+    label: string,
+    month: number,
+    day: number,
+    person = personId,
+    year: number | null = null,
+  ) => {
+    const id = crypto.randomUUID();
+    await sql`insert into crm.person_dates (id, person_id, kind, label, year, month, day, precision)
+      values (${id}::uuid, ${person}::uuid, 'custom', ${label}, ${year}, ${month}, ${day}, ${
+      year === null ? "month_day" : "full"
+    })`;
+    return id;
+  };
+  const november = await date("November birthday", 11, 22);
+  const october = await date("October birthday", 10, 28);
+  const today = await date("Today without reminder", 10, 19);
+  const seventh = await date("Seventh day email only", 10, 26);
+  const eighth = await date("Eighth day", 10, 27);
+  const thirtieth = await date("Thirtieth day", 11, 18);
+  const thirtyFirst = await date("Thirty-first day", 11, 19);
+  const futureYear = await date(
+    "Future first occurrence",
+    10,
+    24,
+    personId,
+    2027,
+  );
+  const leap = await date("Leap day", 2, 29);
+  const newYear = await date("New year", 1, 1);
+  await date("Foreign birthday", 10, 20, foreignPerson);
+  await date("Deleted birthday", 10, 20, deletedPerson);
+  const event = crypto.randomUUID();
+  const oldEvent = crypto.randomUUID();
+  const impreciseEvent = crypto.randomUUID();
+  await sql`insert into crm.life_events (id, workspace_id, person_id, name, year, month, day, precision)
+    values (${event}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Future move', 2026, 10, 26, 'full'),
+      (${oldEvent}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Past move', 2025, 10, 26, 'full'),
+      (${impreciseEvent}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Unknown year move', null, 10, 26, 'month_day'),
+      (gen_random_uuid(), ${fixture.workspaceId}::uuid, ${foreignPerson}::uuid, 'Foreign-linked move', 2026, 10, 26, 'full')`;
+  const notify = async (
+    id: string,
+    occursOn: string,
+    deliverAt: string,
+    leads: number[],
+    emailOnly = false,
+  ) => {
+    const reminder = crypto.randomUUID();
+    await sql`insert into crm.reminders (id, workspace_id, person_date_id, target_kind, anchor_on, recurrence_unit, created_by_member_id)
+      values (${reminder}::uuid, ${fixture.workspaceId}::uuid, ${id}::uuid, 'person_date', ${occursOn}::date, 'year', ${fixture.memberId}::uuid)`;
+    for (const lead of leads) {
+      for (const channel of emailOnly ? ["email"] : ["in_app", "email"]) {
+        await sql`insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, channel, status, lead_time_days)
+          values (${reminder}::uuid, ${fixture.memberId}::uuid, ${occursOn}::date, ${deliverAt}::timestamptz, ${channel}, 'pending', ${lead})`;
+      }
+    }
+    return reminder;
+  };
+  await notify(november, "2026-11-22", "2026-10-23T09:00:00Z", [30]);
+  const octoberReminder = await notify(
+    october,
+    "2026-10-28",
+    "2026-10-21T09:00:00Z",
+    [7, 1],
+  );
+  await notify(seventh, "2026-10-26", "2026-10-19T09:00:00Z", [7], true);
+  // Enough advance notices to fill the query limit must not crowd actual dates
+  // out before calendar filtering happens.
+  for (let index = 0; index < 21; index++) {
+    await notify(november, "2026-11-22", "2026-10-20T09:00:00Z", [30]);
+  }
+  const read = async (now: string) => {
+    const result = await createTodayAttention({
+      actors: { revalidate: () => Promise.resolve("active" as const) },
+      transaction: { run: (work) => work({ opaque: undefined }) },
+      clock: { now: () => new Date(now) },
+      repository: new PostgresTodayAttentionRepository(deliveryConnection.db),
+    }).get(fixture);
+    assert(result.status === "ready", "calendar snapshot ready");
+    return generatedPlanningClient.parseTodayAttention(result);
+  };
+  const initial = await read("2026-10-18T22:30:00Z");
+  const ids = (items: readonly { readonly id: string }[]) =>
+    items.map((item) => item.id);
+  const all = (
+    snapshot: typeof initial,
+  ) => [...Object.values(snapshot.attention).flat(), ...snapshot.upcoming];
+  assert(
+    initial.date === "2026-10-19" &&
+      ids(initial.attention.today).includes(today),
+    "member local date chooses Today at UTC previous day",
+  );
+  assert(
+    ids(initial.attention.nextSevenDays).join() === [seventh, event].join(),
+    "day seven includes email-only birthday and complete event",
+  );
+  assert(
+    ids(initial.upcoming).join() === [eighth, october, thirtieth].join(),
+    "days eight through thirty sort by actual dates",
+  );
+  assert(
+    !all(initial).some((item) =>
+      [november, thirtyFirst, futureYear, oldEvent, impreciseEvent].some((id) =>
+        id === item.id
+      )
+    ) && !JSON.stringify(initial).includes("secret") &&
+      !JSON.stringify(initial).includes("Foreign"),
+    "calendar bounds, precision, original year and tenant isolation",
+  );
+  await sql`update crm.reminder_occurrences set status = 'sent', sent_at = now(), provider_result_state = 'confirmed', provider_receipt = 'calendar-test', provider_effect_at = now(), visible_at = now() where reminder_id = ${octoberReminder}::uuid`;
+  const afterSent = await read("2026-10-21T12:00:00Z");
+  assert(
+    all(afterSent).filter((item) => item.id === october).length === 1 &&
+      ids(afterSent.attention.nextSevenDays).includes(october),
+    "sent leads and multiple channels still show exactly one event",
+  );
+  const inNovember = await read("2026-11-15T12:00:00Z");
+  assert(
+    ids(inNovember.attention.nextSevenDays).includes(november),
+    "November 22 enters next seven on November 15",
+  );
+  assert(
+    !all(await read("2027-02-22T12:00:00Z")).some((item) => item.id === leap),
+    "skip invalid February 29",
+  );
+  assert(
+    ids((await read("2028-02-22T12:00:00Z")).attention.nextSevenDays).includes(
+      leap,
+    ),
+    "include real February 29",
+  );
+  assert(
+    ids((await read("2026-12-25T12:00:00Z")).attention.nextSevenDays).includes(
+      newYear,
+    ),
+    "annual projection crosses year boundary",
+  );
+  const failedReminder = await notify(
+    november,
+    "2026-11-22",
+    "2026-10-23T09:00:00Z",
+    [30],
+    true,
+  );
+  await sql`update crm.reminder_occurrences set status = 'failed' where reminder_id = ${failedReminder}::uuid`;
+  const beforeFailureDate = await read("2026-10-19T12:00:00Z");
+  assert(
+    all(beforeFailureDate).every((item) => item.kind !== "reminder"),
+    "future event delivery failures never fill calendar previews",
+  );
+  const afterFailure = await read("2026-10-24T12:00:00Z");
+  assert(
+    afterFailure.attention.overdue.some((item) =>
+      item.kind === "reminder" && item.reminderStatus === "failed"
+    ),
+    "past event delivery failure remains operationally actionable",
+  );
+});
 
 Deno.test("TODAY-001 PostgreSQL total-orders cross-kind UUID ties at both bounds", async () => {
   const fixture = await register(
@@ -450,21 +627,25 @@ Deno.test("TODAY-001 PostgreSQL projects every v6 reminder target through its au
   const personDateId = crypto.randomUUID();
   await sql`
     insert into crm.person_dates (id, person_id, kind, month, day, precision)
-    values (${personDateId}::uuid, ${personId}::uuid, 'birthday', 8, 22,
+    values (${personDateId}::uuid, ${personId}::uuid, 'birthday', ${
+    Number(anchorOn.slice(5, 7))
+  }, ${Number(anchorOn.slice(8, 10))},
       'month_day')
   `;
-  const important = await insertTarget({
+  await insertTarget({
     kind: "person_date",
     personDateId,
     title: "Authoritative important date",
   });
   const lifeEventId = crypto.randomUUID();
   await sql`
-    insert into crm.life_events (id, workspace_id, person_id, name, precision)
+    insert into crm.life_events (id, workspace_id, person_id, name, year, month, day, precision)
     values (${lifeEventId}::uuid, ${fixture.workspaceId}::uuid,
-      ${personId}::uuid, 'Moved home', 'unknown')
+      ${personId}::uuid, 'Moved home', ${Number(anchorOn.slice(0, 4))}, ${
+    Number(anchorOn.slice(5, 7))
+  }, ${Number(anchorOn.slice(8, 10))}, 'full')
   `;
-  const lifeEvent = await insertTarget({
+  await insertTarget({
     kind: "life_event",
     lifeEventId,
     title: "Authoritative life event",
@@ -518,8 +699,8 @@ Deno.test("TODAY-001 PostgreSQL projects every v6 reminder target through its au
         )?.title === "Smaller source UUID";
       }) &&
       !find("task", completedTask) && !find("task", deletedTask) &&
-      find("important-date", important.occurrenceId)?.person?.id === personId &&
-      find("life-event", lifeEvent.occurrenceId)?.person?.id === personId &&
+      find("important-date", personDateId)?.person?.id === personId &&
+      find("life-event", lifeEventId)?.person?.id === personId &&
       find("reminder", direct.occurrenceId)?.person?.id === personId &&
       find("task", nullDueTask)?.id !== nullDueOccurrence.occurrenceId,
     `v6 target projection was incomplete: ${JSON.stringify(items)}`,
