@@ -106,6 +106,11 @@ as authority. Production ready remains independent of feature completion.
   priorities, and delivery slices, and records catalog gaps that must close.
 - [`research.md`](research.md) records current official capability research and
   the implementation consequences of that research.
+- [API integration research](api-integration-research-2026-10-25.md) proposes
+  external API coverage, token permissions, concrete parameters, and delivery
+  priorities. Its [operation inventory](api-operation-inventory-2026-10-25.md)
+  captures the existing browser and token contracts; these proposals do not
+  change the accepted delivery queue.
 
 The accepted product slice summary remains
 [`docs/product/release-slices.md`](../product/release-slices.md). This directory

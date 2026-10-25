@@ -8,6 +8,38 @@ the current phase and deliver it as a complete vertical behavior. The larger
 and [`traceability.md`](traceability.md) remain coverage references, not
 prerequisite queues.
 
+## User-directed API integration (2026-10-25)
+
+The product owner requested committing the
+[API research](api-integration-research-2026-10-25.md), integrating useful
+functionality autonomously with independent review, and then shipping a public
+API guide in the application's styling. This work takes priority over the
+historical cursor below. Deliver one reviewed candidate per vertical outcome.
+
+- [ ] Scoped person reads: a minimal person identity, profile facts, important
+      dates, relationships, and the lookups consumed by those reads. Preserve
+      the existing directory-only `people:read` grant; detailed person and
+      relationship access use explicit new grants.
+- [ ] Task automation: scoped listing/detail, retry-safe creation, editing,
+      completion and reopening through planning's existing public use cases.
+      Bearer writes work without browser cookies or a fabricated Origin;
+      cookie-authenticated writes retain existing origin checks.
+- [ ] Interaction capture: scoped, retry-safe note/activity/call/conversation
+      recording and the lookups those operations consume. Create-only grants
+      must not expose historic content or broader profile aggregates.
+- [ ] Public API guide: a static, styled, signed-out reference and quickstart,
+      downloadable external OpenAPI, links from public navigation and API
+      settings, exact delivered scope/parameter/error documentation, and
+      cataloged browser verification.
+- [ ] Integration checkpoint for these delivered capabilities: affected
+      coverage, contract/static gates, and the owning production-like browser
+      flow. Record any unrelated failures separately under the existing policy.
+
+Token issuance remains owner/admin-only. Schema-dependent connector identities,
+change feeds, webhooks, OAuth, and the remaining domain expansions stay in the
+research backlog until their consuming integration is selected; this initial
+delivery does not advertise them as implemented.
+
 ## User-directed debt settlement history (2026-10-14)
 
 `GIFTS-001` now opens a settlement dialog with an optional reason and uploaded
