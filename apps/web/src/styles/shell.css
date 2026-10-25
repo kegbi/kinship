@@ -538,8 +538,7 @@
   color: var(--ink-2);
 }
 
-.honesty-note,
-.projection-note {
+.honesty-note {
   margin: 0;
   padding: var(--space-4);
   border-left: 3px solid var(--accent);

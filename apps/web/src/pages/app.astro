@@ -15,7 +15,7 @@ import {
   pageId="app.today"
   title="Today — Kinship"
 >
-  <main id="main-content" class="page-frame" tabindex="-1">
+  <main id="main-content" class="page-frame today-page" tabindex="-1">
     <header class="page-heading">
       <div>
         <p class="eyebrow">Today · <span data-workspace-name></span></p>
@@ -45,7 +45,6 @@ import {
         <li><strong>Create a task, reminder, or stay-in-touch cadence.</strong><span>Planning work appears here when it becomes due.</span></li>
       </ol></div>
       <button id="today-attention-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry attention</button>
-      <p class="projection-note">Task completion here uses the same planning action as the person and global task surfaces.</p>
     </section>
 
     <section class={cardVariants({ className: "today-section" })} aria-labelledby="reconnect-heading" data-today-reminders>

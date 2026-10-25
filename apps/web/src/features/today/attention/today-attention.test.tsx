@@ -212,6 +212,52 @@ describe("PLANNING-001 Today attention island", () => {
     }
   });
 
+  it("draws each item as a scannable row: icon, title, a quieter person link, and when", async () => {
+    todayShell();
+    const birthday = {
+      dueAt: "2026-08-18T09:00:00Z",
+      id: uuid(1),
+      kind: "important-date",
+      occursOn: "2026-08-20",
+      person,
+      title: "Birthday",
+    };
+    const late = task(2, "Send flowers", { dueAt: "2026-08-16T09:00:00Z" });
+    routes(attention([late], [birthday], {
+      attention: {
+        nextSevenDays: [birthday],
+        overdue: [late],
+        today: [],
+      },
+    }));
+    await mount();
+
+    const birthdayRow = row(element("#today-next-seven-list"), "Birthday");
+    const title = within(birthdayRow).getByRole("link", { name: "Birthday" });
+    const personLink = within(birthdayRow).getByRole("link", {
+      name: person.name,
+    });
+    // The title and the person no longer share one look.
+    expect(title.classList).toContain("attention-title");
+    expect(personLink.classList).toContain("attention-person");
+    expect(personLink.classList).not.toContain("attention-title");
+    expect(
+      birthdayRow.querySelector("[data-attention-icon='important-date']"),
+    ).not.toBeNull();
+    expect(birthdayRow.querySelector(".attention-when")?.textContent).toBe(
+      "In 2 days",
+    );
+    expect(
+      row(upcomingList(), "Birthday").querySelector(".attention-when")
+        ?.textContent,
+    ).toBe("In 2 days");
+    const overdueRow = row(overdue(), "Send flowers");
+    expect(overdueRow.querySelector(".attention-when")?.textContent).toBe(
+      "2 days overdue",
+    );
+    expect(overdueRow.querySelector(".attention-when-overdue")).not.toBeNull();
+  });
+
   it("does nothing when the Today regions are absent", async () => {
     drawShell("<p>Other page</p>");
     const unmount = await mount();

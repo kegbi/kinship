@@ -33,18 +33,78 @@
   padding: 0;
 }
 
+/*
+ * Today reads top to bottom in its semantic order; on a wide screen the
+ * shorter sections pair up two to a row (reconnect beside upcoming, recent
+ * people beside favorite notes) so the page is not one long column.
+ */
+@media (min-width: 1100px) {
+  .today-page {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-5);
+    align-items: start;
+  }
+
+  .today-page > :is(.page-heading, .attention-section, #today-recent-activity-region) {
+    grid-column: 1 / -1;
+  }
+
+  .today-page > .today-section {
+    margin: 0;
+  }
+}
+
+.today-page .page-heading {
+  align-items: end;
+}
+
+/* The time-zone note is a caption, not a callout. */
+.today-page .honesty-note {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: .82rem;
+  text-align: end;
+}
+
+/*
+ * The attention groups stack as one agenda: a group with nothing in it takes
+ * no room, and each group's items read as rows of one list.
+ */
 .attention-groups {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.attention-groups > section:has(> ul:empty) {
+  display: none;
 }
 
 .attention-groups h3 {
-  margin-block: 0 var(--space-3);
+  margin-block: 0 var(--space-2);
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
-.task-item,
-.attention-item {
+.attention-groups #today-overdue-heading {
+  color: var(--danger);
+}
+
+.attention-groups .task-list,
+#today-upcoming-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.task-item {
   background: var(--surface, var(--surface-1));
   border: 1px solid var(--line, var(--line-1));
   border-radius: 0.9rem;
@@ -52,39 +112,237 @@
 }
 
 .task-item h3,
-.task-item p,
-.attention-item .attention-title,
-.attention-item p {
+.task-item p {
   margin-block: 0 var(--space-2);
+}
+
+/* One item: kind icon, what and whose, its timing, when, and its action. */
+.attention-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  align-items: center;
+}
+
+.attention-item + .attention-item {
+  border-top: 1px solid var(--line-hairline);
+}
+
+.attention-item:hover {
+  background: var(--surface-2);
+}
+
+.attention-icon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+  place-items: center;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.attention-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.attention-task .attention-icon {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.attention-reminder .attention-icon {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.attention-life-event .attention-icon {
+  color: var(--ink-2);
+  background: var(--surface-3);
+}
+
+.attention-main {
+  display: grid;
+  min-width: 0;
+}
+
+.attention-headline {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
 }
 
 .attention-title {
   max-inline-size: 100%;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.today-touch-target {
-  display: inline-flex;
-  max-inline-size: 100%;
-  min-width: 44px;
-  min-height: 44px;
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid var(--ink-1);
-  border-radius: .65rem;
-  align-items: center;
-  justify-content: center;
+  margin: 0;
   color: var(--ink-1);
-  background: var(--surface-1);
-  cursor: pointer;
   font-weight: 600;
   overflow-wrap: anywhere;
   white-space: normal;
 }
 
-@media (max-width: 760px) {
-  .attention-groups {
-    grid-template-columns: 1fr;
+.attention-person {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.attention-item .attention-meta {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.attention-when {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  background: var(--surface-3);
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.attention-when-overdue {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.attention-when-today {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.attention-when-later {
+  background: transparent;
+}
+
+.attention-actions {
+  justify-content: end;
+}
+
+.attention-person.today-touch-target {
+  gap: var(--space-2);
+}
+
+.attention-avatar {
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: var(--radius-pill);
+  place-items: center;
+  color: var(--ink-2);
+  background: var(--surface-3);
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+/* Reconnect suggestions and reminder delivery read as the same agenda rows. */
+:is(#today-cadences-list, #today-reminders-list) {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+:is(#today-cadences-list, #today-reminders-list) > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  align-items: center;
+}
+
+:is(#today-cadences-list, #today-reminders-list) > li + li {
+  border-top: 1px solid var(--line-hairline);
+}
+
+:is(#today-cadences-list, #today-reminders-list) > li > a {
+  grid-column: 1;
+  color: var(--ink-1);
+  font-weight: 600;
+}
+
+.today-section :is(#today-cadences-list, #today-reminders-list) > li > p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+#today-cadences-list > li > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.reminder-delivery-state {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reminder-delivery-state h3 {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* Recently viewed people are a row of chips. */
+#today-recent-people-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+#today-recent-people-list a {
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+}
+
+/*
+ * A link on Today keeps a 44px hit target but reads as text: underlined only
+ * under the pointer, so a title and a person's name never look like buttons.
+ */
+.today-touch-target {
+  display: inline-flex;
+  max-inline-size: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  align-items: center;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  white-space: normal;
+}
+
+.today-touch-target:hover,
+.today-touch-target:focus-visible {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+@media (max-width: 640px) {
+  .attention-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .attention-item > :is(.attention-when, .attention-actions) {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 

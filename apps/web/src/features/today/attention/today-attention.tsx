@@ -27,6 +27,7 @@ import {
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
+import { Bell, CalendarHeart, Flag, ListTodo, UsersRound } from "lucide-react";
 import {
   acknowledgeReminderOccurrence,
   type ApiResult,
@@ -48,6 +49,7 @@ import {
   loadTimePreferences,
   type TimePreferences,
 } from "../../../lib/time-presentation.ts";
+import { nameInitials } from "../../../lib/person-name.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
@@ -62,6 +64,7 @@ import {
   attentionReducer,
   type AttentionRegion,
   attentionView,
+  attentionWhen,
   completable,
   initialAttentionState,
   upcomingMeta,
@@ -118,28 +121,73 @@ export interface TodayAttentionProps {
   readonly onSettled?: () => void;
 }
 
-function Metadata(props: {
-  readonly item: TodayAttentionItem;
-  readonly text: string;
-}) {
-  const { item, text } = props;
+/** The person an item belongs to: a quieter link than the item's title. */
+function Person(props: { readonly item: TodayAttentionItem }) {
+  const { item } = props;
+  if (!item.person) return null;
   const href = attentionDestination(item);
   return (
-    <p>
-      {text}
-      {item.person && (
-        <>
-          {" · "}
-          {href
-            ? (
-              <a className="today-touch-target" href={href}>
-                {item.person.name}
-              </a>
-            )
-            : item.person.name}
-        </>
+    <>
+      {href
+        ? (
+          <a className="attention-person today-touch-target" href={href}>
+            <span aria-hidden="true" className="attention-avatar">
+              {nameInitials(item.person.name)}
+            </span>
+            {item.person.name}
+          </a>
+        )
+        : <span className="attention-person">{item.person.name}</span>}
+    </>
+  );
+}
+
+const KIND_ICONS = {
+  cadence: UsersRound,
+  "important-date": CalendarHeart,
+  "life-event": Flag,
+  reminder: Bell,
+  task: ListTodo,
+} as const;
+
+/** One queued or upcoming item: what, whose, and when, at a glance. */
+function AttentionRow(props: {
+  readonly actions?: ReactNode;
+  readonly hidden?: boolean;
+  readonly item: TodayAttentionItem;
+  readonly meta: string;
+  readonly today: string | undefined;
+  readonly preferences: TimePreferences | undefined;
+}) {
+  const { item } = props;
+  const Icon = KIND_ICONS[item.kind];
+  const when = attentionWhen(item, props.today, props.preferences);
+  return (
+    <li
+      className={`attention-item attention-${item.kind}`}
+      hidden={props.hidden}
+    >
+      <span
+        aria-hidden="true"
+        className="attention-icon"
+        data-attention-icon={item.kind}
+      >
+        <Icon />
+      </span>
+      <div className="attention-main">
+        <div className="attention-headline">
+          <Title item={item} />
+          <Person item={item} />
+        </div>
+        <p className="attention-meta">{props.meta}</p>
+      </div>
+      {when && (
+        <span className={`attention-when attention-when-${when.tone}`}>
+          {when.label}
+        </span>
       )}
-    </p>
+      {props.actions}
+    </li>
   );
 }
 
@@ -252,16 +300,12 @@ export function TodayAttention(props: TodayAttentionProps) {
 
   const preferences: TimePreferences | undefined = state.preferences;
   const attentionRow = (item: TodayAttentionItem) => (
-    <li
-      className={`attention-item attention-${item.kind}`}
-      hidden={view.hiddenItemId === item.id}
-      key={`${item.kind}:${item.id}`}
-    >
-      <Title item={item} />
-      <Metadata item={item} text={attentionMeta(item, preferences)} />
-      {completable(item)
+    <AttentionRow
+      actions={completable(item)
         ? (
-          <div className={formActionsVariants()}>
+          <div
+            className={formActionsVariants({ className: "attention-actions" })}
+          >
             <button
               className={buttonVariants({ variant: "outline" })}
               aria-label={`Complete ${item.title}`}
@@ -277,7 +321,9 @@ export function TodayAttention(props: TodayAttentionProps) {
         )
         : acknowledgeable(item)
         ? (
-          <div className={formActionsVariants()}>
+          <div
+            className={formActionsVariants({ className: "attention-actions" })}
+          >
             <button
               className={buttonVariants({ variant: "outline" })}
               aria-label={`Dismiss ${item.title}`}
@@ -292,7 +338,13 @@ export function TodayAttention(props: TodayAttentionProps) {
           </div>
         )
         : null}
-    </li>
+      hidden={view.hiddenItemId === item.id}
+      item={item}
+      key={`${item.kind}:${item.id}`}
+      meta={attentionMeta(item, preferences)}
+      preferences={preferences}
+      today={state.date}
+    />
   );
   const group = (
     key: "overdue" | "today" | "nextSevenDays",
@@ -371,10 +423,6 @@ export function TodayAttention(props: TodayAttentionProps) {
       >
         Retry attention
       </button>
-      <p className="projection-note">
-        Task completion here uses the same planning action as the person and
-        global task surfaces.
-      </p>
       {createPortal(
         <>
           <p
@@ -393,13 +441,13 @@ export function TodayAttention(props: TodayAttentionProps) {
             id="today-upcoming-list"
           >
             {state.upcoming.value?.map((item) => (
-              <li
-                className={`attention-item attention-${item.kind}`}
+              <AttentionRow
+                item={item}
                 key={`${item.kind}:${item.id}`}
-              >
-                <Title item={item} />
-                <Metadata item={item} text={upcomingMeta(item, preferences)} />
-              </li>
+                meta={upcomingMeta(item, preferences)}
+                preferences={preferences}
+                today={state.date}
+              />
             ))}
           </ul>
           <div className={formActionsVariants()}>

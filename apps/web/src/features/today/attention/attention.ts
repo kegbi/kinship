@@ -310,6 +310,58 @@ export function attentionMeta(
   return `${due} · ${contact}${item.person.archived ? " · archived" : ""}`;
 }
 
+export interface AttentionWhen {
+  readonly label: string;
+  /** How urgent the item reads: the row's chip colours by it. */
+  readonly tone: "overdue" | "today" | "soon" | "later";
+}
+
+/** The calendar date an instant falls on in `timeZone`, as YYYY-MM-DD. */
+function localDate(instant: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).format(new Date(instant));
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * When `item` falls relative to the member's `today` (the snapshot's date in
+ * their time zone): "Today", "Tomorrow", "In 3 days", or how long ago or how
+ * overdue. A dated item counts its own calendar date; a task or cadence its
+ * due instant's date in the member's time zone. Nothing without `today`.
+ */
+export function attentionWhen(
+  item: TodayAttentionItem,
+  today: string | undefined,
+  preferences: TimePreferences | undefined,
+): AttentionWhen | undefined {
+  if (!today) return undefined;
+  const on = "occursOn" in item
+    ? item.occursOn
+    : localDate(item.dueAt, preferences?.effectiveTimezone ?? "UTC");
+  const days = Math.round((Date.parse(on) - Date.parse(today)) / DAY_MS);
+  if (days === 0) return { label: "Today", tone: "today" };
+  if (days === 1) return { label: "Tomorrow", tone: "soon" };
+  if (days > 1) {
+    return { label: `In ${days} days`, tone: days <= 7 ? "soon" : "later" };
+  }
+  const ago = -days;
+  if (item.kind === "task" || item.kind === "cadence") {
+    return {
+      label: `${ago} day${ago === 1 ? "" : "s"} overdue`,
+      tone: "overdue",
+    };
+  }
+  return {
+    label: ago === 1 ? "Yesterday" : `${ago} days ago`,
+    tone: "overdue",
+  };
+}
+
 /** Timing under an upcoming title; the person renders separately. */
 export function upcomingMeta(
   item: TodayAttentionItem,

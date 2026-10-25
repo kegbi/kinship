@@ -13,6 +13,7 @@ import {
   attentionReducer,
   type AttentionState,
   attentionView,
+  attentionWhen,
   initialAttentionState,
   upcomingMeta,
 } from "./attention.ts";
@@ -748,5 +749,53 @@ describe("REL-088 dismissing an undelivered reminder", () => {
       actionsDisabled: false,
       attentionStatus: "1 relationship priority.",
     });
+  });
+});
+
+describe("when an item falls, relative to the member's today", () => {
+  const belgrade = { effectiveTimezone: "Europe/Belgrade", locale: "en" };
+
+  it.each(
+    [
+      ["2026-10-25", "Today", "today"],
+      ["2026-10-26", "Tomorrow", "soon"],
+      ["2026-10-27", "In 2 days", "soon"],
+      ["2026-11-01", "In 7 days", "soon"],
+      ["2026-11-06", "In 12 days", "later"],
+      ["2026-10-24", "Yesterday", "overdue"],
+      ["2026-10-20", "5 days ago", "overdue"],
+    ] as const,
+  )("a date on %s reads %s", (occursOn, label, tone) => {
+    const item = task("date", {
+      dueAt: "2026-10-01T09:00:00Z",
+      kind: "important-date",
+      occursOn,
+    });
+    expect(attentionWhen(item, "2026-10-25", utc)).toEqual({ label, tone });
+  });
+
+  it("reads a task's due instant in the member's time zone", () => {
+    // 23:30 UTC on the 25th is already the 26th in Belgrade.
+    const late = task("late", { dueAt: "2026-10-25T23:30:00Z" });
+    expect(attentionWhen(late, "2026-10-25", belgrade)).toEqual({
+      label: "Tomorrow",
+      tone: "soon",
+    });
+    expect(attentionWhen(late, "2026-10-25", utc)).toEqual({
+      label: "Today",
+      tone: "today",
+    });
+  });
+
+  it("says how overdue a task is", () => {
+    const item = task("old", { dueAt: "2026-10-22T10:00:00Z" });
+    expect(attentionWhen(item, "2026-10-25", utc)).toEqual({
+      label: "3 days overdue",
+      tone: "overdue",
+    });
+  });
+
+  it("has nothing to say without the member's today", () => {
+    expect(attentionWhen(task("any", {}), undefined, utc)).toBeUndefined();
   });
 });
