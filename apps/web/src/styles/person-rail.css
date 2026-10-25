@@ -57,11 +57,10 @@
 
 .profile-rail-block .profile-section-heading {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: var(--space-1) var(--space-2);
   min-height: 1.85rem;
   align-items: center;
-  padding-right: var(--space-6);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line-hairline);
 }
@@ -89,14 +88,26 @@
   font-size: 1.25rem;
 }
 
-/* The 44px hit target stays; the visible ring sits in the block corner. */
+/*
+ * In a rail block the add button is its ring, in the heading's own grid, so
+ * it shares the count chip's centre line however tall the heading is. The
+ * 44px hit target grows around the ring through ::before.
+ */
 .person-workspace .profile-rail-block .profile-rail-add {
-  position: absolute;
-  inset: calc(var(--pad-block) - .5rem) calc(var(--pad-block) - .5rem) auto
-    auto;
+  position: relative;
+  width: 1.85rem;
+  min-width: 0;
+  height: 1.85rem;
+  min-height: 0;
   border-color: transparent;
   color: var(--ink-1);
   background: transparent;
+}
+
+.person-workspace .profile-rail-block .profile-rail-add::before {
+  position: absolute;
+  inset: calc((1.85rem - 44px) / 2);
+  content: "";
 }
 
 .profile-rail-add > span {

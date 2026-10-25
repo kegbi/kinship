@@ -378,6 +378,25 @@ describe("people form layout regressions", () => {
     );
   });
 
+  it("centres a rail block's count and add button on one heading line", () => {
+    // The add button sits in the heading's own grid, so whatever the heading
+    // carries (a bottom rule once the block has rows), the count chip and
+    // the + share its centre line. Positioning it against the block's
+    // corner instead let them drift apart.
+    expect(applicationStyles).toMatch(
+      /\.profile-rail-block \.profile-section-heading\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto auto;[^}]*align-items:\s*center;/s,
+    );
+    const railAdd =
+      /\.person-workspace \.profile-rail-block \.profile-rail-add\s*\{([^}]*)\}/s
+        .exec(applicationStyles)?.[1] ?? "";
+    expect(railAdd).not.toMatch(/position:\s*absolute|inset:/);
+    // The visible ring is smaller than the hit target; the target grows
+    // around it without moving the ring off the heading line.
+    expect(applicationStyles).toMatch(
+      /\.person-workspace \.profile-rail-block \.profile-rail-add::before\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*calc\(\(1\.85rem - 44px\) \/ 2\);/s,
+    );
+  });
+
   it("UXD-019 pins rail sheets to the established mobile breakpoint", () => {
     const selector = ".profile-rail-dialog {";
     const sheetStart = applicationStyles.indexOf(selector);
