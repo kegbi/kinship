@@ -50,26 +50,57 @@ export async function mountThemeSync(): Promise<void> {
   onSessionRevalidated(reconcileTheme);
 }
 
-function themeLabel(theme: Theme): string {
+export function themeLabel(theme: Theme): string {
   return `${theme.charAt(0).toUpperCase()}${theme.slice(1)}`;
 }
 
-export async function mountThemePreferenceControl(): Promise<void> {
-  const select = document.querySelector<HTMLSelectElement>("#theme-preference");
-  const status = document.querySelector<HTMLElement>("#theme-status");
-  if (!select || !status) return;
+/** What one theme control hears from the page's single saver. */
+export type ThemeSaveEvent =
+  | { readonly phase: "saving"; readonly theme: Theme }
+  | { readonly phase: "saved"; readonly theme: Theme }
+  | {
+    readonly detail: string;
+    readonly phase: "failed";
+    /** The durable theme the page went back to. */
+    readonly theme: Theme;
+  };
 
-  const resolution = await resolveWorkspaceSession();
-  if (resolution.status !== "ready") {
-    status.textContent = "Your theme preference could not be loaded.";
-    return;
-  }
+export interface ThemeSaver {
+  /** Applies `theme` at once and saves it behind any save in flight. */
+  choose(theme: Theme): void;
+  /** The theme the member chose last, saved or still saving. */
+  current(): Theme;
+  subscribe(listener: (event: ThemeSaveEvent) => void): void;
+}
 
+let pageSaver: Promise<ThemeSaver | undefined> | undefined;
+
+/**
+ * The page's one theme saver, shared by the header toggle and the
+ * preferences select so their saves never overlap. Rapid changes coalesce:
+ * at most one save is in flight, and only the latest choice follows it. A
+ * failed save restores the last durable theme. Answers `undefined` when the
+ * session has no workspace to save into.
+ */
+export function themeSaver(): Promise<ThemeSaver | undefined> {
+  pageSaver ??= resolveWorkspaceSession().then((resolution) =>
+    resolution.status === "ready" ? createSaver(resolution) : undefined
+  );
+  return pageSaver;
+}
+
+function createSaver(
+  resolution: Extract<WorkspaceSessionResolution, { status: "ready" }>,
+): ThemeSaver {
   const workspaceId = resolution.session.workspace.id;
-  let durableTheme = resolution.session.uiState?.theme ?? "system";
+  const listeners = new Set<(event: ThemeSaveEvent) => void>();
+  const emit = (event: ThemeSaveEvent) => listeners.forEach((l) => l(event));
+  let durableTheme: Theme = resolution.session.uiState?.theme ?? "system";
   let durableUiState = resolution.session.uiState ?? {};
+  let chosen = durableTheme;
   let pendingTheme: Theme | undefined;
   let saveInFlight = false;
+
   const drainThemeSaves = async (theme: Theme): Promise<void> => {
     saveInFlight = true;
     let savingTheme = theme;
@@ -91,32 +122,65 @@ export async function mountThemePreferenceControl(): Promise<void> {
       }
 
       pendingTheme = undefined;
+      saveInFlight = false;
+      chosen = durableTheme;
+      applyTheme(durableTheme);
       if (result?.ok) {
         updateCachedSessionUiState(result.value.uiState);
-        select.value = durableTheme;
-        applyTheme(durableTheme);
-        status.textContent = `${themeLabel(durableTheme)} theme saved.`;
+        emit({ phase: "saved", theme: durableTheme });
       } else {
         updateCachedSessionUiState(durableUiState);
-        applyTheme(durableTheme);
-        select.value = durableTheme;
-        status.textContent = result?.problem.detail ??
-          "Your theme preference could not be saved.";
+        emit({
+          detail: result?.problem.detail ??
+            "Your theme preference could not be saved.",
+          phase: "failed",
+          theme: durableTheme,
+        });
       }
-      saveInFlight = false;
       return;
     }
   };
 
-  select.value = durableTheme;
+  return {
+    choose(theme) {
+      chosen = theme;
+      applyTheme(theme);
+      emit({ phase: "saving", theme });
+      if (saveInFlight) {
+        pendingTheme = theme;
+        return;
+      }
+      void drainThemeSaves(theme);
+    },
+    current: () => chosen,
+    subscribe(listener) {
+      listeners.add(listener);
+    },
+  };
+}
+
+export async function mountThemePreferenceControl(): Promise<void> {
+  const select = document.querySelector<HTMLSelectElement>("#theme-preference");
+  const status = document.querySelector<HTMLElement>("#theme-status");
+  if (!select || !status) return;
+
+  const saver = await themeSaver();
+  if (!saver) {
+    status.textContent = "Your theme preference could not be loaded.";
+    return;
+  }
+
+  saver.subscribe((event) => {
+    select.value = event.theme;
+    status.textContent = event.phase === "saving"
+      ? `Saving ${themeLabel(event.theme)} theme…`
+      : event.phase === "saved"
+      ? `${themeLabel(event.theme)} theme saved.`
+      : event.detail;
+  });
+  select.value = saver.current();
   select.addEventListener("change", () => {
-    const selectedTheme = select.value as Theme;
-    applyTheme(selectedTheme);
-    pendingTheme = selectedTheme;
-    status.textContent = `Saving ${themeLabel(selectedTheme)} theme…`;
-    if (saveInFlight) return;
-    pendingTheme = undefined;
-    void drainThemeSaves(selectedTheme);
+    saver.choose(select.value as Theme);
   });
   select.disabled = false;
   status.textContent = "";

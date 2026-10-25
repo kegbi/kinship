@@ -104,13 +104,13 @@ textarea {
   }
 
   :where(button[type="submit"]:not([class])) {
-    border-color: var(--accent);
-    color: var(--ink-inverse);
-    background: var(--accent);
+    border-color: var(--accent-solid);
+    color: var(--on-accent);
+    background: var(--accent-solid);
   }
 
   :where(button[type="submit"]:not([class])):hover {
-    background: var(--accent-hover);
+    background: var(--accent-solid-hover);
   }
 
   :where(button:not([class])):disabled {

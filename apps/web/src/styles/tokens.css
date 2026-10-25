@@ -16,6 +16,10 @@
   --accent-hover: #4338ca;
   --accent-soft: #eef2ff;
   --accent-line: #c7d2fe;
+  /* Filled accent controls: a fill white text stays readable on (WCAG AA). */
+  --accent-solid: #4f46e5;
+  --accent-solid-hover: #4338ca;
+  --on-accent: #ffffff;
   --positive: #047857;
   --positive-soft: #ecfdf5;
   --warning: #92400e;
@@ -65,6 +69,9 @@
     --accent-hover: #a5b4fc;
     --accent-soft: #1f1d47;
     --accent-line: #3f3d8f;
+    --accent-solid: #5b55f0;
+    --accent-solid-hover: #6d5ef5;
+    --on-accent: #ffffff;
     --positive: #34d399;
     --positive-soft: #0f2a22;
     --warning: #fbbf24;
@@ -96,6 +103,9 @@
   --accent-hover: #a5b4fc;
   --accent-soft: #1f1d47;
   --accent-line: #3f3d8f;
+  --accent-solid: #5b55f0;
+  --accent-solid-hover: #6d5ef5;
+  --on-accent: #ffffff;
   --positive: #34d399;
   --positive-soft: #0f2a22;
   --warning: #fbbf24;
@@ -130,8 +140,8 @@
   --card-foreground: var(--ink-1);
   --popover: var(--surface-1);
   --popover-foreground: var(--ink-1);
-  --primary: var(--accent);
-  --primary-foreground: var(--ink-inverse);
+  --primary: var(--accent-solid);
+  --primary-foreground: var(--on-accent);
   --secondary: var(--surface-2);
   --secondary-foreground: var(--ink-1);
   --muted-foreground: var(--ink-2);

@@ -1,4 +1,5 @@
 ---
+import ThemeBootstrap from "../components/ThemeBootstrap.astro";
 import "../styles/application.css";
 import "../styles/islands.css";
 import {
@@ -59,19 +60,12 @@ const accessAction = buttonVariants({
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <ThemeBootstrap />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="robots" content="noindex" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f9" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0f12" />
-    <script is:inline>
-      try {
-        const theme = localStorage.getItem("kinship.theme");
-        if (theme === "light" || theme === "dark") {
-          document.documentElement.dataset.theme = theme;
-        }
-      } catch {}
-    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
   </head>
@@ -130,6 +124,7 @@ const accessAction = buttonVariants({
           <div class="global-actions" aria-label="Workspace actions">
             <button class="add-action" data-quick-capture data-interaction-capture-ready="false" type="button" aria-label="Quick capture" disabled><span class="desktop-action-label">Quick capture</span><span class="compact-action-label">Capture</span></button>
             <a class="add-action" href="/app/people/new" tabindex="0">Add person</a>
+            <button class="theme-toggle" data-theme-toggle data-theme-choice="system" type="button" aria-label="Theme" title="Theme" disabled><svg class="theme-toggle-glyph" data-theme-glyph="system" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2" /><path d="M8 21h8M12 17v4" /></svg><svg class="theme-toggle-glyph" data-theme-glyph="light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg><svg class="theme-toggle-glyph" data-theme-glyph="dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg></button>
             <div class="member-menu" role="group" aria-label="Member menu">
               <button id="member-menu-toggle" type="button" aria-label="Open member menu" aria-expanded="false" aria-controls="member-popover"><span class="desktop-action-label">Member menu</span><span class="compact-action-label">Menu</span></button>
               <div id="member-popover" class="member-popover" hidden>
@@ -166,9 +161,11 @@ const accessAction = buttonVariants({
 
 <script>
   import { mountApplicationShell } from "../features/shell/application-shell/application-shell.ts";
+  import { mountThemeToggle } from "../features/shell/theme-toggle/theme-toggle.ts";
   import { mountThemeSync } from "../lib/theme.ts";
   void mountApplicationShell();
   void mountThemeSync();
+  void mountThemeToggle();
 </script>
 
 <script>

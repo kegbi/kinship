@@ -211,9 +211,9 @@
 .people-directory-controls button,
 .directory-pagination button,
 .directory-error button {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
   cursor: pointer;
   font-weight: 600;
 }
@@ -514,9 +514,9 @@
 }
 
 .directory-tag-chip[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
 }
 
 .directory-tag-count {

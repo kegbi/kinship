@@ -1032,9 +1032,9 @@
 }
 
 .invitation-form button {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
   cursor: pointer;
 }
 
@@ -1111,9 +1111,9 @@
 }
 
 .personalization-nav a[aria-current="page"] {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
 }
 
 .personalization-content > :is(h2, p) {

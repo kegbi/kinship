@@ -30,8 +30,8 @@
   aspect-ratio: 1;
   border-radius: 1.35rem;
   place-items: center;
-  color: var(--ink-inverse);
-  background: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent-solid);
   font-family: inherit;
   font-size: clamp(1.6rem, 4vw, 2.6rem);
   font-weight: 700;

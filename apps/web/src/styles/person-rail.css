@@ -123,9 +123,9 @@
 
 .person-workspace .profile-rail-block .profile-rail-add:hover > span,
 .person-workspace .profile-rail-block .profile-rail-add:focus-visible > span {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
 }
 
 .profile-rail-block :is(form, fieldset, .form-grid, label, input, select, textarea) {

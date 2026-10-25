@@ -259,8 +259,8 @@
   aspect-ratio: 1;
   border-radius: var(--radius-pill);
   place-items: center;
-  color: var(--ink-inverse);
-  background: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent-solid);
   font-size: .65rem;
 }
 
@@ -429,9 +429,9 @@
 
 .person-workspace .profile-section-cta:hover,
 .person-workspace .profile-section-cta:focus-visible {
-  border-color: var(--accent);
-  color: var(--ink-inverse);
-  background: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+  background: var(--accent-solid);
   filter: none;
 }
 

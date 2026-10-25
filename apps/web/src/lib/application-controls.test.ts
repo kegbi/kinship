@@ -15,6 +15,10 @@ const applicationLayout = readFileSync(
   "utf8",
 );
 const themeSource = readFileSync("apps/web/src/lib/theme.ts", "utf8");
+const themeBootstrap = readFileSync(
+  "apps/web/src/components/ThemeBootstrap.astro",
+  "utf8",
+);
 const todayPage = readFileSync("apps/web/src/pages/app.astro", "utf8");
 const layoutPaths = [
   "apps/web/src/layouts/ApplicationLayout.astro",
@@ -404,10 +408,10 @@ describe("application control presentation", () => {
   it("runs the local theme cache inline in the application head", () => {
     const headStart = applicationLayout.indexOf("<head>");
     const headEnd = applicationLayout.indexOf("</head>");
-    const inlineScript = applicationLayout.match(
+    const bootstrapIndex = applicationLayout.indexOf("<ThemeBootstrap />");
+    const inlineScript = themeBootstrap.match(
       /<script\s+is:inline>([\s\S]*?)<\/script>/,
     );
-    const scriptIndex = inlineScript?.index ?? -1;
     const layoutStorageKey = inlineScript?.[1]?.match(
       /localStorage\.getItem\("([^"]+)"\)/,
     )?.[1];
@@ -415,8 +419,8 @@ describe("application control presentation", () => {
       /const THEME_STORAGE_KEY = "([^"]+)"/,
     )?.[1];
 
-    expect(scriptIndex).toBeGreaterThan(headStart);
-    expect(scriptIndex).toBeLessThan(headEnd);
+    expect(bootstrapIndex).toBeGreaterThan(headStart);
+    expect(bootstrapIndex).toBeLessThan(headEnd);
     expect(layoutStorageKey).toBe("kinship.theme");
     expect(runtimeStorageKey).toBe(layoutStorageKey);
     expect(inlineScript?.[1]).not.toMatch(/matchMedia|theme-color/);
@@ -553,7 +557,7 @@ describe("application control presentation", () => {
       ) expect(classes).toContain(token);
     }
     // Primary is the indigo accent (#4f46e5) and danger its own red (#b91c1c).
-    expect(tokensCss).toMatch(/--primary:\s*var\(--accent\);/);
+    expect(tokensCss).toMatch(/--primary:\s*var\(--accent-solid\);/);
     expect(tokensCss).toMatch(/--accent:\s*#4f46e5;/);
     expect(buttonVariants().split(" ")).toContain("bg-primary");
     expect(tokensCss).toMatch(/--danger:\s*#b91c1c;/);

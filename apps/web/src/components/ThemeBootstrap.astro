@@ -1,0 +1,21 @@
+---
+/**
+ * The member's theme before first paint, on every layout: `lib/theme.ts`
+ * remembers a forced light or dark choice in `kinship.theme`, and this script
+ * applies it before the stylesheet's tokens resolve. Without a saved choice
+ * the tokens follow the OS. Public and sign-in pages read the same key, so the
+ * choice a member made inside the app survives signing out.
+ *
+ * The body's whitespace is part of the gateway CSP's `sha256-` hash
+ * (`gateway/security_headers.conf`); keep it byte for byte.
+ */
+---
+
+<script is:inline>
+      try {
+        const theme = localStorage.getItem("kinship.theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch {}
+    </script>
