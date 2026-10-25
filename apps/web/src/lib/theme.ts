@@ -1,4 +1,7 @@
-import { saveMemberUiState } from "../../../../packages/contracts/generated/auth-client.ts";
+import {
+  type MemberUiState,
+  saveMemberUiState,
+} from "../../../../packages/contracts/generated/auth-client.ts";
 import {
   onSessionRevalidated,
   resolveWorkspaceSession,
@@ -42,7 +45,10 @@ export function applyTheme(theme: Theme): void {
 
 function reconcileTheme(resolution: WorkspaceSessionResolution): void {
   if (resolution.status !== "ready") return;
-  applyTheme(resolution.session.uiState?.theme ?? "system");
+  const uiState = resolution.session.uiState ?? {};
+  applyTheme(uiState.theme ?? "system");
+  // A theme saved elsewhere (another tab) becomes the saver's durable one.
+  void pageSaver?.then((saver) => saver?.adopt(uiState));
 }
 
 export async function mountThemeSync(): Promise<void> {
@@ -56,6 +62,8 @@ export function themeLabel(theme: Theme): string {
 
 /** What one theme control hears from the page's single saver. */
 export type ThemeSaveEvent =
+  /** The session now holds `theme`, saved elsewhere; nothing to announce. */
+  | { readonly phase: "adopted"; readonly theme: Theme }
   | { readonly phase: "saving"; readonly theme: Theme }
   | { readonly phase: "saved"; readonly theme: Theme }
   | {
@@ -66,6 +74,11 @@ export type ThemeSaveEvent =
   };
 
 export interface ThemeSaver {
+  /**
+   * Takes the session's revalidated UI state as durable, unless a save of
+   * this page's own is in flight (its answer will settle the theme).
+   */
+  adopt(uiState: MemberUiState): void;
   /** Applies `theme` at once and saves it behind any save in flight. */
   choose(theme: Theme): void;
   /** The theme the member chose last, saved or still saving. */
@@ -142,6 +155,13 @@ function createSaver(
   };
 
   return {
+    adopt(uiState) {
+      if (saveInFlight) return;
+      durableUiState = uiState;
+      durableTheme = uiState.theme ?? "system";
+      chosen = durableTheme;
+      emit({ phase: "adopted", theme: durableTheme });
+    },
     choose(theme) {
       chosen = theme;
       applyTheme(theme);
@@ -172,6 +192,7 @@ export async function mountThemePreferenceControl(): Promise<void> {
 
   saver.subscribe((event) => {
     select.value = event.theme;
+    if (event.phase === "adopted") return;
     status.textContent = event.phase === "saving"
       ? `Saving ${themeLabel(event.theme)} theme…`
       : event.phase === "saved"

@@ -47,6 +47,8 @@ export async function keyboardReachMemberMenuToggle(page: Page): Promise<void> {
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Add person" })).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: /^Theme: / })).toBeFocused();
+  await page.keyboard.press("Tab");
   const menuToggle = page.getByRole("button", { name: "Open member menu" });
   await expect(menuToggle).toBeFocused();
 }

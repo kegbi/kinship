@@ -332,7 +332,8 @@ const DAY_MS = 86_400_000;
  * When `item` falls relative to the member's `today` (the snapshot's date in
  * their time zone): "Today", "Tomorrow", "In 3 days", or how long ago or how
  * overdue. A dated item counts its own calendar date; a task or cadence its
- * due instant's date in the member's time zone. Nothing without `today`.
+ * due instant's date in the member's time zone, so nothing until that is
+ * known. Nothing without `today`.
  */
 export function attentionWhen(
   item: TodayAttentionItem,
@@ -340,9 +341,10 @@ export function attentionWhen(
   preferences: TimePreferences | undefined,
 ): AttentionWhen | undefined {
   if (!today) return undefined;
+  if (!("occursOn" in item) && !preferences) return undefined;
   const on = "occursOn" in item
     ? item.occursOn
-    : localDate(item.dueAt, preferences?.effectiveTimezone ?? "UTC");
+    : localDate(item.dueAt, preferences!.effectiveTimezone);
   const days = Math.round((Date.parse(on) - Date.parse(today)) / DAY_MS);
   if (days === 0) return { label: "Today", tone: "today" };
   if (days === 1) return { label: "Tomorrow", tone: "soon" };

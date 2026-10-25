@@ -400,6 +400,11 @@ Deno.test("[SEARCH-001] names match across scripts and keyboard layouts over HTT
   // The plain match still answers a partly typed spelling the fold collapses.
   assertEquals(await people("Ele"), both);
   assertEquals(await people("Petrova"), []);
+  // A short query is never re-typed into letters inside unrelated names
+  // ("Sam" on the other layout folds to "if").
+  const clifford = await addPerson(reader, "Clifford");
+  assertEquals(await people("Sam"), []);
+  assertEquals(await people("Cliff"), [clifford]);
 });
 
 Deno.test("[SEARCH-001] snippets are the stored text, never markup, and groups are bounded", async () => {

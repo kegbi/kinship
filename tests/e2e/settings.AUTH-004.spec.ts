@@ -593,7 +593,9 @@ test(
     const originalBodyBackground = await page.locator("body").evaluate(
       (body) => getComputedStyle(body).backgroundColor,
     );
-    const theme = page.getByLabel("Theme");
+    // The header's theme switch is labelled "Theme: …"; the select is the
+    // one combobox named Theme.
+    const theme = page.getByRole("combobox", { name: "Theme" });
     await theme.selectOption("dark");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect.poll(() =>
@@ -608,9 +610,25 @@ test(
     await page.evaluate(() => localStorage.removeItem("kinship.theme"));
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(page.getByLabel("Theme")).toHaveValue("dark");
-    await page.getByLabel("Theme").selectOption("system");
+    await expect(theme).toHaveValue("dark");
+    await theme.selectOption("system");
     await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+    await expect(
+      page.getByRole("status").filter({ hasText: "System theme saved" }),
+    ).toBeVisible();
+
+    // The header switch steps the same saved theme and the select follows.
+    const headerTheme = page.getByRole("button", { name: /^Theme: System/ });
+    await headerTheme.click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(theme).toHaveValue("light");
+    await expect(
+      page.getByRole("status").filter({ hasText: "Light theme saved" }),
+    ).toBeVisible();
+    await page.goto("/auth/sign-in");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.goto("/app/settings/preferences");
+    await theme.selectOption("system");
     await expect(
       page.getByRole("status").filter({ hasText: "System theme saved" }),
     ).toBeVisible();

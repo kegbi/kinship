@@ -88,6 +88,14 @@ export function mountSettingsSearch(): void {
           count.hidden = !query;
           count.textContent = query ? String(found) : "";
         }
+        // The count is drawn for the eye; the link names it in words.
+        const name = (link.firstChild?.textContent ?? "").trim();
+        if (query) {
+          link.setAttribute(
+            "aria-label",
+            `${name}, ${found} match${found === 1 ? "" : "es"}`,
+          );
+        } else link.removeAttribute("aria-label");
       }
     }
     noResults.hidden = !query || total > 0;

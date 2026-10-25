@@ -178,6 +178,8 @@ test(
       exact: true,
     });
     const toggle = page.getByRole("button", { name: "Open member menu" });
+    const themeSwitch = page.getByRole("button", { name: /^Theme: / });
+    await expect(themeSwitch).toBeEnabled();
     for (
       const target of [
         page.getByRole("link", { name: "Skip to main content" }),
@@ -188,6 +190,7 @@ test(
         ),
         search,
         capture,
+        themeSwitch,
         toggle,
       ]
     ) {
@@ -391,12 +394,20 @@ test(
         .toBeVisible();
     }
     await page.getByLabel("Search settings").fill("password");
+    // A query lists the matching settings as links to their controls.
+    const settingsMain = page.getByRole("main");
     await expect(
-      page.getByRole("heading", { level: 3, name: "Security & sessions" }),
+      settingsMain.getByRole("link", { name: /^Security & sessions/ }),
     )
       .toBeVisible();
-    await expect(page.getByRole("heading", { level: 3, name: "Profile" }))
+    await expect(settingsMain.getByRole("link", { name: /^Profile/ }))
       .toBeHidden();
+    await expect(page.getByRole("heading", { level: 2, name: "Workspace" }))
+      .toBeHidden();
+    await page.getByLabel("Search settings").fill("theme");
+    await expect(settingsMain.getByRole("link", { name: /^Theme Preferences/ }))
+      .toHaveAttribute("href", "/app/settings/preferences#appearance-heading");
+    await page.getByLabel("Search settings").fill("");
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(peopleNavigation).toBeVisible();
     await expect(peopleNavigation).toHaveAttribute("href", "/app/people");

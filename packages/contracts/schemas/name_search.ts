@@ -106,10 +106,16 @@ function retyped(text: string, keys: ReadonlyMap<string, string>): string {
 }
 
 /**
- * The shortest query re-typed on the other layout. Shorter ones are too
- * short to tell a mistyped name from an ordinary pair of letters.
+ * The shortest query re-typed on the other layout. Shorter ones re-type into
+ * two or three common letters ("Sam" -> "if") found inside unrelated names.
  */
-export const NAME_LAYOUT_MINIMUM = 3;
+export const NAME_LAYOUT_MINIMUM = 4;
+
+/** The shortest query folded at all: one folded letter matches nearly anyone. */
+export const NAME_FOLD_MINIMUM = 2;
+
+/** Whether a re-typing reads as a word: letters, spaces, hyphens, apostrophes. */
+const WORDLIKE = /^[\p{L}\s'’-]+$/u;
 
 interface Folded {
   /** Where each unit of `text` came from: a span of the original's units. */
@@ -169,17 +175,21 @@ export function foldName(text: string): string {
 }
 
 /**
- * The folded strings a name may contain to match `query`: the query itself,
- * and, from three characters, the query re-typed as if on the other layout.
- * Unique, in that order, without empty ones.
+ * The folded strings a name may contain to match `query`: the query itself
+ * from two characters, and, from four, the query re-typed as if on the other
+ * layout when that re-typing reads as a word. Unique, in that order, without
+ * empty ones. A shorter query matches only as typed.
  */
 export function nameSearchForms(query: string): string[] {
   const trimmed = query.trim();
-  if (!trimmed) return [];
-  const typed = Array.from(trimmed).length >= NAME_LAYOUT_MINIMUM
-    ? [trimmed, retyped(trimmed, TO_ENGLISH), retyped(trimmed, TO_RUSSIAN)]
-    : [trimmed];
-  return [...new Set(typed.map(foldName))].filter(Boolean);
+  const length = Array.from(trimmed).length;
+  if (length < NAME_FOLD_MINIMUM) return [];
+  const retypings = length >= NAME_LAYOUT_MINIMUM
+    ? [retyped(trimmed, TO_ENGLISH), retyped(trimmed, TO_RUSSIAN)].filter((
+      text,
+    ) => text !== trimmed && WORDLIKE.test(text))
+    : [];
+  return [...new Set([trimmed, ...retypings].map(foldName))].filter(Boolean);
 }
 
 export interface NameMatchRange {

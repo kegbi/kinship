@@ -127,6 +127,35 @@ describe("header theme toggle", () => {
     });
   });
 
+  it("follows a theme another tab saved once the session revalidates", async () => {
+    mocks.resolveWorkspaceSession.mockResolvedValue(ready("system"));
+    let revalidate!: (resolution: ReturnType<typeof ready>) => void;
+    mocks.onSessionRevalidated.mockImplementation((handler) => {
+      revalidate = handler;
+    });
+    mocks.saveMemberUiState.mockImplementation(async (input) =>
+      saved(input.theme)
+    );
+    const { mountThemeToggle } = await import("./theme-toggle.ts");
+    const { mountThemeSync } = await import("../../../lib/theme.ts");
+    await mountThemeSync();
+    await mountThemeToggle();
+
+    revalidate(ready("dark"));
+    await vi.waitFor(() => expect(toggle().dataset.themeChoice).toBe("dark"));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+
+    // The next step starts from the theme the member now has.
+    toggle().click();
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    await vi.waitFor(() =>
+      expect(mocks.saveMemberUiState).toHaveBeenLastCalledWith(
+        { theme: "system" },
+        "workspace-a",
+      )
+    );
+  });
+
   it("stays disabled without a workspace session", async () => {
     mocks.resolveWorkspaceSession.mockResolvedValue({ status: "access-lost" });
     const { mountThemeToggle } = await import("./theme-toggle.ts");

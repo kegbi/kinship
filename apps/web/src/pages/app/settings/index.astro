@@ -74,8 +74,8 @@ const searchEntries = (categoryId: string) =>
     <div class="settings-layout">
       <nav class="settings-local-nav" aria-label="Settings categories">
         <p>Categories</p>
-        {categories.map((category) => <a href={`#${category.title.toLowerCase()}`} data-settings-nav={category.title.toLowerCase()}>{category.title}<span class="settings-nav-count" data-settings-nav-count hidden></span></a>)}
-        <a href="#billing" data-settings-nav="billing">Billing <small>Optional</small><span class="settings-nav-count" data-settings-nav-count hidden></span></a>
+        {categories.map((category) => <a href={`#${category.title.toLowerCase()}`} data-settings-nav={category.title.toLowerCase()}>{category.title}<span class="settings-nav-count" data-settings-nav-count aria-hidden="true" hidden></span></a>)}
+        <a href="#billing" data-settings-nav="billing">Billing <small>Optional</small><span class="settings-nav-count" data-settings-nav-count aria-hidden="true" hidden></span></a>
       </nav>
 
       <div class="settings-groups">
@@ -97,7 +97,7 @@ const searchEntries = (categoryId: string) =>
             <ul class="settings-matches" data-settings-matches aria-label={`${category.title} settings matching the search`} hidden>
               {searchEntries(category.title.toLowerCase()).map((entry) => (
                 <li data-settings-match data-search={`${category.title} ${entry.page ?? ""} ${entry.label} ${entry.keywords}`} data-requires-workspace-admin={entry.access === "admin" ? "true" : undefined} data-requires-workspace-owner={entry.access === "owner" ? "true" : undefined} hidden>
-                  <a href={entry.href}><span class="settings-match-label">{entry.label}</span><span class="settings-match-page">{entry.page ?? "Settings page"}</span></a>
+                  <a href={entry.href}><span class="settings-match-label">{entry.label}</span> <span class="settings-match-page">{entry.page ?? "Settings page"}</span></a>
                 </li>
               ))}
             </ul>
@@ -118,7 +118,7 @@ const searchEntries = (categoryId: string) =>
           </div>
           <ul class="settings-matches" data-settings-matches aria-label="Billing settings matching the search" hidden>
             <li data-settings-match data-search="billing invoices subscription payment plan optional" hidden>
-              <span class="settings-match-unavailable"><span class="settings-match-label">Billing &amp; invoices</span><span class="settings-match-page">Not enabled for this workspace</span></span>
+              <span class="settings-match-unavailable"><span class="settings-match-label">Billing &amp; invoices</span> <span class="settings-match-page">Not enabled for this workspace</span></span>
             </li>
           </ul>
         </section>

@@ -795,6 +795,19 @@ describe("when an item falls, relative to the member's today", () => {
     });
   });
 
+  it("waits for the member's time zone before placing a due instant", () => {
+    const item = task("late", { dueAt: "2026-10-25T23:30:00Z" });
+    expect(attentionWhen(item, "2026-10-25", undefined)).toBeUndefined();
+    const dated = task("date", {
+      kind: "important-date",
+      occursOn: "2026-10-26",
+    });
+    expect(attentionWhen(dated, "2026-10-25", undefined)).toEqual({
+      label: "Tomorrow",
+      tone: "soon",
+    });
+  });
+
   it("has nothing to say without the member's today", () => {
     expect(attentionWhen(task("any", {}), undefined, utc)).toBeUndefined();
   });

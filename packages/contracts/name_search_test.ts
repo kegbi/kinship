@@ -90,8 +90,10 @@ Deno.test("[SEARCH-001] a match maps back to the label's own characters", () => 
     // One Cyrillic letter folds to two Latin ones: a query for half of
     // them still marks the whole letter.
     ["Жанна", "zh", [{ start: 0, end: 1 }]],
-    ["Жанна", "z", [{ start: 0, end: 1 }]],
-    ["Zhanna", "ж", [{ start: 0, end: 2 }]],
+    // A single letter matches only as typed, never across scripts.
+    ["Жанна", "z", []],
+    ["Zhanna", "ж", []],
+    ["Zhanna", "жа", [{ start: 0, end: 3 }]],
     ["Мажор", "zho", [{ start: 2, end: 4 }]],
     // A collapsed pair marks both of the letters it came from.
     ["Yulia", "юл", [{ start: 0, end: 3 }]],
@@ -107,4 +109,20 @@ Deno.test("[SEARCH-001] a match maps back to the label's own characters", () => 
   assert(nameMatches("Settings · Profile", "Ыуеештпы"), "layout command");
   assert(nameMatches("Settings · Profile", "prof"), "plain command");
   assert(!nameMatches("Settings · Profile", "zebra"), "no command");
+});
+
+Deno.test("[SEARCH-001] short queries stay literal instead of folding into unrelated names", () => {
+  // Re-typed on the other layout, three letters fold to two or three common
+  // ones ("Sam" -> "if", "Sue" -> "igu") that sit inside unrelated names.
+  assertEquals(nameSearchForms("Sam"), ["sam"]);
+  assertEquals(nameSearchForms("Sue"), ["sue"]);
+  assert(!nameMatches("Clifford Hale", "Sam"), "Sam finds Clifford");
+  assert(!nameMatches("Miguel Rodriguez", "Sue"), "Sue finds Rodriguez");
+  // One letter folded ("y" -> "i") would match nearly every name.
+  assertEquals(nameSearchForms("y"), []);
+  assert(!nameMatches("Kim Ito", "y"), "y finds Ito");
+  assert(nameMatches("Yana", "y"), "y still finds Yana as typed");
+  // A re-typing that lands on punctuation is not a name.
+  assertEquals(nameSearchForms("hello"), ["hello", "руддщ"].map(foldName));
+  assertEquals(nameSearchForms("1234"), ["1234"]);
 });

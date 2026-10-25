@@ -27,8 +27,8 @@ describe("settings search across individual settings", () => {
       <label for="settings-search">Search settings</label>
       <input id="settings-search" type="search">
       <nav aria-label="Settings categories">
-        <a href="#personal" data-settings-nav="personal">Personal<span data-settings-nav-count hidden></span></a>
-        <a href="#workspace" data-settings-nav="workspace">Workspace<span data-settings-nav-count hidden></span></a>
+        <a href="#personal" data-settings-nav="personal">Personal<span data-settings-nav-count aria-hidden="true" hidden></span></a>
+        <a href="#workspace" data-settings-nav="workspace">Workspace<span data-settings-nav-count aria-hidden="true" hidden></span></a>
       </nav>
       <section id="personal" data-settings-group="personal">
         <h2>Personal</h2>
@@ -81,6 +81,9 @@ describe("settings search across individual settings", () => {
       nav("personal").querySelector("[data-settings-nav-count]")!.textContent,
     )
       .toBe("1");
+    expect(screen.getByRole("link", { name: "Personal, 1 match" })).toBe(
+      nav("personal"),
+    );
   });
 
   it("matches every word of the query in any order across categories", () => {
@@ -123,6 +126,9 @@ describe("settings search across individual settings", () => {
       nav("personal").querySelector<HTMLElement>("[data-settings-nav-count]")!
         .hidden,
     ).toBe(true);
+    expect(screen.getByRole("link", { name: "Personal" })).toBe(
+      nav("personal"),
+    );
     expect(
       group("personal").querySelector<HTMLElement>("[data-settings-matches]")!
         .hidden,

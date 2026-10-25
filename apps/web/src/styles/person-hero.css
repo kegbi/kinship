@@ -227,17 +227,19 @@
   line-height: 1.45;
 }
 
-/* Vitals link to their sections but read as values, not as a row of links. */
+/* Vitals link to their sections; a faint underline marks them as links
+   without making the row read as a list of bold links. */
 .person-vital-stats a {
   color: inherit;
-  text-decoration: none;
-  text-underline-offset: .2em;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: .25em;
 }
 
 .person-vital-stats a:hover,
 .person-vital-stats a:focus-visible {
   color: var(--accent-hover);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 .person-vital-stats [data-vital-empty] {
