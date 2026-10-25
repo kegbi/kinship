@@ -368,7 +368,9 @@
 }
 
 .person-zone .profile-section-card > .profile-section-heading > .profile-section-cta {
+  flex: none;
   margin-left: auto;
+  white-space: nowrap;
 }
 
 .person-zone .profile-section-card > .profile-section-heading h3 {
@@ -440,14 +442,12 @@
   font-size: .85rem;
 }
 
-/* Monica's blank box: a calm centred prompt instead of a bare sentence. */
+/*
+ * An empty section says so in one quiet line under its heading; the add
+ * action beside the title is the prompt, so no boxed placeholder repeats it.
+ */
 .person-zone .profile-section-card[data-section-state="empty"] > .section-state {
-  padding: var(--space-4);
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-md);
-  color: var(--ink-2);
-  background: var(--surface-2);
-  text-align: center;
+  color: var(--ink-3);
 }
 
 .person-zone .profile-section-card > .profile-section-footer {

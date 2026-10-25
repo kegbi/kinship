@@ -223,12 +223,26 @@
 .person-vital-stats dd {
   margin: 0;
   color: var(--ink-1);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.45;
 }
 
+/* Vitals link to their sections but read as values, not as a row of links. */
 .person-vital-stats a {
+  color: inherit;
+  text-decoration: none;
   text-underline-offset: .2em;
+}
+
+.person-vital-stats a:hover,
+.person-vital-stats a:focus-visible {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.person-vital-stats [data-vital-empty] {
+  color: var(--ink-3);
+  font-weight: 400;
 }
 
 .person-hero-tags,

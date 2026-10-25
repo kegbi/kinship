@@ -23,10 +23,9 @@
   text-transform: uppercase;
 }
 
-.tasks-section-card .task-list:empty::after {
-  content: "None";
-  color: var(--ink-3);
-  font-size: .82rem;
+/* A status with no tasks takes no room; the section state says when none do. */
+.tasks-section-card .task-columns > div:has(> .task-list:empty) {
+  display: none;
 }
 
 .tasks-section-card .task-item {

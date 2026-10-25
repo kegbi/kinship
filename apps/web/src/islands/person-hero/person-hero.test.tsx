@@ -1422,6 +1422,24 @@ describe("GAP-047 the identity editor's breadth", () => {
       .not.toBeNull();
   });
 
+  it("marks the vitals with nothing recorded so they read quieter than real values", async () => {
+    markup();
+    await mount(profile({
+      person: { profileSections: [{ id: "activities", status: "hidden" }] },
+    }));
+    const vitals = element("[data-person-vital-stats]");
+    const work = vitals.querySelector<HTMLElement>(
+      '[data-person-vital-value="work"]',
+    )!;
+    expect(work.textContent).toBe("Not recorded");
+    expect(work.hasAttribute("data-vital-empty")).toBe(true);
+    const lastContact = vitals.querySelector<HTMLElement>(
+      "[data-profile-last-contact]",
+    )!;
+    expect(lastContact.textContent).toBe("None recorded");
+    expect(lastContact.hasAttribute("data-vital-empty")).toBe(true);
+  });
+
   it("asks for no date of death when the person was already deceased", async () => {
     markup();
     await mount(profile({ genderOptions, person: { isDeceased: true } }));

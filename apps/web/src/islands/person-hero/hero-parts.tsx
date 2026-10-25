@@ -218,6 +218,18 @@ export function PersonMenu(
 
 const NOT_RECORDED = "Not recorded";
 
+/** What the summary says when a vital has no value (`profile-summary.ts`). */
+const UNRECORDED: ReadonlySet<string> = new Set([
+  NOT_RECORDED,
+  "None recorded",
+  "Not set",
+]);
+
+/** Marks a vital that shows only its placeholder, so it reads quieter. */
+function emptiness(value: string): { readonly "data-vital-empty"?: "" } {
+  return UNRECORDED.has(value) ? { "data-vital-empty": "" } : {};
+}
+
 /**
  * The vital stats. A vital whose section the workspace turned off is left
  * out, and one that only links to such a section keeps its value without the
@@ -236,7 +248,11 @@ export function VitalStats(
       <div>
         <dt>Age or birthday</dt>
         <dd>
-          <a data-person-vital-value="birthday" href="?section=important-dates">
+          <a
+            data-person-vital-value="birthday"
+            href="?section=important-dates"
+            {...emptiness(facts.birthday ?? NOT_RECORDED)}
+          >
             {facts.birthday ?? NOT_RECORDED}
           </a>
         </dd>
@@ -245,9 +261,20 @@ export function VitalStats(
         <dt>Last contact</dt>
         <dd>
           {hidden.has("activities")
-            ? <span data-profile-last-contact="">{facts.lastContact}</span>
+            ? (
+              <span
+                data-profile-last-contact=""
+                {...emptiness(facts.lastContact)}
+              >
+                {facts.lastContact}
+              </span>
+            )
             : (
-              <a data-profile-last-contact="" href="?section=activities">
+              <a
+                data-profile-last-contact=""
+                href="?section=activities"
+                {...emptiness(facts.lastContact)}
+              >
                 {facts.lastContact}
               </a>
             )}
@@ -256,7 +283,11 @@ export function VitalStats(
       <div>
         <dt>Next reminder</dt>
         <dd>
-          <a data-person-vital-value="next-reminder" href="?section=reminders">
+          <a
+            data-person-vital-value="next-reminder"
+            href="?section=reminders"
+            {...emptiness(facts.nextReminder)}
+          >
             {facts.nextReminder}
           </a>
         </dd>
@@ -264,7 +295,7 @@ export function VitalStats(
       <div>
         <dt>Stay in touch</dt>
         <dd>
-          <a href="?section=stay-in-touch">
+          <a href="?section=stay-in-touch" {...emptiness(facts.stayInTouch)}>
             <span id="person-profile-due-state" role="status">
               {facts.stayInTouch}
             </span>
@@ -275,7 +306,11 @@ export function VitalStats(
         <div>
           <dt>Work</dt>
           <dd>
-            <a data-person-vital-value="work" href="?section=work">
+            <a
+              data-person-vital-value="work"
+              href="?section=work"
+              {...emptiness(facts.work ?? NOT_RECORDED)}
+            >
               {facts.work ?? NOT_RECORDED}
             </a>
           </dd>
@@ -288,6 +323,7 @@ export function VitalStats(
             <a
               data-person-vital-value="first-meeting"
               href="?section=first-meeting"
+              {...emptiness(firstMeetingText(facts) ?? NOT_RECORDED)}
             >
               {firstMeetingText(facts) ?? NOT_RECORDED}
             </a>
