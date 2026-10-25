@@ -137,12 +137,17 @@
   font-weight: 700;
 }
 
+/*
+ * The open directory is a menu over the page, below its bar or, when
+ * `workspace.ts` finds more room there, above it; `--directory-room` is the
+ * room it found.
+ */
 .profile-section-directory nav {
   position: absolute;
   inset: 100% 0 auto;
   box-sizing: border-box;
-  max-height: calc(100dvh - var(--person-navigation-top) - 100% -
-    var(--space-3));
+  max-height: var(--directory-room, calc(100dvh -
+    var(--person-navigation-top) - 100% - var(--space-3)));
   padding: var(--space-3);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -150,6 +155,10 @@
   border-radius: var(--radius-lg);
   background: var(--surface-1);
   box-shadow: var(--shadow-2);
+}
+
+.profile-section-directory[data-placement="above"] nav {
+  inset: auto 0 100%;
 }
 
 .profile-section-directory nav ul {
@@ -513,6 +522,36 @@
 
 .profile-section-card:focus {
   outline: none;
+}
+
+/*
+ * The section a link just brought the member to (`markArrival` in
+ * `workspace.ts`): an accent ring and tint that fade once the scroll lands.
+ */
+.person-workspace [data-section-arrived] {
+  animation: section-arrival 1.8s ease-out;
+}
+
+@keyframes section-arrival {
+  0%,
+  40% {
+    background-color: color-mix(in srgb, var(--accent) 7%, var(--surface-1));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .person-workspace [data-section-arrived] {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+@media (forced-colors: active) {
+  .person-workspace [data-section-arrived] {
+    animation: none;
+    border-color: Highlight;
+  }
 }
 
 .profile-section-card:focus-visible > .profile-section-heading :is(h2, h3) {

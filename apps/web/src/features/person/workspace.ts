@@ -665,11 +665,36 @@ function focusSection(
       behavior: prefersReducedMotion() ? "instant" : "smooth",
       block: "start",
     });
+    markArrival(target);
   } else if (placement === "load" || !inViewport(target)) {
     target.scrollIntoView?.({ behavior: "instant", block: "start" });
+    markArrival(target);
   }
   target.focus({ preventScroll: true });
   return true;
+}
+
+/** How long a section stays marked once a link brings the member to it. */
+const SECTION_ARRIVAL_MS = 1800;
+let arrivalTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Marks `target` as where the member just landed, so the eye finds it among
+ * its neighbours; `person-chrome.css` draws the mark and fades it out. Only
+ * the latest arrival is marked.
+ */
+function markArrival(target: HTMLElement): void {
+  clearTimeout(arrivalTimer);
+  for (
+    const marked of document.querySelectorAll("[data-section-arrived]")
+  ) marked.removeAttribute("data-section-arrived");
+  // Restarts the fade when the same section is chosen again.
+  void target.offsetWidth;
+  target.setAttribute("data-section-arrived", "");
+  arrivalTimer = setTimeout(
+    () => target.removeAttribute("data-section-arrived"),
+    SECTION_ARRIVAL_MS,
+  );
 }
 
 function prefersReducedMotion(): boolean {
@@ -698,20 +723,65 @@ function reconcileSectionLocation(
   heading()?.focus({ preventScroll: true });
 }
 
+/** The space kept between the open directory and the viewport's edge. */
+const DIRECTORY_EDGE_GAP = 8;
+
+/**
+ * The section directory opens as a menu where it is and never scrolls the
+ * page: it drops below its bar, or rises above it when the room below is too
+ * short and the room above is larger, and it is never taller than that room
+ * (`--directory-room`), measured again as the page scrolls. Like the member
+ * menu, a click outside it or Escape closes it. Focus leaving it does not:
+ * the page settling after load may move focus while the member opens it.
+ */
+function mountSectionDirectory(
+  directory: HTMLDetailsElement,
+  menu: HTMLElement,
+  signal: AbortSignal,
+): void {
+  const bar = directory.closest<HTMLElement>(".person-workspace-navigation") ??
+    directory;
+  const place = () => {
+    if (!directory.open) return;
+    const { bottom, top } = bar.getBoundingClientRect();
+    // A stuck bar sits below the sticky header; nothing rises over that.
+    const covered = Number.parseFloat(getComputedStyle(bar).top) || 0;
+    const below = globalThis.innerHeight - bottom - DIRECTORY_EDGE_GAP;
+    const above = top - covered - DIRECTORY_EDGE_GAP;
+    const rise = below < menu.scrollHeight && above > below;
+    directory.dataset.placement = rise ? "above" : "below";
+    directory.style.setProperty(
+      "--directory-room",
+      `${Math.max(rise ? above : below, 0)}px`,
+    );
+  };
+  directory.addEventListener("toggle", place, { signal });
+  // The bar moves, and sticks, as the page scrolls under an open menu.
+  for (const event of ["scroll", "resize"]) {
+    globalThis.addEventListener(event, place, { passive: true, signal });
+  }
+  const outside = (target: EventTarget | null) =>
+    !(target instanceof Node && directory.contains(target));
+  document.addEventListener("pointerdown", (event) => {
+    if (directory.open && outside(event.target)) directory.open = false;
+  }, { signal });
+  directory.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !directory.open) return;
+    event.preventDefault();
+    // Only the directory closes; the page's other menus keep their state.
+    event.stopPropagation();
+    directory.open = false;
+    directory.querySelector<HTMLElement>("summary")?.focus();
+  }, { signal });
+}
+
 function mountSectionNavigation(
   profile: ProfileElements,
   navigation: SectionNavigationContext,
   signal: AbortSignal,
 ): void {
   const directory = profile.sections.closest("details");
-  directory?.addEventListener("toggle", () => {
-    if (directory.open) {
-      directory.closest(".person-workspace-navigation")?.scrollIntoView({
-        block: "start",
-        behavior: "instant",
-      });
-    }
-  });
+  if (directory) mountSectionDirectory(directory, profile.sections, signal);
   profile.sections.addEventListener("click", (event) => {
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(
       "[data-section-link]",

@@ -1590,10 +1590,12 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     expect(cadenceClick).not.toHaveBeenCalled();
   });
 
-  it("PRF-001 aligns the shared navigator only when opening its directory", async () => {
+  it("PRF-001 opens the section directory in place, within the room it has", async () => {
     markup();
     stubProfile();
-    const navigation = document.querySelector("#person-profile-sections")!;
+    const navigation = document.querySelector<HTMLElement>(
+      "#person-profile-sections",
+    )!;
     const container = document.createElement("div");
     container.className = "person-workspace-navigation";
     const directory = document.createElement("details");
@@ -1602,18 +1604,99 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     directory.append(navigation);
     const scroll = vi.fn();
     container.scrollIntoView = scroll;
+    directory.scrollIntoView = scroll;
+    vi.spyOn(globalThis, "innerHeight", "get").mockReturnValue(700);
+    Object.defineProperty(navigation, "scrollHeight", { value: 400 });
+    const barAt = (top: number) =>
+      vi.spyOn(container, "getBoundingClientRect").mockReturnValue(
+        { bottom: top + 60, top } as DOMRect,
+      );
 
     await mountPersonWorkspace();
+    barAt(100);
     directory.open = true;
     directory.dispatchEvent(new Event("toggle"));
-    expect(scroll).toHaveBeenCalledWith({
-      block: "start",
-      behavior: "instant",
-    });
-    scroll.mockClear();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(directory.dataset.placement).toBe("below");
+    expect(directory.style.getPropertyValue("--directory-room")).toBe("532px");
+
     directory.open = false;
     directory.dispatchEvent(new Event("toggle"));
+    barAt(560);
+    directory.open = true;
+    directory.dispatchEvent(new Event("toggle"));
     expect(scroll).not.toHaveBeenCalled();
+    expect(directory.dataset.placement).toBe("above");
+    expect(directory.style.getPropertyValue("--directory-room")).toBe("552px");
+
+    // Scrolling while it is open keeps it within the room it now has.
+    barAt(100);
+    globalThis.dispatchEvent(new Event("scroll"));
+    expect(directory.dataset.placement).toBe("below");
+    expect(directory.style.getPropertyValue("--directory-room")).toBe("532px");
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it("PRF-001 closes the section directory on an outside click or Escape", async () => {
+    markup();
+    stubProfile();
+    const navigation = document.querySelector("#person-profile-sections")!;
+    const directory = document.createElement("details");
+    const summary = document.createElement("summary");
+    navigation.replaceWith(directory);
+    directory.append(summary, navigation);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    await mountPersonWorkspace();
+    const link = document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="photos"]',
+    )!;
+
+    directory.open = true;
+    link.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(directory.open).toBe(true);
+    outside.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(directory.open).toBe(false);
+
+    directory.open = true;
+    link.focus();
+    link.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+    );
+    expect(directory.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+
+    // The page moving focus elsewhere (settling after load) leaves it open.
+    directory.open = true;
+    outside.focus();
+    expect(directory.open).toBe(true);
+  });
+
+  it("PRF-001 briefly marks the section a link brought the member to", async () => {
+    markup();
+    stubProfile();
+    await mountPersonWorkspace();
+    const photos = document.querySelector<HTMLElement>(
+      '[data-profile-section="photos"]',
+    )!;
+    const documents = document.querySelector<HTMLElement>(
+      '[data-profile-section="documents"]',
+    )!;
+
+    document.querySelector<HTMLAnchorElement>('[data-section-link="photos"]')
+      ?.click();
+    expect(photos.hasAttribute("data-section-arrived")).toBe(true);
+
+    document.querySelector<HTMLAnchorElement>(
+      '[data-section-link="documents"]',
+    )?.click();
+    expect(photos.hasAttribute("data-section-arrived")).toBe(false);
+    expect(documents.hasAttribute("data-section-arrived")).toBe(true);
+
+    await vi.waitFor(
+      () => expect(documents.hasAttribute("data-section-arrived")).toBe(false),
+      { timeout: 3000 },
+    );
   });
 
   it("PRF-001 closes the section directory before focusing the selected block", async () => {

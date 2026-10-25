@@ -59,8 +59,12 @@ import {
   // reminder-delivery controls, because it is a personal setting.
   import { mountCalendarFeed } from "../../../features/settings/calendar-feed/calendar-feed.tsx";
   import { mountPreferenceSettings } from "../../../features/settings/preferences/preference-settings.tsx";
-  import { mountThemePreferenceControl } from "../../../lib/theme.ts";
   void mountPreferenceSettings();
   void mountCalendarFeed();
+</script>
+<script>
+  // The theme select needs no React; its own script keeps it working when an
+  // island's module fails to load.
+  import { mountThemePreferenceControl } from "../../../lib/theme.ts";
   void mountThemePreferenceControl();
 </script>

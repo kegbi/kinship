@@ -51,6 +51,35 @@ export default defineConfig({
       // assets keep Vite's default limit.
       assetsInlineLimit: (file) => (/\.m?js$/.test(file) ? false : undefined),
     },
+    optimizeDeps: {
+      // Islands mount from page scripts, which Vite's first dependency scan
+      // misses. A dependency it then finds late is pre-bundled again, and a
+      // page still asking for the old bundle gets "504 Outdated Optimize Dep"
+      // and loses its whole script (the preferences page's theme stayed
+      // "Loading…"). Naming them here bundles them once, up front.
+      include: [
+        "@base-ui/react/autocomplete",
+        "@base-ui/react/avatar",
+        "@base-ui/react/button",
+        "@base-ui/react/combobox",
+        "@base-ui/react/dialog",
+        "@base-ui/react/input",
+        "@base-ui/react/merge-props",
+        "@base-ui/react/popover",
+        "@base-ui/react/use-render",
+        "@hookform/resolvers/zod",
+        "class-variance-authority",
+        "clsx",
+        "cmdk",
+        "lucide-react",
+        "react-dom/client",
+        "react-hook-form",
+        "tailwind-merge",
+        // Every `zod` import is aliased to `src/lib/zod-jitless.ts`, which
+        // loads this.
+        "zod/v4",
+      ],
+    },
     resolve: {
       // cmdk's unused Radix Command.Dialog stays out of the bundle; see
       // cmdk-radix-dialog.mjs. Every `zod` import resolves to the JIT-less
