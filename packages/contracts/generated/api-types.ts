@@ -56,6 +56,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with interactions:create. Returns current capture vocabulary and availability only; no historic content. */
         readonly get: operations["listCommunicationOptions"];
         readonly put?: never;
         readonly post?: never;
@@ -233,6 +234,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with interactions:create. Returns bounded current capture vocabulary and availability only; no historic content. Cursors remain bound to their workspace and search filters. */
         readonly get: operations["listInteractionOptions"];
         readonly put?: never;
         readonly post?: never;
@@ -251,6 +253,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Requires a browser session or a personal token with the independent interactions:create grant. Records a note, activity, call, or conversation through its owning use case; grants no historic-content read, edit, or delete access. Reuse body requestId for retries; changed payloads conflict. Bearer requests need no Cookie or Origin. Cookie writes require the exact configured public Origin. */
         readonly post: operations["recordInteraction"];
         readonly delete?: never;
         readonly options?: never;
@@ -2093,7 +2096,7 @@ export interface components {
             /** Format: date-time */
             readonly expiresAt?: string;
             readonly name: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
         };
         readonly ApiTokenCreated: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -2103,7 +2106,7 @@ export interface components {
         };
         readonly ApiTokenList: {
             readonly records: readonly components["schemas"]["ApiTokenRecord"][];
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
             /** @constant */
             readonly status: "ready";
         };
@@ -2119,7 +2122,7 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             readonly revokedAt?: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
         };
         readonly ApiTokenRevoked: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -5980,9 +5983,9 @@ export interface operations {
     readonly recordInteraction: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

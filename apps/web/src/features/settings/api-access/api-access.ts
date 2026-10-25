@@ -146,6 +146,12 @@ export const API_TOKEN_SCOPE_CHOICES: readonly {
     detail:
       "Edit, complete, and reopen existing tasks; no reading or creating.",
   },
+  {
+    scope: "interactions:create",
+    label: "Record interactions",
+    detail:
+      "Record notes, activities, calls, and conversations, with their capture options; no reading, editing, or deleting historic content.",
+  },
 ];
 
 /** A token's scopes and expiry, as its row shows them. */

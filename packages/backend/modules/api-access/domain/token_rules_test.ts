@@ -37,6 +37,7 @@ Deno.test("[GAP-018] the scope vocabulary is closed", () => {
     "tasks:read",
     "tasks:create",
     "tasks:write",
+    "interactions:create",
   ]);
   const scopes = [...API_TOKEN_SCOPES];
   assertEquals(validateApiToken({ name: "Connector", scopes }, NOW), {

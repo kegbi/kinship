@@ -370,8 +370,22 @@ linked-person rules, and tenant validation. The listing's optional `dueBefore`
 is an inclusive ISO instant filter; its cursor is bound to that filter as well
 as workspace, person, and status. Bearer writes require neither Cookie nor
 Origin. Cookie writes still require the exact configured public Origin. This
-exception applies only to those task routes; Today, reminders, cadences,
-security, and settings keep session admission.
+exception applies only to the explicitly token-enabled writes; Today, reminders,
+cadences, security, and settings keep session admission.
+
+Interaction capture uses the independent `interactions:create` grant for
+`POST /api/v1/interactions` and the current vocabulary/availability lookups
+`GET /api/v1/interaction-options` and `GET /api/v1/communication-options`. The
+strict create union records notes, activities, calls, and conversations through
+the existing owning public use cases. It preserves body `requestId`
+replay/conflict, participants, active-person and enabled-section checks,
+vocabulary validation, and channel/contact-method compatibility. Bearer writes
+need neither Cookie nor Origin; browser-cookie writes still require the exact
+configured Origin through the shared scoped-actor admission. This grant implies
+no other grant and permits no historic-content reads, edits, or deletes.
+Activity reports, communications history, profile aggregates, timeline, Today,
+and journal keep session admission. Capture options expose only their existing
+current vocabulary and availability, with existing search/cursor bounds.
 
 On those token-enabled routes, any `Authorization` header selects token
 authentication exclusively. Invalid, expired, revoked, wrong-workspace, and

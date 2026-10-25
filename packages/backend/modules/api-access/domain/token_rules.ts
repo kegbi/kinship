@@ -25,6 +25,7 @@ export const API_TOKEN_SCOPES = [
   "tasks:read",
   "tasks:create",
   "tasks:write",
+  "interactions:create",
 ] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
 

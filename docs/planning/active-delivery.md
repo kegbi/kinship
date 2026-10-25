@@ -35,9 +35,15 @@ historical cursor below. Deliver one reviewed candidate per vertical outcome.
       affected backend and UI coverage exceed the required floors. The
       executable OpenAPI now documents 153 operations. The unrelated SDK export
       pin failure is tracked separately as REL-094.
-- [ ] Interaction capture: scoped, retry-safe note/activity/call/conversation
+- [x] Interaction capture: scoped, retry-safe note/activity/call/conversation
       recording and the lookups those operations consume. Create-only grants
-      must not expose historic content or broader profile aggregates.
+      must not expose historic content or broader profile aggregates. The
+      independent `interactions:create` grant now supports the existing strict
+      capture union and both construction-option reads through the shared
+      scoped-actor admission. Affected Deno checks pass 125 tests, the combined
+      PostgreSQL gate passes 21, and the UI passes 15. Changed backend, helper,
+      and UI coverage exceed their floors. Whole API composition coverage
+      remains with the final owning checkpoint.
 - [ ] Public API guide: a static, styled, signed-out reference and quickstart,
       downloadable external OpenAPI, links from public navigation and API
       settings, exact delivered scope/parameter/error documentation, and

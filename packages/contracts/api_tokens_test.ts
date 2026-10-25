@@ -83,6 +83,7 @@ Deno.test("personal tokens deliberately accept multiple distinct supported grant
     "tasks:read",
     "tasks:create",
     "tasks:write",
+    "interactions:create",
   ];
   assert(
     apiTokenCreateInput.safeParse({ name: "Connector", scopes }).success,
@@ -104,6 +105,67 @@ Deno.test("personal tokens deliberately accept multiple distinct supported grant
       JSON.stringify(API_TOKEN_SCOPES),
     "transport and pure domain share the closed vocabulary",
   );
+});
+
+Deno.test("capture contracts offer one independent grant on exactly three routes", () => {
+  assert(
+    apiTokenCreateInput.safeParse({
+      name: "Capture",
+      scopes: ["interactions:create"],
+    }).success,
+    "capture-only grant can be issued",
+  );
+  const document = buildOpenApiDocument() as {
+    paths: Record<
+      string,
+      Record<
+        string,
+        {
+          security: Record<string, string[]>[];
+          description?: string;
+          parameters?: { name: string; required?: boolean }[];
+        }
+      >
+    >;
+  };
+  for (
+    const [path, method] of [["/api/v1/interactions", "post"], [
+      "/api/v1/interaction-options",
+      "get",
+    ], ["/api/v1/communication-options", "get"]]
+  ) {
+    const operation = document.paths[path!]?.[method!];
+    assert(
+      operation && operation.description?.includes("interactions:create"),
+      "capture grant described",
+    );
+    assert(
+      JSON.stringify(operation.security) ===
+        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
+      "personal bearer security published",
+    );
+    if (method === "post") {
+      assert(
+        operation.parameters?.find((p) => p.name === "Origin")?.required ===
+          false,
+        "bearer Origin optional",
+      );
+    }
+  }
+  for (
+    const path of [
+      "/api/v1/people/{personId}/activity-report",
+      "/api/v1/people/{personId}/communications",
+      "/api/v1/today/favorite-notes",
+      "/api/v1/today/recent-activity",
+    ]
+  ) {
+    assert(
+      JSON.stringify(document.paths[path]?.get?.security) ===
+        JSON.stringify([{ kinship_session: [] }]),
+      "historic projections stay session-only",
+    );
+  }
 });
 
 Deno.test("task client exposes detail and keeps dueBefore on filtered pagination", async () => {

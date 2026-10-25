@@ -53,6 +53,545 @@ function management(
   return api.request(fixture, path, method, body);
 }
 
+Deno.test("interaction capture token preserves four kinds, retries, bounded vocabulary and authority boundaries", async () => {
+  const suffix = crypto.randomUUID();
+  const own = await register(`capture-${suffix}@example.test`, "Capture API");
+  const foreign = await register(
+    `capture-foreign-${suffix}@example.test`,
+    "Foreign capture",
+  );
+  const person = async (fixture: SignedInFixture, givenName: string) => {
+    const response = await api.request(fixture, "/api/v1/people", "POST", {
+      givenName,
+      isPartial: false,
+    });
+    assert(response.status === 201, "person created through application");
+    return (await response.json()).person.id as string;
+  };
+  const personId = await person(own, "Ada");
+  const otherPersonId = await person(own, "Grace");
+  const foreignPersonId = await person(foreign, "Foreign person");
+  const mint = async (fixture: SignedInFixture, scopes: string[]) => {
+    const response = await management(fixture, undefined, "POST", {
+      name: "Capture connector",
+      scopes,
+    });
+    assert(response.status === 201, `capture grant minted: ${response.status}`);
+    return await response.json() as {
+      secret: string;
+      record: { id: string; scopes: string[] };
+    };
+  };
+  const capture = await mint(own, ["interactions:create"]);
+  const foreignCapture = await mint(foreign, ["interactions:create"]);
+  assert(
+    capture.record.scopes.join() === "interactions:create",
+    "no implicit grants issued",
+  );
+  const send = (
+    secret: string,
+    path: string,
+    method = "GET",
+    body?: unknown,
+    extra: Record<string, string> = {},
+  ) =>
+    configured.app.request(`http://localhost${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "content-type": "application/json",
+        ...extra,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const expect = async (response: Response, status: number, label: string) => {
+    assert(
+      response.status === status,
+      `${label}: expected ${status}, received ${response.status}: ${
+        response.status === status ? "" : await response.text()
+      }`,
+    );
+    return await response.json();
+  };
+  const activityTypeId = crypto.randomUUID();
+  const foreignTypeId = crypto.randomUUID();
+  const channelTypeId = crypto.randomUUID();
+  const secondChannelId = crypto.randomUUID();
+  const foreignChannelId = crypto.randomUUID();
+  const contactMethodId = crypto.randomUUID();
+  const otherContactId = crypto.randomUUID();
+  const foreignContactId = crypto.randomUUID();
+  const emotionId = crypto.randomUUID();
+  const inactiveEmotionId = crypto.randomUUID();
+  const inactiveTypeId = crypto.randomUUID();
+  const inactiveChannelId = crypto.randomUUID();
+  const search = `Capture ${suffix}`;
+  await sql`insert into crm.activity_types (id, workspace_id, name) values
+    (${activityTypeId}, ${own.workspaceId}, ${search + " A"}),
+    (${foreignTypeId}, ${foreign.workspaceId}, 'Foreign secret activity')`;
+  await sql`insert into crm.activity_types (workspace_id, name) values (${own.workspaceId}, ${
+    search + " B"
+  })`;
+  await sql`insert into crm.activity_types (id, workspace_id, name, is_archived) values (${inactiveTypeId}, ${own.workspaceId}, ${
+    search + " retired"
+  }, true)`;
+  await sql`insert into crm.contact_method_types (id, workspace_id, name) values
+    (${channelTypeId}, ${own.workspaceId}, 'Connector email'),
+    (${secondChannelId}, ${own.workspaceId}, 'Connector chat'),
+    (${foreignChannelId}, ${foreign.workspaceId}, 'Foreign secret channel')`;
+  await sql`insert into crm.contact_method_types (id, workspace_id, name, is_archived) values (${inactiveChannelId}, ${own.workspaceId}, 'Retired channel', true)`;
+  await sql`insert into crm.person_contact_methods (id, person_id, type_id, value) values
+    (${contactMethodId}, ${personId}, ${channelTypeId}, 'ada@example.test'),
+    (${otherContactId}, ${otherPersonId}, ${channelTypeId}, 'grace@example.test'),
+    (${foreignContactId}, ${foreignPersonId}, ${foreignChannelId}, 'foreign-secret@example.test')`;
+  await sql`insert into crm.emotion_options (id, name) values (${emotionId}, ${
+    search + " joy"
+  })`;
+  await sql`insert into crm.emotion_options (name) values (${
+    search + " calm"
+  })`;
+  await sql`insert into crm.emotion_options (id, name, is_active) values (${inactiveEmotionId}, ${
+    search + " retired"
+  }, false)`;
+  const inputs = [
+    {
+      kind: "note",
+      personId,
+      body: "API reference note",
+      isFavorited: true,
+      requestId: crypto.randomUUID(),
+    },
+    {
+      kind: "activity",
+      participantIds: [personId, otherPersonId],
+      summary: "API dinner",
+      description: "Together",
+      activityTypeId,
+      emotionIds: [emotionId],
+      happenedAt: "2026-10-24T18:00:00.000Z",
+      requestId: crypto.randomUUID(),
+    },
+    {
+      kind: "call",
+      personId,
+      content: "API call",
+      contactWasCaller: false,
+      calledAt: "2026-10-24T19:00:00.000Z",
+      emotionIds: [emotionId],
+      requestId: crypto.randomUUID(),
+    },
+    {
+      kind: "conversation",
+      personId,
+      channelTypeId,
+      contactMethodId,
+      happenedAt: "2026-10-24T20:00:00.000Z",
+      title: "API conversation",
+      messages: [{
+        content: "Hello",
+        direction: "outbound",
+        writtenAt: "2026-10-24T20:00:00.000Z",
+      }],
+      requestId: crypto.randomUUID(),
+    },
+  ];
+  const recordIds: string[] = [];
+  for (const input of inputs) {
+    const created = await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", input),
+      201,
+      `${input.kind}: token only, no Cookie or Origin`,
+    );
+    assert(
+      created.record.kind === input.kind,
+      "owning facade returns requested kind",
+    );
+    recordIds.push(created.record.id);
+    if (input.kind === "activity") {
+      assert(
+        created.record.participants.length === 2 &&
+          created.record.emotions[0].id === emotionId,
+        "participants and vocabulary retained",
+      );
+    }
+    if (input.kind === "conversation") {
+      assert(
+        created.record.contactMethod.id === contactMethodId &&
+          created.record.messages[0].content === "Hello",
+        "contact method and messages retained",
+      );
+    }
+    const replay = await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", input),
+      201,
+      "same body requestId replays",
+    );
+    assert(
+      replay.record.id === created.record.id,
+      "retry returns original record",
+    );
+    const field = input.kind === "note"
+      ? "body"
+      : input.kind === "activity"
+      ? "summary"
+      : input.kind === "call"
+      ? "content"
+      : "title";
+    const conflict = await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", {
+        ...input,
+        [field]: "Changed payload",
+      }),
+      409,
+      "changed payload conflicts",
+    );
+    assert(
+      conflict.code === "interaction_request_conflict",
+      "original conflict code retained",
+    );
+  }
+  const [audits] = await sql<
+    { count: number; actors: number }[]
+  >`select count(*)::int as count,
+    count(*) filter (where actor_member_id = ${own.memberId}::uuid)::int as actors
+    from crm.audit_events where workspace_id = ${own.workspaceId}::uuid
+      and subject_id = any(${recordIds}::uuid[])`;
+  assert(
+    audits?.count === 4 && audits.actors === 4,
+    "exactly one owning audit per create, attributed to token member",
+  );
+
+  const query = `activityTypeSearch=${
+    encodeURIComponent(search)
+  }&emotionSearch=${encodeURIComponent(search)}&limit=1`;
+  const first = await expect(
+    await send(capture.secret, `/api/v1/interaction-options?${query}`),
+    200,
+    "filtered capture vocabulary",
+  );
+  assert(
+    first.activityTypes.length === 1 && first.emotions.length === 1 &&
+      first.activityTypesNextCursor && first.emotionsNextCursor,
+    "both option lists have bounded continuation",
+  );
+  const cursors = `activityTypeCursor=${
+    encodeURIComponent(first.activityTypesNextCursor)
+  }&emotionCursor=${encodeURIComponent(first.emotionsNextCursor)}`;
+  const second = await expect(
+    await send(
+      capture.secret,
+      `/api/v1/interaction-options?${query}&${cursors}`,
+    ),
+    200,
+    "option continuation",
+  );
+  assert(
+    second.activityTypes.length === 1 && second.emotions.length === 1 &&
+      !second.activityTypesNextCursor && !second.emotionsNextCursor &&
+      first.activityTypes[0].id !== second.activityTypes[0].id &&
+      first.emotions[0].id !== second.emotions[0].id,
+    "continuation returns exactly the remaining active matches",
+  );
+  assert(
+    Object.keys(first).sort().join() ===
+      "activityTypes,activityTypesNextCursor,availability,emotions,emotionsNextCursor,status",
+    "options contain no historic content or people",
+  );
+  for (
+    const changedQuery of [
+      query.replace("activityTypeSearch=", "activityTypeSearch=changed"),
+      query.replace("emotionSearch=", "emotionSearch=changed"),
+    ]
+  ) {
+    await expect(
+      await send(
+        capture.secret,
+        `/api/v1/interaction-options?${changedQuery}&${cursors}`,
+      ),
+      409,
+      "option cursor bound to search",
+    );
+  }
+  await expect(
+    await send(
+      foreignCapture.secret,
+      `/api/v1/interaction-options?${query}&${cursors}`,
+    ),
+    409,
+    "option cursors bound to workspace",
+  );
+  for (
+    const query of [
+      "limit=21",
+      "emotionCursor=tampered",
+      "activityTypeCursor=tampered",
+    ]
+  ) {
+    await expect(
+      await send(capture.secret, `/api/v1/interaction-options?${query}`),
+      query === "limit=21" ? 400 : 409,
+      "bounded and opaque queries",
+    );
+  }
+  const communication = await expect(
+    await send(capture.secret, "/api/v1/communication-options"),
+    200,
+    "current communication vocabulary",
+  );
+  assert(
+    communication.channelTypes.some((option: { id: string }) =>
+      option.id === channelTypeId
+    ) && !communication.channelTypes.some((option: { id: string }) =>
+      [foreignChannelId, inactiveChannelId].some((id) =>
+        id === option.id
+      )
+    ),
+    "channels are active and workspace-scoped",
+  );
+  assert(
+    !communication.emotions.some((option: { id: string }) =>
+      option.id === inactiveEmotionId
+    ),
+    "inactive emotions omitted",
+  );
+  assert(
+    Object.keys(communication).sort().join() ===
+      "availability,channelTypes,emotions,status",
+    "communication options contain only existing vocabulary and availability",
+  );
+
+  const routes = [["POST", "/api/v1/interactions", inputs[0]], [
+    "GET",
+    "/api/v1/interaction-options",
+    undefined,
+  ], ["GET", "/api/v1/communication-options", undefined]] as const;
+  const expired = await mint(own, ["interactions:create"]);
+  await sql`update crm.api_tokens set expires_at = now() - interval '1 second' where id = ${expired.record.id}::uuid`;
+  const revoked = await mint(own, ["interactions:create"]);
+  assert(
+    (await management(
+      own,
+      `/api/v1/settings/api-tokens/${revoked.record.id}`,
+      "DELETE",
+    )).status === 200,
+    "revoked through owning use case",
+  );
+  const oldTokens = [];
+  for (
+    const scope of [
+      "people:read",
+      "people:profile:read",
+      "relationships:read",
+      "tasks:read",
+      "tasks:create",
+      "tasks:write",
+    ]
+  ) oldTokens.push(await mint(own, [scope]));
+  for (const [method, path, body] of routes) {
+    for (const token of [expired, revoked, ...oldTokens]) {
+      await expect(
+        await send(token.secret, path, method, body, {
+          cookie: own.cookie,
+          origin: "http://localhost",
+        }),
+        401,
+        "old grant or unusable token never borrows cookie",
+      );
+    }
+    for (const authorization of ["", "Basic invalid", "Bearer malformed"]) {
+      await expect(
+        await send("unused", path, method, body, {
+          authorization,
+          cookie: own.cookie,
+          origin: "http://localhost",
+        }),
+        401,
+        "malformed Authorization never borrows cookie",
+      );
+    }
+    await expect(
+      await send(capture.secret, path, method, body, {
+        "X-Workspace-Id": foreign.workspaceId,
+        cookie: own.cookie,
+      }),
+      401,
+      "foreign requested workspace refused",
+    );
+  }
+  for (const origin of [undefined, "http://foreign.test"]) {
+    await expect(
+      await configured.app.request("http://localhost/api/v1/interactions", {
+        method: "POST",
+        body: JSON.stringify(inputs[0]),
+        headers: {
+          cookie: own.cookie,
+          "content-type": "application/json",
+          ...(origin ? { origin } : {}),
+        },
+      }),
+      403,
+      "cookie writes retain exact Origin",
+    );
+  }
+  assert(
+    (await api.request(own, "/api/v1/interactions", "POST", inputs[0]))
+      .status === 201,
+    "same-origin cookie replay still works",
+  );
+
+  for (
+    const path of [
+      "/api/v1/people",
+      `/api/v1/people/${personId}/identity`,
+      `/api/v1/people/${personId}`,
+      `/api/v1/people/${personId}/relationships`,
+      `/api/v1/people/${personId}/activity-report`,
+      `/api/v1/people/${personId}/communications`,
+      `/api/v1/people/${personId}/timeline`,
+      "/api/v1/today/favorite-notes",
+      "/api/v1/today/recent-activity",
+      "/api/v1/today/attention",
+      "/api/v1/journal",
+      "/api/v1/tasks",
+      "/api/v1/settings/api-tokens",
+    ]
+  ) {
+    await expect(
+      await send(capture.secret, path),
+      401,
+      "capture cannot read historic content or other domains",
+    );
+  }
+  for (
+    const [path, body] of [
+      ["/api/v1/tasks", { title: "Denied", requestId: crypto.randomUUID() }],
+      ["/api/v1/people", { givenName: "Denied", isPartial: false }],
+      ["/api/v1/reminders", {}],
+      ["/api/v1/journal/posts", {}],
+    ] as const
+  ) {
+    const denied = await send(capture.secret, path, "POST", body);
+    assert(
+      denied.status === 401 || denied.status === 403,
+      "unrelated writes denied",
+    );
+    await denied.body?.cancel();
+  }
+  for (
+    const [index, changes] of [
+      [0, { personId: foreignPersonId }],
+      [1, { participantIds: [personId, foreignPersonId] }],
+      [1, { activityTypeId: foreignTypeId }],
+      [1, { activityTypeId: inactiveTypeId }],
+      [1, { emotionIds: [inactiveEmotionId] }],
+      [2, { personId: foreignPersonId }],
+      [2, { emotionIds: [inactiveEmotionId] }],
+      [3, { personId: foreignPersonId }],
+      [3, { channelTypeId: foreignChannelId }],
+      [3, { channelTypeId: inactiveChannelId }],
+      [3, { contactMethodId: foreignContactId }],
+      [3, { contactMethodId: otherContactId }],
+      [3, { channelTypeId: secondChannelId }],
+    ] as const
+  ) {
+    await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", {
+        ...inputs[index],
+        ...changes,
+        requestId: crypto.randomUUID(),
+      }),
+      404,
+      "foreign, inactive, wrong-parent or incompatible reference refused",
+    );
+  }
+  for (
+    const body of [
+      { ...inputs[0], happenedAt: "2026-10-24T18:00:00Z" },
+      { ...inputs[0], body: "x".repeat(10001) },
+      { ...inputs[1], happenedAt: "yesterday" },
+      { ...inputs[2], contactWasCaller: "false" },
+      {
+        ...inputs[3],
+        messages: [{
+          content: "Hello",
+          direction: "sideways",
+          writtenAt: "2026-10-24T20:00:00Z",
+        }],
+      },
+    ]
+  ) {
+    await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", {
+        ...body,
+        requestId: crypto.randomUUID(),
+      }),
+      400,
+      "strict JSON, date and field limits preserved",
+    );
+  }
+
+  for (
+    const [index, key] of [[0, "notes"], [1, "activities"], [2, "calls"], [
+      3,
+      "conversations",
+    ]] as const
+  ) {
+    await sql`insert into crm.workspace_profile_modules (workspace_id, key, name, is_active) values (${own.workspaceId}, ${key}, ${key}, false) on conflict (workspace_id, key) do update set is_active = false`;
+    await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", {
+        ...inputs[index],
+        requestId: crypto.randomUUID(),
+      }),
+      403,
+      "hidden capture section refused",
+    );
+  }
+  const hiddenInteractions = await expect(
+    await send(capture.secret, "/api/v1/interaction-options"),
+    200,
+    "hidden sections availability",
+  );
+  const hiddenCommunications = await expect(
+    await send(capture.secret, "/api/v1/communication-options"),
+    200,
+    "hidden communication availability",
+  );
+  assert(
+    !hiddenInteractions.availability.note &&
+      !hiddenInteractions.availability.activity &&
+      !hiddenCommunications.availability.call &&
+      !hiddenCommunications.availability.conversation,
+    "current availability retained",
+  );
+  await sql`update crm.workspace_profile_modules set is_active = true where workspace_id = ${own.workspaceId}::uuid`;
+  const profile = await (await api.request(own, `/api/v1/people/${personId}`))
+    .json();
+  assert(
+    (await api.request(own, `/api/v1/people/${personId}/archive`, "POST", {
+      expectedUpdatedAt: profile.person.updatedAt,
+    })).status === 200,
+    "person archived through use case",
+  );
+  for (const input of inputs) {
+    await expect(
+      await send(capture.secret, "/api/v1/interactions", "POST", {
+        ...input,
+        requestId: crypto.randomUUID(),
+      }),
+      409,
+      "archived person remains read-only",
+    );
+  }
+  await revokeMembership(sql, own.memberId);
+  for (const [method, path, body] of routes) {
+    await expect(
+      await send(capture.secret, path, method, body),
+      401,
+      "membership revalidated on every capture route",
+    );
+  }
+});
+
 Deno.test("task automation tokens keep independent grants, retry safety, revisions, filters and tenant boundaries", async () => {
   const suffix = crypto.randomUUID();
   const own = await register(`task-api-${suffix}@example.test`, "Task API");

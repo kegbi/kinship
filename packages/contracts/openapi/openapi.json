@@ -346,9 +346,13 @@
     "/api/v1/communication-options": {
       "get": {
         "operationId": "listCommunicationOptions",
+        "description": "Requires a browser session or a personal token with interactions:create. Returns current capture vocabulary and availability only; no historic content.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -1623,9 +1627,13 @@
     "/api/v1/interaction-options": {
       "get": {
         "operationId": "listInteractionOptions",
+        "description": "Requires a browser session or a personal token with interactions:create. Returns bounded current capture vocabulary and availability only; no historic content. Cursors remain bound to their workspace and search filters.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -1754,9 +1762,13 @@
     "/api/v1/interactions": {
       "post": {
         "operationId": "recordInteraction",
+        "description": "Requires a browser session or a personal token with the independent interactions:create grant. Records a note, activity, call, or conversation through its owning use case; grants no historic-content read, edit, or delete access. Reuse body requestId for retries; changed payloads conflict. Bearer requests need no Cookie or Origin. Cookie writes require the exact configured public Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -1767,8 +1779,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -16703,7 +16715,7 @@
           },
           "scopes": {
             "minItems": 1,
-            "maxItems": 6,
+            "maxItems": 7,
             "type": "array",
             "items": {
               "type": "string",
@@ -16713,7 +16725,8 @@
                 "relationships:read",
                 "tasks:read",
                 "tasks:create",
-                "tasks:write"
+                "tasks:write",
+                "interactions:create"
               ]
             },
             "uniqueItems": true
@@ -16765,7 +16778,8 @@
                 "relationships:read",
                 "tasks:read",
                 "tasks:create",
-                "tasks:write"
+                "tasks:write",
+                "interactions:create"
               ]
             }
           },
@@ -16819,7 +16833,8 @@
                 "relationships:read",
                 "tasks:read",
                 "tasks:create",
-                "tasks:write"
+                "tasks:write",
+                "interactions:create"
               ]
             }
           }

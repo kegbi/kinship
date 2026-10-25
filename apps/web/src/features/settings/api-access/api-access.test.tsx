@@ -90,6 +90,38 @@ afterEach(() => {
 });
 
 describe("API-001 personal API tokens", () => {
+  it("offers capture alone and explains its four kinds and historic-content limit", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: jsonResponse({
+        records: [],
+        scopes: ["interactions:create"],
+        status: "ready",
+      }),
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    await mount();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByText(/notes, activities, calls, and conversations/))
+      .toBeTruthy();
+    expect(
+      screen.getByText(/no reading, editing, or deleting historic content/),
+    ).toBeTruthy();
+    act(() => {
+      fireEvent.input(screen.getByLabelText("Token name"), {
+        target: { value: "Capture" },
+      });
+      fireEvent.click(screen.getByLabelText("Record interactions"));
+    });
+    submit();
+    await waitFor(() =>
+      expect(api.bodies()).toEqual([{
+        name: "Capture",
+        scopes: ["interactions:create"],
+      }])
+    );
+  });
   it("explains and selects independent task read, create, and edit grants for automation", async () => {
     shell();
     const api = stubApi({

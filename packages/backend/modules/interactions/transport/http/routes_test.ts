@@ -7,6 +7,7 @@ import type { TodayInteractions } from "../../../../read-models/today/public.ts"
 import { createInteractionRoutes } from "./routes.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
+import type { ScopedTokenAuthority } from "../../../../../http-kit/session.ts";
 
 const personId = fixtures.personId();
 const otherPersonId = "00000000-0000-4000-8000-000000000101";
@@ -92,6 +93,187 @@ const headers = {
   "content-type": "application/json",
   origin: "http://localhost",
 };
+
+Deno.test("capture token admits four strict kinds and forwards bounded options without Cookie or Origin", async () => {
+  const received: unknown[] = [];
+  let optionInput: unknown;
+  const apiTokens: ScopedTokenAuthority<"interactions:create"> = {
+    authenticate: (token, scope, workspace) => {
+      assert(
+        token === "capture" && scope === "interactions:create",
+        "exact capture grant requested",
+      );
+      assert(workspace === actor.workspaceId, "workspace selection forwarded");
+      return Promise.resolve({ actor, status: "authenticated" });
+    },
+  };
+  const current = services({
+    record: (actor, input) => {
+      received.push(input);
+      return services().interactions.record(actor, input);
+    },
+    recordCommunication: (actor, input) => {
+      received.push(input);
+      return services().interactions.recordCommunication(actor, input);
+    },
+    options: (actor, input) => {
+      optionInput = input;
+      return services().interactions.options(actor, input);
+    },
+  });
+  const app = createInteractionRoutes({ ...current, ...{ apiTokens } });
+  const tokenHeaders = {
+    authorization: "Bearer capture",
+    "content-type": "application/json",
+    "X-Workspace-Id": actor.workspaceId,
+  };
+  for (
+    const input of [
+      { kind: "note", personId, body: "Reference", isFavorited: true },
+      {
+        kind: "activity",
+        participantIds: [personId, otherPersonId],
+        summary: "Dinner",
+        happenedAt: "2026-08-16T18:15:00Z",
+        activityTypeId: requestId,
+        description: "Together",
+        emotionIds: [requestId],
+      },
+      {
+        kind: "call",
+        personId,
+        calledAt: "2026-08-16T18:15:00Z",
+        contactWasCaller: false,
+        content: "Plans",
+        emotionIds: [requestId],
+      },
+      {
+        kind: "conversation",
+        personId,
+        channelTypeId: requestId,
+        contactMethodId: requestId,
+        happenedAt: "2026-08-16T18:15:00Z",
+        title: "Plans",
+        messages: [{
+          content: "Hello",
+          direction: "outbound",
+          writtenAt: "2026-08-16T18:15:00Z",
+        }],
+      },
+    ]
+  ) {
+    const body = { ...input, requestId };
+    const response = await app.request("/api/v1/interactions", {
+      method: "POST",
+      headers: tokenHeaders,
+      body: JSON.stringify(body),
+    });
+    assertStatus(response, 201, input.kind);
+    assert(JSON.stringify(received.at(-1)) !== undefined, "input forwarded");
+    // All supported fields survive the transport normalization.
+    const forwarded = received.at(-1) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(body)) {
+      assert(
+        JSON.stringify(forwarded[key]) === JSON.stringify(value),
+        `${input.kind}.${key} retained`,
+      );
+    }
+  }
+  for (
+    const path of [
+      "/api/v1/interaction-options?activityTypeSearch=meal&activityTypeCursor=next-type&emotionSearch=joy&emotionCursor=next-emotion&limit=2",
+      "/api/v1/communication-options",
+    ]
+  ) {
+    const response = await app.request(path, { headers: tokenHeaders });
+    assertStatus(response, 200, path);
+    assert(
+      response.headers.get("Cache-Control") === "private, no-store",
+      "options remain private",
+    );
+  }
+  assert(
+    JSON.stringify(optionInput) ===
+      JSON.stringify({
+        activityTypeCursor: "next-type",
+        activityTypeSearch: "meal",
+        emotionCursor: "next-emotion",
+        emotionSearch: "joy",
+        limit: 2,
+      }),
+    "all option filters forwarded",
+  );
+});
+
+Deno.test("capture routes never borrow cookie authority for a refused bearer and retain browser Origin", async () => {
+  let sessionCalls = 0;
+  let writes = 0;
+  const current = {
+    ...services({
+      record: () => {
+        writes++;
+        return Promise.resolve({ status: "forbidden" });
+      },
+    }),
+    protectedSessions: {
+      resolve: () => {
+        sessionCalls++;
+        return Promise.resolve(actor);
+      },
+    },
+    apiTokens: {
+      authenticate: () => Promise.resolve({ status: "invalid" as const }),
+    },
+  };
+  const app = createInteractionRoutes(current);
+  const body = JSON.stringify({
+    kind: "note",
+    personId,
+    requestId,
+    body: "Reference",
+  });
+  for (
+    const path of [
+      "/api/v1/interactions",
+      "/api/v1/interaction-options",
+      "/api/v1/communication-options",
+    ]
+  ) {
+    const method = path === "/api/v1/interactions" ? "POST" : "GET";
+    for (
+      const authorization of [
+        "Bearer wrong-scope",
+        "Bearer expired",
+        "Bearer revoked",
+        "Bearer malformed",
+        "Basic invalid",
+        "",
+      ]
+    ) {
+      const response = await app.request(path, {
+        method,
+        headers: { ...headers, authorization },
+        ...(method === "POST" ? { body } : {}),
+      });
+      assertStatus(response, 401, `${path}: refused bearer`);
+    }
+  }
+  for (const origin of [undefined, "http://foreign.test"]) {
+    const response = await app.request("/api/v1/interactions", {
+      method: "POST",
+      body,
+      headers: {
+        cookie: headers.cookie,
+        "content-type": "application/json",
+        ...(origin ? { origin } : {}),
+      },
+    });
+    assertStatus(response, 403, "browser exact Origin required");
+  }
+  assert(writes === 0, "refused admission never reaches writes");
+  // sessionActor is lazy; Authorization admission must not resolve a cookie.
+  assert(sessionCalls === 0, "bearer or bad Origin resolved cookie authority");
+});
 
 Deno.test("INTERACTION-001 HTTP records strict activities and exposes read-only projections", async () => {
   let received: unknown;

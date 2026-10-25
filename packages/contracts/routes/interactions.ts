@@ -11,8 +11,8 @@
 import { z } from "zod";
 import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
-  originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -31,7 +31,9 @@ export const listCommunicationOptions = defineRoute({
   method: "get",
   path: "/api/v1/communication-options",
   operationId: "listCommunicationOptions",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with interactions:create. Returns current capture vocabulary and availability only; no historic content.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -59,7 +61,9 @@ export const listInteractionOptions = defineRoute({
   method: "get",
   path: "/api/v1/interaction-options",
   operationId: "listInteractionOptions",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with interactions:create. Returns bounded current capture vocabulary and availability only; no historic content. Cursors remain bound to their workspace and search filters.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listInteractionOptionsQuery,
     headers: workspaceHeaders,
@@ -79,9 +83,11 @@ export const recordInteraction = defineRoute({
   method: "post",
   path: "/api/v1/interactions",
   operationId: "recordInteraction",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with the independent interactions:create grant. Records a note, activity, call, or conversation through its owning use case; grants no historic-content read, edit, or delete access. Reuse body requestId for retries; changed payloads conflict. Bearer requests need no Cookie or Origin. Cookie writes require the exact configured public Origin.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

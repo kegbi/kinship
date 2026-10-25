@@ -188,8 +188,10 @@ permissions:
     scope: active-workspace
 
 invariants:
+  - The independent interactions:create grant permits only POST /api/v1/interactions for note, activity, call and conversation plus GET /api/v1/interaction-options and /api/v1/communication-options for current vocabulary and availability. It grants no historic-content read, edit or delete access and implies no other grant.
+  - Interaction capture preserves owning-use-case requestId replay/conflict, active-person and section checks, participants, vocabulary validation and channel/contact-method compatibility. Reports, communications history, timeline, Today and journal keep session admission.
   - Task token grants are independent; tasks:read permits task list and detail, tasks:create permits retry-safe creation, and tasks:write permits editing, completion and reopening. No grant implies another.
-  - Only the token-enabled task writes may omit Origin with bearer authentication; cookie writes still require the exact configured public origin. Today, reminders, cadences, security and settings keep their existing session admission.
+  - Only the explicitly token-enabled task and interaction capture writes may omit Origin with bearer authentication; cookie writes still require the exact configured public origin. Today, reminders, cadences, security and settings keep their existing session admission.
   - Personal token grants are independent; people:read is directory-only, people:profile:read permits minimal identity, profile facts and their lookup options, and important dates, and relationships:read permits relationship lists and type lookups.
   - Personal token grants intersect current membership, role permissions, workspace and parent boundaries, section visibility, and cursor rules; they never imply access to full profile aggregates or unrelated content.
   - On token-enabled routes an Authorization header selects only token authentication; a refused bearer never falls back to a session cookie.

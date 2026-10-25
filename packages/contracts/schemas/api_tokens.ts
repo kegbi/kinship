@@ -20,6 +20,7 @@ export const apiTokenScope = z.enum([
   "tasks:read",
   "tasks:create",
   "tasks:write",
+  "interactions:create",
 ]);
 
 export const apiTokenCreateInput = z.strictObject({

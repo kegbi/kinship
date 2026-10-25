@@ -14,7 +14,7 @@
  * been matching on one parameter name while the document published another.
  */
 
-import { createApiApp } from "./composition.ts";
+import { type ApiServices, createApiApp } from "./composition.ts";
 import { mountedRoutes } from "../../packages/http-kit/route.ts";
 import {
   API_ROUTES,
@@ -22,6 +22,11 @@ import {
 } from "../../packages/contracts/routes/mod.ts";
 import { routeKey } from "../../packages/contracts/registry.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  personId,
+  sessionActor,
+  uuid,
+} from "../../packages/backend/testing/fixtures.ts";
 
 /**
  * Something every optional service can be.
@@ -41,6 +46,67 @@ function everything(): unknown {
   });
   return stub;
 }
+
+Deno.test("interaction composition uses its configured token authority and fails closed without one", async () => {
+  const actor = sessionActor();
+  for (const enabled of [false, true]) {
+    const base = everything() as ApiServices;
+    const overrides = {
+      apiTokens: enabled
+        ? {
+          authenticate: (token: string, scope: string) => {
+            assert(
+              token === "capture" && scope === "interactions:create",
+              "composition forwards capture authority",
+            );
+            return Promise.resolve({ actor, status: "authenticated" });
+          },
+        }
+        : undefined,
+      browserSecurity: { origin: "http://localhost", secureCookie: false },
+      interactions: {
+        record: () =>
+          Promise.resolve({
+            status: "created",
+            record: {
+              id: uuid(800),
+              kind: "note",
+              body: "Reference",
+              createdAt: "2026-10-25T10:00:00Z",
+              isFavorited: false,
+            },
+          }),
+      },
+      legal: undefined,
+    };
+    const services = new Proxy(base, {
+      get: (target, property) =>
+        property in overrides
+          ? Reflect.get(overrides, property)
+          : Reflect.get(target, property),
+    });
+    const response = await createApiApp(services).request(
+      "/api/v1/interactions",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer capture",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: "note",
+          personId: personId(),
+          requestId: uuid(801),
+          body: "Reference",
+        }),
+      },
+    );
+    assert(
+      response.status === (enabled ? 201 : 401),
+      "capture authority is optional and never borrowed",
+    );
+  }
+});
 
 Deno.test("[GAP-022] every mounted route is one the registry describes", () => {
   const app = createApiApp(everything() as Parameters<typeof createApiApp>[0]);
