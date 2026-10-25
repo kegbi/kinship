@@ -99,6 +99,7 @@ const FUNCTIONS: readonly string[] = [
   "leaveCurrentWorkspace",
   "linkJournalActivity",
   "listCommunicationOptions",
+  "listDebtSettlements",
   "listExports",
   "listImportantDates",
   "listImports",

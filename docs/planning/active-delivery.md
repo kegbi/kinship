@@ -1564,13 +1564,15 @@ Playwright test carrying its stable flow ID.
       pagination boundary separately; no paging adapter changed in the API token
       candidate.
 
-- [ ] **REL-094 — The generated-client export pin omits debt settlement
+- [x] **REL-094 — The generated-client export pin omits debt settlement
       history.** The affected client-contract check reports 54 passed and one
       failure because `listDebtSettlements` is exported but absent from its
       compatibility allowlist. Both the export and the omission exist at
       pre-API-plan baseline `b4e4cc1`; gifts implementation is unchanged by the
-      task candidate. Repair this test expectation separately before the API
-      integration checkpoint; retain the compatibility guard.
+      task candidate. A separate repair adds only the existing released export
+      to the compatibility allowlist. The unchanged client-contract command
+      moved from five passed/one failed to six passed, with affected lint and
+      formatting passing; the compatibility guard is retained.
 
 ## Just-In-Time Technical Capabilities
 
