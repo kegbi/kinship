@@ -7,37 +7,37 @@ const categories = [
     title: "Personal",
     description: "Your identity, preferences, and security.",
     items: [
-      ["Profile", "Name, email, and personal account context", "profile name email account", "/app/settings/profile"],
-      ["Preferences", "Locale, time zone, formats, and display", "preferences locale time zone display density", "/app/settings/preferences"],
-      ["Security & sessions", "Password, MFA, passkeys, recovery, and sessions", "security password mfa passkeys recovery sessions", "/app/settings/security"],
+      ["Profile", "Name, email, and personal account context", "/app/settings/profile"],
+      ["Preferences", "Locale, time zone, formats, and display", "/app/settings/preferences"],
+      ["Security & sessions", "Password, MFA, passkeys, recovery, and sessions", "/app/settings/security"],
     ],
   },
   {
     title: "Workspace",
     description: "Shared workspace settings, clearly separate from personal choices.",
     items: [
-      ["General", "Workspace identity and shared defaults", "workspace general identity defaults", "/app/settings/workspace"],
-      ["Members", "Roles, active members, and invitations", "members roles invitations", "/app/settings/members"],
-      ["Personalization", "Profile modules and controlled vocabularies", "personalization vocabularies tags relationship activity", "/app/settings/personalization?section=profile-modules"],
+      ["General", "Workspace identity and shared defaults", "/app/settings/workspace"],
+      ["Members", "Roles, active members, and invitations", "/app/settings/members"],
+      ["Personalization", "Profile modules and controlled vocabularies", "/app/settings/personalization?section=profile-modules"],
     ],
   },
   {
     title: "Data",
     description: "Operational data tools remain standalone and resumable.",
     items: [
-      ["Storage", "Usage, limits, and object status", "storage files usage limits missing quarantined", "/app/settings/storage"],
-      ["Import", "Import history and resumable import work", "import upload history report", "/app/settings/import"],
-      ["Export", "Authorized exports and downloads", "export download data", "/app/settings/export"],
-      ["Audit history", "Filterable workspace history", "audit history governance", "/app/settings/audit"],
-      ["Workspace danger zone", "Reset CRM data or delete this workspace", "danger reset delete workspace", "/app/settings/workspace/danger-zone"],
+      ["Storage", "Usage, limits, and object status", "/app/settings/storage"],
+      ["Import", "Import history and resumable import work", "/app/settings/import"],
+      ["Export", "Authorized exports and downloads", "/app/settings/export"],
+      ["Audit history", "Filterable workspace history", "/app/settings/audit"],
+      ["Workspace danger zone", "Reset CRM data or delete this workspace", "/app/settings/workspace/danger-zone"],
     ],
   },
   {
     title: "Developer",
     description: "Optional connections and programmatic access.",
     items: [
-      ["Integrations", "DAV contacts, tasks, and connection health", "developer integrations adapters dav contacts tasks", "/app/settings/integrations"],
-      ["API access", "Personal tokens, scopes, expiry, and revocation", "developer api tokens scopes", "/app/settings/api"],
+      ["Integrations", "DAV contacts, tasks, and connection health", "/app/settings/integrations"],
+      ["API access", "Personal tokens, scopes, expiry, and revocation", "/app/settings/api"],
     ],
   },
 ] as const;
@@ -46,6 +46,10 @@ import {
   buttonVariants,
   cardVariants,
 } from "../../../components/ui/variants.ts";
+import { SETTINGS_SEARCH_INDEX } from "../../../lib/settings-search-index.ts";
+
+const searchEntries = (categoryId: string) =>
+  SETTINGS_SEARCH_INDEX.find(({ id }) => id === categoryId)?.entries ?? [];
 ---
 
 <ApplicationLayout
@@ -63,46 +67,60 @@ import {
       </div>
       <div class="settings-search">
         <label for="settings-search">Search settings</label>
-        <input id="settings-search" type="search" autocomplete="off" placeholder="Try “security” or “import”" />
+        <input id="settings-search" type="search" autocomplete="off" placeholder="Try “theme”, “time zone”, or “tags”" />
       </div>
     </header>
 
     <div class="settings-layout">
       <nav class="settings-local-nav" aria-label="Settings categories">
         <p>Categories</p>
-        {categories.map((category) => <a href={`#${category.title.toLowerCase()}`}>{category.title}</a>)}
-        <a href="#billing">Billing <small>Optional</small></a>
+        {categories.map((category) => <a href={`#${category.title.toLowerCase()}`} data-settings-nav={category.title.toLowerCase()}>{category.title}<span class="settings-nav-count" data-settings-nav-count hidden></span></a>)}
+        <a href="#billing" data-settings-nav="billing">Billing <small>Optional</small><span class="settings-nav-count" data-settings-nav-count hidden></span></a>
       </nav>
 
       <div class="settings-groups">
         {categories.map((category) => (
-          <section id={category.title.toLowerCase()} class={cardVariants({ className: "settings-group" })} aria-labelledby={`${category.title.toLowerCase()}-heading`}>
+          <section id={category.title.toLowerCase()} class={cardVariants({ className: "settings-group" })} aria-labelledby={`${category.title.toLowerCase()}-heading`} data-settings-group={category.title.toLowerCase()}>
             <header>
               <p class="scope-label">{category.title === "Personal" ? "Personal scope" : "Workspace scope"}</p>
               <h2 id={`${category.title.toLowerCase()}-heading`}>{category.title}</h2>
               <p>{category.description}</p>
             </header>
-            <div class="settings-card-grid">
-              {category.items.map(([title, description, search, href]) => (
-                <article class="settings-card" data-settings-item data-search={`${category.title} ${title} ${search}`} data-requires-workspace-owner={title === "Workspace danger zone" ? "true" : undefined} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" || title === "Storage" || title === "Import" || title === "Audit history" ? "true" : undefined}>
+            <div class="settings-card-grid" data-settings-cards>
+              {category.items.map(([title, description, href]) => (
+                <article class="settings-card" data-requires-workspace-owner={title === "Workspace danger zone" ? "true" : undefined} data-requires-workspace-admin={title === "Members" || title === "General" || title === "Personalization" || title === "Storage" || title === "Import" || title === "Audit history" ? "true" : undefined}>
                   <div><h3>{title}</h3><p>{description}</p></div>
                   {href ? <a class={buttonVariants({ className: "settings-card-link", variant: "outline" })} href={href}>Open</a> : <span class={badgeVariants({ variant: "secondary" })}>Planned</span>}
                 </article>
               ))}
             </div>
+            <ul class="settings-matches" data-settings-matches aria-label={`${category.title} settings matching the search`} hidden>
+              {searchEntries(category.title.toLowerCase()).map((entry) => (
+                <li data-settings-match data-search={`${category.title} ${entry.page ?? ""} ${entry.label} ${entry.keywords}`} data-requires-workspace-admin={entry.access === "admin" ? "true" : undefined} data-requires-workspace-owner={entry.access === "owner" ? "true" : undefined} hidden>
+                  <a href={entry.href}><span class="settings-match-label">{entry.label}</span><span class="settings-match-page">{entry.page ?? "Settings page"}</span></a>
+                </li>
+              ))}
+            </ul>
           </section>
         ))}
 
-        <section id="billing" class={cardVariants({ className: "settings-group optional-group" })} aria-labelledby="billing-heading">
+        <section id="billing" class={cardVariants({ className: "settings-group optional-group" })} aria-labelledby="billing-heading" data-settings-group="billing">
           <header>
             <p class="scope-label">Optional workspace scope</p>
             <h2 id="billing-heading">Billing</h2>
             <p>Billing navigation appears only when a billing module is enabled. It is not enabled for this workspace.</p>
           </header>
-          <article class="settings-card" data-settings-item data-search="billing invoices subscription optional">
-            <div><h3>Billing &amp; invoices</h3><p>No billing provider or entitlement is enabled.</p></div>
-            <span class={badgeVariants({ variant: "secondary" })}>Not enabled</span>
-          </article>
+          <div class="settings-card-grid" data-settings-cards>
+            <article class="settings-card">
+              <div><h3>Billing &amp; invoices</h3><p>No billing provider or entitlement is enabled.</p></div>
+              <span class={badgeVariants({ variant: "secondary" })}>Not enabled</span>
+            </article>
+          </div>
+          <ul class="settings-matches" data-settings-matches aria-label="Billing settings matching the search" hidden>
+            <li data-settings-match data-search="billing invoices subscription payment plan optional" hidden>
+              <span class="settings-match-unavailable"><span class="settings-match-label">Billing &amp; invoices</span><span class="settings-match-page">Not enabled for this workspace</span></span>
+            </li>
+          </ul>
         </section>
         <p id="settings-no-results" class="empty-search" role="status" hidden>No settings match that search.</p>
       </div>

@@ -243,6 +243,63 @@
   font-size: .65rem;
 }
 
+.settings-local-nav .settings-nav-count {
+  display: grid;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-pill);
+  place-items: center;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+/* A category's section stops below the sticky header when its link opens it. */
+.settings-group {
+  scroll-margin-top: 6rem;
+}
+
+/* The individual settings a search matched, each one link to its control. */
+.settings-matches {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-matches :is(a, .settings-match-unavailable) {
+  display: flex;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--ink-1);
+  background: var(--surface-1);
+  text-decoration: none;
+}
+
+.settings-matches a:hover,
+.settings-matches a:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.settings-match-label {
+  font-weight: 600;
+}
+
+.settings-match-page {
+  color: var(--ink-2);
+  font-size: .82rem;
+  text-align: end;
+}
+
 .settings-navigation-group {
   display: grid;
   gap: var(--space-1);
