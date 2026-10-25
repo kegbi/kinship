@@ -24,6 +24,7 @@ const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
 function services(overrides: Partial<TaskManagement> = {}) {
   const tasks = {
+    get: () => Promise.resolve({ status: "ready" as const, task }),
     change: () => Promise.resolve({ status: "saved" as const, task }),
     create: () => Promise.resolve({ status: "created" as const, task }),
     list: () => Promise.resolve({ items: [task], status: "ready" as const }),
@@ -46,6 +47,233 @@ const headers = {
   "content-type": "application/json",
   origin: "http://localhost",
 };
+
+Deno.test("task automation grants independently admit token-only reads, creates and edits", async () => {
+  const calls: string[] = [];
+  const current = {
+    ...services(),
+    apiTokens: {
+      authenticate: (token: string, scope: string) => {
+        calls.push(scope);
+        return Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const }
+            : { status: "invalid" as const },
+        );
+      },
+    },
+    tasks: {
+      ...services().tasks,
+      get: () => Promise.resolve({ status: "ready" as const, task }),
+    },
+  };
+  const app = createPlanningRoutes(current);
+  const requests = [
+    ["GET", "/api/v1/tasks", "tasks:read", undefined],
+    ["GET", `/api/v1/tasks/${taskId}`, "tasks:read", undefined],
+    ["POST", "/api/v1/tasks", "tasks:create", {
+      requestId: taskId,
+      title: "Call Ada",
+    }],
+    ["PATCH", `/api/v1/tasks/${taskId}`, "tasks:write", {
+      expectedUpdatedAt: task.updatedAt,
+      description: null,
+      dueAt: null,
+    }],
+    ["PUT", `/api/v1/tasks/${taskId}/completion`, "tasks:write", {
+      completed: false,
+    }],
+  ] as const;
+  for (const [method, path, grant, body] of requests) {
+    const send = (authorization: string, cookie?: string) =>
+      app.request(`http://localhost${path}`, {
+        method,
+        headers: {
+          authorization,
+          "content-type": "application/json",
+          ...(cookie ? { cookie } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const accepted = await send(`Bearer ${grant}`);
+    assertStatus(
+      accepted,
+      method === "POST" ? 201 : 200,
+      `${method} ${path} bearer-only`,
+    );
+    assert(
+      accepted.headers.get("cache-control") === "private, no-store",
+      "task response is private",
+    );
+    for (
+      const wrong of [
+        "tasks:read",
+        "tasks:create",
+        "tasks:write",
+        "people:read",
+      ].filter((scope) => scope !== grant)
+    ) {
+      assertStatus(
+        await send(`Bearer ${wrong}`, headers.cookie),
+        401,
+        "a wrong grant never borrows cookies",
+      );
+    }
+    for (
+      const invalid of [
+        "",
+        "Basic token",
+        "Bearer malformed",
+        "Bearer expired",
+        "Bearer revoked",
+      ]
+    ) {
+      assertStatus(
+        await send(invalid, headers.cookie),
+        401,
+        "a present invalid credential never borrows cookies",
+      );
+    }
+    if (method !== "GET") {
+      for (const origin of [undefined, "http://attacker.test"]) {
+        assertStatus(
+          await app.request(`http://localhost${path}`, {
+            method,
+            headers: {
+              cookie: headers.cookie,
+              "content-type": "application/json",
+              ...(origin ? { origin } : {}),
+            },
+            body: JSON.stringify(body),
+          }),
+          403,
+          "cookie writes require the exact Origin",
+        );
+      }
+    }
+  }
+  assert(
+    calls.includes("tasks:create") && calls.includes("tasks:write") &&
+      calls.includes("tasks:read"),
+    "each grant checked explicitly",
+  );
+  assertStatus(
+    await createPlanningRoutes(services()).request(
+      "http://localhost/api/v1/tasks",
+      {
+        headers: {
+          authorization: "Bearer unavailable",
+          cookie: headers.cookie,
+        },
+      },
+    ),
+    401,
+    "missing token authority cannot borrow cookie",
+  );
+  assertStatus(
+    await createPlanningRoutes({
+      ...current,
+      apiTokens: { authenticate: () => Promise.reject(new Error("offline")) },
+    }).request("http://localhost/api/v1/tasks", {
+      headers: { authorization: "Bearer valid", cookie: headers.cookie },
+    }),
+    401,
+    "token outage cannot borrow cookie",
+  );
+  for (
+    const path of [
+      "/api/v1/today/tasks",
+      "/api/v1/today/attention",
+      `/api/v1/people/${personId}/reminders`,
+    ]
+  ) {
+    const response = await app.request(`http://localhost${path}`, {
+      headers: { authorization: "Bearer tasks:read" },
+    });
+    assert(
+      response.status !== 200,
+      "unrelated planning routes remain session-only",
+    );
+  }
+});
+
+Deno.test("task detail reuses get and filtered listing forwards dueBefore", async () => {
+  const seen: unknown[] = [];
+  const detailServices = {
+    ...services(),
+    tasks: {
+      ...services({
+        list: (_actor, input) => {
+          seen.push(input);
+          return Promise.resolve({ status: "ready", items: [] });
+        },
+      }).tasks,
+      get: (_actor: unknown, id: string) => {
+        seen.push(id);
+        return Promise.resolve({ status: "ready" as const, task });
+      },
+    },
+  };
+  const app = createPlanningRoutes(detailServices);
+  assertStatus(
+    await app.request(`http://localhost/api/v1/tasks/${taskId}`, { headers }),
+    200,
+  );
+  const dueBefore = "2026-10-25T12:00:00+02:00";
+  assertStatus(
+    await app.request(
+      `http://localhost/api/v1/tasks?dueBefore=${
+        encodeURIComponent(dueBefore)
+      }&limit=1&cursor=bound`,
+      { headers },
+    ),
+    200,
+  );
+  assert(
+    seen[0] === taskId &&
+      (seen[1] as { dueBefore?: string }).dueBefore === dueBefore,
+    "existing use cases receive detail ID and instant",
+  );
+  assertStatus(
+    await app.request("http://localhost/api/v1/tasks?dueBefore=2026-10-25", {
+      headers,
+    }),
+    400,
+  );
+  assertStatus(
+    await app.request("http://localhost/api/v1/tasks/invalid", { headers }),
+    400,
+  );
+  for (
+    const [status, expected] of [["forbidden", 403], ["not-found", 404], [
+      "validation-error",
+      400,
+    ]] as const
+  ) {
+    const tasks = {
+      ...services().tasks,
+      get: () => Promise.resolve({ status }),
+    };
+    assertStatus(
+      await createPlanningRoutes({ ...services(), tasks }).request(
+        `http://localhost/api/v1/tasks/${taskId}`,
+        { headers },
+      ),
+      expected,
+    );
+  }
+  const tasks = {
+    ...services().tasks,
+    get: () => Promise.reject(new Error("offline")),
+  };
+  assertStatus(
+    await createPlanningRoutes({ ...services(), tasks }).request(
+      `http://localhost/api/v1/tasks/${taskId}`,
+      { headers },
+    ),
+    503,
+  );
+});
 
 Deno.test("PLANNING-001 HTTP creates, lists, changes, completes, and projects tasks", async () => {
   const received: unknown[] = [];

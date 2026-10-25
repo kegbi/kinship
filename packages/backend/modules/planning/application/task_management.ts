@@ -8,9 +8,8 @@
  * `task_writes.ts` stays an internal matter rather than something every caller
  * has to know about.
  *
- * `TaskManagement` stays narrower than what this builds: the API router and the
- * DAV synchronizer are given only the four verbs they use, so neither can grow
- * a dependency on the single-task read that belongs to the person profile.
+ * The HTTP router also uses the single-task read for scoped task automation;
+ * it shares the profile's public use case and its workspace checks.
  */
 
 import { createTaskListing } from "./task_listing.ts";
@@ -31,5 +30,5 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
 
 export type TaskManagement = Pick<
   ReturnType<typeof createTaskManagement>,
-  "change" | "create" | "list" | "setCompletion"
+  "change" | "create" | "get" | "list" | "setCompletion"
 >;

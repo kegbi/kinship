@@ -17,6 +17,9 @@ export const apiTokenScope = z.enum([
   "people:read",
   "people:profile:read",
   "relationships:read",
+  "tasks:read",
+  "tasks:create",
+  "tasks:write",
 ]);
 
 export const apiTokenCreateInput = z.strictObject({

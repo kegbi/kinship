@@ -1692,8 +1692,10 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require tasks:read. Lists tasks in the active workspace, optionally filtered by personId, status, and dueBefore (inclusive ISO instant). Continuation cursors are bound to the workspace and all filters; changing a filter requires a new first page. Grants are independent; create and write grants do not imply read access. */
         readonly get: operations["listTasks"];
         readonly put?: never;
+        /** @description Personal tokens require tasks:create. Retry the same requestId and payload to receive the original task; a changed payload conflicts. Does not grant listing, detail, or editing. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createTask"];
         readonly delete?: never;
         readonly options?: never;
@@ -1708,12 +1710,14 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        readonly get?: never;
+        /** @description Personal tokens require tasks:read. Reads one task through planning's public use case with current membership and workspace validation, including its archived or unavailable linked-person projection. */
+        readonly get: operations["getTask"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
+        /** @description Personal tokens require tasks:write. Edits an existing task using expectedUpdatedAt; nullable fields may be explicitly cleared. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly patch: operations["changeTask"];
         readonly trace?: never;
     };
@@ -1725,6 +1729,7 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
+        /** @description Personal tokens require tasks:write. Completes or reopens an existing task idempotently with completed true or false. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly put: operations["setTaskCompletion"];
         readonly post?: never;
         readonly delete?: never;
@@ -2088,7 +2093,7 @@ export interface components {
             /** Format: date-time */
             readonly expiresAt?: string;
             readonly name: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
         };
         readonly ApiTokenCreated: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -2098,7 +2103,7 @@ export interface components {
         };
         readonly ApiTokenList: {
             readonly records: readonly components["schemas"]["ApiTokenRecord"][];
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
             /** @constant */
             readonly status: "ready";
         };
@@ -2114,7 +2119,7 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             readonly revokedAt?: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write")[];
         };
         readonly ApiTokenRevoked: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -4609,6 +4614,11 @@ export interface components {
             readonly id: string;
             readonly name: string;
             readonly unavailable?: boolean;
+        };
+        readonly TaskReady: {
+            /** @constant */
+            readonly status: "ready";
+            readonly task: components["schemas"]["Task"];
         };
         readonly TodayAttention: {
             readonly attention: components["schemas"]["TodayAttentionGroup"];
@@ -14582,6 +14592,7 @@ export interface operations {
             readonly query?: {
                 readonly cursor?: string;
                 readonly limit?: number;
+                readonly dueBefore?: string;
                 readonly personId?: string;
                 readonly status?: "cancelled" | "completed" | "open";
             };
@@ -14653,9 +14664,9 @@ export interface operations {
     readonly createTask: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -14733,12 +14744,82 @@ export interface operations {
             };
         };
     };
+    readonly getTask: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly taskId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description One task in the active workspace */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TaskReady"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     readonly changeTask: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -14821,9 +14902,9 @@ export interface operations {
     readonly setTaskCompletion: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

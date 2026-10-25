@@ -11,6 +11,45 @@ const cursorKeyset = {
   keys: new Map([[1, new Uint8Array(32).fill(7)]]),
 };
 
+Deno.test("task detail public get validates identifiers, revalidates actors and hydrates in the owning transaction", async () => {
+  const { management, seenTransactions } = dependencies("archived");
+  assert(
+    (await management.get(actor, "malformed")).status === "validation-error",
+    "malformed detail ID refused",
+  );
+  assert(
+    (await management.get(actor, taskId)).status === "not-found",
+    "missing task refused",
+  );
+  const allowed = dependencies();
+  const created = await allowed.management.create(actor, {
+    personId,
+    requestId: taskId,
+    title: "Read task",
+  });
+  assert(created.status === "created", "fixture created");
+  const transaction = { opaque: "task-detail-transaction" };
+  const detail = await allowed.management.get(
+    actor,
+    created.task.id,
+    transaction,
+  );
+  assert(
+    detail.status === "ready" && detail.task.person?.id === personId &&
+      allowed.seenTransactions.at(-1) === transaction.opaque,
+    "public get hydrates inside supplied transaction",
+  );
+  assert(
+    (await dependencies("ready", "forbidden").management.get(actor, taskId))
+      .status === "forbidden",
+    "current actor revalidated before reading",
+  );
+  assert(
+    seenTransactions.length === 1,
+    "malformed ID never reaches transaction",
+  );
+});
+
 Deno.test("DAV task operations use the supplied owning transaction", async () => {
   const { management, seenTransactions } = dependencies();
   const transaction = { opaque: "dav-transaction" };

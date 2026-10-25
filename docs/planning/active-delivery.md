@@ -25,10 +25,16 @@ historical cursor below. Deliver one reviewed candidate per vertical outcome.
       and PostgreSQL token gates pass, with affected line/branch/function
       coverage above 80%. The snapshot research inventory remains historical;
       the executable OpenAPI now documents 152 operations.
-- [ ] Task automation: scoped listing/detail, retry-safe creation, editing,
+- [x] Task automation: scoped listing/detail, retry-safe creation, editing,
       completion and reopening through planning's existing public use cases.
       Bearer writes work without browser cookies or a fabricated Origin;
-      cookie-authenticated writes retain existing origin checks.
+      cookie-authenticated writes retain existing origin checks. Independent
+      `tasks:read`, `tasks:create`, and `tasks:write` grants now cover those
+      operations and cursor-bound `dueBefore` listing. The focused
+      PostgreSQL/security gate passes 101 tests and the token UI passes 14;
+      affected backend and UI coverage exceed the required floors. The
+      executable OpenAPI now documents 153 operations. The unrelated SDK export
+      pin failure is tracked separately as REL-094.
 - [ ] Interaction capture: scoped, retry-safe note/activity/call/conversation
       recording and the lookups those operations consume. Create-only grants
       must not expose historic content or broader profile aggregates.
@@ -1557,6 +1563,14 @@ Playwright test carrying its stable flow ID.
       through the same adapter. Diagnose timestamp preservation in the owning
       pagination boundary separately; no paging adapter changed in the API token
       candidate.
+
+- [ ] **REL-094 — The generated-client export pin omits debt settlement
+      history.** The affected client-contract check reports 54 passed and one
+      failure because `listDebtSettlements` is exported but absent from its
+      compatibility allowlist. Both the export and the omission exist at
+      pre-API-plan baseline `b4e4cc1`; gifts implementation is unchanged by the
+      task candidate. Repair this test expectation separately before the API
+      integration checkpoint; retain the compatibility guard.
 
 ## Just-In-Time Technical Capabilities
 

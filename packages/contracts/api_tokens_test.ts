@@ -5,6 +5,8 @@ import {
   createApiToken,
   getApiTokens,
   getPersonIdentity,
+  getTask,
+  listTasks,
   revokeApiToken,
 } from "./generated/auth-client.ts";
 
@@ -12,11 +14,79 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("personal tokens deliberately accept multiple distinct supported read grants", () => {
-  const scopes = ["people:read", "people:profile:read", "relationships:read"];
+Deno.test("task contracts describe independent grants and conditional write Origin", () => {
+  const document = buildOpenApiDocument() as {
+    paths: Record<
+      string,
+      Record<string, {
+        security: Record<string, string[]>[];
+        description?: string;
+        parameters?: { name: string; required?: boolean }[];
+      }>
+    >;
+  };
+  for (
+    const [path, method, grant] of [
+      ["/api/v1/tasks", "get", "tasks:read"],
+      ["/api/v1/tasks/{taskId}", "get", "tasks:read"],
+      ["/api/v1/tasks", "post", "tasks:create"],
+      ["/api/v1/tasks/{taskId}", "patch", "tasks:write"],
+      ["/api/v1/tasks/{taskId}/completion", "put", "tasks:write"],
+    ] as const
+  ) {
+    const operation = document.paths[path]?.[method];
+    assert(
+      operation && operation.description &&
+        operation.description.includes(grant),
+      `${method} ${path} describes ${grant}`,
+    );
+    assert(
+      JSON.stringify(operation.security) ===
+        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
+      "HTTP bearer uses empty scopes",
+    );
+    if (method !== "get") {
+      assert(
+        operation.description.includes("Origin") &&
+          operation.parameters?.find((p) => p.name === "Origin")?.required ===
+            false,
+        "task write Origin is conditional",
+      );
+    }
+  }
+  assert(
+    document.paths["/api/v1/tasks"]?.get?.parameters?.some((p) =>
+      p.name === "dueBefore"
+    ),
+    "dueBefore is published",
+  );
+  for (const path of ["/api/v1/today/tasks", "/api/v1/today/reminders"]) {
+    assert(
+      JSON.stringify(document.paths[path]?.get?.security) ===
+        JSON.stringify([{ kinship_session: [] }]),
+      "Today stays session-only",
+    );
+  }
+  assert(
+    document.paths["/api/v1/reminders"]?.post?.parameters?.find((p) =>
+      p.name === "Origin"
+    )?.required === true,
+    "unrelated cookie write Origin remains required",
+  );
+});
+
+Deno.test("personal tokens deliberately accept multiple distinct supported grants", () => {
+  const scopes = [
+    "people:read",
+    "people:profile:read",
+    "relationships:read",
+    "tasks:read",
+    "tasks:create",
+    "tasks:write",
+  ];
   assert(
     apiTokenCreateInput.safeParse({ name: "Connector", scopes }).success,
-    "all delivered read grants may be selected together",
+    "all delivered grants may be selected together",
   );
   for (
     const invalid of [[], ["people:read", "people:read"], ["people:write"], [
@@ -34,6 +104,43 @@ Deno.test("personal tokens deliberately accept multiple distinct supported read 
       JSON.stringify(API_TOKEN_SCOPES),
     "transport and pure domain share the closed vocabulary",
   );
+});
+
+Deno.test("task client exposes detail and keeps dueBefore on filtered pagination", async () => {
+  const original = globalThis.fetch;
+  const calls: { url: string; workspace: string | null }[] = [];
+  globalThis.fetch = (input, init) => {
+    calls.push({
+      url: String(input),
+      workspace: new Headers(init?.headers).get("X-Workspace-Id"),
+    });
+    return Promise.resolve(Response.json({ status: "ready", items: [] }));
+  };
+  try {
+    await getTask("task/id", "workspace");
+    await getTask("task/id");
+    await listTasks({
+      dueBefore: "2026-10-25T12:00:00+02:00",
+      cursor: "bound",
+      limit: 1,
+      personId: "person",
+      status: "open",
+    }, "workspace");
+    const query = new URL(calls[2]!.url, "http://localhost").searchParams;
+    assert(
+      calls[0]?.url === "/api/v1/tasks/task%2Fid" &&
+        calls[0].workspace === "workspace" && calls[1]?.workspace === null,
+      "detail ID encoded and optional workspace retained",
+    );
+    assert(
+      query.get("dueBefore") === "2026-10-25T12:00:00+02:00" &&
+        query.get("cursor") === "bound" && query.get("personId") === "person" &&
+        query.get("status") === "open" && query.get("limit") === "1",
+      "list client retains the complete filter question",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 Deno.test("generated minimal identity client uses the scoped route and workspace header", async () => {

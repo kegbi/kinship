@@ -188,6 +188,8 @@ permissions:
     scope: active-workspace
 
 invariants:
+  - Task token grants are independent; tasks:read permits task list and detail, tasks:create permits retry-safe creation, and tasks:write permits editing, completion and reopening. No grant implies another.
+  - Only the token-enabled task writes may omit Origin with bearer authentication; cookie writes still require the exact configured public origin. Today, reminders, cadences, security and settings keep their existing session admission.
   - Personal token grants are independent; people:read is directory-only, people:profile:read permits minimal identity, profile facts and their lookup options, and important dates, and relationships:read permits relationship lists and type lookups.
   - Personal token grants intersect current membership, role permissions, workspace and parent boundaries, section visibility, and cursor rules; they never imply access to full profile aggregates or unrelated content.
   - On token-enabled routes an Authorization header selects only token authentication; a refused bearer never falls back to a session cookie.

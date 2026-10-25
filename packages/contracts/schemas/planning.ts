@@ -181,6 +181,11 @@ export const taskList = z.strictObject({
   status: z.literal("ready"),
 }).meta({ id: "TaskList" });
 
+export const taskReady = z.strictObject({
+  status: z.literal("ready"),
+  task,
+}).meta({ id: "TaskReady" });
+
 export const todayAttentionPerson = z.strictObject({
   archived: z.boolean(),
   id: z.uuid(),

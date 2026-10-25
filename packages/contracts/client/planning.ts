@@ -28,6 +28,7 @@ import type {
 export function listTasks(
   input: {
     readonly cursor?: string;
+    readonly dueBefore?: string;
     readonly limit?: number;
     readonly personId?: string;
     readonly status?: Task["status"];
@@ -35,10 +36,20 @@ export function listTasks(
   workspaceId?: string,
 ): Promise<ApiResult<TaskList>> {
   const suffix = pageQuery(input, {
+    dueBefore: input.dueBefore,
     personId: input.personId,
     status: input.status,
   });
   return request(`/api/v1/tasks${suffix}`, {
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+  });
+}
+
+export function getTask(
+  taskId: string,
+  workspaceId?: string,
+): Promise<ApiResult<{ readonly status: "ready"; readonly task: Task }>> {
+  return request(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }

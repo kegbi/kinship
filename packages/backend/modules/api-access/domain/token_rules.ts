@@ -22,6 +22,9 @@ export const API_TOKEN_SCOPES = [
   "people:read",
   "people:profile:read",
   "relationships:read",
+  "tasks:read",
+  "tasks:create",
+  "tasks:write",
 ] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
 

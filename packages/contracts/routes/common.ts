@@ -32,6 +32,15 @@ export const originAndWorkspaceHeaders = z.object({
   "X-Workspace-Id": workspace,
 });
 
+/** Only token-enabled writes may omit Origin when using bearer admission. */
+export const tokenOrSessionWriteHeaders = z.object({
+  Origin: z.url().optional().meta({
+    description:
+      "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+  }),
+  "X-Workspace-Id": workspace,
+});
+
 /** The cookie a session transition sets, which no client may read back. */
 export const setCookieHeader = z.object({
   "Set-Cookie": z.string().optional().meta({ writeOnly: true }),

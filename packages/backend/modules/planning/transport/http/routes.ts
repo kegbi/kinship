@@ -35,6 +35,7 @@ import {
   createReminder,
   createStayInTouchCadence,
   createTask,
+  getTask,
   getTodayAttention,
   getTodayReminders,
   getTodayTasks,
@@ -59,10 +60,8 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import {
-  rejectForeignOrigin,
-  requireMatchingOrigin,
-} from "../../../../../http-kit/origin.ts";
+import { rejectForeignOrigin } from "../../../../../http-kit/origin.ts";
+import { requireScopedActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -71,6 +70,7 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  type ScopedTokenAuthority,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -82,6 +82,9 @@ import {
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface PlanningHttpServices {
+  readonly apiTokens?: ScopedTokenAuthority<
+    "tasks:read" | "tasks:create" | "tasks:write"
+  >;
   readonly browserSecurity: BrowserSecurityPolicy;
   /** The member's notification feed (GAP-053); without it, 503. */
   readonly notifications?: Notifications;
@@ -327,7 +330,15 @@ export function createPlanningRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const taskActor = (
+    context: Parameters<typeof requireScopedActor>[0],
+    scope: "tasks:read" | "tasks:create" | "tasks:write",
+  ) =>
+    requireScopedActor(context, {
+      browserSecurity: services.browserSecurity,
+      scope,
+      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+    });
 
   mount(routes, getTodayAttention, session, async (context) => {
     const actor = await requireActor(context);
@@ -509,10 +520,11 @@ export function createPlanningRoutes(
     if ("errors" in input) {
       return definedProblem(context, TASK_QUERY_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await taskActor(context, "tasks:read");
     if (actor instanceof Response) return actor;
     const result = await services.tasks.list(actor, {
       ...(input.data.cursor ? { cursor: input.data.cursor } : {}),
+      ...(input.data.dueBefore ? { dueBefore: input.data.dueBefore } : {}),
       limit: input.data.limit,
       ...(input.data.personId ? { personId: input.data.personId } : {}),
       ...(input.data.status ? { status: input.data.status } : {}),
@@ -525,13 +537,27 @@ export function createPlanningRoutes(
     return context.json(result);
   });
 
-  mount(routes, createTask, origin, session, async (context) => {
+  mount(routes, getTask, session, async (context) => {
+    const taskId = parseValue(uuid, context.req.param("taskId"));
+    if ("errors" in taskId) return definedProblem(context, TASK_FIELDS_INVALID);
+    const actor = await taskActor(context, "tasks:read");
+    if (actor instanceof Response) return actor;
+    const result = await services.tasks.get(actor, taskId.data).catch(() =>
+      undefined
+    );
+    if (!result) return definedProblem(context, TASKS_LIST_UNAVAILABLE);
+    if (result.status !== "ready") return taskFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, createTask, session, async (context) => {
+    const actor = await taskActor(context, "tasks:create");
+    if (actor instanceof Response) return actor;
     const input = await parseJsonBody(context, taskCreateInput);
     if ("errors" in input) {
       return definedProblem(context, TASK_FIELDS_INVALID);
     }
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
     const result = await services.tasks.create(actor, {
       ...(input.data.description
         ? { description: input.data.description }
@@ -549,14 +575,14 @@ export function createPlanningRoutes(
     return context.json(result, 201);
   });
 
-  mount(routes, changeTask, origin, session, async (context) => {
+  mount(routes, changeTask, session, async (context) => {
+    const actor = await taskActor(context, "tasks:write");
+    if (actor instanceof Response) return actor;
     const taskId = parseValue(uuid, context.req.param("taskId"));
     const input = await parseJsonBody(context, taskChangeInput);
     if ("errors" in taskId || "errors" in input) {
       return definedProblem(context, TASK_CHANGE_INVALID);
     }
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
     const result = await services.tasks.change(
       actor,
       taskId.data,
@@ -575,16 +601,15 @@ export function createPlanningRoutes(
   mount(
     routes,
     setTaskCompletion,
-    origin,
     session,
     async (context) => {
+      const actor = await taskActor(context, "tasks:write");
+      if (actor instanceof Response) return actor;
       const taskId = parseValue(uuid, context.req.param("taskId"));
       const input = await parseJsonBody(context, taskCompletionInput);
       if ("errors" in taskId || "errors" in input) {
         return definedProblem(context, TASK_COMPLETION_INVALID);
       }
-      const actor = await requireActor(context);
-      if (actor instanceof Response) return actor;
       const result = await services.tasks.setCompletion(
         actor,
         taskId.data,

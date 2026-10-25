@@ -90,6 +90,39 @@ afterEach(() => {
 });
 
 describe("API-001 personal API tokens", () => {
+  it("explains and selects independent task read, create, and edit grants for automation", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: jsonResponse({
+        records: [],
+        scopes: ["tasks:read", "tasks:create", "tasks:write"],
+        status: "ready",
+      }),
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    await mount();
+    act(() => {
+      fireEvent.input(screen.getByLabelText("Token name"), {
+        target: { value: "Task automation" },
+      });
+      fireEvent.click(screen.getByLabelText("Read tasks"));
+      fireEvent.click(screen.getByLabelText("Create tasks"));
+      fireEvent.click(screen.getByLabelText("Edit and complete tasks"));
+    });
+    expect(screen.getByText(/Task lists and individual task details/))
+      .toBeTruthy();
+    expect(screen.getByText(/New tasks only/)).toBeTruthy();
+    expect(screen.getByText(/Edit, complete, and reopen existing tasks/))
+      .toBeTruthy();
+    submit();
+    await waitFor(() =>
+      expect(api.bodies()).toEqual([{
+        name: "Task automation",
+        scopes: ["tasks:read", "tasks:create", "tasks:write"],
+      }])
+    );
+  });
   it("offers the returned grants with plain labels and sends only deliberately selected scopes", async () => {
     shell();
     const api = stubApi({

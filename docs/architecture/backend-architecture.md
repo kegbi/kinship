@@ -357,7 +357,21 @@ lookup. No grant implies another. These reads use the owning public application
 facades, including their current membership, workspace, parent, archived-person,
 hidden-section, and cursor checks. They do not expose the full person profile,
 summary, timeline, search, notes, tasks, journal, life events, file bytes, or
-mutations to tokens.
+mutations through those person grants.
+
+Task automation uses separate independent grants: `tasks:read` permits
+`GET /api/v1/tasks` and `GET /api/v1/tasks/{taskId}`; `tasks:create` permits
+only the retry-safe `POST /api/v1/tasks`; `tasks:write` permits
+`PATCH /api/v1/tasks/{taskId}` and `PUT /api/v1/tasks/{taskId}/completion`,
+including reopening. Full task automation explicitly selects all three. These
+routes use planning's existing public use cases and preserve requestId
+replay/conflict, optimistic revisions, explicit null clearing, archived
+linked-person rules, and tenant validation. The listing's optional `dueBefore`
+is an inclusive ISO instant filter; its cursor is bound to that filter as well
+as workspace, person, and status. Bearer writes require neither Cookie nor
+Origin. Cookie writes still require the exact configured public Origin. This
+exception applies only to those task routes; Today, reminders, cadences,
+security, and settings keep session admission.
 
 On those token-enabled routes, any `Authorization` header selects token
 authentication exclusively. Invalid, expired, revoked, wrong-workspace, and

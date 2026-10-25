@@ -30,6 +30,7 @@ import {
   revokeMembership,
 } from "../support/database.ts";
 import { apiSupport, type SignedInFixture } from "../support/api.ts";
+import type { Task } from "../../packages/contracts/generated/auth-client.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
@@ -51,6 +52,410 @@ function management(
 ) {
   return api.request(fixture, path, method, body);
 }
+
+Deno.test("task automation tokens keep independent grants, retry safety, revisions, filters and tenant boundaries", async () => {
+  const suffix = crypto.randomUUID();
+  const own = await register(`task-api-${suffix}@example.test`, "Task API");
+  const foreign = await register(
+    `task-api-foreign-${suffix}@example.test`,
+    "Foreign tasks",
+  );
+  const person = async (fixture: SignedInFixture) => {
+    const response = await api.request(fixture, "/api/v1/people", "POST", {
+      givenName: "Ada",
+      isPartial: false,
+    });
+    assert(response.status === 201, "person created through application");
+    return (await response.json()).person.id as string;
+  };
+  const personId = await person(own);
+  const foreignPersonId = await person(foreign);
+  const mint = async (scopes: string[]) => {
+    const response = await management(own, undefined, "POST", {
+      name: "Task connector",
+      scopes,
+    });
+    assert(response.status === 201, `task grants minted: ${response.status}`);
+    return await response.json() as { secret: string; record: { id: string } };
+  };
+  const reader = await mint(["tasks:read"]);
+  const creator = await mint(["tasks:create"]);
+  const writer = await mint(["tasks:write"]);
+  const full = await mint(["tasks:read", "tasks:create", "tasks:write"]);
+  const send = (
+    secret: string,
+    path: string,
+    method = "GET",
+    body?: unknown,
+    extra: Record<string, string> = {},
+  ) =>
+    configured.app.request(`http://localhost${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "content-type": "application/json",
+        ...extra,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const expect = async (response: Response, status: number, label: string) => {
+    assert(
+      response.status === status,
+      `${label}: expected ${status}, received ${response.status}`,
+    );
+    return await response.json();
+  };
+  const input = {
+    requestId: crypto.randomUUID(),
+    title: "Call Ada",
+    description: "Discuss plans",
+    personId,
+    dueAt: "2026-10-26T10:00:00.000Z",
+  };
+  const created = await expect(
+    await send(creator.secret, "/api/v1/tasks", "POST", input),
+    201,
+    "create-only token without cookies or Origin",
+  );
+  const task = created.task as Task;
+  const root = `/api/v1/tasks/${task.id}`;
+  const replay = await expect(
+    await send(creator.secret, "/api/v1/tasks", "POST", input),
+    201,
+    "retry same requestId",
+  );
+  assert(replay.task.id === task.id, "retry returns original task");
+  const conflict = await expect(
+    await send(creator.secret, "/api/v1/tasks", "POST", {
+      ...input,
+      title: "Different",
+    }),
+    409,
+    "changed payload conflicts",
+  );
+  assert(
+    conflict.code === "task_request_conflict",
+    "stable idempotency conflict code",
+  );
+  const routes = [
+    ["GET", "/api/v1/tasks", undefined, reader],
+    ["GET", root, undefined, reader],
+    ["POST", "/api/v1/tasks", input, creator],
+    [
+      "PATCH",
+      root,
+      { expectedUpdatedAt: task.updatedAt, title: "Call Ada" },
+      writer,
+    ],
+    ["PUT", `${root}/completion`, { completed: false }, writer],
+  ] as const;
+  for (const [method, path, body, allowed] of routes) {
+    for (
+      const token of [reader, creator, writer].filter((token) =>
+        token !== allowed
+      )
+    ) {
+      await expect(
+        await send(token.secret, path, method, body, { cookie: own.cookie }),
+        401,
+        "wrong grant never borrows valid cookies",
+      );
+    }
+    for (const authorization of ["", "Basic malformed", "Bearer malformed"]) {
+      await expect(
+        await send("ignored", path, method, body, {
+          authorization,
+          cookie: own.cookie,
+        }),
+        401,
+        "malformed Authorization exclusively selects token path",
+      );
+    }
+    await expect(
+      await send(full.secret, path, method, body, {
+        "X-Workspace-Id": foreign.workspaceId,
+      }),
+      401,
+      "foreign requested workspace refused",
+    );
+    if (method !== "GET") {
+      for (const origin of [undefined, "http://foreign.test"]) {
+        const response = await configured.app.request(
+          `http://localhost${path}`,
+          {
+            method,
+            headers: {
+              cookie: own.cookie,
+              "content-type": "application/json",
+              ...(origin ? { origin } : {}),
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        await expect(
+          response,
+          403,
+          "cookie writes retain exact-Origin CSRF protection",
+        );
+      }
+    }
+  }
+  const detail = await expect(
+    await send(reader.secret, root),
+    200,
+    "read task detail",
+  );
+  assert(
+    detail.task.id === task.id && detail.task.person.id === personId,
+    "public get hydrates linked person",
+  );
+  const changed = await expect(
+    await send(writer.secret, root, "PATCH", {
+      expectedUpdatedAt: task.updatedAt,
+      title: "Edited task",
+      description: null,
+      dueAt: null,
+      personId: null,
+    }),
+    200,
+    "write-only token edits and clears nullable fields",
+  );
+  assert(
+    changed.task.description === undefined &&
+      changed.task.dueAt === undefined && changed.task.person === undefined,
+    "explicit nulls clear fields",
+  );
+  await expect(
+    await send(writer.secret, root, "PATCH", {
+      expectedUpdatedAt: task.updatedAt,
+      title: "Stale edit",
+    }),
+    409,
+    "stale optimistic edit refused",
+  );
+  const complete = await expect(
+    await send(writer.secret, `${root}/completion`, "PUT", { completed: true }),
+    200,
+    "complete",
+  );
+  assert(complete.task.status === "completed", "task completed");
+  const again = await expect(
+    await send(writer.secret, `${root}/completion`, "PUT", { completed: true }),
+    200,
+    "retry completion",
+  );
+  assert(again.status === "unchanged", "completion is idempotent");
+  const reopened = await expect(
+    await send(writer.secret, `${root}/completion`, "PUT", {
+      completed: false,
+    }),
+    200,
+    "reopen",
+  );
+  assert(reopened.task.status === "open", "task reopened");
+
+  const foreignCreated = await api.request(foreign, "/api/v1/tasks", "POST", {
+    requestId: crypto.randomUUID(),
+    title: "Foreign secret task",
+    personId: foreignPersonId,
+  });
+  assert(foreignCreated.status === 201, "foreign task created");
+  const foreignTask = (await foreignCreated.json()).task as Task;
+  for (
+    const [method, path, body] of [
+      ["GET", `/api/v1/tasks/${foreignTask.id}`, undefined],
+      ["PATCH", `/api/v1/tasks/${foreignTask.id}`, {
+        expectedUpdatedAt: foreignTask.updatedAt,
+        title: "Denied",
+      }],
+      ["PUT", `/api/v1/tasks/${foreignTask.id}/completion`, {
+        completed: true,
+      }],
+      ["POST", "/api/v1/tasks", {
+        ...input,
+        requestId: crypto.randomUUID(),
+        personId: foreignPersonId,
+      }],
+      ["PATCH", root, {
+        expectedUpdatedAt: reopened.task.updatedAt,
+        personId: foreignPersonId,
+      }],
+    ] as const
+  ) {
+    await expect(
+      await send(full.secret, path, method, body),
+      404,
+      "foreign task or linked person refused",
+    );
+  }
+  const dueBefore = "2026-10-28T12:00:00.000Z";
+  const dueIds: string[] = [];
+  for (const dueAt of [input.dueAt, dueBefore, "2026-11-01T00:00:00.000Z"]) {
+    const due = await expect(
+      await send(creator.secret, "/api/v1/tasks", "POST", {
+        ...input,
+        requestId: crypto.randomUUID(),
+        dueAt,
+      }),
+      201,
+      "dated task created",
+    );
+    if (dueAt !== "2026-11-01T00:00:00.000Z") dueIds.push(due.task.id);
+  }
+  const query = `personId=${personId}&status=open&dueBefore=${
+    encodeURIComponent(dueBefore)
+  }&limit=1`;
+  const first = await expect(
+    await send(reader.secret, `/api/v1/tasks?${query}`),
+    200,
+    "filtered first page",
+  );
+  assert(
+    first.items.length === 1 && first.nextCursor,
+    "filtered page has continuation",
+  );
+  const second = await expect(
+    await send(
+      reader.secret,
+      `/api/v1/tasks?${query}&cursor=${encodeURIComponent(first.nextCursor)}`,
+    ),
+    200,
+    "filtered continuation",
+  );
+  assert(
+    second.items.length === 1 && !second.nextCursor &&
+      new Set([first.items[0].id, second.items[0].id]).size === 2 &&
+      [first.items[0].id, second.items[0].id].every((id) =>
+        dueIds.includes(id)
+      ),
+    "inclusive due filter and continuation return exactly the two matching tasks",
+  );
+  for (
+    const changedQuery of [
+      query.replace(
+        encodeURIComponent(dueBefore),
+        encodeURIComponent("2026-11-02T00:00:00.000Z"),
+      ),
+      query.replace(personId, foreignPersonId),
+      query.replace("status=open", "status=completed"),
+    ]
+  ) {
+    await expect(
+      await send(
+        reader.secret,
+        `/api/v1/tasks?${changedQuery}&cursor=${
+          encodeURIComponent(first.nextCursor)
+        }`,
+      ),
+      409,
+      "cursor is bound to each filter",
+    );
+  }
+  await expect(
+    await send(reader.secret, "/api/v1/tasks?dueBefore=tomorrow"),
+    400,
+    "invalid dueBefore rejected",
+  );
+  const list = await expect(
+    await send(reader.secret, "/api/v1/tasks"),
+    200,
+    "workspace list",
+  );
+  assert(
+    !JSON.stringify(list).includes("Foreign secret task"),
+    "foreign tasks never listed",
+  );
+  const profile = await (await api.request(own, `/api/v1/people/${personId}`))
+    .json();
+  assert(
+    (await api.request(own, `/api/v1/people/${personId}/archive`, "POST", {
+      expectedUpdatedAt: profile.person.updatedAt,
+    })).status === 200,
+    "linked person archived through owning use case",
+  );
+  const archivedRoot = `/api/v1/tasks/${dueIds[0]}`;
+  const archived = await expect(
+    await send(reader.secret, archivedRoot),
+    200,
+    "archived linked person remains readable",
+  );
+  assert(archived.task.person.archived, "archived projection retained");
+  await expect(
+    await send(creator.secret, "/api/v1/tasks", "POST", {
+      ...input,
+      requestId: crypto.randomUUID(),
+    }),
+    409,
+    "cannot create linked task for archived person",
+  );
+  await expect(
+    await send(writer.secret, archivedRoot, "PATCH", {
+      expectedUpdatedAt: archived.task.updatedAt,
+      personId: null,
+    }),
+    409,
+    "cannot detach archived link to bypass rule",
+  );
+  await expect(
+    await send(writer.secret, `${archivedRoot}/completion`, "PUT", {
+      completed: true,
+    }),
+    409,
+    "cannot complete archived linked task",
+  );
+
+  const expired = await mint(["tasks:read", "tasks:create", "tasks:write"]);
+  await sql`update crm.api_tokens set expires_at = now() - interval '1 second' where id = ${expired.record.id}::uuid`;
+  const revoked = await mint(["tasks:read", "tasks:create", "tasks:write"]);
+  assert(
+    (await management(
+      own,
+      `/api/v1/settings/api-tokens/${revoked.record.id}`,
+      "DELETE",
+    )).status === 200,
+    "token revoked through owning API",
+  );
+  for (const token of [expired, revoked]) {
+    for (const [method, path, body] of routes) {
+      await expect(
+        await send(token.secret, path, method, body, { cookie: own.cookie }),
+        401,
+        "expired or revoked bearer never borrows cookie",
+      );
+    }
+  }
+  for (
+    const path of [
+      "/api/v1/today/tasks",
+      "/api/v1/today/attention",
+      "/api/v1/settings/api-tokens",
+    ]
+  ) {
+    await expect(
+      await send(full.secret, path),
+      401,
+      "unrelated routes stay session-only",
+    );
+  }
+  // Session clients retain the original route behavior.
+  assert(
+    (await api.request(own, root)).status === 200,
+    "cookie task detail supported",
+  );
+  assert(
+    (await api.request(own, `${root}/completion`, "PUT", { completed: false }))
+      .status === 200,
+    "same-origin cookie write still works",
+  );
+  await revokeMembership(sql, own.memberId);
+  for (const [method, path, body] of routes) {
+    await expect(
+      await send(full.secret, path, method, body),
+      401,
+      "token revalidates current membership",
+    );
+  }
+});
 
 Deno.test("scoped person tokens preserve projections, parent boundaries, lookups, cursors, and current membership", async () => {
   const suffix = crypto.randomUUID();

@@ -12,6 +12,7 @@ import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
   originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -30,6 +31,7 @@ import {
   taskCreated,
   taskCreateInput,
   taskList,
+  taskReady,
   todayAttention,
   todayReminders,
   todayTasks,
@@ -173,6 +175,7 @@ export const createStayInTouchCadence = defineRoute({
  * by default, where it used to accept and default to a hundred.
  */
 export const listTasksQuery = pageQuery.extend({
+  dueBefore: z.iso.datetime({ offset: true }).optional(),
   personId: z.uuid().optional(),
   status: z.enum(["cancelled", "completed", "open"]).optional(),
 });
@@ -181,7 +184,9 @@ export const listTasks = defineRoute({
   method: "get",
   path: "/api/v1/tasks",
   operationId: "listTasks",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require tasks:read. Lists tasks in the active workspace, optionally filtered by personId, status, and dueBefore (inclusive ISO instant). Continuation cursors are bound to the workspace and all filters; changing a filter requires a new first page. Grants are independent; create and write grants do not imply read access.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listTasksQuery,
     headers: workspaceHeaders,
@@ -197,13 +202,35 @@ export const listTasks = defineRoute({
   },
 });
 
+export const getTask = defineRoute({
+  method: "get",
+  path: "/api/v1/tasks/{taskId}",
+  operationId: "getTask",
+  description:
+    "Personal tokens require tasks:read. Reads one task through planning's public use case with current membership and workspace validation, including its archived or unavailable linked-person projection.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({ taskId: uuid }),
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "One task in the active workspace",
+      content: { "application/json": taskReady },
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
+  },
+});
+
 export const createTask = defineRoute({
   method: "post",
   path: "/api/v1/tasks",
   operationId: "createTask",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require tasks:create. Retry the same requestId and payload to receive the original task; a changed payload conflicts. Does not grant listing, detail, or editing. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -226,12 +253,14 @@ export const changeTask = defineRoute({
   method: "patch",
   path: "/api/v1/tasks/{taskId}",
   operationId: "changeTask",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require tasks:write. Edits an existing task using expectedUpdatedAt; nullable fields may be explicitly cleared. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       taskId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -254,12 +283,14 @@ export const setTaskCompletion = defineRoute({
   method: "put",
   path: "/api/v1/tasks/{taskId}/completion",
   operationId: "setTaskCompletion",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require tasks:write. Completes or reopens an existing task idempotently with completed true or false. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       taskId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -371,6 +402,7 @@ export const PLANNING_ROUTES: readonly RouteDescriptor[] = [
   acknowledgeReminderOccurrence,
   createStayInTouchCadence,
   listTasks,
+  getTask,
   createTask,
   changeTask,
   setTaskCompletion,

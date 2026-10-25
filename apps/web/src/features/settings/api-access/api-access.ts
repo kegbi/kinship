@@ -130,6 +130,22 @@ export const API_TOKEN_SCOPE_CHOICES: readonly {
     label: "Read relationships",
     detail: "Person relationships and relationship types.",
   },
+  {
+    scope: "tasks:read",
+    label: "Read tasks",
+    detail: "Task lists and individual task details.",
+  },
+  {
+    scope: "tasks:create",
+    label: "Create tasks",
+    detail: "New tasks only; no reading or editing existing tasks.",
+  },
+  {
+    scope: "tasks:write",
+    label: "Edit and complete tasks",
+    detail:
+      "Edit, complete, and reopen existing tasks; no reading or creating.",
+  },
 ];
 
 /** A token's scopes and expiry, as its row shows them. */

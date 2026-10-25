@@ -206,6 +206,10 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
             </label>
             <fieldset>
               <legend>Scopes</legend>
+              <p>
+                Grants are independent. For full task automation, select Read
+                tasks, Create tasks, and Edit and complete tasks.
+              </p>
               {API_TOKEN_SCOPE_CHOICES.filter(({ scope }) =>
                 state.scopes?.includes(scope) ?? true
               ).map(({ scope, label, detail }) => (

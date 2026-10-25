@@ -23,4 +23,4 @@ export { searchWorkspace } from "../client/search.ts";
 export { createRelatedPersonRelationship, createRelationship, deleteRelationship, listRelationshipTypes, listRelationships, updateRelationship } from "../client/relationships.ts";
 export { getActivityReport, getTodayFavoriteNotes, getTodayRecentActivity, listCommunicationOptions, listInteractionOptions, listPersonCommunications, recordInteraction } from "../client/interactions.ts";
 export { acceptLegalDocument, getLegalRequirements, getPublicLegalDocument, listPersonAudit, listWorkspaceAudit } from "../client/governance.ts";
-export { acknowledgeReminderOccurrence, changeTask, createReminder, createStayInTouchCadence, createTask, getTodayAttention, getTodayReminders, getTodayTasks, listNotifications, listPersonReminders, listTasks, setReminderActive, setTaskCompletion } from "../client/planning.ts";
+export { acknowledgeReminderOccurrence, changeTask, createReminder, createStayInTouchCadence, createTask, getTask, getTodayAttention, getTodayReminders, getTodayTasks, listNotifications, listPersonReminders, listTasks, setReminderActive, setTaskCompletion } from "../client/planning.ts";
