@@ -45,7 +45,10 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  type ScopedTokenAuthority,
+  SESSION_INVALID,
   sessionActor,
+  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
   parseJsonBody,
@@ -56,6 +59,7 @@ import {
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface RelationshipHttpServices {
+  readonly apiTokens?: ScopedTokenAuthority<"relationships:read">;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly relationships: RelationshipManagement;
@@ -246,8 +250,11 @@ export function createRelationshipRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, TYPES_QUERY_INVALID);
     }
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
+    const actor = await tokenOrSessionActor(context, {
+      scope: "relationships:read",
+      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+    });
+    if (!actor) return definedProblem(context, SESSION_INVALID);
     const result = await services.relationships.listTypes(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
       ...(parsed.data.search ? { search: parsed.data.search } : {}),
@@ -273,8 +280,11 @@ export function createRelationshipRoutes(
       if ("errors" in personId || "errors" in query) {
         return definedProblem(context, SECTION_REQUEST_INVALID);
       }
-      const actor = await requireActor(context);
-      if (actor instanceof Response) return actor;
+      const actor = await tokenOrSessionActor(context, {
+        scope: "relationships:read",
+        ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+      });
+      if (!actor) return definedProblem(context, SESSION_INVALID);
       const result = await services.relationships.list(actor, personId.data, {
         ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
         limit: query.data.limit,

@@ -6,8 +6,8 @@
  * (GAP-053), the view that records who was opened, and the recent-people
  * strip that reads those views back.
  *
- * The directory is the one route in the whole surface that accepts an API
- * token as well as a session cookie, which is what `tokenOrSessionActor` is
+ * The directory accepts an API token as well as a session cookie, which is
+ * what `tokenOrSessionActor` is
  * for: an `Authorization` header commits the request to the token path with
  * the `people:read` scope, so a token that lacks it is nobody rather than a
  * silent fall back onto whatever cookie the same request happened to carry.

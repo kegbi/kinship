@@ -16,10 +16,15 @@ functionality autonomously with independent review, and then shipping a public
 API guide in the application's styling. This work takes priority over the
 historical cursor below. Deliver one reviewed candidate per vertical outcome.
 
-- [ ] Scoped person reads: a minimal person identity, profile facts, important
+- [x] Scoped person reads: a minimal person identity, profile facts, important
       dates, relationships, and the lookups consumed by those reads. Preserve
       the existing directory-only `people:read` grant; detailed person and
-      relationship access use explicit new grants.
+      relationship access use explicit new grants. `people:profile:read` and
+      `relationships:read` now authorize only their documented reads; token
+      creation supports deliberate combinations. The focused HTTP/contract, UI,
+      and PostgreSQL token gates pass, with affected line/branch/function
+      coverage above 80%. The snapshot research inventory remains historical;
+      the executable OpenAPI now documents 152 operations.
 - [ ] Task automation: scoped listing/detail, retry-safe creation, editing,
       completion and reopening through planning's existing public use cases.
       Bearer writes work without browser cookies or a fabricated Origin;
@@ -1542,6 +1547,16 @@ Playwright test carrying its stable flow ID.
       same installed dependencies. Diagnose the file-lock/output-directory
       interaction separately; no application behavior change is required by this
       observation.
+
+- [ ] **REL-093 — Profile-fact cursors can lose sub-millisecond timestamp
+      precision.** Observed during the 2026-10-25 token-read verification with
+      direct-SQL fixtures using PostgreSQL default timestamps. The unchanged
+      Postgres.js date serializer converts `.123456Z` to `.123Z`, so a cursor
+      anchored to a row with microseconds can fail continuation. Representative
+      explicit timestamps pass both continuation and foreign-parent rejection
+      through the same adapter. Diagnose timestamp preservation in the owning
+      pagination boundary separately; no paging adapter changed in the API token
+      candidate.
 
 ## Just-In-Time Technical Capabilities
 

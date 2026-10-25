@@ -12,7 +12,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import {
   type ApiResult,
-  type ApiTokenScope,
   createApiToken,
   getApiTokens,
   revokeApiToken,
@@ -24,6 +23,7 @@ import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
 import { useHeldSubmit } from "../shared/hooks.ts";
 import {
+  API_TOKEN_SCOPE_CHOICES,
   apiAccessReducer,
   initialApiAccess,
   recordActivity,
@@ -51,7 +51,11 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
       });
       return;
     }
-    dispatch({ records: answer.data.records, type: "loaded" });
+    dispatch({
+      records: answer.data.records,
+      scopes: answer.data.scopes,
+      type: "loaded",
+    });
   };
 
   const first = useEffectEvent(async () => {
@@ -106,8 +110,9 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
     const data = new FormData(form);
     const name = data.get("name")?.toString().trim();
     const expires = data.get("expiresAt")?.toString();
-    const scopes: ApiTokenScope[] = data.getAll("scopes").flatMap((scope) =>
-      scope === "people:read" ? [scope] : []
+    const selected = data.getAll("scopes");
+    const scopes = (state.scopes ?? []).filter((scope) =>
+      selected.includes(scope)
     );
     if (!name || scopes.length === 0) {
       dispatch({
@@ -132,7 +137,10 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
       "API token could not be created.",
     );
   };
-  const submit = useHeldSubmit(state.phase === "ready", create);
+  const submit = useHeldSubmit(
+    state.phase === "ready" && state.scopes !== undefined,
+    create,
+  );
 
   const revoke = (id: string) =>
     void change(
@@ -198,12 +206,31 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
             </label>
             <fieldset>
               <legend>Scopes</legend>
-              <label className="scope-choice">
-                <input name="scopes" type="checkbox" value="people:read" />
-                Read people
-              </label>
+              {API_TOKEN_SCOPE_CHOICES.filter(({ scope }) =>
+                state.scopes?.includes(scope) ?? true
+              ).map(({ scope, label, detail }) => (
+                <label className="scope-choice" key={scope}>
+                  <input
+                    aria-label={label}
+                    aria-describedby={`scope-${scope}-detail`}
+                    disabled={state.busy}
+                    name="scopes"
+                    type="checkbox"
+                    value={scope}
+                  />
+                  <span>
+                    {label}
+                    <small id={`scope-${scope}-detail`}>{detail}</small>
+                  </span>
+                </label>
+              ))}
             </fieldset>
-            <button disabled={state.busy} type="submit">Create token</button>
+            <button
+              disabled={state.busy || state.scopes === undefined}
+              type="submit"
+            >
+              Create token
+            </button>
           </form>
         )}
       </section>

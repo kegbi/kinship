@@ -570,6 +570,11 @@ export const personCreated = z.strictObject({
   next: z.string().regex(new RegExp("^/app/people/[0-9a-f-]+$")),
 }).meta({ id: "PersonCreated" });
 
+export const personIdentityReady = z.strictObject({
+  person: personIdentity,
+  status: z.enum(["ready", "archived"]),
+}).meta({ id: "PersonIdentityReady" });
+
 export const personDeleteInput = z.strictObject({
   confirmation: z.string().min(1).max(500),
   expectedUpdatedAt: z.iso.datetime({ offset: true }),

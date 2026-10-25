@@ -13,6 +13,59 @@ const relationshipId = "00000000-0000-4000-8000-000000000300";
 const updatedAt = "2026-08-16T12:00:00.000000Z";
 const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
+Deno.test("relationship bearer reads require relationships:read without cookie fallback", async () => {
+  let sessions = 0;
+  const app = createRelationshipRoutes({
+    ...services(),
+    apiTokens: {
+      authenticate: (token: string, scope: string) =>
+        Promise.resolve(
+          token === "relationships" && scope === "relationships:read"
+            ? { actor, status: "authenticated" as const }
+            : { status: "invalid" as const },
+        ),
+    },
+    protectedSessions: {
+      resolve: () => {
+        sessions++;
+        return Promise.resolve(actor);
+      },
+    },
+  });
+  for (
+    const path of [
+      `/api/v1/people/${sourceId}/relationships`,
+      "/api/v1/relationship-types",
+    ]
+  ) {
+    assertStatus(
+      await app.request(`http://localhost${path}`, {
+        headers: { authorization: "Bearer relationships" },
+      }),
+      200,
+      "token-only relationship read",
+    );
+    for (
+      const authorization of [
+        "Bearer directory",
+        "Bearer profile",
+        "Bearer expired",
+        "Bearer revoked",
+        "Basic invalid",
+      ]
+    ) {
+      assertStatus(
+        await app.request(`http://localhost${path}`, {
+          headers: { authorization, cookie: "kinship_session=current-token" },
+        }),
+        401,
+        "invalid bearer cannot fall back",
+      );
+    }
+  }
+  assert(sessions === 0, "bearer reads never resolve a cookie");
+});
+
 function services(
   overrides: Partial<RelationshipManagement> = {},
 ): RelationshipHttpServices {

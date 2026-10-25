@@ -8,7 +8,10 @@
  * is left; it never reaches the list.
  */
 
-import type { ApiTokenRecord } from "../../../../../../packages/contracts/generated/auth-client.ts";
+import type {
+  ApiTokenRecord,
+  ApiTokenScope,
+} from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
   formatInstant,
   type TimePreferences,
@@ -17,6 +20,7 @@ import {
 export interface ApiAccessState {
   readonly phase: "loading" | "ready" | "no-session" | "member";
   readonly records: readonly ApiTokenRecord[] | undefined;
+  readonly scopes: readonly ApiTokenScope[] | undefined;
   readonly timePreferences: TimePreferences | undefined;
   readonly secret: string | undefined;
   readonly status: string;
@@ -30,7 +34,11 @@ export type ApiAccessAction =
   }
   | { readonly type: "no-session" }
   | { readonly type: "member" }
-  | { readonly type: "loaded"; readonly records: readonly ApiTokenRecord[] }
+  | {
+    readonly type: "loaded";
+    readonly records: readonly ApiTokenRecord[];
+    readonly scopes: readonly ApiTokenScope[];
+  }
   | { readonly type: "status"; readonly message: string }
   | { readonly type: "busy"; readonly busy: boolean; readonly message?: string }
   | { readonly type: "created"; readonly secret: string }
@@ -40,6 +48,7 @@ export const initialApiAccess: ApiAccessState = {
   busy: false,
   phase: "loading",
   records: undefined,
+  scopes: undefined,
   secret: undefined,
   status: "",
   timePreferences: undefined,
@@ -73,6 +82,7 @@ export function apiAccessReducer(
       return {
         ...state,
         records: action.records,
+        scopes: action.scopes,
         status: "API tokens are current.",
       };
     case "status":
@@ -97,6 +107,30 @@ export function apiAccessReducer(
       };
   }
 }
+
+/** Displayed before hydration too; the loaded authority decides which are offered. */
+export const API_TOKEN_SCOPE_CHOICES: readonly {
+  readonly scope: ApiTokenScope;
+  readonly label: string;
+  readonly detail: string;
+}[] = [
+  {
+    scope: "people:read",
+    label: "Read people",
+    detail: "Directory only; names and list entries.",
+  },
+  {
+    scope: "people:profile:read",
+    label: "Read person profiles",
+    detail:
+      "Identity, profile facts, important dates, and their lookup options.",
+  },
+  {
+    scope: "relationships:read",
+    label: "Read relationships",
+    detail: "Person relationships and relationship types.",
+  },
+];
 
 /** A token's scopes and expiry, as its row shows them. */
 export function recordScope(

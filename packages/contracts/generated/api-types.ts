@@ -490,6 +490,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates. */
         readonly get: operations["listPeople"];
         readonly put?: never;
         readonly post: operations["createPerson"];
@@ -702,6 +703,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require people:profile:read. Reads important dates, including archived people, preserving stored date precision. */
         readonly get: operations["listImportantDates"];
         readonly put?: never;
         readonly post: operations["createImportantDate"];
@@ -815,6 +817,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require people:profile:read. Reads one profile-fact section and its lookup options when requested. Hidden sections return no saved records or options; archived people remain readable. Existing person, section, revision, and option-search cursor checks apply. */
         readonly get: operations["listProfileFacts"];
         readonly put?: never;
         readonly post: operations["createProfileFact"];
@@ -920,6 +923,23 @@ export interface paths {
         readonly patch: operations["changeGiftStatus"];
         readonly trace?: never;
     };
+    readonly "/api/v1/people/{personId}/identity": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description Minimal person name and identifier, including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data. */
+        readonly get: operations["getPersonIdentity"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/people/{personId}/life-events": {
         readonly parameters: {
             readonly query?: never;
@@ -994,6 +1014,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require relationships:read. Returns one person's directional relationships and authorized endpoint names in the bound workspace, including archived people. Hidden sections return no relationships; existing cursor checks apply. */
         readonly get: operations["listRelationships"];
         readonly put?: never;
         readonly post: operations["createRelationship"];
@@ -1188,6 +1209,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require relationships:read. Reads the bound workspace's relationship types and resolves selected same-workspace types. Hidden relationship sections return no options; existing cursor and search bounds apply. */
         readonly get: operations["listRelationshipTypes"];
         readonly put?: never;
         readonly post?: never;
@@ -2066,7 +2088,7 @@ export interface components {
             /** Format: date-time */
             readonly expiresAt?: string;
             readonly name: string;
-            readonly scopes: readonly "people:read"[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
         };
         readonly ApiTokenCreated: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -2076,7 +2098,7 @@ export interface components {
         };
         readonly ApiTokenList: {
             readonly records: readonly components["schemas"]["ApiTokenRecord"][];
-            readonly scopes: readonly "people:read"[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
             /** @constant */
             readonly status: "ready";
         };
@@ -2092,7 +2114,7 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             readonly revokedAt?: string;
-            readonly scopes: readonly "people:read"[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read")[];
         };
         readonly ApiTokenRevoked: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -3494,6 +3516,11 @@ export interface components {
             readonly isPartial: boolean;
             readonly middleName?: string;
             readonly nickname?: string;
+        };
+        readonly PersonIdentityReady: {
+            readonly person: components["schemas"]["PersonIdentity"];
+            /** @enum {string} */
+            readonly status: "ready" | "archived";
         };
         readonly PersonInput: {
             readonly duplicateOverride?: boolean;
@@ -9999,6 +10026,76 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly getPersonIdentity: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly personId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Workspace-scoped minimal person identity */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PersonIdentityReady"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

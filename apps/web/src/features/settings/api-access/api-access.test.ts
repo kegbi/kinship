@@ -31,7 +31,13 @@ describe("API-001 API access state", () => {
       secret: undefined,
       status: "The one-time secret has been dismissed.",
     });
-    expect(apiAccessReducer(ready, { records: [], type: "loaded" }).status)
+    expect(
+      apiAccessReducer(ready, {
+        records: [],
+        scopes: ["people:read"],
+        type: "loaded",
+      }).status,
+    )
       .toBe("API tokens are current.");
     const busy = apiAccessReducer(ready, {
       busy: true,

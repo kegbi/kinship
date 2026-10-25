@@ -28,6 +28,7 @@ import type {
   PersonEditInput,
   PersonGenderOption,
   PersonIdentity,
+  PersonIdentityReady,
   PersonInput,
   PersonLifecycleIdentity,
   PersonLifeEvent,
@@ -118,6 +119,16 @@ export function createPerson(
     method: "POST",
     headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
     body: JSON.stringify(input),
+  });
+}
+
+/** The minimal identity read, without profile aggregates. */
+export function getPersonIdentity(
+  personId: string,
+  workspaceId?: string,
+): Promise<ApiResult<PersonIdentityReady>> {
+  return request(`/api/v1/people/${encodeURIComponent(personId)}/identity`, {
+    headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
   });
 }
 

@@ -13,10 +13,19 @@
 
 import { z } from "zod";
 
+export const apiTokenScope = z.enum([
+  "people:read",
+  "people:profile:read",
+  "relationships:read",
+]);
+
 export const apiTokenCreateInput = z.strictObject({
   expiresAt: z.iso.datetime({ offset: true }).optional(),
   name: z.string().trim().min(1).max(100),
-  scopes: z.array(z.enum(["people:read"])).min(1).max(1),
+  scopes: z.array(apiTokenScope).min(1).max(apiTokenScope.options.length)
+    .refine((scopes) => new Set(scopes).size === scopes.length, {
+      message: "Select each scope only once.",
+    }).meta({ uniqueItems: true }),
 }).meta({ id: "ApiTokenCreateInput" });
 
 export const apiTokenRecord = z.strictObject({
@@ -26,7 +35,7 @@ export const apiTokenRecord = z.strictObject({
   lastUsedAt: z.iso.datetime({ offset: true }).optional(),
   name: z.string().min(1).max(100),
   revokedAt: z.iso.datetime({ offset: true }).optional(),
-  scopes: z.array(z.enum(["people:read"])).min(1),
+  scopes: z.array(apiTokenScope).min(1),
 }).meta({ id: "ApiTokenRecord" });
 
 export const apiTokenCreated = z.strictObject({
@@ -37,7 +46,7 @@ export const apiTokenCreated = z.strictObject({
 
 export const apiTokenList = z.strictObject({
   records: z.array(apiTokenRecord),
-  scopes: z.array(z.enum(["people:read"])),
+  scopes: z.array(apiTokenScope),
   status: z.literal("ready"),
 }).meta({ id: "ApiTokenList" });
 

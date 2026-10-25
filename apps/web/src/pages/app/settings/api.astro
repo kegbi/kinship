@@ -2,6 +2,7 @@
 import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
+import { API_TOKEN_SCOPE_CHOICES } from "../../../features/settings/api-access/api-access.ts";
 export const prerender = true;
 import {
   buttonVariants,
@@ -33,8 +34,8 @@ import {
       <form method="post" data-api-create class="api-token-form" novalidate>
         <label>Token name<input name="name" type="text" maxlength="100" autocomplete="off" required /></label>
         <label>Expiry <span class="optional-label">Optional</span><input name="expiresAt" type="datetime-local" /></label>
-        <fieldset><legend>Scopes</legend><label class="scope-choice"><input name="scopes" type="checkbox" value="people:read" />Read people</label></fieldset>
-        <button type="submit">Create token</button>
+        <fieldset><legend>Scopes</legend>{API_TOKEN_SCOPE_CHOICES.map(({ scope, label, detail }) => <label class="scope-choice"><input name="scopes" type="checkbox" value={scope} aria-label={label} aria-describedby={`scope-${scope}-detail`} /><span>{label}<small id={`scope-${scope}-detail`}>{detail}</small></span></label>)}</fieldset>
+        <button type="submit" disabled>Create token</button>
       </form>
     </section>
 

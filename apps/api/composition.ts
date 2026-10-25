@@ -608,6 +608,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
       api.route(
         "/",
         createRelationshipRoutes({
+          ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
           browserSecurity: services.browserSecurity,
           protectedSessions: services.protectedSessions,
           relationships: services.relationships,

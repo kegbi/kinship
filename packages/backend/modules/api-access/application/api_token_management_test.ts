@@ -117,6 +117,41 @@ Deno.test("API tokens reveal a scoped secret once and expose metadata afterward"
   assertEquals(state.audit.actions, ["created"]);
 });
 
+Deno.test("owners and administrators deliberately mint independent person read grants; members cannot", async () => {
+  for (const role of ["owner", "admin", "member"] as const) {
+    const state = fixture();
+    const result = await state.management.create({ ...owner, role }, {
+      name: "Detailed connector",
+      scopes: ["people:profile:read", "relationships:read"],
+    });
+    assertEquals(result.status, role === "member" ? "forbidden" : "created");
+    if (result.status === "created") {
+      assertEquals(result.record.scopes, [
+        "people:profile:read",
+        "relationships:read",
+      ]);
+      assertEquals(
+        await state.management.authenticate(result.secret, "people:read"),
+        { status: "invalid" },
+      );
+      assertEquals(
+        (await state.management.authenticate(
+          result.secret,
+          "people:profile:read",
+        )).status,
+        "authenticated",
+      );
+      assertEquals(
+        (await state.management.authenticate(
+          result.secret,
+          "relationships:read",
+        )).status,
+        "authenticated",
+      );
+    }
+  }
+});
+
 Deno.test("API token authorization fails closed for malformed, expired, missing-scope, and inactive use", async () => {
   const state = fixture();
   const member = { ...owner, role: "member" as const };

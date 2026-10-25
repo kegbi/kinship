@@ -41,7 +41,9 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  SESSION_INVALID,
   sessionActor,
+  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
   parseJsonBody,
@@ -58,7 +60,7 @@ import type { PeopleHttpServices } from "./shared.ts";
 /** What the profile sections of a person's page are served from. */
 export type ProfileFactHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "profileFacts" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "profileFacts" | "protectedSessions"
 >;
 
 /** What a refused profile-fact write says. */
@@ -204,8 +206,11 @@ export function createFactsRoutes(
       if (
         "errors" in personId || "errors" in section || "errors" in query
       ) return definedProblem(context, PROFILE_SECTION_INVALID);
-      const actor = await requireActor(context);
-      if (actor instanceof Response) return actor;
+      const actor = await tokenOrSessionActor(context, {
+        scope: "people:profile:read",
+        ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+      });
+      if (!actor) return definedProblem(context, SESSION_INVALID);
       const result = await services.profileFacts?.list(
         actor,
         personId.data,

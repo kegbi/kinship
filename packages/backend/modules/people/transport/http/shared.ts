@@ -59,11 +59,13 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface PeopleHttpServices {
   /**
-   * The API-token authority the directory also accepts. People does not
+   * The API-token authority the directory and scoped profile reads accept. People does not
    * depend on api-access, so the route names the kit's structural port and
    * the composition root hands api-access's facade in.
    */
-  readonly apiTokens?: ScopedTokenAuthority<"people:read">;
+  readonly apiTokens?: ScopedTokenAuthority<
+    "people:read" | "people:profile:read"
+  >;
   /** A person's avatar (GAP-045); without it the avatar routes answer 503. */
   readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;

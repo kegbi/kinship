@@ -52,6 +52,255 @@ function management(
   return api.request(fixture, path, method, body);
 }
 
+Deno.test("scoped person tokens preserve projections, parent boundaries, lookups, cursors, and current membership", async () => {
+  const suffix = crypto.randomUUID();
+  const own = await register(
+    `profile-api-${suffix}@example.test`,
+    "Profile API",
+  );
+  const foreign = await register(
+    `profile-foreign-${suffix}@example.test`,
+    "Foreign API",
+  );
+  const person = async (fixture: SignedInFixture, givenName: string) => {
+    const response = await api.request(fixture, "/api/v1/people", "POST", {
+      givenName,
+      isPartial: false,
+    });
+    assert(response.status === 201, "person fixture created");
+    return (await response.json()).person.id as string;
+  };
+  const sourceId = await person(own, "Ada");
+  const targetId = await person(own, "Byron");
+  const foreignId = await person(foreign, "Foreign secret name");
+  const typeId = crypto.randomUUID();
+  const foreignTypeId = crypto.randomUUID();
+  const relationshipTypeId = crypto.randomUUID();
+  const foreignRelationshipTypeId = crypto.randomUUID();
+  await sql`insert into crm.contact_method_types (id, workspace_id, name, kind)
+    values (${typeId}, ${own.workspaceId}, 'Connector email', 'email'),
+      (${foreignTypeId}, ${foreign.workspaceId}, 'Foreign secret type', 'email')`;
+  // Stable whole-second revisions match the owning profile-fact paging fixture.
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value, updated_at)
+    select ${sourceId}::uuid, ${typeId}::uuid, 'contact-' || n || '@example.test',
+      '2026-01-01T00:00:00Z'::timestamptz + n * interval '1 second'
+    from generate_series(1, 51) n`;
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value)
+    values (${targetId}, ${typeId}, 'other-parent@example.test'),
+      (${foreignId}, ${foreignTypeId}, 'foreign-secret@example.test')`;
+  await sql`insert into crm.person_dates (person_id, kind, precision, month, day)
+    values (${sourceId}, 'birthday', 'month_day', 12, 10), (${foreignId}, 'birthday', 'month_day', 1, 1)`;
+  await sql`insert into crm.relationship_types (id, workspace_id, forward_label, reverse_label)
+    values (${relationshipTypeId}, ${own.workspaceId}, 'Connector parent', 'Connector child'),
+      (${foreignRelationshipTypeId}, ${foreign.workspaceId}, 'Foreign secret relation', 'Foreign secret inverse')`;
+  await sql`insert into crm.relationships (workspace_id, from_person_id, to_person_id, relationship_type_id)
+    values (${own.workspaceId}, ${sourceId}, ${targetId}, ${relationshipTypeId})`;
+  const mint = async (scopes: readonly string[]) => {
+    const response = await management(own, undefined, "POST", {
+      name: scopes.join(" + "),
+      scopes,
+    });
+    assert(response.status === 201, `mint ${scopes}: ${response.status}`);
+    return await response.json() as {
+      secret: string;
+      record: { id: string; scopes: string[] };
+    };
+  };
+  const directory = await mint(["people:read"]);
+  const profile = await mint(["people:profile:read"]);
+  const relationships = await mint(["relationships:read"]);
+  const combined = await mint(["people:profile:read", "relationships:read"]);
+  assert(combined.record.scopes.length === 2, "both explicit grants persisted");
+  assert(
+    (await management(own, undefined, "POST", {
+      name: "Duplicate",
+      scopes: ["people:profile:read", "people:profile:read"],
+    })).status === 400,
+    "duplicates refused at HTTP boundary",
+  );
+
+  const read = (
+    path: string,
+    secret: string,
+    extra: Record<string, string> = {},
+  ) =>
+    configured.app.request(`http://localhost${path}`, {
+      headers: { authorization: `Bearer ${secret}`, ...extra },
+    });
+  const root = `/api/v1/people/${sourceId}`;
+  const profilePaths = [
+    `${root}/identity`,
+    `${root}/facts/contact-methods?includeOptions=true`,
+    `${root}/dates`,
+  ];
+  const relationshipPaths = [
+    `${root}/relationships`,
+    `/api/v1/relationship-types?selected=${foreignRelationshipTypeId}`,
+  ];
+  const paths = [...profilePaths, ...relationshipPaths];
+  for (const path of paths) {
+    const correct = profilePaths.includes(path) ? profile : relationships;
+    const wrong = profilePaths.includes(path) ? relationships : profile;
+    const accepted = await read(path, correct.secret);
+    assert(accepted.status === 200, `token-only ${path}: ${accepted.status}`);
+    const body = await accepted.text();
+    assert(
+      !body.includes("Foreign secret") && !body.includes("foreign-secret") &&
+        !body.includes("other-parent@"),
+      "no unrelated tenant or parent data",
+    );
+    for (const secret of [directory.secret, wrong.secret, "malformed"]) {
+      assert(
+        (await read(path, secret, { cookie: own.cookie })).status === 401,
+        "wrong or invalid bearer never falls back to valid cookie",
+      );
+    }
+    assert(
+      (await read(path, combined.secret, {
+        "X-Workspace-Id": foreign.workspaceId,
+      })).status === 401,
+      "foreign requested workspace refused",
+    );
+  }
+  for (
+    const suffix of [
+      "identity",
+      "facts/contact-methods?includeOptions=true",
+      "dates",
+      "relationships",
+    ]
+  ) {
+    assert(
+      (await read(`/api/v1/people/${foreignId}/${suffix}`, combined.secret))
+        .status === 404,
+      "foreign parent refused even when its child rows exist",
+    );
+  }
+  assert(
+    (await read("/api/v1/people", directory.secret)).status === 200,
+    "old directory grant preserved",
+  );
+  assert(
+    (await read("/api/v1/people", profile.secret)).status === 401,
+    "profile does not imply directory grant",
+  );
+  for (
+    const path of [
+      root,
+      `${root}?include=summary`,
+      `${root}/timeline`,
+      `${root}/life-events`,
+      "/api/v1/search?q=Ada",
+    ]
+  ) {
+    assert(
+      (await read(path, combined.secret)).status === 401,
+      "aggregates and unrelated content remain cookie-only",
+    );
+  }
+  const facts = await (await read(profilePaths[1]!, profile.secret)).json();
+  assert(
+    facts.records.length === 50 && facts.nextCursor &&
+      facts.options.some((option: { id: string }) => option.id === typeId),
+    "facts and member-readable options remain bounded",
+  );
+  const cursor = encodeURIComponent(facts.nextCursor);
+  const next = await (await read(
+    `${root}/facts/contact-methods?cursor=${cursor}`,
+    profile.secret,
+  )).json();
+  assert(
+    next.records.length === 1 && !next.nextCursor,
+    "fact cursor continues without gaps",
+  );
+  assert(
+    (await read(
+      `/api/v1/people/${targetId}/facts/contact-methods?cursor=${cursor}`,
+      profile.secret,
+    )).status === 409,
+    "fact cursor cannot change parent",
+  );
+  assert(
+    (await read(`${root}/relationships?cursor=forged`, relationships.secret))
+      .status === 409,
+    "relationship cursor semantics preserved",
+  );
+  assert(
+    (await read(
+      "/api/v1/relationship-types?cursor=forged",
+      relationships.secret,
+    )).status === 409,
+    "lookup cursor semantics preserved",
+  );
+  const dates = await (await read(`${root}/dates`, profile.secret)).json();
+  assert(
+    dates.dates[0]?.precision === "month_day" &&
+      !Object.hasOwn(dates.dates[0], "year"),
+    "unknown year remains absent",
+  );
+  const edges =
+    await (await read(`${root}/relationships`, relationships.secret)).json();
+  assert(
+    edges.relationships[0]?.display.personId === targetId &&
+      edges.relationships[0]?.display.label === "Connector parent",
+    "directional edge is scoped to its parent",
+  );
+
+  await sql`update crm.people set archived_at = now() where id = ${sourceId}::uuid`;
+  for (const path of profilePaths) {
+    const response = await read(path, profile.secret);
+    assert(
+      response.status === 200 && (await response.json()).status === "archived",
+      "archived person remains readable",
+    );
+  }
+  assert(
+    (await read(`${root}/relationships`, relationships.secret)).status === 200,
+    "archived relationships remain readable",
+  );
+  await sql`insert into crm.workspace_profile_modules (workspace_id, key, is_active)
+    values (${own.workspaceId}, 'contact-methods', false), (${own.workspaceId}, 'relationships', false)`;
+  for (const path of [profilePaths[1]!, ...relationshipPaths]) {
+    const response = await read(path, combined.secret);
+    const body = await response.json();
+    assert(
+      response.status === 200 && body.status === "hidden" &&
+        (body.records ?? body.relationships ?? body.options).length === 0,
+      "hidden sections and lookups conceal saved data",
+    );
+  }
+  await sql`update crm.api_tokens set expires_at = now() - interval '1 minute' where id = ${combined.record.id}::uuid`;
+  for (const path of paths) {
+    assert(
+      (await read(path, combined.secret, { cookie: own.cookie })).status ===
+        401,
+      "expired bearer refused",
+    );
+  }
+  await sql`update crm.api_tokens set expires_at = null where id = ${combined.record.id}::uuid`;
+  assert(
+    (await management(
+      own,
+      `/api/v1/settings/api-tokens/${combined.record.id}`,
+      "DELETE",
+    )).status === 200,
+    "token revoked through public use case",
+  );
+  for (const path of paths) {
+    assert(
+      (await read(path, combined.secret, { cookie: own.cookie })).status ===
+        401,
+      "revoked bearer refused",
+    );
+  }
+  await revokeMembership(sql, own.memberId);
+  assert(
+    (await read(profilePaths[0]!, profile.secret)).status === 401 &&
+      (await read(relationshipPaths[0]!, relationships.secret)).status === 401,
+    "current membership rechecked for both grants",
+  );
+});
+
 Deno.test("[API-001] PostgreSQL API tokens are hashed, scoped, tenant-bound, expiring, and revocable", async () => {
   const suffix = crypto.randomUUID();
   const primary = await register(`api-${suffix}@example.test`, "API primary");

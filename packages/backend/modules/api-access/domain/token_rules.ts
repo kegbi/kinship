@@ -18,7 +18,11 @@
  */
 
 /** Every permission a personal access token may carry. */
-export const API_TOKEN_SCOPES = ["people:read"] as const;
+export const API_TOKEN_SCOPES = [
+  "people:read",
+  "people:profile:read",
+  "relationships:read",
+] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
 
 /**

@@ -34,6 +34,7 @@ import {
   personDeleteInput,
   personDeletionImpact,
   personEditInput,
+  personIdentityReady,
   personInput,
   personLifecycleChanged,
   personLifeEventChanged,
@@ -95,6 +96,8 @@ export const listPeople = defineRoute({
   method: "get",
   path: "/api/v1/people",
   operationId: "listPeople",
+  description:
+    "Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates.",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listPeopleQuery,
@@ -133,6 +136,23 @@ export const createPerson = defineRoute({
       },
     },
     ...problemResponses(400, 401, 403, 409, 503),
+  },
+});
+
+export const getPersonIdentity = defineRoute({
+  method: "get",
+  path: "/api/v1/people/{personId}/identity",
+  operationId: "getPersonIdentity",
+  description:
+    "Minimal person name and identifier, including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: { params: z.object({ personId: uuid }), headers: workspaceHeaders },
+  responses: {
+    200: {
+      description: "Workspace-scoped minimal person identity",
+      content: { "application/json": personIdentityReady },
+    },
+    ...problemResponses(400, 401, 403, 404, 503),
   },
 });
 
@@ -527,7 +547,9 @@ export const listImportantDates = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/dates",
   operationId: "listImportantDates",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:profile:read. Reads important dates, including archived people, preserving stored date precision.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -681,7 +703,9 @@ export const listProfileFacts = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/facts/{section}",
   operationId: "listProfileFacts",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:profile:read. Reads one profile-fact section and its lookup options when requested. Hidden sections return no saved records or options; archived people remain readable. Existing person, section, revision, and option-search cursor checks apply.",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -1042,6 +1066,7 @@ export const PEOPLE_ROUTES: readonly RouteDescriptor[] = [
   bulkPeople,
   deletePerson,
   getPerson,
+  getPersonIdentity,
   editPerson,
   archivePerson,
   replacePersonAvatar,

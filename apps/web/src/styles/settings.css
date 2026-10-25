@@ -475,6 +475,12 @@
   align-items: center;
 }
 
+.api-token-form .scope-choice small {
+  display: block;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
 .api-token-form > button {
   justify-self: start;
 }

@@ -346,6 +346,28 @@ browser sessions. Keep API tokens separate and never store browser session
 credentials in `localStorage`. Apply CSRF protection to cookie-authenticated
 mutations and explicit origin/CORS rules at the gateway and API.
 
+Personal tokens are issued, listed, and revoked only by active workspace owners
+and administrators. Creation requires one or more distinct grants from the
+closed vocabulary returned by token management. Grants are independent:
+`people:read` remains directory-only; `people:profile:read` permits the minimal
+`GET /api/v1/people/{personId}/identity`, profile-fact section reads (including
+their scoped lookup options), and important-date reads; `relationships:read`
+permits one person's relationship list and the workspace's relationship-type
+lookup. No grant implies another. These reads use the owning public application
+facades, including their current membership, workspace, parent, archived-person,
+hidden-section, and cursor checks. They do not expose the full person profile,
+summary, timeline, search, notes, tasks, journal, life events, file bytes, or
+mutations to tokens.
+
+On those token-enabled routes, any `Authorization` header selects token
+authentication exclusively. Invalid, expired, revoked, wrong-workspace, and
+wrong-grant credentials cannot fall back to a valid session cookie. Without that
+header, existing browser-session admission applies. Tokens revalidate the bound
+user's active membership and optional `X-Workspace-Id`; their grants never
+replace application permissions. OpenAPI describes required domain grants in
+operation prose and uses empty scope arrays for the HTTP bearer security scheme,
+because personal tokens are not OAuth credentials.
+
 The calendar feed (GAP-052, `INTEGRATION-002`) is the one read whose credential
 travels in its path, because a calendar application cannot send a header:
 `GET /api/v1/calendar-feeds/{secret}.ics`. The secret is an `api-access` token

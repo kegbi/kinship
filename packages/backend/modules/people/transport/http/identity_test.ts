@@ -8,7 +8,161 @@
 import type { PeopleManagement } from "../../public.ts";
 import { createPeopleRoutes, type PeopleHttpServices } from "./routes.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
-import { actor, headers, services } from "./people.test-helper.ts";
+import { actor, headers, services, todayRoutes } from "./people.test-helper.ts";
+
+Deno.test("scoped person reads accept only their explicit bearer grant and never fall back to cookies", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  const person = { givenName: "Ada", id: personId, isPartial: false };
+  let sessionCalls = 0;
+  let readCalls = 0;
+  const base = services({ create: () => Promise.reject(new Error("unused")) });
+  const unused = () => Promise.reject(new Error("must not mutate"));
+  const app = todayRoutes({
+    apiTokens: {
+      authenticate: (token, scope: string, workspaceId) =>
+        Promise.resolve(
+          token === "profile" && scope === "people:profile:read" && !workspaceId
+            ? { actor, status: "authenticated" as const }
+            : { status: "invalid" as const },
+        ),
+    },
+    people: {
+      ...base.people,
+      get: (resolved, id) => {
+        assert(
+          resolved.workspaceId === actor.workspaceId && id === personId,
+          "authorized identity lookup",
+        );
+        readCalls++;
+        // A richer adapter result must still be projected to identity fields only.
+        return Promise.resolve({
+          person: { ...person, description: "private aggregate" },
+          status: "archived",
+        });
+      },
+    },
+    profileFacts: {
+      create: unused,
+      delete: unused,
+      update: unused,
+      list: () => {
+        readCalls++;
+        return Promise.resolve({
+          options: [],
+          personUpdatedAt: "2026-10-25T10:00:00Z",
+          records: [],
+          status: "hidden",
+        });
+      },
+    },
+    importantDates: {
+      create: unused,
+      delete: unused,
+      update: unused,
+      list: () => {
+        readCalls++;
+        return Promise.resolve({ dates: [], status: "archived" });
+      },
+    },
+    protectedSessions: {
+      resolve: () => {
+        sessionCalls++;
+        return Promise.resolve(actor);
+      },
+    },
+  });
+  const paths = [
+    `identity`,
+    `facts/contact-methods?includeOptions=true`,
+    `facts/addresses`,
+    `facts/first-meeting`,
+    `facts/food-preferences`,
+    `facts/work`,
+    `facts/pets`,
+    `facts/tags`,
+    `dates`,
+  ].map((suffix) => `/api/v1/people/${personId}/${suffix}`);
+  for (const path of paths) {
+    const accepted = await app.request(`http://localhost${path}`, {
+      headers: { authorization: "Bearer profile" },
+    });
+    assertStatus(accepted, 200, `token-only read ${path}`);
+    assert(
+      accepted.headers.get("cache-control") === "private, no-store",
+      "private response",
+    );
+    const body = await accepted.json();
+    if (path.endsWith("identity")) {
+      assert(
+        JSON.stringify(body) === JSON.stringify({ person, status: "archived" }),
+        "identity excludes aggregates",
+      );
+    }
+    for (
+      const authorization of [
+        "Bearer directory",
+        "Bearer relationships",
+        "Bearer expired",
+        "Bearer revoked",
+        "Bearer malformed",
+        "Basic invalid",
+      ]
+    ) {
+      assertStatus(
+        await app.request(`http://localhost${path}`, {
+          headers: { authorization, cookie: headers.cookie },
+        }),
+        401,
+        "refused bearer cannot use valid cookie",
+      );
+    }
+  }
+  assert(
+    readCalls === paths.length && sessionCalls === 0,
+    "bearer refusal invokes neither use cases nor cookie authority",
+  );
+  assertStatus(
+    await app.request(`http://localhost${paths[0]}`, {
+      headers: { authorization: "Bearer profile", "X-Workspace-Id": "foreign" },
+    }),
+    401,
+    "requested workspace preserved",
+  );
+});
+
+Deno.test("minimal identity read preserves cookie admission and safe facade failures", async () => {
+  const personId = "00000000-0000-4000-8000-000000000100";
+  for (const status of ["forbidden", "not-found", "unavailable"] as const) {
+    const app = createPeopleRoutes(services({
+      create: () => Promise.reject(new Error("unused")),
+      get: () =>
+        status === "unavailable"
+          ? Promise.reject(new Error("private error"))
+          : Promise.resolve({ status }),
+    }));
+    assertStatus(
+      await app.request(`http://localhost/api/v1/people/${personId}/identity`, {
+        headers,
+      }),
+      status === "forbidden" ? 403 : status === "not-found" ? 404 : 503,
+      "existing facade outcome mapped",
+    );
+    assertStatus(
+      await app.request("http://localhost/api/v1/people/invalid/identity", {
+        headers,
+      }),
+      400,
+      "canonical identity required",
+    );
+    assertStatus(
+      await app.request(`http://localhost/api/v1/people/${personId}/identity`, {
+        headers: { ...headers, authorization: "Bearer unsupported" },
+      }),
+      401,
+      "no fallback when token authority absent",
+    );
+  }
+});
 
 Deno.test("PEOPLE-001 person creation requires an active session", async () => {
   const app = createPeopleRoutes({

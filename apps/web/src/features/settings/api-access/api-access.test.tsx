@@ -43,7 +43,11 @@ const record = {
   scopes: ["people:read"],
 };
 const listed = (...records: object[]) =>
-  jsonResponse({ records, status: "ready" });
+  jsonResponse({
+    records,
+    scopes: ["people:read", "people:profile:read", "relationships:read"],
+    status: "ready",
+  });
 const base = {
   [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
@@ -86,6 +90,61 @@ afterEach(() => {
 });
 
 describe("API-001 personal API tokens", () => {
+  it("offers the returned grants with plain labels and sends only deliberately selected scopes", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: listed(),
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    await mount();
+    for (const checkbox of screen.getAllByRole<HTMLInputElement>("checkbox")) {
+      expect(checkbox.checked).toBe(false);
+    }
+    act(() => {
+      fireEvent.input(screen.getByLabelText("Token name"), {
+        target: { value: "Detailed connector" },
+      });
+      fireEvent.click(screen.getByLabelText("Read person profiles"));
+      fireEvent.click(screen.getByLabelText("Read relationships"));
+    });
+    submit();
+    await waitFor(() =>
+      expect(api.bodies()).toEqual([{
+        name: "Detailed connector",
+        scopes: ["people:profile:read", "relationships:read"],
+      }])
+    );
+  });
+
+  it("shows only grants the server currently allows", async () => {
+    shell();
+    stubApi({
+      ...base,
+      [LIST]: jsonResponse({
+        records: [],
+        scopes: ["relationships:read"],
+        status: "ready",
+      }),
+    });
+    await mount();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByLabelText("Read relationships")).toBeTruthy();
+  });
+
+  it("holds creation while allowed scopes cannot be confirmed", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: problemResponse(503, { detail: "Tokens offline" }),
+    });
+    await mount();
+    expect(state().textContent).toBe("Tokens offline");
+    expect(createButton().disabled).toBe(true);
+    fill("Unconfirmed");
+    submit();
+    expect(api.calls()).not.toContain(CREATE);
+  });
   it("does nothing when the API access surface is absent", async () => {
     drawShell("<p>Other page</p>");
     const api = stubApi();
@@ -244,10 +303,10 @@ describe("API-001 personal API tokens", () => {
         problemResponse(400, { detail: "Expiry rejected" }),
         unreachable,
       ],
-      [LIST]: problemResponse(503, { detail: "Tokens offline" }),
+      [LIST]: listed(),
     });
     await mount();
-    expect(state().textContent).toBe("Tokens offline");
+    expect(state().textContent).toBe("API tokens are current.");
     submit();
     expect(state().textContent).toBe("Enter a name and at least one scope.");
     fill("Expired", { expires: "2026-09-24T10:00" });

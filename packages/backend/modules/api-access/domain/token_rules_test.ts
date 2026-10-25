@@ -30,7 +30,34 @@ Deno.test("[GAP-018] a token is an administrative facility", () => {
 });
 
 Deno.test("[GAP-018] the scope vocabulary is closed", () => {
-  assertEquals(API_TOKEN_SCOPES, ["people:read"]);
+  assertEquals(API_TOKEN_SCOPES, [
+    "people:read",
+    "people:profile:read",
+    "relationships:read",
+  ]);
+  const scopes = [...API_TOKEN_SCOPES];
+  assertEquals(validateApiToken({ name: "Connector", scopes }, NOW), {
+    name: "Connector",
+    scopes,
+  });
+  assertEquals(
+    usable({
+      now: NOW,
+      record: RECORD,
+      requiredScope: "people:profile:read",
+      workspaceId: "w",
+    }),
+    false,
+  );
+  assertEquals(
+    usable({
+      now: NOW,
+      record: RECORD,
+      requiredScope: "relationships:read",
+      workspaceId: "w",
+    }),
+    false,
+  );
 });
 
 Deno.test("[GAP-018] a presented token is split into a row to find and a secret to check", () => {

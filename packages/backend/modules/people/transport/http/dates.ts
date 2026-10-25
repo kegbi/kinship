@@ -42,7 +42,9 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  SESSION_INVALID,
   sessionActor,
+  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 import { type PeopleHttpServices, PERSON_ID_INVALID } from "./shared.ts";
@@ -50,7 +52,7 @@ import { type PeopleHttpServices, PERSON_ID_INVALID } from "./shared.ts";
 /** What the important dates of a person's page are served from. */
 export type ImportantDateHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "importantDates" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "importantDates" | "protectedSessions"
 >;
 
 function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
@@ -189,8 +191,11 @@ export function createDatesRoutes(
     if ("errors" in personId) {
       return definedProblem(context, PERSON_ID_INVALID);
     }
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
+    const actor = await tokenOrSessionActor(context, {
+      scope: "people:profile:read",
+      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+    });
+    if (!actor) return definedProblem(context, SESSION_INVALID);
     const result = await services.importantDates?.list(actor, personId.data)
       .catch(() => undefined);
     if (!result) return definedProblem(context, IMPORTANT_DATES_UNAVAILABLE);

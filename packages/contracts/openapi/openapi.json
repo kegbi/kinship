@@ -3309,6 +3309,7 @@
     "/api/v1/people": {
       "get": {
         "operationId": "listPeople",
+        "description": "Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates.",
         "security": [
           {
             "kinship_session": []
@@ -5356,9 +5357,13 @@
     "/api/v1/people/{personId}/dates": {
       "get": {
         "operationId": "listImportantDates",
+        "description": "Personal tokens require people:profile:read. Reads important dates, including archived people, preserving stored date precision.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -6415,9 +6420,13 @@
     "/api/v1/people/{personId}/facts/{section}": {
       "get": {
         "operationId": "listProfileFacts",
+        "description": "Personal tokens require people:profile:read. Reads one profile-fact section and its lookup options when requested. Hidden sections return no saved records or options; archived people remain readable. Existing person, section, revision, and option-search cursor checks apply.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -7921,6 +7930,103 @@
         }
       }
     },
+    "/api/v1/people/{personId}/identity": {
+      "get": {
+        "operationId": "getPersonIdentity",
+        "description": "Minimal person name and identifier, including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data.",
+        "security": [
+          {
+            "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace-scoped minimal person identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonIdentityReady"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/life-events": {
       "get": {
         "operationId": "listPersonLifeEvents",
@@ -8768,9 +8874,13 @@
     "/api/v1/people/{personId}/relationships": {
       "get": {
         "operationId": "listRelationships",
+        "description": "Personal tokens require relationships:read. Returns one person's directional relationships and authorized endpoint names in the bound workspace, including archived people. Hidden sections return no relationships; existing cursor checks apply.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -10486,9 +10596,13 @@
     "/api/v1/relationship-types": {
       "get": {
         "operationId": "listRelationshipTypes",
+        "description": "Personal tokens require relationships:read. Reads the bound workspace's relationship types and resolves selected same-workspace types. Hidden relationship sections return no options; existing cursor and search bounds apply.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
         "parameters": [
@@ -16469,14 +16583,17 @@
           },
           "scopes": {
             "minItems": 1,
-            "maxItems": 1,
+            "maxItems": 3,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
-                "people:read"
+                "people:read",
+                "people:profile:read",
+                "relationships:read"
               ]
-            }
+            },
+            "uniqueItems": true
           }
         },
         "required": [
@@ -16520,7 +16637,9 @@
             "items": {
               "type": "string",
               "enum": [
-                "people:read"
+                "people:read",
+                "people:profile:read",
+                "relationships:read"
               ]
             }
           },
@@ -16569,7 +16688,9 @@
             "items": {
               "type": "string",
               "enum": [
-                "people:read"
+                "people:read",
+                "people:profile:read",
+                "relationships:read"
               ]
             }
           }
@@ -21579,6 +21700,26 @@
           "givenName",
           "id",
           "isPartial"
+        ],
+        "additionalProperties": false
+      },
+      "PersonIdentityReady": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/PersonIdentity"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "archived"
+            ]
+          }
+        },
+        "required": [
+          "person",
+          "status"
         ],
         "additionalProperties": false
       },

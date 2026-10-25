@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import {
   createPerson,
   editPerson,
+  getPersonIdentity,
 } from "../../../../../contracts/routes/people.ts";
 import {
   personEditInput,
@@ -30,7 +31,9 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  SESSION_INVALID,
   sessionActor,
+  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 import {
@@ -38,12 +41,15 @@ import {
   lifecycleFailure,
   lifecycleIdentity,
   type PeopleHttpServices,
+  PERSON_FORBIDDEN,
+  PERSON_ID_INVALID,
 } from "./shared.ts";
+import { PERSON_UNAVAILABLE } from "./profile.ts";
 
 /** What creating and renaming a person is served from. */
 export type PersonIdentityHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "people" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "people" | "protectedSessions"
 >;
 
 export const PERSON_EDIT_INVALID: ProblemDefinition = {
@@ -105,6 +111,29 @@ export function createIdentityRoutes(
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
   const origin = requireMatchingOrigin(services.browserSecurity);
+
+  mount(routes, getPersonIdentity, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    if ("errors" in personId) return definedProblem(context, PERSON_ID_INVALID);
+    const actor = await tokenOrSessionActor(context, {
+      scope: "people:profile:read",
+      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
+    });
+    if (!actor) return definedProblem(context, SESSION_INVALID);
+    const result = await services.people.get(actor, personId.data).catch(() =>
+      undefined
+    );
+    if (!result) return definedProblem(context, PERSON_UNAVAILABLE);
+    if (result.status === "forbidden") {
+      return definedProblem(context, PERSON_FORBIDDEN);
+    }
+    if (result.status === "not-found") return lifecycleFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      person: identity(result.person),
+      status: result.status,
+    });
+  });
 
   mount(routes, editPerson, origin, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));

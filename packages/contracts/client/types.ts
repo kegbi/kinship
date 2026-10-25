@@ -118,7 +118,8 @@ export type StorageFileLookupItem =
 
 export type StorageSettings = components["schemas"]["StorageSettings"];
 
-export type ApiTokenScope = "people:read";
+export type ApiTokenScope =
+  components["schemas"]["ApiTokenRecord"]["scopes"][number];
 
 export type ApiTokenRecord = components["schemas"]["ApiTokenRecord"];
 
@@ -262,6 +263,8 @@ export type PersonalizationEntry =
   components["schemas"]["PersonalizationEntry"];
 
 export type PersonIdentity = components["schemas"]["PersonIdentity"];
+
+export type PersonIdentityReady = components["schemas"]["PersonIdentityReady"];
 
 export type PersonProfileIdentity =
   components["schemas"]["PersonProfileIdentity"];

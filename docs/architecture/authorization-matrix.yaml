@@ -188,6 +188,9 @@ permissions:
     scope: active-workspace
 
 invariants:
+  - Personal token grants are independent; people:read is directory-only, people:profile:read permits minimal identity, profile facts and their lookup options, and important dates, and relationships:read permits relationship lists and type lookups.
+  - Personal token grants intersect current membership, role permissions, workspace and parent boundaries, section visibility, and cursor rules; they never imply access to full profile aggregates or unrelated content.
+  - On token-enabled routes an Authorization header selects only token authentication; a refused bearer never falls back to a session cookie.
   - A role is ignored unless the membership is active.
   - A body or route workspace identifier is never authorization evidence.
   - Every aggregate identifier is resolved together with the active workspace.
