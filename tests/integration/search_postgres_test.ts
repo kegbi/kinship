@@ -355,6 +355,53 @@ Deno.test("[SEARCH-001] names match by prefix and substring, text by its words",
   assertEquals(printed, []);
 });
 
+Deno.test("[SEARCH-001] names match across scripts and keyboard layouts over HTTP", async () => {
+  const { foreign, reader } = await twoWorkspaces("search-scripts");
+  const elena = await addPerson(reader, "Elena");
+  const yelena = await addPerson(reader, "Елена");
+  const archived = await addPerson(reader, "Elena Archived");
+  await sql`update crm.people set archived_at = now() where id = ${archived}`;
+  const deleted = await addPerson(reader, "Елена Deleted");
+  await sql`update crm.people set deleted_at = now() where id = ${deleted}`;
+  await addPerson(foreign, "Elena Foreign");
+  const routes = createSearchRoutes({
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve(
+          fixtures.sessionActor({
+            ...actorOf(reader),
+            workspaceName: "search-scripts reader",
+          }),
+        ),
+    },
+    search,
+  });
+  const people = async (query: string): Promise<string[]> => {
+    const response = await routes.request(
+      `http://localhost/api/v1/search?limit=10&q=${encodeURIComponent(query)}`,
+      { headers: { cookie: "kinship_session=current-token" } },
+    );
+    assertEquals(response.status, 200, `search for ${query}`);
+    const body = await response.json() as {
+      readonly groups: readonly {
+        readonly results: readonly { id: string }[];
+      }[];
+    };
+    return body.groups[0]!.results.map((person) => person.id).sort();
+  };
+  const both = [elena, yelena].sort();
+  // Elena typed on the Russian layout, Елена typed on the English one.
+  assertEquals(await people("удутф"), both);
+  assertEquals(await people("Tktyf"), both);
+  // Either script's spelling finds the other's.
+  assertEquals(await people("елена"), both);
+  assertEquals(await people("elena"), both);
+  assertEquals(await people("Yelena"), both);
+  // The plain match still answers a partly typed spelling the fold collapses.
+  assertEquals(await people("Ele"), both);
+  assertEquals(await people("Petrova"), []);
+});
+
 Deno.test("[SEARCH-001] snippets are the stored text, never markup, and groups are bounded", async () => {
   const { reader } = await twoWorkspaces("search-bounds");
   const shared = word();
@@ -645,6 +692,8 @@ Deno.test("[SEARCH-001] a statement that fails for another reason is not a timeo
   const command = {
     ...actorOf(reader),
     limit: 5,
+    nameFold: [],
+    nameForms: [],
     query: "ada",
     sort: "given-name" as const,
     terms: ["ada"],
@@ -805,6 +854,8 @@ Deno.test("[REL-061] each text group of a large workspace matches through its fu
       const indexes = scannedIndexes(
         await textStatementPlan(explaining.db, {
           limit: 5,
+          nameFold: [],
+          nameForms: [],
           memberId: crypto.randomUUID(),
           query: shared,
           role: "owner",

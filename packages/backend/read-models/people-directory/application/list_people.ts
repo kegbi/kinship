@@ -56,11 +56,26 @@ export interface PeopleDirectoryPerson {
   readonly tags: readonly PeopleDirectoryTag[];
 }
 
+/**
+ * One `replace(text, from, to)` of the name fold, applied in order to the
+ * lowercased name (`SEARCH-001`). The transport supplies the steps; the
+ * repository only repeats them, so the rules have one home.
+ */
+export type PeopleDirectoryNameFoldStep = readonly [from: string, to: string];
+
 export interface ListPeopleInput {
   readonly cursor?: string;
   readonly excludePersonId?: string;
   readonly lifecycle?: PeopleDirectoryLifecycle;
   readonly limit?: number;
+  /** How names are folded before `nameForms` is matched. */
+  readonly nameFold?: readonly PeopleDirectoryNameFoldStep[];
+  /**
+   * The search's folded spellings across scripts and keyboard layouts that a
+   * name may contain, beside the search as typed. They follow from `search`,
+   * so a cursor need not carry them.
+   */
+  readonly nameForms?: readonly string[];
   readonly search?: string;
   readonly selectedPersonId?: string;
   readonly sort?: PeopleDirectorySort;
@@ -91,6 +106,8 @@ export interface PeopleDirectoryCriteria {
   readonly excludePersonId?: string;
   readonly lifecycle: PeopleDirectoryLifecycle;
   readonly limit: number;
+  readonly nameFold: readonly PeopleDirectoryNameFoldStep[];
+  readonly nameForms: readonly string[];
   readonly search: string;
   readonly sort: PeopleDirectorySort;
   readonly starred: boolean;
@@ -154,6 +171,8 @@ function normalize(input: ListPeopleInput): PeopleDirectoryCriteria {
       : {}),
     lifecycle: input.lifecycle ?? "active",
     limit: Number.isFinite(limit) ? limit : 20,
+    nameFold: search ? input.nameFold ?? [] : [],
+    nameForms: search ? input.nameForms ?? [] : [],
     search,
     sort: input.sort ?? "given-name",
     starred: input.starred ?? false,

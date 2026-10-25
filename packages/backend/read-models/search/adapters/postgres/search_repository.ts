@@ -16,8 +16,9 @@
  *
  * The text groups are still their own statement, after people: people search
  * is the directory's own case-insensitive substring match on the
- * workspace-indexed people rows, and a slow text statement can never hold it
- * up. Each statement runs in a read-only transaction under
+ * workspace-indexed people rows, widened to the query's spellings across
+ * scripts and keyboard layouts (`platform/postgres/name_match.ts`), and a
+ * slow text statement can never hold it up. Each statement runs in a read-only transaction under
  * `SEARCH_STATEMENT_TIMEOUT_MS`; a cancelled one answers `timed-out`.
  *
  * Visibility is each owning module's own listing rule:
@@ -42,6 +43,7 @@ import { type Kysely, type RawBuilder, sql, type Transaction } from "kysely";
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { postgresErrorCode } from "../../../../platform/postgres/errors.ts";
+import { nameMatchSql } from "../../../../platform/postgres/name_match.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import type {
@@ -199,9 +201,15 @@ export class PostgresSearchRepository implements SearchRepository {
         where person.workspace_id = ${command.workspaceId}::uuid
           and person.deleted_at is null
           and person.archived_at is null
-          and strpos(lower(concat_ws(' ', person.given_name,
-            person.middle_name, person.family_name, person.nickname)),
-            lower(${command.query}::text)) > 0
+          and ${
+        nameMatchSql(
+          sql`concat_ws(' ', person.given_name, person.middle_name,
+            person.family_name, person.nickname)`,
+          command.query,
+          command.nameForms,
+          command.nameFold,
+        )
+      }
         order by ${primary}, ${secondary}, person.id
         limit ${command.limit}
       `.execute(transaction);

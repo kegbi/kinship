@@ -163,6 +163,23 @@ Deno.test("[SEARCH-001] search bounds the limit and the query before the reposit
   assertEquals(seen[4]?.terms, ["ada", "lovelace"]);
 });
 
+Deno.test("[SEARCH-001] search hands the repository the name forms and fold it was given", async () => {
+  const seen: Parameters<SearchRepository["searchPeople"]>[0][] = [];
+  const repository = answering(EMPTY, seen);
+  await search(repository).search(actor, {
+    nameFold: [["е", "e"], ["y", "i"]],
+    nameForms: ["udutf", "elena"],
+    query: "удутф",
+  });
+  await search(repository).search(actor, { query: "ada" });
+  assertEquals(seen[0]?.nameForms, ["udutf", "elena"]);
+  assertEquals(seen[0]?.nameFold, [["е", "e"], ["y", "i"]]);
+  assertEquals(seen[0]?.query, "удутф");
+  // A caller naming no forms matches the name as typed alone.
+  assertEquals(seen[1]?.nameForms, []);
+  assertEquals(seen[1]?.nameFold, []);
+});
+
 Deno.test("[SEARCH-001] a blank query reads nothing and a revoked member is refused", async () => {
   const repository: SearchRepository = {
     searchPeople: () => Promise.reject(new Error("must not search")),

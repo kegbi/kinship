@@ -5,7 +5,8 @@
  * The header palette used to ask the directory for people; it now asks this
  * route for people, notes, activities, journal posts, and tasks at once. The
  * `search` read model decides what each group may show. This file parses the
- * query, resolves the session, presents each person's avatar the way the
+ * query and the name forms it matches across scripts and keyboard layouts
+ * (`contracts/schemas/name_search.ts`), resolves the session, presents each person's avatar the way the
  * directory does, and names the refusals: a people statement that failed or
  * ran past its timeout is `search_unavailable`, while a text statement that
  * did so leaves the people answer standing with the text groups marked
@@ -17,6 +18,10 @@ import {
   searchWorkspace,
   searchWorkspaceQuery,
 } from "../../../../../contracts/routes/search.ts";
+import {
+  NAME_FOLD_STEPS,
+  nameSearchForms,
+} from "../../../../../contracts/schemas/name_search.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -64,6 +69,8 @@ export function createSearchRoutes(
     if (actor instanceof Response) return actor;
     const result = await services.search?.search(actor, {
       limit: parsed.data.limit,
+      nameFold: NAME_FOLD_STEPS,
+      nameForms: nameSearchForms(parsed.data.q),
       query: parsed.data.q,
       sort: parsed.data.sort,
     }).catch(() => undefined);

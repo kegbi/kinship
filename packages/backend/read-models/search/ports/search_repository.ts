@@ -68,8 +68,23 @@ export interface SearchTaskRecord extends SearchEntityRecord {
 /** How the people group is ordered: the member's contact sort preference. */
 export type SearchPeopleSort = "family-name" | "given-name";
 
+/**
+ * One `replace(text, from, to)` of the name fold, applied in order to the
+ * lowercased name. The transport supplies the steps; the repository only
+ * repeats them, so the rules have one home.
+ */
+export type SearchNameFoldStep = readonly [from: string, to: string];
+
 export interface SearchCriteria {
   readonly limit: number;
+  /**
+   * How every stored name is folded, after `lower()`, before it is matched
+   * against `nameForms`: the query's own spellings across scripts and
+   * keyboard layouts. A name also matches the query as typed, so no forms
+   * means that match alone.
+   */
+  readonly nameFold: readonly SearchNameFoldStep[];
+  readonly nameForms: readonly string[];
   /** The trimmed query, one to two hundred characters. */
   readonly query: string;
   readonly sort: SearchPeopleSort;

@@ -3,7 +3,7 @@ import {
   type PeopleDirectoryPersonRecord,
   type PeopleDirectoryRepository,
 } from "../public.ts";
-import { assert } from "../../../testing/assert.ts";
+import { assert, assertEquals } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
 
 const actor = fixtures.actor();
@@ -85,6 +85,10 @@ Deno.test("PEOPLE-002 directory normalizes criteria and emits a bounded opaque c
       calls[0]?.search === "Ada" && calls[0]?.limit === 2 &&
       calls[0]?.excludePersonId === record(9).id,
     "normalized criteria and actor reach the repository",
+  );
+  assert(
+    calls[0]?.nameForms.length === 0 && calls[0]?.nameFold.length === 0,
+    "a caller naming no forms matches the name as typed alone",
   );
 
   await directory.list(actor, {
@@ -406,4 +410,29 @@ Deno.test("[PEOPLE-010] a cursor from before the starred criteria is stale", asy
   const result = await directory.list(actor, { cursor: legacy });
   assert(result.status === "stale-cursor", "a version 1 cursor is stale");
   assert(calls === 0, "a stale cursor queries nothing");
+});
+
+Deno.test("SEARCH-001 directory hands the repository a search's name forms and fold", async () => {
+  const calls: Parameters<PeopleDirectoryRepository["list"]>[0][] = [];
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      list(command) {
+        calls.push(command);
+        return Promise.resolve({ people: [], status: "ready" });
+      },
+    },
+  });
+  await directory.list(actor, {
+    nameFold: [["е", "e"]],
+    nameForms: ["udutf", "elena"],
+    search: "удутф",
+  });
+  // Without a search there is no name to match, whatever forms arrive.
+  await directory.list(actor, { nameFold: [["е", "e"]], nameForms: ["x"] });
+  assertEquals(calls[0]?.nameForms, ["udutf", "elena"]);
+  assertEquals(calls[0]?.nameFold, [["е", "e"]]);
+  assertEquals(calls[1]?.nameForms, []);
+  assertEquals(calls[1]?.nameFold, []);
 });

@@ -22,6 +22,7 @@
 import {
   Fragment,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -69,6 +70,7 @@ import {
   commandIndex,
   type EntityKind,
   initials,
+  type MatchRanges,
   type PaletteAnswer,
   type PaletteCommand,
   type PaletteRow,
@@ -218,6 +220,36 @@ const ENTITY_ICONS: Readonly<Record<EntityKind, LucideIcon>> = {
   task: SquareCheck,
 };
 
+/**
+ * The part of a row the query matched: a soft accent tint behind the
+ * letters, in their own colour and without padding, so marking never moves
+ * the text it marks. The accent's soft tone has a light and a dark value.
+ */
+const MATCH =
+  "rounded-[.2em] bg-[color-mix(in_srgb,var(--accent)_24%,transparent)] text-inherit underline decoration-(--accent) decoration-2 underline-offset-[.18em]";
+
+/** `text` with each of `matches` drawn as a `<mark>`. */
+function Marked(
+  props: {
+    readonly matches?: MatchRanges | undefined;
+    readonly text: string;
+  },
+) {
+  const { matches = [], text } = props;
+  if (matches.length === 0) return text;
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const { end, start } of matches) {
+    if (start > at) parts.push(text.slice(at, start));
+    parts.push(
+      <mark className={MATCH} key={start}>{text.slice(start, end)}</mark>,
+    );
+    at = end;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return parts;
+}
+
 function PaletteOption(
   props: {
     readonly onSelect: (row: PaletteRow) => void;
@@ -233,12 +265,14 @@ function PaletteOption(
           <Icon className="size-5" />
         </span>
         <span className="grid min-w-0 wrap-anywhere">
-          <strong>{row.label}</strong>
+          <strong>
+            <Marked matches={row.labelMatches} text={row.label} />
+          </strong>
           {row.person
             ? <span className="text-muted-foreground">{row.person}</span>
             : null}
           <span className="line-clamp-2 text-[.875rem] text-muted-foreground">
-            {row.snippet}
+            <Marked matches={row.snippetMatches} text={row.snippet} />
           </span>
         </span>
         {row.archived ? <Badge variant="secondary">Archived</Badge> : null}
@@ -263,10 +297,18 @@ function PaletteOption(
       {row.kind === "person"
         ? (
           <span className="grid min-w-0 wrap-anywhere">
-            <strong>{row.label}</strong>
+            <strong>
+              <Marked matches={row.labelMatches} text={row.label} />
+            </strong>
           </span>
         )
-        : <strong>{row.label}</strong>}
+        : (
+          <strong>
+            {row.kind === "command"
+              ? <Marked matches={row.labelMatches} text={row.label} />
+              : row.label}
+          </strong>
+        )}
       {row.kind === "person" && row.archived
         ? <Badge variant="secondary">Archived</Badge>
         : null}

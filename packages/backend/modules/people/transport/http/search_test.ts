@@ -29,6 +29,10 @@ const failing = (error: Error): SearchRepository => ({
   searchText: () => Promise.reject(error),
 });
 import { searchResults } from "../../../../../contracts/schemas/search.ts";
+import {
+  NAME_FOLD_STEPS,
+  nameSearchForms,
+} from "../../../../../contracts/schemas/name_search.ts";
 import { createPeopleRoutes } from "./routes.ts";
 import {
   assert,
@@ -118,6 +122,14 @@ Deno.test("[SEARCH-001] HTTP answers the resolved workspace's groups with avatar
   assertEquals(seen[0]?.limit, 3);
   assertEquals(seen[0]?.query, "river");
   assertEquals(seen[0]?.sort, "family-name");
+  // Names match in either script and on either keyboard layout.
+  assertEquals(seen[0]?.nameForms, nameSearchForms("river"));
+  assertEquals(seen[0]?.nameFold, NAME_FOLD_STEPS);
+  await app.request(
+    `http://localhost/api/v1/search?q=${encodeURIComponent("удутф")}`,
+    { headers },
+  );
+  assertEquals(seen[1]?.nameForms, ["udutf", "elena"]);
 });
 
 Deno.test("[SEARCH-001] HTTP answers people with the text groups marked unavailable", async () => {

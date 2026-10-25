@@ -7,6 +7,10 @@
  * journal posts, and tasks, each under its own heading. These functions turn
  * each answer into the groups of rows the list renders; the island only
  * fetches and draws.
+ *
+ * Names and commands match by `name_search.ts`: in either script and on
+ * either keyboard layout. Each row carries the ranges of its text the query
+ * matched, which the list marks.
  */
 
 import type {
@@ -15,6 +19,11 @@ import type {
   SearchResults,
   SessionContext,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
+import {
+  nameMatches,
+  type NameMatchRange,
+  nameMatchRanges,
+} from "../../../../../packages/contracts/schemas/name_search.ts";
 import {
   displayPersonName,
   type PersonNameOrder,
@@ -42,6 +51,9 @@ export interface SearchPerson {
 /** The kinds of record a search finds beside people. */
 export type EntityKind = SearchEntityResult["kind"];
 
+/** The parts of a row's text the query matched, in order, never overlapping. */
+export type MatchRanges = readonly NameMatchRange[];
+
 /** One option of the list, keyed uniquely within its answer. */
 export type PaletteRow =
   | {
@@ -52,10 +64,12 @@ export type PaletteRow =
     readonly kind: "entity";
     /** The record's own name: its title, or the person a note is about. */
     readonly label: string;
+    readonly labelMatches?: MatchRanges;
     readonly path: string;
     /** The person a titled record belongs to, beside its title. */
     readonly person?: string;
     readonly snippet: string;
+    readonly snippetMatches?: MatchRanges;
   }
   | {
     readonly archived: boolean;
@@ -63,6 +77,7 @@ export type PaletteRow =
     readonly key: string;
     readonly kind: "person";
     readonly label: string;
+    readonly labelMatches?: MatchRanges;
     readonly path: string;
   }
   | {
@@ -76,6 +91,7 @@ export type PaletteRow =
     readonly key: string;
     readonly kind: "command";
     readonly label: string;
+    readonly labelMatches?: MatchRanges;
     readonly path?: string;
   };
 
@@ -140,24 +156,66 @@ export function commandIndex(role: MemberRole): readonly PaletteCommand[] {
   return [...primaryCommands, ...settingsCommands];
 }
 
+/**
+ * Where `query` matches `text`: the whole query if it does, otherwise each of
+ * its words, as a text search finds them. Search operators (`-word`, quotes,
+ * `or`) are not words to mark.
+ */
+export function matchRanges(text: string, query: string): MatchRanges {
+  const whole = nameMatchRanges(text, query);
+  if (whole.length > 0) return whole;
+  const words = query.split(/\s+/)
+    .filter((word) => !word.startsWith("-"))
+    .map((word) => word.replace(/^"+|"+$/g, ""))
+    .filter((word) => word !== "" && word.toLowerCase() !== "or");
+  if (words.length < 2) return [];
+  const ranges = words.flatMap((word) => nameMatchRanges(text, word))
+    .sort((left, right) => left.start - right.start);
+  const merged: NameMatchRange[] = [];
+  for (const range of ranges) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end) {
+      merged[merged.length - 1] = {
+        start: last.start,
+        end: Math.max(last.end, range.end),
+      };
+    } else {
+      merged.push(range);
+    }
+  }
+  return merged;
+}
+
+/** `{ [key]: ranges }` when `query` matches `text`, otherwise nothing. */
+function matched<Key extends "labelMatches" | "snippetMatches">(
+  key: Key,
+  text: string,
+  query: string | undefined,
+): Partial<Record<Key, MatchRanges>> {
+  const ranges = query ? matchRanges(text, query) : [];
+  return ranges.length > 0
+    ? { [key]: ranges } as Partial<Record<Key, MatchRanges>>
+    : {};
+}
+
 function matchingCommands(
   commands: readonly PaletteCommand[],
   filter: string,
 ): readonly PaletteCommand[] {
-  const normalizedFilter = filter.toLocaleLowerCase();
-  return commands.filter((command) =>
-    command.label.toLocaleLowerCase().includes(normalizedFilter)
-  );
+  if (!filter.trim()) return commands;
+  return commands.filter((command) => nameMatches(command.label, filter));
 }
 
 function commandRows(
   commands: readonly PaletteCommand[],
+  filter?: string,
 ): readonly PaletteRow[] {
   return commands.map((command, index) => ({
     ...(command.command ? { command: command.command } : {}),
     key: `command:${index}`,
     kind: "command",
     label: command.label,
+    ...matched("labelMatches", command.label, filter),
     ...(command.path ? { path: command.path } : {}),
   }));
 }
@@ -178,7 +236,7 @@ export function commandAnswer(
   const matches = matchingCommands(commands, filter);
   return {
     ...(matches.length === 0 ? { empty: "No commands match" } : {}),
-    groups: [{ id: "commands", rows: commandRows(matches) }],
+    groups: [{ id: "commands", rows: commandRows(matches, filter) }],
     problem: false,
     status: count(matches.length, "command", "commands"),
   };
@@ -252,6 +310,7 @@ function peopleRows(
     key: `person:${person.id}`,
     kind: "person",
     label: person.name,
+    ...matched("labelMatches", person.name, query),
     path: `/app/people/${encodeURIComponent(person.id)}`,
   }));
   if (query) {
@@ -265,7 +324,7 @@ function peopleRows(
       });
     }
     if (people.length === 0) {
-      rows.push(...commandRows(matchingCommands(commands, query)));
+      rows.push(...commandRows(matchingCommands(commands, query), query));
     }
   }
   return rows;
@@ -300,7 +359,7 @@ const ENTITY_GROUPS: Readonly<
   tasks: { heading: "Tasks", many: "tasks", one: "task" },
 };
 
-function entityRow(result: SearchEntityResult): PaletteRow {
+function entityRow(result: SearchEntityResult, query: string): PaletteRow {
   const own = result.title ??
     (result.kind === "journal-post"
       ? "Journal post"
@@ -311,9 +370,11 @@ function entityRow(result: SearchEntityResult): PaletteRow {
     key: `${result.kind}:${result.id}`,
     kind: "entity",
     label: own,
+    ...matched("labelMatches", own, query),
     path: result.href,
     ...(result.person && result.title ? { person: result.person.name } : {}),
     snippet: result.snippet,
+    ...matched("snippetMatches", result.snippet, query),
   };
 }
 
@@ -354,7 +415,7 @@ export function searchAnswer(
     groups.push({
       heading: named.heading,
       id: group.kind,
-      rows: group.results.map(entityRow),
+      rows: group.results.map((result) => entityRow(result, query)),
     });
     counts.push(counted(group.results.length, named.one, named.many));
   }

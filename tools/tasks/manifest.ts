@@ -565,6 +565,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/config_test.ts",
         "packages/backend/platform/postgres/errors_test.ts",
         "packages/backend/platform/postgres/lifecycle_impact_test.ts",
+        "packages/backend/platform/postgres/name_match_test.ts",
         "packages/backend/platform/postgres/person_display_test.ts",
         "packages/backend/platform/postgres/reference_counter_test.ts",
         "packages/backend/platform/postgres/person_references_test.ts",
@@ -815,6 +816,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/config_test.ts",
         "packages/backend/platform/postgres/errors_test.ts",
         "packages/backend/platform/postgres/lifecycle_impact_test.ts",
+        "packages/backend/platform/postgres/name_match_test.ts",
         "packages/backend/platform/postgres/person_display_test.ts",
         "packages/backend/platform/postgres/reference_counter_test.ts",
         "packages/backend/platform/postgres/person_references_test.ts",
@@ -1553,12 +1555,15 @@ export const MODULES: readonly TaskModule[] = [
     // Workspace search (GAP-048, `SEARCH-001`): the `search` read model over
     // people, notes, activities, journal posts, and tasks, and the route the
     // people surface serves it on. Its visibility rules exist only in SQL, so
-    // the set measures the PostgreSQL suite beside the unit ones.
+    // the set measures the PostgreSQL suite beside the unit ones. Names match
+    // across scripts and keyboard layouts by one set of rules the API and the
+    // palette share (`packages/contracts/schemas/name_search.ts`).
     id: "search",
     unit: {
       tests: [
         "packages/backend/read-models/search/application/search_workspace_test.ts",
         "packages/backend/modules/people/transport/http/search_test.ts",
+        "packages/contracts/name_search_test.ts",
       ],
       permissions: { read: ["packages/contracts"] },
     },
@@ -1577,12 +1582,16 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/read-models/search/application/search_workspace_test.ts",
         "packages/backend/modules/people/transport/http/search_test.ts",
+        "packages/contracts/name_search_test.ts",
+        "packages/backend/platform/postgres/name_match_test.ts",
         "tests/integration/search_postgres_test.ts",
       ],
       include: [
         "packages/backend/read-models/search/application",
         "packages/backend/read-models/search/adapters",
         "packages/backend/modules/people/transport/http/search.ts",
+        "packages/contracts/schemas/name_search.ts",
+        "packages/backend/platform/postgres/name_match.ts",
       ],
     },
   },

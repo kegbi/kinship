@@ -1021,3 +1021,60 @@ describe("SEARCH-001 workspace search groups", () => {
     );
   });
 });
+
+describe("SEARCH-001 highlighted matches", () => {
+  /** Each option's marked text, in order; an option without a mark is "". */
+  const marked = () =>
+    screen.getAllByRole("option").map((option) =>
+      [...option.querySelectorAll("mark")].map((mark) => mark.textContent)
+        .join("|")
+    );
+
+  it.each([
+    ["Pet", "Pet"],
+    ["елена", "Elena"],
+    ["удутф", "Elena"],
+    ["ELENA P", "Elena P"],
+  ])("marks what %s matched in each person's name", async (query, mark) => {
+    markup();
+    stubPeople([directoryPerson(adaId, "Elena", "Petrova")]);
+    await mount();
+    await search(query);
+    await waitFor(() => expect(statusLine()).toBe("1 person found"));
+    expect(optionNames()[0]).toBe("Elena Petrova");
+    // The add row repeats the query; it marks nothing.
+    expect(marked()).toEqual([mark, ""]);
+  });
+
+  it("marks the query's words in record labels and snippets", async () => {
+    markup();
+    stubPeople([], [], undefined, {
+      notes: [{
+        href: `/app/people/${adaId}?section=notes`,
+        id: "00000000-0000-4000-8000-000000000201",
+        kind: "note",
+        person: { archived: false, id: adaId, name: "Ada Lovelace" },
+        snippet: "Rowed down the River with Ada",
+      }],
+    });
+    await mount();
+    await search("river");
+    await waitFor(() => expect(statusLine()).toBe("0 people and 1 note found"));
+    const note = screen.getAllByRole("option").at(-1)!;
+    expect([...note.querySelectorAll("mark")].map((mark) => mark.textContent))
+      .toEqual(["River"]);
+    expect(note.textContent).toContain("Rowed down the River with Ada");
+  });
+
+  it("matches and marks commands typed on the other keyboard layout", async () => {
+    markup();
+    stubPeople();
+    await mount();
+    // "settings" typed on the Russian layout.
+    type("> ыуеештпы");
+    expect(optionNames()).toEqual(["Settings"]);
+    expect(marked()).toEqual(["Settings"]);
+    type("> pref");
+    expect(marked()).toEqual(["Pref"]);
+  });
+});

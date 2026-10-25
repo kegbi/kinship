@@ -28,6 +28,10 @@ import {
   listPeopleTagOptionsQuery,
   recordPersonView,
 } from "../../../../../contracts/routes/people.ts";
+import {
+  NAME_FOLD_STEPS,
+  nameSearchForms,
+} from "../../../../../contracts/schemas/name_search.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import {
@@ -194,7 +198,14 @@ export function createDirectoryRoutes(
         : {}),
       lifecycle: parsed.data.lifecycle,
       limit: parsed.data.limit,
-      ...(parsed.data.search ? { search: parsed.data.search } : {}),
+      ...(parsed.data.search
+        ? {
+          // Names match across scripts and keyboard layouts (`SEARCH-001`).
+          nameFold: NAME_FOLD_STEPS,
+          nameForms: nameSearchForms(parsed.data.search),
+          search: parsed.data.search,
+        }
+        : {}),
       ...(parsed.data.selectedPersonId
         ? { selectedPersonId: parsed.data.selectedPersonId }
         : {}),

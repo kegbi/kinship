@@ -607,6 +607,68 @@ Deno.test({
 
 Deno.test({
   name:
+    "SEARCH-001 real PostgreSQL directory search matches names across scripts and keyboard layouts",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await register(
+      `directory-scripts-${crypto.randomUUID()}@example.test`,
+      "Scripts circle",
+    );
+    const foreign = await register(
+      `directory-scripts-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign scripts",
+    );
+    const elenaId = crypto.randomUUID();
+    const yelenaId = crypto.randomUUID();
+    const archivedId = crypto.randomUUID();
+    const deletedId = crypto.randomUUID();
+    await sql`
+      insert into crm.people (
+        id, workspace_id, created_by_member_id, given_name, family_name
+      ) values
+        (${elenaId}, ${owner.workspaceId}, ${owner.memberId}, 'Elena',
+          'Petrova'),
+        (${yelenaId}, ${owner.workspaceId}, ${owner.memberId}, 'Елена',
+          'Смирнова'),
+        (${archivedId}, ${owner.workspaceId}, ${owner.memberId}, 'Elena',
+          'Archived'),
+        (${deletedId}, ${owner.workspaceId}, ${owner.memberId}, 'Елена',
+          'Deleted'),
+        (${crypto.randomUUID()}, ${foreign.workspaceId}, ${foreign.memberId},
+          'Elena', 'Foreign')
+    `;
+    await sql`
+      update crm.people set archived_at = now() where id = ${archivedId}
+    `;
+    await sql`update crm.people set deleted_at = now() where id = ${deletedId}`;
+    const found = async (search: string): Promise<string> => {
+      const response = await listPeople(
+        owner,
+        `search=${encodeURIComponent(search)}&lifecycle=active`,
+      );
+      assert(response.status === 200, `the directory answers ${search}`);
+      const body = await response.json() as {
+        readonly people: readonly { readonly id: string }[];
+      };
+      return body.people.map((person) => person.id).sort().join(",");
+    };
+    const both = [elenaId, yelenaId].sort().join(",");
+    for (const search of ["удутф", "Tktyf", "елена", "elena", "Elena P"]) {
+      const expected = search === "Elena P" ? elenaId : both;
+      assert(
+        await found(search) === expected,
+        `${search} finds Elena and Елена, never archived, deleted, or foreign`,
+      );
+    }
+    assert(await found("смирн") === yelenaId, "a family name in Cyrillic");
+    assert(await found("smirn") === yelenaId, "and its transliteration");
+    assert(await found("zebra") === "", "an unrelated name finds nobody");
+  },
+});
+
+Deno.test({
+  name:
     "PEOPLE-001 stale active-workspace context discloses and writes nothing",
   sanitizeOps: false,
   sanitizeResources: false,

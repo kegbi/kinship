@@ -15,6 +15,7 @@ import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 import type {
   SearchActor,
   SearchEntityRecord,
+  SearchNameFoldStep,
   SearchPeopleSort,
   SearchPersonReference,
   SearchRepository,
@@ -38,6 +39,10 @@ const SNIPPET_LEAD = 40;
 
 export interface SearchInput {
   readonly limit?: number;
+  /** How names are folded before `nameForms` is matched (`SEARCH-001`). */
+  readonly nameFold?: readonly SearchNameFoldStep[];
+  /** The query's folded spellings a person's name may contain. */
+  readonly nameForms?: readonly string[];
   readonly query: string;
   readonly sort?: SearchPeopleSort;
 }
@@ -219,6 +224,8 @@ export function createWorkspaceSearch(dependencies: {
         userId: actor.userId,
         workspaceId: actor.workspaceId,
         limit: limitOf(input.limit),
+        nameFold: input.nameFold ?? [],
+        nameForms: input.nameForms ?? [],
         query,
         sort: input.sort ?? "given-name",
         terms: searchTerms(query),

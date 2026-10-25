@@ -10,7 +10,15 @@ import {
   createPeopleDirectory,
 } from "../../../../read-models/people-directory/public.ts";
 import { createPeopleRoutes } from "./routes.ts";
-import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertStatus,
+} from "../../../../testing/assert.ts";
+import {
+  NAME_FOLD_STEPS,
+  nameSearchForms,
+} from "../../../../../contracts/schemas/name_search.ts";
 import { actor, headers, services } from "./people.test-helper.ts";
 
 Deno.test("API-001 bearer scope authenticates only the people directory read", async () => {
@@ -131,6 +139,12 @@ Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () =
         "Ada",
     "resolved actor and query criteria reach the directory use case",
   );
+  const named = received as {
+    readonly nameFold?: unknown;
+    readonly nameForms?: unknown;
+  };
+  assertEquals(named.nameForms, nameSearchForms("Ada"));
+  assertEquals(named.nameFold, NAME_FOLD_STEPS);
 });
 
 Deno.test("PEOPLE-006 HTTP hydrates one bounded introducer descriptor", async () => {

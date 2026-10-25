@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import type { Kysely, RawBuilder } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { nameMatchSql } from "../../../../platform/postgres/name_match.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import {
   PEOPLE_DIRECTORY_TAG_PREVIEW_LIMIT,
@@ -88,10 +89,15 @@ function filters(
     ? sql`person.archived_at is null`
     : sql`person.archived_at is not null`;
   const search = command.search
-    ? sql`and strpos(
-        lower(concat_ws(' ', person.given_name, person.middle_name,
-          person.family_name, person.nickname)), lower(${command.search})
-      ) > 0`
+    ? sql`and ${
+      nameMatchSql(
+        sql`concat_ws(' ', person.given_name, person.middle_name,
+          person.family_name, person.nickname)`,
+        command.search,
+        command.nameForms,
+        command.nameFold,
+      )
+    }`
     : sql``;
   const tag = command.tagId
     ? sql`and exists (
