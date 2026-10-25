@@ -6,6 +6,11 @@
  * `features/shell/application-shell/application-shell.ts`.
  */
 
+import {
+  foldName,
+  nameSearchForms,
+} from "../../../../packages/contracts/schemas/name_search.ts";
+
 /** Dispatched on `#protected-shell` once a member's layout width is saved. */
 export const MEMBER_LAYOUT_SAVED_EVENT = "kinship:member-layout-saved";
 
@@ -14,12 +19,18 @@ export interface MemberLayoutSavedDetail {
   readonly fluidLayout: boolean;
 }
 
-/** Whether every word of `query` occurs in `text`, in any order. */
+/**
+ * Whether every word of `query` occurs in `text`, in any order, as typed or
+ * re-typed from the other keyboard layout ("еруьу" is "theme"), by the same
+ * rules as people search.
+ */
 export function settingsQueryMatches(text: string, query: string): boolean {
   const haystack = text.toLocaleLowerCase();
-  return query.toLocaleLowerCase().split(/\s+/).filter(Boolean).every((
-    word,
-  ) => haystack.includes(word));
+  const folded = foldName(text);
+  return query.split(/\s+/).filter(Boolean).every((word) =>
+    haystack.includes(word.toLocaleLowerCase()) ||
+    nameSearchForms(word).some((form) => folded.includes(form))
+  );
 }
 
 /**

@@ -100,6 +100,15 @@ describe("settings search across individual settings", () => {
       .toBe(true);
   });
 
+  it("finds a setting typed on the other keyboard layout", () => {
+    drawOverview();
+    // "theme" typed with the Russian layout active.
+    search("еруьу");
+    expect(screen.getByRole("link", { name: "Theme" }).closest("li")!.hidden)
+      .toBe(false);
+    expect(group("workspace").hidden).toBe(true);
+  });
+
   it("restores the overview when the query is cleared", () => {
     drawOverview();
     search("nothing like this");
