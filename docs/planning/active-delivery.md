@@ -1560,15 +1560,20 @@ Playwright test carrying its stable flow ID.
       interaction separately; no application behavior change is required by this
       observation.
 
-- [ ] **REL-093 — Profile-fact cursors can lose sub-millisecond timestamp
+- [x] **REL-093 — Profile-fact cursors can lose sub-millisecond timestamp
       precision.** Observed during the 2026-10-25 token-read verification with
       direct-SQL fixtures using PostgreSQL default timestamps. The unchanged
       Postgres.js date serializer converts `.123456Z` to `.123Z`, so a cursor
       anchored to a row with microseconds can fail continuation. Representative
       explicit timestamps pass both continuation and foreign-parent rejection
-      through the same adapter. Diagnose timestamp preservation in the owning
-      pagination boundary separately; no paging adapter changed in the API token
-      candidate.
+      through the same adapter. A separate repair now binds keyset timestamp
+      values as text before PostgreSQL converts them to timestamptz; indexed
+      columns, exact-anchor checks, and the cursor wire format are unchanged.
+      The regression first repeated 50 rows instead of returning the remaining
+      three in all four multi-row fact sections. The repaired affected gate
+      passes 21 tests/four steps, proving order, exact stamps, last-page shape,
+      no duplicates, stale anchors, and foreign-cursor rejection. Adapter
+      coverage is 91.3% lines, 82.1% branches, and 100% functions.
 
 - [x] **REL-094 — The generated-client export pin omits debt settlement
       history.** The affected client-contract check reports 54 passed and one

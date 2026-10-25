@@ -125,6 +125,8 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
     const limit = Math.min(command.limit ?? 51, 51);
     const afterId = command.after?.id ?? null;
     const afterUpdatedAt = command.after?.updatedAt ?? null;
+    // Bind cursor timestamps as text before PostgreSQL casts them, so the
+    // driver's Date serializer cannot discard their microsecond precision.
     let result: { readonly rows: readonly FactRow[] };
     if (command.section === "contact-methods") {
       result = await sql<FactRow>`
@@ -153,7 +155,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (method.updated_at, method.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by method.updated_at, method.id
         limit ${limit}
       `.execute(database);
@@ -185,7 +187,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (address.updated_at, address.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by address.updated_at, address.id
         limit ${limit}
       `.execute(database);
@@ -208,7 +210,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (meeting.updated_at, meeting.person_id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by meeting.updated_at, meeting.person_id
         limit ${limit}
       `.execute(database);
@@ -225,7 +227,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (person.updated_at, person.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by person.updated_at, person.id
         limit ${limit}
       `.execute(database);
@@ -251,7 +253,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (occupation.updated_at, occupation.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by occupation.updated_at, occupation.id
         limit ${limit}
       `.execute(database);
@@ -268,7 +270,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (pet.updated_at, pet.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by pet.updated_at, pet.id
         limit ${limit}
       `.execute(database);
@@ -293,7 +295,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
       }::uuid)
           and (${afterId}::uuid is null or
             (person.updated_at, person.id) >
-              (${afterUpdatedAt}::timestamptz, ${afterId}::uuid))
+              (${afterUpdatedAt}::text::timestamptz, ${afterId}::uuid))
         order by person.updated_at, person.id
         limit ${limit}
       `.execute(database);

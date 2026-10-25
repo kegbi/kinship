@@ -6,7 +6,7 @@
  * `people.test-helper.ts`.
  */
 
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   configured,
   createPerson,
@@ -1350,6 +1350,164 @@ Deno.test({
         })
       }`,
     );
+  },
+});
+
+Deno.test({
+  name: "[REL-093] PostgreSQL fact cursors preserve microsecond anchors",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn(t) {
+    const owner = await register(
+      `fact-microseconds-${crypto.randomUUID()}@example.test`,
+      "Microsecond facts",
+    );
+    const foreign = await register(
+      `fact-microseconds-foreign-${crypto.randomUUID()}@example.test`,
+      "Foreign microsecond facts",
+    );
+    const person = async (fixture: typeof owner, givenName: string) => {
+      const response = await createPerson(fixture, {
+        givenName,
+        isPartial: false,
+      });
+      assertEquals(response.status, 201);
+      return (await response.json() as {
+        readonly person: { readonly id: string };
+      }).person.id;
+    };
+    const personId = await person(owner, "Ada");
+    const otherPersonId = await person(owner, "Grace");
+    const foreignPersonId = await person(foreign, "Private");
+    const ids = Array.from({ length: 53 }, () => crypto.randomUUID()).sort();
+    // Equal timestamps straddle the page boundary; neighbours differ by only
+    // one microsecond. Keep these values in PostgreSQL, never in a JS Date.
+    await sql`
+      insert into crm.pets (id, person_id, name, updated_at)
+      select id, ${personId}::uuid, 'Microsecond pet ' || position,
+        '2026-01-01T00:00:00.123456Z'::timestamptz +
+          case when position <= 49 then 0 when position <= 51 then 1 else 2 end *
+            interval '1 microsecond'
+      from unnest(${ids}::uuid[]) with ordinality fixture(id, position)
+    `;
+    const typeId = crypto.randomUUID();
+    await sql`
+      insert into crm.contact_method_types (id, workspace_id, name)
+      values (${typeId}::uuid, ${owner.workspaceId}::uuid, 'Microsecond contact')
+    `;
+    await sql`
+      insert into crm.person_contact_methods (
+        id, person_id, type_id, value, updated_at
+      )
+      select id, person_id, ${typeId}::uuid, name, updated_at
+      from crm.pets where person_id = ${personId}::uuid
+    `;
+    await sql`
+      insert into crm.person_addresses (id, person_id, display_name, updated_at)
+      select id, person_id, name, updated_at
+      from crm.pets where person_id = ${personId}::uuid
+    `;
+    await sql`
+      insert into crm.person_occupations (id, person_id, title, updated_at)
+      select id, person_id, name, updated_at
+      from crm.pets where person_id = ${personId}::uuid
+    `;
+    const expected = ids.map((id, index) => ({
+      id,
+      updatedAt: `2026-01-01T00:00:00.${
+        index < 49 ? "123456" : index < 51 ? "123457" : "123458"
+      }Z`,
+    }));
+    interface Page {
+      readonly nextCursor?: string;
+      readonly records: readonly {
+        readonly id: string;
+        readonly updatedAt: string;
+      }[];
+    }
+    const projection = (page: Page) =>
+      page.records.map(({ id, updatedAt }) => ({ id, updatedAt }));
+    const request = (
+      section: string,
+      cursor?: string,
+      targetPersonId = personId,
+      fixture = owner,
+    ) =>
+      configured.app.request(
+        `http://localhost/api/v1/people/${targetPersonId}/facts/${section}${
+          cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+        }`,
+        {
+          headers: {
+            cookie: fixture.cookie,
+            "X-Workspace-Id": fixture.workspaceId,
+          },
+        },
+      );
+    for (const section of ["pets", "contact-methods", "addresses", "work"]) {
+      await t.step(section, async () => {
+        const firstResponse = await request(section);
+        assertEquals(firstResponse.status, 200);
+        const first = await firstResponse.json() as Page;
+        assertEquals(projection(first), expected.slice(0, 50), "first page");
+        assert(first.nextCursor, "first page has a continuation");
+        const secondResponse = await request(section, first.nextCursor);
+        assertEquals(secondResponse.status, 200, "microsecond continuation");
+        const second = await secondResponse.json() as Page;
+        assertEquals(second.records.length, 3, "exact remaining fact count");
+        assertEquals(projection(second), expected.slice(50), "second page");
+        assertEquals(
+          [...projection(first), ...projection(second)],
+          expected,
+          "all facts retain their exact order and timestamps",
+        );
+        assertEquals(
+          new Set([...first.records, ...second.records].map(({ id }) => id))
+            .size,
+          ids.length,
+          "no duplicate facts",
+        );
+        assert(!("nextCursor" in second), "last page omits its continuation");
+        for (
+          const [targetId, fixture] of [
+            [otherPersonId, owner],
+            [foreignPersonId, foreign],
+          ] as const
+        ) {
+          const refused = await request(
+            section,
+            first.nextCursor,
+            targetId,
+            fixture,
+          );
+          assertEquals(refused.status, 409, "foreign cursor is refused");
+          assertEquals(
+            (await refused.json() as { readonly code: string }).code,
+            "profile_fact_cursor_stale",
+          );
+        }
+        // Changing only the anchor, without changing the person's revision,
+        // must still invalidate the cursor at full microsecond precision.
+        const table = {
+          pets: "crm.pets",
+          "contact-methods": "crm.person_contact_methods",
+          addresses: "crm.person_addresses",
+          work: "crm.person_occupations",
+        }[section]!;
+        await sql`
+          update ${
+          sql(table)
+        } set updated_at = updated_at + interval '1 microsecond'
+          where id = ${ids[49]!}::uuid and person_id = ${personId}::uuid
+        `;
+        const stale = await request(section, first.nextCursor);
+        assertEquals(stale.status, 409, "changed microsecond anchor is stale");
+        assertEquals(
+          (await stale.json() as { readonly code: string }).code,
+          "profile_fact_cursor_stale",
+        );
+      });
+    }
   },
 });
 
