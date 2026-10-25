@@ -38,6 +38,7 @@ const PUBLIC_PAGES = [
   "auth/sign-in/index.html",
   "auth/sign-up/index.html",
   "features/index.html",
+  "docs/api/index.html",
   "index.html",
   "privacy/index.html",
   "terms/index.html",

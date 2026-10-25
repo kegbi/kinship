@@ -12,16 +12,16 @@ The current baseline contains:
 - 15 backend modules and 9 read models in `module-boundaries.yaml`; 14 modules
   and all 9 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
-- 39 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 4 `static`), all
+- 40 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 5 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 41 required flows: 17 P0, 20 P1, and 4 P2;
-- 40 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 42 required flows: 17 P0, 20 P1, and 5 P2;
+- 41 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 46 Playwright specs under `tests/e2e/`. Flow specs are named
+- 47 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 44 of them; `perf.PERF-001.spec.ts` and
+  name. The flows' `testRefs` name 45 of them; `perf.PERF-001.spec.ts` and
   `public-home.spec.ts` prove no catalog flow.
 
 Verified against `docs/architecture/module-boundaries.yaml`,
@@ -95,51 +95,52 @@ Every row must eventually name at least one Playwright test in the flow
 catalog's `testRefs`. The test must carry the stable flow ID in its title or tag
 and exercise the production-like gateway, not an internal service URL.
 
-| Flow               | Priority | Complete slice | Primary pages                                    | Acceptance emphasis                                                                                     |
-| ------------------ | -------- | -------------: | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `AUTH-001`         | P0       |              1 | `auth.sign-up`, `auth.verify-email`, `app.today` | First verified owner and workspace; replay/expiry/error states                                          |
-| `AUTH-002`         | P0       |              1 | `settings.members`, `invitation.accept`          | Role-authorized invite, existing/new user acceptance, expiry and replay                                 |
-| `AUTH-003`         | P0       |              1 | sign-in, recovery, reset, MFA                    | Password/MFA challenge, recovery, lockout/rate controls, session creation                               |
-| `AUTH-004`         | P0       |              1 | settings overview/profile/preferences/security   | Current-member profile/preferences and session revocation, including stale/forbidden session cases      |
-| `AUTH-005`         | P1       |              7 | settings overview/profile                        | Leave workspace or delete identity only after full impact analysis and lifecycle coordination           |
-| `WORKSPACE-001`    | P1       |              1 | workspace and members settings                   | Settings/member/role management; this was previously missing from the release-slice assignment          |
-| `WORKSPACE-002`    | P1       |              7 | workspace danger zone                            | Preview, confirmation, atomic reset/delete, retained audit policy, owner safeguards                     |
-| `WORKSPACE-003`    | P1       |              2 | personalization settings                         | Module toggles and vocabulary CRUD via stable `section` deep links                                      |
-| `TODAY-001`        | P0       |              4 | Today, person profile, tasks                     | Documented semantic ordering, empty/overdue/due states, authorized inline actions                       |
-| `TODAY-002`        | P1       |              4 | application shell, person profile, settings      | Member-scoped notification feed, read-through watermark, bounded badge, cross-member negatives          |
-| `PEOPLE-001`       | P0       |              1 | create person, person profile                    | Create minimal/full person, validation, duplicate guidance, navigation                                  |
-| `PEOPLE-002`       | P0       |              1 | people, archived people, profile                 | Search/filter/order/paginate and distinguish active/archived/not-found/forbidden                        |
-| `PEOPLE-003`       | P0       |              6 | person profile                                   | Complete composable workspace across all enabled core sections; shell begins in Slice 1                 |
-| `PEOPLE-004`       | P0       |              2 | profile, people, archived people                 | Edit, archive, restore, and delete are one mutation flow; no fictional read-only subset                 |
-| `PEOPLE-005`       | P0       |              2 | person profile                                   | Valid full/partial/unknown dates, chronology, display, recurrence behavior                              |
-| `PEOPLE-006`       | P1       |              2 | person profile                                   | All remaining enabled profile facts and section visibility behavior                                     |
-| `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects   |
-| `PEOPLE-008`       | P1       |              7 | people, person profile                           | Duplicate review and atomic merge through every owning module; no undo; re-import stays idempotent      |
-| `PEOPLE-009`       | P1       |              7 | people, archived people                          | Bulk tag, archive, restore, and vCard export through single-person use cases with per-person results    |
-| `PEOPLE-010`       | P1       |              7 | people, archived people, person profile          | Workspace star with archived rule and audit, tag facet counts, every order's keyset cursor              |
-| `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them |
-| `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                               |
-| `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                            |
-| `PLANNING-001`     | P0       |              4 | profile, tasks, Today                            | Person/global tasks, completion/reopen, permissions and projections                                     |
-| `PLANNING-002`     | P0       |              4 | profile, Today                                   | Generate, claim, deliver, retry, and de-duplicate reminders across time zones                           |
-| `PLANNING-003`     | P1       |              4 | preferences settings, person profile             | Email and daily-digest delivery with person links, unverified fallback, retry, and reconciliation       |
-| `FILES-001`        | P0       |              5 | profile, storage settings                        | Upload/link/download/remove with limits, authorization, missing/quarantined objects                     |
-| `GIFTS-001`        | P1       |              5 | person profile                                   | Gifts, debts, amounts/currencies, and attachment coordination                                           |
-| `JOURNAL-001`      | P1       |              6 | journal index/item, person profile               | Post/rating/ordered items and person-linked display                                                     |
-| `JOURNAL-002`      | P1       |              6 | person profile                                   | Add/edit/remove life events: precision, revision, archived read-only, and cross-workspace rejection     |
-| `SEARCH-001`       | P1       |              6 | header palette, profile, journal item, tasks     | Grouped cross-entity results, keyboard navigation, deep links, tenancy, hidden and deleted rows         |
-| `IMPORT-001`       | P0       |              7 | import index/new/report                          | Detect, stage, dry-run, validate, commit atomically, rerun idempotently, handle attachments safely      |
-| `IMPORT-002`       | P1       |              7 | import index/new/report                          | vCard and CSV staging, CSV column mapping, skipped-property report, UID conflicts, idempotent rerun     |
-| `EXPORT-001`       | P0       |              7 | export settings, person profile                  | Authorized workspace/person exports, manifests, vCard and portable round-trip checks                    |
-| `EXPORT-002`       | P1       |              7 | export settings                                  | CSV archive and all-people vCard, formula-injection guard, manifests, short-lived downloads             |
-| `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                      |
-| `INTEGRATION-001`  | P2       |              8 | integrations settings                            | Configure/synchronize DAV; isolate failures; core works while disabled                                  |
-| `INTEGRATION-002`  | P2       |              8 | personal preferences                             | Read-only iCalendar feed: secret URL shown once, rotate/revoke 404, 304, cap, secret never logged       |
-| `GOVERNANCE-001`   | P1       |              6 | privacy, terms, compliance acceptance            | Versioned document display and immutable, required acceptance                                           |
-| `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                            |
-| `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                              |
+| Flow               | Priority | Complete slice | Primary pages                                    | Acceptance emphasis                                                                                          |
+| ------------------ | -------- | -------------: | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `AUTH-001`         | P0       |              1 | `auth.sign-up`, `auth.verify-email`, `app.today` | First verified owner and workspace; replay/expiry/error states                                               |
+| `AUTH-002`         | P0       |              1 | `settings.members`, `invitation.accept`          | Role-authorized invite, existing/new user acceptance, expiry and replay                                      |
+| `AUTH-003`         | P0       |              1 | sign-in, recovery, reset, MFA                    | Password/MFA challenge, recovery, lockout/rate controls, session creation                                    |
+| `AUTH-004`         | P0       |              1 | settings overview/profile/preferences/security   | Current-member profile/preferences and session revocation, including stale/forbidden session cases           |
+| `AUTH-005`         | P1       |              7 | settings overview/profile                        | Leave workspace or delete identity only after full impact analysis and lifecycle coordination                |
+| `WORKSPACE-001`    | P1       |              1 | workspace and members settings                   | Settings/member/role management; this was previously missing from the release-slice assignment               |
+| `WORKSPACE-002`    | P1       |              7 | workspace danger zone                            | Preview, confirmation, atomic reset/delete, retained audit policy, owner safeguards                          |
+| `WORKSPACE-003`    | P1       |              2 | personalization settings                         | Module toggles and vocabulary CRUD via stable `section` deep links                                           |
+| `TODAY-001`        | P0       |              4 | Today, person profile, tasks                     | Documented semantic ordering, empty/overdue/due states, authorized inline actions                            |
+| `TODAY-002`        | P1       |              4 | application shell, person profile, settings      | Member-scoped notification feed, read-through watermark, bounded badge, cross-member negatives               |
+| `PEOPLE-001`       | P0       |              1 | create person, person profile                    | Create minimal/full person, validation, duplicate guidance, navigation                                       |
+| `PEOPLE-002`       | P0       |              1 | people, archived people, profile                 | Search/filter/order/paginate and distinguish active/archived/not-found/forbidden                             |
+| `PEOPLE-003`       | P0       |              6 | person profile                                   | Complete composable workspace across all enabled core sections; shell begins in Slice 1                      |
+| `PEOPLE-004`       | P0       |              2 | profile, people, archived people                 | Edit, archive, restore, and delete are one mutation flow; no fictional read-only subset                      |
+| `PEOPLE-005`       | P0       |              2 | person profile                                   | Valid full/partial/unknown dates, chronology, display, recurrence behavior                                   |
+| `PEOPLE-006`       | P1       |              2 | person profile                                   | All remaining enabled profile facts and section visibility behavior                                          |
+| `PEOPLE-007`       | P1       |              5 | person profile, people                           | Avatar upload/replace/remove through files and people, initials fallback, quarantined/missing objects        |
+| `PEOPLE-008`       | P1       |              7 | people, person profile                           | Duplicate review and atomic merge through every owning module; no undo; re-import stays idempotent           |
+| `PEOPLE-009`       | P1       |              7 | people, archived people                          | Bulk tag, archive, restore, and vCard export through single-person use cases with per-person results         |
+| `PEOPLE-010`       | P1       |              7 | people, archived people, person profile          | Workspace star with archived rule and audit, tag facet counts, every order's keyset cursor                   |
+| `RELATIONSHIP-001` | P0       |              2 | person profile                                   | Directional graph, valid types, remove/change behavior, and romantic details only if DG-07 accepts them      |
+| `INTERACTION-001`  | P0       |              3 | person profile, activity report, Today           | Add/review note or activity and observe projections/audit                                                    |
+| `INTERACTION-002`  | P1       |              3 | person profile                                   | Calls, conversations/messages, participants, emotion and chronology behavior                                 |
+| `PLANNING-001`     | P0       |              4 | profile, tasks, Today                            | Person/global tasks, completion/reopen, permissions and projections                                          |
+| `PLANNING-002`     | P0       |              4 | profile, Today                                   | Generate, claim, deliver, retry, and de-duplicate reminders across time zones                                |
+| `PLANNING-003`     | P1       |              4 | preferences settings, person profile             | Email and daily-digest delivery with person links, unverified fallback, retry, and reconciliation            |
+| `FILES-001`        | P0       |              5 | profile, storage settings                        | Upload/link/download/remove with limits, authorization, missing/quarantined objects                          |
+| `GIFTS-001`        | P1       |              5 | person profile                                   | Gifts, debts, amounts/currencies, and attachment coordination                                                |
+| `JOURNAL-001`      | P1       |              6 | journal index/item, person profile               | Post/rating/ordered items and person-linked display                                                          |
+| `JOURNAL-002`      | P1       |              6 | person profile                                   | Add/edit/remove life events: precision, revision, archived read-only, and cross-workspace rejection          |
+| `SEARCH-001`       | P1       |              6 | header palette, profile, journal item, tasks     | Grouped cross-entity results, keyboard navigation, deep links, tenancy, hidden and deleted rows              |
+| `IMPORT-001`       | P0       |              7 | import index/new/report                          | Detect, stage, dry-run, validate, commit atomically, rerun idempotently, handle attachments safely           |
+| `IMPORT-002`       | P1       |              7 | import index/new/report                          | vCard and CSV staging, CSV column mapping, skipped-property report, UID conflicts, idempotent rerun          |
+| `EXPORT-001`       | P0       |              7 | export settings, person profile                  | Authorized workspace/person exports, manifests, vCard and portable round-trip checks                         |
+| `EXPORT-002`       | P1       |              7 | export settings                                  | CSV archive and all-people vCard, formula-injection guard, manifests, short-lived downloads                  |
+| `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                           |
+| `API-002`          | P2       |              8 | Public API reference, API access settings        | Signed-out static documentation, bearer OpenAPI, person/task/capture automation and grant refusal/revocation |
+| `INTEGRATION-001`  | P2       |              8 | integrations settings                            | Configure/synchronize DAV; isolate failures; core works while disabled                                       |
+| `INTEGRATION-002`  | P2       |              8 | personal preferences                             | Read-only iCalendar feed: secret URL shown once, rotate/revoke 404, 304, cap, secret never logged            |
+| `GOVERNANCE-001`   | P1       |              6 | privacy, terms, compliance acceptance            | Versioned document display and immutable, required acceptance                                                |
+| `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                                 |
+| `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                                   |
 
-For the current 41-flow snapshot, this assignment places all 17 P0 and all 20 P1
+For the current 42-flow snapshot, this assignment places all 17 P0 and all 20 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted
@@ -153,6 +154,7 @@ route must work end to end; an earlier slice may introduce a shared shell.
 | Route group                    | Catalog IDs                                                                                                                 |                                                                          Delivery |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------: |
 | Public product                 | `public.home`, `public.features`                                                                                            |                                                                                 1 |
+| Public API reference           | `public.api-reference`                                                                                                      |                                                                                 8 |
 | Legal public                   | `legal.privacy`, `legal.terms`                                                                                              |                                                                                 6 |
 | Authentication and invitation  | `auth.sign-in`, `auth.sign-up`, `auth.verify-email`, `auth.recover`, `auth.reset`, `auth.mfa`, `invitation.accept`          |                                                                                 1 |
 | Today                          | `app.today`                                                                                                                 |                                                               shell 1; complete 4 |

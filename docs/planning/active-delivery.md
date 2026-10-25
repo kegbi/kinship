@@ -44,13 +44,32 @@ historical cursor below. Deliver one reviewed candidate per vertical outcome.
       PostgreSQL gate passes 21, and the UI passes 15. Changed backend, helper,
       and UI coverage exceed their floors. Whole API composition coverage
       remains with the final owning checkpoint.
-- [ ] Public API guide: a static, styled, signed-out reference and quickstart,
+- [x] Public API guide: a static, styled, signed-out reference and quickstart,
       downloadable external OpenAPI, links from public navigation and API
       settings, exact delivered scope/parameter/error documentation, and
-      cataloged browser verification.
+      cataloged browser verification. `/docs/api` and `/docs/api/openapi.json`
+      expose the 14 bearer-enabled operations through generated contracts.
+      API-002 covers no-script reading, native download, mobile reflow,
+      accessibility, and real bearer automation. The TLS browser checkpoint has
+      29 passes and the isolated WebKit fixture limitation recorded in REL-104;
+      it is not an all-green release gate.
 - [ ] Integration checkpoint for these delivered capabilities: affected
       coverage, contract/static gates, and the owning production-like browser
       flow. Record any unrelated failures separately under the existing policy.
+      The checkpoint was executed, but remains blocked by REL-095–REL-104.
+      Architecture, generated contracts, Astro check, affected lint/formatting,
+      production image builds, and scoped feature tests pass. The large API
+      coverage collection records 1,640 passes and nine failures; one missing
+      identity-route pin is corrected and passes its focused rerun, while the
+      remaining failures reproduce at the pre-API-plan baseline. Its measured
+      API set passes the threshold at 95.3% lines, 92.5% branches, and 96.5%
+      functions. Root coverage is still blocked by the stale capacity fixture;
+      diagnostic collection excluded that single unchanged fixture, without
+      weakening any committed gate. Full-repository lint also encounters six
+      existing test errors; formatting of source passes after excluding ignored
+      tool session-state files while retaining the configured generated-output
+      exclusions. The pinned native Deno executable avoids the npm shim's
+      Windows command-length limit during the large diagnostic commands.
 
 Token issuance remains owner/admin-only. Schema-dependent connector identities,
 change feeds, webhooks, OAuth, and the remaining domain expansions stay in the
@@ -1584,6 +1603,79 @@ Playwright test carrying its stable flow ID.
       to the compatibility allowlist. The unchanged client-contract command
       moved from five passed/one failed to six passed, with affected lint and
       formatting passing; the compatibility guard is retained.
+
+- [ ] **REL-095 — Directory capacity fixture no longer satisfies its read
+      criteria.** The 2026-10-25 integration checkpoint reports TS2379 at
+      `people_directory_capacity_postgres_test.ts:116`: `nameFold` and
+      `nameForms` are missing. The fixture and criteria are unchanged from the
+      pre-API-plan baseline. A bounded direct type-check reproduces the error;
+      it blocks root `check` and the API coverage set. Repair the owning fixture
+      separately rather than relaxing type checks.
+
+- [ ] **REL-096 — Existing UI tests fail Deno's require-await lint rule.** Three
+      callbacks each in `person-gifts.test.tsx` and `theme-toggle.test.ts` are
+      async without awaiting. Both files are unchanged from the pre-API-plan
+      baseline; the two-file lint reproduction reports the same six failures.
+      The remaining Deno lint and frontend ESLint checks pass.
+
+- [ ] **REL-097 — Runtime pin assertion disagrees with the pinned images.** Root
+      `test` stops after 73 passing tests because GAP-041 expects Node 24.15.0
+      from `.tool-versions`, while the Dockerfiles pin Node 24.22.1 by digest.
+      The Dockerfiles, runtime file, and assertion are unchanged from the
+      pre-API-plan baseline; the filtered assertion reproduces the failure.
+      Resolve the accepted runtime pin together in a separate candidate.
+
+- [ ] **REL-098 — Frontend build-output assertions have baseline drift.** Astro
+      emits the frontend, but its output suite reports ten passes and four
+      failures: two assertions assume one preferences-page script, one expects
+      an absent spacing utility, and one rejects the existing `contents` class
+      collision. Building the approved checkout without the API guide reproduces
+      the same four failures. Public-page no-React checks pass in both builds.
+      Repair the owning output contracts separately.
+
+- [ ] **REL-099 — Legacy upgrades disagree on schema-qualified foreign keys.**
+      Registration's legacy non-activation check and the v1–v3 migration cases
+      fail structural verification: the actual activities foreign key is
+      unqualified while the expected signature contains `<schema>`. A disposable
+      PostgreSQL reproduction at pre-API-plan `b4e4cc1` reproduces the v1
+      upgrade and registration failures. Diagnose catalog
+      normalization/search-path handling separately; do not edit immutable
+      schema baselines to hide it.
+
+- [ ] **REL-100 — Monica import currency conversion disagrees with its
+      three-decimal fixture.** The existing live-choice import case expects
+      `0.5550 KWD` but persists `555.0000 KWD`; its JPY case agrees. The same
+      filtered test fails at pre-API-plan `b4e4cc1` on disposable PostgreSQL.
+      Resolve source amount units and conversion in the owning import boundary.
+
+- [ ] **REL-101 — Important-date occurrence test disagrees with dispatch.** The
+      existing planning case reports direct and important-date reminders as
+      conflated, missing, or duplicated. The same filtered case fails at
+      pre-API-plan `b4e4cc1` on disposable PostgreSQL. Diagnose occurrence
+      selection and its fixture in a separate planning candidate.
+
+- [ ] **REL-102 — Immutable-migration guard assertion expects the wrong checksum
+      failure.** The existing guard test receives a v9-to-v10 checksum mismatch
+      but rejects that expected refusal message. The filtered case reproduces at
+      pre-API-plan `b4e4cc1`; repair the assertion and its intended artifact
+      selection without changing immutable migrations.
+
+- [ ] **REL-103 — Rolling reminder fixture disagrees with generated horizon.**
+      The ninth-occurrence lifecycle case finds 13 distinct occurrences rather
+      than its expected rolling count, with its ninth instant at
+      `2026-11-02 01:30:00+00`. The same filtered test fails at pre-API-plan
+      `b4e4cc1`. Diagnose its horizon and timezone contract separately.
+
+- [ ] **REL-104 — WebKit native downloads fail with the loopback TLS fixture.**
+      The API-002 visitor receives valid gateway JSON but never receives a
+      native download event under self-signed HTTPS. The same WebKit download
+      succeeds over HTTP. Adding Content-Disposition, an ephemeral default
+      context, and a transport-only route bridge did not fix HTTPS; all
+      experiments were removed. Chromium and Firefox pass the HTTPS visitor
+      flow, and all three browsers pass bearer automation. Keep the real native
+      download assertion visible; do not alter production TLS or user trust
+      stores or replace the original link with a synthetic download to claim a
+      green gateway matrix.
 
 ## Just-In-Time Technical Capabilities
 

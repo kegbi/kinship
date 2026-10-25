@@ -16,6 +16,7 @@ utilities rather than primary CRM navigation.
 Public
   Home
   Features
+  API reference
   Privacy
   Terms
   Authentication and invitation acceptance
@@ -211,7 +212,7 @@ the place for work that is due.
 
 | Page class                                               | Default strategy                  | Reason                                                             |
 | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
-| Marketing and legal                                      | Static                            | Public and stable content.                                         |
+| Marketing, legal, and API reference                      | Static                            | Public and stable content.                                         |
 | Sign-in and simple recovery forms                        | Static shell with an island       | Only the form and session result are dynamic.                      |
 | Token, invitation, MFA, and cookie-sensitive transitions | On-demand                         | The first response depends on protected server state.              |
 | Authenticated CRM pages                                  | Static shell with focused islands | Preserves static-first delivery while loading private data safely. |
@@ -219,6 +220,13 @@ the place for work that is due.
 
 Client rendering never weakens authorization: every API query and mutation
 independently verifies the principal and active workspace.
+
+`public.api-reference` (`/docs/api`, flow `API-002`) is readable signed out and
+without page-specific JavaScript. The public navigation uses the short label
+"API"; API access settings also link to the reference. Its anchored quickstart,
+grants, automation examples, conventions, errors, operations, and full schema
+expanders use the generated bearer contract and offer a static OpenAPI download.
+It accepts no credentials and performs no API requests on a visitor's behalf.
 
 ## Responsive And Accessible Composition
 

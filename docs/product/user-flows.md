@@ -37,6 +37,12 @@ on:
 Unit/source coverage and workflow coverage are independent gates. One cannot
 substitute for the other.
 
+`API-002` covers signed-out, JavaScript-free API reference navigation and
+download, then real token automation through the documented person, task, and
+interaction operations, including replay/conflict and grant refusal/revocation.
+`API-001` continues to own token creation, one-time display, and revocation
+management.
+
 ## Priorities
 
 | Priority | Meaning                                                   |

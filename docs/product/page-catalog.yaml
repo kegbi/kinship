@@ -94,6 +94,22 @@ pages:
     owner: web
     flowIds: []
 
+  - id: public.api-reference
+    path: /docs/api
+    access: public
+    rendering: static
+    owner: web
+    flowIds: [API-002]
+    sections: [
+      quickstart,
+      grants,
+      examples,
+      conventions,
+      errors,
+      operations,
+      schemas,
+    ]
+
   - id: legal.privacy
     path: /privacy
     access: public
@@ -619,7 +635,7 @@ pages:
     access: workspace-admin
     rendering: static-shell-islands
     owner: api-access
-    flowIds: [API-001]
+    flowIds: [API-001, API-002]
 
   - id: settings.integrations
     path: /app/settings/integrations

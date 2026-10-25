@@ -34,6 +34,7 @@ export default defineConfig({
         "apps/web/src/islands/**/*.tsx",
         "apps/web/src/components/ui/*.ts",
         "apps/web/src/components/ui/*.tsx",
+        "apps/web/src/pages/docs/api/openapi.json.ts",
       ],
       exclude: [
         "apps/web/src/**/*.test.ts",

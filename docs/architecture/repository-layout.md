@@ -70,7 +70,7 @@ packages/
     routes/               route descriptors, one file per area
     schemas/              pure Zod schemas the web may import
     client/               source of the generated client
-    openapi/openapi.json  checked-in OpenAPI document
+    openapi/              checked-in internal and bearer-only external OpenAPI
     generated/            generated client and API types
     registry.ts           defineRoute and the route registry
   http-kit/               shared HTTP machinery for module routes
@@ -145,7 +145,10 @@ CI lives in `.github/workflows/ci.yml` and `lefthook.yml`.
   Besides the generated client it may import `packages/contracts/schemas` (the
   `contracts-schemas` token in `module-boundaries.yaml`), the pure Zod schemas
   an island's form validates with; `tools/architecture/check_boundaries.ts`
-  refuses the route descriptors, the client internals, and the HTTP kit.
+  refuses the route descriptors, the client internals, and the HTTP kit. Public
+  documentation also consumes the generated `openapi/external.json` through the
+  narrow `contracts-external-openapi` token at build time. The full internal
+  OpenAPI document remains outside the frontend import surface.
 - Per [ADR 0006](decisions/0006-ui-stack-shadcn-react-islands.md),
   `apps/web/components.json` configures the shadcn CLI,
   `apps/web/src/components/ui/` holds the vendored source-owned shadcn/ui
@@ -276,11 +279,16 @@ enforces these rules.
   migrated to the canonical DDL, and `test:integration` fails on drift. Adapters
   may import them; application, domain, and ports never do.
 - `deno task contracts:generate` writes
-  `packages/contracts/openapi/openapi.json` and `packages/contracts/generated/`
-  (`api-types.ts` and `auth-client.ts`) from the route descriptors and
-  `packages/contracts/client/`. They are checked in, and
+  `packages/contracts/openapi/openapi.json`, `openapi/external.json`, and
+  `packages/contracts/generated/` (`api-types.ts` and `auth-client.ts`) from the
+  route descriptors and `packages/contracts/client/`. They are checked in, and
   `deno task contracts:check` fails on drift. Only `apps/web` and `tests/e2e`
   consume the generated client.
+- The external OpenAPI projects only bearer-enabled operations from the full
+  executable contract, with bearer security and complete transitive component
+  references. `/docs/api` renders that artifact at build time and prerenders its
+  download at `/docs/api/openapi.json`; neither route needs credentials or page
+  JavaScript. No second schema authority or endpoint inventory is maintained.
 - The canonical schema bundle under `personal-crm-schema/` remains outside
   generator and formatter write targets.
 - A generated-file header names its generator command and source artifact.

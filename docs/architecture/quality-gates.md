@@ -135,6 +135,16 @@ integration suites, run inside a disposable PostgreSQL Compose project.
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
 
+The contract build writes four checked-in artifacts: internal OpenAPI, the full
+generated TypeScript types and client barrel, and bearer-only external OpenAPI.
+The `contracts-build` unit/contract set verifies external operation filtering
+and complete reference closure; its focused coverage measures the projection. It
+uses the generator's existing environment permission because
+openapi-typescript's debug dependency enumerates `process.env`, without printing
+it. Public build checks include `/docs/api` in the React-free inventory;
+`API-002` covers signed-out reading/download and real bearer person/task/capture
+automation across browsers.
+
 ### Generated Kysely types
 
 `packages/backend/platform/postgres/generated/database.ts` holds the Kysely

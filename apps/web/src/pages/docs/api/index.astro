@@ -1,0 +1,190 @@
+---
+import PublicLayout from "../../../layouts/PublicLayout.astro";
+import Schema from "../../../components/api-reference/Schema.astro";
+import Code from "../../../components/api-reference/Code.astro";
+import { API_TOKEN_SCOPE_CHOICES } from "../../../features/settings/api-access/api-access.ts";
+import { referenceOperations, referenceSchemas } from "../../../features/api-reference/reference.ts";
+import "../../../styles/api-reference.css";
+
+export const prerender = true;
+
+const quickstart = `export KINSHIP_ORIGIN='https://kinship.example'
+# Set KINSHIP_TOKEN privately in your server environment.
+curl --fail-with-body "$KINSHIP_ORIGIN/api/v1/people?limit=20" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN"`;
+const identityExample = `# Replace this v4 UUID with a person id from the directory.
+PERSON_ID='2bdfe742-48dc-4e6d-9e74-f27c7dc4c467'
+curl --fail-with-body "$KINSHIP_ORIGIN/api/v1/people/$PERSON_ID/identity" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN"`;
+const taskExample = `curl --fail-with-body "$KINSHIP_ORIGIN/api/v1/tasks" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  --data '{"requestId":"c29deea8-da23-45c5-af92-86c3458d05b7","title":"Ask Ada about her trip","personId":"2bdfe742-48dc-4e6d-9e74-f27c7dc4c467"}'
+
+# TASK_ID is the response's task.id. Read its current task.updatedAt.
+curl --fail-with-body "$KINSHIP_ORIGIN/api/v1/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN"
+
+# UPDATED_AT is task.updatedAt copied verbatim from that response.
+curl --fail-with-body -X PATCH "$KINSHIP_ORIGIN/api/v1/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  --data "{\\"expectedUpdatedAt\\":\\"$UPDATED_AT\\",\\"title\\":\\"Call Ada about her trip\\",\\"dueAt\\":null}"
+
+curl --fail-with-body -X PUT "$KINSHIP_ORIGIN/api/v1/tasks/$TASK_ID/completion" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN" \\
+  -H 'Content-Type: application/json' --data '{"completed":true}'`;
+const captureExample = `curl --fail-with-body "$KINSHIP_ORIGIN/api/v1/interactions" \\
+  -H "Authorization: Bearer $KINSHIP_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  --data '{"kind":"note","requestId":"75b13e5a-937d-4f4d-89dd-9b5bfcfcd9fd","personId":"2bdfe742-48dc-4e6d-9e74-f27c7dc4c467","body":"Ada is planning a trip in November."}'`;
+const serverExample = `// Server-side JavaScript (Node 24). Keep the token on the server.
+const base = process.env.KINSHIP_ORIGIN;
+const token = process.env.KINSHIP_TOKEN;
+const personId = process.env.KINSHIP_PERSON_ID; // an existing person
+if (!base || !token || !personId) throw new Error("Configure the server environment");
+
+async function api(path, method = "GET", body) {
+  const response = await fetch(new URL("/api/v1" + path, base), {
+    method,
+    headers: {
+      Authorization: "Bearer " + token,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.code + ": " + result.detail);
+  return result;
+}
+
+const { person } = await api("/people/" + personId + "/identity");
+const createBody = {
+  requestId: crypto.randomUUID(), // retain this body for a retry
+  personId: person.id,
+  title: "Ask " + person.givenName + " about her trip",
+};
+const created = await api("/tasks", "POST", createBody);
+// If the response was lost, retry createBody unchanged to recover this task.
+const current = await api("/tasks/" + created.task.id);
+await api("/tasks/" + current.task.id, "PATCH", {
+  expectedUpdatedAt: current.task.updatedAt,
+  title: "Call about the trip",
+  dueAt: null,
+});
+await api("/tasks/" + current.task.id + "/completion", "PUT", { completed: true });
+// Reopen with { completed: false } using the same completion operation.
+const captured = await api("/interactions", "POST", {
+  kind: "note",
+  requestId: crypto.randomUUID(),
+  personId: person.id,
+  body: "We talked about the trip.",
+});
+console.log(created.task.id, captured.record.id);`;
+const problemExample = {
+  type: "https://kinship.test/problems/session_invalid",
+  title: "Authentication required",
+  status: 401,
+  detail: "Sign in with an active workspace membership.",
+  code: "session_invalid",
+};
+const sections = [
+  ["quickstart", "Quickstart"], ["grants", "Tokens & grants"],
+  ["examples", "Automation examples"], ["conventions", "Pagination, dates & retries"],
+  ["errors", "Errors"], ["operations", "Operations"], ["schemas", "Schemas"],
+];
+---
+
+<PublicLayout currentPath="/docs/api" pageId="public.api-reference" title="API reference — Kinship" description="Use Kinship's scoped token API to read people, automate tasks, and capture interactions. Public reference, examples, and OpenAPI download.">
+  <main id="main-content" class="api-reference" tabindex="-1">
+    <header class="reference-heading">
+      <div><p class="eyebrow">Build around your relationships</p><h1>API reference</h1><p class="reference-lede">Bring Kinship into your own tools. Read the people you need, keep tasks moving, and capture the moments worth remembering.</p></div>
+      <a class="button-link button-link-primary" href="/docs/api/openapi.json" download="kinship-openapi.json">Download OpenAPI 3.1</a>
+      <p class="reference-meta">REST · JSON · <code>/api/v1</code> · {referenceOperations.length} supported operations</p>
+    </header>
+    <div class="reference-layout">
+      <aside class="reference-toc"><nav aria-label="API reference contents"><p class="scope-label">On this page</p><ol>{sections.map(([id, label]) => <li><a href={`#${id}`}>{label}</a></li>)}</ol></nav><a href="/app/settings/api">Manage API tokens <span aria-hidden="true">↗</span></a></aside>
+      <div class="reference-content">
+        <section id="quickstart" aria-labelledby="quickstart-heading">
+          <p class="eyebrow">01 / Get connected</p><h2 id="quickstart-heading">Quickstart</h2>
+          <ol class="reference-steps">
+            <li>Sign in as a workspace owner or administrator and open <a href="/app/settings/api">Settings → API access</a>.</li>
+            <li>Create a named token with <code>people:read</code> for this first request. Select an optional expiry and copy the secret while it is shown. You cannot reveal it again.</li>
+            <li>Keep the token in your server's secret environment. Set <code>KINSHIP_ORIGIN</code> to your Kinship deployment's public origin and send the token in the <code>Authorization: Bearer …</code> header.</li>
+          </ol>
+          <Code label="Directory quickstart cURL" text={quickstart} />
+          <p>A successful directory request returns <code>200</code> with <code>status: "ready"</code>, <code>lifecycle</code>, <code>people</code>, and an optional <code>nextCursor</code>. Use a returned person's <code>id</code> for the examples below.</p>
+          <div class="reference-note"><strong>Server-to-server ready.</strong> Bearer reads and writes need no Cookie or Origin header. CORS still restricts browser origins; a token does not bypass that policy. Keep bearer secrets out of browser bundles, URLs, and logs.</div>
+        </section>
+
+        <section id="grants" aria-labelledby="grants-heading">
+          <p class="eyebrow">02 / Choose access deliberately</p><h2 id="grants-heading">Tokens & grants</h2>
+          <p>Each token is bound to its issuing user and workspace. Every request revalidates the active user, membership, and workspace; grants also remain subject to application permissions and enabled profile sections. Only owners and administrators can issue or manage tokens. Revoke unused tokens from API access.</p>
+          <p>These seven grants are independent. None implies another. Select all three task grants for the complete task example.</p>
+          <dl class="grant-list">{API_TOKEN_SCOPE_CHOICES.map(({ scope, label, detail }) => <div><dt><code>{scope}</code><span>{label}</span></dt><dd>{detail}</dd></div>)}</dl>
+          <p><code>people:read</code> covers the directory only. The profile grant reads minimal identity, profile facts and their options, and important dates. The relationship grant reads directional relationships and type lookup. Full profiles, timeline, search, history, files, administration, and other mutations remain outside this token API.</p>
+          <p>The optional <code>X-Workspace-Id</code> header must match the token's workspace; it cannot switch the token to another workspace. Any Authorization header selects token authentication exclusively, with no session-cookie fallback. Expired, revoked, wrong-workspace, and wrong-grant tokens are refused with <code>401</code>.</p>
+        </section>
+
+        <section id="examples" aria-labelledby="examples-heading">
+          <p class="eyebrow">03 / Put it to work</p><h2 id="examples-heading">Automation examples</h2>
+          <h3>Retrieve a person</h3><p>Add <code>people:profile:read</code> to retrieve minimal identity. The envelope is <code>{'{"status":"ready","person":{…}}'}</code> (or <code>status: "archived"</code>). Use the fact and date operations below for more detail.</p>
+          <Code label="Person identity cURL" text={identityExample} />
+          <h3>Create, read, edit, and complete a task</h3><p>Select <code>tasks:create</code>, <code>tasks:read</code>, and <code>tasks:write</code>. Creation returns <code>201</code> with <code>{'{"status":"created","task":{…}}'}</code>. Detail returns <code>200</code> with <code>status: "ready"</code>; editing and completion return <code>200</code> with <code>status: "saved"</code> or <code>"unchanged"</code> and the current <code>task</code>.</p>
+          <Code label="Task automation cURL" text={taskExample} />
+          <p>PATCH requires <code>expectedUpdatedAt</code> echoed exactly from the latest task, plus at least one changed field. Omitted fields stay as they are. Send <code>null</code> to clear <code>description</code>, <code>dueAt</code>, or <code>personId</code>. Completion takes <code>completed</code>: <code>true</code> completes and <code>false</code> reopens. Archived linked people remain read-only.</p>
+          <h3>Capture an interaction</h3><p>Select <code>interactions:create</code>. The strict <code>kind</code> union accepts <code>note</code>, <code>activity</code>, <code>call</code>, or <code>conversation</code>; each has its own required fields. Success is <code>201</code> with <code>{'{"status":"created","record":{…}}'}</code>.</p>
+          <Code label="Note capture cURL" text={captureExample} />
+          <p>Read interaction options before selecting activity types or emotions; communication options provide channels, emotions, and call/conversation availability. Use IDs returned by your workspace. Activities need participants and an occurrence instant; calls need a person, call instant, and caller direction; conversations need a compatible channel, person, and occurrence instant. Optional messages include direction and written time. Hidden sections, archived people, invalid participants, and incompatible vocabulary can refuse capture. This grant exposes no historic-content read, edit, or delete operation.</p>
+          <h3>One server-side JavaScript workflow</h3><p>This example uses the profile, three task, and capture grants. It uses built-in fetch and random v4 UUIDs. Supply an existing person's UUID through <code>KINSHIP_PERSON_ID</code>; no SDK package is required.</p>
+          <Code label="Server-side JavaScript automation" text={serverExample} />
+        </section>
+
+        <section id="conventions" aria-labelledby="conventions-heading">
+          <p class="eyebrow">04 / Keep automation predictable</p><h2 id="conventions-heading">Pagination, dates & retries</h2>
+          <dl class="convention-list">
+            <div><dt>Pagination</dt><dd>Send optional <code>limit</code> and the opaque cursor returned by the previous page. Most lists default to 20 and allow 1–50; bounded option lookups may allow only 20. Exact bounds and names appear per operation below. Continue only while the corresponding <code>nextCursor</code> (or named options cursor) is present. Keep workspace, person, search, sort, and filters unchanged. Restart from the first page after a stale-cursor conflict or a filter change. Do not decode cursors or use offsets.</dd></div>
+            <div><dt>Dates & instants</dt><dd>Use ISO 8601 instants with <code>Z</code> or an explicit offset for date-time fields, such as <code>2026-10-25T09:00:00Z</code>. <code>dueBefore</code> is an inclusive instant filter. Calendar/partial person dates preserve their precision and known components; do not invent missing years or days. IDs in requests are UUIDs; examples use version 4.</dd></div>
+            <div><dt>Create replay</dt><dd>Task creation and interaction capture use the JSON body's <code>requestId</code>. Retain the same UUID and unchanged payload if the response is lost, then retry to receive the original record. A changed payload with a used key returns <code>409</code>. Use a fresh UUID for a new record. The key is not necessarily the returned record ID. This is separate from the diagnostic <code>X-Request-Id</code> header; an <code>Idempotency-Key</code> header is not implemented.</dd></div>
+            <div><dt>Updates & retries</dt><dd>Completion is idempotent. For a stale PATCH, read the latest task, reconcile your edit, then use its current <code>updatedAt</code>. Do not blindly overwrite. For network failures or transient <code>503</code> responses, retry with bounded exponential backoff and jitter, preserving create replay keys. Do not retry validation, authentication, permission, or conflict failures without fixing the cause. No per-token rate-limit or Retry-After guarantee is published by these operations.</dd></div>
+            <div><dt>Request shape</dt><dd>Send <code>Content-Type: application/json</code> for bodies. Field names and enum values are case-sensitive. Strict object schemas reject unknown fields. A schema's <code>required</code> array names mandatory properties; absence means optional, not nullable. Follow <code>oneOf</code>/<code>anyOf</code> alongside parent properties and <code>dependentRequired</code>, including address and relationship-label conditions. Named schemas below show their complete JSON rather than a flattened approximation.</dd></div>
+          </dl>
+        </section>
+
+        <section id="errors" aria-labelledby="errors-heading">
+          <p class="eyebrow">05 / Handle refusals</p><h2 id="errors-heading">Errors</h2>
+          <p>Failures use <code>application/problem+json</code>: <code>type</code>, <code>title</code>, numeric <code>status</code>, <code>detail</code>, and stable <code>code</code>, with optional field <code>errors</code>. The type URI identifies the problem; it is not a documentation URL to fetch. Branch on <code>code</code> and status, and retain diagnostic request IDs without logging credentials or personal content.</p>
+          <Code label="Authentication problem example" text={JSON.stringify(problemExample, null, 2)} />
+          <div class="reference-table"><table><caption>Common responses; each operation lists its supported statuses below</caption><thead><tr><th>Status</th><th>Examples and recovery</th></tr></thead><tbody>
+            <tr><td><code>400</code></td><td><code>task_request_invalid</code>, <code>task_validation_failed</code>, <code>interaction_request_invalid</code>, <code>validation_failed</code>: correct the fields and shape.</td></tr>
+            <tr><td><code>401</code></td><td><code>session_invalid</code>: missing, invalid, expired, revoked, wrong-workspace, or wrong-grant credential. This includes scope refusal; these tokens do not use OAuth <code>insufficient_scope</code> semantics.</td></tr>
+            <tr><td><code>403</code></td><td><code>tasks_forbidden</code>, <code>interactions_forbidden</code>: current permissions or enabled sections disallow the action.</td></tr>
+            <tr><td><code>404</code></td><td><code>task_not_found</code>, <code>interaction_context_not_found</code>: the requested record or selected context is unavailable in this workspace.</td></tr>
+            <tr><td><code>409</code></td><td><code>task_request_conflict</code>, <code>interaction_request_conflict</code>: changed create payload with a used key. <code>task_stale</code>: refresh the revision. <code>task_cursor_stale</code>, <code>interaction_cursor_stale</code>: restart pagination. <code>archived_write_rejected</code>: restore the linked person before writing.</td></tr>
+            <tr><td><code>503</code></td><td><code>tasks_unavailable</code>, <code>interactions_unavailable</code>: temporary service failure; retry safely after a delay.</td></tr>
+          </tbody></table></div>
+        </section>
+
+        <section id="operations" aria-labelledby="operations-heading">
+          <p class="eyebrow">06 / Supported surface</p><h2 id="operations-heading">Operations</h2>
+          <p>Every operation below accepts a bearer token and only its explicitly described grant. The list, parameters, responses, and schemas are rendered from the generated external OpenAPI contract. Browser-only endpoints are outside this reference.</p>
+          <ul class="operation-index">{referenceOperations.map(({ path, method, operation }) => <li><a href={`#${operation.operationId}`}><span class="http-method">{method}</span><code>{path}</code></a></li>)}</ul>
+          {referenceOperations.map(({ path, method, operation }) => <article class="reference-operation" id={operation.operationId} data-api-operation={operation.operationId}>
+            <h3><span class="http-method">{method}</span><code>{path}</code></h3><p>{operation.description}</p>
+            <p><strong>Required header:</strong> <code>Authorization: Bearer &lt;token&gt;</code>. {operation.requestBody && <>Send <code>Content-Type: application/json</code>.</>}</p>
+            {operation.parameters && <div class="reference-table"><table><caption>Parameters for {operation.operationId}</caption><thead><tr><th>Field / location</th><th>Required?</th><th>Schema & constraints</th></tr></thead><tbody>{operation.parameters.map((parameter) => <tr><td><code>{parameter.name}</code><small>{parameter.in}</small></td><td>{parameter.required ? "Required" : "Optional"}</td><td>{parameter.description && <p>{parameter.description}</p>}<Schema value={parameter.schema} label={`${operation.operationId} ${parameter.name}`} /></td></tr>)}</tbody></table></div>}
+            {operation.requestBody && <div><h4>Request body <span class="reference-meta">{operation.requestBody.required ? "Required" : "Optional"}</span></h4>{Object.entries(operation.requestBody.content).map(([media, { schema }]) => <div><p><code>{media}</code> — follow the linked schema's required fields, optional fields, and union variants.</p><Schema value={schema} label={`${operation.operationId} request body`} /></div>)}</div>}
+            <h4>Responses</h4><dl class="response-list">{Object.entries(operation.responses).map(([status, response]) => <div><dt><code>{status}</code> — {response.description}</dt><dd>{Object.entries(response.content ?? {}).map(([media, { schema }]) => <div><p><code>{media}</code></p><Schema value={schema} label={`${operation.operationId} ${status} response`} /></div>)}{response.headers && <Schema value={response.headers} label={`${operation.operationId} ${status} response headers`} />}</dd></div>)}</dl>
+            <a class="back-to-index" href="#operations">Back to operation index ↑</a>
+          </article>)}
+        </section>
+
+        <section id="schemas" aria-labelledby="schemas-heading">
+          <p class="eyebrow">07 / Exact data shapes</p><h2 id="schemas-heading">Schemas</h2>
+          <p>Expand a named schema to inspect every field, required property, enum, default, bound, nested reference, and composition rule. Parent properties and refinements apply together. <code>additionalProperties: false</code> closes an object to unknown fields. Expand referenced schemas in turn, or use the <a href="/docs/api/openapi.json" download="kinship-openapi.json">complete OpenAPI download</a> with your own tooling.</p>
+          {referenceSchemas.map(([name, schema]) => <details class="reference-schema" id={`schema-${name}`}><summary><code>{name}</code></summary><Schema value={schema} label={`${name} complete schema`} /></details>)}
+        </section>
+      </div>
+    </div>
+  </main>
+</PublicLayout>

@@ -53,9 +53,9 @@ flows.
 | Canonical PostgreSQL schema  | 91 tables and 868 columns; current v10 passed live validation on PostgreSQL 18.4 and 17.10; immutable v6 also passed PostgreSQL 17.10 compatibility checking |
 | Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                     |
 | Cross-module read models     | 9 accepted, query-only compositions                                                                                                                          |
-| Cataloged pages              | 39                                                                                                                                                           |
-| Cataloged flows              | 41 total: 17 P0, 20 P1, and 4 P2                                                                                                                             |
-| Delivered flows              | 40 of 41; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                        |
+| Cataloged pages              | 40                                                                                                                                                           |
+| Cataloged flows              | 42 total: 17 P0, 20 P1, and 5 P2                                                                                                                             |
+| Delivered flows              | 41 of 42; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                        |
 | Existing executable code     | Runnable Deno API and worker, Astro web app, gateway, shared contracts, and application test suites                                                          |
 | Current application scaffold | API, worker, web app, contracts, main Compose stack, and application tests are present; CI and hooks remain pending                                          |
 

@@ -97,7 +97,12 @@ layerRules:
     bootstrap,
     http-kit,
   ]
-  frontendMayImport: [contracts-generated, contracts-schemas, frontend-code]
+  frontendMayImport: [
+    contracts-generated,
+    contracts-schemas,
+    contracts-external-openapi,
+    frontend-code,
+  ]
   forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]
 
 # `publishes` and `consumes` name the intended domain events. No event bus or

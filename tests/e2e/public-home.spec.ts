@@ -131,6 +131,7 @@ test("public navigation and skip links have a coherent keyboard order", async ({
     page.getByRole("link", { name: "Kinship home" }),
     page.getByRole("link", { name: "Home", exact: true }),
     page.getByRole("link", { name: "Features", exact: true }),
+    page.getByRole("link", { name: "API", exact: true }),
     page.getByRole("link", { name: "Privacy", exact: true }),
     page.getByRole("link", { name: "Terms", exact: true }),
     page.getByRole("banner").getByRole("link", {
@@ -158,6 +159,16 @@ test("public pages remain usable at a representative mobile viewport", async ({ 
     .toBeInViewport();
   await expect(page.getByRole("link", { name: "Features", exact: true }))
     .toBeInViewport();
+  await expect(page.getByRole("link", { name: "API", exact: true }))
+    .toBeInViewport();
+  expect(
+    await page.getByRole("banner").locator("a").evaluateAll((links) =>
+      links.filter((link) => {
+        const bounds = link.getBoundingClientRect();
+        return bounds.left < 0 || bounds.right > innerWidth;
+      }).map((link) => link.textContent?.trim())
+    ),
+  ).toEqual([]);
   await expect(
     page.getByRole("banner").getByRole("link", {
       name: "Create account",

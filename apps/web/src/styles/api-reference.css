@@ -1,0 +1,337 @@
+.api-reference {
+  padding-block: 3.5rem 5rem;
+}
+.reference-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  padding-bottom: 2.5rem;
+  border-bottom: 1px solid var(--line-1);
+}
+.reference-heading > div {
+  max-width: 44rem;
+}
+.reference-heading h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  letter-spacing: -0.055em;
+  line-height: 1.05;
+}
+.reference-lede {
+  margin-block: 1.25rem 0;
+  color: var(--ink-2);
+  font-size: 1.1rem;
+  line-height: 1.75;
+}
+.reference-meta {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.reference-heading > .reference-meta {
+  flex-basis: 100%;
+  margin: 0;
+}
+.reference-layout {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 3rem;
+  align-items: start;
+  margin-top: 2.5rem;
+}
+.reference-toc {
+  position: sticky;
+  top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  font-size: 0.85rem;
+}
+.reference-toc ol {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.reference-toc .scope-label {
+  margin-top: 0;
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.reference-toc li {
+  margin-block: 0.25rem;
+}
+.reference-toc a {
+  display: block;
+  padding: 0.45rem 0;
+  text-decoration: none;
+  color: var(--ink-2);
+}
+.reference-toc a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.reference-toc > a {
+  border-top: 1px solid var(--line-1);
+  padding-top: 1rem;
+}
+.reference-content {
+  min-width: 0;
+  line-height: 1.75;
+}
+.reference-content section {
+  scroll-margin-top: 1.5rem;
+  margin-bottom: 3.5rem;
+}
+.reference-content h2 {
+  margin: 0 0 1.25rem;
+  font-size: 1.85rem;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+.reference-content h3 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+}
+.reference-content h4 {
+  font-size: 1rem;
+  margin-block: 1.5rem 0.5rem;
+}
+.reference-content p {
+  color: var(--ink-2);
+}
+.reference-content a {
+  text-underline-offset: 0.2em;
+}
+.api-reference code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.reference-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  color: var(--ink-1);
+  background: var(--surface-2);
+  line-height: 1.65;
+  tab-size: 2;
+}
+.reference-content pre code {
+  overflow-wrap: normal;
+  font-size: 0.78rem;
+}
+.reference-content :is(pre, summary):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.reference-steps {
+  padding-left: 1.4rem;
+}
+.reference-steps li {
+  padding-left: 0.25rem;
+  margin-block: 0.75rem;
+}
+.reference-note {
+  padding: 1.2rem;
+  border-left: 3px solid var(--accent-solid);
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+}
+.grant-list {
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.grant-list > div {
+  padding: 1rem 1.25rem;
+}
+.grant-list > div + div {
+  border-top: 1px solid var(--line-1);
+}
+.grant-list dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  font-weight: 600;
+}
+.grant-list dt span {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+.grant-list dd {
+  margin: 0.3rem 0 0;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+.convention-list dt {
+  font-weight: 650;
+}
+.convention-list dd {
+  margin: 0.5rem 0 1.5rem;
+  color: var(--ink-2);
+}
+.reference-table {
+  overflow-x: auto;
+  margin-block: 1.25rem;
+}
+.reference-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.reference-table caption {
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  padding-bottom: 0.75rem;
+}
+.reference-table :is(th, td) {
+  vertical-align: top;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--line-1);
+}
+.reference-table th {
+  background: var(--surface-1);
+  font-weight: 600;
+}
+.reference-table td small {
+  display: block;
+  color: var(--ink-2);
+}
+.reference-table td p {
+  margin-top: 0;
+}
+.reference-table pre {
+  padding: 0.6rem;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reference-table pre code {
+  overflow-wrap: anywhere;
+}
+.operation-index {
+  list-style: none;
+  padding: 0;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.operation-index li + li {
+  border-top: 1px solid var(--line-1);
+}
+.operation-index a {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.75rem 1rem;
+  text-decoration: none;
+}
+.http-method {
+  flex-shrink: 0;
+  display: inline-block;
+  min-width: 3.25rem;
+  color: var(--accent-hover);
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+.reference-operation {
+  border-top: 1px solid var(--line-1);
+  padding-block: 0.5rem 2rem;
+  margin-top: 2rem;
+  scroll-margin-top: 1.5rem;
+}
+.reference-operation h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.schema-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  list-style: none;
+  padding: 0;
+  margin-block: 0.75rem;
+}
+.response-list > div {
+  border-bottom: 1px solid var(--line-1);
+  padding-block: 0.75rem;
+}
+.response-list dt {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.response-list dd {
+  margin: 0;
+}
+.response-list p {
+  margin-block: 0.25rem;
+  font-size: 0.8rem;
+}
+.response-list pre {
+  margin-block: 0.5rem;
+}
+.back-to-index {
+  font-size: 0.8rem;
+}
+.reference-schema {
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  margin-block: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface-1);
+  scroll-margin-top: 1.5rem;
+}
+.reference-schema:target {
+  border-color: var(--accent-solid);
+}
+.reference-schema summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .reference-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+  }
+  .reference-toc {
+    position: static;
+  }
+  .reference-toc ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.5rem;
+  }
+}
+@media (max-width: 540px) {
+  .api-reference {
+    padding-block: 2.5rem;
+  }
+  .reference-content pre {
+    padding: 0.8rem;
+  }
+  .reference-table :is(th, td) {
+    padding: 0.5rem;
+  }
+  .reference-operation h3 {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+}

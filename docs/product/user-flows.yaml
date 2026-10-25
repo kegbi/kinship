@@ -1296,6 +1296,37 @@ flows:
     testLayers: [unit, integration, e2e]
     e2e: { required: true, testRefs: [tests/e2e/api-tokens.API-001.spec.ts] }
 
+  - id: API-002
+    title: Read the public API reference and automate with a scoped token
+    deliveryStatus: delivered
+    priority: P2
+    actor: visitor-or-workspace-admin
+    trigger: A visitor opens the API reference from public navigation or API settings.
+    preconditions: [
+      no-account-required-to-read,
+      active-admin-membership-for-token-issuance,
+    ]
+    steps:
+      - Read the static reference while signed out and without JavaScript.
+      - Navigate anchored operations and exact schemas and download external OpenAPI.
+      - Create a token with explicit independent grants in API settings.
+      - Retrieve a person and create, replay, read, edit, complete, and reopen a task using bearer requests.
+      - Capture an interaction and confirm grant refusal or revocation.
+    alternateOutcomes: [missing-grant, replay-conflict, revoked-token]
+    result: Visitors can learn the supported token API and administrators can run documented automation.
+    auditEffect: api-token-created-or-revoked-and-owning-use-case-events
+    pageIds: [public.api-reference, settings.api-access]
+    moduleIds: [api-access, people, planning, interactions, workspaces]
+    permissions: [
+      api-tokens.manage,
+      people.read,
+      tasks.read,
+      tasks.write,
+      interactions.write,
+    ]
+    testLayers: [unit, contract, e2e]
+    e2e: { required: true, testRefs: [tests/e2e/api-reference.API-002.spec.ts] }
+
   - id: INTEGRATION-001
     title: Configure and synchronize DAV
     deliveryStatus: delivered

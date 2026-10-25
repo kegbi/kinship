@@ -576,6 +576,10 @@ const FRONTEND_IMPORT_SURFACES: ReadonlyArray<
 > = [
   { token: "contracts-generated", path: "packages/contracts/generated/" },
   { token: "contracts-schemas", path: "packages/contracts/schemas/" },
+  {
+    token: "contracts-external-openapi",
+    path: "packages/contracts/openapi/external.json",
+  },
 ];
 
 /**
@@ -600,7 +604,7 @@ function frontendImportViolation(
     return `apps/web imports ${resolved} from packages/backend`;
   }
   const surface = FRONTEND_IMPORT_SURFACES.find(({ path }) =>
-    resolved.startsWith(path)
+    path.endsWith("/") ? resolved.startsWith(path) : resolved === path
   );
   if (surface) {
     return frontendMayImport.includes(surface.token)

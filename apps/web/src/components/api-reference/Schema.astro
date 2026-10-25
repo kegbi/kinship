@@ -1,0 +1,11 @@
+---
+import { referencedSchemas } from "../../features/api-reference/reference.ts";
+import Code from "./Code.astro";
+interface Props { readonly value: object; readonly label: string; }
+const { value, label } = Astro.props;
+const references = referencedSchemas(value);
+---
+{references.length > 0 && <ul class="schema-links" aria-label={`${label} referenced schemas`}>
+  {references.map((name) => <li><a href={`#schema-${name}`}><code>{name}</code></a></li>)}
+</ul>}
+<Code label={label} text={JSON.stringify(value, null, 2)} />

@@ -25,6 +25,7 @@
 
 import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
 import { buildOpenApiDocument } from "./document.ts";
+import { buildExternalOpenApiDocument } from "./external.ts";
 import { readClientModules, renderClientBarrel } from "./client.ts";
 import {
   API_ROUTES,
@@ -60,6 +61,12 @@ export async function buildArtefacts(): Promise<readonly Artefact[]> {
     },
     { path: "generated/api-types.ts", contents: types },
     { path: "generated/auth-client.ts", contents: barrel },
+    {
+      path: "openapi/external.json",
+      contents: `${
+        JSON.stringify(buildExternalOpenApiDocument(document), null, 2)
+      }\n`,
+    },
   ];
 }
 
@@ -152,7 +159,7 @@ async function main(): Promise<void> {
   }
   console.log(
     checking
-      ? `contracts: ${DOCUMENTED_ROUTES.length} documented routes, ${API_ROUTES.length} mounted, 3 artefacts current`
+      ? `contracts: ${DOCUMENTED_ROUTES.length} documented routes, ${API_ROUTES.length} mounted, ${artefacts.length} artefacts current`
       : `contracts: wrote ${artefacts.length} artefacts for ${DOCUMENTED_ROUTES.length} documented routes`,
   );
 }

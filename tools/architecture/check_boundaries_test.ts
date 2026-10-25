@@ -573,6 +573,47 @@ const WITH_CONTRACT_SCHEMAS = MANIFEST.replace(
   "frontendMayImport: [contracts-generated, contracts-schemas]",
 );
 
+Deno.test("public documentation consumes only the generated external OpenAPI contract", async () => {
+  const manifestText = MANIFEST.replace(
+    "frontendMayImport: [contracts-generated]",
+    "frontendMayImport: [contracts-generated, contracts-external-openapi]",
+  );
+  const violations = await fixture([{
+    path: "apps/web/src/features/reference.ts",
+    text:
+      'import external from "../../../../packages/contracts/openapi/external.json";',
+  }], { manifestText });
+  assert(
+    violations.length === 0,
+    `external reference refused: ${render(violations)}`,
+  );
+  const internal = await fixture([{
+    path: "apps/web/src/features/reference.ts",
+    text:
+      'import internal from "../../../../packages/contracts/openapi/openapi.json";',
+  }], { manifestText });
+  assert(
+    internal.some((v) => v.rule === "layer"),
+    "internal OpenAPI remains private",
+  );
+  for (
+    const [target, manifest] of [
+      ["external.json", MANIFEST],
+      ["external.json.ts", manifestText],
+    ] as const
+  ) {
+    const refused = await fixture([{
+      path: "apps/web/src/features/reference.ts",
+      text:
+        `import document from "../../../../packages/contracts/openapi/${target}";`,
+    }], { manifestText: manifest });
+    assert(
+      refused.some((v) => v.rule === "layer"),
+      "external import requires its exact file and token",
+    );
+  }
+});
+
 Deno.test("[GAP-026] an island validates with the published contract schemas", async () => {
   const violations = await fixture([{
     path: "apps/web/src/islands/person-gifts/gift-form.tsx",

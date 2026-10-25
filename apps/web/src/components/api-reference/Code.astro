@@ -1,0 +1,10 @@
+---
+/* eslint-disable astro/jsx-a11y/no-noninteractive-tabindex -- Keyboard access to the named scrollable code region. */
+interface Props {
+  readonly label: string;
+  readonly text: string;
+}
+const { label, text } = Astro.props;
+---
+<!-- A named, focusable scroll region lets keyboard users read long code lines. -->
+<pre role="region" tabindex="0" aria-label={label}><code>{text}</code></pre>

@@ -164,7 +164,14 @@ transaction, and exports the selection as one vCard.
 
 ## Slice 8: Optional Platform Modules
 
-Flows: `API-001`, `INTEGRATION-001`, `INTEGRATION-002`, and `BILLING-001`.
+Flows: `API-001`, `API-002`, `INTEGRATION-001`, `INTEGRATION-002`, and
+`BILLING-001`.
+
+`API-002` delivers `public.api-reference` at `/docs/api`: signed-out static
+documentation linked from public navigation and API access settings, anchored
+operations and complete schemas derived from the bearer-only contract, a static
+OpenAPI download, and real person/task/capture automation with grant refusal and
+revocation. It adds no credential-entry or interactive execution surface.
 
 Deliver API tokens/OAuth only when required, DAV and other optional adapters,
 billing, and operational administration. `INTEGRATION-002` is a read-only

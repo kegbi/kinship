@@ -396,6 +396,14 @@ replace application permissions. OpenAPI describes required domain grants in
 operation prose and uses empty scope arrays for the HTTP bearer security scheme,
 because personal tokens are not OAuth credentials.
 
+The public reference at `/docs/api` is static and available without an account.
+Its operation catalog and `/docs/api/openapi.json` download consume the
+generated bearer-only projection `packages/contracts/openapi/external.json`.
+Generation filters executable security metadata, retains complete referenced
+schemas and their refinements, and removes the browser-only Origin parameter
+from that projection. The internal OpenAPI and generated application client
+remain the full surface authority. Cookie writes retain their Origin protection.
+
 The calendar feed (GAP-052, `INTEGRATION-002`) is the one read whose credential
 travels in its path, because a calendar application cannot send a header:
 `GET /api/v1/calendar-feeds/{secret}.ics`. The secret is an `api-access` token

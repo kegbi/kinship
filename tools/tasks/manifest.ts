@@ -2033,6 +2033,22 @@ export const MODULES: readonly TaskModule[] = [
     },
   },
   {
+    id: "contracts-build",
+    unit: {
+      tests: ["tools/contracts/api_reference_test.ts"],
+      // Same permissions as contracts:check: debug enumerates process.env and
+      // Redocly discovers local configuration. Keep these out of API unit tests.
+      permissions: { env: "all", read: "all" },
+    },
+    contract: ["tools/contracts/api_reference_test.ts"],
+    coverage: {
+      directory: "contracts-build",
+      tests: ["tools/contracts/api_reference_test.ts"],
+      include: ["tools/contracts/external.ts"],
+      permissions: { env: "all", read: "all" },
+    },
+  },
+  {
     id: "web",
     unit: { runner: "vitest", tests: WEB_TESTS },
     coverage: {
@@ -2050,6 +2066,7 @@ export const MODULES: readonly TaskModule[] = [
         "apps/web/src/islands/**/*.tsx",
         "apps/web/src/components/ui/*.ts",
         "apps/web/src/components/ui/*.tsx",
+        "apps/web/src/pages/docs/api/openapi.json.ts",
       ],
     },
   },
@@ -2214,6 +2231,7 @@ export const MODULES: readonly TaskModule[] = [
  */
 export const TEST_AGGREGATE: readonly string[] = [
   "tasks",
+  "contracts-build",
   "shared-kernel",
   "people",
   "api",
@@ -2249,6 +2267,7 @@ export const TEST_AGGREGATE: readonly string[] = [
  * non-on-demand coverage set must appear exactly once.
  */
 export const COVERAGE_AGGREGATE: readonly string[] = [
+  "contracts-build",
   "shared-kernel",
   "people",
   "api",
