@@ -807,12 +807,12 @@ export class PostgresReminderDeliveryRepository
         { opaque: transaction },
         eligible,
       );
+      // An important date notifies on the day plus each active lead rule.
       const candidates = await sql<ReplenishmentRow>`
         select distinct reminder.id::text as reminder_id,
           occurrence.member_id::text, reminder.anchor_on::text,
           reminder.recurrence_unit, reminder.recurrence_interval,
-          case when reminder.target_kind = 'person_date'
-            then occurrence.lead_time_days else null end as lead_time_days,
+          lead.days_before as lead_time_days,
           coalesce(
             reminder.send_time, setting.default_reminder_time, '12:00'::time
           )::text as send_time, reminder.title,
@@ -829,6 +829,16 @@ export class PostgresReminderDeliveryRepository
           on preference.member_id = occurrence.member_id
         left join crm.workspace_settings setting
           on setting.workspace_id = reminder.workspace_id
+        cross join lateral (
+          select null::int as days_before
+          where reminder.target_kind <> 'person_date'
+          union
+          select 0 where reminder.target_kind = 'person_date'
+          union
+          select rule.days_before from crm.reminder_rules rule
+          where reminder.target_kind = 'person_date'
+            and rule.workspace_id = reminder.workspace_id and rule.is_active
+        ) lead
         where reminder.is_active and reminder.deleted_at is null
           and reminder.recurrence_unit <> 'none'
           and person.archived_at is null and person.deleted_at is null
@@ -857,6 +867,8 @@ export class PostgresReminderDeliveryRepository
             candidate.send_time,
             candidate.timezone,
           );
+          // A lead window that already passed is not announced late.
+          if (Date.parse(deliverAt) < command.now.valueOf()) continue;
           // One statement per date, so `both` mints both channels while a
           // date generated earlier on any channel keeps what it has.
           await sql`
@@ -884,6 +896,22 @@ export class PostgresReminderDeliveryRepository
           `.execute(transaction);
         }
       }
+      // Withdrawn only now, so a date whose sole notices belonged to a removed
+      // rule was still a candidate above and kept its day-of notice.
+      await sql`
+        delete from crm.reminder_occurrences occurrence
+        using crm.reminders reminder
+        where reminder.id = occurrence.reminder_id
+          and reminder.target_kind = 'person_date'
+          and occurrence.status = 'pending'
+          and occurrence.lead_time_days <> 0
+          and not exists (
+            select 1 from crm.reminder_rules rule
+            where rule.workspace_id = reminder.workspace_id
+              and rule.is_active
+              and rule.days_before = occurrence.lead_time_days
+          )
+      `.execute(transaction);
     });
   }
 

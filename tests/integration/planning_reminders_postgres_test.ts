@@ -1044,6 +1044,122 @@ Deno.test("PLANNING-002 PostgreSQL preserves every important-date lead rule thro
   );
 });
 
+Deno.test("PLANNING-002 PostgreSQL always notifies an important date on the day and follows current lead rules", async () => {
+  const fixture = await register(
+    `important-date-day-of-${crypto.randomUUID()}@example.test`,
+    "Important-date day of",
+  );
+  const foreign = await register(
+    `important-date-day-of-foreign-${crypto.randomUUID()}@example.test`,
+    "Important-date day of foreign",
+  );
+  const personId = await createPerson(fixture, "Day-of person");
+  const nearPersonId = await createPerson(fixture, "Near day-of person");
+  const foreignPersonId = await createPerson(foreign, "Foreign day-of person");
+  // Monica's default advance notice; it must add to the day itself.
+  const [weekRule] = await sql<{ readonly id: string }[]>`
+    insert into crm.reminder_rules (workspace_id, days_before)
+    values (${fixture.workspaceId}::uuid, 7), (${foreign.workspaceId}::uuid, 7)
+    returning id::text
+  `;
+  const createBirthday = async (
+    caller: typeof fixture,
+    subject: string,
+    daysAhead: number,
+  ) => {
+    const event = new Date(Date.now() + daysAhead * 86_400_000);
+    const created = await request(
+      caller,
+      `/api/v1/people/${subject}/dates`,
+      "POST",
+      {
+        day: event.getUTCDate(),
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "birthday",
+        month: event.getUTCMonth() + 1,
+        precision: "month_day",
+      },
+    );
+    assert(created.status === 201, "birthday with an advance rule created");
+  };
+  await createBirthday(fixture, personId, 60);
+  await createBirthday(fixture, nearPersonId, 10);
+  await createBirthday(foreign, foreignPersonId, 60);
+  const pendingLeads = (subject = personId) =>
+    sql<{ readonly lead_time_days: number; readonly occurs_on: string }[]>`
+      select distinct occurrence.lead_time_days,
+        occurrence.occurs_on::text as occurs_on
+      from crm.reminder_occurrences occurrence
+      join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      where reminder.person_id = ${subject}::uuid
+        and occurrence.status = 'pending'
+      order by occurs_on, occurrence.lead_time_days
+    `;
+  const initial = await pendingLeads();
+  assert(
+    JSON.stringify(initial.map((row) => row.lead_time_days)) === "[0,7]" &&
+      initial[0]?.occurs_on === initial[1]?.occurs_on,
+    `an advance rule replaced the day-of notification: ${
+      JSON.stringify(initial)
+    }`,
+  );
+
+  // A date scheduled before this rule existed holds only its advance notice;
+  // changing the rules afterwards must reach it without re-saving the date.
+  await sql`
+    delete from crm.reminder_occurrences occurrence
+    using crm.reminders reminder
+    where reminder.id = occurrence.reminder_id
+      and reminder.person_id = ${personId}::uuid
+      and occurrence.lead_time_days = 0
+  `;
+  await sql`
+    update crm.reminder_rules set is_active = false
+    where workspace_id = ${fixture.workspaceId}::uuid
+      and id = ${weekRule!.id}::uuid
+  `;
+  await sql`
+    insert into crm.reminder_rules (workspace_id, days_before)
+    values (${fixture.workspaceId}::uuid, 30)
+  `;
+  await deliveryRepository.replenish({ now: new Date() });
+  const refreshed = await pendingLeads();
+  const leads = [...new Set(refreshed.map((row) => row.lead_time_days))];
+  assert(
+    JSON.stringify(leads.sort((left, right) => left - right)) === "[0,30]" &&
+      refreshed.some((row) =>
+        row.occurs_on === initial[0]?.occurs_on && row.lead_time_days === 0
+      ),
+    `rolling delivery kept stale lead rules or missed the day itself: ${
+      JSON.stringify(refreshed)
+    }`,
+  );
+  // Ten days out, this year's thirty-day window has already passed.
+  const near = await pendingLeads(nearPersonId);
+  const nearFirst = near[0]?.occurs_on;
+  assert(
+    near.some((row) =>
+      row.occurs_on === nearFirst && row.lead_time_days === 0
+    ) &&
+      !near.some((row) =>
+        row.occurs_on === nearFirst && row.lead_time_days === 30
+      ) &&
+      near.some((row) =>
+        row.occurs_on > nearFirst! && row.lead_time_days === 30
+      ),
+    `a passed lead window was announced late: ${JSON.stringify(near)}`,
+  );
+  const foreignLeads = await pendingLeads(foreignPersonId);
+  assert(
+    foreignLeads.some((row) => row.lead_time_days === 7) &&
+      !foreignLeads.some((row) => row.lead_time_days === 30),
+    `another workspace's lead rules changed its notices: ${
+      JSON.stringify(foreignLeads)
+    }`,
+  );
+});
+
 Deno.test("[GAP-023] PostgreSQL pages a person's reminders behind a bound cursor", async () => {
   const suffix = crypto.randomUUID();
   const fixture = await register(

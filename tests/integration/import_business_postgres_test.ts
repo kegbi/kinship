@@ -665,33 +665,36 @@ Deno.test({
           await sql`select member_id,occurs_on::text,lead_time_days,deliver_at,title_snapshot from crm.reminder_occurrences where reminder_id=${
             reminder!.id
           }::uuid and status='pending'`;
+        const dayOf = pending.filter((r) => r.lead_time_days === 0);
+        const lead = pending.filter((r) => r.lead_time_days === 7);
+        assertEquals(dayOf.length, 16);
+        assertEquals(
+          dayOf.filter((r) => r.member_id === secondMemberId).length,
+          8,
+        );
         if (!round) {
-          assertEquals(pending.length, 16);
-          assertEquals(
-            pending.filter((r) => r.member_id === secondMemberId).length,
-            8,
-          );
+          assertEquals(lead.length, 0);
         } else {
           // A near-term date may already be inside its seven-day lead window.
           assert(
-            pending.length >= 14 && pending.length <= 16,
+            lead.length >= 14 && lead.length <= 16,
             "both members retain future lead-time deliveries",
           );
           assert(
-            pending.filter((r) => r.member_id === secondMemberId).length >= 7,
+            lead.filter((r) => r.member_id === secondMemberId).length >= 7,
             "second member keeps future lead-time deliveries",
           );
         }
         assert(
-          pending.every((r) => r.lead_time_days === (round ? 7 : 0)),
-          "active date rules and zero-day fallback are represented",
+          pending.every((r) => [0, 7].includes(r.lead_time_days)),
+          "the day itself and every active date rule are represented",
         );
         assert(
           pending.every((r) =>
             r.deliver_at.toISOString().slice(0, 10) ===
               new Date(
                 Date.parse(r.occurs_on + "T00:00:00Z") -
-                  (round ? 7 : 0) * 86400000,
+                  r.lead_time_days * 86400000,
               ).toISOString().slice(0, 10)
           ),
           "lead times change delivery dates",

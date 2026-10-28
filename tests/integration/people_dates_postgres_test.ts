@@ -242,8 +242,10 @@ Deno.test({
       readonly unscheduled_definitions: number;
     }[]>`
       select
-        count(*) filter (where reminder.is_active)::int active_definitions,
-        count(*) filter (where not reminder.is_active)::int unscheduled_definitions,
+        count(distinct reminder.id) filter (where reminder.is_active)::int
+          active_definitions,
+        count(distinct reminder.id) filter (where not reminder.is_active)::int
+          unscheduled_definitions,
         (select count(*)::int from crm.reminder_occurrences occurrence
           join crm.reminders owned on owned.id = occurrence.reminder_id
           where owned.person_id = ${personId}
@@ -251,9 +253,9 @@ Deno.test({
         bool_and(
           ((occurrence.deliver_at at time zone 'America/New_York')::time =
             '09:30'::time)
-          and occurrence.lead_time_days = 2
+          and occurrence.lead_time_days in (0, 2)
           and (occurrence.deliver_at at time zone 'America/New_York')::date =
-            occurrence.occurs_on - 2
+            occurrence.occurs_on - occurrence.lead_time_days
         ) filter (where occurrence.id is not null) local_delivery_valid
       from crm.reminders reminder
       left join crm.reminder_occurrences occurrence
@@ -262,7 +264,8 @@ Deno.test({
     `;
     assert(
       initialSchedule?.active_definitions === schedulableDates &&
-        initialSchedule.pending_occurrences === schedulableDates &&
+        // The day itself plus the two-day rule.
+        initialSchedule.pending_occurrences === schedulableDates * 2 &&
         initialSchedule.unscheduled_definitions === 0 &&
         initialSchedule.local_delivery_valid,
       `only month/day dates generate annual future state in member scheduling time: ${
@@ -346,6 +349,7 @@ Deno.test({
       where reminder.person_date_id = ${leadBirthday.id}
         and occurrence.member_id = ${owner.memberId}
         and occurrence.status = 'pending'
+        and occurrence.lead_time_days = 2
     `;
     assert(
       leadProof?.delivery_future && leadProof.next_annual && leadProof.bounded,
@@ -412,7 +416,8 @@ Deno.test({
         and occurrence.status = 'pending'
     `;
     assert(
-      futurityProof?.count === 3 && futurityProof.future &&
+      // The lead birthday holds its day-of and two-day notices.
+      futurityProof?.count === 4 && futurityProof.future &&
         futurityProof.bounded && futurityProof.same_day_advanced &&
         futurityProof.dst_local_midnight,
       `every pending member occurrence is future, bounded, and timezone-stable across lead, same-day, and DST dates: ${
@@ -524,8 +529,9 @@ Deno.test({
             and status = 'sent') sent_count
     `;
     assert(
+      // Both the day-of and the two-day notice were delivered.
       history?.date_absent && history.definition_detached &&
-        history.sent_count === 1,
+        history.sent_count === 2,
       "delete removes pending state while preserving detached delivered history",
     );
 

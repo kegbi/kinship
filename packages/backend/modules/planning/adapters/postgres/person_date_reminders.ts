@@ -195,17 +195,14 @@ export class PostgresPersonDateReminderPublisher
           on settings.workspace_id = ${command.workspaceId}::uuid
         left join crm.member_preferences preferences
           on preferences.member_id = recipient.member_id
+        -- The day itself always notifies; active rules add advance notices.
         cross join lateral (
+          select 0 as days_before
+          union
           select rule.days_before
           from crm.reminder_rules rule
           where rule.workspace_id = ${command.workspaceId}::uuid
             and rule.is_active
-          union all
-          select 0 where not exists (
-            select 1 from crm.reminder_rules rule
-            where rule.workspace_id = ${command.workspaceId}::uuid
-              and rule.is_active
-          )
         ) lead
       ), candidate_years as (
         select schedule.*, series::int as candidate_year

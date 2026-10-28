@@ -132,8 +132,9 @@ export class PostgresPlanningBusinessImportBoundary
           >`select days_before from crm.reminder_rules where workspace_id=${c.actor.workspaceId}::uuid and is_active order by days_before`
             .execute(db)).rows.map((row) => row.days_before)
           : [];
+        // The day itself always notifies; active rules add advance notices.
         const leadTimes: readonly (number | null)[] = p.dateId
-          ? (rules.length ? rules : [0])
+          ? [...new Set([0, ...rules])]
           : [null];
         const channels = await recipientChannels(
           this.preferences,
