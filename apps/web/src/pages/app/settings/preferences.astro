@@ -40,7 +40,7 @@ import {
       <label class="check-label"><input name="fluidLayout" type="checkbox" disabled /> Use fluid layout</label>
       <label>Reminder delivery<select name="reminderDelivery" aria-describedby="reminder-delivery-hint" required disabled><option value="in_app">In the app</option><option value="email">Email</option><option value="both">In the app and by email</option></select></label>
       <label>Daily email digest<input name="digestTime" type="time" aria-describedby="reminder-delivery-hint digest-time-error" disabled /><small id="digest-time-error" data-field-error="digestTime"></small></label>
-      <p id="reminder-delivery-hint">Email reminders go to your verified email address; without one, reminders stay in the app. A delivery change applies to reminders scheduled from now on. A digest time applies to every email reminder still waiting: they arrive together at that time in your time zone. Leave it empty to get each one when it is due.</p>
+      <p id="reminder-delivery-hint">Email reminders go to your verified email address; without one, reminders stay in the app. A delivery change applies to every reminder not yet sent, including those already scheduled. A digest time applies to every email reminder still waiting: they arrive together at that time in your time zone. Leave it empty to get each one when it is due.</p>
       <button type="submit" class={buttonVariants()} disabled>Save changes</button><p id="settings-dirty" role="status" aria-live="polite"></p><p id="settings-status" role="status" aria-live="polite">Loading your preferences…</p>
     </form>
     </div>

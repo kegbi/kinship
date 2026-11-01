@@ -14,7 +14,7 @@
 
 import type { WorkspaceRole } from "./roles.ts";
 
-/** Where a member's newly generated reminders are delivered (PLANNING-003). */
+/** Where a member's reminders not yet sent are delivered (PLANNING-003). */
 export type ReminderDelivery = "both" | "email" | "in_app";
 
 /** What one member has chosen for themselves. */

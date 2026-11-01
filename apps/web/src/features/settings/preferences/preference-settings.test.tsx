@@ -304,7 +304,7 @@ describe("AUTH-004 personal preferences", () => {
     expect(saved).toEqual([{ fluidLayout: true, workspaceId: ids.workspace }]);
   });
 
-  it("[PLANNING-003] saves reminder delivery and a digest time for reminders scheduled from now on", async () => {
+  it("[PLANNING-003] saves reminder delivery and a digest time for every reminder not yet sent", async () => {
     shell();
     const api = stubApi({
       [PREFERENCES]: loaded({ digestTime: "08:15", reminderDelivery: "both" }),
@@ -333,7 +333,10 @@ describe("AUTH-004 personal preferences", () => {
     const hint = element("#reminder-delivery-hint").textContent ?? "";
     expect(hint).toMatch(/verified email address/);
     expect(hint).toMatch(/stay in the app/);
-    expect(hint).toMatch(/scheduled from now on/);
+    expect(hint).toMatch(
+      /delivery change applies to every reminder not yet sent, including those already scheduled/,
+    );
+    expect(hint).not.toMatch(/from now on/);
     expect(hint).toMatch(
       /digest time applies to every email reminder still waiting/,
     );

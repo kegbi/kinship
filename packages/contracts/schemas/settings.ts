@@ -51,7 +51,7 @@ const workspaceSlug = z.string().trim().toLowerCase().refine(
 const digestTime = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 
 /**
- * Where a member's newly generated reminders are delivered (PLANNING-003).
+ * Where a member's reminders not yet sent are delivered (PLANNING-003).
  * Email needs a verified address; without one, reminders stay in the app.
  */
 const reminderDelivery = z.enum(["in_app", "email", "both"]);

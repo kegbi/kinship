@@ -717,11 +717,11 @@ Deno.test("[PLANNING-003] both channels, and an unverified member keeps in-app r
     )
   `;
   await worker().tick({ limit: 100, owner: "unverified-window" });
+  // The kept email notice is waiting too, so it moves to the app as well.
   const refilled = await occurrencesOf(weekly.id);
   assert(
     refilled.length > 1 &&
-      refilled.filter((state) => state.channel === "in_app").length ===
-        refilled.length - 1,
+      refilled.every((state) => state.channel === "in_app"),
     `no reminder is lost to an address that is no longer verified: ${
       JSON.stringify(refilled)
     }`,
@@ -785,6 +785,160 @@ Deno.test("[PLANNING-003] an important date's reminders follow each member's del
     byMember.get(unverified),
     "in_app",
     "an unverified member keeps in-app reminders",
+  );
+});
+
+Deno.test("[PLANNING-003] a delivery change re-channels every notification not yet sent", async () => {
+  const { email, fixture, personId } = await signedUp("email-switch");
+  await choose(fixture, { digestTime: null, reminderDelivery: "in_app" });
+  const once = await createReminder(fixture, personId, "Switch once");
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "week",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Switch weekly",
+  });
+  assert(created.status === 201, `weekly reminder created: ${created.status}`);
+  const weekly = (await created.json() as { reminder: { id: string } })
+    .reminder;
+  // One notice already went out in the app; a later choice never touches it.
+  const [delivered] = await occurrencesOf(weekly.id);
+  await sql`
+    update crm.reminder_occurrences set status = 'sent',
+      deliver_at = now() - interval '1 day', sent_at = now(),
+      attempt_count = 1, provider_result_state = 'confirmed',
+      provider_receipt = 'in-app', provider_effect_at = now(),
+      visible_at = now()
+    where id = ${delivered!.id}::uuid
+  `;
+  const reminders = [once.id, weekly.id];
+  /** Each date's channels that are still waiting to be sent. */
+  const waiting = async () =>
+    await sql<{ readonly channels: string }[]>`
+      select string_agg(channel, ',' order by channel) as channels
+      from crm.reminder_occurrences
+      where reminder_id = any(${reminders}::uuid[]) and status = 'pending'
+      group by reminder_id, occurs_on, coalesce(lead_time_days, -1)
+    `;
+  const pendingDates = (await waiting()).length;
+  assert(pendingDates > 2, `dates are scheduled: ${pendingDates}`);
+  const settle = async (choice: string) => {
+    await choose(fixture, { digestTime: null, reminderDelivery: choice });
+    await worker().tick({ limit: 100, owner: `email-switch-${choice}` });
+    return (await waiting()).map((row) => row.channels);
+  };
+
+  for (
+    const [choice, expected] of [
+      ["both", "email,in_app"],
+      ["email", "email"],
+      ["in_app", "in_app"],
+    ] as const
+  ) {
+    const channels = await settle(choice);
+    assertEquals(
+      channels.length,
+      pendingDates,
+      `${choice} keeps every scheduled date`,
+    );
+    assert(
+      channels.every((value) => value === expected),
+      `${choice} applies to every waiting notice: ${JSON.stringify(channels)}`,
+    );
+  }
+  const [kept] = await sql<{ readonly status: string }[]>`
+    select status from crm.reminder_occurrences
+    where id = ${delivered!.id}::uuid
+  `;
+  assertEquals(kept?.status, "sent", "a notice already sent stays as it was");
+  assertEquals((await messagesTo(email)).length, 0, "nothing was due");
+});
+
+Deno.test("[PLANNING-003] a re-channel never leaves a date without a live notice", async () => {
+  const weeklyFor = async (label: string) => {
+    const member = await signedUp(label);
+    await choose(member.fixture, {
+      digestTime: null,
+      reminderDelivery: "in_app",
+    });
+    const created = await request(
+      member.fixture,
+      "/api/v1/reminders",
+      "POST",
+      {
+        anchorOn: futureReminderAnchor(),
+        personId: member.personId,
+        recurrenceInterval: 1,
+        recurrenceUnit: "week",
+        requestId: crypto.randomUUID(),
+        sendTime: "09:00",
+        title: `${label} weekly`,
+      },
+    );
+    assert(created.status === 201, `weekly reminder: ${created.status}`);
+    const reminder = (await created.json() as { reminder: { id: string } })
+      .reminder;
+    return { ...member, reminderId: reminder.id };
+  };
+  const member = await weeklyFor("email-keep");
+  const neighbour = await weeklyFor("email-neighbour");
+  const dates = await sql<
+    { readonly id: string; readonly occurs_on: string }[]
+  >`
+    select id::text, occurs_on::text from crm.reminder_occurrences
+    where reminder_id = ${member.reminderId}::uuid order by occurs_on
+  `;
+  const [cancelledDate, attemptedDate] = [dates[1]!, dates[2]!];
+  // A copy left cancelled on the channel about to be chosen, as reactivating
+  // a reminder or an import leaves one, holds that date's unique key.
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, channel, status,
+      title_snapshot, created_at, updated_at
+    )
+    select reminder_id, member_id, occurs_on, deliver_at, 'email',
+      'cancelled', title_snapshot, now(), now()
+    from crm.reminder_occurrences where id = ${cancelledDate.id}::uuid
+  `;
+  // A notice already attempted is the provider's to settle, not the choice's.
+  await sql`
+    update crm.reminder_occurrences set status = 'retry', attempt_count = 1,
+      last_attempt_at = now(), next_attempt_at = deliver_at
+    where id = ${attemptedDate.id}::uuid
+  `;
+
+  await choose(member.fixture, { digestTime: null, reminderDelivery: "email" });
+  await worker().tick({ limit: 100, owner: "email-keep" });
+
+  const live = await sql<{ readonly channels: string }[]>`
+    select coalesce(string_agg(occurrence.channel, ','
+      order by occurrence.channel) filter (
+        where occurrence.status in ('pending', 'retry')
+      ), '') as channels
+    from crm.reminder_occurrences occurrence
+    where occurrence.reminder_id = ${member.reminderId}::uuid
+      and occurrence.occurs_on = ${cancelledDate.occurs_on}::date
+  `;
+  assertEquals(
+    live[0]?.channels,
+    "email",
+    "the cancelled email copy is revived instead of the date going silent",
+  );
+  const [attempted] = await sql<{ readonly status: string }[]>`
+    select status from crm.reminder_occurrences
+    where id = ${attemptedDate.id}::uuid
+  `;
+  assertEquals(attempted?.status, "retry", "an attempted notice is kept");
+  const neighbours = await occurrencesOf(neighbour.reminderId);
+  assert(
+    neighbours.length > 1 &&
+      neighbours.every((state) => state.channel === "in_app"),
+    `another workspace's member keeps their own choice: ${
+      JSON.stringify(neighbours)
+    }`,
   );
 });
 

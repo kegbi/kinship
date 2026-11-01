@@ -194,10 +194,11 @@ export function PreferenceSettingsForm(
           </label>
           <p id="reminder-delivery-hint">
             Email reminders go to your verified email address; without one,
-            reminders stay in the app. A delivery change applies to reminders
-            scheduled from now on. A digest time applies to every email reminder
-            still waiting: they arrive together at that time in your time zone.
-            Leave it empty to get each one when it is due.
+            reminders stay in the app. A delivery change applies to every
+            reminder not yet sent, including those already scheduled. A digest
+            time applies to every email reminder still waiting: they arrive
+            together at that time in your time zone. Leave it empty to get each
+            one when it is due.
           </p>
         </>
       )}

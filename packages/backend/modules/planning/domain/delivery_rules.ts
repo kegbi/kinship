@@ -17,7 +17,7 @@
 /** Where a reminder occurrence is delivered. */
 export type DeliveryChannel = "email" | "in_app";
 
-/** What a member chose for the occurrences generated for them from now on. */
+/** What a member chose for every occurrence of theirs not yet sent. */
 export type ReminderDeliveryPreference = "both" | "email" | "in_app";
 
 /** Whether the provider is known to have had an effect for an occurrence. */
@@ -215,11 +215,12 @@ export function deliveryAuditAction(
 }
 
 /**
- * The channels a member's newly generated occurrences use.
+ * The channels a member's occurrences not yet sent use.
  *
  * Email needs somewhere to go: a member without a verified address keeps
- * in-app reminders whatever they chose, so no reminder is lost. Occurrences
- * that already exist keep the channel they were generated with.
+ * in-app reminders whatever they chose, so no reminder is lost. Waiting
+ * occurrences move onto these channels on the worker's next replenishment;
+ * one already attempted, sent, or due keeps its channel.
  */
 export function deliveryChannels(input: {
   readonly hasVerifiedEmail: boolean;

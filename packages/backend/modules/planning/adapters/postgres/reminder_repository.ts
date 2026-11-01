@@ -176,7 +176,7 @@ async function choicesOf(
 }
 
 /**
- * The channels each recipient's newly generated occurrences use: their
+ * The channels each recipient's waiting occurrences use: their
  * choice from `workspaces`, and in-app alone without a verified address.
  */
 export async function recipientChannels(
@@ -197,6 +197,122 @@ export async function recipientChannels(
         "in_app",
     }),
   ]));
+}
+
+/** An `occurrence` still waiting: pending, never attempted, not yet due. */
+const waitingOccurrence = (now: Date) =>
+  sql`
+  occurrence.status = 'pending' and occurrence.attempt_count = 0
+  and occurrence.provider_result_state = 'unattempted'
+  and occurrence.provider_receipt is null
+  and occurrence.provider_effect_at is null
+  and occurrence.visible_at is null
+  and occurrence.deliver_at > ${now}
+`;
+
+/**
+ * Moves every waiting notice onto the channels its member chooses now.
+ *
+ * A delivery choice applies to everything not yet sent, not only to dates
+ * minted after it: each waiting date gains a copy on every chosen channel it
+ * lacks, reviving one left cancelled there, then loses its copies on channels
+ * no longer chosen. A copy is withdrawn only beside a live or delivered one on
+ * a chosen channel, so no date loses its last notice, and a notice already
+ * attempted, sent, or due is never touched.
+ */
+async function rechannelWaiting(
+  database: Kysely<ApplicationDatabase>,
+  eligible: readonly ReminderRecipient[],
+  channels: ReadonlyMap<string, readonly DeliveryChannel[]>,
+  now: Date,
+): Promise<void> {
+  const chosen = eligible.flatMap((recipient) =>
+    (channels.get(recipient.memberId) ?? ["in_app"]).map((channel) => ({
+      channel,
+      memberId: recipient.memberId,
+      workspaceId: recipient.workspaceId,
+    }))
+  );
+  if (chosen.length === 0) return;
+  const memberIds = chosen.map((row) => row.memberId);
+  const workspaceIds = chosen.map((row) => row.workspaceId);
+  const chosenChannels = chosen.map((row) => row.channel);
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, lead_time_days, channel,
+      status, title_snapshot, body_snapshot, created_at, updated_at
+    )
+    select occurrence.reminder_id, occurrence.member_id, occurrence.occurs_on,
+      occurrence.deliver_at, occurrence.lead_time_days, chosen.channel,
+      'pending', occurrence.title_snapshot, occurrence.body_snapshot,
+      ${now}, ${now}
+    from crm.reminder_occurrences occurrence
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+    join crm.people person on person.id = reminder.person_id
+    join unnest(
+      ${memberIds}::uuid[], ${workspaceIds}::uuid[], ${chosenChannels}::text[]
+    ) as chosen(member_id, workspace_id, channel)
+      on chosen.member_id = occurrence.member_id
+      and chosen.workspace_id = reminder.workspace_id
+    where ${waitingOccurrence(now)}
+      and reminder.is_active and reminder.deleted_at is null
+      and person.archived_at is null and person.deleted_at is null
+      and not exists (
+        select 1 from crm.reminder_occurrences existing
+        where existing.reminder_id = occurrence.reminder_id
+          and existing.member_id = occurrence.member_id
+          and existing.occurs_on = occurrence.occurs_on
+          and coalesce(existing.lead_time_days, -1)
+            = coalesce(occurrence.lead_time_days, -1)
+          and existing.channel = chosen.channel
+          and existing.status <> 'cancelled'
+      )
+    on conflict (
+      reminder_id, member_id, occurs_on, channel,
+      (coalesce(lead_time_days, -1))
+    ) do update set
+      deliver_at = excluded.deliver_at, status = 'pending',
+      title_snapshot = excluded.title_snapshot,
+      body_snapshot = excluded.body_snapshot,
+      claim_token = null, claim_owner = null, lease_expires_at = null,
+      next_attempt_at = null, error = null, updated_at = excluded.updated_at
+    where reminder_occurrences.status = 'cancelled'
+      and reminder_occurrences.attempt_count = 0
+      and reminder_occurrences.provider_result_state = 'unattempted'
+      and reminder_occurrences.provider_receipt is null
+      and reminder_occurrences.provider_effect_at is null
+      and reminder_occurrences.visible_at is null
+  `.execute(database);
+  await sql`
+    delete from crm.reminder_occurrences occurrence
+    using crm.reminders reminder
+    where reminder.id = occurrence.reminder_id
+      and ${waitingOccurrence(now)}
+      and exists (
+        select 1 from unnest(${memberIds}::uuid[], ${workspaceIds}::uuid[])
+          as eligible(member_id, workspace_id)
+        where eligible.member_id = occurrence.member_id
+          and eligible.workspace_id = reminder.workspace_id
+      )
+      and not exists (
+        select 1 from unnest(${memberIds}::uuid[], ${chosenChannels}::text[])
+          as chosen(member_id, channel)
+        where chosen.member_id = occurrence.member_id
+          and chosen.channel = occurrence.channel
+      )
+      and exists (
+        select 1 from crm.reminder_occurrences kept
+        join unnest(${memberIds}::uuid[], ${chosenChannels}::text[])
+          as chosen(member_id, channel)
+          on chosen.member_id = kept.member_id and chosen.channel = kept.channel
+        where kept.reminder_id = occurrence.reminder_id
+          and kept.status in ('pending', 'claimed', 'retry', 'sent')
+          and kept.member_id = occurrence.member_id
+          and kept.occurs_on = occurrence.occurs_on
+          and coalesce(kept.lead_time_days, -1)
+            = coalesce(occurrence.lead_time_days, -1)
+      )
+  `.execute(database);
 }
 
 /**
@@ -291,7 +407,8 @@ export class PostgresReminderRepository implements ReminderRepository {
       eligible,
     )).get(command.memberId) ?? ["in_app"];
     // A date that still has a live occurrence on a channel the member no
-    // longer chose keeps it: already generated occurrences keep their channel.
+    // longer chose keeps it here; the worker's next replenishment moves every
+    // waiting notice onto the chosen channels (`rechannelWaiting`).
     for (const item of command.occurrences) {
       for (const channel of channels) {
         await sql`
@@ -784,7 +901,9 @@ export class PostgresReminderDeliveryRepository
         for share
       `.execute(transaction);
       // The scan reaches every workspace at once, so the eligible members come
-      // from the `workspaces` port rather than a membership join here.
+      // from the `workspaces` port rather than a membership join here. A
+      // one-off reminder's member counts too: their waiting notice follows
+      // a delivery change like any other.
       const candidateMembers = await sql<{ readonly member_id: string }>`
         select distinct occurrence.member_id::text as member_id
         from crm.reminders reminder
@@ -792,7 +911,6 @@ export class PostgresReminderDeliveryRepository
           on occurrence.reminder_id = reminder.id
         join crm.people person on person.id = reminder.person_id
         where reminder.is_active and reminder.deleted_at is null
-          and reminder.recurrence_unit <> 'none'
           and person.archived_at is null and person.deleted_at is null
       `.execute(transaction);
       const eligible = await this.recipients.filterEligible({
@@ -869,8 +987,9 @@ export class PostgresReminderDeliveryRepository
           );
           // A lead window that already passed is not announced late.
           if (Date.parse(deliverAt) < command.now.valueOf()) continue;
-          // One statement per date, so `both` mints both channels while a
-          // date generated earlier on any channel keeps what it has.
+          // One statement per date, so `both` mints both channels. A date
+          // generated earlier keeps its rows; `rechannelWaiting` below moves
+          // them onto the channels chosen now.
           await sql`
             insert into crm.reminder_occurrences (
               reminder_id, member_id, occurs_on, deliver_at, lead_time_days,
@@ -912,6 +1031,7 @@ export class PostgresReminderDeliveryRepository
               and rule.days_before = occurrence.lead_time_days
           )
       `.execute(transaction);
+      await rechannelWaiting(transaction, eligible, channels, command.now);
     });
   }
 
