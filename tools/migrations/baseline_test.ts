@@ -9,11 +9,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v11 migration classifies only exact empty and v1-v11 states", () => {
+Deno.test("schema v12 migration classifies only exact empty and v1-v12 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v11",
-    "empty target applies the full v11 schema",
+      "apply-v12",
+    "empty target applies the full v12 schema",
   );
   for (
     const version of [
@@ -27,18 +27,19 @@ Deno.test("schema v11 migration classifies only exact empty and v1-v11 states", 
       "v8",
       "v9",
       "v10",
+      "v11",
     ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v11`,
+        `upgrade-${version}-to-v12`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v11" }) ===
-      "verify-v11",
-    "exact v11 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v12" }) ===
+      "verify-v12",
+    "exact v12 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -86,23 +87,23 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v11 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v12 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v11/personal_crm_schema_spec_v11.md",
+    "personal-crm-schema/v12/personal_crm_schema_spec_v12.md",
   );
   assert(
     specification.includes("SQL tables parsed: **92**") &&
       specification.includes("SQL columns parsed: **876**") &&
       specification.includes("Explicit indexes: **157**"),
-    "v11 specification metrics drifted from canonical SQL and validation JSON",
+    "v12 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v11/personal_crm_schema_v11.sql",
+    "personal-crm-schema/v12/personal_crm_schema_v12.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
       specification.includes("`transactional-failure`"),
-    "v11 omits the redacted post-rollback lifecycle outcome",
+    "v12 omits the redacted post-rollback lifecycle outcome",
   );
   assert(
     sql.includes("reminder_delivery text NOT NULL DEFAULT 'in_app'") &&
@@ -112,7 +113,21 @@ Deno.test("schema v11 specification reports its exact canonical metrics", async 
       sql.replaceAll("\r\n", "\n").includes("  digest_time time,\n") &&
       specification.includes("`reminder_delivery`") &&
       specification.includes("`digest_time`"),
-    "v11 omits the member reminder-delivery preferences",
+    "v12 omits the member reminder-delivery preferences",
+  );
+  const deliveryComment =
+    "Channels for every reminder occurrence not yet sent, including those already scheduled: in_app, email, or both; email requires a verified address.";
+  const catalog = await Deno.readTextFile(
+    "personal-crm-schema/v12/personal_crm_field_catalog_v12.csv",
+  );
+  assert(
+    sql.includes(
+      `COMMENT ON COLUMN member_preferences.reminder_delivery IS '${deliveryComment}';`,
+    ) &&
+      !sql.includes("occurrences generated from now on") &&
+      catalog.includes(deliveryComment) &&
+      !catalog.includes("occurrences generated from now on"),
+    "v12 reminder-delivery comment does not apply to every unsent occurrence",
   );
   assert(
     sql.includes("CREATE TABLE person_duplicate_dismissals (") &&
@@ -124,7 +139,7 @@ Deno.test("schema v11 specification reports its exact canonical metrics", async 
         "FOREIGN KEY (workspace_id, person_high_id) REFERENCES people(workspace_id, id) ON DELETE CASCADE",
       ) &&
       specification.includes("### `person_duplicate_dismissals`"),
-    "v11 omits the workspace-shared duplicate dismissals",
+    "v12 omits the workspace-shared duplicate dismissals",
   );
   for (
     const index of [
@@ -137,7 +152,7 @@ Deno.test("schema v11 specification reports its exact canonical metrics", async 
     assert(
       sql.includes(`CREATE INDEX ${index};`) &&
         specification.includes(`CREATE INDEX ${index};`),
-      `v11 omits ${index}`,
+      `v12 omits ${index}`,
     );
   }
   assert(
@@ -154,6 +169,6 @@ Deno.test("schema v11 specification reports its exact canonical metrics", async 
       sql.includes("ON DELETE SET NULL (recurring_debt_id)") &&
       specification.includes("### `recurring_debts`") &&
       specification.includes("debts_recurring_occurrence_key"),
-    "v11 omits the recurring debt rules or their one-debt-per-period key",
+    "v12 omits the recurring debt rules or their one-debt-per-period key",
   );
 });

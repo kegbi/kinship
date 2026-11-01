@@ -89,6 +89,18 @@ export async function readCanonicalArtifacts(): Promise<
   CanonicalSchemaArtifacts
 > {
   return {
+    v12Sql: await Deno.readTextFile(
+      new URL(
+        "../../personal-crm-schema/v12/personal_crm_schema_v12.sql",
+        import.meta.url,
+      ),
+    ),
+    migrationV11ToV12: await Deno.readTextFile(
+      new URL(
+        "../../personal-crm-schema/v12/migrations/0012_reword_member_reminder_delivery_comment.sql",
+        import.meta.url,
+      ),
+    ),
     v11Sql: await Deno.readTextFile(
       new URL(
         "../../personal-crm-schema/v11/personal_crm_schema_v11.sql",
@@ -123,7 +135,7 @@ export async function readCanonicalArtifacts(): Promise<
   };
 }
 
-/** Brings the configured database to canonical schema v11, or refuses. */
+/** Brings the configured database to canonical schema v12, or refuses. */
 export async function runMigration(
   environment: { get(name: string): string | undefined },
 ): Promise<Exclude<SchemaAction, "reject">> {
@@ -140,5 +152,5 @@ export async function runMigration(
 }
 
 if (import.meta.main) {
-  console.log(`Canonical schema v11: ${await runMigration(Deno.env)}`);
+  console.log(`Canonical schema v12: ${await runMigration(Deno.env)}`);
 }

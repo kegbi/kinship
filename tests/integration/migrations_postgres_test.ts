@@ -77,10 +77,11 @@ const priorBaselines = [
   ["v8", artifacts.v8Sql],
   ["v9", artifacts.v9Sql],
   ["v10", artifacts.v10Sql],
+  ["v11", artifacts.v11Sql],
 ] as const;
 
 for (const [version, baselineSql] of priorBaselines) {
-  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v11 catalog`, async () => {
+  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v12 catalog`, async () => {
     await withScratchDatabase(async ({ sql, url }) => {
       await sql.unsafe(baselineSql);
       const userId = crypto.randomUUID();
@@ -90,16 +91,16 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v11`,
+        await runMigration(environment(url)) === `upgrade-${version}-to-v12`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
       const upgraded = await crmTables(sql);
-      const expected = canonicalTableNames(artifacts.v11Sql);
+      const expected = canonicalTableNames(artifacts.v12Sql);
       assert(
         JSON.stringify(upgraded) === JSON.stringify(expected) &&
           upgraded.length === 92,
-        `the upgraded catalog is not v11: ${
+        `the upgraded catalog is not v12: ${
           expected.filter((name) => !upgraded.includes(name)).join(", ")
         }`,
       );
@@ -110,15 +111,49 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v11 catalog
+      // The runner verified the structure against a freshly built v12 catalog
       // before it committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v11",
-        `an upgraded ${version} database is not recognised as exact v11`,
+        await runMigration(environment(url)) === "verify-v12",
+        `an upgraded ${version} database is not recognised as exact v12`,
       );
     });
   });
 }
+
+Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery column comment", async () => {
+  const columnComment = (sql: Sql) =>
+    sql<{ readonly comment: string }[]>`
+      select col_description('crm.member_preferences'::regclass, attnum) as comment
+      from pg_attribute
+      where attrelid = 'crm.member_preferences'::regclass
+        and attname = 'reminder_delivery'
+    `;
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v11Sql);
+    const [before] = await columnComment(sql);
+    assert(
+      before?.comment.includes("generated from now on") === true,
+      "the v11 comment no longer describes only later occurrences",
+    );
+
+    assert(
+      await runMigration(environment(url)) === "upgrade-v11-to-v12",
+      "an exact v11 database was not classified for the v11-to-v12 upgrade",
+    );
+    const [after] = await columnComment(sql);
+    assert(
+      after?.comment ===
+        "Channels for every reminder occurrence not yet sent, including those already scheduled: in_app, email, or both; email requires a verified address.",
+      `the v12 comment was not applied: ${after?.comment}`,
+    );
+    assert(
+      JSON.stringify(await crmTables(sql)) ===
+        JSON.stringify(canonicalTableNames(artifacts.v12Sql)),
+      "the comment-only upgrade changed the table catalog",
+    );
+  });
+});
 
 Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery with no digest", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
@@ -143,7 +178,7 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v11",
+      await runMigration(environment(url)) === "upgrade-v7-to-v12",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -203,7 +238,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v11",
+      await runMigration(environment(url)) === "upgrade-v8-to-v12",
       "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
@@ -233,7 +268,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
   });
 });
 
-Deno.test("[GIFTS-001] the v9-to-v11 upgrade keeps hand-recorded debts and charges a period once", async () => {
+Deno.test("[GIFTS-001] the v9-to-v12 upgrade keeps hand-recorded debts and charges a period once", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v9Sql);
     const [userId, workspaceId, otherWorkspaceId] = [
@@ -262,8 +297,8 @@ Deno.test("[GIFTS-001] the v9-to-v11 upgrade keeps hand-recorded debts and charg
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v9-to-v11",
-      "an exact v9 database was not classified for the v9-to-v11 upgrade",
+      await runMigration(environment(url)) === "upgrade-v9-to-v12",
+      "an exact v9 database was not classified for the v9-to-v12 upgrade",
     );
     const [kept] = await sql<
       { readonly amount: string; readonly rule: string | null }[]

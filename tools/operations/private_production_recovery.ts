@@ -540,7 +540,7 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
           as present
       `;
       if (!row?.present) {
-        throw new Error("Database is not the canonical schema v11.");
+        throw new Error("Database is not the canonical schema v12.");
       }
     } finally {
       await sql.end();
@@ -549,8 +549,8 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
       this.databaseUrl,
       await readCanonicalArtifacts(),
     );
-    if (action !== "verify-v11") {
-      throw new Error("Database is not the canonical schema v11.");
+    if (action !== "verify-v12") {
+      throw new Error("Database is not the canonical schema v12.");
     }
   }
 }

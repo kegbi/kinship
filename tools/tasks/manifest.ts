@@ -177,6 +177,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v9",
   "personal-crm-schema/v10",
   "personal-crm-schema/v11",
+  "personal-crm-schema/v12",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -274,6 +275,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "packages",
     "personal-crm-schema/v10",
     "personal-crm-schema/v11",
+    "personal-crm-schema/v12",
     "tools",
   ],
 };
@@ -607,8 +609,8 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v11/personal_crm_schema_spec_v11.md",
-          "personal-crm-schema/v11/personal_crm_schema_v11.sql",
+          "personal-crm-schema/v12/personal_crm_schema_spec_v12.md",
+          "personal-crm-schema/v12/personal_crm_schema_v12.sql",
           "packages/contracts",
           ...OWNERSHIP_BOUNDARY_READS,
           ".tls/e2e",
@@ -2111,6 +2113,7 @@ export const MODULES: readonly TaskModule[] = [
           "docs/product/user-flows.yaml",
           "personal-crm-schema/v10",
           "personal-crm-schema/v11",
+          "personal-crm-schema/v12",
           "apps",
           "packages",
           "tools",
