@@ -60,6 +60,83 @@ Deno.test("[PLANNING-003] a reminder email carries its title, body, and an absol
   assert(!/token|password/i.test(text), "no secret material");
 });
 
+Deno.test("[PLANNING-003] an advance notice says how far ahead it is, when the date falls, and why", () => {
+  const message = buildReminderMessage(options, {
+    idempotencyKey: "reminder-occurrence:lead",
+    items: [{
+      body: "",
+      leadDays: 30,
+      occursOn: "2026-12-02",
+      personId: "11111111-1111-4111-8111-111111111111",
+      title: "Wish happy birthday to Ada",
+    }],
+    to: "owner@example.test",
+  });
+  assert(
+    message.includes(
+      "Subject: Reminder: Wish happy birthday to Ada - in 30 days, on December 2\r\n",
+    ),
+    message,
+  );
+  const text = decodedParts(message);
+  assert(text.includes("Advance notice: this is coming up in 30 days."), text);
+  assert(text.includes("When: Wednesday, December 2, 2026 (in 30 days)"), text);
+  assert(
+    text.includes(
+      "https://kinship.test/app/settings/personalization?section=reminder-rules",
+    ),
+    "the email says where advance notices are set",
+  );
+  assert(!text.includes("A Kinship reminder is due."), text);
+});
+
+Deno.test("[PLANNING-003] a day-of reminder says it is today and names the date", () => {
+  const message = buildReminderMessage(options, {
+    idempotencyKey: "reminder-occurrence:day",
+    items: [{
+      body: "",
+      leadDays: 0,
+      occursOn: "2026-12-02",
+      title: "Wish happy birthday to Ada",
+    }],
+    to: "owner@example.test",
+  });
+  assert(
+    message.includes(
+      "Subject: Reminder: Wish happy birthday to Ada - today\r\n",
+    ),
+    message,
+  );
+  const text = decodedParts(message);
+  assert(text.includes("A Kinship reminder is due today."), text);
+  assert(text.includes("When: Wednesday, December 2, 2026 (today)"), text);
+  assert(!text.includes("reminder-rules"), "no advance-notice hint");
+});
+
+Deno.test("[PLANNING-003] a one-day notice and a digest name each date", () => {
+  const single = decodedParts(buildReminderMessage(options, {
+    idempotencyKey: "k",
+    items: [{ body: "", leadDays: 1, occursOn: "2026-03-01", title: "Ada" }],
+    to: "owner@example.test",
+  }));
+  assert(single.includes("When: Sunday, March 1, 2026 (tomorrow)"), single);
+  const digest = decodedParts(buildReminderMessage(options, {
+    digestDate: "2026-11-02",
+    idempotencyKey: "digest:dates",
+    items: [
+      { body: "", leadDays: 30, occursOn: "2026-12-02", title: "Ada" },
+      { body: "", occursOn: "2026-11-02", title: "Grace" },
+    ],
+    to: "owner@example.test",
+  }));
+  assert(
+    digest.includes("When: Wednesday, December 2, 2026 (in 30 days)"),
+    digest,
+  );
+  assert(digest.includes("When: Monday, November 2, 2026 (today)"), digest);
+  assert(digest.includes("reminder-rules"), "a digest with a notice hints");
+});
+
 Deno.test("[PLANNING-003] a digest lists every reminder with its own link and escapes HTML", () => {
   const message = buildReminderMessage(options, {
     digestDate: "2026-10-20",

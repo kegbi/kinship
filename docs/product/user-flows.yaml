@@ -915,7 +915,7 @@ flows:
     steps:
       - Choose in-app, email, or both reminder delivery and an optional daily digest time in personal preferences.
       - A reminder not yet sent comes due, and the worker claims its email occurrence.
-      - The email arrives once with the reminder's title and body and an absolute link to the person workspace.
+      - The email arrives once with the reminder's title and body, the date it is for and how far ahead an advance notice is sent, and an absolute link to the person workspace.
     # A delivery-channel change applies to every occurrence not yet sent,
     # including those generated before it: on its next tick the worker gives
     # each waiting date a copy on every chosen channel and withdraws its

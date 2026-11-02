@@ -75,6 +75,37 @@ describe("PLANNING-002 reminder presentation", () => {
     );
   });
 
+  it("names the date an advance notice is for, in the member's time zone", () => {
+    const notice: Reminder = {
+      ...reminder,
+      nextOccurrence: {
+        ...reminder.nextOccurrence!,
+        deliverAt: "2026-11-25T11:00:00.000Z",
+        occursOn: "2026-12-02",
+        status: "pending",
+      },
+    };
+    expect(reminderStateText(notice, utc)).toBe(
+      `pending · ${
+        formatInstant("2026-11-25T11:00:00.000Z", utc)
+      } · notice for Dec 2, 2026`,
+    );
+    // A day-of delivery that is still the date locally names nothing more.
+    const tokyo = { effectiveTimezone: "Asia/Tokyo", locale: "en" };
+    const dayOf: Reminder = {
+      ...reminder,
+      nextOccurrence: {
+        ...reminder.nextOccurrence!,
+        deliverAt: "2026-12-01T22:00:00.000Z",
+        occursOn: "2026-12-02",
+        status: "pending",
+      },
+    };
+    expect(reminderStateText(dayOf, tokyo)).toBe(
+      `pending · ${formatInstant("2026-12-01T22:00:00.000Z", tokyo)}`,
+    );
+  });
+
   it("words cadences, the hero's due state, and the next reminder", () => {
     expect(intervalText(1, "month")).toBe("Every 1 month");
     expect(intervalText(2, "week")).toBe("Every 2 weeks");

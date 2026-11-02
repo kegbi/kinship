@@ -44,7 +44,14 @@ export interface ClaimedReminderOccurrence {
    */
   readonly digestDate?: string;
   readonly id: string;
+  /**
+   * How many days before its date this notice is delivered: a lead rule's
+   * advance notice, or 0 or absent for the date itself.
+   */
+  readonly leadTimeDays?: number;
   readonly memberId: string;
+  /** The date the reminder is for, which a lead notice precedes. */
+  readonly occursOn?: string;
   /** The reminder's person, when the reminder names one. */
   readonly personId?: string;
   readonly providerIdempotencyKey: string;

@@ -122,6 +122,10 @@ type Answer =
 function emailItem(occurrence: ClaimedReminderOccurrence) {
   return {
     body: occurrence.body,
+    ...(occurrence.leadTimeDays !== undefined
+      ? { leadDays: occurrence.leadTimeDays }
+      : {}),
+    ...(occurrence.occursOn ? { occursOn: occurrence.occursOn } : {}),
     ...(occurrence.personId ? { personId: occurrence.personId } : {}),
     title: occurrence.title,
   };

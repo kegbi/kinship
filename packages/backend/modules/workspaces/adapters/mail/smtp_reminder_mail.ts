@@ -10,8 +10,11 @@
  * the worker never sends it again.
  *
  * Every email names the reminder, its body snapshot, and an absolute link to
- * the person's workspace built from the configured public origin. It carries
- * no token, credential, or anything beyond what the reminder already says.
+ * the person's workspace built from the configured public origin. When the
+ * reminder's date is known, the email names it and says how far ahead it is,
+ * so an advance notice never reads as the day itself, and points at the
+ * workspace reminder rules that set advance notices. It carries no token,
+ * credential, or anything beyond what the reminder already says.
  */
 
 import {
@@ -24,6 +27,10 @@ import {
 /** One reminder in an email. */
 export interface ReminderMailItem {
   readonly body: string;
+  /** How many days before its date this notice is sent; 0 or absent: on it. */
+  readonly leadDays?: number;
+  /** The reminder's own date (`YYYY-MM-DD`), when known. */
+  readonly occursOn?: string;
   readonly personId?: string;
   readonly title: string;
 }
@@ -113,6 +120,53 @@ function personLink(
     : undefined;
 }
 
+/** Where a workspace's advance-notice rules are changed. */
+function reminderRulesLink(options: ReminderMailOptions): string {
+  return new URL(
+    "/app/settings/personalization?section=reminder-rules",
+    options.webOrigin,
+  ).toString();
+}
+
+/** When a reminder falls, in long and short form, and how far away it is. */
+interface ReminderWhen {
+  readonly ahead: boolean;
+  readonly long: string;
+  readonly relative: string;
+  readonly short: string;
+}
+
+function calendarDate(
+  occursOn: string,
+  format: Intl.DateTimeFormatOptions,
+): string {
+  return new Intl.DateTimeFormat("en-US", { ...format, timeZone: "UTC" })
+    .format(new Date(`${occursOn}T12:00:00Z`));
+}
+
+/** An item's date, or nothing when it has none it can name. */
+function whenOf(item: ReminderMailItem): ReminderWhen | undefined {
+  const occursOn = item.occursOn;
+  if (!occursOn || !/^\d{4}-\d{2}-\d{2}$/.test(occursOn)) return undefined;
+  if (Number.isNaN(Date.parse(`${occursOn}T12:00:00Z`))) return undefined;
+  const days = Math.max(0, Math.trunc(item.leadDays ?? 0));
+  return {
+    ahead: days > 0,
+    long: calendarDate(occursOn, {
+      day: "numeric",
+      month: "long",
+      weekday: "long",
+      year: "numeric",
+    }),
+    relative: days === 0
+      ? "today"
+      : days === 1
+      ? "tomorrow"
+      : `in ${days} days`,
+    short: calendarDate(occursOn, { day: "numeric", month: "long" }),
+  };
+}
+
 /** A body part, base64-encoded in lines a mail server keeps intact. */
 function part(contentType: string, content: string): string {
   const encoded = new TextEncoder().encode(content).toBase64();
@@ -129,43 +183,75 @@ export function buildReminderMessage(
   options: ReminderMailOptions,
   message: ReminderMailMessage,
 ): string {
-  const items = message.items.map((item) => ({
-    body: line(item.body),
-    link: personLink(options, item),
-    title: line(item.title) || "Reminder",
-  }));
+  const items = message.items.map((item) => {
+    const when = whenOf(item);
+    return {
+      body: line(item.body),
+      link: personLink(options, item),
+      title: line(item.title) || "Reminder",
+      when,
+      whenLine: when ? `When: ${when.long} (${when.relative})` : undefined,
+    };
+  });
   const digest = message.digestDate !== undefined;
+  const first = items[0];
   const subject = digest
     ? `Your Kinship reminders for ${message.digestDate}`
-    : `Reminder: ${items[0]?.title ?? "Reminder"}`;
+    : `Reminder: ${first?.title ?? "Reminder"}${
+      first?.when
+        ? first.when.ahead
+          ? ` - ${first.when.relative}, on ${first.when.short}`
+          : " - today"
+        : ""
+    }`;
   const intro = digest
     ? `You have ${items.length} ${
       items.length === 1 ? "reminder" : "reminders"
     } due.`
+    : first?.when?.ahead
+    ? `Advance notice: this is coming up ${first.when.relative}.`
+    : first?.when
+    ? "A Kinship reminder is due today."
     : "A Kinship reminder is due.";
+  const rules = items.some((item) => item.when?.ahead)
+    ? {
+      link: reminderRulesLink(options),
+      text: "Advance notices follow your workspace reminder rules.",
+    }
+    : undefined;
   const text = [
     intro,
     "",
     ...items.flatMap((item) => [
       digest ? `- ${item.title}` : item.title,
+      ...(item.whenLine ? [item.whenLine] : []),
       ...(item.body ? [item.body] : []),
       ...(item.link ? [`Open in Kinship: ${item.link}`] : []),
       "",
     ]),
+    ...(rules ? [`${rules.text} Change them: ${rules.link}`] : []),
   ].join("\r\n");
   const html = [
     "<!doctype html>",
     `<html><body><p>${escapeHtml(intro)}</p><ul>`,
     ...items.map((item) =>
       `<li><strong>${escapeHtml(item.title)}</strong>${
-        item.body ? `<br>${escapeHtml(item.body)}` : ""
-      }${
+        item.whenLine ? `<br>${escapeHtml(item.whenLine)}` : ""
+      }${item.body ? `<br>${escapeHtml(item.body)}` : ""}${
         item.link
           ? `<br><a href="${escapeHtml(item.link)}">Open in Kinship</a>`
           : ""
       }</li>`
     ),
-    "</ul></body></html>",
+    "</ul>",
+    ...(rules
+      ? [
+        `<p>${escapeHtml(rules.text)} <a href="${
+          escapeHtml(rules.link)
+        }">Change them</a></p>`,
+      ]
+      : []),
+    "</body></html>",
   ].join("\r\n");
   return [
     `From: Kinship <${safeHeader(options.from)}>`,

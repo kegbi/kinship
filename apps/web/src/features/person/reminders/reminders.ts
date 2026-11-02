@@ -13,22 +13,51 @@ import type {
   StayInTouchCadence,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
+  formatCalendarDate,
   formatInstant,
   type TimePreferences,
 } from "../../../lib/time-presentation.ts";
 
 // --- How the records read ---------------------------------------------------
 
-/** A reminder's next occurrence, or why it has none. */
+/** The calendar date an instant falls on for the member, or nothing. */
+function localDate(
+  instant: string,
+  preferences: TimePreferences | undefined,
+): string | undefined {
+  if (!preferences?.effectiveTimezone) return undefined;
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      calendar: "gregory",
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: preferences.effectiveTimezone,
+      year: "numeric",
+    }).format(new Date(instant));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A reminder's next occurrence, or why it has none. An advance notice, sent
+ * before the date it is for, also names that date, so it never reads as the
+ * date itself.
+ */
 export function reminderStateText(
   reminder: Reminder,
   preferences: TimePreferences | undefined,
 ): string {
   const next = reminder.nextOccurrence;
   if (next) {
+    const sentOn = localDate(next.deliverAt, preferences);
+    const forDate = preferences && sentOn !== undefined &&
+        sentOn < next.occursOn
+      ? ` · notice for ${formatCalendarDate(next.occursOn, preferences.locale)}`
+      : "";
     return `${
       next.visibleAt ? "Notification visible" : next.status.replaceAll("_", " ")
-    } · ${formatInstant(next.deliverAt, preferences)}`;
+    } · ${formatInstant(next.deliverAt, preferences)}${forDate}`;
   }
   return reminder.isActive ? "No future occurrence" : "Disabled";
 }

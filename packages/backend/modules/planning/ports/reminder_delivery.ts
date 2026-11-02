@@ -45,6 +45,10 @@ export interface ReminderDeliveryProvider {
 /** One reminder as an email carries it. */
 export interface ReminderEmailItem {
   readonly body: string;
+  /** Days ahead of `occursOn` this notice is sent; 0 or absent: on the day. */
+  readonly leadDays?: number;
+  /** The date the reminder is for. */
+  readonly occursOn?: string;
   /** The reminder's person, whose workspace the email links to. */
   readonly personId?: string;
   readonly title: string;

@@ -252,7 +252,7 @@ Deno.test("[PLANNING-003] an immediate reminder email arrives once with a link t
   );
   const messages = await messagesTo(email);
   assertEquals(messages.length, 1, "one email");
-  assertEquals(messages[0]?.Subject, "Reminder: Call Ada by email");
+  assertEquals(messages[0]?.Subject, "Reminder: Call Ada by email - today");
   const text = await messageText(messages[0]!.ID);
   assert(
     text.includes("Call Ada by email") &&
@@ -785,6 +785,68 @@ Deno.test("[PLANNING-003] an important date's reminders follow each member's del
     byMember.get(unverified),
     "in_app",
     "an unverified member keeps in-app reminders",
+  );
+});
+
+Deno.test("[PLANNING-003] an advance notice email names the date it is for and how far ahead", async () => {
+  const { email, fixture, personId } = await signedUp("email-lead");
+  await choose(fixture, { digestTime: null, reminderDelivery: "email" });
+  await sql`
+    insert into crm.reminder_rules (workspace_id, days_before, is_active)
+    values (${fixture.workspaceId}::uuid, 30, true)
+  `;
+  const created = await request(
+    fixture,
+    `/api/v1/people/${personId}/dates`,
+    "POST",
+    {
+      day: 2,
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "birthday",
+      month: 12,
+      precision: "month_day",
+    },
+  );
+  assert(created.status === 201, `birthday saved: ${created.status}`);
+  // The worker mints the date's lead notices; then only the 30-day one is due.
+  await worker().tick({ limit: 100, owner: "email-lead-mint" });
+  const [notice] = await sql<
+    { readonly id: string; readonly occurs_on: string }[]
+  >`
+    select occurrence.id::text, occurrence.occurs_on::text
+    from crm.reminder_occurrences occurrence
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+    join crm.person_dates date on date.id = reminder.person_date_id
+    where date.person_id = ${personId}::uuid and occurrence.channel = 'email'
+      and occurrence.lead_time_days = 30 and occurrence.status = 'pending'
+    order by occurrence.occurs_on limit 1
+  `;
+  assert(notice, "a 30-day email notice was minted");
+  await sql`
+    update crm.reminder_occurrences set deliver_at = now() - interval '1 minute'
+    where id = ${notice.id}::uuid
+  `;
+  await worker().tick({ limit: 100, owner: "email-lead" });
+  const messages = await messagesTo(email);
+  assertEquals(messages.length, 1, "only the due notice is sent");
+  const on = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+    weekday: "long",
+    year: "numeric",
+  }).format(new Date(`${notice.occurs_on}T12:00:00Z`));
+  const subject = messages[0]?.Subject ?? "";
+  assert(subject.endsWith(" - in 30 days, on December 2"), subject);
+  const text = await messageText(messages[0]!.ID);
+  assert(text.includes("Advance notice: this is coming up in 30 days."), text);
+  assert(text.includes(`When: ${on} (in 30 days)`), text);
+  assert(
+    text.includes(
+      `${WEB_ORIGIN}/app/settings/personalization?section=reminder-rules`,
+    ),
+    text,
   );
 });
 

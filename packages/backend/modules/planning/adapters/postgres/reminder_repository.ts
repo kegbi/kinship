@@ -838,7 +838,9 @@ interface ClaimRow {
   readonly channel: DeliveryChannel;
   readonly claim_token: string;
   readonly id: string;
+  readonly lead_time_days: number | null;
   readonly member_id: string;
+  readonly occurs_on: string;
   readonly person_id: string | null;
   readonly provider_idempotency_key: string;
   readonly provider_result_state:
@@ -1182,7 +1184,8 @@ export class PostgresReminderDeliveryRepository
         occurrence.channel, occurrence.claim_token::text,
         occurrence.attempt_count, occurrence.provider_idempotency_key,
         occurrence.provider_result_state, occurrence.title_snapshot as title,
-        occurrence.body_snapshot as body,
+        occurrence.body_snapshot as body, occurrence.occurs_on::text,
+        occurrence.lead_time_days,
         case when occurrence.channel = 'email'
             and occurrence.provider_result_state = 'ambiguous'
             and occurrence.provider_receipt like 'digest:%'
@@ -1204,7 +1207,11 @@ export class PostgresReminderDeliveryRepository
         claimToken: row.claim_token,
         ...(digestDate ? { digestDate } : {}),
         id: row.id,
+        ...(row.lead_time_days !== null
+          ? { leadTimeDays: row.lead_time_days }
+          : {}),
         memberId: row.member_id,
+        occursOn: row.occurs_on,
         ...(row.person_id ? { personId: row.person_id } : {}),
         providerIdempotencyKey: row.provider_idempotency_key,
         providerResultState: row.provider_result_state,
