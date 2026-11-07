@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { expectAccessible } from "./support/page-checks.ts";

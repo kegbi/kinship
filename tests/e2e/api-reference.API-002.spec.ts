@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { readFile } from "node:fs/promises";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { origin } from "./support/env.ts";

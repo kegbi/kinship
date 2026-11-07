@@ -1174,7 +1174,7 @@ these:
     document why it is not a credential endpoint, and pin `NGINX_IMAGE` to
     `Dockerfile.web`.
 
-- [ ] **AUD-G3 — The CSP drops `style-src 'unsafe-inline'`.** S. Normal.
+- [x] **AUD-G3 — The CSP drops `style-src 'unsafe-inline'`.** S. Normal.
       Depends: AUD-G1. Closes: FER-15, SECA-13 item 4.
   - Scope:
     - Remove `'unsafe-inline'` from `style-src`. Exercise the avatar editors,
@@ -1184,6 +1184,14 @@ these:
   - RED: the collector fails on a page with an injected inline style (the
     positive control), and passes on every page after the change.
   - Verify: the Chromium E2E project once; the gateway contract tests.
+  - Delivered 2026-11-08: `style-src` is `'self'` only; a shared Playwright
+    fixture collects `securitypolicyviolation` events on every page and fails
+    the test on any refusal, with an injected inline style as the positive
+    control; the full Chromium project ran 77 passed with only IMPORT-002
+    (REL-108) failing, gateway unit 5 and gateway contract 21 passed, and fmt,
+    architecture, and lint (only REL-096) are clean. The console-based
+    `recordPolicyViolations` helper in `tests/e2e/support/page-checks.ts` and
+    its six call sites are now redundant (parked).
 
 - [ ] **AUD-G4 — Containers and PostgreSQL are hardened and observable.** S–M.
       Normal. Depends: none. Closes: SECA-13 item 7, SECA-06 (the trusted-proxy

@@ -1,9 +1,5 @@
-import {
-  type APIRequestContext,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { registerVerified } from "./support/api.ts";
 import { saveNewPerson } from "./support/directory.ts";
 import { mailOrigin, origin } from "./support/env.ts";

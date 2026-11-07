@@ -1,10 +1,5 @@
-import {
-  type APIRequestContext,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import {
   settleNavigation,
@@ -1525,8 +1520,15 @@ test(
     }
     await page.setViewportSize({ width: 375, height: 667 });
     // Development chrome must not intercept the production menu's pointer test.
-    await page.addStyleTag({
-      content: "astro-dev-toolbar { display: none !important; }",
+    // A CSSOM write, not a `<style>` element, which the CSP refuses (AUD-G3).
+    await page.locator("astro-dev-toolbar").evaluateAll((toolbars) => {
+      for (const toolbar of toolbars) {
+        (toolbar as HTMLElement).style.setProperty(
+          "display",
+          "none",
+          "important",
+        );
+      }
     });
     await directory.locator("summary").scrollIntoViewIfNeeded();
     await directory.locator("summary").click({ timeout: 5_000 });

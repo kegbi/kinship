@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import { registerVerified } from "./support/api.ts";
 import { database, sqlLiteral } from "./support/database.ts";

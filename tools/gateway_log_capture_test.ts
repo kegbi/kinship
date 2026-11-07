@@ -19,7 +19,7 @@ const THEME_SCRIPT_HASH =
   "'sha256-JcBF2XCeGM7UUhyx5ih7eaW4njR7Xo8zgcRdSMNXAj4='";
 
 const CONTENT_SECURITY_POLICY =
-  `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' ${THEME_SCRIPT_HASH}; connect-src 'self'`;
+  `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self'; script-src 'self' ${THEME_SCRIPT_HASH}; connect-src 'self'`;
 
 /** The `script-src` sources of one Content-Security-Policy value. */
 function scriptSources(policy: string): string[] {

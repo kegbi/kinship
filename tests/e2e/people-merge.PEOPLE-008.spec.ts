@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { registerVerified } from "./support/api.ts";
 import { database, databaseValue, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";

@@ -805,11 +805,6 @@ Deno.test("[GAP-040] the CSP allows scripts only from the origin and hashed inli
     assert(expected.has(hash), `script-src allows a stale inline hash ${hash}`);
   }
 
-  assert(
-    JSON.stringify(directives.get("style-src")) ===
-      JSON.stringify(["'self'", "'unsafe-inline'"]),
-    "style-src keeps inline styles, which Base UI's <style> elements need",
-  );
   for (
     const [name, sources] of [
       ["default-src", ["'self'"]],
@@ -854,6 +849,62 @@ Deno.test("[GAP-040] the CSP allows scripts only from the origin and hashed inli
   assert(
     scriptSourceWeaknesses(undefined).length > 0,
     "a policy without script-src is rejected",
+  );
+});
+
+Deno.test("[AUD-G3] the CSP allows styles only from the origin", async () => {
+  const securityHeaders = await Deno.readTextFile(
+    new URL("../gateway/security_headers.conf", import.meta.url),
+  );
+  const directives = cspDirectives(
+    addedHeaderValue(securityHeaders, "Content-Security-Policy") ?? "",
+  );
+  // No `style="…"` in markup and no `<style>` element; styles set through
+  // the CSSOM, as React and Base UI positioning do, are not inline styles.
+  assert(
+    JSON.stringify(directives.get("style-src")) === JSON.stringify(["'self'"]),
+    `style-src is the origin alone: ${directives.get("style-src")}`,
+  );
+  assert(
+    !directives.has("style-src-elem") && !directives.has("style-src-attr"),
+    "no narrower style directive reopens inline styles",
+  );
+});
+
+Deno.test("[AUD-G3] every E2E spec runs under the policy-violation collector", async () => {
+  const directory = new URL("../tests/e2e/", import.meta.url);
+  const support = await Deno.readTextFile(
+    new URL("support/test.ts", directory),
+  );
+  assert(
+    /addEventListener\(\s*"securitypolicyviolation"/.test(support) &&
+      /\{ auto: true \}/.test(support),
+    "the shared test collects every refusal automatically",
+  );
+  const specs: string[] = [];
+  const offenders: string[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    if (!entry.isFile || !entry.name.endsWith(".spec.ts")) continue;
+    specs.push(entry.name);
+    const source = await Deno.readTextFile(new URL(entry.name, directory));
+    const playwrightValues = [
+      ...source.matchAll(/import \{([^}]*)\} from "@playwright\/test"/g),
+    ].flatMap(([, names = ""]) =>
+      names.split(",").map((name) => name.trim()).filter((name) =>
+        name !== "" && !name.startsWith("type ")
+      )
+    );
+    if (
+      playwrightValues.length > 0 ||
+      !/import \{[^}]*\btest\b[^}]*\} from "\.\/support\/test\.ts"/.test(source)
+    ) {
+      offenders.push(entry.name);
+    }
+  }
+  assert(specs.length > 40, `the E2E specs were found (${specs.length})`);
+  assert(
+    offenders.length === 0,
+    `specs that bypass support/test.ts: ${offenders.join(", ")}`,
   );
 });
 

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { registerVerified } from "./support/api.ts";
 import { database } from "./support/database.ts";
 import { origin, password } from "./support/env.ts";

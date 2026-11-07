@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { deletePerson, registerVerified } from "./support/api.ts";
 import { databaseValue, sqlLiteral } from "./support/database.ts";
 import { bareToken } from "./support/mail.ts";

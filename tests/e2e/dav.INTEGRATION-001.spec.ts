@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { registerVerified } from "./support/api.ts";
 import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";

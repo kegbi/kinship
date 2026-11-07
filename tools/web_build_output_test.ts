@@ -824,6 +824,32 @@ Deno.test("[GAP-040] pages rendered on demand inline no bundled script either", 
   assert(inlined === "[]", `the renderer inlines scripts: ${inlined}`);
 });
 
+Deno.test("[AUD-G3] no page, prerendered or on demand, carries an inline style", async () => {
+  // The gateway's CSP allows styles only from the origin: no `<style>`
+  // element (Astro inlines none, `inlineStylesheets: "never"`) and no
+  // `style` attribute in markup. CSSOM writes at runtime are not inline.
+  const pages = await builtPages();
+  assert(pages.length > 20, `the build wrote pages, found ${pages.length}`);
+  for (const page of pages) {
+    const html = await read(page);
+    const element = html.match(/<style\b[^>]*>/i)?.[0];
+    assert(element === undefined, `${page} carries ${element}`);
+    const attribute = html.match(/<[a-zA-Z][^>]*?\sstyle\s*=[^>]*>/)?.[0];
+    assert(attribute === undefined, `${page} carries ${attribute}`);
+  }
+  const entry = await Deno.readTextFile(
+    new URL("../apps/web/dist/server/entry.mjs", import.meta.url),
+  );
+  assert(
+    /"styles":\[\{"type":"external","src":/.test(entry),
+    "the renderer manifest links its pages' stylesheets",
+  );
+  assert(
+    !/"type":"inline","content"/.test(entry),
+    "the renderer manifest inlines no stylesheet",
+  );
+});
+
 /**
  * The body of the built `@layer utilities { … }` block. The protected pages'
  * stylesheet bundles the hand-written CSS and the Tailwind layers into one

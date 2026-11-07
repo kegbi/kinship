@@ -1,4 +1,5 @@
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { mailOrigin, origin } from "./support/env.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 

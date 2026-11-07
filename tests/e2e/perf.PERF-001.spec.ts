@@ -1,9 +1,5 @@
-import {
-  type APIRequestContext,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";

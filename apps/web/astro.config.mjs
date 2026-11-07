@@ -62,6 +62,12 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // The gateway's CSP allows styles only from the origin (AUD-G3), so a
+    // small stylesheet ships as a same-origin file, never a `<style>`
+    // element in the HTML.
+    inlineStylesheets: "never",
+  },
   server: {
     host: "127.0.0.1",
     port: webPort,

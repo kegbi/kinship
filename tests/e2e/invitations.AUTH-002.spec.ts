@@ -1,9 +1,5 @@
-import {
-  type APIRequestContext,
-  type BrowserContext,
-  expect,
-  test,
-} from "@playwright/test";
+import type { APIRequestContext, BrowserContext } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { register } from "./support/api.ts";
 import { database, databaseSql, sqlLiteral } from "./support/database.ts";
 import { origin, password } from "./support/env.ts";

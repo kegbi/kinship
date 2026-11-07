@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import { activateGlobalSearch } from "./support/islands.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";

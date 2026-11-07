@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./support/test.ts";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { origin } from "./support/env.ts";
 import { bareToken } from "./support/mail.ts";
