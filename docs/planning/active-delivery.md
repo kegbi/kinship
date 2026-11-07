@@ -8,6 +8,22 @@ the current phase and deliver it as a complete vertical behavior. The larger
 and [`traceability.md`](traceability.md) remain coverage references, not
 prerequisite queues.
 
+## User-directed audit remediation (2026-11-07)
+
+The product owner asked for every finding of the
+[2026-11-07 architecture, security, and performance audit](../validation/audit-2026-11-07/README.md)
+to be resolved, with independent work running in parallel. The work order is the
+[audit remediation plan](audit-remediation-plan-2026-11-07.md):
+
+- 41 tickets in ten lanes;
+- decisions D1–D4, which block only the tickets that name them;
+- a closure checkpoint that records each of the audit's 70 finding IDs as Fixed,
+  Decided, or Documented.
+
+This work takes priority over the cursor below. Deliver one reviewed candidate
+per ticket. The plan's checkboxes are the ledger, so this section does not
+repeat them.
+
 ## User-directed API integration (2026-10-25)
 
 The product owner requested committing the

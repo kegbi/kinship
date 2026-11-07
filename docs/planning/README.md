@@ -111,6 +111,11 @@ as authority. Production ready remains independent of feature completion.
   priorities. Its [operation inventory](api-operation-inventory-2026-10-25.md)
   captures the existing browser and token contracts; these proposals do not
   change the accepted delivery queue.
+- The [audit remediation plan](audit-remediation-plan-2026-11-07.md) turns every
+  finding of the [2026-11-07 audit](../validation/audit-2026-11-07/README.md)
+  into tickets that can run in parallel lanes, with decisions and closure
+  criteria. Its [orchestrator prompt](audit-remediation-orchestrator-prompt.md)
+  runs those tickets through the repository's delivery loop.
 
 The accepted product slice summary remains
 [`docs/product/release-slices.md`](../product/release-slices.md). This directory

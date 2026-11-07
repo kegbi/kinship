@@ -184,16 +184,20 @@ server-rendered routes do not need a renderer.**
 The orchestrator re-checked the High findings and the release blocker
 independently of the agents:
 
-| Finding   | Re-check                                                                                                                                                                                                                                                                                                                                                    | Result    |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| SECA-01   | On the shared stack: register an address with password P (202), sign in before verification (401), POST the mailed verification token (200), then sign in with P (200). Code: `identity/adapters/postgres/identity_repository.ts:19-26` inserts `status = 'active'` with the requester's hash; `email_verification.ts:79-83` only sets `email_verified_at`. | Confirmed |
-| BEQ-01/02 | `planning/application/reminder_delivery.ts:353` calls `replenish` on every tick before `claimDue`. `reminder_repository.ts` runs one transaction that opens with two `for share` selects and loops per candidate (`count: 8`) with one INSERT per occurrence. `apps/worker/main.ts:48` sets a 5 s interval.                                                 | Confirmed |
-| BEQ-03    | The legal guard calls `readActor` (`governance/transport/http/routes.ts:230`), which resolves the session itself. Each module router then builds its own `sessionActor` memo (38 call sites).                                                                                                                                                               | Confirmed |
-| FEQ-01    | Eight independent `getMemberPreferences` call sites with no shared memo: shell, global search, quick capture, `lib/time-presentation.ts`, directory, duplicates, person workspace, and preference settings.                                                                                                                                                 | Confirmed |
-| FER-01    | `apps/web/src/layouts/ApplicationLayout.astro:176-181` statically imports and calls `mountGlobalPeopleSearch()`, `mountQuickCapture()`, and `mountNotificationBell()`.                                                                                                                                                                                      | Confirmed |
-| SECT-03   | `begin; delete from crm.workspaces where id = <workspace with contact methods>; rollback;` fails with `violates RESTRICT setting of foreign key constraint "person_contact_methods_type_id_fkey"` (schema v12 line 815). The workspace was intact afterwards.                                                                                               | Confirmed |
+| Finding   | Re-check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Result    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| SECA-01   | On the shared stack: register an address with password P (202), sign in before verification (401), POST the mailed verification token (200), then sign in with P (200). Code: `identity/adapters/postgres/identity_repository.ts:19-26` inserts `status = 'active'` with the requester's hash; `email_verification.ts:79-83` only sets `email_verified_at`.                                                                                                                                                                | Confirmed |
+| BEQ-01/02 | `planning/application/reminder_delivery.ts:353` calls `replenish` on every tick before `claimDue`. `reminder_repository.ts` runs one transaction that opens with two `for share` selects and loops per candidate (`count: 8`) with one INSERT per occurrence. `apps/worker/main.ts:48` sets a 5 s interval.                                                                                                                                                                                                                | Confirmed |
+| BEQ-03    | The legal guard calls `readActor` (`governance/transport/http/routes.ts:230`), which resolves the session itself. Each module router then builds its own `sessionActor` memo (38 call sites).                                                                                                                                                                                                                                                                                                                              | Confirmed |
+| FEQ-01    | Eight independent `getMemberPreferences` call sites with no shared memo: shell, global search, quick capture, `lib/time-presentation.ts`, directory, duplicates, person workspace, and preference settings.                                                                                                                                                                                                                                                                                                                | Confirmed |
+| FER-01    | `apps/web/src/layouts/ApplicationLayout.astro:176-181` statically imports and calls `mountGlobalPeopleSearch()`, `mountQuickCapture()`, and `mountNotificationBell()`.                                                                                                                                                                                                                                                                                                                                                     | Confirmed |
+| SECT-03   | `begin; delete from crm.workspaces where id = <workspace with contact methods>; rollback;` fails with `violates RESTRICT setting of foreign key constraint "person_contact_methods_type_id_fkey"` (schema v12 line 815). The workspace was intact afterwards. In a throwaway PostgreSQL 18.4 container with the same two cascade paths, plain `NO ACTION` failed the same way, `NO ACTION DEFERRABLE INITIALLY DEFERRED` succeeded, and deleting `people` before the workspace succeeded with the original `RESTRICT` key. | Confirmed |
 
 ## Recommended order of work
+
+The executable version of this order, with every finding ID mapped to a ticket,
+is the
+[audit remediation plan](../../planning/audit-remediation-plan-2026-11-07.md).
 
 Each item cites the findings it resolves. Items marked **v13** need a new
 synchronized schema version. Items marked **ADR** need an explicit architecture
@@ -206,8 +210,13 @@ decision before implementation, per `AGENTS.md`.
      pending account. For an address that is already verified, answer 202 and
      send an "account exists" mail. The two request sequences in the 03 report
      give a failing-first regression test.
-   - SECT-03: delete in dependency order inside the lifecycle transaction, or
-     change the two `RESTRICT` keys in v13. Add an integration test that seeds
+   - SECT-03: delete in dependency order inside the lifecycle transaction; this
+     works with the existing keys and needs no schema change. Changing the keys
+     is not a simple alternative. A throwaway PostgreSQL 18.4 test showed that
+     plain `NO ACTION` fails exactly like `RESTRICT`, and `CASCADE` would
+     silently delete contact methods when a type is deleted. Only
+     `NO ACTION DEFERRABLE INITIALLY DEFERRED` passes, and it moves the "type in
+     use" error from the DELETE to COMMIT. Add an integration test that seeds
      every module and then runs workspace reset and delete.
    - SECT-04: add an invitation-revoke route, and re-check the inviter's
      authority when an invitation is accepted.
