@@ -1,0 +1,10 @@
+/*
+ * The people directory, archived people, and add-a-person (FER-09), after
+ * application.css. Its imports keep the application cascade order (GAP-032).
+ */
+@layer legacy-defaults, theme, base, components, utilities;
+@import "./components.css";
+@import "./status.css";
+@import "./people.css";
+@import "./person-actions.css";
+@import "./overrides.css";

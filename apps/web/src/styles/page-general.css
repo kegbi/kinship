@@ -1,0 +1,13 @@
+/*
+ * Every other protected page (FER-09): Today, tasks, the journal, compliance,
+ * the activity report, and a person's audit history, after application.css.
+ * Its imports keep the application cascade order (GAP-032).
+ */
+@layer legacy-defaults, theme, base, components, utilities;
+@import "./sections.css";
+@import "./components.css";
+@import "./status.css";
+@import "./section-form.css";
+@import "./task-board.css";
+@import "./pages.css";
+@import "./overrides.css";

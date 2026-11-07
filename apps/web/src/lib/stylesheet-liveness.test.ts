@@ -2,6 +2,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { STREAM_ZONES } from "../features/person/sections.ts";
+import {
+  PAGE_GROUPS,
+  type PageGroup,
+  PROTECTED_CASCADE,
+  stylesheetImports,
+} from "./application-stylesheet.test-helper.ts";
 
 /**
  * Every hand-written rule styles something the application can draw
@@ -266,40 +272,62 @@ describe("stylesheet liveness", () => {
 });
 
 describe("stylesheet ownership", () => {
-  const imports = [
-    ...readFileSync(join(stylesDirectory, "application.css"), "utf8")
-      .matchAll(/^@import\s+"\.\/([\w-]+)\.css";$/gm),
-  ].map(([, name]) => name!);
+  const shared = stylesheetImports("application");
+  const groupImports = (group: PageGroup): string[] =>
+    stylesheetImports(`page-${group}`);
 
   it("gives each person workspace zone its own stylesheet, in zone order", () => {
     const zones = ["hero", "rail", ...STREAM_ZONES.map(({ id }) => id)];
-    const person = imports.filter((name) => name.startsWith("person-"));
+    const person = groupImports("person").filter((name) =>
+      name.startsWith("person-")
+    );
     expect(person).toEqual([
       "person-chrome",
       ...zones.map((zone) => `person-${zone}`),
+      "person-actions",
     ]);
     expect(readdirSync(stylesDirectory)).not.toContain("person.css");
   });
 
   it("imports the stylesheets in their cascade order", () => {
-    expect(imports).toEqual([
-      "fonts",
-      "tokens",
-      "base",
-      "shell",
-      "settings",
-      "components",
-      "person-chrome",
-      "person-hero",
-      "person-rail",
-      "person-timeline",
-      "person-planning",
-      "person-things",
-      "person-admin",
-      "people",
-      "pages",
-      "overrides",
-    ]);
+    // The layout carries what every protected page shares (FER-09).
+    expect(shared).toEqual(["fonts", "tokens", "base", "shell"]);
+    expect(PROTECTED_CASCADE.slice(0, shared.length)).toEqual(shared);
+    const imported = new Set(shared);
+    for (const group of PAGE_GROUPS) {
+      const own = groupImports(group);
+      own.forEach((name) => imported.add(name));
+      // A group keeps the cascade order and ends with the overrides.
+      const positions = own.map((name) =>
+        PROTECTED_CASCADE.indexOf(name as (typeof PROTECTED_CASCADE)[number])
+      );
+      expect(positions.every((at) => at >= shared.length)).toBe(true);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      expect(own.at(-1)).toBe("overrides");
+    }
+    expect([...imported].sort()).toEqual([...PROTECTED_CASCADE].sort());
+  });
+
+  it("gives every protected page its group's stylesheet right after the layout", () => {
+    // Astro links the layout's stylesheet first only while the page imports
+    // its group's stylesheet after the layout (FER-09).
+    const pages = sourceFiles(join(root, "pages"))
+      .filter((path) => path.endsWith(".astro"))
+      .map((path) => readFileSync(path, "utf8"))
+      .filter((source) => source.includes("ApplicationLayout"));
+    expect(pages.length).toBeGreaterThan(20);
+    for (const source of pages) {
+      expect(source).toMatch(
+        /^import ApplicationLayout from "[./]+\/layouts\/ApplicationLayout\.astro";\r?\nimport "[./]+\/styles\/page-(?:general|people|person|settings)\.css";$/m,
+      );
+      expect(source.match(/styles\/page-[\w-]+\.css/g)).toHaveLength(1);
+    }
+    const layout = readFileSync(
+      join(root, "layouts/ApplicationLayout.astro"),
+      "utf8",
+    );
+    const firstImport = layout.match(/^import\s.*$/m)?.[0];
+    expect(firstImport).toBe('import "../styles/application.css";');
   });
 
   it("documents the owner of every stylesheet", () => {

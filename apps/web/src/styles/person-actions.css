@@ -1,0 +1,40 @@
+/*
+ * The person lifecycle buttons and the merge dialog (GAP-049), which the
+ * person workspace and the people directory share.
+ */
+
+.person-lifecycle-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.person-lifecycle-buttons button {
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 999px;
+}
+
+.person-lifecycle-buttons button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.person-merge-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+}
+
+.person-merge-warning {
+  margin: 0;
+  color: var(--ink-1);
+}
+
+.person-merge-conflicts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+}

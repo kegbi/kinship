@@ -1,99 +1,8 @@
 /*
- * The spacing rules every content card and settings page follows:
- *
- * - A card or page section is a vertical stack. Its children carry no margins
- *   of their own; the stack puts --space-4 between each pair, so a heading,
- *   its status line, its list, and its actions never touch.
- * - Inside a heading block, a kicker, a title, and a description sit tighter,
- *   at --space-1 to --space-2.
- * - Separate sections of one page stand --space-6 apart.
- * - A label sits --space-2 above its field, and fields in one form stand
- *   --space-4 apart.
- * - Empty lists and empty status lines take no room.
+ * The settings pages (GAP-032): the settings index, personalization, members,
+ * API access, storage, imports, and lifecycle pages, with their phone layout.
+ * They follow the spacing rules in sections.css.
  */
-.today-section {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
-  align-content: start;
-}
-
-.today-section > *,
-.today-section > .contents > * {
-  margin-block: 0;
-}
-
-.today-section :is(.task-list, .interaction-list, .section-state):empty {
-  display: none;
-}
-
-.today-section p {
-  color: var(--ink-2);
-  line-height: 1.6;
-}
-
-.section-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  align-items: start;
-  justify-content: space-between;
-}
-
-.section-heading > div {
-  flex: 1 1 12rem;
-  min-width: 0;
-}
-
-.section-heading > :is(p, span) {
-  flex: none;
-}
-
-.section-heading h2,
-.settings-group h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.success-loop {
-  display: grid;
-  gap: var(--space-3);
-  margin: var(--space-4) 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: steps;
-}
-
-.success-loop li {
-  display: grid;
-  grid-template-columns: 2.3rem 1fr;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-4);
-  border-radius: .75rem;
-  background: var(--surface-page);
-  counter-increment: steps;
-}
-
-.success-loop li::before {
-  grid-row: 1 / 3;
-  display: grid;
-  width: 2.1rem;
-  height: 2.1rem;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--ink-inverse);
-  background: var(--positive);
-  content: counter(steps);
-  font-weight: 700;
-}
-
-.success-loop span {
-  color: var(--ink-2);
-  font-size: .85rem;
-  line-height: 1.45;
-}
 
 .settings-page {
   width: min(var(--application-width, 1180px), calc(100% - 2rem));
@@ -378,10 +287,6 @@
 
 .optional-group {
   border-style: dashed;
-}
-
-.secondary-link {
-  justify-self: end;
 }
 
 .settings-card-link {
@@ -1525,15 +1430,10 @@
     grid-template-columns: 1fr;
   }
 
-  .invitation-form button,
-  .secondary-link {
+  .invitation-form button {
     width: 100%;
     min-height: 44px;
     justify-self: stretch;
-  }
-
-  .section-heading {
-    align-items: center;
   }
 
   .managed-list li,

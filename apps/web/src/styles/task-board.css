@@ -1,0 +1,54 @@
+/*
+ * The task board (GAP-032) the tasks page, Today, and the person planning zone
+ * share.
+ */
+
+.task-filters,
+.task-columns {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.task-columns h4 {
+  font-size: .875rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.task-filters {
+  align-items: end;
+  background: var(--surface, var(--surface-1));
+  border: 1px solid var(--line, var(--line-1));
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.task-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-item {
+  background: var(--surface, var(--surface-1));
+  border: 1px solid var(--line, var(--line-1));
+  border-radius: 0.9rem;
+  padding: var(--space-4);
+}
+
+.task-item h3,
+.task-item p {
+  margin-block: 0 var(--space-2);
+}
+
+.task-meta {
+  color: var(--muted, var(--ink-2));
+  font-size: 0.9rem;
+}
+
+.task-form {
+  margin-block: var(--space-4);
+}

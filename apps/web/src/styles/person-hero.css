@@ -1,7 +1,7 @@
 /*
  * The person workspace's hero zone (GAP-032): the identity heading, avatar,
- * vital stats, tags, the person menu, the lifecycle controls and archived
- * banner, and the identity summary.
+ * vital stats, tags, the person menu, the lifecycle form and archived banner,
+ * and the identity summary. The lifecycle buttons are person-actions.css.
  */
 
 .person-profile-hero {
@@ -286,23 +286,6 @@
 
 .person-archived-banner p {
   margin: 0;
-}
-
-.person-lifecycle-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.person-lifecycle-buttons button {
-  min-height: 44px;
-  padding: var(--space-3) var(--space-4);
-  border-radius: 999px;
-}
-
-.person-lifecycle-buttons button:disabled {
-  cursor: wait;
-  opacity: .55;
 }
 
 .person-lifecycle-form {

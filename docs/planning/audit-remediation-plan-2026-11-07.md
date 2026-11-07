@@ -1081,7 +1081,7 @@ these:
     desktop and phone viewports (today 0.26 and 0.38).
   - Verify: E2E `today.TODAY-001` (Chromium); `test:unit --module=web`.
 
-- [ ] **AUD-F8 — Each page group loads only its own CSS.** S. Normal. Depends:
+- [x] **AUD-F8 — Each page group loads only its own CSS.** S. Normal. Depends:
       AUD-F2. Closes: FER-09.
   - Scope: the layout imports only the shell, base, tokens, and component
     styles. The settings, person, and people page groups import their own CSS,
@@ -1092,6 +1092,14 @@ these:
     checks in a Chromium smoke test.
   - Note: AUD-F6 and AUD-F8 both append to `tools/web_build_output_test.ts`;
     integrate one, then rebase the other.
+  - Delivered 2026-11-08: the layout imports only fonts, tokens, base, and shell
+    styles, and each protected page imports its group's sheet, so a page loads
+    the shared sheet plus one group sheet instead of one 117.6 KB sheet; gzip
+    per group is general 10.9 KB, people 11.1 KB, settings 13.0 KB, and person
+    15.3 KB (was 20.0 KB), and a build-output test locks ownership and a 30 KB
+    ceiling; web-build and build show only REL-098, a five-spec Chromium smoke
+    under AUD-G3's CSP collector passed 14, and fmt, contracts, architecture,
+    and lint (only REL-096) are clean.
 
 - [ ] **AUD-F9 — Public and auth pages are polished.** S. Low. Depends: none.
       Closes: FER-12, FER-13, FER-14.

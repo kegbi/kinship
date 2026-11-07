@@ -2,9 +2,8 @@
  * The person workspace's shared chrome (GAP-032): the page state card, the
  * workspace button base, the sticky navigation and section directory, the zone
  * switcher, the zone headings, the section cards and their headings, glyphs,
- * add actions, empty states and footers, the phone sheet the shell template
- * opens rail editors in, and the section form every zone's editors use (the
- * journal and the tasks page reuse `.profile-fact-form`).
+ * add actions, empty states and footers, and the phone sheet the shell template
+ * opens rail editors in. The section form is section-form.css.
  * Zones live in `features/person/sections.ts`; each zone's own rules follow in
  * person-hero.css through person-admin.css.
  */
@@ -83,18 +82,6 @@
 
 .profile-section-heading .section-kicker {
   margin-bottom: var(--space-1);
-}
-
-.section-state {
-  margin: 0;
-  line-height: 1.55;
-}
-
-.section-state.unavailable {
-  padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--warning);
-  color: var(--ink-2);
-  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
 }
 
 .person-workspace-layout {
@@ -578,94 +565,6 @@
   margin: var(--space-4) 0 0;
   color: var(--ink-2);
   line-height: 1.6;
-}
-
-.profile-fact-form {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.profile-fact-form[hidden] {
-  display: none;
-}
-
-.profile-fact-form label {
-  display: grid;
-  font-weight: 700;
-  gap: var(--space-2);
-}
-
-/* A form's fields: a label above each, a stack gap between them. */
-.profile-fact-form .form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
-  gap: var(--space-4);
-}
-
-/* A lookup's search box with its buttons beside it, wrapping when narrow. */
-.option-search {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: flex-end;
-}
-
-.option-search > label {
-  flex: 1 1 14rem;
-  min-width: 0;
-}
-
-.option-search-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.profile-fact-form input,
-.profile-fact-form select,
-.profile-fact-form textarea {
-  box-sizing: border-box;
-  max-width: 100%;
-  min-width: 0;
-  width: 100%;
-}
-
-.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
-.profile-fact-form select,
-.profile-fact-form textarea {
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid var(--line-strong);
-  border-radius: .65rem;
-  color: inherit;
-  background: var(--surface-1);
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: 400;
-}
-
-.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
-.profile-fact-form select {
-  min-height: 44px;
-}
-
-.profile-fact-form textarea {
-  min-height: 6rem;
-  resize: vertical;
-}
-
-.profile-fact-form select[multiple] {
-  min-height: 7rem;
-}
-
-.profile-fact-form .checkbox-row {
-  align-items: center;
-  display: flex;
-  font-weight: 600;
-}
-
-.profile-fact-form .checkbox-row input {
-  width: auto;
 }
 
 @media (max-width: 1050px) {

@@ -364,7 +364,7 @@ describe("PLANNING-002 Today reminder regions island", () => {
       format("2026-08-17T08:00:00.000Z"),
     );
     const style = document.createElement("style");
-    style.textContent = readApplicationStylesheet();
+    style.textContent = readApplicationStylesheet("general");
     document.head.append(style);
     expect(reminderRetry().hidden).toBe(true);
     expect(reminderRetry().type).toBe("button");

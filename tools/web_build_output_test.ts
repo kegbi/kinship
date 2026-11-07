@@ -942,3 +942,123 @@ Deno.test("[GAP-026] no Tailwind utility shares a name with a hand-written class
     `utilities collide with hand-written classes: ${shared.join(", ")}`,
   );
 });
+
+// --- [FER-09] Each page group loads only its own CSS (AUD-F8) --------------
+
+/**
+ * The protected page groups, each found by its built pages' paths, and one
+ * selector only that group's stylesheet carries. The layout's stylesheet holds
+ * what every protected page shares; a page adds its group's sheet, so it never
+ * downloads another group's rules.
+ */
+const STYLE_GROUPS: readonly {
+  readonly name: string;
+  readonly pages: RegExp;
+  readonly marker: string;
+}[] = [
+  {
+    name: "settings",
+    pages: /^(app\/settings\/|internal\/import-report-shell\/)/,
+    marker: ".settings-layout{",
+  },
+  {
+    name: "people",
+    pages: /^app\/people\//,
+    marker: ".people-directory-controls{",
+  },
+  {
+    name: "person",
+    pages: /^internal\/person-profile-shell\//,
+    marker: ".person-workspace-layout{",
+  },
+  // Today, tasks, the journal, the activity report, and a person's audit.
+  { name: "general", pages: /^(app|internal)\//, marker: ".attention-groups{" },
+];
+
+/** A selector only the layout's shared stylesheet carries: the shell's. */
+const SHARED_STYLE_MARKER = ".primary-nav{";
+
+/** The most protected CSS, gzipped, one page may load (FER-09). */
+const PAGE_GROUP_CSS_BUDGET = 30 * 1024;
+
+/** The `_astro/*.css` stylesheets a page links, in document order. */
+function linkedStylesheets(html: string): string[] {
+  return [
+    ...html.matchAll(
+      /<link\b[^>]*\brel="stylesheet"[^>]*\bhref="\/(_astro\/[\w.-]+\.css)"/g,
+    ),
+  ].map(([, href]) => href!);
+}
+
+/** Every built protected page, with the group it belongs to. */
+async function protectedPageGroups(): Promise<
+  { page: string; group: (typeof STYLE_GROUPS)[number] }[]
+> {
+  const pages = [...await builtPages("app/"), ...await builtPages("internal/")];
+  return pages.map((page) => ({
+    page,
+    group: STYLE_GROUPS.find(({ pages }) => pages.test(page))!,
+  }));
+}
+
+Deno.test("[FER-09] the stylesheet reader finds every linked stylesheet", () => {
+  const html =
+    '<link rel="stylesheet" href="/_astro/A.1.css"><link rel="preload" href="/_astro/B.2.css">' +
+    '<link rel="stylesheet" href="/_astro/C_x.3.css" media="all">';
+  assert(
+    JSON.stringify(linkedStylesheets(html)) ===
+      JSON.stringify(["_astro/A.1.css", "_astro/C_x.3.css"]),
+    "stylesheet links are read, preloads are not",
+  );
+});
+
+Deno.test("[FER-09] each protected page group loads only its own CSS", async () => {
+  // The shared stylesheet comes first, so its rules keep their place in the
+  // cascade before the group's (GAP-032), and no page inlines a style.
+  const pages = await protectedPageGroups();
+  assert(pages.length > 20, "the build wrote the protected pages");
+  for (const { name } of STYLE_GROUPS) {
+    assert(
+      pages.some(({ group }) => group.name === name),
+      `the build wrote a ${name} page`,
+    );
+  }
+  for (const { page, group } of pages) {
+    const html = await read(page);
+    assert(!/<style\b/i.test(html), `${page} inlines no style`);
+    const sheets = linkedStylesheets(html);
+    const css = await Promise.all(sheets.map(read));
+    for (const other of STYLE_GROUPS) {
+      if (other === group) continue;
+      assert(
+        !css.some((sheet) => sheet.includes(other.marker)),
+        `${page} (${group.name}) loads the ${other.name} CSS: ${sheets}`,
+      );
+    }
+    assert(
+      css.length === 2 && css[0]!.includes(SHARED_STYLE_MARKER) &&
+        !css[0]!.includes(group.marker) && css[1]!.includes(group.marker),
+      `${page} links the shared stylesheet, then the ${group.name} one: ${sheets}`,
+    );
+  }
+});
+
+Deno.test("[FER-09] no protected page group loads more than 30 KB of gzipped CSS", async () => {
+  const totals = new Map<string, number>();
+  for (const { page, group } of await protectedPageGroups()) {
+    const sheets = linkedStylesheets(await read(page));
+    assert(sheets.length > 0, `${page} links a stylesheet`);
+    let bytes = 0;
+    for (const sheet of sheets) bytes += await gzipSize(sheet);
+    assert(
+      bytes <= PAGE_GROUP_CSS_BUDGET,
+      `${page} loads ${bytes} bytes of gzipped CSS, over ${PAGE_GROUP_CSS_BUDGET}`,
+    );
+    totals.set(group.name, Math.max(totals.get(group.name) ?? 0, bytes));
+  }
+  console.log(
+    `Protected CSS per page group, gzip: ${
+      [...totals].map(([name, bytes]) => `${name} ${bytes} B`).join(", ")
+    }`,
+  );
+});

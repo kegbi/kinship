@@ -394,7 +394,7 @@ describe("PLANNING-001 Today attention island", () => {
       within(overdue()).getAllByRole("button", { name: /^Complete / }),
     ).toHaveLength(3);
     const style = document.createElement("style");
-    style.textContent = readApplicationStylesheet();
+    style.textContent = readApplicationStylesheet("general");
     document.head.append(style);
     const links = [
       ...document.querySelectorAll<HTMLElement>(

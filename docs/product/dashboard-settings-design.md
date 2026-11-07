@@ -320,28 +320,47 @@ Every style has one owner (GAP-032). Paths are under `apps/web/src/`.
   variant classes win over them.
 - `styles/fonts.css`: the Inter Variable face, imported by every layout's
   stylesheet.
-- `styles/application.css`: the authenticated layout's entry. It declares the
-  layer order and imports the stylesheets below in cascade order.
+- `styles/application.css`: the authenticated layout's entry (FER-09). It
+  declares the layer order and imports what every protected page shares: the
+  fonts, tokens, base, and shell stylesheets.
+- `styles/page-general.css`, `styles/page-people.css`, `styles/page-person.css`,
+  and `styles/page-settings.css`: one entry per protected page group (FER-09).
+  Every protected page imports its group's entry right after the layout, so
+  Astro links it after `application.css`. An entry imports the stylesheets below
+  that its pages draw, in the order this list gives them (`PROTECTED_CASCADE` in
+  `lib/application-stylesheet.test-helper.ts`), and ends with `overrides.css`.
+  The settings group is the settings pages and the import report; people is the
+  directory, archived people, and add-a-person; person is the person workspace;
+  general is every other protected page.
 - `styles/base.css`: application element defaults, focus, forms, and access
   states.
 - `styles/shell.css`: the application shell (header, primary navigation, search,
   member menu, page frame, toasts).
+- `styles/sections.css`: the section stack, section headings, and success list
+  Today and the settings pages share, and the spacing rules they follow.
 - `styles/settings.css`: the settings index, personalization, members, API
-  access, storage, imports, and lifecycle pages, with their phone layout, and
-  the section headings and success list Today shares with them.
+  access, storage, imports, and lifecycle pages, with their phone layout.
 - `styles/components.css`: the add-a-person and person page widths, the
   quick-capture dialog, interaction lists, the activity report filter, and the
   audit history page.
+- `styles/status.css`: the status lines every protected page draws: a section's
+  state line and its unavailable variant, and a form's error summary.
 - `styles/person-chrome.css`: the person workspace's shared chrome (navigation,
-  section directory, zone switcher, zone headings, section cards, the rail
-  editors' phone sheet, and the section form the journal and tasks page reuse).
+  section directory, zone switcher, zone headings, section cards, and the rail
+  editors' phone sheet).
+- `styles/section-form.css`: the section form every person-workspace zone's
+  editors use, which the journal and the tasks page reuse.
 - `styles/person-hero.css`, `styles/person-rail.css`,
   `styles/person-timeline.css`, `styles/person-planning.css`,
   `styles/person-things.css`, and `styles/person-admin.css`: one person
   workspace zone each, as `features/person/sections.ts` names them.
 - `styles/people.css`: the people directory and add-a-person pages.
-- `styles/pages.css`: Today's attention groups, the task board the tasks page,
-  Today, and the planning zone share, the journal, and the compliance page.
+- `styles/person-actions.css`: the person lifecycle buttons and the merge
+  dialog, which the person workspace and the people directory share.
+- `styles/task-board.css`: the task board the tasks page, Today, and the
+  planning zone share.
+- `styles/pages.css`: Today's attention groups, the journal, and the compliance
+  page.
 - `styles/overrides.css`: the select caret and reduced motion, which must follow
   every component stylesheet.
 - `styles/public.css` and `styles/auth.css`: the public pages and the

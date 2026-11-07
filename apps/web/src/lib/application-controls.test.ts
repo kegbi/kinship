@@ -2,7 +2,10 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { readApplicationStylesheet } from "./application-stylesheet.test-helper.ts";
+import {
+  PROTECTED_CASCADE,
+  readApplicationStylesheet,
+} from "./application-stylesheet.test-helper.ts";
 import {
   buttonVariants,
   formActionsVariants,
@@ -25,15 +28,10 @@ const layoutPaths = [
   "apps/web/src/layouts/AuthLayout.astro",
   "apps/web/src/layouts/PublicLayout.astro",
 ] as const;
-/** Every stylesheet application.css imports except the fonts and tokens. */
-const applicationImports = readFileSync(
-  "apps/web/src/styles/application.css",
-  "utf8",
-);
-const nonTokenStylesheetPaths = Array.from(
-  applicationImports.matchAll(/^@import\s+"\.\/([\w-]+\.css)";$/gm),
-  ([, file]) => `apps/web/src/styles/${file}`,
-).filter((path) => !/\/(?:fonts|tokens)\.css$/.test(path));
+/** Every protected stylesheet except the fonts and tokens (FER-09). */
+const nonTokenStylesheetPaths = PROTECTED_CASCADE
+  .filter((name) => name !== "fonts" && name !== "tokens")
+  .map((name) => `apps/web/src/styles/${name}.css`);
 const cssNamedColors = [
   "aliceblue",
   "antiquewhite",
@@ -347,12 +345,13 @@ afterEach(() => {
 });
 
 describe("the stylesheets the invariants read", () => {
-  it("are every application.css import except the fonts and tokens", () => {
-    const everyImport = applicationImports.match(/^@import\b/gm) ?? [];
-    expect(nonTokenStylesheetPaths.length).toBeGreaterThan(0);
-    expect(nonTokenStylesheetPaths).toHaveLength(everyImport.length - 2);
+  it("are every protected stylesheet except the fonts and tokens", () => {
+    expect(nonTokenStylesheetPaths).toHaveLength(PROTECTED_CASCADE.length - 2);
     expect(nonTokenStylesheetPaths).toContain(
       "apps/web/src/styles/person-chrome.css",
+    );
+    expect(nonTokenStylesheetPaths).toContain(
+      "apps/web/src/styles/settings.css",
     );
   });
 });

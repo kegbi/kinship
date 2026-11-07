@@ -1,0 +1,10 @@
+/*
+ * The settings pages and the import report (FER-09), after application.css.
+ * Its imports keep the application cascade order (GAP-032).
+ */
+@layer legacy-defaults, theme, base, components, utilities;
+@import "./sections.css";
+@import "./settings.css";
+@import "./components.css";
+@import "./status.css";
+@import "./overrides.css";

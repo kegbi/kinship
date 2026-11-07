@@ -1,0 +1,92 @@
+/*
+ * The section form (GAP-032): every person-workspace zone's editors, and the
+ * journal and the tasks page, which reuse `.profile-fact-form`.
+ */
+
+.profile-fact-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.profile-fact-form[hidden] {
+  display: none;
+}
+
+.profile-fact-form label {
+  display: grid;
+  font-weight: 700;
+  gap: var(--space-2);
+}
+
+/* A form's fields: a label above each, a stack gap between them. */
+.profile-fact-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-4);
+}
+
+/* A lookup's search box with its buttons beside it, wrapping when narrow. */
+.option-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.option-search > label {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.option-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.profile-fact-form input,
+.profile-fact-form select,
+.profile-fact-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select,
+.profile-fact-form textarea {
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: .65rem;
+  color: inherit;
+  background: var(--surface-1);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+.profile-fact-form input:not([type="checkbox"]):not([type="radio"]),
+.profile-fact-form select {
+  min-height: 44px;
+}
+
+.profile-fact-form textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.profile-fact-form select[multiple] {
+  min-height: 7rem;
+}
+
+.profile-fact-form .checkbox-row {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+}
+
+.profile-fact-form .checkbox-row input {
+  width: auto;
+}

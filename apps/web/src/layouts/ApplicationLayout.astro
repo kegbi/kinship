@@ -1,7 +1,9 @@
 ---
-import ThemeBootstrap from "../components/ThemeBootstrap.astro";
+// The shared stylesheets come first, so they load before the page group's
+// stylesheet each page imports right after this layout (FER-09).
 import "../styles/application.css";
 import "../styles/islands.css";
+import ThemeBootstrap from "../components/ThemeBootstrap.astro";
 import {
   buttonVariants,
   skeletonLinesVariants,

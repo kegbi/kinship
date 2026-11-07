@@ -2,22 +2,14 @@
  * The cascade layers, lowest first (GAP-027). `legacy-defaults` holds the element
  * defaults a primitive's variant classes must beat; everything else in these
  * stylesheets stays unlayered and keeps winning where it speaks. islands.css
- * declares the same order.
+ * and every page group's stylesheet declare the same order.
+ *
+ * What every protected page shares (FER-09). Each page group adds its own
+ * stylesheet after this one, which imports the rest of the cascade it draws
+ * and ends with overrides.css.
  */
 @layer legacy-defaults, theme, base, components, utilities;
 @import "./fonts.css";
 @import "./tokens.css";
 @import "./base.css";
 @import "./shell.css";
-@import "./settings.css";
-@import "./components.css";
-@import "./person-chrome.css";
-@import "./person-hero.css";
-@import "./person-rail.css";
-@import "./person-timeline.css";
-@import "./person-planning.css";
-@import "./person-things.css";
-@import "./person-admin.css";
-@import "./people.css";
-@import "./pages.css";
-@import "./overrides.css";

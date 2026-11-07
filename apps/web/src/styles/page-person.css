@@ -1,0 +1,18 @@
+/*
+ * The person workspace (FER-09), after application.css. Its imports keep the
+ * application cascade order (GAP-032), with each zone in zone order.
+ */
+@layer legacy-defaults, theme, base, components, utilities;
+@import "./components.css";
+@import "./status.css";
+@import "./person-chrome.css";
+@import "./section-form.css";
+@import "./person-hero.css";
+@import "./person-rail.css";
+@import "./person-timeline.css";
+@import "./person-planning.css";
+@import "./person-things.css";
+@import "./person-admin.css";
+@import "./person-actions.css";
+@import "./task-board.css";
+@import "./overrides.css";

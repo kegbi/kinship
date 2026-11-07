@@ -42,7 +42,7 @@ import {
   PERSON_REMINDERS_ISLAND,
 } from "./person-reminders.tsx";
 
-const applicationCss = readApplicationStylesheet();
+const applicationCss = readApplicationStylesheet("person");
 const { person: personId } = ids;
 const reminderId = "00000000-0000-4000-8000-000000000900";
 const utc = { effectiveTimezone: "UTC", locale: "en" };

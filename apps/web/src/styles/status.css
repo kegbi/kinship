@@ -1,0 +1,24 @@
+/*
+ * The status lines every protected page draws (GAP-032): a section's state
+ * line and its unavailable variant, and a form's error summary.
+ */
+
+.section-state {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.section-state.unavailable {
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--warning);
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
+}
+
+.form-error-summary {
+  padding: var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: .75rem;
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+}

@@ -1,6 +1,6 @@
 /*
  * The people directory (`/app/people`) and add-a-person (`/app/people/new`)
- * (GAP-032). `.form-error-summary` is also the settings forms' error summary.
+ * (GAP-032).
  */
 
 .person-form {
@@ -73,7 +73,6 @@
   gap: var(--space-1);
 }
 
-.form-error-summary,
 .duplicate-warning {
   padding: var(--space-4);
   border: 1px solid var(--danger);
@@ -117,6 +116,10 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.secondary-link {
+  justify-self: end;
 }
 
 .people-directory-controls {
@@ -604,6 +607,12 @@
     justify-content: center;
   }
 
+  .secondary-link {
+    width: 100%;
+    min-height: 44px;
+    justify-self: stretch;
+  }
+
   .name-grid {
     grid-template-columns: 1fr;
   }
@@ -676,23 +685,4 @@
 .people-duplicate-reasons {
   margin: 0;
   color: var(--ink-2);
-}
-
-.person-merge-choice {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 44px;
-}
-
-.person-merge-warning {
-  margin: 0;
-  color: var(--ink-1);
-}
-
-.person-merge-conflicts {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding-left: var(--space-5);
 }
