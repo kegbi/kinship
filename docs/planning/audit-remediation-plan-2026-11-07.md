@@ -855,7 +855,7 @@ these:
 
 ### Lane T — Tenant hardening without schema changes
 
-- [ ] **AUD-T1 — Id-only statements prove their workspace, and export-download
+- [x] **AUD-T1 — Id-only statements prove their workspace, and export-download
       tokens are bound to their requester.** S–M. Normal. Depends: none. Closes:
       SECT-09 (people, interactions, and workspaces), and the export token part
       of SECT-10.
@@ -875,6 +875,18 @@ these:
     second admin redeeming a member's export token gets 403.
   - Verify: `test:integration --module=people`, `--module=interactions`, and
     `--module=exports`; E2E `export.EXPORT-001`.
+  - Delivered 2026-11-07: `[AUD-T1]` integration and unit tests (a forged
+    cross-workspace id changes and reads nothing in food preferences, tags,
+    merge facts, address copies, and imported avatars; the interactions import
+    inserts the parent id it checked; recent people refuse another workspace's
+    person; a second admin redeeming a member's export link gets 403 and the
+    link stays unspent), exports integration 6, people, interactions, and
+    workspaces files run directly 47 (those modules declare no integration
+    target), people, workspaces, import-export, and api unit tests (only the
+    `baseline_test.ts` permission gap); E2E EXPORT-001 passed on Chromium;
+    changed files 91.4% lines, 81.2% branches, 86.5% functions; contracts, fmt,
+    architecture, and lint (only REL-096). The link binding lives in the
+    existing `data_exports.manifest`; no schema change.
 
 ### Lane F — Frontend data layer and shell
 

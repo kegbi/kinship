@@ -8,7 +8,9 @@
  *
  * The identifier is canonicalised before anything is written, and a value that
  * is not one is refused rather than dropped — recording a person nobody can
- * name would put a row in the list that no page can render.
+ * name would put a row in the list that no page can render. A person outside
+ * the actor's workspace is refused the same way (AUD-T1, SECT-09), so the list
+ * holds only ids its one reader could show.
  */
 
 import {
@@ -20,10 +22,14 @@ import type {
   RecentPeopleActor,
   RecentPeopleTransactionRunner,
 } from "../ports/context.ts";
-import type { RecentPeopleRepository } from "../ports/ui_state_repository.ts";
+import type {
+  RecentPeopleRepository,
+  RecentPersonScope,
+} from "../ports/ui_state_repository.ts";
 
 export interface RecentPeopleDependencies {
   readonly actors: ActorRevalidation;
+  readonly people: RecentPersonScope;
   readonly repository: RecentPeopleRepository;
   readonly transaction: RecentPeopleTransactionRunner;
 }
@@ -50,6 +56,12 @@ export function createRecentPeopleManagement(
         if (locked.status !== "ready") return locked;
         const canonical = canonicalPersonId(personId);
         if (!canonical) return { status: "forbidden" as const };
+        const inWorkspace = await dependencies.people.inWorkspace({
+          personId: canonical,
+          transaction,
+          workspaceId: actor.workspaceId,
+        });
+        if (!inWorkspace) return { status: "forbidden" as const };
         return await dependencies.repository.save({
             ...actor,
             transaction,

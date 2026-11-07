@@ -181,10 +181,17 @@ export class PostgresPersonMergeRepository implements PersonMergeRepository {
     command: Parameters<PersonMergeRepository["listFacts"]>[0],
   ): ReturnType<PersonMergeRepository["listFacts"]> {
     const db = database(command);
+    // Every read below proves the person is in the actor's workspace, and the
+    // introducer and place are joined only from that workspace (SECT-09).
+    const owned = sql`exists (
+      select 1 from crm.people owner
+      where owner.id = ${command.personId}::uuid
+        and owner.workspace_id = ${command.workspaceId}::uuid
+    )`;
     const dates = await sql<ImportantDateRow>`
       select ${IMPORTANT_DATE_COLUMNS}
       from crm.person_dates
-      where person_id = ${command.personId}::uuid
+      where person_id = ${command.personId}::uuid and ${owned}
       order by created_at, id
     `.execute(db);
     // The first meeting as the confirmation names it: where, through whom,
@@ -213,8 +220,11 @@ export class PostgresPersonMergeRepository implements PersonMergeRepository {
       from crm.person_first_meetings meeting
       left join crm.people introducer
         on introducer.id = meeting.introduced_by_person_id
-      left join crm.locations place on place.id = meeting.location_id
-      where meeting.person_id = ${command.personId}::uuid
+        and introducer.workspace_id = ${command.workspaceId}::uuid
+      left join crm.locations place
+        on place.id = meeting.location_id
+        and place.workspace_id = ${command.workspaceId}::uuid
+      where meeting.person_id = ${command.personId}::uuid and ${owned}
     `.execute(db);
     const avatar = await sql<{
       readonly external_url: string | null;
@@ -222,7 +232,7 @@ export class PostgresPersonMergeRepository implements PersonMergeRepository {
       readonly source: string;
     }>`
       select source, file_id::text, external_url from crm.person_avatars
-      where person_id = ${command.personId}::uuid
+      where person_id = ${command.personId}::uuid and ${owned}
     `.execute(db);
     const meetingRow = meeting.rows[0];
     const avatarRow = avatar.rows[0];
@@ -445,8 +455,10 @@ async function relinkOwnTables(command: Command): Promise<ReferenceOutcome> {
           from crm.person_addresses kept
           left join crm.locations kept_place
             on kept_place.id = kept.location_id
+            and kept_place.workspace_id = ${command.workspaceId}::uuid
           left join crm.locations copy_place
             on copy_place.id = copy.location_id
+            and copy_place.workspace_id = ${command.workspaceId}::uuid
           where kept.person_id = ${primary}::uuid
             and kept.display_name is not distinct from copy.display_name
             and kept_place.street is not distinct from copy_place.street

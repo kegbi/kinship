@@ -20,6 +20,8 @@ import { PostgresRecentPeopleRepository } from "../../packages/backend/modules/w
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { PostgresRegistrationTransaction } from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
+import { recentPersonScope } from "../../apps/api/composition.ts";
+import { personBoundary } from "../../packages/backend/modules/people/composition.ts";
 import {
   addMembership,
   configured,
@@ -745,6 +747,7 @@ Deno.test({
       });
       const recentPeople = createRecentPeopleManagement({
         actors,
+        people: recentPersonScope(personBoundary()),
         repository: new PostgresRecentPeopleRepository(),
         transaction,
       });
@@ -775,6 +778,54 @@ Deno.test({
       assert(
         stored?.state.includes('"dark"'),
         "a revoked member overwrote its stored UI state",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+// AUD-T1 (SECT-09): the recent list once stored any well-formed id, and only
+// its reader filtered by workspace; now an id outside the actor's workspace
+// is refused before anything is written.
+Deno.test({
+  name:
+    "[TODAY-001] AUD-T1 PostgreSQL never stores another workspace's person as recent",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const actor = await revocableActor(
+        sql,
+        `t1-recent-${crypto.randomUUID()}`,
+      );
+      const foreign = await revocableActor(
+        sql,
+        `t1-recent-foreign-${crypto.randomUUID()}`,
+      );
+      const recentPeople = createRecentPeopleManagement({
+        actors: new PostgresActorRevalidation(),
+        people: recentPersonScope(personBoundary()),
+        repository: new PostgresRecentPeopleRepository(),
+        transaction: new PostgresRegistrationTransaction(connection.db),
+      });
+
+      const own = await recentPeople.record(actor, actor.personId);
+      const forged = await recentPeople.record(actor, foreign.personId);
+      assert(
+        own.status === "recorded" && forged.status === "forbidden",
+        `recent people did not prove the workspace: ${
+          JSON.stringify({ forged, own })
+        }`,
+      );
+      const [stored] = await sql<[{ readonly ids: string[] }]>`
+        select coalesce(ui_state->'recentPersonIds', '[]'::jsonb) as ids
+        from crm.member_preferences where member_id = ${actor.memberId}
+      `;
+      assert(
+        JSON.stringify(stored?.ids) === JSON.stringify([actor.personId]),
+        `another workspace's person was stored: ${JSON.stringify(stored)}`,
       );
     } finally {
       await connection.destroy();

@@ -16,6 +16,7 @@ import type {
   ProfileFactValue,
 } from "../../domain/profile_facts/values.ts";
 import type { ImportantDatePublisher } from "../../ports/important_date_repository.ts";
+import type { PostgresPeopleBusinessImportBoundary } from "./import_business_boundary.ts";
 import { PostgresImportantDateRepository } from "./important_date_repository.ts";
 import { PostgresProfileFactRepository } from "./profile_fact_repository.ts";
 
@@ -31,6 +32,11 @@ import { PostgresProfileFactRepository } from "./profile_fact_repository.ts";
  * through the same repositories and rules the profile editors use, and hands
  * each date to planning's publisher, so an imported birthday reminds exactly
  * as a typed one does.
+ *
+ * `linkAvatar` asks the files module whether the file is in the actor's
+ * workspace before it links it (AUD-T1, SECT-09): people may not read the
+ * files table, so the proof comes through the same port the business import
+ * boundary checks an avatar's file with.
  */
 export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   readonly #dates = new PostgresImportantDateRepository();
@@ -39,6 +45,10 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   constructor(
     private readonly publisher: ImportantDatePublisher,
     private readonly contactTypes: Pick<ContactMethodTypeCatalog, "forImport">,
+    private readonly files: Pick<
+      ConstructorParameters<typeof PostgresPeopleBusinessImportBoundary>[0],
+      "file"
+    >,
   ) {}
 
   async addDetails(
@@ -240,6 +250,14 @@ export class PostgresPeopleImportBoundary implements PeopleImportBoundary {
   async linkAvatar(
     command: Parameters<PeopleImportBoundary["linkAvatar"]>[0],
   ): Promise<void> {
+    const held = await this.files.file({
+      id: command.fileId,
+      transaction: command.transaction,
+      workspaceId: command.actor.workspaceId,
+    });
+    if (!held) {
+      throw new Error("Imported avatar file is outside the workspace.");
+    }
     const result = await sql<{ readonly person_id: string }>`
       insert into crm.person_avatars (person_id, source, file_id)
       select person.id, 'file', ${command.fileId}::uuid

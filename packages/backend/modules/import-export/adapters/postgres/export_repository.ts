@@ -182,18 +182,30 @@ export class PostgresExportRepository implements ExportRepository {
         and export.expires_at > ${command.now}
         and export.manifest #>> '{download,digest}' = ${command.digest}
         and (export.manifest #>> '{download,expiresAt}')::timestamptz > ${command.now}
+        and export.manifest #>> '{download,memberId}' = ${command.actor.memberId}
       returning export.file_id::text
     `.execute(database);
     if (result.rows[0]) {
       return { fileId: result.rows[0].file_id, status: "consumed" };
     }
-    const existing = await sql<{ readonly id: string }>`
-      select id::text from crm.data_exports
+    // A live link issued to another member is refused without being spent
+    // (SECT-10): it stays the issuing member's to redeem.
+    const existing = await sql<{ readonly elsewhere: boolean }>`
+      select coalesce(
+        manifest #>> '{download,digest}' = ${command.digest}
+          and (manifest #>> '{download,expiresAt}')::timestamptz > ${command.now}
+          and (manifest #>> '{download,memberId}')
+            is distinct from ${command.actor.memberId},
+        false
+      ) as elsewhere
+      from crm.data_exports
       where id = ${command.exportId}::uuid
         and workspace_id = ${command.actor.workspaceId}::uuid
         and status = 'completed'
     `.execute(database);
-    return existing.rows[0] ? { status: "expired" } : { status: "not-found" };
+    const row = existing.rows[0];
+    if (!row) return { status: "not-found" };
+    return row.elsewhere ? { status: "forbidden" } : { status: "expired" };
   }
 
   async lock(
@@ -232,6 +244,9 @@ export class PostgresExportRepository implements ExportRepository {
       JSON.stringify({
         digest: command.digest,
         expiresAt: command.expiresAt.toISOString(),
+        // The member the link is bound to (SECT-10). The schema keeps the
+        // link's state in the manifest, so the binding sits beside its digest.
+        memberId: command.actor.memberId,
       })
     }::text::jsonb, true
       ), updated_at = now()

@@ -173,6 +173,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     importBoundary: new PostgresPeopleImportBoundary(
       ports.importantDatePublisher,
       ports.importContactTypes,
+      ports.importReferences,
     ),
     importantDates: createImportantDateManagement({
       actors: shared.actors,

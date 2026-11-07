@@ -7,9 +7,13 @@
  */
 
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import { PostgresProfileFactRepository } from "../../packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts";
+import { revocableActor } from "../support/database.ts";
 import {
   configured,
   createPerson,
+  peopleConnection,
   profileFacts,
   register,
   sql,
@@ -1508,6 +1512,80 @@ Deno.test({
         );
       });
     }
+  },
+});
+
+Deno.test({
+  // AUD-T1 (SECT-09): the food-preference read and write and the tag read
+  // address a person by id, and each now proves that person is in the actor's
+  // workspace itself rather than relying on the caller's `lockContext`.
+  name:
+    "[PEOPLE-006] AUD-T1 food-preference and tag statements given another workspace's person read and change nothing",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await revocableActor(sql, `t1-facts-${crypto.randomUUID()}`);
+    const foreign = await revocableActor(
+      sql,
+      `t1-facts-foreign-${crypto.randomUUID()}`,
+    );
+    await sql`
+      update crm.people set food_preferences = 'Foreign secret'
+      where id = ${foreign.personId}::uuid
+    `;
+    const [before] = await sql<{ readonly updated_at: string }[]>`
+      select updated_at::text from crm.people where id = ${foreign.personId}::uuid
+    `;
+    const repository = new PostgresProfileFactRepository();
+    const transaction = new PostgresPeopleTransaction(peopleConnection.db);
+    const actor = {
+      memberId: owner.memberId,
+      role: owner.role,
+      userId: owner.userId,
+      workspaceId: owner.workspaceId,
+    };
+
+    const listed = await transaction.run((session) =>
+      repository.list({
+        ...actor,
+        personId: foreign.personId,
+        section: "food-preferences",
+        transaction: session,
+      })
+    );
+    assertEquals(listed, [], "another workspace's food preferences were read");
+    const tags = await transaction.run((session) =>
+      repository.list({
+        ...actor,
+        personId: foreign.personId,
+        section: "tags",
+        transaction: session,
+      })
+    );
+    assertEquals(tags, [], "another workspace's person was read as tags");
+
+    const saved = await transaction.run((session) =>
+      repository.save({
+        ...actor,
+        id: crypto.randomUUID(),
+        occurredAt: new Date(),
+        personId: foreign.personId,
+        section: "food-preferences",
+        transaction: session,
+        value: { foodPreferences: "Forged" },
+      })
+    ).then(() => "saved", () => "refused");
+    assertEquals(saved, "refused", "a forged person id was written");
+    const [after] = await sql<
+      { readonly food_preferences: string; readonly updated_at: string }[]
+    >`
+      select food_preferences, updated_at::text from crm.people
+      where id = ${foreign.personId}::uuid
+    `;
+    assertEquals(after, {
+      food_preferences: "Foreign secret",
+      updated_at: before!.updated_at,
+    });
   },
 });
 

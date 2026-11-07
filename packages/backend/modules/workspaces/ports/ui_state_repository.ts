@@ -63,3 +63,16 @@ export interface RecentPeopleRepository {
     },
   ): Promise<boolean>;
 }
+
+/**
+ * Whether a person is in the actor's workspace (AUD-T1, SECT-09). People own
+ * that table and depend on this module, so the composition root fills this
+ * port from the people module instead of this module reading the people table.
+ */
+export interface RecentPersonScope {
+  inWorkspace(command: {
+    readonly personId: string;
+    readonly transaction: RecentPeopleTransaction;
+    readonly workspaceId: string;
+  }): Promise<boolean>;
+}

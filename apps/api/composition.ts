@@ -145,6 +145,7 @@ import {
   type AuthenticationResponseEqualizer,
   createPersonalizationManagement,
   type MemberUiStateManagement,
+  type RecentPersonScope,
   settingsAuditFrom,
   type VerificationMail,
 } from "../../packages/backend/modules/workspaces/public.ts";
@@ -852,6 +853,24 @@ export function avatarImages(files: PersonFileManagement): PersonAvatarImages {
 }
 
 /**
+ * The workspaces module's recent-people check, filled from the people module
+ * (AUD-T1, SECT-09): people depend on workspaces, so workspaces names the
+ * question and people answer it, inside the recording transaction.
+ */
+export function recentPersonScope(
+  persons: ReturnType<typeof personBoundary>,
+): RecentPersonScope {
+  return {
+    inWorkspace: ({ personId, transaction, workspaceId }) =>
+      persons.existsForImport({
+        personIds: [personId],
+        transaction,
+        workspaceId,
+      }),
+  };
+}
+
+/**
  * The person-merge participants (GAP-049), in the order a merge relinks them.
  *
  * People depends on none of these modules, so each hands the root the one
@@ -1151,6 +1170,7 @@ export function composeApiServices(
     memberCredentials: apiAccess.apiTokens,
     // Planning's hook: changing a timezone reschedules the reminders it owns.
     planningPublisher: planning.reminders,
+    recentPeople: recentPersonScope(persons),
     responseEqualizer: options.responseEqualizer ??
       createAuthenticationResponseEqualizer(
         DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,

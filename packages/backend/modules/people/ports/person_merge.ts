@@ -97,6 +97,7 @@ export interface PersonMergeRepository {
   listFacts(command: {
     readonly personId: string;
     readonly transaction: PeopleTransaction;
+    readonly workspaceId: string;
   }): Promise<PersonMergeFacts>;
   /** People's own tables, as a participant sees them. */
   readonly ownTables: Omit<PersonMergeParticipant, "relinkPerson"> & {

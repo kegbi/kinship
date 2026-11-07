@@ -21,6 +21,8 @@ const personId = "00000000-0000-4000-8000-000000000006";
 class MemoryRepository implements ExportRepository {
   summary?: ExportSummary;
   stored?: StoredExport;
+  /** The member the outstanding link was issued to. */
+  downloadMemberId?: string;
   failed = false;
   completeFails = false;
   complete(command: Parameters<ExportRepository["complete"]>[0]) {
@@ -52,6 +54,9 @@ class MemoryRepository implements ExportRepository {
       this.stored.downloadDigest !== command.digest ||
       Date.parse(this.stored.downloadExpiresAt ?? "") <= command.now.getTime()
     ) return Promise.resolve({ status: "expired" });
+    if (this.downloadMemberId !== command.actor.memberId) {
+      return Promise.resolve({ status: "forbidden" });
+    }
     const fileId = this.stored.fileId!;
     const { downloadDigest: _digest, downloadExpiresAt: _expires, ...stored } =
       this.stored;
@@ -67,6 +72,7 @@ class MemoryRepository implements ExportRepository {
       downloadDigest: command.digest,
       downloadExpiresAt: command.expiresAt.toISOString(),
     };
+    this.downloadMemberId = command.actor.memberId;
     return Promise.resolve(true);
   }
   list(): Promise<readonly ExportSummary[]> {
@@ -336,6 +342,26 @@ Deno.test("[EXPORT-001] persists resumable history and validates each short-live
   assert(
     (await exports.download(actor, exportId, "stale")).status === "expired",
     "wrong token rejected as expired",
+  );
+  // AUD-T1 (SECT-10): another admin holding the link is refused, and the
+  // refusal leaves it for the member it was issued to.
+  assert(
+    (await exports.createDownload(actor, exportId)).status === "ready",
+    "a second reference issued",
+  );
+  const colleague = {
+    ...actor,
+    memberId: "00000000-0000-4000-8000-000000000007",
+  };
+  assert(
+    (await exports.download(colleague, exportId, "download-secret")).status ===
+      "forbidden",
+    "another admin redeemed the member's download reference",
+  );
+  assert(
+    (await exports.download(actor, exportId, "download-secret")).status ===
+      "ready",
+    "the refusal spent the member's download reference",
   );
   assert(
     (await exports.createDownload({ ...actor, role: "member" }, exportId))

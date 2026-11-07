@@ -1583,3 +1583,96 @@ Deno.test("[PEOPLE-008] a merge whose conflicts changed after its preview is ref
   const merged = await confirm(third.conflictsDigest);
   assertEquals(merged.status, 200, await merged.clone().text());
 });
+
+// AUD-T1 (SECT-09): the merge reads a first meeting's introducer and place,
+// and compares two addresses' places, by id. Each join now proves the joined
+// row is in the actor's workspace, so a forged id from another workspace is
+// neither read nor treated as an exact copy.
+Deno.test("[PEOPLE-008] AUD-T1 merge facts and address copies ignore another workspace's rows", async () => {
+  const owner = await register("t1-scope");
+  const foreign = await register("t1-scope-foreign");
+  const primary = await addPerson(owner, "Mary Jackson");
+  const duplicate = await addPerson(owner, "Mary Jackson");
+  const outsider = await addPerson(foreign, "Private Outsider");
+  const ownPlace = crypto.randomUUID();
+  const foreignPlace = crypto.randomUUID();
+  await sql`
+    insert into crm.locations (id, workspace_id, city) values
+      (${ownPlace}::uuid, ${owner.workspaceId}::uuid, 'Hampton'),
+      (${foreignPlace}::uuid, ${foreign.workspaceId}::uuid, 'Hampton')
+  `;
+  // Forged rows: the duplicate's first meeting names the other workspace's
+  // person and place, and its address points at the other workspace's place.
+  await sql`
+    insert into crm.person_first_meetings (
+      person_id, introduced_by_person_id, location_id, place_text
+    ) values (
+      ${duplicate}::uuid, ${outsider}::uuid, ${foreignPlace}::uuid, 'Langley'
+    )
+  `;
+  await sql`
+    insert into crm.person_first_meetings (person_id, place_text)
+    values (${outsider}::uuid, 'Outsider meeting')
+  `;
+  await sql`
+    insert into crm.person_addresses (person_id, location_id, display_name)
+    values (${primary}::uuid, ${ownPlace}::uuid, 'Home')
+  `;
+  const [forgedAddress] = await sql<{ readonly id: string }[]>`
+    insert into crm.person_addresses (person_id, location_id, display_name)
+    values (${duplicate}::uuid, ${foreignPlace}::uuid, 'Home')
+    returning id::text
+  `;
+  const connection = connectDatabase(databaseUrl);
+  try {
+    const repository = new PostgresPersonMergeRepository();
+    const transaction = peopleTransactionRunner(connection.db);
+    const facts = await transaction.run((session) =>
+      repository.listFacts({
+        personId: duplicate,
+        transaction: session,
+        workspaceId: owner.workspaceId,
+      })
+    );
+    assertEquals(
+      facts.firstMeeting,
+      { placeText: "Langley" },
+      "another workspace's introducer or place was read",
+    );
+    const outsiderFacts = await transaction.run((session) =>
+      repository.listFacts({
+        personId: outsider,
+        transaction: session,
+        workspaceId: owner.workspaceId,
+      })
+    );
+    assertEquals(
+      outsiderFacts,
+      { dates: [] },
+      "another workspace's person's facts were read",
+    );
+
+    await transaction.run((session) =>
+      repository.ownTables.relinkPerson({
+        duplicateId: duplicate,
+        memberId: owner.memberId,
+        occurredAt: new Date(),
+        primaryId: primary,
+        removedDateIds: [],
+        transaction: session,
+        workspaceId: owner.workspaceId,
+      })
+    );
+  } finally {
+    await connection.destroy();
+  }
+  const kept = await sql<{ readonly person_id: string }[]>`
+    select person_id::text from crm.person_addresses
+    where id = ${forgedAddress!.id}::uuid
+  `;
+  assertEquals(
+    kept,
+    [{ person_id: primary }],
+    "an address was dropped as a copy of another workspace's place",
+  );
+});

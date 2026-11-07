@@ -221,6 +221,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
             'foodPreferences', person.food_preferences
           )) as value
         from crm.people person where person.id = ${command.personId}::uuid
+          and person.workspace_id = ${command.workspaceId}::uuid
           and person.food_preferences is not null
           and (${command.factId ?? null}::uuid is null or person.id = ${
         command.factId ?? null
@@ -290,6 +291,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
             and tag.workspace_id = ${command.workspaceId}::uuid
         ) tags on true
         where person.id = ${command.personId}::uuid
+          and person.workspace_id = ${command.workspaceId}::uuid
           and (${command.factId ?? null}::uuid is null or person.id = ${
         command.factId ?? null
       }::uuid)
@@ -513,6 +515,7 @@ export class PostgresProfileFactRepository implements ProfileFactRepository {
         value.foodPreferences ?? null
       }
         where id = ${command.personId}::uuid
+          and workspace_id = ${command.workspaceId}::uuid
           and (${expected}::timestamptz is null or updated_at = ${expected}::timestamptz)
         returning id::text
       `.execute(database);

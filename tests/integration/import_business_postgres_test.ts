@@ -404,6 +404,13 @@ Deno.test({
         await sql`insert into crm.relationship_types(workspace_id,forward_label,reverse_label) values(${foreign.workspaceId}::uuid,'Foreign','Foreign') returning id`;
       const [date] =
         await sql`insert into crm.person_dates(person_id,kind,precision,year,month,day) values(${foreign.personId}::uuid,'birthday','full',1990,1,1) returning id`;
+      // AUD-T1 (SECT-09): an activity emotion is inserted under `parentId`,
+      // so naming the actor's own activity as `activityId` beside it must not
+      // pass the check for another workspace's parent.
+      const [ownActivity] =
+        await sql`insert into crm.activities(workspace_id,summary,happened_at) values(${actor.workspaceId}::uuid,'Own',now()) returning id`;
+      const [emotion] =
+        await sql`insert into crm.emotion_options(name) values(${`t1-${crypto.randomUUID()}`}) returning id`;
       const commands = [
         (transaction: { opaque: unknown }) =>
           planning.importRecords({
@@ -482,6 +489,20 @@ Deno.test({
             transaction,
             records: [{
               id: crypto.randomUUID(),
+              data: { kind: "activity_emotion", createdAt: null },
+              references: {
+                activityId: ownActivity!.id,
+                emotionId: emotion!.id,
+                parentId: activity!.id,
+              },
+            }],
+          }),
+        (transaction: { opaque: unknown }) =>
+          interactions.importRecords({
+            actor,
+            transaction,
+            records: [{
+              id: crypto.randomUUID(),
               data: { kind: "call_emotion" },
               references: { parentId: call!.id },
             }],
@@ -522,6 +543,13 @@ Deno.test({
           0,
         );
       }
+      assertEquals(
+        (await sql`select activity_id from crm.activity_emotions where activity_id=${
+          activity!.id
+        }::uuid`).length,
+        0,
+        "an emotion was attached to another workspace's activity",
+      );
       await sql`update crm.people set deleted_at=now() where id=${actor.personId}::uuid`;
       const historicalNote = crypto.randomUUID(),
         historicalCall = crypto.randomUUID();

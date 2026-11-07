@@ -28,6 +28,8 @@ import {
 import {
   PostgresFileImportBoundary,
 } from "../../packages/backend/modules/files/adapters/postgres/import_file_boundary.ts";
+import { PostgresFileBusinessImportBoundary } from "../../packages/backend/modules/files/adapters/postgres/import_business_boundary.ts";
+import { personBoundary } from "../../packages/backend/modules/people/composition.ts";
 import {
   PostgresAuditEventRecorder,
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
@@ -47,6 +49,14 @@ import { apiSupport, type SignedInFixture } from "../support/api.ts";
 const monicaDates = {
   regenerate: () =>
     Promise.reject(new Error("A Monica import regenerated a reminder.")),
+};
+
+/** The files module's answer to whether an imported avatar's file is the actor's. */
+const avatarFileBoundary = new PostgresFileBusinessImportBoundary(
+  personBoundary(),
+);
+const avatarFiles = {
+  file: avatarFileBoundary.fileExists.bind(avatarFileBoundary),
 };
 
 function commitMonica(
@@ -267,6 +277,7 @@ Deno.test("[IMPORT-001] owning-boundary failure rolls back every commit effect a
     people: new PostgresPeopleImportBoundary(
       monicaDates,
       new PostgresContactMethodTypeCatalog(),
+      avatarFiles,
     ),
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),
@@ -355,6 +366,7 @@ Deno.test({
         people: new PostgresPeopleImportBoundary(
           monicaDates,
           new PostgresContactMethodTypeCatalog(),
+          avatarFiles,
         ),
         repository: new PostgresImportRepository(connection.db),
         transaction: new PostgresImportTransaction(connection.db),
@@ -539,6 +551,7 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
         new PostgresPeopleImportBoundary(
           monicaDates,
           new PostgresContactMethodTypeCatalog(),
+          avatarFiles,
         ).presence({
           actor: {
             memberId: fixture.memberId,
@@ -559,6 +572,60 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
 
   // Another workspace's deleted person decides nothing here.
   assertEquals(await importOnce(foreign), counts(3, 0, 0));
+});
+
+// AUD-T1 (SECT-09): `linkAvatar` once trusted that its file was the one the
+// import had just represented; it now asks files whether the file is in the
+// actor's workspace, so another workspace's file is never linked.
+Deno.test({
+  name:
+    "[IMPORT-001] AUD-T1 an imported avatar links only a file in the actor's workspace",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const owner = await revocableActor(sql, `t1-avatar-${crypto.randomUUID()}`);
+    const foreign = await revocableActor(
+      sql,
+      `t1-avatar-foreign-${crypto.randomUUID()}`,
+    );
+    const [foreignFile] = await sql<{ readonly id: string }[]>`
+      insert into crm.files (workspace_id, original_filename, status)
+      values (${foreign.workspaceId}::uuid, 'private.png', 'missing')
+      returning id::text
+    `;
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const linked = await new PostgresImportTransaction(connection.db).run(
+        (transaction) =>
+          new PostgresPeopleImportBoundary(
+            monicaDates,
+            new PostgresContactMethodTypeCatalog(),
+            avatarFiles,
+          ).linkAvatar({
+            actor: {
+              memberId: owner.memberId,
+              role: owner.role,
+              userId: owner.userId,
+              workspaceId: owner.workspaceId,
+            },
+            fileId: foreignFile!.id,
+            personId: owner.personId,
+            transaction,
+          }),
+      ).then(() => "linked", () => "refused");
+      assertEquals(linked, "refused", "another workspace's file was linked");
+    } finally {
+      await connection.destroy();
+    }
+    assertEquals(
+      await sql`
+        select person_id from crm.person_avatars
+        where person_id = ${owner.personId}::uuid
+      `.then((rows) => rows.length),
+      0,
+      "an avatar row was written for a forged file",
+    );
+  },
 });
 
 Deno.test("[IMPORT-001] SQL contacts and related details commit once through existing boundaries", async () => {
@@ -682,6 +749,7 @@ Deno.test("[IMPORT-001] approved vocabulary is atomic, tenant scoped, retired-sa
     people: new PostgresPeopleImportBoundary(
       monicaDates,
       new PostgresContactMethodTypeCatalog(),
+      avatarFiles,
     ),
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),
@@ -964,6 +1032,7 @@ Deno.test("[IMPORT-001] source catalog metadata persists only on newly created t
     people: new PostgresPeopleImportBoundary(
       monicaDates,
       new PostgresContactMethodTypeCatalog(),
+      avatarFiles,
     ),
     repository: new PostgresImportRepository(connection.db),
     transaction: new PostgresImportTransaction(connection.db),

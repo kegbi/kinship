@@ -70,6 +70,7 @@ import {
   type InvitationTokens,
   type MemberCredentialRevocation,
   personalLifecycleAuditFrom,
+  type RecentPersonScope,
   registrationAuditFrom,
   settingsAuditFrom,
   type SettingsPlanningPublisher,
@@ -224,6 +225,8 @@ export interface WorkspacePorts {
   readonly memberCredentials: MemberCredentialRevocation;
   /** Planning's late-bound hook for a timezone change. */
   readonly planningPublisher: SettingsPlanningPublisher;
+  /** People's word on whether a recent person is in the actor's workspace. */
+  readonly recentPeople: RecentPersonScope;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
   readonly storage: {
     remove(command: { readonly key: string }): Promise<void>;
@@ -315,6 +318,7 @@ export function composeWorkspaces(
     }),
     recentPeople: createRecentPeopleManagement({
       actors: shared.actors,
+      people: ports.recentPeople,
       repository: new PostgresRecentPeopleRepository(),
       transaction: shared.transaction,
     }),

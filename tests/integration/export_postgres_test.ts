@@ -31,14 +31,19 @@ import {
 import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
+  addMembership,
   openSql,
   requireDatabaseUrl,
   revocableActor,
   revokeMembership,
 } from "../support/database.ts";
-import { apiSupport, type SignedInFixture } from "../support/api.ts";
+import {
+  apiSupport,
+  sessionCookie,
+  type SignedInFixture,
+} from "../support/api.ts";
 
 class CapturedStorage implements ObjectStorage {
   readonly bucket = "export-test";
@@ -351,6 +356,73 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
       persisted.visibility === "private" && persisted.audits === "3",
     "canonical job, private file, and lifecycle audit persisted",
   );
+});
+
+// AUD-T1 (SECT-10): a download link is bound to the member who asked for it,
+// so another owner or admin of the same workspace who holds it is refused,
+// and the refusal does not spend it.
+Deno.test("[EXPORT-001] AUD-T1 a download link is spent only by the member it was issued to", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`export-bound-${suffix}@example.test`);
+  const colleagueEmail = `export-bound-admin-${suffix}@example.test`;
+  const colleague = await register(colleagueEmail);
+  const adminMemberId = await addMembership(
+    sql,
+    colleague.userId,
+    owner.workspaceId,
+    "admin",
+  );
+  const signedIn = await api.signIn(colleagueEmail, {
+    workspaceId: owner.workspaceId,
+  });
+  const adminCookie = sessionCookie(signedIn);
+  assert(signedIn.status === 200 && adminCookie, "the admin signs in");
+  const admin: SignedInFixture = {
+    cookie: adminCookie,
+    memberId: adminMemberId,
+    role: "admin",
+    userId: colleague.userId,
+    workspaceId: owner.workspaceId,
+  };
+
+  const created = await request(owner, "/api/v1/exports", "POST");
+  const { exportId } = await created.json() as { exportId: string };
+  assertEquals(created.status, 201);
+  const issued = await request(
+    owner,
+    `/api/v1/exports/${exportId}/downloads`,
+    "POST",
+  );
+  const { href } = await issued.json() as { href: string };
+  assertEquals(issued.status, 201);
+
+  const stolen = await request(admin, href, "GET");
+  assertEquals(
+    stolen.status,
+    403,
+    "a second admin redeemed the owner's download link",
+  );
+  assertEquals(
+    (await stolen.json() as { code: string }).code,
+    "export_forbidden",
+  );
+  const spent = await request(owner, href, "GET");
+  assertEquals(
+    spent.status,
+    200,
+    "the refused redemption spent the owner's link",
+  );
+  await spent.arrayBuffer();
+
+  const own = await request(
+    admin,
+    `/api/v1/exports/${exportId}/downloads`,
+    "POST",
+  );
+  const ownHref = (await own.json() as { href: string }).href;
+  const ownDownload = await request(admin, ownHref, "GET");
+  assertEquals(ownDownload.status, 200, "the admin spends a link of its own");
+  await ownDownload.arrayBuffer();
 });
 
 // --- GAP-009 -------------------------------------------------------------

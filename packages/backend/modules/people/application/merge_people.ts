@@ -238,10 +238,12 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
     const primaryFacts = await dependencies.repository.listFacts({
       personId: primaryId,
       transaction,
+      workspaceId,
     });
     const duplicateFacts = await dependencies.repository.listFacts({
       personId: duplicateId,
       transaction,
+      workspaceId,
     });
     return {
       conflicts: [

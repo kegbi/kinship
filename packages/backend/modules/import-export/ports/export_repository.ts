@@ -7,8 +7,9 @@
  * why a member who asks twice gets one artifact rather than two.
  *
  * A download link is a one-shot credential: `issueDownload` stores only its
- * digest and `consumeDownload` spends it, answering with the artifact or with
- * the reason it will not — expired, or never issued at all.
+ * digest, beside the member it was issued to, and `consumeDownload` spends it
+ * for that member alone, answering with the artifact or with the reason it
+ * will not — issued to somebody else, expired, or never issued at all.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
@@ -45,7 +46,7 @@ export interface ExportRepository {
     readonly transaction: ExportTransaction;
   }): Promise<
     | { readonly fileId: string; readonly status: "consumed" }
-    | Failure<"not-found", "expired">
+    | Failure<"forbidden" | "not-found", "expired">
   >;
   issueDownload(command: {
     readonly actor: ExportActor;

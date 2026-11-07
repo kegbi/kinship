@@ -1,6 +1,7 @@
 import {
   createRecentPeopleManagement,
   type RecentPeopleRepository,
+  type RecentPersonScope,
 } from "../public.ts";
 import { assert } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
@@ -12,9 +13,16 @@ const transactionRunner = {
     return work(transaction);
   },
 };
-const manage = (repository: RecentPeopleRepository) =>
+const everyone: RecentPersonScope = {
+  inWorkspace: () => Promise.resolve(true),
+};
+const manage = (
+  repository: RecentPeopleRepository,
+  people: RecentPersonScope = everyone,
+) =>
   createRecentPeopleManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
+    people,
     repository,
     transaction: transactionRunner,
   });
@@ -109,5 +117,43 @@ Deno.test("TODAY-001 recent-person state repairs malformed roots and fails close
   assert(
     forbidden.status === "forbidden" && !saved,
     "denial did not stop write",
+  );
+});
+
+Deno.test("AUD-T1 a person outside the actor's workspace is never stored as recent", async () => {
+  let saved = false;
+  const asked: unknown[] = [];
+  const recent = manage(
+    {
+      lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+      save: () => {
+        saved = true;
+        return Promise.resolve(true);
+      },
+    },
+    {
+      inWorkspace(command) {
+        asked.push({
+          personId: command.personId,
+          transaction: command.transaction,
+          workspaceId: command.workspaceId,
+        });
+        return Promise.resolve(false);
+      },
+    },
+  );
+  const result = await recent.record(actor, person(7).toUpperCase());
+  assert(
+    result.status === "forbidden" && !saved,
+    "a person outside the workspace was recorded",
+  );
+  assert(
+    JSON.stringify(asked) ===
+      JSON.stringify([{
+        personId: person(7),
+        transaction,
+        workspaceId: actor.workspaceId,
+      }]),
+    "the canonical id was not checked in the actor's workspace and transaction",
   );
 });

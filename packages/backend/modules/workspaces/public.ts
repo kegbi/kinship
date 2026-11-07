@@ -210,7 +210,10 @@ export type {
   RecentPeopleActor,
   RecentPeopleTransaction,
 } from "./ports/context.ts";
-export type { RecentPeopleRepository } from "./ports/ui_state_repository.ts";
+export type {
+  RecentPeopleRepository,
+  RecentPersonScope,
+} from "./ports/ui_state_repository.ts";
 export { createMemberUiStateManagement } from "./application/member_ui_state.ts";
 /**
  * The notifications read-through watermark's rule (GAP-053), which the
