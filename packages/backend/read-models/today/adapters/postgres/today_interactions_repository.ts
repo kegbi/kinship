@@ -56,8 +56,30 @@ export class PostgresTodayInteractionsRepository
   ): Promise<
     Awaited<ReturnType<TodayInteractionsRepository["getRecentActivity"]>>
   > {
+    // Each kind takes its own most recent page first, on the real
+    // `timestamptz` the activities index is ordered by, so the history behind
+    // the page is never read; only those survivors gather participants and
+    // names, and the final sort sees at most two pages.
     const rows = await sql<TodayRow>`
-      with projection as (
+      with recent_activity as (
+        select activity.id, activity.activity_type_id, activity.summary,
+          activity.happened_at
+        from crm.activities activity
+        where activity.workspace_id = ${command.workspaceId}::uuid
+        order by activity.happened_at desc, activity.id desc
+        limit ${command.recentLimit}
+      ), recent_note as (
+        select note.id, note.person_id, note.body, note.is_favorited,
+          note.created_at
+        from crm.notes note
+        where note.workspace_id = ${command.workspaceId}::uuid
+          and exists (select 1 from crm.people person
+            where person.id = note.person_id
+              and person.workspace_id = note.workspace_id
+              and person.deleted_at is null)
+        order by note.created_at desc, note.id desc
+        limit ${command.recentLimit}
+      ), projection as (
         select activity.id, 'activity'::text as kind, activity.summary,
           coalesce(
             nullif(activity_type.name, ''), activity_type.translation_key
@@ -65,10 +87,10 @@ export class PostgresTodayInteractionsRepository
           null::text as body, null::boolean as is_favorited,
           activity.happened_at,
           coalesce(participants.value, '[]'::jsonb) as participants
-        from crm.activities activity
+        from recent_activity activity
         left join crm.activity_types activity_type
           on activity_type.id = activity.activity_type_id
-          and activity_type.workspace_id = activity.workspace_id
+          and activity_type.workspace_id = ${command.workspaceId}::uuid
         left join lateral (
           select jsonb_agg(jsonb_build_object(
             'id', person.id::text,
@@ -76,11 +98,10 @@ export class PostgresTodayInteractionsRepository
           ) order by lower(coalesce(person.given_name, person.nickname, '')), person.id) as value
           from crm.activity_participants link
           join crm.people person on person.id = link.person_id
-            and person.workspace_id = activity.workspace_id
+            and person.workspace_id = ${command.workspaceId}::uuid
             and person.deleted_at is null
           where link.activity_id = activity.id
         ) participants on true
-        where activity.workspace_id = ${command.workspaceId}::uuid
         union all
         select note.id, 'note'::text, null::text, null::text, note.body,
           note.is_favorited, note.created_at,
@@ -88,15 +109,15 @@ export class PostgresTodayInteractionsRepository
             'id', person.id::text,
             'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
           ))
-        from crm.notes note
+        from recent_note note
         join crm.people person on person.id = note.person_id
-          and person.workspace_id = note.workspace_id and person.deleted_at is null
-        where note.workspace_id = ${command.workspaceId}::uuid
+          and person.workspace_id = ${command.workspaceId}::uuid
       )
       select id::text, kind, summary, activity_type, body, is_favorited,
         participants,
-        ${instantColumn("happened_at")} as happened_at
-      from projection order by happened_at desc, id desc
+        ${instantColumn("projection.happened_at")} as happened_at
+      from projection
+      order by projection.happened_at desc, projection.id desc
       limit ${command.recentLimit}
     `.execute(this.database);
     return {

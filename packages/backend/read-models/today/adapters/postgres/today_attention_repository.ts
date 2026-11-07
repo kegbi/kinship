@@ -1,4 +1,4 @@
-import { type Kysely, sql } from "kysely";
+import { type Kysely, type RawBuilder, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
@@ -25,6 +25,13 @@ interface ItemRow {
   readonly unavailable: boolean | null;
 }
 
+/** The columns every attention arm lists, in order. */
+const ARM_COLUMNS = sql.raw(
+  "id, kind, title, due_at, occurs_on, reminder_status, channel, " +
+    "last_contacted_at, person_id, source_order, source_id, archived, " +
+    "unavailable, person_name",
+);
+
 export class PostgresTodayAttentionRepository
   implements TodayAttentionRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
@@ -46,6 +53,30 @@ export class PostgresTodayAttentionRepository
     `.execute(transaction);
         const timezone = context.rows[0]!.timezone;
         const window = todayAttentionWindow(command.now, timezone);
+        const bucket = (dueAt: RawBuilder<unknown>) =>
+          sql`case when ${dueAt} < ${window.todayStart} then 'overdue'
+            when ${dueAt} < ${window.tomorrowStart} then 'today'
+            when ${dueAt} < ${window.nextSevenDaysEnd} then 'next'
+            else 'upcoming' end`;
+        const shown = (dueAt: RawBuilder<unknown>) =>
+          sql`case when ${bucket(dueAt)} = 'upcoming'
+            then ${command.upcomingLimit}::bigint
+            else ${command.perAttentionGroupLimit}::bigint end`;
+        const attentionOrder = (row: RawBuilder<unknown>) =>
+          sql`${row}.due_at, lower(coalesce(${row}.person_name, ${row}.title)),
+            ${row}.kind, ${row}.id`;
+        // One arm's items, cut to as many of each bucket as Today shows,
+        // ranked as the merged list is. An arm's ids are its own, so the
+        // merged list's top of each bucket is always among its arms' tops.
+        const limitedArm = (arm: RawBuilder<unknown>) =>
+          sql`(select ${ARM_COLUMNS} from (
+            select source.*, row_number() over (
+              partition by ${bucket(sql`source.due_at`)}
+              order by ${attentionOrder(sql`source`)}
+            ) as arm_position
+            from (${arm}) as source (${ARM_COLUMNS})
+          ) candidate
+          where candidate.arm_position <= ${shown(sql`candidate.due_at`)})`;
         const result = await sql<ItemRow>`
       with authorized as (
         select ${command.workspaceId}::uuid as id
@@ -55,56 +86,7 @@ export class PostgresTodayAttentionRepository
         -- in non-leap years without normalizing it into a different day.
         select ${window.date}::date + offset_day as occurs_on
         from generate_series(0, 30) offset_day
-      ), projection_source as (
-        select task.id, 'task'::text as kind, task.title, task.due_at,
-          null::date as occurs_on, null::text as reminder_status,
-          null::text as channel,
-          null::timestamptz as last_contacted_at, person.id as person_id,
-          0::int as source_order, task.id as source_id,
-          person.archived_at is not null as archived,
-          person.id is not null and person.deleted_at is not null as unavailable,
-          case when person.id is null then null
-            when person.deleted_at is not null then 'Deleted/Unavailable person'
-            else ${
-          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-        } end as person_name
-        from authorized join crm.tasks task on task.workspace_id = authorized.id
-        left join crm.people person on person.id = task.person_id
-          and person.workspace_id = authorized.id
-        where task.status = 'open' and task.deleted_at is null
-          and task.due_at is not null and task.due_at < ${window.thirtyDaysEnd}
-        union all
-        select person_date.id, 'important-date',
-          coalesce(person_date.label, case person_date.kind
-            when 'birthday' then 'Birthday' when 'deceased' then 'Death anniversary'
-            when 'first_met' then 'First met' when 'anniversary' then 'Anniversary'
-            else 'Important date' end),
-          calendar.occurs_on::timestamp at time zone ${timezone},
-          calendar.occurs_on, null::text, null::text, null::timestamptz,
-          person.id, 0::int, person_date.id, person.archived_at is not null,
-          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
-        from authorized join crm.people person on person.workspace_id = authorized.id
-        join crm.person_dates person_date on person_date.person_id = person.id
-        join calendar on extract(month from calendar.occurs_on) = person_date.month
-          and extract(day from calendar.occurs_on) = person_date.day
-          and (person_date.year is null or person_date.year <= extract(year from calendar.occurs_on))
-        where person.deleted_at is null and person_date.precision in ('full', 'month_day')
-        union all
-        select event.id, 'life-event', coalesce(event.name, 'Life event'),
-          calendar.occurs_on::timestamp at time zone ${timezone},
-          calendar.occurs_on, null::text, null::text, null::timestamptz,
-          person.id, 0::int, event.id, person.archived_at is not null,
-          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
-        from authorized join crm.life_events event on event.workspace_id = authorized.id
-        join crm.people person on person.id = event.person_id
-          and person.workspace_id = authorized.id
-        join calendar on (event.year = extract(year from calendar.occurs_on)
-          and event.month = extract(month from calendar.occurs_on)
-          and event.day = extract(day from calendar.occurs_on))
-          or (event.year is null and event.month is null and event.day is null
-            and (event.happened_at at time zone ${timezone})::date = calendar.occurs_on)
-        where person.deleted_at is null and event.precision = 'full'
-        union all
+      ), reminder_source (${ARM_COLUMNS}) as (
         select case when reminder.target_kind = 'task' then target_task.id
             else occurrence.id end,
           case reminder.target_kind when 'task' then 'task' else 'reminder' end,
@@ -185,10 +167,82 @@ export class PostgresTodayAttentionRepository
           end
           and not exists (select 1 from crm.stay_in_touch_cadences cadence
             where cadence.reminder_id = reminder.id and cadence.is_active)
-        union all
-        select cadence.id, 'cadence', 'Reconnect with ' || ${
+      ), task_source as (
+        -- A task its own reminder brings forward is one item: it is listed
+        -- once, at the earlier time, before any arm is cut to its buckets.
+        -- Every other arm's ids are its own, so no other item repeats.
+        select distinct on (candidate.id) candidate.* from (
+        select task.id, 'task'::text as kind, task.title, task.due_at,
+          null::date as occurs_on, null::text as reminder_status,
+          null::text as channel,
+          null::timestamptz as last_contacted_at, person.id as person_id,
+          0::int as source_order, task.id as source_id,
+          person.archived_at is not null as archived,
+          person.id is not null and person.deleted_at is not null as unavailable,
+          case when person.id is null then null
+            when person.deleted_at is not null then 'Deleted/Unavailable person'
+            else ${
           sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-        },
+        } end as person_name
+        from authorized join crm.tasks task on task.workspace_id = authorized.id
+        left join crm.people person on person.id = task.person_id
+          and person.workspace_id = authorized.id
+        where task.status = 'open' and task.deleted_at is null
+          and task.due_at is not null and task.due_at < ${window.thirtyDaysEnd}
+          union all
+          select * from reminder_source where kind = 'task'
+        ) candidate
+        order by candidate.id, candidate.due_at, candidate.source_order,
+          candidate.source_id
+      ), projection as (
+        ${limitedArm(sql`select * from task_source`)}
+        union all
+        ${
+          limitedArm(sql`select * from reminder_source where kind = 'reminder'`)
+        }
+        union all
+        ${
+          limitedArm(sql`
+        select person_date.id, 'important-date',
+          coalesce(person_date.label, case person_date.kind
+            when 'birthday' then 'Birthday' when 'deceased' then 'Death anniversary'
+            when 'first_met' then 'First met' when 'anniversary' then 'Anniversary'
+            else 'Important date' end),
+          calendar.occurs_on::timestamp at time zone ${timezone},
+          calendar.occurs_on, null::text, null::text, null::timestamptz,
+          person.id, 0::int, person_date.id, person.archived_at is not null,
+          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
+        from authorized join crm.people person on person.workspace_id = authorized.id
+        join crm.person_dates person_date on person_date.person_id = person.id
+        join calendar on extract(month from calendar.occurs_on) = person_date.month
+          and extract(day from calendar.occurs_on) = person_date.day
+          and (person_date.year is null or person_date.year <= extract(year from calendar.occurs_on))
+        where person.deleted_at is null and person_date.precision in ('full', 'month_day')`)
+        }
+        union all
+        ${
+          limitedArm(sql`
+        select event.id, 'life-event', coalesce(event.name, 'Life event'),
+          calendar.occurs_on::timestamp at time zone ${timezone},
+          calendar.occurs_on, null::text, null::text, null::timestamptz,
+          person.id, 0::int, event.id, person.archived_at is not null,
+          false, ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
+        from authorized join crm.life_events event on event.workspace_id = authorized.id
+        join crm.people person on person.id = event.person_id
+          and person.workspace_id = authorized.id
+        join calendar on (event.year = extract(year from calendar.occurs_on)
+          and event.month = extract(month from calendar.occurs_on)
+          and event.day = extract(day from calendar.occurs_on))
+          or (event.year is null and event.month is null and event.day is null
+            and (event.happened_at at time zone ${timezone})::date = calendar.occurs_on)
+        where person.deleted_at is null and event.precision = 'full'`)
+        }
+        union all
+        ${
+          limitedArm(sql`
+        select cadence.id, 'cadence', 'Reconnect with ' || ${
+            sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+          },
           cadence.next_due_at, null::date, null::text, null::text,
           cadence.last_contacted_at,
           person.id, 2::int, cadence.id, person.archived_at is not null, false,
@@ -197,22 +251,14 @@ export class PostgresTodayAttentionRepository
         join crm.stay_in_touch_cadences cadence on cadence.person_id = person.id
         where cadence.is_active and cadence.next_due_at is not null
           and cadence.next_due_at < ${window.thirtyDaysEnd}
-          and person.deleted_at is null
-      ), projection as (
-        select distinct on (kind, id) * from projection_source
-        order by kind, id, due_at, source_order, source_id
+          and person.deleted_at is null`)
+        }
       ), ranked as (
-        select projection.*, case
-          when due_at < ${window.todayStart} then 'overdue'
-          when due_at < ${window.tomorrowStart} then 'today'
-          when due_at < ${window.nextSevenDaysEnd} then 'next'
-          else 'upcoming' end as bucket,
-          row_number() over (partition by case
-            when due_at < ${window.todayStart} then 'overdue'
-            when due_at < ${window.tomorrowStart} then 'today'
-            when due_at < ${window.nextSevenDaysEnd} then 'next'
-          else 'upcoming' end order by due_at,
-            lower(coalesce(person_name, title)), kind, id) as position
+        select projection.*, ${bucket(sql`projection.due_at`)} as bucket,
+          row_number() over (
+            partition by ${bucket(sql`projection.due_at`)}
+            order by ${attentionOrder(sql`projection`)}
+          ) as position
         from projection
       )
       select id::text, kind, title, ${instantColumn("due_at")} as due_at,

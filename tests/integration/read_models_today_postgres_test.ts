@@ -21,12 +21,22 @@ import {
 import { assert } from "../../packages/backend/testing/assert.ts";
 import { revokeMembership } from "../support/database.ts";
 import {
+  describePlan,
+  explainedPlan,
+  rowsProduced,
+  scansOf,
+  unionBranches,
+  withScratchCrm,
+} from "../support/query_plan.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
   actors,
   addActivity,
   addNote,
   addPerson,
   closeResources,
   connection,
+  databaseUrl,
   memberOf,
   type SeededActor,
   sql,
@@ -557,6 +567,252 @@ Deno.test("[TODAY-001] [PLANNING-003] REL-059 PostgreSQL Today attention lists t
       JSON.stringify(listed)
     }`,
   );
+});
+
+Deno.test("[TODAY-001] AUD-Q1 an activity or note with no text is not shown on Today", async () => {
+  const { reader } = await twoWorkspaces("today-empty");
+  const shown = await addNote(
+    reader,
+    reader.personId,
+    "Moved house",
+    "2026-06-01T12:00:00.000Z",
+  );
+  await addActivity(reader, "", "2026-06-02T12:00:00.000Z", [
+    reader.personId,
+  ]);
+  await addNote(reader, reader.personId, "", "2026-06-03T12:00:00.000Z", true);
+  const repository = new PostgresTodayInteractionsRepository(connection.db);
+  const recent = await repository.getRecentActivity({
+    ...actorOf(reader),
+    recentLimit: 20,
+  });
+  const favourites = await repository.getFavoriteNotes({
+    ...actorOf(reader),
+    favoriteLimit: 8,
+  });
+  assert(
+    recent.status === "ready" && favourites.status === "ready" &&
+      JSON.stringify(recent.items.map((item) => item.id)) ===
+        JSON.stringify([shown]) &&
+      favourites.items.length === 0,
+    `an empty activity or note was shown: ${
+      JSON.stringify({ favourites, recent })
+    }`,
+  );
+});
+
+Deno.test("[TODAY-001] AUD-Q1 each attention arm takes only what its buckets can show", async () => {
+  const { reader } = await twoWorkspaces("today-attention-arms");
+  const [perGroup, upcoming] = [2, 3];
+  const most = 3 * perGroup + upcoming;
+  const birthday = new Date(inDays(12));
+  for (let index = 0; index < most + 3; index++) {
+    const person = await addPerson(reader, `Birthday ${index}`);
+    await sql`
+      insert into crm.person_dates (person_id, kind, month, day, precision)
+      values (${person}, 'birthday', ${birthday.getUTCMonth() + 1},
+        ${birthday.getUTCDate()}, 'month_day')
+    `;
+    await addCadence(person, inDays(2 + index / 100));
+    await addPersonReminder(reader, person, `Check in ${index}`, inDays(3));
+  }
+  // A task its own reminder brings forward is listed once, at the earlier
+  // time, however many rows each arm keeps.
+  const task = await addTask(reader, "Send the photos", inDays(20));
+  const reminderId = crypto.randomUUID();
+  await sql`
+    insert into crm.reminders (id, workspace_id, task_id, target_kind, title,
+      anchor_on, recurrence_unit, created_by_member_id)
+    values (${reminderId}, ${reader.workspaceId}, ${task}, 'task',
+      'Send the photos', ${inDays(1).slice(0, 10)}::date, 'none',
+      ${reader.memberId})
+  `;
+  await sql`
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+      deliver_at, channel, status, title_snapshot)
+    values (${reminderId}, ${reader.memberId}, ${inDays(1).slice(0, 10)}::date,
+      ${inDays(1)}, 'in_app', 'pending', 'Send the photos')
+  `;
+  const command = {
+    ...actorOf(reader),
+    now: NOW,
+    perAttentionGroupLimit: perGroup,
+    upcomingLimit: upcoming,
+  };
+  const plan = await explainedPlan(
+    connection.db,
+    (statement) => statement.includes("reminder_source"),
+    (database) =>
+      new PostgresTodayAttentionRepository(database).getSnapshot(command),
+    [{}],
+  );
+  const arms = unionBranches(plan).filter((branches) => branches.length >= 5);
+  assert(arms.length > 0, `attention merges no arms: ${describePlan(plan)}`);
+  for (const arm of arms.flat()) {
+    assert(
+      rowsProduced(arm) <= most,
+      `an attention arm hands ${
+        rowsProduced(arm)
+      } rows to the ranking, more than its buckets show (${most}): ${
+        describePlan(plan)
+      }`,
+    );
+  }
+
+  const snapshot = await new PostgresTodayAttentionRepository(connection.db)
+    .getSnapshot(command);
+  assert(snapshot.status === "ready", "attention reads");
+  const listed = snapshot.items.filter((item) => item.id === task);
+  assert(
+    listed.length === 1 && listed[0]!.dueAt.slice(0, 10) ===
+        inDays(1).slice(0, 10),
+    `the task is not listed once at its reminder's time: ${
+      JSON.stringify(listed)
+    }`,
+  );
+});
+
+/**
+ * A scaled share of the large capacity profile in one workspace: enough
+ * history that reading all of it is visibly different from reading the page,
+ * and below ANALYZE's sample size so the plan is the same on every run.
+ */
+const SCALED = { activities: 4000, notes: 8000, people: 2000 } as const;
+const RECENT_LIMIT = 20;
+/**
+ * The tables whose recent rows the recent-activity statement must reach
+ * through an index, reading about a page of them rather than the history.
+ * AUD-V1 adds `notes_workspace_created_idx` and, with it, `notes`.
+ */
+const RECENT_ACTIVITY_INDEXED = ["activities"] as const;
+
+Deno.test("[TODAY-001] AUD-Q1 Today's recent activity and recent people read their page, not the workspace's history", async () => {
+  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const [userId, workspaceId, memberId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await scratch`insert into crm.users (id, email) values (${userId}, 'plan@example.test')`;
+    await scratch`
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${workspaceId}, 'Large', ${userId})
+    `;
+    await scratch`
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+      values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+    `;
+    await scratch`
+      insert into crm.people (workspace_id, given_name)
+      select ${workspaceId}::uuid, 'Person ' || n
+      from generate_series(1, ${SCALED.people}) n
+    `;
+    await scratch`
+      create temporary table plan_people as
+      select id, row_number() over (order by id) as n from crm.people
+    `;
+    await scratch`
+      with created as (
+        insert into crm.activities (workspace_id, summary, happened_at)
+        select ${workspaceId}::uuid, 'Walk ' || n,
+          now() - (n || ' minutes')::interval
+        from generate_series(1, ${SCALED.activities}) n
+        returning id, happened_at
+      ), numbered as (
+        select id, row_number() over (order by happened_at) as n from created
+      )
+      insert into crm.activity_participants (activity_id, person_id)
+      select numbered.id, person.id
+      from numbered
+      join plan_people person
+        on person.n in (1 + numbered.n % ${SCALED.people},
+          1 + (numbered.n * 7) % ${SCALED.people})
+    `;
+    await scratch`
+      insert into crm.notes (workspace_id, person_id, body, created_at, updated_at)
+      select ${workspaceId}::uuid, person.id, 'Note ' || i,
+        now() - (i || ' seconds')::interval, now()
+      from generate_series(1, ${SCALED.notes}) i
+      join plan_people person on person.n = 1 + i % ${SCALED.people}
+    `;
+    const recentIds = (await scratch<{ readonly id: string }[]>`
+      select id::text from plan_people order by n desc limit 8
+    `).map((row) => row.id);
+    await scratch`
+      insert into crm.member_preferences (member_id, ui_state)
+      values (${memberId}, ${scratch.json({ recentPersonIds: recentIds })})
+    `;
+    await scratch`drop table plan_people`;
+    await scratch`analyze`;
+
+    const explaining = connectDatabase(url);
+    try {
+      const actor = {
+        memberId,
+        role: "owner" as const,
+        userId,
+        workspaceId,
+      };
+      const recentActivity = await explainedPlan(
+        explaining.db,
+        (statement) =>
+          statement.includes("crm.activities") &&
+          statement.includes("crm.notes"),
+        (database) =>
+          new PostgresTodayInteractionsRepository(database).getRecentActivity({
+            ...actor,
+            recentLimit: RECENT_LIMIT,
+          }),
+      );
+      const plan = describePlan(recentActivity);
+      for (const relation of RECENT_ACTIVITY_INDEXED) {
+        const scans = scansOf(recentActivity, relation);
+        assert(scans.length > 0, `${relation} is not read: ${plan}`);
+        assert(
+          scans.every((scan) => scan["Node Type"] !== "Seq Scan"),
+          `recent activity scans all of ${relation}: ${plan}`,
+        );
+        const read = scans.reduce((sum, scan) => sum + rowsProduced(scan), 0);
+        assert(
+          read <= 2 * RECENT_LIMIT,
+          `recent activity reads ${read} ${relation} rows for ${RECENT_LIMIT}: ${plan}`,
+        );
+      }
+      const participantLoops = Math.max(
+        0,
+        ...scansOf(recentActivity, "activity_participants").map((scan) =>
+          scan["Actual Loops"] ?? 1
+        ),
+      );
+      assert(
+        participantLoops <= RECENT_LIMIT,
+        `participants are gathered for ${participantLoops} activities, not the ${RECENT_LIMIT} shown: ${plan}`,
+      );
+
+      const recentPeople = await explainedPlan(
+        explaining.db,
+        (statement) =>
+          statement.includes("unnest(") && statement.includes("crm.people"),
+        (database) =>
+          new PostgresTodayRecentPeopleRepository(database).list({
+            ...actor,
+            limit: 8,
+          }),
+      );
+      const peopleScans = scansOf(recentPeople, "people");
+      assert(
+        peopleScans.length > 0 &&
+          peopleScans.every((scan) => scan["Node Type"] !== "Seq Scan") &&
+          peopleScans.reduce((sum, scan) => sum + rowsProduced(scan), 0) <=
+            recentIds.length,
+        `recent people do not look their ${recentIds.length} people up by index: ${
+          describePlan(recentPeople)
+        }`,
+      );
+    } finally {
+      await explaining.destroy();
+    }
+  });
 });
 
 Deno.test({

@@ -13,6 +13,10 @@ import {
   SEARCH_STATEMENT_TIMEOUT_MS,
 } from "../../packages/backend/read-models/search/adapters/postgres/search_repository.ts";
 import { createSearchRoutes } from "../../packages/backend/modules/people/transport/http/search.ts";
+import {
+  NAME_FOLD_STEPS,
+  nameSearchForms,
+} from "../../packages/contracts/schemas/name_search.ts";
 import * as fixtures from "../../packages/backend/testing/fixtures.ts";
 import {
   createWorkspaceSearch,
@@ -20,6 +24,12 @@ import {
 } from "../../packages/backend/read-models/search/public.ts";
 import { type KyselyPlugin, RawNode, sql as sqlQuery } from "kysely";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import {
+  describePlan,
+  explainedPlan,
+  planNodes,
+  withScratchCrm as withPlanCrm,
+} from "../support/query_plan.ts";
 import { openSql, revokeMembership, type Sql } from "../support/database.ts";
 import {
   connectDatabase,
@@ -405,6 +415,32 @@ Deno.test("[SEARCH-001] names match across scripts and keyboard layouts over HTT
   const clifford = await addPerson(reader, "Clifford");
   assertEquals(await people("Sam"), []);
   assertEquals(await people("Cliff"), [clifford]);
+});
+
+Deno.test("[SEARCH-001] AUD-Q1 the one-pass fold finds what the full fold found", async () => {
+  const { reader } = await twoWorkspaces("search-one-pass");
+  const julia = await addPerson(reader, "Julia");
+  const yulia = await addPerson(reader, "Юлия");
+  const alexandr = await addPerson(reader, "Alexandr");
+  await addPerson(reader, "Acb");
+  const people = async (query: string): Promise<string[]> => {
+    const result = await search.search(actorOf(reader), {
+      limit: 10,
+      nameFold: NAME_FOLD_STEPS,
+      nameForms: nameSearchForms(query),
+      query,
+    });
+    assert(result.status === "ready", `search for ${query}`);
+    return result.groups[0]!.results.map((person) => person.id).sort();
+  };
+  // A Latin name still takes the Latin steps of the fold.
+  assertEquals(await people("Yulia"), [julia, yulia].sort());
+  assertEquals(await people("Aleksandr"), [alexandr]);
+  // A Cyrillic name still takes every step.
+  assertEquals(await people("iuli"), [julia, yulia].sort());
+  // A form's `_` and `%` are letters, not wildcards.
+  assertEquals(await people("a_b"), []);
+  assertEquals(await people("a%b"), []);
 });
 
 Deno.test("[SEARCH-001] snippets are the stored text, never markup, and groups are bounded", async () => {
@@ -881,6 +917,110 @@ Deno.test("[REL-061] each text group of a large workspace matches through its fu
         assert(
           indexes.includes(index),
           `the text statement does not scan ${index}: ${indexes.join(", ")}`,
+        );
+      }
+    } finally {
+      await explaining.destroy();
+    }
+  });
+});
+
+Deno.test("[SEARCH-001] AUD-Q1 a common word names and cuts only the rows shown, not every match", async () => {
+  await withPlanCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const [owner, workspace] = [crypto.randomUUID(), crypto.randomUUID()];
+    const [people, matches, limit] = [20, 400, 5];
+    await scratch`insert into crm.users (id, email) values (${owner}, 'owner@example.test')`;
+    await scratch`
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${workspace}, 'Common', ${owner})
+    `;
+    await scratch`
+      insert into crm.people (workspace_id, given_name)
+      select ${workspace}::uuid, 'Person ' || n from generate_series(1, ${people}) n
+    `;
+    await scratch`
+      insert into crm.notes (workspace_id, person_id, body)
+      select person.workspace_id, person.id,
+        repeat('dolor ', 400) || 'lorem ipsum ' || md5(n::text)
+      from crm.people person
+      cross join generate_series(1, ${matches / people}) n
+    `;
+    await scratch`
+      with created as (
+        insert into crm.activities (workspace_id, summary, happened_at)
+        select person.workspace_id, person.id::text || ' lorem ' || md5(n::text),
+          now() - (n || ' minutes')::interval
+        from crm.people person
+        cross join generate_series(1, ${matches / people}) n
+        returning id, split_part(summary, ' ', 1) as person_id
+      )
+      insert into crm.activity_participants (activity_id, person_id)
+      select id, person_id::uuid from created
+    `;
+    await scratch`
+      with created as (
+        insert into crm.journal_posts (workspace_id, body)
+        select ${workspace}::uuid,
+          repeat('dolor ', 400) || 'lorem day ' || md5(n::text)
+        from generate_series(1, ${matches}) n
+        returning id, workspace_id, occurred_at
+      )
+      insert into crm.journal_items (workspace_id, occurred_at, journal_post_id)
+      select workspace_id, occurred_at, id from created
+    `;
+    await scratch`
+      insert into crm.tasks (workspace_id, person_id, title)
+      select person.workspace_id, person.id, 'lorem call ' || md5(n::text)
+      from crm.people person
+      cross join generate_series(1, ${matches / people}) n
+    `;
+    await scratch`analyze`;
+    const explaining = connectDatabase(url);
+    try {
+      const plan = await explainedPlan(
+        explaining.db,
+        (statement) => statement.includes("with parsed as"),
+        (database) =>
+          new PostgresSearchRepository(database).searchText({
+            limit,
+            memberId: crypto.randomUUID(),
+            nameFold: [],
+            nameForms: [],
+            query: "lorem",
+            role: "owner",
+            sort: "given-name",
+            terms: ["lorem"],
+            userId: owner,
+            workspaceId: workspace,
+          }),
+        [{ activities: [], journal_posts: [], notes: [], tasks: [] }],
+      );
+      // An activity is opened on its first attendee, found by a lateral
+      // `limit 1` once for each activity it is looked up for.
+      const lookups = planNodes(plan).filter((node) =>
+        node["Node Type"] === "Limit" && (node["Actual Loops"] ?? 0) > 1
+      );
+      assert(
+        lookups.every((lookup) => (lookup["Actual Loops"] ?? 0) <= limit),
+        `an attendee is looked up for ${
+          Math.max(...lookups.map((lookup) => lookup["Actual Loops"] ?? 0))
+        } activities, not the ${limit} shown: ${describePlan(plan)}`,
+      );
+      // A long text finds its snippet's window through `unnest(terms)`,
+      // once for each row it is cut for.
+      const cuts = planNodes(plan).filter((node) =>
+        node["Function Name"] === "unnest"
+      );
+      assert(
+        cuts.some((cut) => (cut["Actual Loops"] ?? 0) > 0),
+        `no long text is cut: ${describePlan(plan)}`,
+      );
+      for (const cut of cuts) {
+        assert(
+          (cut["Actual Loops"] ?? 0) <= limit,
+          `a snippet is cut ${cut["Actual Loops"]} times for ${limit} rows: ${
+            describePlan(plan)
+          }`,
         );
       }
     } finally {

@@ -51,6 +51,8 @@ export class PostgresTodayRecentPeopleRepository
         if (ids.length === 0) {
           return { people: [], status: "ready" as const };
         }
+        // The ids are typed, not the column, so each is one probe of the
+        // people key rather than a scan of the workspace (BEQ-13).
         const result = await sql<{
           readonly archived: boolean;
           readonly id: string;
@@ -58,9 +60,9 @@ export class PostgresTodayRecentPeopleRepository
         }>`
           select person.id::text, person.archived_at is not null as archived,
             ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))} as name
-          from unnest(array[${sql.join(ids.map((id) => sql`${id}`))}]::text[])
+          from unnest(array[${sql.join(ids.map((id) => sql`${id}`))}]::uuid[])
             with ordinality as recent(person_id, position)
-          join crm.people person on person.id::text = recent.person_id
+          join crm.people person on person.id = recent.person_id
             and person.workspace_id = ${command.workspaceId}::uuid
           where person.deleted_at is null
           order by recent.position

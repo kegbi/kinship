@@ -30,6 +30,12 @@ import { peopleTransactionRunner } from "../../packages/backend/modules/people/c
 import { workspaceActors } from "../../packages/backend/modules/workspaces/composition.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { createPerson } from "../support/fixtures.ts";
+import {
+  describePlan,
+  explainedPlan,
+  rowsProduced,
+  unionBranches,
+} from "../support/query_plan.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
@@ -537,4 +543,106 @@ Deno.test("[TODAY-002] an inviter demoted to member is not linked to the members
   assert(demoted.status === "ready", "the demoted member's feed reads");
   assertEquals(demoted.items[0]?.kind, "invitation-accepted");
   assertEquals(demoted.items[0]?.href, "/app");
+});
+
+Deno.test("[TODAY-002] AUD-Q1 each feed arm takes its own page before the arms are merged", async () => {
+  const owner = await register("arms");
+  const ada = await person(owner, "Ada");
+  const start = Date.UTC(2026, 9, 1, 12);
+  for (let index = 0; index < 30; index++) {
+    await occurrence(owner.workspaceId, owner.memberId, ada, {
+      at: new Date(start - index * 60_000).toISOString(),
+      title: `Reminder ${index}`,
+    });
+    await audit(owner.workspaceId, "export.completed", {
+      actorMemberId: owner.memberId,
+      at: new Date(start - index * 60_000 - 1_000).toISOString(),
+      subjectType: "export_job",
+    });
+  }
+  const actor = {
+    memberId: owner.memberId,
+    role: "owner" as const,
+    userId: owner.userId,
+    workspaceId: owner.workspaceId,
+  };
+  const connection = connectDatabase(databaseUrl);
+  try {
+    const limit = 11;
+    const statement = (text: string) => text.includes("crm.audit_events");
+    for (
+      const [name, read] of [
+        [
+          "the page",
+          (database: typeof connection.db) =>
+            new PostgresNotificationsRepository(database).list({
+              ...actor,
+              limit,
+            }),
+        ],
+        [
+          "the unread count",
+          (database: typeof connection.db) =>
+            new PostgresNotificationsRepository(database).countUnread({
+              ...actor,
+              cap: limit,
+            }),
+        ],
+      ] as const
+    ) {
+      const plan = await explainedPlan(connection.db, statement, read);
+      const merged = unionBranches(plan);
+      assert(
+        merged.length > 0,
+        `${name} merges no arms: ${describePlan(plan)}`,
+      );
+      for (const branches of merged) {
+        for (const arm of branches) {
+          assert(
+            rowsProduced(arm) <= limit,
+            `an arm of ${name} hands ${
+              rowsProduced(arm)
+            } rows to the merge for ${limit}: ${describePlan(plan)}`,
+          );
+        }
+      }
+    }
+
+    // Two reminders made visible within one millisecond: the feed orders
+    // them by id inside that millisecond, as its cursor does, so an arm's
+    // own page must be cut on the same key.
+    const [first, second] = await Promise.all([
+      occurrence(owner.workspaceId, owner.memberId, ada, {
+        at: new Date(start + 60_000).toISOString(),
+      }),
+      occurrence(owner.workspaceId, owner.memberId, ada, {
+        at: new Date(start + 60_000).toISOString(),
+      }),
+    ]);
+    const [higher, lower] = first! > second! ? [first!, second!] : [
+      second!,
+      first!,
+    ];
+    await sql`
+      update crm.reminder_occurrences set visible_at = case id
+        when ${higher}::uuid then ${
+      new Date(start + 60_000).toISOString()
+    }::timestamptz + interval '100 microseconds'
+        else ${
+      new Date(start + 60_000).toISOString()
+    }::timestamptz + interval '900 microseconds' end
+      where id in (${higher}::uuid, ${lower}::uuid)
+    `;
+    const repository = new PostgresNotificationsRepository(connection.db);
+    const top = await repository.list({ ...actor, limit: 1 });
+    assertEquals(top.map((item) => item.id), [higher]);
+    const next = await repository.list({
+      ...actor,
+      after: { at: top[0]!.occurredAt, id: higher },
+      limit: 1,
+    });
+    assertEquals(next.map((item) => item.id), [lower]);
+  } finally {
+    await connection.destroy();
+  }
 });

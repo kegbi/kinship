@@ -6,6 +6,7 @@ import { MILLISECOND_INSTANT_FORMAT } from "../../../../platform/postgres/timest
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type {
   NotificationKind,
+  NotificationPosition,
   NotificationRecord,
   NotificationsActor,
   NotificationsRepository,
@@ -25,10 +26,74 @@ interface FeedRow {
 const PERSON_NAME = sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"));
 
 /**
- * The member's feed as one union, every arm scoped to the workspace and
- * addressed to the member alone. Each item's time is cut to milliseconds, the
- * precision the read-through watermark is stored at, so an item is never
- * after the watermark that was set from its own time.
+ * Which of an arm's rows a statement reads, at most `limit` of them: a page
+ * takes the arm's newest before a position, and the unread count takes any
+ * after the read-through watermark.
+ */
+type FeedWindow =
+  | {
+    readonly after?: NotificationPosition;
+    readonly kind: "page";
+    readonly limit: number;
+  }
+  | {
+    readonly kind: "count";
+    readonly limit: number;
+    readonly since?: string;
+  };
+
+/**
+ * An item's time cut to milliseconds, the precision the read-through
+ * watermark is stored at, so an item is never after the watermark that was
+ * set from its own time. It is the UTC wall-clock `timestamp`: the cut is
+ * then immutable, so an index can be ordered by the very key the feed is.
+ */
+function itemTime(column: RawBuilder<unknown>): RawBuilder<unknown> {
+  return sql`date_trunc('milliseconds', ${column} at time zone 'UTC')`;
+}
+
+/** An instant the client sent, on the same key as `itemTime`. */
+function instantKey(instant: string): RawBuilder<unknown> {
+  return sql`(${instant}::timestamptz at time zone 'UTC')`;
+}
+
+/**
+ * One arm of the feed. `select` names `kind`, `id`, `at` (its `itemTime`),
+ * `title`, `person_id`, and `subject_id`, and ends with its `where`, so the
+ * window's conditions follow it.
+ */
+interface FeedArm {
+  readonly at: RawBuilder<unknown>;
+  readonly id: RawBuilder<unknown>;
+  readonly select: RawBuilder<unknown>;
+}
+
+/**
+ * The arm's own rows in the window, newest first for a page, and no more
+ * than the statement can use, so merging the arms never sorts the history.
+ * A page orders each arm by the same key and tie-break as the merged feed,
+ * so each arm's page holds every row of its own that the feed's page shows.
+ */
+function windowed(arm: FeedArm, window: FeedWindow): RawBuilder<unknown> {
+  const at = itemTime(arm.at);
+  if (window.kind === "count") {
+    const since = window.since
+      ? sql`and ${at} > ${instantKey(window.since)}`
+      : sql``;
+    return sql`(${arm.select} ${since} limit ${window.limit})`;
+  }
+  const after = window.after
+    ? sql`and (${at}, ${arm.id}) <
+        (${instantKey(window.after.at)}, ${window.after.id}::uuid)`
+    : sql``;
+  return sql`(${arm.select} ${after}
+    order by ${at} desc, ${arm.id} desc limit ${window.limit})`;
+}
+
+/**
+ * The member's feed in the window, as one union whose every arm is scoped to
+ * the workspace, addressed to the member alone, and cut to the window before
+ * the arms are merged.
  *
  * - Delivered in-app reminders are the member's own occurrences (`member_id`)
  *   of a live reminder in this workspace, timed by when they became visible.
@@ -41,77 +106,98 @@ const PERSON_NAME = sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"));
  * - Accepted invitations are `workspace.member-joined` events for a member
  *   this member invited.
  *
- * A notification about a person who has since been deleted is left out.
+ * A notification about a person who has since been deleted is left out
+ * inside its arm, so it never takes the place of one that is shown.
  */
-function feed(actor: NotificationsActor): RawBuilder<FeedRow> {
+function feed(
+  actor: NotificationsActor,
+  window: FeedWindow,
+): RawBuilder<unknown> {
   const workspaceId = sql`${actor.workspaceId}::uuid`;
   const memberId = sql`${actor.memberId}::uuid`;
-  return sql<FeedRow>`
-    select 'reminder' as kind, occurrence.id,
-      date_trunc('milliseconds', occurrence.visible_at) as at,
-      coalesce(nullif(occurrence.title_snapshot, ''), reminder.title) as title,
-      reminder.person_id, null::uuid as subject_id
-    from crm.reminder_occurrences occurrence
-    join crm.reminders reminder on reminder.id = occurrence.reminder_id
-      and reminder.workspace_id = ${workspaceId}
-      and reminder.deleted_at is null
-    where occurrence.member_id = ${memberId}
-      and occurrence.channel = 'in_app'
-      and occurrence.status = 'sent'
-      and occurrence.visible_at is not null
-    union all
-    select 'reminder-email-failed', event.id,
-      date_trunc('milliseconds', event.occurred_at),
-      coalesce(nullif(occurrence.title_snapshot, ''), reminder.title),
-      reminder.person_id, null::uuid
-    from crm.audit_events event
-    join crm.reminder_occurrences occurrence on occurrence.id = event.subject_id
-      and occurrence.member_id = ${memberId}
-      and occurrence.channel = 'email'
-    join crm.reminders reminder on reminder.id = occurrence.reminder_id
-      and reminder.workspace_id = ${workspaceId}
-      and reminder.deleted_at is null
-    where event.workspace_id = ${workspaceId}
-      and event.action = 'planning.reminder-failed'
-      and event.subject_type = 'reminder_occurrence'
-    union all
-    select case event.action when 'export.completed' then 'export-ready'
-        else 'import-finished' end,
-      event.id, date_trunc('milliseconds', event.occurred_at), null,
-      null::uuid, event.subject_id
-    from crm.audit_events event
-    join crm.workspace_members member on member.id = ${memberId}
-      and member.workspace_id = ${workspaceId}
-      and member.role in ('owner', 'admin')
-    where event.workspace_id = ${workspaceId}
-      and event.actor_member_id = ${memberId}
-      and event.action in ('export.completed', 'import.committed')
-    union all
-    select 'invitation-accepted', event.id,
-      date_trunc('milliseconds', event.occurred_at), null, null::uuid,
-      event.subject_id
-    from crm.audit_events event
-    join crm.workspace_members joined on joined.id = event.subject_id
-      and joined.workspace_id = ${workspaceId}
-      and joined.invited_by_member_id = ${memberId}
-      and joined.id <> ${memberId}
-    where event.workspace_id = ${workspaceId}
-      and event.action = 'workspace.member-joined'
-  `;
-}
-
-/** The feed with its people named, and a deleted person's items gone. */
-function visible(actor: NotificationsActor) {
-  return sql`
-    select item.*, person.archived_at is not null as person_archived,
-      case when person.id is null then null else ${PERSON_NAME} end
-        as person_name
-    from (${feed(actor)}) item
-    left join crm.people person on person.id = item.person_id
-      and person.workspace_id = ${actor.workspaceId}::uuid
-    where item.person_id is null
-      or (person.id is not null and person.deleted_at is null)
-  `;
+  const personShown = sql`(reminder.person_id is null or exists (
+    select 1 from crm.people person
+    where person.id = reminder.person_id
+      and person.workspace_id = ${workspaceId}
+      and person.deleted_at is null))`;
+  const arms: readonly FeedArm[] = [
+    {
+      at: sql`occurrence.visible_at`,
+      id: sql`occurrence.id`,
+      select: sql`
+        select 'reminder' as kind, occurrence.id,
+          ${itemTime(sql`occurrence.visible_at`)} as at,
+          coalesce(nullif(occurrence.title_snapshot, ''), reminder.title)
+            as title,
+          reminder.person_id, null::uuid as subject_id
+        from crm.reminder_occurrences occurrence
+        join crm.reminders reminder on reminder.id = occurrence.reminder_id
+          and reminder.workspace_id = ${workspaceId}
+          and reminder.deleted_at is null
+        where occurrence.member_id = ${memberId}
+          and occurrence.channel = 'in_app'
+          and occurrence.status = 'sent'
+          and occurrence.visible_at is not null
+          and ${personShown}`,
+    },
+    {
+      at: sql`event.occurred_at`,
+      id: sql`event.id`,
+      select: sql`
+        select 'reminder-email-failed' as kind, event.id,
+          ${itemTime(sql`event.occurred_at`)} as at,
+          coalesce(nullif(occurrence.title_snapshot, ''), reminder.title)
+            as title,
+          reminder.person_id, null::uuid as subject_id
+        from crm.audit_events event
+        join crm.reminder_occurrences occurrence
+          on occurrence.id = event.subject_id
+          and occurrence.member_id = ${memberId}
+          and occurrence.channel = 'email'
+        join crm.reminders reminder on reminder.id = occurrence.reminder_id
+          and reminder.workspace_id = ${workspaceId}
+          and reminder.deleted_at is null
+        where event.workspace_id = ${workspaceId}
+          and event.action = 'planning.reminder-failed'
+          and event.subject_type = 'reminder_occurrence'
+          and ${personShown}`,
+    },
+    {
+      at: sql`event.occurred_at`,
+      id: sql`event.id`,
+      select: sql`
+        select case event.action when 'export.completed' then 'export-ready'
+            else 'import-finished' end as kind,
+          event.id, ${itemTime(sql`event.occurred_at`)} as at,
+          null::text as title, null::uuid as person_id, event.subject_id
+        from crm.audit_events event
+        join crm.workspace_members member on member.id = ${memberId}
+          and member.workspace_id = ${workspaceId}
+          and member.role in ('owner', 'admin')
+        where event.workspace_id = ${workspaceId}
+          and event.actor_member_id = ${memberId}
+          and event.action in ('export.completed', 'import.committed')`,
+    },
+    {
+      at: sql`event.occurred_at`,
+      id: sql`event.id`,
+      select: sql`
+        select 'invitation-accepted' as kind, event.id,
+          ${itemTime(sql`event.occurred_at`)} as at, null::text as title,
+          null::uuid as person_id, event.subject_id
+        from crm.audit_events event
+        join crm.workspace_members joined on joined.id = event.subject_id
+          and joined.workspace_id = ${workspaceId}
+          and joined.invited_by_member_id = ${memberId}
+          and joined.id <> ${memberId}
+        where event.workspace_id = ${workspaceId}
+          and event.action = 'workspace.member-joined'`,
+    },
+  ];
+  return sql.join(
+    arms.map((arm) => windowed(arm, window)),
+    sql` union all `,
+  );
 }
 
 function record(row: FeedRow): NotificationRecord {
@@ -147,23 +233,32 @@ export class PostgresNotificationsRepository
     return result.rows[0]?.ui_state;
   }
 
+  /** The page, merged from the arms' own pages, with its people named. */
   async list(
     command: Parameters<NotificationsRepository["list"]>[0],
   ): Promise<readonly NotificationRecord[]> {
-    const after = command.after
-      ? sql`where (visible.at, visible.id) <
-          (${command.after.at}::timestamptz, ${command.after.id}::uuid)`
-      : sql``;
+    const window: FeedWindow = {
+      ...(command.after ? { after: command.after } : {}),
+      kind: "page",
+      limit: command.limit,
+    };
     const result = await sql<FeedRow>`
-      select visible.kind, visible.id::text,
-        to_char(visible.at at time zone 'UTC',
-          ${sql.lit(MILLISECOND_INSTANT_FORMAT)}) as occurred_at,
-        visible.title, visible.person_id::text, visible.person_name,
-        visible.person_archived, visible.subject_id::text
-      from (${visible(command)}) visible
-      ${after}
-      order by visible.at desc, visible.id desc
-      limit ${command.limit}
+      select item.kind, item.id::text,
+        to_char(item.at, ${sql.lit(MILLISECOND_INSTANT_FORMAT)})
+          as occurred_at,
+        item.title, item.person_id::text,
+        case when person.id is null then null else ${PERSON_NAME} end
+          as person_name,
+        person.archived_at is not null as person_archived,
+        item.subject_id::text
+      from (
+        select page.* from (${feed(command, window)}) page
+        order by page.at desc, page.id desc
+        limit ${command.limit}
+      ) item
+      left join crm.people person on person.id = item.person_id
+        and person.workspace_id = ${command.workspaceId}::uuid
+      order by item.at desc, item.id desc
     `.execute(this.database);
     return result.rows.map(record);
   }
@@ -171,13 +266,14 @@ export class PostgresNotificationsRepository
   async countUnread(
     command: Parameters<NotificationsRepository["countUnread"]>[0],
   ): Promise<number> {
-    const since = command.readThrough
-      ? sql`where visible.at > ${command.readThrough}::timestamptz`
-      : sql``;
+    const window: FeedWindow = {
+      kind: "count",
+      limit: command.cap,
+      ...(command.readThrough ? { since: command.readThrough } : {}),
+    };
     const result = await sql<{ readonly count: number }>`
       select count(*)::int as count from (
-        select 1 from (${visible(command)}) visible
-        ${since}
+        select 1 from (${feed(command, window)}) unread
         limit ${command.cap}
       ) unread
     `.execute(this.database);

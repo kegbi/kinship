@@ -254,92 +254,115 @@ export class PostgresSearchRepository implements SearchRepository {
         from parsed
       )
       select
+        -- Each group first takes its own top rows by its listing order from
+        -- the matching rows alone; only those are cut to a snippet, named,
+        -- and, for an activity, given its first attendee, so a common word's
+        -- thousands of matches are never looked up one by one.
         (select coalesce(jsonb_agg(found order by found.rank), '[]'::jsonb)
           from (
-            select note.id::text as id, null::text as title,
-              ${clipped(sql`note.body`, terms)} as text,
+            select top.id::text as id, null::text as title,
+              ${clipped(sql`top.body`, terms)} as text,
               person.id::text as person_id,
               ${displayName("person")} as person_name,
               person.archived_at is not null as person_archived,
-              row_number() over (order by note.created_at desc, note.id desc)
+              row_number() over (order by top.created_at desc, top.id desc)
                 as rank
-            from crm.notes note
-            join crm.people person on person.id = note.person_id
-              and person.workspace_id = note.workspace_id
-              and person.deleted_at is null
-            left join crm.workspace_profile_modules profile_module
-              on profile_module.workspace_id = note.workspace_id
-              and profile_module.key = 'notes'
-            where note.workspace_id = ${workspace}
-              and coalesce(profile_module.is_active, true)
-              and to_tsvector('simple', note.body)
-                @@ (select terms from criteria)
-            order by rank
-            limit ${limit}
+            from (
+              select note.id, note.body, note.person_id, note.created_at
+              from crm.notes note
+              left join crm.workspace_profile_modules profile_module
+                on profile_module.workspace_id = note.workspace_id
+                and profile_module.key = 'notes'
+              where note.workspace_id = ${workspace}
+                and coalesce(profile_module.is_active, true)
+                and to_tsvector('simple', note.body)
+                  @@ (select terms from criteria)
+                and exists (select 1 from crm.people person
+                  where person.id = note.person_id
+                    and person.workspace_id = note.workspace_id
+                    and person.deleted_at is null)
+              order by note.created_at desc, note.id desc
+              limit ${limit}
+            ) top
+            join crm.people person on person.id = top.person_id
+              and person.workspace_id = ${workspace}
           ) found) as notes,
         (select coalesce(jsonb_agg(found order by found.rank), '[]'::jsonb)
           from (
-            select activity.id::text as id, activity.summary as title,
+            select top.id::text as id, top.summary as title,
               ${
         clipped(
-          sql`coalesce(nullif(btrim(activity.description), ''),
-                activity.summary)`,
+          sql`coalesce(nullif(btrim(top.description), ''), top.summary)`,
           terms,
         )
       } as text,
               attendee.id::text as person_id, attendee.name as person_name,
               attendee.archived as person_archived,
               row_number() over (
-                order by activity.happened_at desc, activity.id desc
+                order by top.happened_at desc, top.id desc
               ) as rank
-            from crm.activities activity
+            from (
+              select activity.id, activity.summary, activity.description,
+                activity.happened_at
+              from crm.activities activity
+              left join crm.workspace_profile_modules profile_module
+                on profile_module.workspace_id = activity.workspace_id
+                and profile_module.key = 'activities'
+              where activity.workspace_id = ${workspace}
+                and coalesce(profile_module.is_active, true)
+                and to_tsvector('simple', activity.summary || ' ' ||
+                  coalesce(activity.description, ''))
+                  @@ (select terms from criteria)
+                and exists (select 1 from crm.activity_participants link
+                  join crm.people person on person.id = link.person_id
+                    and person.workspace_id = activity.workspace_id
+                    and person.deleted_at is null
+                  where link.activity_id = activity.id)
+              order by activity.happened_at desc, activity.id desc
+              limit ${limit}
+            ) top
             join lateral (
               select person.id, ${displayName("person")} as name,
                 person.archived_at is not null as archived
               from crm.activity_participants link
               join crm.people person on person.id = link.person_id
-                and person.workspace_id = activity.workspace_id
+                and person.workspace_id = ${workspace}
                 and person.deleted_at is null
-              where link.activity_id = activity.id
+              where link.activity_id = top.id
               order by person.archived_at is not null,
                 lower(${displayName("person")}), person.id
               limit 1
             ) attendee on true
-            left join crm.workspace_profile_modules profile_module
-              on profile_module.workspace_id = activity.workspace_id
-              and profile_module.key = 'activities'
-            where activity.workspace_id = ${workspace}
-              and coalesce(profile_module.is_active, true)
-              and to_tsvector('simple', activity.summary || ' ' ||
-                coalesce(activity.description, ''))
-                @@ (select terms from criteria)
-            order by rank
-            limit ${limit}
           ) found) as activities,
         (select coalesce(jsonb_agg(found order by found.rank), '[]'::jsonb)
           from (
-            select post.id::text as id, post.title,
-              ${clipped(sql`post.body`, terms)} as text,
-              item.id::text as journal_item_id,
+            select top.id::text as id, top.title,
+              ${clipped(sql`top.body`, terms)} as text,
+              top.journal_item_id::text as journal_item_id,
               row_number() over (
-                order by item.occurred_at desc, item.created_at desc,
-                  item.id desc
+                order by top.occurred_at desc, top.created_at desc,
+                  top.journal_item_id desc
               ) as rank
-            from crm.journal_posts post
-            join crm.journal_items item on item.journal_post_id = post.id
-              and item.workspace_id = post.workspace_id
-            where post.workspace_id = ${workspace}
-              and to_tsvector('simple', coalesce(post.title, '') || ' ' ||
-                post.body) @@ (select terms from criteria)
-            order by rank
-            limit ${limit}
+            from (
+              select post.id, post.title, post.body,
+                item.id as journal_item_id, item.occurred_at, item.created_at
+              from crm.journal_posts post
+              join crm.journal_items item on item.journal_post_id = post.id
+                and item.workspace_id = post.workspace_id
+              where post.workspace_id = ${workspace}
+                and to_tsvector('simple', coalesce(post.title, '') || ' ' ||
+                  post.body) @@ (select terms from criteria)
+              order by item.occurred_at desc, item.created_at desc,
+                item.id desc
+              limit ${limit}
+            ) top
           ) found) as journal_posts,
         (select coalesce(jsonb_agg(found order by found.rank), '[]'::jsonb)
           from (
-            select task.id::text as id, task.title,
+            select top.id::text as id, top.title,
               ${
         clipped(
-          sql`coalesce(nullif(btrim(task.description), ''), task.title)`,
+          sql`coalesce(nullif(btrim(top.description), ''), top.title)`,
           terms,
         )
       } as text,
@@ -347,25 +370,30 @@ export class PostgresSearchRepository implements SearchRepository {
               case when person.id is not null
                 then ${displayName("person")} end as person_name,
               person.archived_at is not null as person_archived,
-              coalesce(profile_module.is_active, true) as section_shown,
-              row_number() over (order by
+              top.section_shown,
+              row_number() over (order by top.status_order,
+                top.updated_at desc, top.id desc) as rank
+            from (
+              select task.id, task.title, task.description, task.person_id,
                 case task.status when 'open' then 0 when 'completed' then 1
-                  else 2 end,
-                task.updated_at desc, task.id desc) as rank
-            from crm.tasks task
-            left join crm.people person on person.id = task.person_id
-              and person.workspace_id = task.workspace_id
+                  else 2 end as status_order,
+                task.updated_at,
+                coalesce(profile_module.is_active, true) as section_shown
+              from crm.tasks task
+              left join crm.workspace_profile_modules profile_module
+                on profile_module.workspace_id = task.workspace_id
+                and profile_module.key = 'tasks'
+              where task.workspace_id = ${workspace}
+                and task.deleted_at is null
+                and to_tsvector('simple', task.title || ' ' ||
+                  coalesce(task.description, ''))
+                  @@ (select terms from criteria)
+              order by status_order, task.updated_at desc, task.id desc
+              limit ${limit}
+            ) top
+            left join crm.people person on person.id = top.person_id
+              and person.workspace_id = ${workspace}
               and person.deleted_at is null
-            left join crm.workspace_profile_modules profile_module
-              on profile_module.workspace_id = task.workspace_id
-              and profile_module.key = 'tasks'
-            where task.workspace_id = ${workspace}
-              and task.deleted_at is null
-              and to_tsvector('simple', task.title || ' ' ||
-                coalesce(task.description, ''))
-                @@ (select terms from criteria)
-            order by rank
-            limit ${limit}
           ) found) as tasks
       from criteria
     `.execute(transaction);

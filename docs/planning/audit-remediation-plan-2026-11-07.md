@@ -703,7 +703,7 @@ these:
 
 ### Lane Q — Query shape and read models
 
-- [ ] **AUD-Q1 — Hot read queries scale with their output, not with history.**
+- [x] **AUD-Q1 — Hot read queries scale with their output, not with history.**
       M. High. Depends: none. Closes: BEQ-06 (the query), BEQ-07 (the query),
       BEQ-11, and BEQ-13 (the cast).
   - Scope:
@@ -722,6 +722,16 @@ these:
   - Verify: `test:integration --module=search` and `--module=notifications`;
     `read_models_today_postgres_test.ts`; E2E `today.TODAY-001`,
     `search.SEARCH-001`, and `notifications.TODAY-002`.
+  - Delivered 2026-11-07: EXPLAIN plan-shape tests on a scaled seed (recent
+    activity reads a page, not every activity; recent people use an index; each
+    notification and attention arm cuts before the merge; search names only the
+    rows shown), Today read model 12, search 15, and notifications 7 integration
+    passed; E2E TODAY-001, SEARCH-001, and TODAY-002 5 passed on Chromium;
+    changed adapters at least 87% lines, 84.6% branches, 100% functions; fmt,
+    architecture, and lint (only the known REL-096) gates. Search skips only the
+    Cyrillic fold steps for plain-ASCII names, which keeps the full fold's
+    results; AUD-V1 indexes the feed's UTC-millisecond sort expression and
+    tightens the notes plan assertion.
 
 - [ ] **AUD-Q2 — The search palette opens with one request.** M. Normal.
       Depends: AUD-Q1, AUD-F2, AUD-F3. Closes: FEQ-05.
