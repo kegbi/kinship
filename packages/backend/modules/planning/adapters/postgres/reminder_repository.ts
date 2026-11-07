@@ -1446,15 +1446,20 @@ export class PostgresReminderDeliveryRepository
   ): Promise<readonly ClaimedReminderOccurrence[]> {
     const channels = command.channels ?? ["in_app"];
     // The same set-based question: which members may still be delivered to.
+    // Only members with something due or a lease run out are asked about,
+    // read through the due and lease indexes rather than every occurrence.
     const candidateMembers = await sql<{ readonly member_id: string }>`
-      select distinct occurrence.member_id::text as member_id
+      select occurrence.member_id::text as member_id
       from crm.reminder_occurrences occurrence
-      join crm.reminders reminder on reminder.id = occurrence.reminder_id
-      where occurrence.channel = any(${channels}::text[])
-        and (
-          occurrence.status in ('pending','retry','claimed')
-          or occurrence.provider_result_state in ('ambiguous','confirmed')
-        )
+      where occurrence.status in ('pending','retry')
+        and coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now}
+        and occurrence.channel = any(${channels}::text[])
+      union
+      select occurrence.member_id::text
+      from crm.reminder_occurrences occurrence
+      where occurrence.status = 'claimed'
+        and occurrence.lease_expires_at <= ${command.now}
+        and occurrence.channel = any(${channels}::text[])
     `.execute(this.database);
     const eligible = await this.recipients.filterEligible({
       memberIds: candidateMembers.rows.map((row) => row.member_id),
@@ -1509,7 +1514,15 @@ export class PostgresReminderDeliveryRepository
           and occurrence.visible_at is null
         returning occurrence.id
       ), due as (
-        select occurrence.id, occurrence.member_id
+        -- Pending and retrying work, found through the due index on its own
+        -- predicate (BEQ-08). Eligibility is joined inside the same locking
+        -- select, so a row that fails it — an archived or deleted person, a
+        -- member who may no longer receive, a digest not yet due — is never
+        -- locked, never counts against the limit, and never holds the rest
+        -- of the queue behind it. A digest's time has always passed by now,
+        -- so the index bound covers the digest rule as well.
+        select occurrence.id, occurrence.member_id,
+          coalesce(occurrence.next_attempt_at, occurrence.deliver_at) as due_at
         from crm.reminder_occurrences occurrence
         join crm.reminders reminder on reminder.id = occurrence.reminder_id
         join crm.people person on person.id = reminder.person_id
@@ -1521,31 +1534,58 @@ export class PostgresReminderDeliveryRepository
           as digest(member_id, cutoff)
           on digest.member_id = occurrence.member_id
           and occurrence.channel = 'email'
-        where occurrence.channel = any(${channels}::text[])
+        where occurrence.status in ('pending','retry')
+          and coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now}
+          and occurrence.channel = any(${channels}::text[])
           and (
             (
               reminder.is_active and reminder.deleted_at is null
               and person.archived_at is null and person.deleted_at is null
               and (
-                (occurrence.status in ('pending','retry') and case
-                  when occurrence.next_attempt_at is null
-                    and digest.cutoff is not null
-                  then occurrence.deliver_at <= digest.cutoff
-                  else coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now}
-                end)
-                or (occurrence.status = 'claimed' and occurrence.lease_expires_at <= ${command.now})
+                occurrence.next_attempt_at is not null
+                or digest.cutoff is null
+                or occurrence.deliver_at <= digest.cutoff
               )
             )
             or (
-              occurrence.provider_result_state in ('ambiguous','confirmed')
-              and (
-                (occurrence.status = 'retry' and occurrence.next_attempt_at <= ${command.now})
-                or (occurrence.status = 'claimed' and occurrence.lease_expires_at <= ${command.now})
-              )
+              occurrence.status = 'retry'
+              and occurrence.provider_result_state in ('ambiguous','confirmed')
             )
           )
-        order by coalesce(occurrence.next_attempt_at, occurrence.deliver_at), occurrence.id
+        order by due_at, occurrence.id
         for update of occurrence skip locked
+        limit ${command.limit}
+      ), expired as (
+        -- Claims whose lease ran out, a small select over the lease index.
+        select occurrence.id, occurrence.member_id,
+          coalesce(occurrence.next_attempt_at, occurrence.deliver_at) as due_at
+        from crm.reminder_occurrences occurrence
+        join crm.reminders reminder on reminder.id = occurrence.reminder_id
+        join crm.people person on person.id = reminder.person_id
+        join unnest(${eligibleMemberIds}::uuid[], ${eligibleWorkspaceIds}::uuid[])
+          as eligible(member_id, workspace_id)
+          on eligible.member_id = occurrence.member_id
+          and eligible.workspace_id = reminder.workspace_id
+        where occurrence.status = 'claimed'
+          and occurrence.lease_expires_at <= ${command.now}
+          and occurrence.channel = any(${channels}::text[])
+          and (
+            (
+              reminder.is_active and reminder.deleted_at is null
+              and person.archived_at is null and person.deleted_at is null
+            )
+            or occurrence.provider_result_state in ('ambiguous','confirmed')
+          )
+        order by occurrence.lease_expires_at, occurrence.id
+        for update of occurrence skip locked
+        limit ${command.limit}
+      ), picked as (
+        -- One batch of at most the limit, in due order across both. A row
+        -- locked above but not picked is left as it was and released when
+        -- this statement commits, for the next tick.
+        select id, member_id
+        from (select * from due union all select * from expired) as candidate
+        order by due_at, id
         limit ${command.limit}
       ), digest_rest as (
         -- The rest of a digest member's due email, so one digest carries all
@@ -1562,18 +1602,19 @@ export class PostgresReminderDeliveryRepository
           as digest(member_id, cutoff)
           on digest.member_id = occurrence.member_id
         where occurrence.channel = 'email'
-          and occurrence.member_id in (select member_id from due)
-          and occurrence.id not in (select id from due)
+          and occurrence.member_id in (select member_id from picked)
+          and occurrence.id not in (select id from picked)
           and reminder.is_active and reminder.deleted_at is null
           and person.archived_at is null and person.deleted_at is null
           and occurrence.status = 'pending'
           and occurrence.next_attempt_at is null
+          and coalesce(occurrence.next_attempt_at, occurrence.deliver_at) <= ${command.now}
           and occurrence.deliver_at <= digest.cutoff
         order by occurrence.deliver_at, occurrence.id
         for update of occurrence skip locked
         limit ${DIGEST_CLAIM_LIMIT}
       ), claimable as (
-        select id from due union select id from digest_rest
+        select id from picked union select id from digest_rest
       )
       update crm.reminder_occurrences occurrence set
         status = 'claimed', claim_token = gen_random_uuid(),

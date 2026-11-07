@@ -1,5 +1,6 @@
 import { denoWorkerRuntime, runWorker, type WorkerRuntime } from "./main.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import { recordingLogger } from "../../packages/backend/testing/fakes.ts";
 
 type Signal = "SIGINT" | "SIGTERM";
 
@@ -101,32 +102,48 @@ Deno.test("[GAP-037] worker entry point names an owner when none is configured",
   );
 });
 
-Deno.test("[GAP-037] worker entry point closes its connection when a tick fails", async () => {
+Deno.test("[AUD-W2] worker entry point logs a failed tick, keeps running, and closes", async () => {
   const signals = new RecordedSignals();
-  let closed = false;
-  let failure: unknown;
-  try {
-    await runWorker({
-      configure: () => ({
+  const logger = recordingLogger();
+  const effects: string[] = [];
+  let ticks = 0;
+  await runWorker({
+    configure: (_databaseUrl, configuredLogger) => {
+      assert(configuredLogger === logger, "the worker logs elsewhere");
+      return {
         close: () => {
-          closed = true;
+          effects.push("close");
           return Promise.resolve();
         },
-        worker: { tick: () => Promise.reject(new Error("database down")) },
-      }),
-      environment: environment({ DATABASE_URL }),
-      intervalMilliseconds: 60_000,
-      randomOwner: () => "owner",
-      signals,
-    });
-  } catch (error) {
-    failure = error;
-  }
-  assert(
-    failure instanceof Error && failure.message === "database down",
-    "a failed tick was swallowed",
-  );
-  assert(closed, "a failed tick left the database connection open");
+        reconnect: () => {
+          effects.push("reconnect");
+          return Promise.resolve();
+        },
+        worker: {
+          tick: () => {
+            ticks += 1;
+            effects.push(`tick:${ticks}`);
+            if (ticks === 1) {
+              return Promise.reject(
+                Object.assign(new Error("database down"), {
+                  code: "CONNECTION_CLOSED",
+                }),
+              );
+            }
+            signals.fire("SIGTERM");
+            return Promise.resolve();
+          },
+        },
+      };
+    },
+    environment: environment({ DATABASE_URL }),
+    intervalMilliseconds: 1,
+    logger,
+    randomOwner: () => "owner",
+    signals,
+  });
+  assertEquals(effects, ["tick:1", "reconnect", "tick:2", "close"]);
+  assertEquals(logger.events.map((line) => line.event), ["worker.job"]);
   assert(signals.count === 0, "a failed tick left a signal listener");
 });
 
@@ -224,4 +241,120 @@ Deno.test("[GAP-037] worker entry point removes its signal listeners when compos
     "a failed composition was swallowed",
   );
   assert(signals.count === 0, "a failed composition left a signal listener");
+});
+
+/** An event target that counts the listeners on it, by event type. */
+class CountingTarget extends EventTarget {
+  readonly listening = new Map<string, number>();
+
+  override addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: AddEventListenerOptions | boolean,
+  ): void {
+    this.listening.set(type, (this.listening.get(type) ?? 0) + 1);
+    super.addEventListener(type, listener, options);
+  }
+
+  override removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: EventListenerOptions | boolean,
+  ): void {
+    this.listening.set(type, (this.listening.get(type) ?? 0) - 1);
+    super.removeEventListener(type, listener, options);
+  }
+}
+
+Deno.test("[AUD-W2] worker entry point listens for driver crashes only while it runs", async () => {
+  const signals = new RecordedSignals();
+  const faults = new CountingTarget();
+  let listeningDuringTick: unknown;
+  await runWorker({
+    configure: () => ({
+      close: () => Promise.resolve(),
+      worker: {
+        tick: () => {
+          listeningDuringTick = Object.fromEntries(faults.listening);
+          signals.fire("SIGTERM");
+          return Promise.resolve();
+        },
+      },
+    }),
+    environment: environment({ DATABASE_URL }),
+    faults,
+    intervalMilliseconds: 1,
+    randomOwner: () => "owner",
+    signals,
+  });
+  assertEquals(listeningDuringTick, { error: 1, unhandledrejection: 1 });
+  assertEquals(Object.fromEntries(faults.listening), {
+    error: 0,
+    unhandledrejection: 0,
+  });
+});
+
+Deno.test("[AUD-W2] worker entry point stops promptly while a tick and its close are stuck", async () => {
+  const signals = new RecordedSignals();
+  const faults = new CountingTarget();
+  const effects: string[] = [];
+  const started = performance.now();
+  await runWorker({
+    configure: () => ({
+      close: () => {
+        effects.push("close");
+        return new Promise<never>(() => undefined);
+      },
+      worker: {
+        tick: () => {
+          effects.push("tick");
+          setTimeout(() => signals.fire("SIGTERM"), 1);
+          return new Promise<never>(() => undefined);
+        },
+      },
+    }),
+    environment: environment({ DATABASE_URL }),
+    faults,
+    intervalMilliseconds: 1,
+    randomOwner: () => "owner",
+    shutdownGraceMilliseconds: 20,
+    signals,
+  });
+  assert(
+    performance.now() - started < 1_000,
+    "a stuck tick held the shutdown",
+  );
+  assertEquals(effects, ["tick", "close"]);
+  assert(signals.count === 0, "a stuck tick left a signal listener");
+  assertEquals(Object.fromEntries(faults.listening), {
+    error: 0,
+    unhandledrejection: 0,
+  });
+});
+
+Deno.test("[AUD-W2] a tick in flight at shutdown is given its grace to finish", async () => {
+  const signals = new RecordedSignals();
+  const effects: string[] = [];
+  await runWorker({
+    configure: () => ({
+      close: () => {
+        effects.push("close");
+        return Promise.resolve();
+      },
+      worker: {
+        tick: async () => {
+          signals.fire("SIGTERM");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          effects.push("tick finished");
+        },
+      },
+    }),
+    environment: environment({ DATABASE_URL }),
+    faults: new EventTarget(),
+    intervalMilliseconds: 1,
+    randomOwner: () => "owner",
+    shutdownGraceMilliseconds: 5_000,
+    signals,
+  });
+  assertEquals(effects, ["tick finished", "close"]);
 });

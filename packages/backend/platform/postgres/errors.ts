@@ -54,3 +54,80 @@ export function postgresFailureStatus(
 export function isUniqueViolation(error: unknown): boolean {
   return postgresErrorCode(error) === "23505";
 }
+
+/**
+ * The codes Postgres.js gives a query whose connection went away under it,
+ * the socket's own when it is reset or written to after the server ended it,
+ * and the SQLSTATEs a server sends as it drops one: a connection exception
+ * (class 08), or an administrator, crash, or startup shutdown (`57P01` to
+ * `57P03`, which `pg_terminate_backend()` and a failover produce).
+ */
+const LOST_CONNECTION_CODES = new Set([
+  "CONNECTION_CLOSED",
+  "CONNECTION_DESTROYED",
+  "CONNECTION_ENDED",
+  "CONNECT_TIMEOUT",
+  "ECONNRESET",
+  "EPIPE",
+  "57P01",
+  "57P02",
+  "57P03",
+]);
+
+/**
+ * Whether `error`, or an error it wraps, is the driver reporting that its
+ * connection to the database is gone rather than a statement that failed.
+ */
+export function isConnectionLost(error: unknown): boolean {
+  for (
+    let current: unknown = error, depth = 0;
+    typeof current === "object" && current !== null && depth < 4;
+    current = (current as { readonly cause?: unknown }).cause, depth += 1
+  ) {
+    const code = postgresErrorCode(current);
+    if (
+      code !== undefined &&
+      (LOST_CONNECTION_CODES.has(code) || /^08[0-9A-Z]{3}$/.test(code))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** A stack frame inside the Postgres.js package, however it is installed. */
+const DRIVER_FRAME =
+  /[\/]postgres(?:[\/][^\/]+|@[^\/]+[\/]node_modules[\/]postgres)[\/](?:cjs[\/]|cf[\/])?src[\/]/;
+
+/** A frame of the runtime itself rather than of any program it runs. */
+const RUNTIME_FRAME = /^(?:ext:|node:|internal[\/]|native\b|<anonymous>)/;
+
+/**
+ * Whether `error` is the database driver failing on its own, rather than a
+ * program fault: a lost connection, or an uncoded error raised inside
+ * Postgres.js (or by the runtime on its behalf) before any application frame.
+ * Postgres.js raises those from its own timers when a connection dies with a
+ * write still queued (BEQ-09), out of reach of the query that queued it.
+ *
+ * Every error that carries a code and is not a lost connection is a program
+ * fault, however driver-shaped its stack: Postgres.js builds each statement
+ * error (a SQLSTATE) and each of its own client errors (`UNDEFINED_VALUE`,
+ * `MAX_PARAMETERS_EXCEEDED`) inside itself, so the stack starts there for a
+ * query the program forgot to await as well.
+ */
+export function isDriverFault(error: unknown): boolean {
+  if (isConnectionLost(error)) return true;
+  if (
+    !(error instanceof Error) || typeof error.stack !== "string" ||
+    (error as { readonly code?: unknown }).code !== undefined
+  ) {
+    return false;
+  }
+  for (const line of error.stack.split("\n")) {
+    const frame = line.match(/^\s+at (?:.*? \()?(.*?)\)?$/)?.[1];
+    if (frame === undefined) continue;
+    if (DRIVER_FRAME.test(frame)) return true;
+    if (!RUNTIME_FRAME.test(frame)) return false;
+  }
+  return false;
+}

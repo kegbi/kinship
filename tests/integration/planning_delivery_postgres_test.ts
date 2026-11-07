@@ -20,11 +20,20 @@ import {
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import {
+  describePlan,
+  explainedPlan,
+  planNodes,
+  scansOf,
+  withScratchCrm,
+} from "../support/query_plan.ts";
 import {
   configured,
   type CreatedReminder,
   createPerson,
   createReminder,
+  databaseUrl,
   deliveryConnection,
   deliveryRepository,
   deliveryTransaction,
@@ -808,6 +817,240 @@ Deno.test("[AUD-W1] a preference write is not held behind an open replenishment"
     release();
     await replenishing;
   }
+});
+
+/**
+ * A deployment-sized queue in a scratch database: many people with a window
+ * of pending occurrences ahead, a few due, a few claims whose lease ran out,
+ * and an archived person whose due occurrences sort before all of them.
+ */
+async function seedClaimQueue(
+  scratch: typeof sql,
+  now: Date,
+): Promise<{
+  readonly archivedDue: number;
+  readonly due: number;
+  readonly expired: number;
+}> {
+  const [userId, workspaceId, memberId] = [
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+    crypto.randomUUID(),
+  ];
+  const at = now.toISOString();
+  await scratch`
+    insert into crm.users (id, email, status)
+    values (${userId}, 'claim-plan@example.test', 'active')
+  `;
+  await scratch`
+    insert into crm.workspaces (id, name, created_by_user_id)
+    values (${workspaceId}, 'Claim plan', ${userId})
+  `;
+  await scratch`
+    insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+    values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+  `;
+  await scratch`
+    insert into crm.people (workspace_id, given_name, archived_at)
+    select ${workspaceId}::uuid, 'Person ' || n,
+      case when n = 0 then ${at}::timestamptz end
+    from generate_series(0, 400) n
+  `;
+  await scratch`
+    insert into crm.reminders (workspace_id, person_id, target_kind, title,
+      anchor_on, recurrence_unit, created_by_member_id)
+    select ${workspaceId}::uuid, person.id, 'person',
+      'Call ' || person.given_name, ${at}::date, 'day', ${memberId}::uuid
+    from crm.people person
+    cross join generate_series(1, 5)
+  `;
+  // Twenty dates ahead for every reminder: the queue's long, not-yet-due tail.
+  await scratch`
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+      deliver_at, channel, title_snapshot)
+    select reminder.id, ${memberId}::uuid, ${at}::date + day,
+      ${at}::timestamptz + make_interval(days => day), 'in_app', reminder.title
+    from crm.reminders reminder cross join generate_series(1, 20) day
+  `;
+  const due = 15;
+  const expired = 3;
+  const active = await scratch<{ readonly id: string }[]>`
+    select reminder.id::text from crm.reminders reminder
+    join crm.people person on person.id = reminder.person_id
+    where person.archived_at is null
+    order by reminder.id limit ${due + expired}
+  `;
+  for (const [index, reminder] of active.entries()) {
+    const claimed = index >= due;
+    await scratch`
+      insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+        deliver_at, channel, title_snapshot, status, claim_token, claim_owner,
+        lease_expires_at, attempt_count)
+      values (${reminder.id}::uuid, ${memberId}::uuid, ${at}::date - 1,
+        ${at}::timestamptz - make_interval(mins => ${60 - index}), 'in_app',
+        'Due', ${claimed ? "claimed" : "pending"},
+        ${claimed ? crypto.randomUUID() : null}::uuid,
+        ${claimed ? "crashed-worker" : null},
+        ${claimed ? at : null}::timestamptz - interval '1 minute',
+        ${claimed ? 1 : 0})
+    `;
+  }
+  // The archived person's past dates are due before anything else and must
+  // never be claimed, nor keep the rest of the queue waiting behind them.
+  const [archived] = await scratch<{ readonly count: number }[]>`
+    with inserted as (
+      insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+        deliver_at, channel, title_snapshot)
+      select reminder.id, ${memberId}::uuid, ${at}::date - 100 + day,
+        ${at}::timestamptz - make_interval(days => 100 - day), 'in_app',
+        'Archived'
+      from crm.reminders reminder
+      join crm.people person on person.id = reminder.person_id
+      cross join generate_series(1, 8) day
+      where person.archived_at is not null
+      returning 1
+    )
+    select count(*)::int as count from inserted
+  `;
+  await scratch`analyze`;
+  return { archivedDue: archived!.count, due, expired };
+}
+
+function scratchDeliveryRepository(
+  database: ReturnType<typeof connectDatabase>["db"],
+): PostgresReminderDeliveryRepository {
+  return new PostgresReminderDeliveryRepository(
+    database,
+    new PostgresActorRevalidation(),
+    new PostgresReminderDeliveryPreferences(),
+  );
+}
+
+Deno.test("[AUD-W2] the claim reads due work through the due and lease indexes", async () => {
+  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const now = new Date();
+    await seedClaimQueue(scratch, now);
+    const explaining = connectDatabase(url);
+    try {
+      const plan = await explainedPlan(
+        explaining.db,
+        (text) => text.includes("update crm.reminder_occurrences"),
+        (database) =>
+          scratchDeliveryRepository(database).claimDue({
+            channels: ["in_app"],
+            leaseExpiresAt: new Date(now.getTime() + 60_000),
+            limit: 10,
+            now,
+            owner: "plan-owner",
+          }),
+      );
+      const scans = scansOf(plan, "reminder_occurrences");
+      // A bitmap index scan names its index but not its table.
+      const indexes = new Set(
+        planNodes(plan).map((node) => node["Index Name"]),
+      );
+      assert(
+        indexes.has("reminder_occurrences_due_idx"),
+        `the claim does not read the due index: ${describePlan(plan)}`,
+      );
+      assert(
+        indexes.has("reminder_occurrences_lease_idx"),
+        `the claim does not read the lease index: ${describePlan(plan)}`,
+      );
+      assert(
+        !scans.some((node) => node["Node Type"] === "Seq Scan"),
+        `the claim scans every occurrence: ${describePlan(plan)}`,
+      );
+      // The members asked about first (BEQ-08) are read the same way.
+      const candidates = await explainedPlan(
+        explaining.db,
+        (text) =>
+          text.includes("select occurrence.member_id::text as member_id") &&
+          text.includes("union"),
+        (database) =>
+          scratchDeliveryRepository(database).claimDue({
+            channels: ["in_app"],
+            leaseExpiresAt: new Date(now.getTime() + 60_000),
+            limit: 10,
+            now,
+            owner: "plan-owner",
+          }),
+      );
+      const candidateIndexes = new Set(
+        planNodes(candidates).map((node) => node["Index Name"]),
+      );
+      assert(
+        candidateIndexes.has("reminder_occurrences_due_idx"),
+        `the candidate members do not read the due index: ${
+          describePlan(candidates)
+        }`,
+      );
+      assert(
+        candidateIndexes.has("reminder_occurrences_lease_idx"),
+        `the candidate members do not read the lease index: ${
+          describePlan(candidates)
+        }`,
+      );
+      assert(
+        !scansOf(candidates, "reminder_occurrences").some((node) =>
+          node["Node Type"] === "Seq Scan"
+        ),
+        `the candidate members scan every occurrence: ${
+          describePlan(candidates)
+        }`,
+      );
+    } finally {
+      await explaining.destroy();
+    }
+  });
+});
+
+Deno.test("[AUD-W2] concurrent claims take every eligible due row once and skip the archived", async () => {
+  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const now = new Date();
+    const { archivedDue, due, expired } = await seedClaimQueue(scratch, now);
+    const claiming = connectDatabase(url);
+    try {
+      const repository = scratchDeliveryRepository(claiming.db);
+      const claim = (owner: string) =>
+        repository.claimDue({
+          channels: ["in_app"],
+          leaseExpiresAt: new Date(now.getTime() + 60_000),
+          limit: 10,
+          now,
+          owner,
+        });
+      const concurrent = await Promise.all([claim("first"), claim("second")]);
+      const rest = await claim("third");
+      const ids = [...concurrent.flat(), ...rest].map((row) => row.id);
+      assertEquals(
+        new Set(ids).size,
+        ids.length,
+        "an occurrence was claimed twice",
+      );
+      assertEquals(ids.length, due + expired, "an eligible due row was lost");
+      assert(
+        concurrent.every((batch) => batch.length <= 10),
+        "a claim took more than its limit",
+      );
+      const [archived] = await scratch<
+        { readonly claimed: number; readonly pending: number }[]
+      >`
+        select count(*) filter (where status = 'pending'
+            and attempt_count = 0)::int as pending,
+          count(*) filter (where status = 'claimed')::int as claimed
+        from crm.reminder_occurrences
+        where title_snapshot = 'Archived'
+      `;
+      assertEquals(
+        { claimed: archived?.claimed, pending: archived?.pending },
+        { claimed: 0, pending: archivedDue },
+        "an archived person's due occurrence was claimed",
+      );
+    } finally {
+      await claiming.destroy();
+    }
+  });
 });
 
 Deno.test({

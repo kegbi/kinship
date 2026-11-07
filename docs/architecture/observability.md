@@ -131,12 +131,37 @@ any other name.
 | `gateway.request`   | Nginx access log                              | `method`, `route` (template), `status`, `duration_seconds`, `bytes_sent`, `request_id`       |
 | `gateway.readiness` | Nginx readiness probe                         | `boundary`, `state`, `status`, `dependency_status`                                           |
 | `api.request`       | HTTP kit, one per API request                 | `method`, `route` (registered pattern or `unmatched`), `status`, `duration_ms`, `request_id` |
-| `worker.job`        | reminder delivery, one per claimed occurrence | `job`, `request_id`, `attempt`, `outcome`, `duration_ms`                                     |
+| `worker.job`        | worker, per claimed occurrence or failed tick | `job`, `request_id`, `attempt`, `outcome`, `duration_ms`                                     |
 | `file.cleanup`      | files and people, one per unfinished cleanup  | `reason`, `outcome`, `request_id`                                                            |
 
 `worker.job` outcomes are the stable delivery codes `sent`, `retry`, `failed`,
-`manual_attention`, `stale-claim`, and `processing-error`. A failure is
-described by that code or by an HTTP status, never by `error.message`.
+`manual_attention`, `stale-claim`, and `processing-error`, plus the worker's
+`unattended-driver-fault`. A failure is described by that code or by an HTTP
+status, never by `error.message`.
+
+A tick that throws (BEQ-09) does not end the worker. The loop logs it as job
+`worker-tick` with outcome `processing-error`, a fresh `request_id`, and the
+count of consecutive failed ticks as `attempt`. It then waits twice as long
+after each consecutive failure, up to a minute. When the driver reports the
+connection lost (a Postgres.js `CONNECTION_*` or `CONNECT_TIMEOUT` code, a
+socket `ECONNRESET` or `EPIPE`, or SQLSTATE class `08` or `57P01`–`57P03`), it
+rebuilds the database pool before the next tick.
+
+Postgres.js can also fail outside any query: a connection that dies with a write
+still queued throws from the driver's own timer and leaves that query unsettled.
+While the loop runs, the worker listens for uncaught errors and unhandled
+rejections. A driver fault (a lost-connection code, or an error with no code
+raised inside Postgres.js before any application frame) is kept from ending the
+process and fails the tick in flight, which is then logged, backed off, and
+reconnected like any other lost connection. Any other uncaught error still ends
+the process, and the container restarts it: that includes every statement error
+and Postgres.js client error, such as a query the program forgot to await,
+though the driver builds those too. A driver fault with no tick in flight fails
+nothing and is only counted: before each tick, and once as the loop stops, a
+nonzero count is logged as job `worker-tick` with outcome
+`unattended-driver-fault`, the count as `attempt`, and `duration_ms` 0. On
+shutdown a tick in flight has five seconds to finish, and closing the pool
+whatever is left of them.
 
 `file.cleanup` records a stored file that was due to go and is still there
 (REL-082, REL-083): an avatar image a replacement (`avatar-replaced`), a failed

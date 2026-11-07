@@ -1212,6 +1212,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/planning_cadences_postgres_test.ts",
       "tests/integration/planning_delivery_postgres_test.ts",
       "tests/integration/planning_email_delivery_postgres_test.ts",
+      // The worker loop under a cut database connection (BEQ-09).
+      "tests/integration/worker_resilience_postgres_test.ts",
     ],
     coverage: {
       directory: "planning",

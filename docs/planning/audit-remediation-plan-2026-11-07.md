@@ -832,7 +832,7 @@ these:
       implementer (1.4–2.0 s) and 5 more at integration; performance unit,
       contracts, fmt, architecture, and lint (only REL-096) are clean.
 
-- [ ] **AUD-W2 — The worker claims through the due index and survives
+- [x] **AUD-W2 — The worker claims through the due index and survives
       failures.** S. Normal. Depends: AUD-W1. Closes: BEQ-08, BEQ-09.
   - Scope:
     - Select due ids from the indexable predicate first, with a CTE using
@@ -845,6 +845,17 @@ these:
   - RED: the claim's EXPLAIN shows the due index, and a tick whose repository
     throws is logged while the loop continues.
   - Verify: `test:unit --module=planning`; `test:integration --module=planning`.
+  - Delivered 2026-11-08: the claim selects due rows through
+    `reminder_occurrences_due_idx` and lease-expired rows through
+    `reminder_occurrences_lease_idx`, each `FOR UPDATE SKIP LOCKED` with a limit
+    and with eligibility joined in the locking select, so ineligible rows are
+    never claimed (EXPLAIN tests); a failed tick logs a `worker.job` line, backs
+    off up to 60 s, and rebuilds the pool on a lost connection, and every pool,
+    including each reconnect, keeps AUD-K3's 5 min worker statement timeout.
+    Planning unit 141, planning integration 70 (only REL-101 and REL-103), the
+    worker resilience file 3; contracts, fmt, architecture, and lint (only
+    REL-096). Planning tests that assert database-wide state flake on a reused
+    database (REL-113).
 
 - [x] **AUD-W3 — Planning statements prove their workspace, and unknown people
       answer 404.** S. Normal. Depends: AUD-W1. Closes: SECT-11, and the
