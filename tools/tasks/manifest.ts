@@ -2226,7 +2226,7 @@ export const MODULES: readonly TaskModule[] = [
     id: "web-build",
     onDemand: {
       reason:
-        "GAP-026, GAP-027, and GAP-028 prove what `astro build` ships to the browser — public pages load no React, the palette's and the person page's islands' hydrated bytes, and the Tailwind utilities the variants compile to — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
+        "GAP-026, GAP-027, and GAP-028 prove what `astro build` ships to the browser — public pages load no React, the palette's and the person page's islands' hydrated bytes, each page's modulepreload links (FER-02), and the Tailwind utilities the variants compile to — so it reads apps/web/dist and can only run after a build. The `build` verb runs it right after `astro build`.",
     },
     unit: {
       tests: ["tools/web_build_output_test.ts"],

@@ -17,7 +17,10 @@
  * people, tasks, and every settings page) mount theirs from their own page
  * script, as the on-demand pages in `ON_DEMAND_ISLANDS` (the required legal
  * review) do. Every island's bytes are measured, so the evidence line
- * records real numbers.
+ * records real numbers. Each page preloads exactly the static import closure
+ * of its scripts (FER-02), and the person shell also the hero, rail, and fact
+ * sections it always mounts, so no lazy chunk and no React is preloaded where
+ * the page would not load it eagerly.
  *
  * It needs `apps/web/dist`, so it runs from the `build` verb right after
  * `astro build` rather than in the aggregate unit gate.
@@ -563,6 +566,130 @@ Deno.test("[GAP-033] each on-demand island page loads its islands from its own s
       assert(fromScript.has(entry), `${page}'s script loads ${name}`);
       assert(!fromLayout.has(entry), `${name} does not load with the layout`);
       await logHydratedBytes(`${page} ${name}`, entry, react);
+    }
+  }
+});
+
+/** The `href` of every `<link rel="modulepreload">` in a page's `<head>`. */
+export function modulePreloads(html: string): string[] {
+  const head = html.slice(0, html.indexOf("</head>"));
+  return [...head.matchAll(/<link\b[^>]*>/gi)]
+    .map(([tag]) => tag)
+    .filter((tag) => /\brel\s*=\s*["']?modulepreload\b/i.test(tag))
+    .map((tag) => tag.match(/\bhref\s*=\s*["']([^"']*)["']/i)?.[1] ?? "");
+}
+
+Deno.test("[FER-02] the preload reader finds each modulepreload in the head only", () => {
+  const html = [
+    '<html><head><link rel="stylesheet" href="/_astro/a.css">',
+    '<link rel="modulepreload" href="/_astro/one.A1.js">',
+    "<link href='/_astro/two.B2.js' rel='modulepreload'>",
+    '</head><body><link rel="modulepreload" href="/_astro/late.C3.js">',
+    "</body></html>",
+  ].join("");
+  assert(
+    JSON.stringify(modulePreloads(html)) ===
+      JSON.stringify(["/_astro/one.A1.js", "/_astro/two.B2.js"]),
+    `head modulepreloads only: ${modulePreloads(html)}`,
+  );
+});
+
+/**
+ * The person shell's islands every person page mounts once the person
+ * resolves (FER-02): the hero, the rail summary, and the profile fact
+ * sections the rail loads. Their entries and static imports are preloaded
+ * with the shell's own closure; every other person island stays lazy.
+ */
+const PERSON_PRELOADED_ISLANDS = [
+  "person-hero",
+  "person-rail",
+  "person-fact-contact-methods",
+  "person-fact-addresses",
+  "person-fact-work",
+  "person-fact-pets",
+  "person-fact-food-preferences",
+  "person-fact-first-meeting",
+  "person-fact-tags",
+] as const;
+
+/** The chunks a page must preload: its scripts' static closure, and extras. */
+async function expectedPreloads(page: string): Promise<Set<string>> {
+  const entries = [...eagerScripts(await read(page))];
+  if (page === PERSON_SHELL) {
+    for (const name of PERSON_PRELOADED_ISLANDS) {
+      const island = await islandEntries(name);
+      assert(island.length === 1, `one ${name} island entry, not ${island}`);
+      entries.push(island[0]!);
+    }
+  }
+  return await eagerlyReachable(entries);
+}
+
+Deno.test("[FER-02] every page preloads exactly its static module closure in its head", async () => {
+  const pages = await builtPages();
+  assert(pages.length > 20, `the build wrote pages, found ${pages.length}`);
+  let preloading = 0;
+  for (const page of pages) {
+    const html = await read(page);
+    const preloads = modulePreloads(html);
+    for (const href of preloads) {
+      assert(
+        /^\/_astro\/[\w.-]+\.js$/.test(href),
+        `${page} preloads ${href}, not a same-origin fingerprinted chunk`,
+      );
+    }
+    const preloaded = new Set(preloads.map((href) => href.slice(1)));
+    assert(
+      preloaded.size === preloads.length,
+      `${page} preloads a chunk twice`,
+    );
+    const expected = await expectedPreloads(page);
+    const missing = [...expected].filter((chunk) => !preloaded.has(chunk));
+    assert(
+      missing.length === 0,
+      `${page} does not preload ${missing.sort().join(", ")}`,
+    );
+    const extra = [...preloaded].filter((chunk) => !expected.has(chunk));
+    assert(
+      extra.length === 0,
+      `${page} preloads lazy chunks ${extra.sort().join(", ")}`,
+    );
+    assert(
+      !/<link\b[^>]*\bas\s*=\s*["']?fetch\b/i.test(html),
+      `${page} preloads a fetch`,
+    );
+    if (expected.size > 0) preloading += 1;
+  }
+  assert(preloading > 20, `pages with scripts preload, found ${preloading}`);
+});
+
+Deno.test("[FER-02] the person shell preloads the hero, the rail, and the fact sections, and no other island", async () => {
+  const preloaded = new Set(
+    modulePreloads(await read(PERSON_SHELL)).map((href) => href.slice(1)),
+  );
+  for (const name of PERSON_PRELOADED_ISLANDS) {
+    const [entry] = await islandEntries(name);
+    assert(entry && preloaded.has(entry), `the person shell preloads ${name}`);
+  }
+  const lazy = [
+    ...PERSON_ISLANDS.filter((name) =>
+      !(PERSON_PRELOADED_ISLANDS as readonly string[]).includes(name)
+    ),
+    ...SHELL_ISLANDS,
+  ];
+  for (const name of lazy) {
+    const [entry] = await islandEntries(name);
+    assert(entry && !preloaded.has(entry), `the person shell preloads ${name}`);
+  }
+});
+
+Deno.test("[FER-02] public pages and the island-free shell preload no React", async () => {
+  for (const page of [...PUBLIC_PAGES, SHELL_ONLY_PAGE]) {
+    for (const href of modulePreloads(await read(page))) {
+      assert(
+        !carriesReact(await read(href.slice(1))),
+        `${page} preloads React through ${href}`,
+      );
     }
   }
 });

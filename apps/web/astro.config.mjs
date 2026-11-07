@@ -4,6 +4,7 @@ import node from "@astrojs/node";
 import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolveDevStaticShellRoute } from "./src/lib/dev-static-shell-route.ts";
+import { modulePreload } from "./src/lib/module-preload.ts";
 
 /**
  * React's development preamble on every page (GAP-027). Astro adds it only
@@ -37,7 +38,30 @@ export default defineConfig({
   adapter: node({ mode: "standalone" }),
   // React runs only inside hydrated islands (ADR 0006); no page renders it
   // unless it mounts one.
-  integrations: [react(), reactRefreshPreamble],
+  integrations: [
+    react(),
+    reactRefreshPreamble,
+    // Each built page preloads its scripts' static import closure (FER-02).
+    // The person shell also preloads the islands it mounts as soon as the
+    // person resolves — the hero, the rail summary, and the profile fact
+    // sections the rail loads (features/person/section-mounts.ts) — so their
+    // chunks do not wait for the profile read.
+    modulePreload({
+      extraEntries: {
+        "internal/person-profile-shell/index.html": [
+          "src/islands/person-hero/mount.tsx",
+          "src/islands/person-rail/mount.tsx",
+          "src/features/person/facts/contact-methods.tsx",
+          "src/features/person/facts/addresses.tsx",
+          "src/features/person/facts/work.tsx",
+          "src/features/person/facts/pets.tsx",
+          "src/features/person/facts/food.tsx",
+          "src/features/person/facts/first-meeting.tsx",
+          "src/features/person/facts/tags.tsx",
+        ],
+      },
+    }),
+  ],
   server: {
     host: "127.0.0.1",
     port: webPort,

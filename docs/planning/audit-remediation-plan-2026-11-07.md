@@ -1008,7 +1008,7 @@ these:
     `activities.INTERACTION-001`, `communications.INTERACTION-002`,
     `profile-facts.PEOPLE-006`, and `relationships.RELATIONSHIP-001`.
 
-- [ ] **AUD-F6 — Pages preload their module graph.** S–M. Normal. Depends:
+- [x] **AUD-F6 — Pages preload their module graph.** S–M. Normal. Depends:
       AUD-F2. Closes: FER-02.
   - Scope:
     - A post-build integration on `astro:build:done` writes a
@@ -1020,6 +1020,15 @@ these:
     closure (today no page has a preload link).
   - Verify: `test:unit --module=web-build`; `deno task build`; a Chromium E2E
     smoke test.
+  - Delivered 2026-11-07: four `[FER-02]` build-output tests (every built page
+    preloads exactly its static closure; the person shell also preloads its
+    hero, rail, and fact islands and no other island; no React preload on public
+    pages or the island-free settings overview), web-build 17 (only the known
+    REL-098), web unit 1730 (only REL-107), the integration's own suite at 100%
+    lines, branches, and functions; E2E PEOPLE-003 person shell, public-home,
+    and TODAY-001 shell 10 passed on Chromium; build, fmt, eslint, architecture,
+    and lint (only REL-096). On-demand pages get no build-time preloads; AUD-G5
+    keeps or explicitly drops them for `/privacy` and `/terms`.
 
 - [ ] **AUD-F7 — Today does not shift while it loads.** S. Normal. Depends:
       AUD-F3. Closes: FER-06.
