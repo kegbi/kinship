@@ -38,7 +38,9 @@ export interface ActiveWorkspaceResolver {
     readonly transaction: ProtectedSessionTransaction;
     readonly userId: string;
   }): Promise<ActiveWorkspaceContext | undefined>;
+  /** `lock` holds the context's rows until commit; writes pass it. */
   resolveActiveContext(command: {
+    readonly lock?: boolean;
     readonly requestedWorkspaceId?: string;
     readonly transaction: ProtectedSessionTransaction;
     readonly userId: string;

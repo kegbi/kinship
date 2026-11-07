@@ -207,6 +207,7 @@ Deno.test("protected session resolution lists only accessible workspaces", async
     workspaceId: "00000000-0000-4000-8000-000000000005",
     workspaceName: "Community circle",
   };
+  const locks: boolean[] = [];
   const coordinator = createProtectedSessionCoordinator({
     ...fixture.deps,
     identity: {
@@ -215,7 +216,10 @@ Deno.test("protected session resolution lists only accessible workspaces", async
     },
     workspace: {
       ...fixture.deps.workspace,
-      resolveActiveContext: () => Promise.resolve(active),
+      resolveActiveContext: (command) => {
+        locks.push(command.lock === true);
+        return Promise.resolve(active);
+      },
       listActiveContexts: () => Promise.resolve([active, second]),
     },
   });
@@ -225,6 +229,10 @@ Deno.test("protected session resolution lists only accessible workspaces", async
   });
 
   assert(resolved?.workspaceId === active.workspaceId, "active workspace kept");
+  assert(
+    locks.join(",") === "false",
+    "[AUD-K2] resolving a request's session takes no row locks",
+  );
   assert(
     resolved.accessibleWorkspaces.map((workspace) => workspace.workspaceId)
       .join(",") === `${active.workspaceId},${second.workspaceId}`,
@@ -270,7 +278,17 @@ function responseBarrier(expected: number): {
 
 Deno.test("password sign-in persists a session only after active workspace resolution", async () => {
   const { deps, effects } = dependencies();
-  const result = await createProtectedSessionCoordinator(deps).signIn({
+  const locks: boolean[] = [];
+  const result = await createProtectedSessionCoordinator({
+    ...deps,
+    workspace: {
+      ...deps.workspace,
+      resolveActiveContext: (command) => {
+        locks.push(command.lock === true);
+        return deps.workspace.resolveActiveContext(command);
+      },
+    },
+  }).signIn({
     email: "owner@example.test",
     ipAddress: "127.0.0.1",
     password: "correct horse battery staple",
@@ -285,6 +303,10 @@ Deno.test("password sign-in persists a session only after active workspace resol
     effects.join(",") ===
       "budget.password.begin,identity.password,transaction.begin,workspace.resolve,identity.session,audit.succeeded,identity.postcondition,workspace.postcondition,audit.postcondition,budget.password-reservation.finalize.200.transactional,transaction.commit",
     `unexpected effect order: ${effects.join(",")}`,
+  );
+  assert(
+    locks.join(",") === "true",
+    "[AUD-K2] issuing a session holds the workspace context it resolved",
   );
 });
 

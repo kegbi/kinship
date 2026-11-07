@@ -176,7 +176,6 @@ export class PostgresActiveWorkspaceResolver
         and wm.status = 'active' and wm.left_at is null
         and w.status = 'active' and w.deleted_at is null
       order by wm.joined_at asc nulls last, wm.id asc
-      for share of u, wm, w
     `.execute(databaseFromSession(command.transaction));
     return result.rows;
   }
@@ -202,7 +201,15 @@ export class PostgresActiveWorkspaceResolver
     return result.rows[0];
   }
 
+  /**
+   * A read resolves without row locks, so parallel requests under one session
+   * do not serialize on its membership (AUD-K2). Issuing a session passes
+   * `lock`, which holds the rows `for share` until it commits, so a concurrent
+   * suspension, removal, or password reset cannot slip between this answer and
+   * the new session.
+   */
   async resolveActiveContext(command: {
+    readonly lock?: boolean;
     readonly requestedWorkspaceId?: string;
     readonly transaction: Parameters<
       ActiveWorkspaceResolver["resolveActiveContext"]
@@ -223,7 +230,7 @@ export class PostgresActiveWorkspaceResolver
           or w.id = ${command.requestedWorkspaceId ?? null}::uuid)
       order by wm.joined_at asc nulls last, wm.id asc
       limit 1
-      for share of u, wm, w
+      ${command.lock ? sql`for share of u, wm, w` : sql``}
     `.execute(databaseFromSession(command.transaction));
     return result.rows[0];
   }

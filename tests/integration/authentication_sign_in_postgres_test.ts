@@ -840,6 +840,224 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "[AUD-K2] session reads neither write nor lock, and revocation and suspension still bind the next request",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const email = `aud-k2-${crypto.randomUUID()}@example.test`;
+    const { userId } = await registerAndVerify(email);
+    const signInAs = async (clientAddress: string): Promise<string> => {
+      const response = await signIn(email, undefined, { clientAddress });
+      assert(response.status === 200, "fixture signs in");
+      return extractCookie(response, "kinship_session");
+    };
+    const read = (token: string) =>
+      configured.app.request("http://localhost/api/v1/session", {
+        headers: { cookie: `kinship_session=${token}` },
+      });
+    const settle = async <T>(
+      work: T | Promise<T>,
+      milliseconds: number,
+    ) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(work).then((value) => ({
+            settled: true as const,
+            value,
+          })),
+          new Promise<{ readonly settled: false }>((resolve) => {
+            timer = setTimeout(() => resolve({ settled: false }), milliseconds);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    // A row's xmin changes when it is updated and its xmax when it is locked,
+    // so an unchanged pair proves the request neither wrote nor locked it.
+    const versions = async () =>
+      await database<{ readonly row: string; readonly version: string }[]>`
+        select 'session:' || s.id::text as row,
+          s.xmin::text || '/' || s.xmax::text || '/' || s.last_seen_at::text
+            as version
+        from crm.user_sessions s
+        where s.user_id = ${userId}::uuid
+        union all
+        select 'user', u.xmin::text || '/' || u.xmax::text
+        from crm.users u where u.id = ${userId}::uuid
+        union all
+        select 'member:' || wm.id::text, wm.xmin::text || '/' || wm.xmax::text
+        from crm.workspace_members wm where wm.user_id = ${userId}::uuid
+        union all
+        select 'workspace:' || w.id::text, w.xmin::text || '/' || w.xmax::text
+        from crm.workspace_members wm join crm.workspaces w
+          on w.id = wm.workspace_id
+        where wm.user_id = ${userId}::uuid
+        order by row
+      `;
+
+    const token = await signInAs("127.0.0.71");
+    const before = JSON.stringify(await versions());
+    for (const attempt of [1, 2]) {
+      const response = await read(token);
+      assert(response.status === 200, `read ${attempt} resolves the session`);
+    }
+    const after = JSON.stringify(await versions());
+    assert(
+      before === after,
+      `two reads within a minute wrote or locked a row: ${before} -> ${after}`,
+    );
+
+    const lastSeen = async () => {
+      const [row] = await database<{ readonly last_seen_at: Date }[]>`
+        select last_seen_at from crm.user_sessions
+        where user_id = ${userId}::uuid and revoked_at is null
+          and purpose = 'authenticated'
+      `;
+      assert(row, "the active session exists");
+      return row.last_seen_at.getTime();
+    };
+    await database`
+      update crm.user_sessions
+      set last_seen_at = last_seen_at - interval '2 minutes'
+      where user_id = ${userId}::uuid and revoked_at is null
+        and purpose = 'authenticated'
+    `;
+    const stale = await lastSeen();
+    assert((await read(token)).status === 200, "a stale session resolves");
+    const refreshed = await lastSeen();
+    assert(
+      refreshed - stale >= 110_000,
+      "a session last seen over a minute ago records its presence",
+    );
+    assert((await read(token)).status === 200, "the session still resolves");
+    assert(
+      await lastSeen() === refreshed,
+      "presence is recorded at most once a minute",
+    );
+
+    // Revocation: a read does not wait on an open revocation, and the first
+    // request after it commits is refused.
+    let commitRevocation = (): void => undefined;
+    const revocationReleased = new Promise<void>((resolve) => {
+      commitRevocation = resolve;
+    });
+    let markRevoked = (): void => undefined;
+    const revokedInTransaction = new Promise<void>((resolve) => {
+      markRevoked = resolve;
+    });
+    const revocation = database.begin(async (transaction) => {
+      await transaction`
+        update crm.user_sessions set revoked_at = now()
+        where user_id = ${userId}::uuid and revoked_at is null
+      `;
+      markRevoked();
+      await revocationReleased;
+    });
+    await revokedInTransaction;
+    const duringRevocation = await settle(read(token), 3_000);
+    commitRevocation();
+    await revocation;
+    assert(
+      duringRevocation.settled,
+      "a session read waited on an uncommitted revocation",
+    );
+    assert(
+      (await read(token)).status === 401,
+      "the first request after a committed revocation is refused",
+    );
+    const signedOut = await signInAs("127.0.0.72");
+    const signOut = await configured.app.request(
+      "http://localhost/api/v1/sign-out",
+      {
+        method: "POST",
+        headers: {
+          cookie: `kinship_session=${signedOut}`,
+          origin: "http://localhost",
+        },
+      },
+    );
+    assert(signOut.status < 300, "sign-out succeeds");
+    assert(
+      (await read(signedOut)).status === 401,
+      "the first request after sign-out is refused",
+    );
+
+    // Suspension: a write admitted against an open suspension waits for it on
+    // the locking revalidation and is refused once it commits; reads never wait.
+    const suspendedToken = await signInAs("127.0.0.73");
+    const [membership] = await database<{ readonly workspace_id: string }[]>`
+      select workspace_id::text from crm.workspace_members
+      where user_id = ${userId}::uuid
+    `;
+    assert(membership, "the fixture membership exists");
+    const peopleCount = async () => {
+      const [row] = await database<{ readonly count: number }[]>`
+        select count(*)::int count from crm.people
+        where workspace_id = ${membership.workspace_id}::uuid
+      `;
+      return row?.count ?? -1;
+    };
+    const peopleBefore = await peopleCount();
+    let commitSuspension = (): void => undefined;
+    const suspensionReleased = new Promise<void>((resolve) => {
+      commitSuspension = resolve;
+    });
+    let markSuspended = (): void => undefined;
+    const suspendedInTransaction = new Promise<void>((resolve) => {
+      markSuspended = resolve;
+    });
+    const suspension = database.begin(async (transaction) => {
+      await transaction`
+        update crm.workspace_members set status = 'suspended'
+        where user_id = ${userId}::uuid
+      `;
+      markSuspended();
+      await suspensionReleased;
+    });
+    await suspendedInTransaction;
+    const write = Promise.resolve(
+      configured.app.request("http://localhost/api/v1/people", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `kinship_session=${suspendedToken}`,
+          origin: "http://localhost",
+        },
+        body: JSON.stringify({ givenName: "Concurrent", isPartial: false }),
+      }),
+    );
+    const duringSuspensionRead = await settle(read(suspendedToken), 3_000);
+    const duringSuspensionWrite = await settle(write, 500);
+    commitSuspension();
+    await suspension;
+    const written = await write;
+    assert(
+      duringSuspensionRead.settled,
+      "a session read waited on an uncommitted suspension",
+    );
+    assert(
+      !duringSuspensionWrite.settled,
+      "a write did not wait on an uncommitted suspension",
+    );
+    assert(
+      written.status === 401 || written.status === 403,
+      `a write racing a suspension was admitted with ${written.status}`,
+    );
+    assert(
+      await peopleCount() === peopleBefore,
+      "a write racing a suspension changed the workspace",
+    );
+    assert(
+      (await read(suspendedToken)).status === 401,
+      "the first request after a committed suspension is refused",
+    );
+  },
+});
+
+Deno.test({
   name: "authentication PostgreSQL resources close",
   sanitizeOps: false,
   sanitizeResources: false,

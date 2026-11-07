@@ -1055,6 +1055,108 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "[AUD-K2] RELATIONSHIP-001 PostgreSQL reads take the vocabulary lock only when a default is missing",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const fixture = await register(
+      `relationship-unlocked-${crypto.randomUUID()}@example.test`,
+      "Unlocked relationship workspace",
+    );
+    const personResponse = await createPerson(fixture, {
+      givenName: "Unlocked reader",
+      isPartial: false,
+    });
+    const personId = (await personResponse.json()).person.id as string;
+    const listTypes = () =>
+      configured.app.request("http://localhost/api/v1/relationship-types", {
+        headers: {
+          cookie: fixture.cookie,
+          "X-Workspace-Id": fixture.workspaceId,
+        },
+      });
+    const settle = async <T>(work: T | Promise<T>, milliseconds: number) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(work).then((value) => ({
+            settled: true as const,
+            value,
+          })),
+          new Promise<{ readonly settled: false }>((resolve) => {
+            timer = setTimeout(() => resolve({ settled: false }), milliseconds);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    // Holds the vocabulary's advisory lock on another connection while `work`
+    // runs, so a read that takes the lock cannot finish until it is released.
+    const whileVocabularyLocked = async <T>(
+      work: () => Promise<T>,
+    ): Promise<T> =>
+      await raceSql.begin(async (transaction) => {
+        await transaction`
+          select pg_advisory_xact_lock(hashtextextended(
+            ${fixture.workspaceId}::text,
+            ${DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version}::bigint
+          ))
+        `;
+        return await work();
+      }) as T;
+
+    const unlocked = await whileVocabularyLocked(async () => ({
+      types: await settle(listTypes(), 3_000),
+      relationships: await settle(
+        relationshipRequest(fixture, personId, "GET"),
+        3_000,
+      ),
+    }));
+    assert(
+      unlocked.types.settled && unlocked.types.value.status === 200,
+      "a relationship-type read took the vocabulary lock with every default present",
+    );
+    assert(
+      unlocked.relationships.settled &&
+        unlocked.relationships.value.status === 200,
+      "a relationships read took the vocabulary lock with every default present",
+    );
+
+    const missing = DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types[3]!;
+    await sql`
+      delete from crm.relationship_types
+      where workspace_id = ${fixture.workspaceId}::uuid and is_system = true
+        and forward_label = ${missing.forwardLabel}
+        and reverse_label = ${missing.reverseLabel}
+    `;
+    let pending: Promise<Response> | undefined;
+    const whileMissing = await whileVocabularyLocked(async () => {
+      pending = Promise.resolve(listTypes());
+      return await settle(pending, 500);
+    });
+    assert(
+      !whileMissing.settled,
+      "a read backfilled a missing default without the vocabulary lock",
+    );
+    assert(pending, "the backfilling read was started");
+    assert(
+      (await pending).status === 200,
+      "the backfilling read answers once the lock is free",
+    );
+    const [restored] = await sql<{ readonly count: number }[]>`
+      select count(*)::int count from crm.relationship_types
+      where workspace_id = ${fixture.workspaceId}::uuid and is_system = true
+    `;
+    assert(
+      restored?.count === DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length,
+      "the missing default was restored under the lock",
+    );
+  },
+});
+
+Deno.test({
   name: "PEOPLE-001 PostgreSQL resources close",
   sanitizeOps: false,
   sanitizeResources: false,

@@ -400,14 +400,17 @@ export class PostgresIdentityAuthentication
             select 1 from crm.email_verification_tokens evt
             where evt.user_id = u.id and evt.used_at is not null
           )
-        for update of s
       `.execute(transaction);
       const principal = result.rows[0];
       if (!principal) return undefined;
+      // A read only records presence, so it neither locks the session nor
+      // writes it more than once a minute; revocation is decided by the
+      // predicate above on every request (AUD-K2).
+      const presenceStaleBefore = new Date(now.getTime() - 60_000);
       await sql`
         update crm.user_sessions set last_seen_at = ${now}
         where session_hash = ${hash} and purpose = 'authenticated'
-          and revoked_at is null
+          and revoked_at is null and last_seen_at < ${presenceStaleBefore}
       `.execute(transaction);
       return principal;
     });

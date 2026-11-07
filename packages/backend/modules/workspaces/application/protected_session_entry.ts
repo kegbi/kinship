@@ -38,6 +38,7 @@ export async function establishSession(
   return await dependencies.transaction.run(async (transaction) => {
     const context = await dependencies.workspace.resolveActiveContext({
       ...requested(command),
+      lock: true,
       transaction,
       userId: command.userId,
     });

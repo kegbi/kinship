@@ -20,6 +20,14 @@ function option(row: {
   };
 }
 
+/** The versioned defaults as a `values` list of label pairs and order. */
+function expectedDefaults() {
+  return DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.map((type) =>
+    sql`(${type.forwardLabel}::text, ${type.reverseLabel}::text,
+      ${type.sortOrder}::integer)`
+  );
+}
+
 export class PostgresRelationshipWorkspaceBoundary
   implements RelationshipWorkspaceBoundary {
   async ensureDefaultRelationshipTypes(
@@ -40,19 +48,21 @@ export class PostgresRelationshipWorkspaceBoundary
       };
     }
     const database = databaseFromSession(command.transaction);
+    // Once a workspace holds every default, reading it must not serialize the
+    // workspace behind the seeding lock, so the unlocked check answers first
+    // and the lock is taken only to fill a gap (AUD-K2).
+    if (await this.#defaultsComplete(database, command.workspaceId)) {
+      return { status: "ready" };
+    }
     const vocabulary = DEFAULT_RELATIONSHIP_TYPE_VOCABULARY;
     await sql`
       select pg_advisory_xact_lock(
         hashtextextended(${command.workspaceId}, ${vocabulary.version})
       )
     `.execute(database);
-    const expected = vocabulary.types.map((type) =>
-      sql`(${type.forwardLabel}::text, ${type.reverseLabel}::text,
-        ${type.sortOrder}::integer)`
-    );
     await sql`
       with expected (forward_label, reverse_label, sort_order) as (
-        values ${sql.join(expected)}
+        values ${sql.join(expectedDefaults())}
       )
       insert into crm.relationship_types (
         workspace_id, forward_label, reverse_label, is_system, can_delete,
@@ -69,9 +79,20 @@ export class PostgresRelationshipWorkspaceBoundary
           and actual.reverse_label = expected.reverse_label
       )
     `.execute(database);
-    const postcondition = await sql<{ readonly valid: boolean }>`
+    if (!await this.#defaultsComplete(database, command.workspaceId)) {
+      throw new Error("Default relationship-type postconditions failed.");
+    }
+    return { status: "ready" };
+  }
+
+  /** Whether the workspace holds each default exactly once, as seeded. */
+  async #defaultsComplete(
+    database: ReturnType<typeof databaseFromSession>,
+    workspaceId: string,
+  ): Promise<boolean> {
+    const result = await sql<{ readonly valid: boolean }>`
       with expected (forward_label, reverse_label, sort_order) as (
-        values ${sql.join(expected)}
+        values ${sql.join(expectedDefaults())}
       ), checked as (
         select expected.forward_label, expected.reverse_label,
           expected.sort_order, count(actual.id)::integer as matches,
@@ -82,21 +103,18 @@ export class PostgresRelationshipWorkspaceBoundary
           ), false) as exact
         from expected
         left join crm.relationship_types actual
-          on actual.workspace_id = ${command.workspaceId}::uuid
+          on actual.workspace_id = ${workspaceId}::uuid
           and actual.is_system = true
           and actual.forward_label = expected.forward_label
           and actual.reverse_label = expected.reverse_label
         group by expected.forward_label, expected.reverse_label,
           expected.sort_order
       )
-      select count(*) = ${vocabulary.types.length}
+      select count(*) = ${DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length}
         and bool_and(matches = 1 and exact) as valid
       from checked
     `.execute(database);
-    if (postcondition.rows[0]?.valid !== true) {
-      throw new Error("Default relationship-type postconditions failed.");
-    }
-    return { status: "ready" };
+    return result.rows[0]?.valid === true;
   }
 
   async inspect(

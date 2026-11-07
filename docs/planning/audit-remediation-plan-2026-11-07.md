@@ -545,7 +545,7 @@ these:
     branches, 100% functions; contracts, fmt, architecture, and lint (only the
     known REL-096) gates.
 
-- [ ] **AUD-K2 — Reads stop writing.** M. Normal. Depends: AUD-K1. Closes:
+- [x] **AUD-K2 — Reads stop writing.** M. Normal. Depends: AUD-K1. Closes:
       BEQ-05.
   - Scope:
     - Throttle `last_seen_at` so it is written at most once a minute, as the
@@ -559,6 +559,18 @@ these:
     relationships read takes no advisory lock when the vocabulary exists.
   - Verify: `test:integration --module=identity`, `--module=workspaces`, and
     `--module=relationships`.
+  - Delivered 2026-11-07: `[AUD-K2]` integration tests (two GETs within a minute
+    neither write nor lock the session, user, member, or workspace rows, while
+    revocation, sign-out, and suspension still refuse the next request and a
+    racing write; a relationships read takes the vocabulary lock only when a
+    default is missing), identity integration 6 (only the known REL-099),
+    workspaces integration 6, sign-in, relationships, and invitation files 14,
+    workspaces and identity unit tests; changed lines covered (authentication.ts
+    90.7% lines, 87.3% branches, 100% functions); fmt, architecture, and lint
+    (only REL-096). Session issuance keeps its share lock so a reset or
+    suspension cannot slip between the credential check and the new session.
+    Relationships declares no integration suite of its own; its file ran
+    directly.
 
 - [ ] **AUD-K3 — The fixed database cost per request drops from 24 round trips
       to at most 8, and stalled statements time out.** M–L. Normal. Depends:
