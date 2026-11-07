@@ -1,6 +1,8 @@
 import { PERSON_SECTIONS } from "../apps/web/src/features/person/sections.ts";
 import { PROFILE_MODULE_DEFAULTS } from "../packages/backend/modules/workspaces/public.ts";
 import { problemBody } from "../packages/http-kit/problem.ts";
+import { REQUEST_TOO_LARGE } from "../packages/http-kit/body_limit.ts";
+import { PERSON_FILE_MAX_BYTES } from "../packages/backend/modules/files/public.ts";
 import { calendarFeedFile } from "../packages/contracts/schemas/calendar_feeds.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -290,13 +292,19 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       base.includes("GATEWAY_TLS_PRIVATE_KEY_PATH"),
     "production-like gateway terminates TLS from deployment-provided files",
   );
+  // add_header in a location replaces the server's, so every location that
+  // adds its own repeats the policy; only fingerprinted subresources do not.
+  const unprotected = nginxLocations(gateway).filter(({ selector, body }) =>
+    selector !== "/_astro/" && addedHeaderNames(body).length > 0 &&
+    !/^\s*include \/etc\/nginx\/security_headers\.conf;$/m.test(body)
+  ).map(({ selector }) => selector);
   assert(
-    (gateway.match(/include \/etc\/nginx\/security_headers\.conf;/g)?.length ??
-          0) === 8 &&
+    /^ {4}include \/etc\/nginx\/security_headers\.conf;$/m.test(gateway) &&
+      unprotected.length === 0 &&
       gatewayImage.includes(
         "COPY gateway/security_headers.conf /etc/nginx/security_headers.conf",
       ),
-    "all public gateway responses receive the pinned browser security policy",
+    `all public gateway responses receive the pinned browser security policy: ${unprotected}`,
   );
   assert(
     gateway.includes("location /api/v1/") &&
@@ -887,6 +895,167 @@ Deno.test("[GAP-040] every proxied location forwards the gateway's request ident
       `${selector} forwards the gateway's own request identifier`,
     );
   }
+});
+
+/** Every `add_header` name one location declares itself. */
+function locationHeaderNames(location: string): string[] {
+  return addedHeaderNames(location).map((name) => name.toLowerCase()).sort();
+}
+
+const SECURITY_HEADERS_INCLUDE =
+  /^\s*include \/etc\/nginx\/security_headers\.conf;$/m;
+
+Deno.test("[AUD-G1] static HTML revalidates and only fingerprinted assets are immutable", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const locations = nginxLocations(gateway);
+  const shells = locations.filter(({ body }) =>
+    /^\s*try_files \/internal\/[a-z-]+-shell\/index\.html =404;$/m.test(body)
+  );
+  assert(shells.length === 5, `five static shell rewrites (${shells.length})`);
+  const html = [
+    ...shells,
+    { selector: "/", body: nginxLocation(gateway, "/") },
+    {
+      selector: "= /docs/api/openapi.json",
+      body: nginxLocation(gateway, "= /docs/api/openapi.json"),
+    },
+  ];
+  for (const { selector, body } of html) {
+    // add_header in a location replaces the server's, so it repeats them.
+    assert(
+      addedHeaderValue(body, "Cache-Control") === "no-cache" &&
+        SECURITY_HEADERS_INCLUDE.test(body),
+      `${selector} revalidates with the browser policy`,
+    );
+  }
+
+  const favicon = nginxLocation(gateway, "= /favicon.svg");
+  assert(
+    addedHeaderValue(favicon, "Cache-Control") === "public, max-age=86400" &&
+      SECURITY_HEADERS_INCLUDE.test(favicon),
+    "the favicon is cached for a day with the browser policy",
+  );
+
+  const assets = nginxLocation(gateway, "/_astro/");
+  assert(
+    JSON.stringify(locationHeaderNames(assets)) ===
+        JSON.stringify([
+          "cache-control",
+          "cross-origin-resource-policy",
+          "x-content-type-options",
+        ]) &&
+      !SECURITY_HEADERS_INCLUDE.test(assets) &&
+      addedHeaderValue(assets, "Cache-Control") ===
+        "public, max-age=31536000, immutable" &&
+      addedHeaderValue(assets, "Cross-Origin-Resource-Policy") ===
+        "same-origin" &&
+      addedHeaderValue(assets, "X-Content-Type-Options") === "nosniff",
+    `fingerprinted assets carry only what a subresource uses: ${
+      locationHeaderNames(assets)
+    }`,
+  );
+});
+
+Deno.test("[AUD-G1] the TLS listener speaks HTTP/2 and the gateway hides its version", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const server = gateway.slice(gateway.indexOf("\n  server {"));
+  assert(
+    /^ {4}listen 8443 ssl;$/m.test(server) && /^ {4}http2 on;$/m.test(server),
+    "the TLS server negotiates HTTP/2",
+  );
+  assert(
+    /^ {2}server_tokens off;$/m.test(gateway),
+    "the Server header names no nginx version",
+  );
+});
+
+Deno.test("[AUD-G1] a person file up to its limit passes the gateway and a larger one is a problem", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const person = "/api/v1/people/393de041-31ca-47c3-95d4-ae37b7473e2e";
+  const matching = (path: string) =>
+    nginxLocations(gateway).filter(({ selector }) => {
+      const pattern = selector.match(/^~ "(.+)"$/)?.[1];
+      return pattern !== undefined && new RegExp(pattern).test(path);
+    });
+  const [upload, ...others] = matching(`${person}/files`);
+  assert(
+    upload && others.length === 0,
+    `one location of its own matches ${person}/files`,
+  );
+  const limit = Number(
+    upload.body.match(/^\s*client_max_body_size (\d+);$/m)?.[1],
+  );
+  assert(
+    limit >= PERSON_FILE_MAX_BYTES && limit <= PERSON_FILE_MAX_BYTES + 65_536,
+    `the upload admits a whole person file and little more (${limit})`,
+  );
+  for (const path of [`${person}/avatar`, `${person}/files/extra`, person]) {
+    assert(
+      matching(path).length === 0,
+      `${path} keeps the ordinary API envelope`,
+    );
+  }
+  // The gateway's /tmp is a 16m tmpfs, so a body this size must stream.
+  assert(
+    /^\s*proxy_request_buffering off;$/m.test(upload.body),
+    "the upload streams to the API instead of buffering to a temp file",
+  );
+  // A streamed body holds an API request while it trickles in, so each read
+  // waits at most as long as the proxy waits on the API.
+  assert(
+    /^\s*client_body_timeout 15s;$/m.test(upload.body),
+    "a stalled upload body times out like the proxied request",
+  );
+  const api = nginxLocation(gateway, "/api/v1/");
+  // Every directive, rate and connection limits included, except the body's.
+  const withoutBodyRules = (location: string) =>
+    location.split("\n").map((line) => line.trim()).filter((line) =>
+      line !== "" && !line.startsWith("#") &&
+      !line.startsWith("client_max_body_size ") &&
+      line !== "proxy_request_buffering off;" &&
+      line !== "client_body_timeout 15s;"
+    );
+  assert(
+    JSON.stringify(withoutBodyRules(upload.body)) ===
+      JSON.stringify(withoutBodyRules(api)),
+    `the upload proxies and limits exactly like /api/v1/: ${
+      withoutBodyRules(upload.body)
+    }`,
+  );
+  assert(
+    [api, nginxLocation(gateway, "^~ /api/v1/calendar-feeds/"), upload.body]
+      .every((location) =>
+        /^\s*error_page 413 = @request_too_large;$/m.test(location)
+      ),
+    "every API location answers an oversized body itself",
+  );
+
+  const refusal = nginxLocation(gateway, "@request_too_large");
+  const body = refusal.match(/^\s*return 413 '(\{[^']*\})';$/m)?.[1];
+  assert(
+    body ===
+      JSON.stringify(
+        problemBody(
+          413,
+          REQUEST_TOO_LARGE.code,
+          REQUEST_TOO_LARGE.title,
+          REQUEST_TOO_LARGE.detail,
+        ),
+      ),
+    `the oversized-body answer is the API's own problem: ${body}`,
+  );
+  assert(
+    /^\s*default_type application\/problem\+json;$/m.test(refusal) &&
+      addedHeaderValue(refusal, "Cache-Control") === "no-store" &&
+      SECURITY_HEADERS_INCLUDE.test(refusal),
+    "the oversized-body answer is an uncached problem with the browser policy",
+  );
 });
 
 Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", async () => {

@@ -938,7 +938,7 @@ these:
 
 ### Lane G — Gateway, delivery, and operations
 
-- [ ] **AUD-G1 — Gateway delivery and edge hardening.** S–M. High. Depends:
+- [x] **AUD-G1 — Gateway delivery and edge hardening.** S–M. High. Depends:
       none. Closes: FER-05, FEQ-07, FER-07, SECA-12, and SECA-13 items 2, 3, 5,
       and 8.
   - Scope:
@@ -965,6 +965,14 @@ these:
   - Verify: `test:unit --module=api` (gateway contract) and `--module=gateway`;
     `deno task build`; E2E `person-files.FILES-001` and `public-home`
     (Chromium).
+  - Delivered 2026-11-07: gateway contract 17 passed (HTML `no-cache`, TLS
+    `http2`, upload-location limit and full rate-limit parity, 15 s body
+    timeout) and the live real-nginx `[AUD-G1]` test (HTTP/2, 5 MB upload 201,
+    oversize problem+json 413); E2E FILES-001 and public-home 8 passed on
+    Chromium; configuration-only change; build, fmt, and architecture gates,
+    with only the known REL-096, REL-098, and the unrelated manifest permission
+    failures in `baseline_test.ts` and the gateway compression test. The Dokploy
+    edge's HTTP/2 is documented as unverified, with the operator check.
 
 - [ ] **AUD-G2 — Responses are compressed where it is safe.** S. Normal.
       Depends: AUD-G1. Closes: FEQ-12, FER-08.

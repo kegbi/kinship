@@ -32,7 +32,7 @@ export const PERSON_FILE_MAX_BYTES = 10 * 1024 * 1024;
  *
  * An avatar is drawn at a few dozen pixels on every list a person appears in,
  * so it has a limit of its own, well inside the gateway's 1.5 MB request
- * envelope that bounds every `/api/v1/` body.
+ * envelope that bounds every `/api/v1/` body but a person file's.
  */
 export const AVATAR_MAX_BYTES = 1024 * 1024;
 

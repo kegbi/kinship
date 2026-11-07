@@ -113,10 +113,13 @@ After deployment, inspect service exit/health states, then run:
 deno task ops probe https://kinship.homelaboss.com
 ```
 
-Verify HTTPS, public authentication links, sign-in/MFA, one person read, one
-attachment upload/read/delete, authenticated SMTP delivery, a worker reminder
-cycle, and DAV only if enabled. Verify unauthenticated file access is denied.
-These are operational acceptance checks, not claims that deployment has passed.
+Verify HTTPS and that the edge negotiates HTTP/2
+(`curl -sS -o /dev/null -w '%{http_version}' https://kinship.homelaboss.com/`
+prints `2`; see the Gateway Hardening section of the Compose contract), public
+authentication links, sign-in/MFA, one person read, one attachment
+upload/read/delete, authenticated SMTP delivery, a worker reminder cycle, and
+DAV only if enabled. Verify unauthenticated file access is denied. These are
+operational acceptance checks, not claims that deployment has passed.
 
 For an application-only rollback with unchanged schema compatibility, stop API
 and worker, select the last healthy reviewed Git revision, retain the same

@@ -852,6 +852,267 @@ async function compressionResponse(
   };
 }
 
+/**
+ * One request curl makes from inside the gateway container, optionally with a
+ * body of `bodyBytes` zero bytes: the status, negotiated HTTP version,
+ * lower-cased response headers, and body text.
+ */
+async function curlInGateway(
+  container: string,
+  url: string,
+  options: { readonly http2?: boolean; readonly bodyBytes?: number } = {},
+) {
+  const send = options.bodyBytes === undefined
+    ? ""
+    : `head -c ${options.bodyBytes} /dev/zero | `;
+  const upload = options.bodyBytes === undefined
+    ? ""
+    : "--data-binary @- -H 'Content-Type: application/octet-stream' -H 'Expect:'";
+  const output = await docker([
+    "exec",
+    container,
+    "sh",
+    "-c",
+    `${send}curl -sk ${
+      options.http2 ? "--http2" : "--http1.1"
+    } ${upload} -D /dev/shm/curl-headers -o /dev/shm/curl-body -w '%{http_code} %{http_version}' "$1" && printf '\\nHEADERS\\n' && cat /dev/shm/curl-headers && printf '\\nBODY\\n' && cat /dev/shm/curl-body`,
+    "sh",
+    url,
+  ]);
+  const [summary = "", rest = ""] = output.split("\nHEADERS\n");
+  const [head = "", body = ""] = rest.split("\nBODY\n");
+  const [status, version] = summary.trim().split(" ");
+  const headers: Record<string, string[]> = {};
+  for (const line of head.split("\n")) {
+    const match = line.trim().match(/^([^:]+):\s*(.*)$/);
+    if (match) (headers[match[1]!.toLowerCase()] ??= []).push(match[2]!);
+  }
+  return { status: Number(status), version, headers, body };
+}
+
+Deno.test({
+  name:
+    "[AUD-G1] real Nginx revalidates HTML, speaks HTTP/2 over TLS, and admits a whole person file",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const id = `kinship-delivery-${Deno.pid}-${Date.now()}`;
+    const tls = await createE2eTls(`kinship-e2e-${Deno.pid}-${Date.now()}`);
+    const containers: string[] = [];
+    let networkCreated = false;
+    const uuid = "393de041-31ca-47c3-95d4-ae37b7473e2e";
+    const files = [
+      "index.html",
+      "favicon.svg",
+      "docs/api/openapi.json",
+      "_astro/fixture.js",
+      "internal/person-profile-shell/index.html",
+      "internal/person-audit-shell/index.html",
+      "internal/activity-report-shell/index.html",
+      "internal/import-report-shell/index.html",
+      "internal/journal-item-shell/index.html",
+    ];
+    // The static root is a tmpfs the gateway fills before nginx starts, so the
+    // fixture needs no host directory.
+    const fill = files.map((file) =>
+      `mkdir -p "/usr/share/nginx/html/${
+        file.split("/").slice(0, -1).join("/")
+      }" && printf fixture > "/usr/share/nginx/html/${file}"`
+    ).join(" && ");
+    try {
+      await docker(["network", "create", id]);
+      networkCreated = true;
+      const upstream = `${id}-upstream`;
+      // The API stand-in answers 201 with the body length it received.
+      const upstreamConfig =
+        `events {} http { server { listen 8000; listen 4321; client_max_body_size 0; location / { return 201 '{"received":$content_length}'; } } }`;
+      await docker([
+        "run",
+        "--detach",
+        "--name",
+        upstream,
+        "--network",
+        id,
+        "--network-alias",
+        "kinship-private-api",
+        "--network-alias",
+        "kinship-private-web",
+        "--entrypoint",
+        "sh",
+        NGINX_IMAGE,
+        "-c",
+        `printf '%s' "$1" >/tmp/upstream.conf; exec nginx -c /tmp/upstream.conf -g 'daemon off;'`,
+        "sh",
+        upstreamConfig,
+      ]);
+      containers.push(upstream);
+      const gateway = `${id}-gateway`;
+      await docker([
+        "run",
+        "--detach",
+        "--name",
+        gateway,
+        "--network",
+        id,
+        "--user",
+        "nginx",
+        "--tmpfs",
+        "/usr/share/nginx/html:rw,mode=1777",
+        // Smaller than one upload, as Compose's 16m /tmp is smaller than two:
+        // a person file must stream to the API, not buffer to a temp file.
+        "--tmpfs",
+        "/tmp:rw,mode=1777,size=4m",
+        ...[
+          [await Deno.realPath("gateway/nginx.conf"), "/etc/nginx/nginx.conf"],
+          [
+            await Deno.realPath("gateway/security_headers.conf"),
+            "/etc/nginx/security_headers.conf",
+          ],
+          [tls.certificate, "/run/secrets/gateway_tls_certificate"],
+          [tls.privateKey, "/run/secrets/gateway_tls_private_key"],
+        ].flatMap((
+          [source, target],
+        ) => [
+          "--mount",
+          `type=bind,source=${source},target=${target},readonly`,
+        ]),
+        "--entrypoint",
+        "sh",
+        NGINX_IMAGE,
+        "-c",
+        `${fill} && exec nginx -g 'daemon off;'`,
+      ]);
+      containers.push(gateway);
+      const http = "http://127.0.0.1:8080";
+      const deadline = Date.now() + 15_000;
+      while (true) {
+        try {
+          assert(
+            (await curlInGateway(gateway, `${http}/`)).status === 200,
+            "gateway ready",
+          );
+          break;
+        } catch (error) {
+          if (Date.now() >= deadline) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      const one = (
+        headers: Record<string, string[]>,
+        name: string,
+      ) => headers[name]?.length === 1 ? headers[name][0] : undefined;
+
+      // FEQ-07/FER-07: browsers reaching the TLS listener negotiate h2.
+      const secure = await curlInGateway(gateway, "https://127.0.0.1:8443/", {
+        http2: true,
+      });
+      assert(
+        secure.status === 200 && secure.version === "2",
+        `the TLS listener negotiates HTTP/2 (${secure.version})`,
+      );
+      assert(
+        one(secure.headers, "server") === "nginx",
+        `the Server header names no version: ${secure.headers.server}`,
+      );
+
+      // FER-05: every static document revalidates, once, with the policy.
+      for (
+        const path of [
+          "/",
+          "/docs/api/openapi.json",
+          `/app/people/${uuid}`,
+          `/app/people/${uuid}/audit`,
+          `/app/people/${uuid}/activity-report`,
+          `/app/settings/import/${uuid}`,
+          `/app/journal/${uuid}`,
+        ]
+      ) {
+        const page = await curlInGateway(gateway, `${http}${path}`);
+        assert(
+          page.status === 200 &&
+            one(page.headers, "cache-control") === "no-cache" &&
+            one(page.headers, "content-security-policy") ===
+              CONTENT_SECURITY_POLICY &&
+            one(page.headers, "x-frame-options") === "DENY",
+          `${path} revalidates with the browser policy: ${
+            JSON.stringify(page.headers)
+          }`,
+        );
+      }
+      const favicon = await curlInGateway(gateway, `${http}/favicon.svg`);
+      assert(
+        favicon.status === 200 &&
+          one(favicon.headers, "cache-control") === "public, max-age=86400" &&
+          one(favicon.headers, "content-security-policy") ===
+            CONTENT_SECURITY_POLICY,
+        `the favicon is cached for a day: ${JSON.stringify(favicon.headers)}`,
+      );
+      const asset = await curlInGateway(gateway, `${http}/_astro/fixture.js`);
+      assert(
+        asset.status === 200 &&
+          one(asset.headers, "cache-control") ===
+            "public, max-age=31536000, immutable" &&
+          one(asset.headers, "x-content-type-options") === "nosniff" &&
+          one(asset.headers, "cross-origin-resource-policy") ===
+            "same-origin" &&
+          [
+            "content-security-policy",
+            "permissions-policy",
+            "referrer-policy",
+            "strict-transport-security",
+            "x-frame-options",
+          ].every((name) => asset.headers[name] === undefined),
+        `a fingerprinted asset carries only its subresource headers: ${
+          JSON.stringify(asset.headers)
+        }`,
+      );
+
+      // SECA-12: a 5 MB document reaches the API; past the file limit the
+      // gateway answers the API's own problem.
+      const filesPath = `${http}/api/v1/people/${uuid}/files`;
+      const accepted = await curlInGateway(gateway, filesPath, {
+        bodyBytes: 5_000_000,
+      });
+      assert(
+        accepted.status === 201 &&
+          accepted.body === '{"received":5000000}',
+        `a 5 MB upload reaches the API whole: ${accepted.status} ${accepted.body}`,
+      );
+      for (
+        const [path, bodyBytes] of [
+          [filesPath, 11 * 1024 * 1024],
+          [`${http}/api/v1/people`, 2_000_000],
+        ] as const
+      ) {
+        const refused = await curlInGateway(gateway, path, { bodyBytes });
+        assert(
+          refused.status === 413 &&
+            one(refused.headers, "content-type") ===
+              "application/problem+json" &&
+            one(refused.headers, "cache-control") === "no-store" &&
+            one(refused.headers, "content-security-policy") ===
+              CONTENT_SECURITY_POLICY,
+          `${path} refuses ${bodyBytes} bytes as an uncached problem: ${refused.status} ${
+            JSON.stringify(refused.headers)
+          }`,
+        );
+        const problem = JSON.parse(refused.body) as Record<string, unknown>;
+        assert(
+          problem.status === 413 && problem.code === "request_too_large" &&
+            problem.type === "https://kinship.test/problems/request_too_large",
+          `the refusal is the API's problem shape: ${refused.body}`,
+        );
+      }
+    } finally {
+      for (const container of containers.reverse()) {
+        await docker(["rm", "--force", container]);
+      }
+      if (networkCreated) await docker(["network", "rm", id]);
+      await removeE2eTls(tls);
+    }
+  },
+});
+
 Deno.test("static gateway compression negotiates behind a proxy without compressing private responses", async () => {
   const id = `kinship-compression-${Deno.pid}-${Date.now()}`;
   const tls = await createE2eTls(`kinship-e2e-${Deno.pid}-${Date.now()}`);
@@ -993,23 +1254,25 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
             `${path} varies by encoding`,
           );
           assert(
-            response.headers["content-security-policy"],
-            `${path} preserves CSP`,
-          );
-          assert(
-            response.headers["strict-transport-security"] ===
-              "max-age=31536000",
-            `${path} preserves HSTS`,
-          );
-          assert(
             response.headers["x-content-type-options"] === "nosniff",
             `${path} preserves nosniff`,
           );
           if (path.startsWith("/_astro/")) {
+            // AUD-G1: a subresource carries no document policy.
             assert(
               response.headers["cache-control"] ===
-                "public, max-age=31536000, immutable",
-              `${path} preserves immutable cache`,
+                  "public, max-age=31536000, immutable" &&
+                !response.headers["content-security-policy"] &&
+                !response.headers["strict-transport-security"],
+              `${path} preserves immutable cache without document policies`,
+            );
+          } else {
+            assert(
+              response.headers["content-security-policy"] &&
+                response.headers["strict-transport-security"] ===
+                  "max-age=31536000" &&
+                response.headers["cache-control"] === "no-cache",
+              `${path} preserves CSP and HSTS and revalidates`,
             );
           }
         }
