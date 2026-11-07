@@ -41,6 +41,11 @@ export type {
   EligibleRecipient,
   RevalidatedActor,
 } from "./ports/actors.ts";
+export {
+  actorMayRead,
+  type ActorReadDependencies,
+  carryAdmission,
+} from "./application/actor_admission.ts";
 export { createProtectedSessionCoordinator } from "./application/protected_session.ts";
 export { protectedSessionHttpStatus } from "./domain/session_rules.ts";
 export type {

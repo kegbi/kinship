@@ -1,6 +1,9 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 
 export interface ReadModelTransaction {
@@ -278,9 +281,7 @@ export function createPersonProfile(dependencies: {
   readonly repository: PersonProfileRepository;
 }) {
   const readable = async (actor: PersonProfileActor): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+    await actorMayRead(dependencies, actor);
 
   return {
     get: async (

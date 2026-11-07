@@ -95,7 +95,14 @@ export interface IdentityAuthenticationFacade {
     readonly transaction: IdentityTransaction;
     readonly userId: string;
   }): Promise<void>;
-  resolveSession(token: string): Promise<SessionPrincipal | undefined>;
+  /**
+   * The principal behind an authenticated session token, or nobody. It runs
+   * on the caller's connection when one is given, and opens no transaction.
+   */
+  resolveSession(
+    token: string,
+    connection?: IdentityTransaction,
+  ): Promise<SessionPrincipal | undefined>;
   revokeSession(command: {
     readonly token: string;
     readonly transaction: IdentityTransaction;

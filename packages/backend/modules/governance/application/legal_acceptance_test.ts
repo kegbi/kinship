@@ -155,3 +155,55 @@ Deno.test("GOVERNANCE-001 a revoked member neither reads requirements nor accept
     "the public documents stay readable without a membership",
   );
 });
+
+Deno.test("[AUD-K3] outstanding documents are read on a connection, after any standing check", async () => {
+  const effects: string[] = [];
+  const legal = (standing: "active" | "revoked") =>
+    createLegalAcceptance({
+      actors: {
+        revalidate: (command) => {
+          effects.push(`revalidate lock=${command.lock}`);
+          return Promise.resolve(standing);
+        },
+      },
+      clock: fixedClock("2026-08-23T10:00:00.000Z"),
+      connection: {
+        run: (work) => {
+          effects.push("connection");
+          return work({ opaque: "connection" });
+        },
+      },
+      ids: { next: () => "00000000-0000-4000-8000-000000000901" },
+      repository: {
+        accept: () => Promise.reject(new Error("not accepted here")),
+        publicDocument: () => Promise.resolve({ status: "not-found" }),
+        requirements(command) {
+          effects.push(`requirements on ${String(command.transaction.opaque)}`);
+          return Promise.resolve({ documents: [], status: "ready" });
+        },
+      },
+      transaction: {
+        run: (work) => {
+          effects.push("transaction");
+          return work({ opaque: "transaction" });
+        },
+      },
+    });
+
+  // An actor built by hand, not resolved by this request, is revalidated.
+  const ready = await legal("active").requirements({ ...actor });
+  assert(ready.status === "ready", "an active actor reads what it owes");
+  assert(
+    effects.join(",") ===
+      "transaction,revalidate lock=false,connection,requirements on connection",
+    `the standing is checked, then one read runs outside a transaction: ${effects}`,
+  );
+
+  effects.length = 0;
+  const forbidden = await legal("revoked").requirements({ ...actor });
+  assert(forbidden.status === "forbidden", "a revoked actor is refused");
+  assert(
+    effects.join(",") === "transaction,revalidate lock=false",
+    "a revoked actor's documents are never read",
+  );
+});

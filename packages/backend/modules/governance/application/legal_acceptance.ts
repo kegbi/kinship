@@ -2,9 +2,10 @@
  * The legal acceptance use case.
  *
  * All three paths orchestrate and nothing else: establish the caller's
- * standing inside the transaction the work will happen in, ask the repository,
- * and hand back what it said. Reading what is outstanding takes no lock;
- * accepting does, because it writes evidence against the member's row.
+ * standing, ask the repository, and hand back what it said. Reading what is
+ * outstanding takes no lock and no transaction; accepting establishes the
+ * standing with a lock inside the transaction it writes in, because it writes
+ * evidence against the member's row.
  *
  * Each path turns a thrown failure into `unavailable`. That is the one place
  * this module departs from letting a failure travel: the consent gate sits in
@@ -25,11 +26,20 @@ import type {
   LegalTransaction,
   LegalTransactionRunner,
 } from "../ports/context.ts";
-import type { ActorRevalidation } from "../../workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../workspaces/public.ts";
 
 export interface LegalAcceptanceDependencies {
   readonly actors: ActorRevalidation;
   readonly clock: Clock;
+  /**
+   * Runs the outstanding-documents read on one connection without a
+   * transaction. A deployment passes it; without it the read runs inside
+   * `transaction`, which answers the same at two more round trips.
+   */
+  readonly connection?: LegalTransactionRunner;
   readonly ids: { next(): string };
   readonly repository: LegalAcceptanceRepository;
   readonly transaction: LegalTransactionRunner;
@@ -48,17 +58,24 @@ export function createLegalAcceptance(
       "revoked";
 
   return {
+    /**
+     * What the actor still owes. The legal guard asks this on every request,
+     * for the actor the request has just resolved, so that actor's standing
+     * is not asked again (BEQ-04); any other actor is revalidated first. The
+     * read itself is one statement, outside a transaction.
+     */
     requirements: async (actor: LegalActor) => {
       try {
-        return await dependencies.transaction.run(async (transaction) => {
-          if (await revoked(actor, transaction, false)) {
-            return { status: "forbidden" as const };
-          }
-          return await dependencies.repository.requirements({
+        if (!await actorMayRead(dependencies, actor)) {
+          return { status: "forbidden" as const };
+        }
+        const reads = dependencies.connection ?? dependencies.transaction;
+        return await reads.run((connection) =>
+          dependencies.repository.requirements({
             ...actor,
-            transaction,
-          });
-        });
+            transaction: connection,
+          })
+        );
       } catch {
         return { status: "unavailable" as const };
       }

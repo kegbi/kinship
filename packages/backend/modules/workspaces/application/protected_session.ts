@@ -22,7 +22,10 @@
 
 import type { ProtectedSessionResult } from "../domain/session_rules.ts";
 import { client, requested } from "../domain/session_rules.ts";
-import type { ResolvedSessionContext } from "../ports/context.ts";
+import type {
+  ActiveWorkspaceContext,
+  ResolvedSessionContext,
+} from "../ports/context.ts";
 import {
   admittedAttempt,
   type CompleteMfaCommand,
@@ -35,6 +38,22 @@ import {
   establishIdentityEntry,
   establishSession,
 } from "./protected_session_entry.ts";
+import { admitResolved } from "./actor_admission.ts";
+
+/**
+ * The workspace a resolution acts in: the requested one when the user may
+ * enter it, otherwise the first the user joined. `contexts` is already in
+ * that order, and the database writes a uuid in lower case.
+ */
+function activeContext(
+  contexts: readonly ActiveWorkspaceContext[],
+  requestedWorkspaceId: string | undefined,
+): ActiveWorkspaceContext | undefined {
+  const requested = requestedWorkspaceId?.toLowerCase();
+  return requested === undefined
+    ? contexts[0]
+    : contexts.find((context) => context.workspaceId === requested);
+}
 
 /**
  * A password sign-in that proved the password hands its browser a fresh device
@@ -243,20 +262,28 @@ export function createProtectedSessionCoordinator(
     establishVerifiedEntry: (command) =>
       establishSession(dependencies, command),
     async resolve(command) {
-      const principal = await dependencies.identity.resolveSession(
-        command.sessionToken,
-      );
-      if (!principal) return undefined;
-      return await dependencies.transaction.run(async (transaction) => {
-        const active = await dependencies.workspace.resolveActiveContext({
-          ...requested(command),
-          transaction,
-          userId: principal.userId,
-        });
-        if (!active) return undefined;
+      // Two statements on one connection and no transaction around them
+      // (BEQ-04): the session, then every workspace the user may enter. The
+      // active one is the first of those the request may act in, so it needs
+      // no statement of its own.
+      const reads = dependencies.connection ?? dependencies.transaction;
+      return await reads.run(async (connection) => {
+        const principal = await dependencies.identity.resolveSession(
+          command.sessionToken,
+          connection,
+        );
+        if (!principal) return undefined;
         const accessibleWorkspaces = await dependencies.workspace
-          .listActiveContexts({ transaction, userId: principal.userId });
-        return { ...active, accessibleWorkspaces };
+          .listActiveContexts({
+            transaction: connection,
+            userId: principal.userId,
+          });
+        const active = activeContext(
+          accessibleWorkspaces,
+          command.requestedWorkspaceId,
+        );
+        return active &&
+          admitResolved({ ...active, accessibleWorkspaces });
       });
     },
     async signOut(sessionToken) {

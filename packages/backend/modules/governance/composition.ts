@@ -7,6 +7,7 @@
 
 import type { AuditEventRecorder } from "../../shared-kernel/audit_event.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresConnectionRunner } from "../../platform/postgres/transactions.ts";
 import { PostgresAuditPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresAuditEventRecorder } from "./adapters/postgres/audit_event_recorder.ts";
 import { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
@@ -31,6 +32,7 @@ export function composeGovernance(shared: SharedComposition) {
     legal: createLegalAcceptance({
       actors: shared.actors,
       clock: shared.clock,
+      connection: new PostgresConnectionRunner(shared.database),
       ids: { next: () => shared.ids.create() },
       repository: new PostgresLegalAcceptanceRepository(shared.database),
       transaction: shared.peopleTransaction,

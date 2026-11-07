@@ -2018,6 +2018,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/workspaces/adapters/mail/smtp_verification_mail_test.ts",
         "packages/backend/modules/workspaces/adapters/mail/smtp_reminder_mail_test.ts",
         "packages/backend/modules/workspaces/application/member_ui_state_test.ts",
+        "packages/backend/modules/workspaces/application/actor_admission_test.ts",
         "packages/backend/modules/workspaces/domain/invitation_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personal_lifecycle_rules_test.ts",
         "packages/backend/modules/workspaces/domain/personalization_rules_test.ts",

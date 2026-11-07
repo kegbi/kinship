@@ -1,5 +1,8 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 
 export interface ReadModelTransaction {
@@ -296,9 +299,7 @@ export function createPeopleDirectory(dependencies: {
   readonly repository: PeopleDirectoryRepository;
 }) {
   const readable = async (actor: PeopleDirectoryActor): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+    await actorMayRead(dependencies, actor);
 
   return {
     list: async (

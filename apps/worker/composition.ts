@@ -31,6 +31,17 @@ import {
 } from "../../packages/backend/modules/workspaces/composition.ts";
 import { resolveObjectStorageConfiguration } from "../api/file_storage_config.ts";
 
+/**
+ * How long one worker statement may run (SECA-15). The API's 10 s request
+ * bound exists so a request answers before the gateway's 15 s; nothing waits
+ * on the worker that way, and its statements are whole-workspace work — a
+ * workspace erasure deletes every row of the workspace in dependency order,
+ * and replenishment extends the rolling occurrence window of every reminder —
+ * that may legitimately outlast a request. A stalled statement is still cancelled, so
+ * a hung database frees the worker's connection and the next tick retries.
+ */
+export const WORKER_STATEMENT_TIMEOUT_MS = 5 * 60_000;
+
 interface TickWorker {
   tick(command: { readonly owner: string }): Promise<unknown>;
 }
@@ -72,7 +83,9 @@ export function createConfiguredReminderWorker(
     resolveObjectStorageConfiguration(environment),
   );
   const email = composeReminderMail(environment);
-  const connection = connectDatabase(databaseUrl);
+  const connection = connectDatabase(databaseUrl, {
+    statementTimeoutMs: WORKER_STATEMENT_TIMEOUT_MS,
+  });
   const shared: SharedComposition = {
     actors: workspaceActors(),
     audit: governanceAuditRecorder(),

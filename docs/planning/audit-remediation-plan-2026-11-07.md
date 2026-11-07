@@ -601,7 +601,7 @@ these:
     Relationships declares no integration suite of its own; its file ran
     directly.
 
-- [ ] **AUD-K3 — The fixed database cost per request drops from 24 round trips
+- [x] **AUD-K3 — The fixed database cost per request drops from 24 round trips
       to at most 8, and stalled statements time out.** M–L. Normal. Depends:
       AUD-K2. Closes: BEQ-04, SECA-15.
   - Scope (items 2–7 of the 02 report's BEQ-04):
@@ -626,6 +626,21 @@ these:
     over the timeout answers 503 within about 10 s.
   - Verify: `test:integration` for people directory, search, notifications, and
     Today; `test:coverage` for the touched modules; PERF-001 on Chromium.
+  - Delivered 2026-11-08: a statement-counting harness test shows
+    `GET /api/v1/people?limit=20` sends 4 statements (was 16; search 25→9,
+    notifications 18→5, Today 16–19→4–7) and a stalled statement answers 503
+    within the 10 s pool timeout; reads reuse the request's admitted actor
+    (object identity, 15 s) while writes keep the locking revalidate; legal
+    requirements are read per request (no cache); idle 120 s, lifetime 30 min,
+    prepared statements, worker pool 5 min; people directory, Today, sign-in,
+    and governance files 42, search 15, notifications 7, eight unit modules, api
+    unit (only REL-106); changed files at least 91% lines; contracts, fmt,
+    architecture, and lint (only REL-096). PERF-001's `workerDueToDelivery`
+    crossed its ceiling on base and candidate alike: an A/B run traced it to
+    AUD-W1's recurring-reminder seed being timed before autovacuum analyzes it
+    (AUD-W1-fix). SECA-15 is closed for lock waits; a frozen database server
+    needs a client-side deadline (parked). AUD-V2 must set the workspace once
+    per request or budget 8–9 round trips.
 
 - [ ] **AUD-K4 — The session cookie and sign-out are hardened.** S–M. Normal.
       Depends: AUD-K1, AUD-F3. Closes: SECA-07, SECA-09, SECT-06.

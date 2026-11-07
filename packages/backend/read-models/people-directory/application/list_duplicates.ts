@@ -19,7 +19,10 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 import type {
   PeopleDirectoryActor,
@@ -87,10 +90,9 @@ export function createPeopleDuplicates(dependencies: {
     list: async (
       actor: PeopleDirectoryActor,
     ): Promise<ListPeopleDuplicatesResult> => {
-      const standing = await dependencies.transaction.run((transaction) =>
-        dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-      );
-      if (standing !== "active") return { status: "forbidden" };
+      if (!await actorMayRead(dependencies, actor)) {
+        return { status: "forbidden" };
+      }
       const pairs = await dependencies.repository.listPairs({
         groupLimit: PEOPLE_DUPLICATE_GROUP_LIMIT,
         limit: PEOPLE_DUPLICATE_PAIR_LIMIT + 1,

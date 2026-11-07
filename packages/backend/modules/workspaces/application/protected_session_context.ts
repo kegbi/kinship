@@ -50,6 +50,12 @@ export interface ProtectedSessionDependencies {
   /** Issues sign-in device tokens; without it none are issued (AUD-A3). */
   readonly signInDevices?: SignInDeviceIssuer;
   readonly transaction: ProtectedSessionTransactionRunner;
+  /**
+   * Runs a session resolution's reads on one connection without a
+   * transaction. A deployment passes it; without it a resolution runs inside
+   * `transaction`, which answers the same at two more round trips.
+   */
+  readonly connection?: ProtectedSessionTransactionRunner;
   readonly workspace: ActiveWorkspaceResolver;
 }
 

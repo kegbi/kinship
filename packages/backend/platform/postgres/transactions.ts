@@ -40,6 +40,67 @@ export class PostgresTransactionRunner<
   }
 }
 
+/**
+ * Runs work on one pooled connection, without a transaction around it.
+ *
+ * It hands the work the same opaque handle a transaction runner does, so an
+ * adapter cannot tell them apart, but it sends no `begin` and no `commit`: a
+ * read whose statements need no common snapshot — each statement already
+ * sees committed data at READ COMMITTED, inside a transaction or not — costs
+ * only its own round trips (BEQ-04). Every statement still runs on the one
+ * connection the work was given.
+ */
+export class PostgresConnectionRunner<
+  Session extends { readonly opaque: unknown },
+> implements TransactionRunner<Session> {
+  constructor(private readonly database: Kysely<ApplicationDatabase>) {}
+
+  run<Result>(
+    work: (connection: Session) => Promise<Result>,
+  ): Promise<Result> {
+    return this.database.connection().execute((connection) =>
+      work({ opaque: connection } as Session)
+    );
+  }
+}
+
+/**
+ * Runs `work` in a read-only transaction whose statements PostgreSQL cancels
+ * past `timeoutMs`, opened in one round trip.
+ *
+ * `begin read only` and `set local statement_timeout` go as one simple-protocol
+ * message, so the bracket costs one round trip in front of the work and one
+ * `commit` behind it, where `begin`, `set transaction`, and
+ * `set_config(…, true)` cost three (BEQ-04). `set local` ends with the
+ * transaction and never stays on a pooled connection. The timeout is an
+ * integer this code chose, never a caller's text, so it is written into the
+ * message rather than bound. Further transaction-local settings — the
+ * workspace ADR 0008 will set — belong in the same message.
+ */
+export async function readOnlyWithin<Result>(
+  database: Kysely<ApplicationDatabase>,
+  timeoutMs: number,
+  work: (transaction: Kysely<ApplicationDatabase>) => Promise<Result>,
+): Promise<Result> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError(`${timeoutMs} is no statement timeout`);
+  }
+  return await database.connection().execute(async (connection) => {
+    await sql.raw(
+      `begin read only; set local statement_timeout = ${timeoutMs}`,
+    ).execute(connection);
+    let result: Result;
+    try {
+      result = await work(connection);
+    } catch (error) {
+      await sql.raw("rollback").execute(connection);
+      throw error;
+    }
+    await sql.raw("commit").execute(connection);
+    return result;
+  });
+}
+
 /** The answer a conflicting write gives instead of throwing. */
 export const UNIQUE_CONFLICT: unique symbol = Symbol(
   "postgres-unique-conflict",

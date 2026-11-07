@@ -5,7 +5,10 @@ import {
   type JournalPageAnchor,
 } from "../../../modules/journal/public.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 
 /** The largest page this timeline serves, as the contract publishes it. */
 export const JOURNAL_PAGE_LIMIT_MAXIMUM = 50;
@@ -110,9 +113,7 @@ export function createJournalTimeline(
   },
 ) {
   const readable = async (actor: PeopleActor): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+    await actorMayRead(dependencies, actor);
 
   return {
     get: async (actor: PeopleActor, itemId: string) => {

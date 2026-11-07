@@ -42,6 +42,13 @@ import {
 } from "./people.test-helper.ts";
 import { closeResources } from "./people.test-helper.ts";
 import { resetDatabase, truncate } from "../support/database.ts";
+import {
+  CapturedVerificationMail,
+  createConfiguredApiApp,
+} from "../../apps/api/composition.ts";
+import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { apiSupport } from "../support/api.ts";
 
 Deno.test({
   name:
@@ -1064,6 +1071,147 @@ Deno.test({
       releaseLocker();
       await Promise.allSettled([lockerWork]);
       await Promise.all([locker.end(), observer.end()]);
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "AUD-K3 a directory page costs at most 8 statements, and a stalled one answers 503 within the timeout",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // A pool of its own whose every statement is observed, so the count is
+    // the request's alone: each statement is one round trip (BEQ-04).
+    let observed: string[] | undefined;
+    const countedMail = new CapturedVerificationMail();
+    const counted = createConfiguredApiApp(
+      databaseUrl,
+      countedMail,
+      browserSecurityPolicy("test", "http://localhost"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (url) =>
+        connectDatabase(url, {
+          onStatement: (text) => observed?.push(text),
+        }),
+    );
+    const countedApi = apiSupport(counted.app, countedMail, sql);
+    await resetDatabase(sql);
+    const locker = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+    try {
+      const owner = await countedApi.register(
+        "round-trips-owner@example.test",
+        "Round trips circle",
+      );
+      for (const givenName of ["Ada", "Grace", "Katherine"]) {
+        const created = await countedApi.request(
+          owner,
+          "/api/v1/people",
+          "POST",
+          { givenName, isPartial: false },
+        );
+        assert(created.status === 201, `${givenName} is created`);
+      }
+      // The first read prepares what later reads reuse.
+      const warm = await countedApi.request(owner, "/api/v1/people?limit=20");
+      assert(warm.status === 200, "the warm-up read answers");
+      await warm.body?.cancel();
+
+      observed = [];
+      const listed = await countedApi.request(owner, "/api/v1/people?limit=20");
+      const statements = observed;
+      observed = undefined;
+      const body = await listed.json() as { readonly people: unknown[] };
+      assert(
+        listed.status === 200 && body.people.length === 3,
+        "the counted read answers the directory",
+      );
+      assert(
+        statements.length <= 8,
+        `GET /api/v1/people?limit=20 sent ${statements.length} statements:\n${
+          statements.map((text) => text.replace(/\s+/g, " ").slice(0, 90))
+            .join("\n")
+        }`,
+      );
+
+      // Each parameterized statement is prepared once per connection and
+      // reused, so a repeated one is neither parsed nor planned again.
+      const prepared = connectDatabase(databaseUrl);
+      try {
+        const statements = await prepared.db.connection().execute(
+          async (connection) => {
+            for (const name of ["first", "second"]) {
+              await kyselySql`select ${name}::text as aud_k3_prepared`
+                .execute(connection);
+            }
+            const result = await kyselySql<{ readonly count: number }>`
+              select count(*)::int as count from pg_prepared_statements
+              where statement like '%aud_k3_prepared%'
+            `.execute(connection);
+            return result.rows[0]?.count;
+          },
+        );
+        assert(statements === 1, `the statement was prepared ${statements}x`);
+      } finally {
+        await prepared.destroy();
+      }
+
+      // A statement that cannot finish is cancelled by the pool's timeout,
+      // and the request answers 503 well before the gateway's 15 s.
+      const held = deferred();
+      const released = deferred();
+      const holding = locker.begin(async (transaction) => {
+        await transaction`lock table crm.people in access exclusive mode`;
+        held.resolve();
+        await released.promise;
+      });
+      await held.promise;
+      const started = performance.now();
+      try {
+        const stalled = await bounded(
+          Promise.resolve(
+            countedApi.request(owner, "/api/v1/people?limit=20"),
+          ),
+          "the stalled directory read",
+          13_000,
+        );
+        const elapsed = performance.now() - started;
+        assert(stalled.status === 503, `a stalled read answers 503`);
+        await stalled.body?.cancel();
+        assert(
+          elapsed >= 9_000 && elapsed < 12_000,
+          `the stalled read gave up after ${Math.round(elapsed)} ms`,
+        );
+      } finally {
+        released.resolve();
+        await holding.catch(() => undefined);
+      }
+
+      // A read trusts only the resolution of its own request, and that
+      // resolution holds the revalidation's predicate: an account marked
+      // deleted is refused on its very next request.
+      await sql`update crm.users set deleted_at = now()
+        where id = ${owner.userId}`;
+      const refused = await countedApi.request(
+        owner,
+        "/api/v1/people?limit=20",
+      );
+      assert(
+        refused.status === 401,
+        `a deleted account's next read is refused (${refused.status})`,
+      );
+      await refused.body?.cancel();
+    } finally {
+      await locker.end();
+      await counted.close();
     }
   },
 });

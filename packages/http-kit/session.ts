@@ -34,9 +34,10 @@
  */
 
 import type { Context, MiddlewareHandler } from "hono";
-import type {
-  ResolvedSessionContext,
-  WorkspaceRole,
+import {
+  carryAdmission,
+  type ResolvedSessionContext,
+  type WorkspaceRole,
 } from "../backend/modules/workspaces/public.ts";
 import {
   type Correlation,
@@ -192,18 +193,23 @@ function correlation(context: Context): Correlation {
   return correlationOf({ requestId: requestIdOf(context) });
 }
 
-/** The membership, and nothing else, out of a wider resolution. */
+/**
+ * The membership, and nothing else, out of a wider resolution.
+ *
+ * It keeps the resolution's admission (BEQ-04), so a read use case handed
+ * this actor knows the request has just resolved it and does not revalidate.
+ */
 function membership(
   resolved: ResolvedSession,
   context: Context,
 ): SessionActor {
-  return {
+  return carryAdmission(resolved, {
     memberId: resolved.memberId,
     role: resolved.role,
     userId: resolved.userId,
     workspaceId: resolved.workspaceId,
     ...correlation(context),
-  };
+  });
 }
 
 /**

@@ -10,7 +10,10 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type { PersonAvatarRecord } from "../../../modules/people/public.ts";
 import type {
   SearchActor,
@@ -206,9 +209,7 @@ export function createWorkspaceSearch(dependencies: {
   };
 }) {
   const readable = async (actor: SearchActor): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+    await actorMayRead(dependencies, actor);
 
   return {
     search: async (

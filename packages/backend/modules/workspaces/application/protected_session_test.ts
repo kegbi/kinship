@@ -204,23 +204,39 @@ Deno.test("protected session resolution lists only accessible workspaces", async
     ...active,
     memberId: "00000000-0000-4000-8000-000000000004",
     role: "member" as const,
-    workspaceId: "00000000-0000-4000-8000-000000000005",
+    workspaceId: "00000000-0000-4000-8000-00000000000a",
     workspaceName: "Community circle",
   };
-  const locks: boolean[] = [];
+  const reads: string[] = [];
+  const pinned = { opaque: "one connection" };
   const coordinator = createProtectedSessionCoordinator({
     ...fixture.deps,
+    connection: {
+      run: (work) => {
+        reads.push("connection");
+        return work(pinned);
+      },
+    },
     identity: {
       ...fixture.deps.identity,
-      resolveSession: () => Promise.resolve({ userId: active.userId }),
+      resolveSession: (_token, connection) => {
+        reads.push(connection === pinned ? "session" : "session elsewhere");
+        return Promise.resolve({ userId: active.userId });
+      },
+    },
+    transaction: {
+      run: () => Promise.reject(new Error("a resolution opens no transaction")),
     },
     workspace: {
       ...fixture.deps.workspace,
-      resolveActiveContext: (command) => {
-        locks.push(command.lock === true);
-        return Promise.resolve(active);
+      resolveActiveContext: () =>
+        Promise.reject(new Error("the active workspace is in the list")),
+      listActiveContexts: (command) => {
+        reads.push(
+          command.transaction === pinned ? "contexts" : "contexts elsewhere",
+        );
+        return Promise.resolve([active, second]);
       },
-      listActiveContexts: () => Promise.resolve([active, second]),
     },
   });
 
@@ -230,14 +246,72 @@ Deno.test("protected session resolution lists only accessible workspaces", async
 
   assert(resolved?.workspaceId === active.workspaceId, "active workspace kept");
   assert(
-    locks.join(",") === "false",
-    "[AUD-K2] resolving a request's session takes no row locks",
+    reads.join(",") === "connection,session,contexts",
+    "[AUD-K3] one connection, one session read, one context read",
   );
   assert(
     resolved.accessibleWorkspaces.map((workspace) => workspace.workspaceId)
       .join(",") === `${active.workspaceId},${second.workspaceId}`,
     "only the resolver's ordered active memberships are exposed",
   );
+  assert(Object.isFrozen(resolved), "[AUD-K3] the resolution is frozen");
+
+  const switched = await coordinator.resolve({
+    requestedWorkspaceId: second.workspaceId.toUpperCase(),
+    sessionToken: "active-session-token",
+  });
+  assert(
+    switched?.workspaceId === second.workspaceId &&
+      switched.memberId === second.memberId,
+    "[AUD-K3] a requested workspace is matched whatever its letter case",
+  );
+  const foreign = await coordinator.resolve({
+    requestedWorkspaceId: "00000000-0000-4000-8000-0000000000ff",
+    sessionToken: "active-session-token",
+  });
+  assert(foreign === undefined, "a workspace outside the list resolves nobody");
+});
+
+Deno.test("[AUD-K3] a resolution without a connection runner reads inside a transaction", async () => {
+  const fixture = dependencies();
+  const active = fixtures.workspaceActor({ role: "owner" });
+  const runs: string[] = [];
+  const resolved = await createProtectedSessionCoordinator({
+    ...fixture.deps,
+    identity: {
+      ...fixture.deps.identity,
+      resolveSession: () => Promise.resolve({ userId: active.userId }),
+    },
+    transaction: {
+      run: (work) => {
+        runs.push("transaction");
+        return work({ opaque: undefined });
+      },
+    },
+    workspace: {
+      ...fixture.deps.workspace,
+      listActiveContexts: () => Promise.resolve([active]),
+    },
+  }).resolve({ sessionToken: "active-session-token" });
+  assert(resolved?.memberId === active.memberId, "the member resolves");
+  assert(runs.join(",") === "transaction", "the fallback runner is used");
+});
+
+Deno.test("[AUD-K3] a session nobody holds resolves nobody without a context read", async () => {
+  const fixture = dependencies();
+  const resolved = await createProtectedSessionCoordinator({
+    ...fixture.deps,
+    identity: {
+      ...fixture.deps.identity,
+      resolveSession: () => Promise.resolve(undefined),
+    },
+    workspace: {
+      ...fixture.deps.workspace,
+      listActiveContexts: () =>
+        Promise.reject(new Error("no context is read for nobody")),
+    },
+  }).resolve({ sessionToken: "unknown-session-token" });
+  assert(resolved === undefined, "nobody resolves");
 });
 
 function responseBarrier(expected: number): {

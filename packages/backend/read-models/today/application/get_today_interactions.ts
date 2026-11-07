@@ -1,5 +1,8 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 
 export interface ReadModelTransaction {
   readonly opaque: unknown;
@@ -58,10 +61,7 @@ export function createTodayInteractions(dependencies: {
       readonly userId: string;
       readonly workspaceId: string;
     },
-  ): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+  ): Promise<boolean> => await actorMayRead(dependencies, actor);
 
   return {
     getFavoriteNotes: async (actor: ActivityReportActor) =>

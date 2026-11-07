@@ -35,6 +35,7 @@ import {
   connectDatabase,
   DATABASE_POOL_MAX,
   type DatabaseConnection,
+  REQUEST_STATEMENT_TIMEOUT_MS,
 } from "../../packages/backend/platform/postgres/database.ts";
 import {
   actors,
@@ -50,6 +51,9 @@ import {
   transaction,
   twoWorkspaces,
 } from "./read_models.test-helper.ts";
+
+/** How PostgreSQL shows the pool's own statement bound. */
+const POOL_STATEMENT_TIMEOUT = `${REQUEST_STATEMENT_TIMEOUT_MS / 1000}s`;
 
 const repository = new PostgresSearchRepository(connection.db);
 const search = createWorkspaceSearch({ actors, repository, transaction });
@@ -673,8 +677,9 @@ Deno.test("[SEARCH-001] a text statement past its timeout still answers people, 
     ),
   );
   assertEquals(new Set(settings.map(({ pid }) => pid)).size, DATABASE_POOL_MAX);
+  // Each is back at the pool's own bound (SECA-15), not the search's.
   assert(
-    settings.every(({ timeout }) => timeout === "0"),
+    settings.every(({ timeout }) => timeout === POOL_STATEMENT_TIMEOUT),
     `leaked: ${settings.map(({ timeout }) => timeout)}`,
   );
   assert(SEARCH_STATEMENT_TIMEOUT_MS === 1500, "the production bound");
@@ -720,7 +725,7 @@ Deno.test("[SEARCH-001] a people statement past its timeout answers search_unava
   const after = await connection.db.transaction().execute(async (trx) =>
     (await sqlQuery`show statement_timeout`.execute(trx)).rows[0]
   );
-  assertEquals(after, { statement_timeout: "0" });
+  assertEquals(after, { statement_timeout: POOL_STATEMENT_TIMEOUT });
   const healthy = await search.search(actorOf(reader), {
     query: "Filler 12345",
   });

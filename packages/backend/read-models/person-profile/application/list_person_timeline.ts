@@ -4,7 +4,10 @@ import type {
   PersonProfileActor,
   ReadModelTransaction,
 } from "./get_person_profile.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type {
   InteractionOption,
   InteractionParticipant,
@@ -83,9 +86,7 @@ export function createPersonTimeline(dependencies: {
   readonly repository: PersonTimelineRepository;
 }) {
   const readable = async (actor: PersonProfileActor): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+    await actorMayRead(dependencies, actor);
 
   return {
     listTimeline: async (

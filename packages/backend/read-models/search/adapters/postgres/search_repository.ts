@@ -18,8 +18,9 @@
  * is the directory's own case-insensitive substring match on the
  * workspace-indexed people rows, widened to the query's spellings across
  * scripts and keyboard layouts (`platform/postgres/name_match.ts`), and a
- * slow text statement can never hold it up. Each statement runs in a read-only transaction under
- * `SEARCH_STATEMENT_TIMEOUT_MS`; a cancelled one answers `timed-out`.
+ * slow text statement can never hold it up. Each statement runs in a
+ * read-only transaction under `SEARCH_STATEMENT_TIMEOUT_MS`, opened in one
+ * round trip; a cancelled one answers `timed-out`.
  *
  * Visibility is each owning module's own listing rule:
  *
@@ -39,13 +40,14 @@
  * match deep in a long note still reaches the snippet.
  */
 
-import { type Kysely, type RawBuilder, sql, type Transaction } from "kysely";
+import { type Kysely, type RawBuilder, sql } from "kysely";
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { postgresErrorCode } from "../../../../platform/postgres/errors.ts";
 import { nameMatchSql } from "../../../../platform/postgres/name_match.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { readOnlyWithin } from "../../../../platform/postgres/transactions.ts";
 import type {
   SearchJournalPostRecord,
   SearchPersonEntityRecord,
@@ -151,19 +153,13 @@ export class PostgresSearchRepository implements SearchRepository {
 
   /**
    * Runs `work` in a read-only transaction whose statements PostgreSQL
-   * cancels past the timeout. `set_config(..., true)` is `SET LOCAL`, so the
-   * bound ends with the transaction and never stays on a pooled connection.
+   * cancels past the timeout, opened in one round trip (`readOnlyWithin`).
    */
   private async bounded<T>(
-    work: (transaction: Transaction<ApplicationDatabase>) => Promise<T>,
+    work: (transaction: Kysely<ApplicationDatabase>) => Promise<T>,
   ): Promise<T | { readonly status: "timed-out" }> {
     try {
-      return await this.database.transaction().execute(async (transaction) => {
-        await sql`set transaction read only`.execute(transaction);
-        await sql`select set_config('statement_timeout',
-          ${String(this.statementTimeoutMs)}, true)`.execute(transaction);
-        return await work(transaction);
-      });
+      return await readOnlyWithin(this.database, this.statementTimeoutMs, work);
     } catch (error) {
       if (postgresErrorCode(error) === QUERY_CANCELED) {
         return { status: "timed-out" };

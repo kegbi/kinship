@@ -18,6 +18,7 @@ import { PostgresVocabularyBusinessImportBoundary } from "./adapters/postgres/bu
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../platform/postgres/database.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
+import { PostgresConnectionRunner } from "../../platform/postgres/transactions.ts";
 import { PostgresContactMethodTypeCatalog } from "./adapters/postgres/contact_method_types.ts";
 import { SmtpReminderMail } from "./adapters/mail/smtp_reminder_mail.ts";
 import {
@@ -295,6 +296,7 @@ export function composeWorkspaces(
     }),
     memberUiState: createMemberUiStateManagement({
       actors: shared.actors,
+      connection: new PostgresConnectionRunner(shared.database),
       repository: new PostgresMemberUiStateRepository(),
       transaction: shared.transaction,
     }),
@@ -314,6 +316,7 @@ export function composeWorkspaces(
       clock: shared.clock,
       identity: ports.identity.authentication,
       identityEntry: ports.identity.verification,
+      connection: new PostgresConnectionRunner(shared.database),
       responseEqualizer: ports.responseEqualizer,
       signInDevices: ports.signInDevices,
       transaction: shared.transaction,

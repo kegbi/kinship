@@ -22,8 +22,9 @@ const reminder = (index: number, at: string): NotificationRecord => ({
 function notifications(
   options: {
     readonly records?: readonly NotificationRecord[];
+    /** The watermark as the count statement reads it from the column. */
+    readonly readThrough?: unknown;
     readonly revalidation?: "active" | "revoked";
-    readonly uiState?: unknown;
     readonly unread?: number;
   } = {},
 ) {
@@ -32,13 +33,17 @@ function notifications(
   const repository: NotificationsRepository = {
     countUnread(command) {
       counts.push(command);
-      return Promise.resolve(options.unread ?? 0);
+      return Promise.resolve({
+        count: options.unread ?? 0,
+        ...(options.readThrough === undefined
+          ? {}
+          : { readThrough: options.readThrough }),
+      });
     },
     list(command) {
       lists.push(command);
       return Promise.resolve(options.records ?? []);
     },
-    uiState: () => Promise.resolve(options.uiState ?? {}),
   };
   const subject = createNotifications({
     actors: {
@@ -78,10 +83,7 @@ Deno.test("[TODAY-002] notifications are newest first, linked, and unread after 
         title: "Send the card",
       },
     ],
-    uiState: {
-      notificationsReadThrough: "2026-09-28T11:00:00.000Z",
-      theme: "dark",
-    },
+    readThrough: "2026-09-28T11:00:00.000Z",
     unread: 1,
   });
   // An owner, who may open the members page an accepted invitation links to.
@@ -135,14 +137,14 @@ Deno.test("[TODAY-002] notifications are newest first, linked, and unread after 
   assertEquals(lists[0]?.workspaceId, actor.workspaceId);
   assertEquals(lists[0]?.memberId, actor.memberId);
   assertEquals(lists[0]?.limit, NOTIFICATIONS_PAGE_SIZE + 1);
-  assertEquals(counts[0]?.readThrough, "2026-09-28T11:00:00.000Z");
+  assertEquals(counts[0]?.memberId, actor.memberId);
   assertEquals(counts[0]?.cap, NOTIFICATIONS_UNREAD_CAP);
 });
 
 Deno.test("[TODAY-002] without a watermark everything is unread", async () => {
   const { counts, subject } = notifications({
     records: [reminder(1, "2026-09-28T12:00:00.000Z")],
-    uiState: { notificationsReadThrough: "not an instant" },
+    readThrough: "not an instant",
     unread: 1,
   });
   const result = await subject.list(actor, {});
@@ -150,7 +152,7 @@ Deno.test("[TODAY-002] without a watermark everything is unread", async () => {
   if (result.status !== "ready") return;
   assertEquals(result.readThrough, undefined);
   assertEquals(result.items[0]?.unread, true);
-  assertEquals(counts[0]?.readThrough, undefined);
+  assertEquals(counts.length, 1);
 });
 
 Deno.test("[TODAY-002] a custom reminder without a person opens Today", async () => {

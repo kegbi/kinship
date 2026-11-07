@@ -39,7 +39,8 @@ type FeedWindow =
   | {
     readonly kind: "count";
     readonly limit: number;
-    readonly since?: string;
+    /** The watermark on the `itemTime` key; null counts every item. */
+    readonly since: RawBuilder<unknown>;
   };
 
 /**
@@ -56,6 +57,40 @@ function itemTime(column: RawBuilder<unknown>): RawBuilder<unknown> {
 function instantKey(instant: string): RawBuilder<unknown> {
   return sql`(${instant}::timestamptz at time zone 'UTC')`;
 }
+
+/**
+ * The read-through watermark the member's interface state holds, on the
+ * `itemTime` key, or null when there is none it could mean. A value is read
+ * as an instant exactly when `readThroughInstant` accepts it: a UTC instant
+ * with at most three fractional digits whose date and time exist. Anything
+ * else counts every item, as it always did.
+ */
+function storedWatermark(actor: NotificationsActor): RawBuilder<unknown> {
+  return sql`
+    select stored.read_through,
+      case when stored.read_through ~ ${READ_THROUGH_PATTERN}
+          and pg_input_is_valid(stored.read_through, 'timestamptz')
+        then stored.read_through::timestamptz at time zone 'UTC'
+      end as since
+    from (
+      select (
+        select preference.ui_state ->> 'notificationsReadThrough'
+        from crm.member_preferences preference
+        join crm.workspace_members member
+          on member.id = preference.member_id
+        where preference.member_id = ${actor.memberId}::uuid
+          and member.workspace_id = ${actor.workspaceId}::uuid
+      ) as read_through
+    ) stored`;
+}
+
+/**
+ * The form `readThroughInstant` accepts, with the clock fields bounded to
+ * the times PostgreSQL and JavaScript's `Date` both read, so one stored value
+ * is the same watermark to the count and to the page's unread flags.
+ */
+const READ_THROUGH_PATTERN =
+  "^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,3})?Z$";
 
 /**
  * One arm of the feed. `select` names `kind`, `id`, `at` (its `itemTime`),
@@ -77,10 +112,9 @@ interface FeedArm {
 function windowed(arm: FeedArm, window: FeedWindow): RawBuilder<unknown> {
   const at = itemTime(arm.at);
   if (window.kind === "count") {
-    const since = window.since
-      ? sql`and ${at} > ${instantKey(window.since)}`
-      : sql``;
-    return sql`(${arm.select} ${since} limit ${window.limit})`;
+    return sql`(${arm.select}
+      and ${at} > coalesce(${window.since}, '-infinity'::timestamp)
+      limit ${window.limit})`;
   }
   const after = window.after
     ? sql`and (${at}, ${arm.id}) <
@@ -222,17 +256,6 @@ export class PostgresNotificationsRepository
   implements NotificationsRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
-  async uiState(actor: NotificationsActor): Promise<unknown> {
-    const result = await sql<{ readonly ui_state: unknown }>`
-      select preference.ui_state
-      from crm.member_preferences preference
-      join crm.workspace_members member on member.id = preference.member_id
-      where preference.member_id = ${actor.memberId}::uuid
-        and member.workspace_id = ${actor.workspaceId}::uuid
-    `.execute(this.database);
-    return result.rows[0]?.ui_state;
-  }
-
   /** The page, merged from the arms' own pages, with its people named. */
   async list(
     command: Parameters<NotificationsRepository["list"]>[0],
@@ -265,18 +288,27 @@ export class PostgresNotificationsRepository
 
   async countUnread(
     command: Parameters<NotificationsRepository["countUnread"]>[0],
-  ): Promise<number> {
+  ): ReturnType<NotificationsRepository["countUnread"]> {
     const window: FeedWindow = {
       kind: "count",
       limit: command.cap,
-      ...(command.readThrough ? { since: command.readThrough } : {}),
+      since: sql`(select since from watermark)`,
     };
-    const result = await sql<{ readonly count: number }>`
-      select count(*)::int as count from (
-        select 1 from (${feed(command, window)}) unread
-        limit ${command.cap}
-      ) unread
+    const result = await sql<{
+      readonly count: number;
+      readonly read_through: string | null;
+    }>`
+      with watermark as (${storedWatermark(command)})
+      select (select read_through from watermark) as read_through,
+        (select count(*)::int from (
+          select 1 from (${feed(command, window)}) unread
+          limit ${command.cap}
+        ) unread) as count
     `.execute(this.database);
-    return result.rows[0]?.count ?? 0;
+    const row = result.rows[0];
+    return {
+      count: row?.count ?? 0,
+      ...(row?.read_through ? { readThrough: row.read_through } : {}),
+    };
   }
 }

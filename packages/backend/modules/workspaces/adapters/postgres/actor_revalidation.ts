@@ -159,6 +159,12 @@ export class PostgresActorRevalidation
  */
 export class PostgresActiveWorkspaceResolver
   implements ActiveWorkspaceResolver {
+  /**
+   * Every workspace the user may enter, first-joined first. A session
+   * resolution takes its active workspace from this list, and admits it in
+   * place of a later `revalidate`, so the predicate is that one's: an active,
+   * undeleted user, an active membership, and an active, undeleted workspace.
+   */
   async listActiveContexts(command: {
     readonly transaction: Parameters<
       ActiveWorkspaceResolver["listActiveContexts"]
@@ -172,7 +178,7 @@ export class PostgresActiveWorkspaceResolver
       join crm.workspace_members wm on wm.user_id = u.id
       join crm.workspaces w on w.id = wm.workspace_id
       where u.id = ${command.userId}::uuid and u.status = 'active'
-        and u.email_verified_at is not null
+        and u.deleted_at is null and u.email_verified_at is not null
         and wm.status = 'active' and wm.left_at is null
         and w.status = 'active' and w.deleted_at is null
       order by wm.joined_at asc nulls last, wm.id asc
@@ -223,7 +229,7 @@ export class PostgresActiveWorkspaceResolver
       join crm.workspace_members wm on wm.user_id = u.id
       join crm.workspaces w on w.id = wm.workspace_id
       where u.id = ${command.userId}::uuid and u.status = 'active'
-        and u.email_verified_at is not null
+        and u.deleted_at is null and u.email_verified_at is not null
         and wm.status = 'active' and wm.left_at is null
         and w.status = 'active' and w.deleted_at is null
         and (${command.requestedWorkspaceId ?? null}::uuid is null

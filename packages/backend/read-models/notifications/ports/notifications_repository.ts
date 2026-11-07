@@ -60,8 +60,6 @@ export interface NotificationPosition {
 }
 
 export interface NotificationsRepository {
-  /** The member's stored interface state, as the column holds it. */
-  uiState(command: NotificationsActor): Promise<unknown>;
   /** The member's items, newest first, after `after`; at most `limit`. */
   list(
     command: NotificationsActor & {
@@ -70,13 +68,13 @@ export interface NotificationsRepository {
     },
   ): Promise<readonly NotificationRecord[]>;
   /**
-   * How many of the member's items are after `readThrough` (all of them
-   * without one), counting no further than `cap`.
+   * How many of the member's items are after the read-through watermark the
+   * member's interface state holds (all of them without a valid one),
+   * counting no further than `cap`, and that watermark as the column holds
+   * it. Both come from one statement, so the count waits on no earlier read
+   * of the watermark and runs beside the page (BEQ-04).
    */
   countUnread(
-    command: NotificationsActor & {
-      readonly cap: number;
-      readonly readThrough?: string;
-    },
-  ): Promise<number>;
+    command: NotificationsActor & { readonly cap: number },
+  ): Promise<{ readonly count: number; readonly readThrough?: unknown }>;
 }

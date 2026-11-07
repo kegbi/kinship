@@ -363,35 +363,52 @@ export class PostgresIdentityAuthentication
     }
   }
 
-  async resolveSession(token: string): Promise<SessionPrincipal | undefined> {
+  /**
+   * One statement for the session, and a second only when its presence is a
+   * minute old. Neither needs the other's snapshot, so there is no
+   * transaction around them: the caller's connection, or the pool, runs each
+   * on its own (BEQ-04).
+   */
+  async resolveSession(
+    token: string,
+    connection?: IdentityTransaction,
+  ): Promise<SessionPrincipal | undefined> {
     const hash = await this.#sessionHash(token);
     const now = this.clock.now();
-    return await this.database.transaction().execute(async (transaction) => {
-      const result = await sql<{ readonly userId: string }>`
-        select u.id::text as "userId"
-        from crm.user_sessions s join crm.users u on u.id = s.user_id
-        where s.session_hash = ${hash} and s.revoked_at is null
-          and s.purpose = 'authenticated'
-          and s.expires_at > ${now} and u.status = 'active'
-          and u.email_verified_at is not null
-          and exists (
-            select 1 from crm.email_verification_tokens evt
-            where evt.user_id = u.id and evt.used_at is not null
-          )
-      `.execute(transaction);
-      const principal = result.rows[0];
-      if (!principal) return undefined;
-      // A read only records presence, so it neither locks the session nor
-      // writes it more than once a minute; revocation is decided by the
-      // predicate above on every request (AUD-K2).
-      const presenceStaleBefore = new Date(now.getTime() - 60_000);
+    const database = connection
+      ? databaseFromSession(connection)
+      : this.database;
+    const presenceStaleBefore = new Date(now.getTime() - 60_000);
+    const result = await sql<{
+      readonly presenceStale: boolean;
+      readonly userId: string;
+    }>`
+      select u.id::text as "userId",
+        s.last_seen_at < ${presenceStaleBefore} as "presenceStale"
+      from crm.user_sessions s join crm.users u on u.id = s.user_id
+      where s.session_hash = ${hash} and s.revoked_at is null
+        and s.purpose = 'authenticated'
+        and s.expires_at > ${now} and u.status = 'active'
+        and u.email_verified_at is not null
+        and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = u.id and evt.used_at is not null
+        )
+    `.execute(database);
+    const principal = result.rows[0];
+    if (!principal) return undefined;
+    // A read only records presence, so it neither locks the session nor
+    // writes it more than once a minute; revocation is decided by the
+    // predicate above on every request (AUD-K2). The update keeps its own
+    // guards, so a revocation that lands in between is never overwritten.
+    if (principal.presenceStale) {
       await sql`
         update crm.user_sessions set last_seen_at = ${now}
         where session_hash = ${hash} and purpose = 'authenticated'
           and revoked_at is null and last_seen_at < ${presenceStaleBefore}
-      `.execute(transaction);
-      return principal;
-    });
+      `.execute(database);
+    }
+    return { userId: principal.userId };
   }
 
   async revokeSession(command: {

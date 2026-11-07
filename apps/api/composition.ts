@@ -22,6 +22,7 @@ import { type Kysely, sql } from "kysely";
 import {
   type ApplicationDatabase,
   connectDatabase,
+  type DatabaseConnection,
 } from "../../packages/backend/platform/postgres/database.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
 import {
@@ -932,6 +933,7 @@ export function createConfiguredApiApp(
   davEnabled = true,
   logger?: Logger,
   deviceKeysetOverride?: AuthenticationSubjectKeyset,
+  connect: (url: string) => DatabaseConnection = connectDatabase,
 ): {
   readonly app: Hono<RequestIdEnv>;
   readonly close: () => Promise<void>;
@@ -965,7 +967,7 @@ export function createConfiguredApiApp(
   const mail = mailAdapter ?? composeVerificationMail(Deno.env);
   const objectStore = objectStorageOverride ??
     composeObjectStorage(resolveObjectStorageConfiguration(Deno.env));
-  const connection = connectDatabase(databaseUrl);
+  const connection = connect(databaseUrl);
   const app = createApiApp(composeApiServices(connection.db, {
     davEnabled,
     davKeyset,

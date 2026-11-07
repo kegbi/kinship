@@ -146,6 +146,11 @@ failure does not make the complete profile unavailable.
 - Avoid exposing raw query-builder instances outside adapters.
 - Concurrency-sensitive use cases must use explicit PostgreSQL constraints, row
   locks, advisory locks, or compare-and-swap semantics and must have race tests.
+- Every API statement runs under a 10-second `statement_timeout`, below the
+  gateway's 15 seconds, so a stalled database answers 503 rather than hanging
+  until the gateway's 504. The worker's pool, which no gateway waits on, uses
+  five minutes. Pools keep idle connections for two minutes, recycle each
+  connection after thirty, and prepare every parameterized statement (AUD-K3).
 
 ### Contact import writes (GAP-050)
 
@@ -301,7 +306,12 @@ case required by `AGENTS.md`. Structural review alone is not enough.
 Workspace isolation is a security boundary, not a repository filter convention.
 
 - Resolve the authenticated principal and active workspace before invoking a
-  protected use case.
+  protected use case. A request resolves its session once, on one pooled
+  connection without a transaction. That resolution admits the actor it returns,
+  so a read use case handed that same actor does not revalidate it, while any
+  other actor — built by hand, authenticated by an API token, or kept past the
+  admission's 15-second window — is revalidated. A write always revalidates with
+  a lock inside its own transaction (AUD-K3).
 - Pass typed principal/workspace context explicitly to application services.
 - Application services reject unauthorized or cross-workspace identifiers before
   persistence.

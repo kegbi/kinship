@@ -63,6 +63,7 @@ import {
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
+  actorOf,
   type SessionActor,
   sessionActor,
   sessionOf,
@@ -514,13 +515,10 @@ export function createAuthenticationRoutes(
     const token = cookieValue(context.req.header("Cookie"), SESSION_COOKIE);
     if (!token) return definedProblem(context, SIGN_IN_REQUIRED);
     const resolved = await sessionOf(context);
-    if (!resolved) return definedProblem(context, SESSION_ENDED);
-    const actor = {
-      memberId: resolved.memberId,
-      role: resolved.role,
-      userId: resolved.userId,
-      workspaceId: resolved.workspaceId,
-    };
+    // The request's own membership, from the same resolution: the use cases
+    // below know it was resolved just now and do not revalidate it (BEQ-04).
+    const actor = await actorOf(context);
+    if (!resolved || !actor) return definedProblem(context, SESSION_ENDED);
     const requirements = services.legal
       ? await services.legal.requirements(actor)
       : { documents: [], status: "ready" as const };

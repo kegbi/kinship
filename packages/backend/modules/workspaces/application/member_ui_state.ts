@@ -18,6 +18,7 @@ import {
   validMemberUiState,
 } from "../domain/ui_state_rules.ts";
 import type { ActorRevalidation } from "../ports/actors.ts";
+import { actorMayRead } from "./actor_admission.ts";
 import type {
   MemberUiStateActor,
   MemberUiStateTransactionRunner,
@@ -26,6 +27,11 @@ import type { MemberUiStateRepository } from "../ports/ui_state_repository.ts";
 
 export interface MemberUiStateDependencies {
   readonly actors: ActorRevalidation;
+  /**
+   * Runs the read on one connection without a transaction. A deployment
+   * passes it; without it the read runs inside `transaction`.
+   */
+  readonly connection?: MemberUiStateTransactionRunner;
   readonly repository: MemberUiStateRepository;
   readonly transaction: MemberUiStateTransactionRunner;
 }
@@ -34,22 +40,21 @@ export function createMemberUiStateManagement(
   dependencies: MemberUiStateDependencies,
 ) {
   return {
+    /**
+     * The actor the request has just resolved is not asked about again
+     * (BEQ-04); any other is revalidated first. The read is one statement.
+     */
     async read(actor: MemberUiStateActor) {
-      return await dependencies.transaction.run(async (transaction) => {
-        const standing = await dependencies.actors.revalidate({
-          ...actor,
-          lock: false,
-          transaction,
-        });
-        if (standing === "revoked") return { status: "forbidden" as const };
-        const result = await dependencies.repository.read({
-          ...actor,
-          transaction,
-        });
-        return result.status === "ready"
-          ? { status: "ready" as const, uiState: projection(result.uiState) }
-          : result;
-      });
+      if (!await actorMayRead(dependencies, actor)) {
+        return { status: "forbidden" as const };
+      }
+      const reads = dependencies.connection ?? dependencies.transaction;
+      const result = await reads.run((connection) =>
+        dependencies.repository.read({ ...actor, transaction: connection })
+      );
+      return result.status === "ready"
+        ? { status: "ready" as const, uiState: projection(result.uiState) }
+        : result;
     },
 
     async save(actor: MemberUiStateActor, input: MemberUiState) {

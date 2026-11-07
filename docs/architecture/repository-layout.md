@@ -249,7 +249,8 @@ descriptor, the session middleware, problem responses and failure tables,
 cookies, the origin and CORS checks, body limits, request identifiers, request
 logging, secure headers, downloads, the health probe, and the browser security
 policy shape. It depends on Hono, Zod, the shared kernel, `packages/contracts`,
-and the session types on the workspaces facade. It never depends on an app.
+and the session types and actor admission on the workspaces facade. It never
+depends on an app.
 
 ### Read models
 

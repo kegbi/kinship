@@ -12,6 +12,7 @@
 
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
+  actorMayRead,
   type ActorRevalidation,
   readThroughInstant,
 } from "../../../modules/workspaces/public.ts";
@@ -145,17 +146,12 @@ export function createNotifications(dependencies: {
     ): Promise<ListNotificationsResult> => {
       const after = input.cursor ? decodeCursor(input.cursor) : undefined;
       if (input.cursor && !after) return { status: "invalid-cursor" };
-      const standing = await dependencies.transaction.run((transaction) =>
-        dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-      );
-      if (standing !== "active") return { status: "forbidden" };
-      const stored = await dependencies.repository.uiState(actor);
-      const readThrough = typeof stored === "object" && stored !== null
-        ? readThroughInstant(
-          (stored as Record<string, unknown>).notificationsReadThrough,
-        )
-        : undefined;
-      const [records, unreadCount] = await Promise.all([
+      if (!await actorMayRead(dependencies, actor)) {
+        return { status: "forbidden" };
+      }
+      // The count reads the watermark itself, so the page and the count
+      // start together and wait on no read before them.
+      const [records, unread] = await Promise.all([
         dependencies.repository.list({
           ...actor,
           ...(after ? { after } : {}),
@@ -164,9 +160,10 @@ export function createNotifications(dependencies: {
         dependencies.repository.countUnread({
           ...actor,
           cap: NOTIFICATIONS_UNREAD_CAP,
-          ...(readThrough ? { readThrough } : {}),
         }),
       ]);
+      const readThrough = readThroughInstant(unread.readThrough);
+      const unreadCount = unread.count;
       const page = records.slice(0, NOTIFICATIONS_PAGE_SIZE);
       const final = page.at(-1);
       return {

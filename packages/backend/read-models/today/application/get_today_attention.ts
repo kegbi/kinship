@@ -1,7 +1,10 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
-import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
+import {
+  actorMayRead,
+  type ActorRevalidation,
+} from "../../../modules/workspaces/public.ts";
 import type { ReadModelTransaction } from "./get_today_interactions.ts";
 
 export interface TodayAttentionPerson {
@@ -115,10 +118,7 @@ export function createTodayAttention(dependencies: {
       readonly userId: string;
       readonly workspaceId: string;
     },
-  ): Promise<boolean> =>
-    await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-    ) === "active";
+  ): Promise<boolean> => await actorMayRead(dependencies, actor);
 
   return {
     async get(actor: PeopleActor) {
