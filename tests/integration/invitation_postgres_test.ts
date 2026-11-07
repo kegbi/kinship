@@ -41,8 +41,12 @@ import {
 import {
   PostgresWorkspaceInvitations,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_invitations.ts";
+import {
+  revokeInvitationsOfInviters,
+} from "../../packages/backend/modules/workspaces/adapters/postgres/invitation_authority.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  addMembership,
   openSql,
   requireDatabaseUrl,
   resetDatabase,
@@ -522,6 +526,7 @@ Deno.test({
         const repository: WorkspaceInvitationRepository = {
           create: (command) => baseRepository.create(command),
           list: (command) => baseRepository.list(command),
+          revoke: (command) => baseRepository.revoke(command),
           inspect: (command) => baseRepository.inspect(command),
           async accept(command) {
             const result = await baseRepository.accept(command);
@@ -847,6 +852,7 @@ Deno.test({
     });
     const creationRepository: WorkspaceInvitationRepository = {
       accept: (command) => baseRepository.accept(command),
+      revoke: (command) => baseRepository.revoke(command),
       assertAcceptancePostcondition: (command) =>
         baseRepository.assertAcceptancePostcondition(command),
       async create(command) {
@@ -1272,6 +1278,777 @@ Deno.test({
       );
     } finally {
       await replayConnection.destroy();
+    }
+  },
+});
+
+/** Accepts `token` as the signed-in, verified identity behind `cookie`. */
+async function acceptAs(cookie: string, token: string): Promise<Response> {
+  return await configured.app.request(
+    "http://localhost/api/v1/workspace-invitations/accept",
+    {
+      method: "POST",
+      headers: { ...originHeaders, cookie },
+      body: JSON.stringify({ token }),
+    },
+  );
+}
+
+/** Invites `email` as an admin of `workspaceId` and returns the mailed token. */
+async function inviteAdmin(
+  cookie: string,
+  workspaceId: string,
+  email: string,
+): Promise<string> {
+  const response = await configured.app.request(
+    "http://localhost/api/v1/workspace-invitations",
+    {
+      method: "POST",
+      headers: { ...originHeaders, cookie, "X-Workspace-Id": workspaceId },
+      body: JSON.stringify({ email, role: "admin" }),
+    },
+  );
+  assert(response.status === 201, `${email} invited as admin`);
+  const token = mail.latestInvitationToken(email);
+  assert(token, `${email} invitation delivered`);
+  return token;
+}
+
+const invitationStatus = async (workspaceId: string, email: string) =>
+  (await sql<{ status: string }[]>`
+    select status from crm.workspace_invitations
+    where workspace_id = ${workspaceId}::uuid and email = ${email}
+    order by created_at desc limit 1
+  `)[0]?.status;
+
+const membershipsIn = async (workspaceId: string, email: string) =>
+  (await sql<{ count: number }[]>`
+    select count(*)::int count from crm.workspace_members wm
+    join crm.users u on u.id = wm.user_id
+    where wm.workspace_id = ${workspaceId}::uuid and u.email = ${email}
+  `)[0]?.count;
+
+Deno.test({
+  name:
+    "SECT-04 an invitation from an admin the owner suspended cannot be accepted",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const owner = await registerVerifySignIn(
+      "sect04-owner@example.test",
+      "Authority circle",
+    );
+    const admin = await registerVerifySignIn(
+      "sect04-admin@example.test",
+      "Admin home",
+    );
+    const adminMemberId = await addMembership(
+      sql,
+      admin.userId,
+      owner.workspaceId,
+      "admin",
+    );
+    const inviteeEmail = "sect04-invitee@example.test";
+    const invitee = await registerVerifySignIn(inviteeEmail, "Invitee home");
+    const token = await inviteAdmin(
+      admin.cookie,
+      owner.workspaceId,
+      inviteeEmail,
+    );
+    const suspended = await api.request(
+      owner,
+      `/api/v1/settings/members/${adminMemberId}`,
+      "PATCH",
+      { role: "admin", status: "suspended" },
+    );
+    assert(suspended.status === 200, "owner suspends the admin");
+    assert(
+      await invitationStatus(owner.workspaceId, inviteeEmail) === "revoked",
+      "the suspension revoked the admin's pending invitation with it",
+    );
+    const accepted = await acceptAs(invitee.cookie, token);
+    assert(
+      accepted.status === 410,
+      `acceptance after the inviter's suspension is refused: ${accepted.status}`,
+    );
+    assert(
+      await membershipsIn(owner.workspaceId, inviteeEmail) === 0,
+      "no seat is created for the invitee",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "SECT-04 demotion, leaving, and account deletion revoke only the inviter's pending invitations",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const owner = await registerVerifySignIn(
+      "sect04-cascade-owner@example.test",
+      "Cascade circle",
+    );
+    const ownerInvitee = "sect04-owner-invitee@example.test";
+    await inviteAdmin(owner.cookie, owner.workspaceId, ownerInvitee);
+    const admins = [];
+    for (const name of ["demoted", "leaver", "deleted"] as const) {
+      const admin = await registerVerifySignIn(
+        `sect04-${name}@example.test`,
+        `${name} home`,
+      );
+      const memberId = await addMembership(
+        sql,
+        admin.userId,
+        owner.workspaceId,
+        "admin",
+      );
+      const email = `sect04-${name}-invitee@example.test`;
+      await inviteAdmin(admin.cookie, owner.workspaceId, email);
+      admins.push({ ...admin, email, memberId });
+    }
+    const [demoted, leaver, deleted] = admins;
+    assert(demoted && leaver && deleted, "three admins invited somebody");
+
+    const promoted = await api.request(
+      owner,
+      `/api/v1/settings/members/${demoted.memberId}`,
+      "PATCH",
+      { role: "owner", status: "active" },
+    );
+    assert(promoted.status === 200, "promotion to owner succeeds");
+    assert(
+      await invitationStatus(owner.workspaceId, demoted.email) === "pending",
+      "a change that keeps authority keeps the invitation",
+    );
+    const demotion = await api.request(
+      owner,
+      `/api/v1/settings/members/${demoted.memberId}`,
+      "PATCH",
+      { role: "member", status: "active" },
+    );
+    assert(demotion.status === 200, "owner demotes the admin to member");
+    assert(
+      await invitationStatus(owner.workspaceId, demoted.email) === "revoked",
+      "demotion revokes the demoted inviter's invitation",
+    );
+
+    const left = await configured.app.request(
+      "http://localhost/api/v1/settings/personal-lifecycle/leave",
+      {
+        method: "POST",
+        headers: {
+          ...originHeaders,
+          cookie: leaver.cookie,
+          "X-Workspace-Id": owner.workspaceId,
+        },
+        body: JSON.stringify({
+          confirmation: "LEAVE Cascade circle",
+          password,
+        }),
+      },
+    );
+    assert(left.status === 200, `the admin leaves: ${left.status}`);
+    assert(
+      await invitationStatus(owner.workspaceId, leaver.email) === "revoked",
+      "leaving revokes the leaver's invitation",
+    );
+
+    // The deleting admin's home needs another owner, or deletion is refused.
+    await addMembership(sql, owner.userId, deleted.workspaceId, "owner");
+    const deletion = await configured.app.request(
+      "http://localhost/api/v1/settings/personal-lifecycle",
+      {
+        method: "DELETE",
+        headers: {
+          ...originHeaders,
+          cookie: deleted.cookie,
+          "X-Workspace-Id": owner.workspaceId,
+        },
+        body: JSON.stringify({
+          confirmation: "DELETE sect04-deleted@example.test",
+          password,
+        }),
+      },
+    );
+    assert(deletion.status === 200, `the admin deletes: ${deletion.status}`);
+    assert(
+      await invitationStatus(owner.workspaceId, deleted.email) === "revoked",
+      "account deletion revokes the deleted inviter's invitation",
+    );
+
+    assert(
+      await invitationStatus(owner.workspaceId, ownerInvitee) === "pending",
+      "the owner's own invitation is untouched by every other change",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "SECT-04 owners and admins see who invited whom and revoke a pending invitation",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const owner = await registerVerifySignIn(
+      "sect04-list-owner@example.test",
+      "Listing circle",
+    );
+    const admin = await registerVerifySignIn(
+      "sect04-list-admin@example.test",
+      "Listing admin home",
+    );
+    await addMembership(sql, admin.userId, owner.workspaceId, "admin");
+    const member = await registerVerifySignIn(
+      "sect04-list-member@example.test",
+      "Listing member home",
+    );
+    await addMembership(sql, member.userId, owner.workspaceId, "member");
+    const foreign = await registerVerifySignIn(
+      "sect04-list-foreign@example.test",
+      "Foreign listing",
+    );
+    const inviteeEmail = "sect04-list-invitee@example.test";
+    const invitee = await registerVerifySignIn(inviteeEmail, "Invitee home");
+    const token = await inviteAdmin(
+      admin.cookie,
+      owner.workspaceId,
+      inviteeEmail,
+    );
+    const foreignEmail = "sect04-foreign-invitee@example.test";
+    await inviteAdmin(foreign.cookie, foreign.workspaceId, foreignEmail);
+
+    const listed = await api.request(owner, "/api/v1/workspace-members");
+    const body = await listed.json() as {
+      readonly invitations: readonly {
+        readonly email: string;
+        readonly id: string;
+        readonly invitedBy: { readonly id: string; readonly name: string };
+        readonly role: string;
+      }[];
+      readonly members: readonly {
+        readonly email: string;
+        readonly id: string;
+      }[];
+    };
+    const pending = body.invitations.find((item) =>
+      item.email === inviteeEmail
+    );
+    const adminMember = body.members.find((item) =>
+      item.email === "sect04-list-admin@example.test"
+    );
+    assert(
+      listed.status === 200 && pending && adminMember &&
+        pending.role === "admin" && pending.invitedBy.id === adminMember.id &&
+        pending.invitedBy.name === "Test Member",
+      `the list names the inviting admin and the role: ${
+        JSON.stringify(pending)
+      }`,
+    );
+    const [foreignInvitation] = await sql<{ id: string }[]>`
+      select id::text from crm.workspace_invitations where email = ${foreignEmail}
+    `;
+    assert(foreignInvitation, "a foreign workspace has its own invitation");
+
+    const revoke = (session: { readonly cookie: string }, id: string) =>
+      api.request(
+        { cookie: session.cookie, workspaceId: owner.workspaceId },
+        `/api/v1/workspace-invitations/${id}`,
+        "DELETE",
+      );
+    const byMember = await revoke(member, pending.id);
+    assert(
+      byMember.status === 403,
+      `a member cannot revoke: ${byMember.status}`,
+    );
+    const crossed = await revoke(owner, foreignInvitation.id);
+    assert(
+      crossed.status === 404,
+      `another workspace's invitation is not found: ${crossed.status}`,
+    );
+    const unknown = await revoke(owner, crypto.randomUUID());
+    assert(unknown.status === 404, "an unknown invitation is not found");
+    const foreignHeader = await api.request(
+      { cookie: owner.cookie, workspaceId: foreign.workspaceId },
+      `/api/v1/workspace-invitations/${foreignInvitation.id}`,
+      "DELETE",
+    );
+    assert(
+      foreignHeader.status === 401,
+      "naming a foreign workspace is not authorization",
+    );
+    assert(
+      await invitationStatus(foreign.workspaceId, foreignEmail) === "pending",
+      "no refusal touched the foreign invitation",
+    );
+
+    const revoked = await revoke(owner, pending.id);
+    assert(
+      revoked.status === 200 &&
+        (await revoked.json() as { status: string }).status === "revoked",
+      "the owner revokes the admin's invitation",
+    );
+    const again = await revoke(admin, pending.id);
+    assert(again.status === 404, "a revoked invitation is no longer pending");
+    const relisted = await api.request(owner, "/api/v1/workspace-members");
+    const relistedBody = await relisted.json() as {
+      readonly invitations: readonly { readonly id: string }[];
+    };
+    assert(
+      !relistedBody.invitations.some((item) => item.id === pending.id),
+      "a revoked invitation leaves the pending list",
+    );
+    const accepted = await acceptAs(invitee.cookie, token);
+    assert(accepted.status === 410, "a revoked link cannot be accepted");
+    assert(
+      await membershipsIn(owner.workspaceId, inviteeEmail) === 0,
+      "revocation creates no seat",
+    );
+
+    const adminRevokes = "sect04-admin-revokes@example.test";
+    await inviteAdmin(owner.cookie, owner.workspaceId, adminRevokes);
+    const [ownerInvitation] = await sql<{ id: string }[]>`
+      select id::text from crm.workspace_invitations
+      where email = ${adminRevokes} and status = 'pending'
+    `;
+    assert(ownerInvitation, "the owner invited somebody else");
+    assert(
+      (await revoke(admin, ownerInvitation.id)).status === 200,
+      "an admin may revoke any pending invitation of the workspace",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "SECT-04 acceptance re-checks the inviter's authority when nothing revoked the invitation",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const owner = await registerVerifySignIn(
+      "sect04-backstop-owner@example.test",
+      "Backstop circle",
+    );
+    const admin = await registerVerifySignIn(
+      "sect04-backstop-admin@example.test",
+      "Backstop admin home",
+    );
+    const adminMemberId = await addMembership(
+      sql,
+      admin.userId,
+      owner.workspaceId,
+      "admin",
+    );
+    const inviteeEmail = "sect04-backstop-invitee@example.test";
+    await registerVerifySignIn(inviteeEmail, "Invitee home");
+    const token = await inviteAdmin(
+      admin.cookie,
+      owner.workspaceId,
+      inviteeEmail,
+    );
+    // An invitation that predates the cascade: its inviter lost authority
+    // without its pending invitations being touched.
+    await sql`
+      update crm.workspace_members set role = 'member'
+      where id = ${adminMemberId}::uuid
+    `;
+    assert(
+      await invitationStatus(owner.workspaceId, inviteeEmail) === "pending",
+      "the fixture left the invitation pending",
+    );
+    const inspected = await configured.app.request(
+      "http://localhost/api/v1/workspace-invitations/inspect",
+      {
+        method: "POST",
+        headers: originHeaders,
+        body: JSON.stringify({ token }),
+      },
+    );
+    assert(inspected.status === 410, "inspection reports it revoked");
+    assert(
+      await invitationStatus(owner.workspaceId, inviteeEmail) === "revoked",
+      "inspection spends the unauthorised invitation",
+    );
+
+    const secondEmail = "sect04-backstop-second@example.test";
+    const second = await registerVerifySignIn(secondEmail, "Second home");
+    await sql`
+      update crm.workspace_members set role = 'admin'
+      where id = ${adminMemberId}::uuid
+    `;
+    const secondToken = await inviteAdmin(
+      admin.cookie,
+      owner.workspaceId,
+      secondEmail,
+    );
+    await sql`
+      update crm.workspace_members set status = 'suspended'
+      where id = ${adminMemberId}::uuid
+    `;
+    // The repository's own acceptance refuses too, not only the inspection
+    // every coordinator path runs before it.
+    const connection = connectDatabase(databaseUrl);
+    try {
+      const tokenHash = await new SecureTokenService(
+        new WebCryptoRandomSource(),
+      ).hash(secondToken);
+      const direct = await new PostgresRegistrationTransaction(connection.db)
+        .run((transaction) =>
+          new PostgresWorkspaceInvitations().accept({
+            memberId: crypto.randomUUID(),
+            now: new Date(),
+            tokenHash,
+            transaction,
+            userId: second.userId,
+          })
+        );
+      assert(
+        direct.status === "revoked",
+        `the repository refuses: ${direct.status}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+    const accepted = await acceptAs(second.cookie, secondToken);
+    assert(
+      accepted.status === 410,
+      `acceptance refuses a suspended inviter: ${accepted.status}`,
+    );
+    assert(
+      await membershipsIn(owner.workspaceId, secondEmail) === 0 &&
+        await membershipsIn(owner.workspaceId, inviteeEmail) === 0,
+      "neither invitee gets a seat",
+    );
+  },
+});
+
+/**
+ * An admin's pending invitation and the two hands that can reach it at once:
+ * the invitee accepting it and the owner removing the admin's authority.
+ */
+async function lockOrderFixture(prefix: string) {
+  const owner = await registerVerifySignIn(
+    `${prefix}-owner@example.test`,
+    `${prefix} circle`,
+  );
+  const admin = await registerVerifySignIn(
+    `${prefix}-admin@example.test`,
+    `${prefix} admin home`,
+  );
+  const adminMemberId = await addMembership(
+    sql,
+    admin.userId,
+    owner.workspaceId,
+    "admin",
+  );
+  const inviteeEmail = `${prefix}-invitee@example.test`;
+  const invitee = await registerVerifySignIn(inviteeEmail, "Invitee home");
+  const token = await inviteAdmin(
+    admin.cookie,
+    owner.workspaceId,
+    inviteeEmail,
+  );
+  const tokenHash = await new SecureTokenService(new WebCryptoRandomSource())
+    .hash(token);
+  return { adminMemberId, inviteeEmail, invitee, owner, tokenHash };
+}
+
+/** A latch one transaction opens and another awaits. */
+function latch(): {
+  readonly open: () => void;
+  readonly opened: Promise<void>;
+} {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { open, opened };
+}
+
+/** Names the transaction so the test can see when it waits on a lock. */
+async function nameTransaction(
+  transaction: { readonly opaque: unknown },
+  name: string,
+): Promise<void> {
+  await kyselySql`select set_config('application_name', ${name}, true)`
+    .execute(databaseFromSession(transaction));
+}
+
+async function waitsOnLock(name: string): Promise<boolean> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const [activity] = await sql<{ waiting: boolean }[]>`
+      select coalesce(bool_or(wait_event_type = 'Lock'), false) as waiting
+      from pg_stat_activity where application_name = ${name}
+    `;
+    if (activity?.waiting === true) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return false;
+}
+
+/** Fails with the SQLSTATE when either side was chosen as a deadlock victim. */
+function settled<Value>(
+  outcome: PromiseSettledResult<Value>,
+  side: string,
+): Value {
+  if (outcome.status === "fulfilled") return outcome.value;
+  const reason = outcome.reason as { code?: string; message?: string };
+  throw new Error(
+    `${side} failed (${reason.code ?? "no SQLSTATE"}): ${reason.message}`,
+  );
+}
+
+/**
+ * Accepts as the coordinator does — inspection, then acceptance, in one
+ * transaction — optionally holding the transaction open after acceptance.
+ */
+const acceptInTransaction = (
+  connection: ReturnType<typeof connectDatabase>,
+  command: {
+    readonly name: string;
+    readonly tokenHash: string;
+    readonly userId: string;
+  },
+  afterAccept?: () => Promise<void>,
+) =>
+  new PostgresRegistrationTransaction(connection.db).run(
+    async (transaction) => {
+      await nameTransaction(transaction, command.name);
+      const repository = new PostgresWorkspaceInvitations();
+      const now = new Date();
+      const inspected = await repository.inspect({
+        now,
+        tokenHash: command.tokenHash,
+        transaction,
+      });
+      if (inspected.status !== "pending") return inspected;
+      const accepted = await repository.accept({
+        memberId: crypto.randomUUID(),
+        now,
+        tokenHash: command.tokenHash,
+        transaction,
+        userId: command.userId,
+      });
+      await afterAccept?.();
+      return accepted;
+    },
+  );
+
+/** The statements updateMember runs to suspend a member, then `between`. */
+const suspendInviter = (
+  connection: ReturnType<typeof connectDatabase>,
+  memberId: string,
+  between: () => Promise<void>,
+  name?: string,
+) =>
+  new PostgresRegistrationTransaction(connection.db).run(
+    async (transaction) => {
+      if (name) await nameTransaction(transaction, name);
+      const database = databaseFromSession(transaction);
+      await kyselySql`
+        select id from crm.workspace_members
+        where id = ${memberId}::uuid for update
+      `.execute(database);
+      await kyselySql`
+        update crm.workspace_members set status = 'suspended',
+          updated_at = now()
+        where id = ${memberId}::uuid
+      `.execute(database);
+      await between();
+      await revokeInvitationsOfInviters(transaction, { memberId });
+    },
+  );
+
+Deno.test({
+  name:
+    "SECT-04 acceptance waiting on the inviter's suspension reads the invitation revoked",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const fixture = await lockOrderFixture("sect04-suspend-first");
+    const suspender = connectDatabase(databaseUrl);
+    const acceptor = connectDatabase(databaseUrl);
+    const suspendedUncommitted = latch();
+    const revokeNow = latch();
+    try {
+      const suspension = suspendInviter(
+        suspender,
+        fixture.adminMemberId,
+        async () => {
+          suspendedUncommitted.open();
+          await revokeNow.opened;
+        },
+      );
+      await suspendedUncommitted.opened;
+      const acceptance = acceptInTransaction(acceptor, {
+        name: "sect04-accept-waits",
+        tokenHash: fixture.tokenHash,
+        userId: fixture.invitee.userId,
+      });
+      const waiting = await waitsOnLock("sect04-accept-waits");
+      revokeNow.open();
+      const [suspended, accepted] = await Promise.allSettled([
+        suspension,
+        acceptance,
+      ]);
+      settled(suspended, "suspension");
+      const answer = settled(accepted, "acceptance");
+      assert(waiting, "acceptance waits behind the suspension");
+      assert(
+        answer.status === "revoked",
+        `acceptance reads the invitation revoked: ${answer.status}`,
+      );
+      assert(
+        await membershipsIn(fixture.owner.workspaceId, fixture.inviteeEmail) ===
+            0 &&
+          await invitationStatus(
+              fixture.owner.workspaceId,
+              fixture.inviteeEmail,
+            ) === "revoked",
+        "no seat, and the invitation stays revoked",
+      );
+    } finally {
+      revokeNow.open();
+      await suspender.destroy();
+      await acceptor.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "SECT-04 a suspension waiting on an acceptance commits after it without a deadlock",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const fixture = await lockOrderFixture("sect04-accept-first");
+    const suspender = connectDatabase(databaseUrl);
+    const acceptor = connectDatabase(databaseUrl);
+    const acceptedUncommitted = latch();
+    const commitAcceptance = latch();
+    try {
+      const acceptance = acceptInTransaction(
+        acceptor,
+        {
+          name: "sect04-accept-first",
+          tokenHash: fixture.tokenHash,
+          userId: fixture.invitee.userId,
+        },
+        async () => {
+          acceptedUncommitted.open();
+          await commitAcceptance.opened;
+        },
+      );
+      await acceptedUncommitted.opened;
+      const suspension = suspendInviter(
+        suspender,
+        fixture.adminMemberId,
+        () => Promise.resolve(),
+        "sect04-suspension-waits",
+      );
+      const waiting = await waitsOnLock("sect04-suspension-waits");
+      commitAcceptance.open();
+      const [accepted, suspended] = await Promise.allSettled([
+        acceptance,
+        suspension,
+      ]);
+      settled(suspended, "suspension");
+      const answer = settled(accepted, "acceptance");
+      assert(waiting, "the suspension waits behind the acceptance");
+      assert(
+        answer.status === "accepted",
+        `the earlier acceptance commits: ${answer.status}`,
+      );
+      const [admin] = await sql<{ status: string }[]>`
+        select status from crm.workspace_members
+        where id = ${fixture.adminMemberId}::uuid
+      `;
+      assert(
+        admin?.status === "suspended" &&
+          await membershipsIn(
+              fixture.owner.workspaceId,
+              fixture.inviteeEmail,
+            ) ===
+            1 &&
+          await invitationStatus(
+              fixture.owner.workspaceId,
+              fixture.inviteeEmail,
+            ) === "accepted",
+        "one seat, the accepted invitation untouched, the inviter suspended",
+      );
+    } finally {
+      commitAcceptance.open();
+      await suspender.destroy();
+      await acceptor.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "SECT-04 acceptance waiting on an inviter leaving the workspace reads the invitation revoked",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(sql);
+    const fixture = await lockOrderFixture("sect04-leave-first");
+    const leaver = connectDatabase(databaseUrl);
+    const acceptor = connectDatabase(databaseUrl);
+    const workspaceLocked = latch();
+    const leaveNow = latch();
+    try {
+      // Leaving locks the workspace (the personal-lifecycle inspection), then
+      // writes the membership, then revokes.
+      const leaving = new PostgresRegistrationTransaction(leaver.db).run(
+        async (transaction) => {
+          const database = databaseFromSession(transaction);
+          await kyselySql`
+            select id from crm.workspaces
+            where id = ${fixture.owner.workspaceId}::uuid for update
+          `.execute(database);
+          workspaceLocked.open();
+          await leaveNow.opened;
+          await kyselySql`
+            update crm.workspace_members set status = 'left', left_at = now(),
+              updated_at = now()
+            where id = ${fixture.adminMemberId}::uuid
+          `.execute(database);
+          await revokeInvitationsOfInviters(transaction, {
+            memberId: fixture.adminMemberId,
+          });
+        },
+      );
+      await workspaceLocked.opened;
+      const acceptance = acceptInTransaction(acceptor, {
+        name: "sect04-accept-waits-leave",
+        tokenHash: fixture.tokenHash,
+        userId: fixture.invitee.userId,
+      });
+      const waiting = await waitsOnLock("sect04-accept-waits-leave");
+      leaveNow.open();
+      const [left, accepted] = await Promise.allSettled([leaving, acceptance]);
+      settled(left, "leaving");
+      const answer = settled(accepted, "acceptance");
+      assert(waiting, "acceptance waits behind the leaving inviter");
+      assert(
+        answer.status === "revoked",
+        `acceptance reads the invitation revoked: ${answer.status}`,
+      );
+      assert(
+        await membershipsIn(fixture.owner.workspaceId, fixture.inviteeEmail) ===
+          0,
+        "no seat is created",
+      );
+    } finally {
+      leaveNow.open();
+      await leaver.destroy();
+      await acceptor.destroy();
     }
   },
 });

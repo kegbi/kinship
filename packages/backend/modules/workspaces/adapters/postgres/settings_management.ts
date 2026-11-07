@@ -7,6 +7,7 @@ import type {
   WorkspaceMemberRecord,
 } from "../../domain/settings_rules.ts";
 import type { WorkspaceSettingsRepository } from "../../ports/settings_repository.ts";
+import { revokeInvitationsOfInviters } from "./invitation_authority.ts";
 
 interface PreferenceRow {
   readonly effectiveTimezone: string;
@@ -302,6 +303,13 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         and workspace_id = ${command.workspaceId}::uuid
       returning id::text, user_id::text as "userId", role, status
     `.execute(database);
-    return result.rows[0] ?? "not-found";
+    const updated = result.rows[0];
+    if (!updated) return "not-found";
+    // A demoted or suspended inviter's pending invitations end with their
+    // authority, in this transaction (SECT-04).
+    await revokeInvitationsOfInviters(command.transaction, {
+      memberId: updated.id,
+    });
+    return updated;
   }
 }

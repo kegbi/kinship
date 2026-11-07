@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type { PersonalLifecycleMembership } from "../../domain/personal_lifecycle_rules.ts";
 import type { PersonalLifecycleMemberships } from "../../ports/personal_lifecycle.ts";
+import { revokeInvitationsOfInviters } from "./invitation_authority.ts";
 
 interface MembershipRow {
   readonly activeOwnerCount: number;
@@ -78,6 +79,10 @@ export class PostgresPersonalLifecycleMemberships
       returning id::text
     `.execute(databaseFromSession(command.transaction));
     if (!result.rows[0]) throw new Error("Active membership is unavailable.");
+    // Somebody who has left can no longer vouch for an invitee (SECT-04).
+    await revokeInvitationsOfInviters(command.transaction, {
+      memberId: command.memberId,
+    });
   }
 
   async leaveAll(
@@ -89,5 +94,8 @@ export class PostgresPersonalLifecycleMemberships
       where user_id = ${command.userId}::uuid
         and status <> 'left' and left_at is null
     `.execute(databaseFromSession(command.transaction));
+    await revokeInvitationsOfInviters(command.transaction, {
+      userId: command.userId,
+    });
   }
 }

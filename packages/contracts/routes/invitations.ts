@@ -25,10 +25,12 @@ import {
   invitationInspection,
   invitationMfaInput,
   invitationRegistrationInput,
+  invitationRevoked,
   optionalInvitationToken,
   workspaceMembers,
 } from "../schemas/invitations.ts";
 import { registrationAccepted } from "../schemas/registration.ts";
+import { uuid } from "../schemas/shared.ts";
 
 export const createWorkspaceInvitation = defineRoute({
   method: "post",
@@ -252,6 +254,30 @@ export const listWorkspaceMembers = defineRoute({
   },
 });
 
+export const revokeWorkspaceInvitation = defineRoute({
+  method: "delete",
+  path: "/api/v1/workspace-invitations/{invitationId}",
+  operationId: "revokeWorkspaceInvitation",
+  description:
+    "Revokes a pending invitation of the active workspace so its link no longer works. Owners and admins only.",
+  security: [{ kinship_session: [] }],
+  request: {
+    params: z.object({
+      invitationId: uuid,
+    }),
+    headers: originAndWorkspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "Invitation revoked",
+      content: {
+        "application/json": invitationRevoked,
+      },
+    },
+    ...problemResponses(401, 403, 404, 503),
+  },
+});
+
 /** Every invitations route, in the order the surface mounts them. */
 export const INVITATIONS_ROUTES: readonly RouteDescriptor[] = [
   createWorkspaceInvitation,
@@ -262,4 +288,5 @@ export const INVITATIONS_ROUTES: readonly RouteDescriptor[] = [
   registerInvitedIdentity,
   retryInvitedVerificationDelivery,
   listWorkspaceMembers,
+  revokeWorkspaceInvitation,
 ];

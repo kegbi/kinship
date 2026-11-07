@@ -1,8 +1,8 @@
 /**
  * The members page's state (GAP-033): the active members and pending
- * invitations, the role controls an owner or admin may use, and the
- * invitation form. A pure reducer with the words the page shows;
- * `members.tsx` renders it.
+ * invitations, the role controls an owner or admin may use, the invitation
+ * form, and revoking a pending invitation (SECT-04). A pure reducer with the
+ * words the page shows; `members.tsx` renders it.
  */
 
 import type {
@@ -27,6 +27,10 @@ export interface MembersState {
   /** What the role controls last said; `undefined` shows the list alone. */
   readonly managedStatus: string | undefined;
   readonly saving: readonly string[];
+  /** The pending invitations whose revocation is in flight. */
+  readonly revoking: readonly string[];
+  /** What the pending list last said about a revocation. */
+  readonly pendingStatus: string;
   readonly sending: boolean;
   readonly inviteStatus: string;
   readonly timePreferences: TimePreferences | undefined;
@@ -48,14 +52,22 @@ export type MembersAction =
   | { readonly type: "sending" }
   | { readonly type: "sent"; readonly message: string }
   | { readonly type: "saving"; readonly id: string }
-  | { readonly type: "saved"; readonly id: string; readonly message: string };
+  | { readonly type: "saved"; readonly id: string; readonly message: string }
+  | { readonly type: "revoking"; readonly id: string }
+  | {
+    readonly type: "revoked";
+    readonly id: string;
+    readonly message: string;
+  };
 
 export const initialMembers: MembersState = {
   inviteStatus: "",
   lists: undefined,
   managed: undefined,
   managedStatus: "Loading role controls…",
+  pendingStatus: "",
   phase: "loading",
+  revoking: [],
   saving: [],
   sending: false,
   timePreferences: undefined,
@@ -105,8 +117,28 @@ export function membersReducer(
         managedStatus: action.message,
         saving: state.saving.filter((id) => id !== action.id),
       };
+    case "revoking":
+      return { ...state, revoking: [...state.revoking, action.id] };
+    case "revoked":
+      return {
+        ...state,
+        pendingStatus: action.message,
+        revoking: state.revoking.filter((id) => id !== action.id),
+      };
   }
 }
+
+/** Who sent a pending invitation, as its row says it. */
+export function invitationSender(
+  invitation: Pick<WorkspaceMembers["invitations"][number], "invitedBy">,
+): string {
+  return invitation.invitedBy
+    ? `Invited by ${invitation.invitedBy.name}`
+    : "Invited by a former member";
+}
+
+/** What the pending list says when a revocation is refused. */
+export const REVOCATION_FAILED = "The invitation could not be revoked.";
 
 /** What the invitation form says when the server refuses an invitation. */
 export function invitationRefusal(problem: ProblemDetails | undefined): string {

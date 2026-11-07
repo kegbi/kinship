@@ -47,6 +47,21 @@ export interface WorkspaceInvitationRepository {
       readonly status: "ready";
     }
   >;
+  /**
+   * Revokes one pending invitation of the actor's workspace, provided the
+   * actor is still an active owner or admin there. Another workspace's
+   * invitation, and one that is no longer pending, are `not-found`.
+   */
+  revoke(command: {
+    readonly actor: InvitationActor;
+    readonly invitationId: string;
+    readonly transaction: RegistrationTransaction;
+  }): Promise<"forbidden" | "not-found" | "revoked">;
+  /**
+   * What a token names. A pending invitation whose sender no longer holds
+   * owner or admin authority is revoked here and answered as such (SECT-04);
+   * `accept` applies the same rule.
+   */
   inspect(command: {
     readonly now: Date;
     readonly tokenHash: string;

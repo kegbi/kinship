@@ -94,6 +94,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RoutePermission>> = {
   registerInvitedIdentity: "registration.create",
   retryInvitedVerificationDelivery: "registration.create",
   listWorkspaceMembers: "workspace.members.invite",
+  revokeWorkspaceInvitation: "workspace.members.invite",
 
   // Settings.
   getMemberUiState: "member.self.manage",

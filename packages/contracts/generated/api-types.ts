@@ -1958,6 +1958,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/workspace-invitations/{invitationId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Revokes a pending invitation of the active workspace so its link no longer works. Owners and admins only. */
+        readonly delete: operations["revokeWorkspaceInvitation"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/workspace-members": {
         readonly parameters: {
             readonly query?: never;
@@ -2978,6 +2995,10 @@ export interface components {
             readonly lastName: string;
             readonly password: string;
             readonly token: string;
+        };
+        readonly InvitationRevoked: {
+            /** @constant */
+            readonly status: "revoked";
         };
         readonly InvitationToken: {
             readonly token: string;
@@ -4887,6 +4908,12 @@ export interface components {
                 readonly createdAt: string;
                 /** Format: date-time */
                 readonly expiresAt: string;
+                /** @description The member who sent the invitation, or null when their identity is no longer available. */
+                readonly invitedBy: {
+                    /** Format: uuid */
+                    readonly id: string;
+                    readonly name: string;
+                } | null;
             }[];
         };
         readonly WorkspaceReset: {
@@ -16849,6 +16876,78 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly revokeWorkspaceInvitation: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly invitationId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Invitation revoked */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InvitationRevoked"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

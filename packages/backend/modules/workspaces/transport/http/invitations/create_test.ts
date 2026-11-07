@@ -70,3 +70,72 @@ Deno.test("invitation HTTP checks workspace selection through the authenticated 
     "cross-workspace header is not authorization evidence",
   );
 });
+
+const INVITATION_ID = "00000000-0000-4000-8000-0000000000a1";
+
+Deno.test("[SECT-04] revoking an invitation is origin/session protected and answers each outcome", async () => {
+  const calls: unknown[] = [];
+  let outcome: "forbidden" | "not-found" | "revoked" | "throw" = "revoked";
+  const app = createInvitationRoutes(services({
+    revoke: (actor, invitationId) => {
+      calls.push({ actor, invitationId });
+      return outcome === "throw"
+        ? Promise.reject(new Error("database detail"))
+        : Promise.resolve(outcome);
+    },
+  }));
+  const revoke = (id = INVITATION_ID, headers = secureHeaders) =>
+    app.request(`https://kinship.test/api/v1/workspace-invitations/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+
+  const revoked = await revoke();
+  assert(
+    revoked.status === 200 &&
+      await revoked.text() === '{"status":"revoked"}' &&
+      revoked.headers.get("cache-control") === "private, no-store",
+    "revocation answers a narrow uncached result",
+  );
+  assert(
+    JSON.stringify(calls[0]) === JSON.stringify({
+      actor: {
+        memberId: "member",
+        role: "owner",
+        userId: "user",
+        workspaceId: "workspace",
+      },
+      invitationId: INVITATION_ID,
+    }),
+    `the resolved actor and the path id reach the use case: ${
+      JSON.stringify(calls[0])
+    }`,
+  );
+
+  const expected = {
+    forbidden: [403, "invitation_forbidden"],
+    "not-found": [404, "invitation_not_found"],
+    throw: [503, "invitation_unavailable"],
+  } as const;
+  for (const [result, [status, code]] of Object.entries(expected)) {
+    outcome = result as keyof typeof expected;
+    const response = await revoke();
+    const body = await response.json() as { readonly code: string };
+    assert(
+      response.status === status && body.code === code,
+      `${result} answers ${status} ${code}: ${response.status} ${body.code}`,
+    );
+  }
+
+  const before = calls.length;
+  assertStatus(await revoke("not-a-uuid"), 404, "a malformed id is not found");
+  assertStatus(
+    await revoke(INVITATION_ID, {
+      ...secureHeaders,
+      origin: "https://attacker.invalid",
+    }),
+    403,
+    "wrong origin is denied before mutation",
+  );
+  assert(calls.length === before, "neither refusal reaches the use case");
+});

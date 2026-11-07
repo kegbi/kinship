@@ -59,6 +59,11 @@ export interface WorkspaceSettingsRepository {
       readonly transaction: SettingsTransaction;
     },
   ): Promise<readonly WorkspaceMemberRecord[] | "forbidden">;
+  /**
+   * Changes a member's role or status. When the change leaves them without
+   * owner or admin authority, their pending invitations are revoked in the
+   * same transaction (SECT-04).
+   */
   updateMember(
     command: SettingsActor & {
       readonly newRole: WorkspaceRole;

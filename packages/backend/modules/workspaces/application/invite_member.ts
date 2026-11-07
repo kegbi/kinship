@@ -1,7 +1,7 @@
 /**
  * The workspace invitation coordinator.
  *
- * Six paths, and the one thing they all do first is hash the token the caller
+ * The token paths all start the same way: hash the token the caller
  * presented, because everything downstream is keyed by the digest and the raw
  * link never goes anywhere near the database. Everything else is ordering.
  *
@@ -111,6 +111,10 @@ export function createWorkspaceInvitationCoordinator(
   list(
     actor: InvitationActor,
   ): Promise<WorkspaceInvitationList>;
+  revoke(
+    actor: InvitationActor,
+    invitationId: string,
+  ): Promise<"forbidden" | "not-found" | "revoked">;
   registerInvitee(command: {
     readonly email: string;
     readonly firstName: string;
@@ -340,14 +344,31 @@ export function createWorkspaceInvitationCoordinator(
         const identities = await dependencies.identity
           .listIdentityDisplaySummaries({
             transaction,
-            userIds: listed.members.map((member) => member.userId),
+            userIds: [
+              ...new Set([
+                ...listed.members.map((member) => member.userId),
+                ...listed.invitations.flatMap((invitation) =>
+                  invitation.invitedByUserId ? [invitation.invitedByUserId] : []
+                ),
+              ]),
+            ],
           });
         return {
-          invitations: listed.invitations.map(invitationSummary),
+          invitations: listed.invitations.map((invitation) =>
+            invitationSummary(invitation, identities)
+          ),
           members: memberDirectory(listed.members, identities),
           status: "ready",
         };
       });
+    },
+    async revoke(actor, invitationId) {
+      // Decided before the first read, like `list`; the repository re-checks
+      // the actor's membership under lock.
+      if (!privileged(actor)) return "forbidden";
+      return await dependencies.transaction.run((transaction) =>
+        dependencies.repository.revoke({ actor, invitationId, transaction })
+      );
     },
     async inspect(token) {
       const tokenHash = await dependencies.tokens.hash(token);

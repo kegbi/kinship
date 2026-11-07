@@ -100,6 +100,7 @@ function dependencies(overrides: {
   readonly inspect?: InvitationInspection;
   readonly mailFails?: boolean;
   readonly retryCreated?: boolean;
+  readonly revoke?: "forbidden" | "not-found" | "revoked";
   readonly verificationMailFails?: boolean;
   readonly repositoryPostconditionFails?: boolean;
 } = {}): {
@@ -229,7 +230,18 @@ function dependencies(overrides: {
               email: "invitee@example.test",
               expiresAt: new Date("2026-08-22T12:00:00.456Z"),
               id: "00000000-0000-4000-8000-000000000008",
+              invitedByMemberId: owner.memberId,
+              invitedByUserId: owner.userId,
               role: "member" as const,
+              status: "pending" as const,
+            }, {
+              createdAt: new Date("2026-08-14T12:00:00.000Z"),
+              email: "orphan@example.test",
+              expiresAt: new Date("2026-08-21T12:00:00.000Z"),
+              id: "00000000-0000-4000-8000-000000000009",
+              invitedByMemberId: null,
+              invitedByUserId: null,
+              role: "admin" as const,
               status: "pending" as const,
             }],
             members: [{
@@ -240,6 +252,12 @@ function dependencies(overrides: {
             }],
             status: "ready",
           });
+        },
+        revoke(command) {
+          effects.push(
+            `revoke:${command.invitationId}:${command.actor.memberId}:${command.transaction.opaque}`,
+          );
+          return Promise.resolve(overrides.revoke ?? "revoked");
         },
         inspect(command) {
           effects.push(`inspect:${command.tokenHash}`);
@@ -575,6 +593,63 @@ Deno.test("AUTH-002 inspection hashes bearer material and list remains actor sco
     effects.includes("inspect:hash:raw-token") && effects.includes("list"),
     "reads use hashed token and actor-scoped repository",
   );
+});
+
+Deno.test("[SECT-04] the pending list names who sent each invitation", async () => {
+  const { deps, effects } = dependencies();
+  const listed = await createWorkspaceInvitationCoordinator(deps).list(owner);
+  assert(listed.status === "ready", "list is ready");
+  const [sent, orphan] = listed.invitations;
+  assert(
+    sent?.invitedBy?.id === owner.memberId &&
+      sent.invitedBy.name === "Owner Person" && sent.role === "member",
+    `the sender is named from identity: ${JSON.stringify(sent)}`,
+  );
+  assert(
+    orphan?.invitedBy === null && orphan.role === "admin",
+    "an invitation whose sender is gone names nobody",
+  );
+  assert(
+    effects.includes(`identity.summaries:${owner.userId}`),
+    `the sender's identity is read once with the members': ${effects}`,
+  );
+});
+
+Deno.test("[SECT-04] an owner or admin revokes an invitation in one transaction", async () => {
+  for (const role of ["owner", "admin"] as const) {
+    const { deps, effects } = dependencies();
+    const result = await createWorkspaceInvitationCoordinator(deps).revoke(
+      { ...owner, role },
+      "00000000-0000-4000-8000-000000000008",
+    );
+    assert(result === "revoked", `${role} revokes`);
+    assert(
+      effects.join() === [
+        "transaction.begin",
+        `revoke:00000000-0000-4000-8000-000000000008:${owner.memberId}:transaction`,
+        "transaction.commit",
+      ].join(),
+      `the repository decides inside the transaction: ${effects}`,
+    );
+  }
+  for (const outcome of ["forbidden", "not-found"] as const) {
+    const { deps } = dependencies({ revoke: outcome });
+    assert(
+      await createWorkspaceInvitationCoordinator(deps).revoke(owner, "x") ===
+        outcome,
+      `the repository's ${outcome} is passed through`,
+    );
+  }
+});
+
+Deno.test("[SECT-04] a member is refused revocation before any read", async () => {
+  const { deps, effects } = dependencies();
+  const result = await createWorkspaceInvitationCoordinator(deps).revoke(
+    { ...owner, role: "member" },
+    "00000000-0000-4000-8000-000000000008",
+  );
+  assert(result === "forbidden", "member role is denied");
+  assert(effects.length === 0, `the refusal reads nothing: ${effects}`);
 });
 
 Deno.test("[AUD-K5] a member is refused the member list before any read", async () => {

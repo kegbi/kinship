@@ -6,10 +6,12 @@
  * form is wired from its first render: an invitation sent before the page
  * has loaded is held, never submitted natively (REL-041, which would put the
  * invitee's email in the URL), and sent once the lists are in. Each role
- * save holds only its own control.
+ * save, and each invitation revocation (SECT-04), holds only its own control,
+ * and a revocation that lands refreshes the lists from the server.
  */
 
 import {
+  type ReactNode,
   type SyntheticEvent,
   useEffect,
   useEffectEvent,
@@ -21,7 +23,9 @@ import {
   getWorkspaceMembers,
   listManagedMembers,
   type ManagedMember,
+  revokeWorkspaceInvitation,
   updateManagedMember,
+  type WorkspaceMembers,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
   badgeVariants,
@@ -36,9 +40,11 @@ import {
   initialMembers,
   INVITATION_SENT,
   invitationRefusal,
+  invitationSender,
   listWords,
   membersReducer,
   optionLabel,
+  REVOCATION_FAILED,
 } from "./members.ts";
 
 export const MEMBERS_ISLAND = "settings-members";
@@ -164,6 +170,33 @@ export function MembersPage(props: { readonly onSettled?: () => void }) {
     const message = `${member.email} updated.`;
     dispatch({ id: member.id, message, type: "saved" });
     await manage(message);
+  };
+
+  const revoke = async (
+    invitation: WorkspaceMembers["invitations"][number],
+  ) => {
+    const workspaceId = workspace.current!;
+    dispatch({ id: invitation.id, type: "revoking" });
+    const result = await settle(() =>
+      revokeWorkspaceInvitation(invitation.id, workspaceId)
+    );
+    if (result.status !== "ready") {
+      dispatch({
+        id: invitation.id,
+        message: result.problem?.detail ?? REVOCATION_FAILED,
+        type: "revoked",
+      });
+      // Not pending any more — revoked or accepted elsewhere — so the row is
+      // stale and the fresh list drops it.
+      if (result.problem?.status === 404) await load();
+      return;
+    }
+    dispatch({
+      id: invitation.id,
+      message: `Invitation for ${invitation.email} revoked.`,
+      type: "revoked",
+    });
+    await load();
   };
 
   const words = listWords(state);
@@ -355,6 +388,15 @@ export function MembersPage(props: { readonly onSettled?: () => void }) {
         >
           {words.pending}
         </div>
+        <p
+          aria-live="polite"
+          className="list-state"
+          hidden={state.pendingStatus === ""}
+          id="pending-status"
+          role="status"
+        >
+          {state.pendingStatus}
+        </p>
         <ul
           className="member-list"
           hidden={invitations.length === 0}
@@ -365,10 +407,20 @@ export function MembersPage(props: { readonly onSettled?: () => void }) {
               badge={invitation.role}
               key={invitation.id}
               primary={invitation.email}
-              secondary={`Expires ${
+              secondary={`${invitationSender(invitation)} · Expires ${
                 formatInstant(invitation.expiresAt, timePreferences)
               }`}
-            />
+            >
+              <button
+                aria-label={`Revoke invitation for ${invitation.email}`}
+                className={buttonVariants({ variant: "outline" })}
+                disabled={state.revoking.includes(invitation.id)}
+                onClick={() => void revoke(invitation)}
+                type="button"
+              >
+                Revoke
+              </button>
+            </ListRow>
           ))}
         </ul>
       </section>
@@ -381,15 +433,24 @@ function ListRow(
     readonly primary: string;
     readonly secondary: string;
     readonly badge: string;
+    readonly children?: ReactNode;
   },
 ) {
+  const badge = <span className="role-badge">{props.badge}</span>;
   return (
     <li>
       <span>
         <strong>{props.primary}</strong>
         <small>{props.secondary}</small>
       </span>
-      <span className="role-badge">{props.badge}</span>
+      {props.children
+        ? (
+          <span className="member-controls">
+            {badge}
+            {props.children}
+          </span>
+        )
+        : badge}
     </li>
   );
 }

@@ -148,6 +148,7 @@ const FUNCTIONS: readonly string[] = [
   "revokeApiToken",
   "revokeCalendarFeed",
   "revokeMemberSession",
+  "revokeWorkspaceInvitation",
   "rotateCalendarFeed",
   "saveJournalDayRating",
   "saveMemberUiState",

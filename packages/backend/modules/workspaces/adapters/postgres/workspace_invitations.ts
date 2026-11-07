@@ -7,6 +7,25 @@ import type {
   WorkspaceMemberRecord,
 } from "../../domain/invitation_rules.ts";
 import type { WorkspaceInvitationRepository } from "../../ports/invitation_repository.ts";
+import {
+  INVITER_HOLDS_AUTHORITY,
+  lockInvitationAuthority,
+} from "./invitation_authority.ts";
+
+/**
+ * Revokes a pending invitation whose inviter no longer holds authority
+ * (SECT-04), so it is spent the same way for every path that meets it.
+ */
+async function revokeWithoutAuthority(
+  database: ReturnType<typeof databaseFromSession>,
+  tokenHash: string,
+): Promise<{ readonly status: "revoked" }> {
+  await sql`
+    update crm.workspace_invitations set status = 'revoked', updated_at = now()
+    where token_hash = ${tokenHash} and status = 'pending'
+  `.execute(database);
+  return { status: "revoked" };
+}
 
 export class PostgresWorkspaceInvitations
   implements WorkspaceInvitationRepository {
@@ -96,12 +115,17 @@ export class PostgresWorkspaceInvitations
       order by id
     `.execute(database);
     const invitations = await sql<WorkspaceInvitationRecord>`
-      select id::text, email::text, role, status,
-        created_at as "createdAt", expires_at as "expiresAt"
-      from crm.workspace_invitations
-      where workspace_id = ${command.actor.workspaceId}::uuid
-        and status = 'pending' and expires_at > ${command.now}
-      order by created_at desc, id
+      select wi.id::text, wi.email::text, wi.role, wi.status,
+        wi.created_at as "createdAt", wi.expires_at as "expiresAt",
+        inviter.id::text as "invitedByMemberId",
+        inviter.user_id::text as "invitedByUserId"
+      from crm.workspace_invitations wi
+      left join crm.workspace_members inviter
+        on inviter.id = wi.invited_by_member_id
+        and inviter.workspace_id = wi.workspace_id
+      where wi.workspace_id = ${command.actor.workspaceId}::uuid
+        and wi.status = 'pending' and wi.expires_at > ${command.now}
+      order by wi.created_at desc, wi.id
     `.execute(database);
     return {
       invitations: invitations.rows,
@@ -110,20 +134,48 @@ export class PostgresWorkspaceInvitations
     };
   }
 
+  async revoke(
+    command: Parameters<WorkspaceInvitationRepository["revoke"]>[0],
+  ): Promise<"forbidden" | "not-found" | "revoked"> {
+    const database = databaseFromSession(command.transaction);
+    const authorized = await sql<{ readonly authorized: boolean }>`
+      select true as authorized
+      from crm.workspace_members
+      where id = ${command.actor.memberId}::uuid
+        and user_id = ${command.actor.userId}::uuid
+        and workspace_id = ${command.actor.workspaceId}::uuid
+        and role in ('owner', 'admin') and status = 'active'
+        and left_at is null
+      limit 1 for share
+    `.execute(database);
+    if (authorized.rows[0]?.authorized !== true) return "forbidden";
+    const revoked = await sql<{ readonly id: string }>`
+      update crm.workspace_invitations set status = 'revoked', updated_at = now()
+      where id = ${command.invitationId}::uuid
+        and workspace_id = ${command.actor.workspaceId}::uuid
+        and status = 'pending'
+      returning id::text
+    `.execute(database);
+    return revoked.rows[0] ? "revoked" : "not-found";
+  }
+
   async inspect(
     command: Parameters<WorkspaceInvitationRepository["inspect"]>[0],
   ): Promise<InvitationInspection> {
     const database = databaseFromSession(command.transaction);
+    await lockInvitationAuthority(command.transaction, command.tokenHash);
     const result = await sql<{
       readonly email: string;
       readonly expiresAt: Date | string | null;
       readonly invitationId: string;
+      readonly inviterAuthorized: boolean;
       readonly role: "admin" | "member";
       readonly status: "accepted" | "expired" | "pending" | "revoked";
       readonly workspaceName: string;
     }>`
       select wi.id::text as "invitationId", wi.email::text, wi.role, wi.status,
         wi.expires_at as "expiresAt",
+        ${INVITER_HOLDS_AUTHORITY} as "inviterAuthorized",
         w.name as "workspaceName"
       from crm.workspace_invitations wi
       join crm.workspaces w on w.id = wi.workspace_id
@@ -147,6 +199,9 @@ export class PostgresWorkspaceInvitations
       return { status: "expired" };
     }
     if (invitation.status === "expired") return { status: "expired" };
+    if (!invitation.inviterAuthorized) {
+      return await revokeWithoutAuthority(database, command.tokenHash);
+    }
     return {
       email: invitation.email,
       role: invitation.role,
@@ -159,11 +214,13 @@ export class PostgresWorkspaceInvitations
     command: Parameters<WorkspaceInvitationRepository["accept"]>[0],
   ): Promise<InvitationAcceptance> {
     const database = databaseFromSession(command.transaction);
+    await lockInvitationAuthority(command.transaction, command.tokenHash);
     const result = await sql<{
       readonly email: string;
       readonly expiresAt: Date | string | null;
       readonly invitationId: string;
       readonly invitedByMemberId: string | null;
+      readonly inviterAuthorized: boolean;
       readonly role: "admin" | "member";
       readonly status: "accepted" | "expired" | "pending" | "revoked";
       readonly workspaceId: string;
@@ -172,6 +229,7 @@ export class PostgresWorkspaceInvitations
       select wi.id::text as "invitationId", wi.email::text, wi.role, wi.status,
         wi.expires_at as "expiresAt",
         wi.invited_by_member_id::text as "invitedByMemberId",
+        ${INVITER_HOLDS_AUTHORITY} as "inviterAuthorized",
         wi.workspace_id::text as "workspaceId", w.name as "workspaceName"
       from crm.workspace_invitations wi
       join crm.workspaces w on w.id = wi.workspace_id
@@ -194,6 +252,9 @@ export class PostgresWorkspaceInvitations
         where token_hash = ${command.tokenHash} and status = 'pending'
       `.execute(database);
       return { status: "expired" };
+    }
+    if (!invitation.inviterAuthorized) {
+      return await revokeWithoutAuthority(database, command.tokenHash);
     }
     const existing = await sql<{ readonly id: string }>`
       select id::text from crm.workspace_members

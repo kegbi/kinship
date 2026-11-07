@@ -393,15 +393,30 @@ test(
           page.getByRole("status").filter({ hasText: "Invitation sent" }),
         ).toBeVisible();
         const terminalLink = await invitationLink(request, terminalEmail);
-        databaseSql(
-          terminal === "expired"
-            ? `update crm.workspace_invitations set expires_at = now() - interval '1 second' where email = ${
-              sqlLiteral(terminalEmail)
-            };`
-            : `update crm.workspace_invitations set status = 'revoked' where email = ${
+        if (terminal === "expired") {
+          databaseSql(
+            `update crm.workspace_invitations set expires_at = now() - interval '1 second' where email = ${
               sqlLiteral(terminalEmail)
             };`,
-        );
+          );
+        } else {
+          // SECT-04: the pending row names who sent it and the role, and the
+          // owner revokes it from the list.
+          const row = page.locator("#pending-list li").filter({
+            hasText: terminalEmail,
+          });
+          await expect(row).toContainText("Invited by Test Invitee");
+          await expect(row.locator(".role-badge")).toHaveText("member");
+          await row.getByRole("button", {
+            name: `Revoke invitation for ${terminalEmail}`,
+          }).click();
+          await expect(
+            page.getByRole("status").filter({
+              hasText: `Invitation for ${terminalEmail} revoked.`,
+            }),
+          ).toBeVisible();
+          await expect(row).toHaveCount(0);
+        }
         const terminalContext = await browser.newContext({
           baseURL: origin,
           ignoreHTTPSErrors: true,

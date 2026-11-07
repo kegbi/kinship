@@ -459,7 +459,7 @@ these:
     Chromium; changed scope line 99.7%, branch 95.0%, function 93.8%; fmt,
     architecture, and lint (only the known REL-096) gates.
 
-- [ ] **AUD-M2 — Invitations stay bound to an inviter who still holds authority,
+- [x] **AUD-M2 — Invitations stay bound to an inviter who still holds authority,
       and can be revoked.** M. High. Depends: AUD-A1. Closes: SECT-04.
   - Scope:
     - At acceptance, require that the inviter still holds owner or admin in that
@@ -473,6 +473,19 @@ these:
   - Verify: `test:integration --module=workspaces`
     (`invitation_postgres_test.ts`); contracts; the web unit tests; E2E
     `invitations.AUTH-002` and `settings.AUTH-004`.
+  - Delivered 2026-11-07: SECT-04 integration tests (an invitation from a
+    suspended or demoted inviter cannot be accepted; demotion, suspension,
+    leaving, and account deletion revoke the inviter's pending invitations in
+    the same transaction; acceptance against a concurrent suspension or leave
+    never deadlocks, locking workspace, then inviter, then invitation),
+    workspaces integration 13, workspaces unit, web unit 1733 (only REL-107),
+    api unit 487 (only REL-106), gateway contract; new
+    `DELETE /api/v1/workspace-invitations/{id}` for owners and admins with the
+    same 404 for unknown and foreign ids; E2E AUTH-002 and AUTH-004 6 passed on
+    Chromium; changed backend lines 98.6%, branches 95.7%, functions 100%;
+    contracts, fmt, eslint, architecture, and lint (only REL-096). A
+    workspace-settings save still locks the member before the workspace
+    (REL-109's repair should lock the workspace first).
 
 - [ ] **AUD-M3 — Invitation and account mail cannot be used as a relay.** M.
       Normal. Depends: AUD-A1, AUD-M2. Closes: SECA-03.

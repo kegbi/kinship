@@ -32,6 +32,20 @@ export function createWorkspaceInvitation(
   });
 }
 
+/** Revokes a pending invitation, so its link no longer works (SECT-04). */
+export function revokeWorkspaceInvitation(
+  invitationId: string,
+  workspaceId?: string,
+): Promise<ApiResult<{ readonly status: "revoked" }>> {
+  return request(
+    `/api/v1/workspace-invitations/${encodeURIComponent(invitationId)}`,
+    {
+      method: "DELETE",
+      headers: workspaceId ? { "X-Workspace-Id": workspaceId } : undefined,
+    },
+  );
+}
+
 export function registerInvitedIdentity(
   input: {
     readonly email: string;

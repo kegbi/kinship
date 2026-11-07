@@ -1,10 +1,12 @@
 /**
- * An owner inviting somebody, and the list of who has been invited already.
+ * An owner inviting somebody, the list of who has been invited already, and
+ * taking an invitation back.
  *
- * Two routes for the one person who can see both: an active owner or admin.
- * Creating an invitation is the only write in this file, and it never returns
- * the token it created — the invitee receives that by email, and nothing on
- * this side of the flow may read it back.
+ * Three routes for the one person who can use them: an active owner or admin.
+ * Creating an invitation never returns the token it created — the invitee
+ * receives that by email, and nothing on this side of the flow may read it
+ * back. Revoking one (SECT-04) is addressed by the invitation's id, which the
+ * list shows, never by its token.
  *
  * An email that already has a membership record is a conflict rather than a
  * second invitation, because a membership's lifecycle is managed explicitly.
@@ -17,8 +19,10 @@ import { Hono } from "hono";
 import {
   createWorkspaceInvitation,
   listWorkspaceMembers,
+  revokeWorkspaceInvitation,
 } from "../../../../../../contracts/routes/invitations.ts";
 import { invitationInput } from "../../../../../../contracts/schemas/invitations.ts";
+import { uuid } from "../../../../../../contracts/schemas/shared.ts";
 import { requireMatchingOrigin } from "../../../../../../http-kit/origin.ts";
 import {
   definedProblem,
@@ -30,7 +34,10 @@ import {
   requireSession,
   sessionActor,
 } from "../../../../../../http-kit/session.ts";
-import { parseJsonBody } from "../../../../../../http-kit/validate.ts";
+import {
+  parseJsonBody,
+  parseValue,
+} from "../../../../../../http-kit/validate.ts";
 import type { InvitationHttpServices } from "./shared.ts";
 
 /** What inviting a member and listing the invited is served from. */
@@ -82,6 +89,25 @@ export const MEMBERS_FORBIDDEN: ProblemDefinition = {
   detail: "Only an active workspace owner or admin may view this page.",
   status: 403,
   title: "Members unavailable",
+};
+
+export const INVITATION_NOT_FOUND: ProblemDefinition = {
+  code: "invitation_not_found",
+  detail: "That invitation is not pending in this workspace.",
+  status: 404,
+  title: "Invitation not found",
+};
+export const INVITATION_REVOKE_FORBIDDEN: ProblemDefinition = {
+  code: "invitation_forbidden",
+  detail: "Only an active workspace owner or admin may revoke invitations.",
+  status: 403,
+  title: "Invitation forbidden",
+};
+export const INVITATION_NOT_REVOKED: ProblemDefinition = {
+  code: "invitation_unavailable",
+  detail: "The invitation could not be revoked. Please try again.",
+  status: 503,
+  title: "Invitation unavailable",
 };
 
 export function createInvitationCreationRoutes(
@@ -142,6 +168,33 @@ export function createInvitationCreationRoutes(
     }
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
+  });
+
+  mount(routes, revokeWorkspaceInvitation, origin, session, async (context) => {
+    const invitationId = parseValue(uuid, context.req.param("invitationId"));
+    if ("errors" in invitationId) {
+      return definedProblem(context, INVITATION_NOT_FOUND);
+    }
+    const actor = await requireSession(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.invitations.revoke({
+      memberId: actor.memberId,
+      role: actor.role,
+      userId: actor.userId,
+      workspaceId: actor.workspaceId,
+    }, invitationId.data).catch(() => "unavailable" as const);
+    if (result === "revoked") {
+      context.header("Cache-Control", "private, no-store");
+      return context.json({ status: "revoked" });
+    }
+    return definedProblem(
+      context,
+      result === "forbidden"
+        ? INVITATION_REVOKE_FORBIDDEN
+        : result === "not-found"
+        ? INVITATION_NOT_FOUND
+        : INVITATION_NOT_REVOKED,
+    );
   });
   return routes;
 }

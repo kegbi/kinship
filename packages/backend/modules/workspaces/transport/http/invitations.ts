@@ -1,9 +1,10 @@
 /**
  * Inviting somebody into a workspace, and everything they do to accept.
  *
- * Eight routes over one flow, and GAP-021 cut it where the flow itself
- * changes hands: `invitations/create.ts` is what an owner does,
- * `invitations/register.ts` is what an invitee with no account does, and
+ * Nine routes over one flow, and GAP-021 cut it where the flow itself
+ * changes hands: `invitations/create.ts` is what an owner does — invite,
+ * list, and revoke — `invitations/register.ts` is what an invitee with no
+ * account does, and
  * `invitations/accept.ts` is the one sitting in which somebody inspects the
  * link, signs in against it, answers a second factor, and accepts. The five
  * refusal tables live in `invitations/failures.ts` because the three steps
@@ -15,7 +16,8 @@
  * by the invitation coordinator rather than by settings.
  *
  * No two invitation paths overlap — `/api/v1/workspace-invitations` and its
- * four literal children are distinct, and the member list is rooted
+ * literal children are distinct, the one parameterised child is a `DELETE`
+ * that none of the literal `POST`s can match, and the member list is rooted
  * elsewhere — so the mounted order is free; `invitations/routes_test.ts`
  * requests each path through the mounted whole.
  */
@@ -29,7 +31,10 @@ import {
   INVITATION_DELIVERY_FAILED,
   INVITATION_FORBIDDEN,
   INVITATION_NOT_CREATED,
+  INVITATION_NOT_FOUND,
+  INVITATION_NOT_REVOKED,
   INVITATION_REQUEST_INVALID,
+  INVITATION_REVOKE_FORBIDDEN,
   MEMBERS_FORBIDDEN,
   MEMBERS_UNAVAILABLE,
 } from "./invitations/create.ts";
@@ -78,7 +83,10 @@ export const INVITATION_PROBLEMS: readonly ProblemDefinition[] = [
   INVITATION_NOT_ACCEPTED,
   INVITATION_NOT_CHECKED,
   INVITATION_NOT_CREATED,
+  INVITATION_NOT_FOUND,
+  INVITATION_NOT_REVOKED,
   INVITATION_REQUEST_INVALID,
+  INVITATION_REVOKE_FORBIDDEN,
   INVITATION_SIGN_IN_REQUIRED,
   INVITEE_VERIFICATION_DELAYED,
   MEMBERS_FORBIDDEN,

@@ -5,7 +5,7 @@ export type { ActivityOrNoteInteraction, ActivityReport, AddressFact, ApiTokenCr
 export { parseTodayAttention, parseTodayRecentPeople, parseTodayReminders } from "../client/today.ts";
 export { consumeApplicationEntry, register, retryVerificationDelivery, verifyEmail } from "../client/registration.ts";
 export { completeMfa, getSession, requestPasswordReset, resetPassword, signIn, signOut } from "../client/authentication.ts";
-export { acceptWorkspaceInvitation, authenticateWorkspaceInvitation, completeWorkspaceInvitationMfa, createWorkspaceInvitation, getWorkspaceMembers, inspectWorkspaceInvitation, registerInvitedIdentity, retryInvitedVerificationDelivery } from "../client/invitations.ts";
+export { acceptWorkspaceInvitation, authenticateWorkspaceInvitation, completeWorkspaceInvitationMfa, createWorkspaceInvitation, getWorkspaceMembers, inspectWorkspaceInvitation, registerInvitedIdentity, retryInvitedVerificationDelivery, revokeWorkspaceInvitation } from "../client/invitations.ts";
 export { createPersonalizationEntry, deletePersonalizationEntry, getMemberPreferences, getMemberUiState, getSettingsProfile, getWorkspaceSettings, listManagedMembers, listMemberSessions, listPersonalizationEntries, revokeMemberSession, saveMemberUiState, updateManagedMember, updateMemberPreferences, updatePersonalizationEntry, updateSettingsProfile, updateWorkspaceSettings } from "../client/settings.ts";
 export { createApiToken, getApiTokens, revokeApiToken } from "../client/api_tokens.ts";
 export { createCalendarFeed, getCalendarFeed, revokeCalendarFeed, rotateCalendarFeed } from "../client/calendar_feeds.ts";

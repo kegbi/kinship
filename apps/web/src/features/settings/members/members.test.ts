@@ -4,6 +4,7 @@ import {
   initialMembers,
   INVITATION_SENT,
   invitationRefusal,
+  invitationSender,
   listWords,
   type MembersAction,
   membersReducer,
@@ -74,6 +75,27 @@ describe("AUTH-002 members state", () => {
       managed: undefined,
       managedStatus: "Down.",
     });
+  });
+
+  it("tracks each invitation revocation on its own", () => {
+    const revoking = reduce({ id: "a", type: "revoking" }, {
+      id: "b",
+      type: "revoking",
+    });
+    expect(revoking.revoking).toEqual(["a", "b"]);
+    expect(
+      membersReducer(revoking, { id: "a", message: "Gone.", type: "revoked" }),
+    ).toMatchObject({ pendingStatus: "Gone.", revoking: ["b"] });
+    expect(initialMembers.pendingStatus).toBe("");
+  });
+
+  it("names who sent an invitation", () => {
+    expect(invitationSender({ invitedBy: { id: "m", name: "Ada" } })).toBe(
+      "Invited by Ada",
+    );
+    expect(invitationSender({ invitedBy: null })).toBe(
+      "Invited by a former member",
+    );
   });
 
   it("words refusals and options", () => {

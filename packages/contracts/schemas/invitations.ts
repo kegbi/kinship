@@ -77,5 +77,16 @@ export const workspaceMembers = z.strictObject({
     status: z.literal("pending"),
     createdAt: z.iso.datetime({ offset: true }),
     expiresAt: z.iso.datetime({ offset: true }),
+    invitedBy: z.strictObject({
+      id: z.uuid(),
+      name: z.string(),
+    }).nullable().meta({
+      description:
+        "The member who sent the invitation, or null when their identity is no longer available.",
+    }),
   })),
 }).meta({ id: "WorkspaceMembers" });
+
+export const invitationRevoked = z.strictObject({
+  status: z.literal("revoked"),
+}).meta({ id: "InvitationRevoked" });

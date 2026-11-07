@@ -15,6 +15,7 @@ export function services(overrides: {
     InvitationHttpServices["invitations"]["acceptVerifiedEntry"];
   readonly create?: InvitationHttpServices["invitations"]["create"];
   readonly list?: InvitationHttpServices["invitations"]["list"];
+  readonly revoke?: InvitationHttpServices["invitations"]["revoke"];
   readonly resolve?: InvitationHttpServices["protectedSessions"]["resolve"];
   readonly inspect?: InvitationHttpServices["invitations"]["inspect"];
   readonly registerInvitee?:
@@ -61,6 +62,7 @@ export function services(overrides: {
             members: [],
             status: "ready" as const,
           })),
+      revoke: overrides.revoke ?? (() => Promise.resolve("revoked" as const)),
       registerInvitee: overrides.registerInvitee ??
         (() => Promise.resolve("verification-required" as const)),
       retryInviteeVerification: overrides.retryInviteeVerification ??

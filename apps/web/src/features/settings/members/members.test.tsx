@@ -34,6 +34,7 @@ const MEMBERS = "GET /api/v1/workspace-members";
 const INVITE = "POST /api/v1/workspace-invitations";
 const MANAGED = "GET /api/v1/settings/members";
 const UPDATE = "PATCH /api/v1/settings/members/:id";
+const REVOKE = "DELETE /api/v1/workspace-invitations/:id";
 
 const owner = {
   email: "owner@example.test",
@@ -54,6 +55,7 @@ const pending = {
   email: "pending@example.test",
   expiresAt: "2026-08-22T12:00:00Z",
   id: "invite",
+  invitedBy: { id: ids.member, name: "Owner Person" },
   role: "member",
   status: "pending",
 };
@@ -120,7 +122,7 @@ describe("AUTH-002 members settings", () => {
     expect(element("#member-count").textContent).toBe("1 active");
     expect(element("#invitation-count").textContent).toBe("1 pending");
     expect(element("#pending-list").textContent).toBe(
-      "pending@example.testExpires Aug 22, 2026, 12:00 PMmember",
+      "pending@example.testInvited by Owner Person · Expires Aug 22, 2026, 12:00 PMmemberRevoke",
     );
     await expectNoAxeViolations(document.body);
     invite(" Invitee@Example.test ", "admin");
@@ -354,6 +356,100 @@ describe("AUTH-002 members settings", () => {
     await waitFor(() =>
       expect(state.textContent).toBe("Member could not be updated.")
     );
+  });
+
+  it("SECT-04 names who invited each pending invitee and revokes one", async () => {
+    shell();
+    const revoked = deferred<Response>();
+    const orphan = {
+      ...pending,
+      email: "orphan@example.test",
+      id: "orphan",
+      invitedBy: null,
+      role: "admin",
+    };
+    const api = stubApi({
+      ...base,
+      [MANAGED]: managed(owner),
+      [MEMBERS]: [
+        lists([owner], [pending, orphan]),
+        lists([owner], [orphan]),
+        lists([owner], []),
+      ],
+      [REVOKE]: [
+        revoked.promise,
+        unreachable,
+        problemResponse(404, {
+          detail: "That invitation is not pending in this workspace.",
+        }),
+      ],
+    });
+    await mount();
+    const rows = within(element("#pending-list")).getAllByRole("listitem");
+    expect(rows.map((row) => row.querySelector("small")?.textContent)).toEqual([
+      "Invited by Owner Person · Expires Aug 22, 2026, 12:00 PM",
+      "Invited by a former member · Expires Aug 22, 2026, 12:00 PM",
+    ]);
+    expect(rows[1]!.querySelector(".role-badge")?.textContent).toBe("admin");
+    await expectNoAxeViolations(document.body);
+    const revoke = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Revoke invitation for pending@example.test",
+    });
+    act(() => {
+      fireEvent.click(revoke);
+    });
+    expect(revoke.disabled).toBe(true);
+    act(() => {
+      fireEvent.click(revoke);
+    });
+    await act(async () => {
+      revoked.resolve(jsonResponse({ status: "revoked" }));
+      await revoked.promise;
+    });
+    const state = element("#pending-status");
+    await waitFor(() =>
+      expect(state.textContent).toBe(
+        "Invitation for pending@example.test revoked.",
+      )
+    );
+    expect(
+      api.calls().filter((call) => call.startsWith("DELETE")),
+    ).toEqual(["DELETE /api/v1/workspace-invitations/invite"]);
+    expect(element("#invitation-count").textContent).toBe("1 pending");
+    expect(
+      screen.queryByRole("button", {
+        name: "Revoke invitation for pending@example.test",
+      }),
+    ).toBeNull();
+    const orphanRevoke = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Revoke invitation for orphan@example.test",
+    });
+    act(() => {
+      fireEvent.click(orphanRevoke);
+    });
+    await waitFor(() =>
+      expect(state.textContent).toBe("The invitation could not be revoked.")
+    );
+    expect(orphanRevoke.disabled).toBe(false);
+    // Revoked or accepted elsewhere meanwhile: the stale row goes with a
+    // fresh list instead of offering a Revoke that can only fail again.
+    act(() => {
+      fireEvent.click(orphanRevoke);
+    });
+    await waitFor(() =>
+      expect(element("#invitation-count").textContent).toBe("0 pending")
+    );
+    expect(state.textContent).toBe(
+      "That invitation is not pending in this workspace.",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "Revoke invitation for orphan@example.test",
+      }),
+    ).toBeNull();
+    expect(
+      api.calls().filter((call) => call.startsWith("DELETE")),
+    ).toHaveLength(3);
   });
 
   it("says when member administration is unavailable", async () => {

@@ -25,12 +25,17 @@ export function invitationExpiry(now: Date): Date {
   return new Date(now.getTime() + INVITATION_WINDOW_MS);
 }
 
-/** One outstanding invitation, as an administrator sees it listed. */
+/**
+ * One outstanding invitation, as an administrator sees it listed: who it is
+ * for, the role it grants, and who sent it (SECT-04).
+ */
 export interface InvitationSummary {
   readonly createdAt: string;
   readonly email: string;
   readonly expiresAt: string;
   readonly id: string;
+  /** The sending member, or null when their identity is no longer available. */
+  readonly invitedBy: { readonly id: string; readonly name: string } | null;
   readonly role: InvitationRole;
   readonly status: "pending";
 }
@@ -50,6 +55,9 @@ export interface WorkspaceInvitationRecord {
   readonly email: string;
   readonly expiresAt: Date;
   readonly id: string;
+  /** The sending membership and its identity; null once the row has gone. */
+  readonly invitedByMemberId: string | null;
+  readonly invitedByUserId: string | null;
   readonly role: InvitationRole;
   readonly status: "pending";
 }
@@ -140,14 +148,27 @@ export function sameMailbox(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-/** An invitation as it is listed, with its two instants as text. */
+/**
+ * An invitation as it is listed: its two instants as text, and its sender
+ * named from the identities given, or null when theirs is not among them.
+ */
 export function invitationSummary(
   record: WorkspaceInvitationRecord,
+  identities: readonly MemberIdentitySummary[] = [],
 ): InvitationSummary {
+  const sender = identities.find((identity) =>
+    identity.userId === record.invitedByUserId
+  );
   return {
-    ...record,
     createdAt: record.createdAt.toISOString(),
+    email: record.email,
     expiresAt: record.expiresAt.toISOString(),
+    id: record.id,
+    invitedBy: record.invitedByMemberId && sender
+      ? { id: record.invitedByMemberId, name: sender.name || sender.email }
+      : null,
+    role: record.role,
+    status: record.status,
   };
 }
 

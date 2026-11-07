@@ -34,6 +34,8 @@ Deno.test("[GAP-018] an invitation is listed with its instants as text", () => {
       email: "ada@example.com",
       expiresAt: new Date("2026-03-08T10:00:00.000Z"),
       id: "i1",
+      invitedByMemberId: null,
+      invitedByUserId: null,
       role: "member",
       status: "pending",
     }),
@@ -42,9 +44,45 @@ Deno.test("[GAP-018] an invitation is listed with its instants as text", () => {
       email: "ada@example.com",
       expiresAt: "2026-03-08T10:00:00.000Z",
       id: "i1",
+      invitedBy: null,
       role: "member",
       status: "pending",
     },
+  );
+});
+
+Deno.test("[SECT-04] an invitation is listed with the member who sent it", () => {
+  const record = {
+    createdAt: new Date("2026-03-01T10:00:00.000Z"),
+    email: "ada@example.com",
+    expiresAt: new Date("2026-03-08T10:00:00.000Z"),
+    id: "i1",
+    invitedByMemberId: "m1",
+    invitedByUserId: "u1",
+    role: "admin" as const,
+    status: "pending" as const,
+  };
+  const identities = [
+    { email: "grace@example.com", name: "Grace Hopper", userId: "u1" },
+    { email: "other@example.com", name: "Other", userId: "u2" },
+  ];
+  assertEquals(invitationSummary(record, identities).invitedBy, {
+    id: "m1",
+    name: "Grace Hopper",
+  });
+  assertEquals(
+    invitationSummary(record, [{
+      email: "grace@example.com",
+      name: "",
+      userId: "u1",
+    }]).invitedBy,
+    { id: "m1", name: "grace@example.com" },
+    "a sender with no name is named by address",
+  );
+  assertEquals(
+    invitationSummary(record, [identities[1]!]).invitedBy,
+    null,
+    "a sender whose identity has gone names nobody",
   );
 });
 

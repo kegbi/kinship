@@ -87,6 +87,7 @@ Deno.test("[GAP-021] the mounted invitation concerns register every route in ord
     [
       "POST /api/v1/workspace-invitations",
       "GET /api/v1/workspace-members",
+      "DELETE /api/v1/workspace-invitations/:invitationId",
       "POST /api/v1/workspace-invitations/register",
       "POST /api/v1/workspace-invitations/verification-delivery",
       "POST /api/v1/workspace-invitations/authenticate",

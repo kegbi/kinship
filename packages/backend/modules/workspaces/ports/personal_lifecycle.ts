@@ -8,7 +8,9 @@
  *
  * `leaveCurrent` and `leaveAll` are separate rather than one method with a
  * flag, because they end differently: leaving one workspace moves somebody to
- * another, and leaving all of them precedes deleting the account itself.
+ * another, and leaving all of them precedes deleting the account itself. Both
+ * revoke the pending invitations the leaver sent, in the same transaction,
+ * because nobody who has left can vouch for an invitee (SECT-04).
  */
 
 import type { PersonalLifecycleMembership } from "../domain/personal_lifecycle_rules.ts";
