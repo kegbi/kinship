@@ -14,7 +14,9 @@
  *
  * The two time-zone entry points are events, not requests: a member or a
  * workspace changed zone, and the occurrences already minted have to be
- * recomputed inside whichever transaction carried that change.
+ * recomputed inside whichever transaction carried that change. A member's
+ * new delivery choice is the same kind of event: their waiting notices move
+ * onto the chosen channels in the transaction that saved it.
  *
  * Reading a person's reminders pages: the section serves one page of
  * definitions and the person's single cadence, and a cursor that does not
@@ -249,6 +251,16 @@ export function createReminderDefinitions(
         ...actor,
         now: dependencies.clock.now(),
         timezone: zone.timezone,
+        transaction,
+      });
+    },
+    deliveryChanged: async (
+      actor: PlanningActor,
+      transaction: PlanningTransaction,
+    ): Promise<void> => {
+      await dependencies.repository.rechannelMember({
+        ...actor,
+        now: dependencies.clock.now(),
         transaction,
       });
     },

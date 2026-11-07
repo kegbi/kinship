@@ -10,6 +10,8 @@ import {
   planDeliveryUnits,
   type ProviderDeliveryResult,
   safeCode,
+  TOP_UP_CHUNK_ROWS,
+  topUpBatches,
 } from "./delivery_rules.ts";
 
 const finalizedAt = new Date("2026-05-04T09:00:00.000Z");
@@ -336,5 +338,34 @@ Deno.test("[PLANNING-003] a member's fresh digest claims become one delivery uni
       },
     ],
     "fresh digest claims group per member; everything else is delivered alone",
+  );
+});
+
+Deno.test("[AUD-W1] replenishment batches stay in one workspace and bounded in rows", () => {
+  const window = (workspaceId: string, reminderId: string, rows: number) => ({
+    memberId: "member",
+    reminderId,
+    rows,
+    workspaceId,
+  });
+  const batches = topUpBatches([
+    window("a", "a1", 200),
+    window("a", "a2", 200),
+    window("a", "a3", 200),
+    window("b", "b1", 8),
+    window("b", "b2", 640),
+    window("b", "b3", 16),
+  ]);
+  assertEquals(
+    batches.map((batch) => batch.map((item) => item.reminderId)),
+    [["a1", "a2"], ["a3"], ["b1"], ["b2"], ["b3"]],
+  );
+  assertEquals(TOP_UP_CHUNK_ROWS, 500);
+  assertEquals(topUpBatches([]), []);
+  assertEquals(
+    topUpBatches([window("a", "a1", 500), window("a", "a2", 1)], 500)
+      .map((batch) => batch.length),
+    [1, 1],
+    "a full batch takes nothing more",
   );
 });

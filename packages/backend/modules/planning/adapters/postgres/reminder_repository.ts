@@ -12,6 +12,9 @@ import {
   digestIdempotencyKey,
   digestWindow,
   type ProviderDeliveryResult,
+  REMINDER_WINDOW_OCCURRENCES,
+  type ShortReminderWindow,
+  topUpBatches,
 } from "../../domain/delivery_rules.ts";
 import {
   type CalendarOccurrence,
@@ -36,6 +39,7 @@ import type {
   ReminderWorkspaceBoundary,
 } from "../../ports/reminder_repository.ts";
 import type { PlanningTransaction } from "../../ports/context.ts";
+import type { PersonRestorePublisher } from "../../../people/public.ts";
 
 interface ReminderRow {
   readonly anchor_on: string;
@@ -312,6 +316,141 @@ async function rechannelWaiting(
           and coalesce(kept.lead_time_days, -1)
             = coalesce(occurrence.lead_time_days, -1)
       )
+  `.execute(database);
+}
+
+/**
+ * Withdraws the waiting advance notices whose lead rule is no longer active:
+ * in one workspace, or in every workspace when none is named.
+ */
+async function withdrawRetiredLeadNotices(
+  database: Kysely<ApplicationDatabase>,
+  workspaceId?: string,
+): Promise<void> {
+  await sql`
+    delete from crm.reminder_occurrences occurrence
+    using crm.reminders reminder
+    where reminder.id = occurrence.reminder_id
+      ${
+    workspaceId ? sql`and reminder.workspace_id = ${workspaceId}::uuid` : sql``
+  }
+      and reminder.target_kind = 'person_date'
+      and occurrence.status = 'pending'
+      and occurrence.lead_time_days <> 0
+      and not exists (
+        select 1 from crm.reminder_rules rule
+        where rule.workspace_id = reminder.workspace_id
+          and rule.is_active
+          and rule.days_before = occurrence.lead_time_days
+      )
+  `.execute(database);
+}
+
+/**
+ * Brings one workspace's important-date notices in line with its lead rules
+ * inside the transaction that changed them (AUD-W1): notices of a rule no
+ * longer active are withdrawn, and every date still scheduled gains the
+ * advance notice of each active rule whose moment has not passed, on the
+ * same channels as its day-of notice. The day-of notices already carry each
+ * member's eligibility and channel, so nothing more is asked of `workspaces`.
+ * The notices are inserted a few reminders at a time, about
+ * `TOP_UP_CHUNK_ROWS` rows per statement, so a large workspace's rule change
+ * never becomes one statement of tens of thousands of rows.
+ */
+export async function refreshLeadNotices(
+  transaction: PlanningTransaction,
+  workspaceId: string,
+): Promise<void> {
+  const database = databaseFromSession(transaction);
+  await withdrawRetiredLeadNotices(database, workspaceId);
+  const scheduled = await sql<{
+    readonly day_of: number;
+    readonly reminder_id: string;
+    readonly rules: number;
+  }>`
+    select reminder.id::text as reminder_id, count(*)::int as day_of, (
+      select count(*) from crm.reminder_rules rule
+      where rule.workspace_id = reminder.workspace_id and rule.is_active
+        and rule.days_before > 0
+    )::int as rules
+    from crm.reminders reminder
+    join crm.people person on person.id = reminder.person_id
+    join crm.reminder_occurrences day_of on day_of.reminder_id = reminder.id
+    where reminder.workspace_id = ${workspaceId}::uuid
+      and reminder.target_kind = 'person_date'
+      and reminder.is_active and reminder.deleted_at is null
+      and person.archived_at is null and person.deleted_at is null
+      and coalesce(day_of.lead_time_days, 0) = 0
+      and day_of.status <> 'cancelled'
+    group by reminder.id
+    order by reminder.id
+  `.execute(database);
+  const batches = topUpBatches(
+    scheduled.rows
+      .filter((row) => row.rules > 0)
+      .map((row) => ({
+        reminderId: row.reminder_id,
+        rows: row.day_of * row.rules,
+        workspaceId,
+      })),
+  );
+  for (const batch of batches) {
+    await insertLeadNotices(
+      database,
+      workspaceId,
+      batch.map((window) => window.reminderId),
+    );
+  }
+}
+
+/** The advance notices `refreshLeadNotices` owes these reminders. */
+async function insertLeadNotices(
+  database: Kysely<ApplicationDatabase>,
+  workspaceId: string,
+  reminderIds: readonly string[],
+): Promise<void> {
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, lead_time_days, channel,
+      status, title_snapshot, body_snapshot, created_at, updated_at
+    )
+    select day_of.reminder_id, day_of.member_id, day_of.occurs_on,
+      notice.deliver_at, rule.days_before, day_of.channel, 'pending',
+      reminder.title, 'Reminder for ' || reminder.title, now(), now()
+    from crm.reminders reminder
+    join crm.people person on person.id = reminder.person_id
+    join crm.reminder_occurrences day_of on day_of.reminder_id = reminder.id
+    join crm.reminder_rules rule on rule.workspace_id = reminder.workspace_id
+      and rule.is_active and rule.days_before > 0
+    left join crm.workspace_settings setting
+      on setting.workspace_id = reminder.workspace_id
+    left join crm.member_preferences preference
+      on preference.member_id = day_of.member_id
+    cross join lateral (
+      select (
+        ((day_of.occurs_on - rule.days_before) + coalesce(
+          reminder.send_time, setting.default_reminder_time, '12:00'::time
+        )) at time zone coalesce(
+          preference.timezone, setting.default_timezone, 'UTC'
+        )
+      ) as deliver_at
+    ) notice
+    where reminder.workspace_id = ${workspaceId}::uuid
+      and reminder.id = any(${reminderIds}::uuid[])
+      and reminder.target_kind = 'person_date'
+      and reminder.is_active and reminder.deleted_at is null
+      and person.archived_at is null and person.deleted_at is null
+      and coalesce(day_of.lead_time_days, 0) = 0
+      and day_of.status <> 'cancelled'
+      and notice.deliver_at >= now()
+      and not exists (
+        select 1 from crm.reminder_occurrences existing
+        where existing.reminder_id = day_of.reminder_id
+          and existing.member_id = day_of.member_id
+          and existing.occurs_on = day_of.occurs_on
+          and existing.lead_time_days = rule.days_before
+      )
+    on conflict do nothing
   `.execute(database);
 }
 
@@ -667,6 +806,22 @@ export class PostgresReminderRepository implements ReminderRepository {
     `.execute(databaseFromSession(command.transaction));
   }
 
+  async rechannelMember(
+    command: Parameters<ReminderRepository["rechannelMember"]>[0],
+  ): Promise<void> {
+    const eligible = (await this.recipients.filterEligible({
+      memberIds: [command.memberId],
+      transaction: command.transaction,
+    })).filter((recipient) => recipient.workspaceId === command.workspaceId);
+    if (eligible.length === 0) return;
+    await rechannelWaiting(
+      databaseFromSession(command.transaction),
+      eligible,
+      await recipientChannels(this.preferences, command.transaction, eligible),
+      command.now,
+    );
+  }
+
   async regenerateForTimezone(
     command: Parameters<ReminderRepository["regenerateForTimezone"]>[0],
   ): Promise<void> {
@@ -864,6 +1019,273 @@ interface ReplenishmentRow {
   readonly title: string;
 }
 
+/** One member's window of one recurring reminder that fell short. */
+interface ShortWindowRow {
+  readonly member_id: string;
+  /** The notices each date carries: the day itself plus any lead rules. */
+  readonly notices: number;
+  readonly reminder_id: string;
+  readonly workspace_id: string;
+}
+
+/** One occurrence row a top-up may insert. */
+interface WindowRow {
+  readonly channel: DeliveryChannel;
+  readonly deliverAt: string;
+  /** -1 for a reminder without lead days, as the unique key reads it. */
+  readonly leadTimeDays: number;
+  readonly memberId: string;
+  readonly occursOn: string;
+  readonly reminderId: string;
+  readonly title: string;
+}
+
+/**
+ * The rows the windows should hold from `now`: the next eight dates of each
+ * reminder and lead rule, on each of the member's channels. A lead window
+ * that already passed is not announced late, and a definition the calendar
+ * cannot schedule is skipped rather than stopping the others.
+ */
+function windowRows(
+  candidates: readonly ReplenishmentRow[],
+  channels: ReadonlyMap<string, readonly DeliveryChannel[]>,
+  now: Date,
+): readonly WindowRow[] {
+  const rows: WindowRow[] = [];
+  for (const candidate of candidates) {
+    let occurrences: readonly CalendarOccurrence[];
+    try {
+      occurrences = generateCalendarOccurrences({
+        anchorOn: candidate.anchor_on,
+        count: REMINDER_WINDOW_OCCURRENCES,
+        from: now.toISOString(),
+        recurrenceInterval: candidate.recurrence_interval,
+        recurrenceUnit: candidate.recurrence_unit,
+        sendTime: candidate.send_time,
+        timezone: candidate.timezone,
+      });
+    } catch {
+      continue;
+    }
+    const candidateChannels = channels.get(candidate.member_id) ?? ["in_app"];
+    for (const occurrence of occurrences) {
+      const deliverAt = leadDeliveryAt(
+        occurrence.occursOn,
+        candidate.lead_time_days,
+        candidate.send_time,
+        candidate.timezone,
+      );
+      if (Date.parse(deliverAt) < now.valueOf()) continue;
+      for (const channel of candidateChannels) {
+        rows.push({
+          channel,
+          deliverAt,
+          leadTimeDays: candidate.lead_time_days ?? -1,
+          memberId: candidate.member_id,
+          occursOn: occurrence.occursOn,
+          reminderId: candidate.reminder_id,
+          title: candidate.title,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Who of `memberIds` may still be delivered to in the workspace, and on
+ * which channels, read once their preferences are held: a delivery change
+ * either committed first and is read here, or waits for this transaction
+ * and re-channels after it.
+ */
+async function lockedRecipients(
+  transaction: Kysely<ApplicationDatabase>,
+  recipients: ReminderRecipients,
+  preferences: ReminderDeliveryPreferences,
+  workspaceId: string,
+  memberIds: readonly string[],
+): Promise<{
+  readonly channels: ReadonlyMap<string, readonly DeliveryChannel[]>;
+  readonly eligible: readonly ReminderRecipient[];
+}> {
+  await sql`
+    select preference.member_id from crm.member_preferences preference
+    where preference.member_id = any(${[...memberIds].sort()}::uuid[])
+    order by preference.member_id
+    for share
+  `.execute(transaction);
+  const eligible = (await recipients.filterEligible({
+    memberIds,
+    transaction: { opaque: transaction },
+  })).filter((recipient) => recipient.workspaceId === workspaceId);
+  return {
+    channels: await recipientChannels(
+      preferences,
+      { opaque: transaction },
+      eligible,
+    ),
+    eligible,
+  };
+}
+
+/**
+ * Refills a bounded batch of one workspace's windows inside `transaction`
+ * with one set-based insert of the dates they lack.
+ */
+async function topUpWindows(
+  transaction: Kysely<ApplicationDatabase>,
+  recipients: ReminderRecipients,
+  preferences: ReminderDeliveryPreferences,
+  batch: readonly ShortReminderWindow[],
+  now: Date,
+): Promise<void> {
+  const workspaceId = batch[0]!.workspaceId;
+  const memberIds = [...new Set(batch.map((window) => window.memberId))];
+  // A zone, default send time, or delivery choice being changed is waited
+  // for here, so the window below is computed in the zone and on the
+  // channels that commit.
+  await sql`
+    select setting.workspace_id from crm.workspace_settings setting
+    where setting.workspace_id = ${workspaceId}::uuid
+    for share
+  `.execute(transaction);
+  const { channels, eligible } = await lockedRecipients(
+    transaction,
+    recipients,
+    preferences,
+    workspaceId,
+    memberIds,
+  );
+  const current = batch.filter((window) =>
+    eligible.some((recipient) => recipient.memberId === window.memberId)
+  );
+  if (current.length === 0) return;
+  // An important date notifies on the day plus each active lead rule.
+  const candidates = await sql<ReplenishmentRow>`
+    select reminder.id::text as reminder_id,
+      short.member_id::text as member_id, reminder.anchor_on::text,
+      reminder.recurrence_unit, reminder.recurrence_interval,
+      lead.days_before as lead_time_days,
+      coalesce(
+        reminder.send_time, setting.default_reminder_time, '12:00'::time
+      )::text as send_time, reminder.title,
+      coalesce(preference.timezone, setting.default_timezone, 'UTC')
+        as timezone
+    from unnest(
+      ${current.map((window) => window.reminderId)}::uuid[],
+      ${current.map((window) => window.memberId)}::uuid[]
+    ) as short(reminder_id, member_id)
+    join crm.reminders reminder on reminder.id = short.reminder_id
+      and reminder.workspace_id = ${workspaceId}::uuid
+    join crm.people person on person.id = reminder.person_id
+    left join crm.member_preferences preference
+      on preference.member_id = short.member_id
+    left join crm.workspace_settings setting
+      on setting.workspace_id = reminder.workspace_id
+    cross join lateral (
+      select null::int as days_before
+      where reminder.target_kind <> 'person_date'
+      union
+      select 0 where reminder.target_kind = 'person_date'
+      union
+      select rule.days_before from crm.reminder_rules rule
+      where reminder.target_kind = 'person_date'
+        and rule.workspace_id = reminder.workspace_id and rule.is_active
+    ) lead
+    where reminder.is_active and reminder.deleted_at is null
+      and reminder.recurrence_unit <> 'none'
+      and person.archived_at is null and person.deleted_at is null
+  `.execute(transaction);
+  const rows = windowRows(candidates.rows, channels, now);
+  if (rows.length === 0) return;
+  // A date generated earlier keeps its rows, whatever their channel;
+  // `rechannelWaiting` moves them onto the channels chosen now.
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, lead_time_days,
+      channel, status, title_snapshot, body_snapshot, created_at,
+      updated_at
+    )
+    select candidate.reminder_id, candidate.member_id,
+      candidate.occurs_on, candidate.deliver_at,
+      nullif(candidate.lead_time_days, -1), candidate.channel, 'pending',
+      candidate.title, 'Reminder for ' || candidate.title, ${now}, ${now}
+    from unnest(
+      ${rows.map((row) => row.reminderId)}::uuid[],
+      ${rows.map((row) => row.memberId)}::uuid[],
+      ${rows.map((row) => row.occursOn)}::date[],
+      ${rows.map((row) => row.deliverAt)}::timestamptz[],
+      ${rows.map((row) => row.leadTimeDays)}::int[],
+      ${rows.map((row) => row.channel)}::text[],
+      ${rows.map((row) => row.title)}::text[]
+    ) as candidate(
+      reminder_id, member_id, occurs_on, deliver_at, lead_time_days,
+      channel, title
+    )
+    where not exists (
+      select 1 from crm.reminder_occurrences existing
+      where existing.reminder_id = candidate.reminder_id
+        and existing.member_id = candidate.member_id
+        and existing.occurs_on = candidate.occurs_on
+        and coalesce(existing.lead_time_days, -1) =
+          candidate.lead_time_days
+    )
+    on conflict do nothing
+  `.execute(transaction);
+}
+
+/**
+ * Refills a restored person's recurring reminders in the restore's own
+ * transaction (AUD-W1). Archived, they gained no dates and the ones ahead
+ * may have passed; waiting for the worker's hourly replenishment would skip
+ * a date that falls before it.
+ */
+export class PostgresPersonRestoreReminderPublisher
+  implements PersonRestorePublisher {
+  constructor(
+    private readonly recipients: ReminderRecipients,
+    private readonly preferences: ReminderDeliveryPreferences,
+  ) {}
+
+  async restored(
+    command: Parameters<PersonRestorePublisher["restored"]>[0],
+  ): Promise<void> {
+    const database = databaseFromSession(command.transaction);
+    const windows = await sql<Omit<ShortWindowRow, "workspace_id">>`
+      select distinct reminder.id::text as reminder_id,
+        occurrence.member_id::text as member_id,
+        (case when reminder.target_kind = 'person_date' then 1 + (
+          select count(*) from crm.reminder_rules rule
+          where rule.workspace_id = reminder.workspace_id and rule.is_active
+            and rule.days_before <> 0
+        ) else 1 end)::int as notices
+      from crm.reminders reminder
+      join crm.reminder_occurrences occurrence
+        on occurrence.reminder_id = reminder.id
+      where reminder.workspace_id = ${command.workspaceId}::uuid
+        and reminder.person_id = ${command.personId}::uuid
+        and reminder.is_active and reminder.deleted_at is null
+        and reminder.recurrence_unit <> 'none'
+      order by 1, 2
+    `.execute(database);
+    const batches = topUpBatches(windows.rows.map((row) => ({
+      memberId: row.member_id,
+      reminderId: row.reminder_id,
+      rows: REMINDER_WINDOW_OCCURRENCES * row.notices,
+      workspaceId: command.workspaceId,
+    })));
+    for (const batch of batches) {
+      await topUpWindows(
+        database,
+        this.recipients,
+        this.preferences,
+        batch,
+        command.occurredAt,
+      );
+    }
+  }
+}
+
 /** How many of one member's due digest occurrences one claim may carry. */
 const DIGEST_CLAIM_LIMIT = 100;
 
@@ -875,166 +1297,148 @@ export class PostgresReminderDeliveryRepository
     private readonly preferences: ReminderDeliveryPreferences,
   ) {}
 
+  /**
+   * Tops up the rolling window of every recurring reminder that needs it.
+   *
+   * One set-based question finds the windows that fell short — fewer than
+   * eight dates still ahead, or an active lead rule without its advance
+   * notice on a date still to come — so a deployment whose windows are full
+   * gets an empty answer and inserts nothing. That question takes no lock.
+   * Each top-up transaction then covers one workspace and about
+   * `TOP_UP_CHUNK_ROWS` rows per channel: it holds that workspace's settings
+   * and its members' preferences, and only under them asks `workspaces` who
+   * may still be delivered to and on which channels, then reads their zones
+   * and inserts. A time-zone or delivery change therefore waits milliseconds,
+   * never the whole deployment's replenishment, and a window is never
+   * committed in a zone or on a channel that was being replaced. The waiting
+   * notices are re-channelled the same way, one workspace at a time.
+   */
   async replenish(
     command: Parameters<ReminderDeliveryRepository["replenish"]>[0],
   ): Promise<void> {
-    await this.database.transaction().execute(async (transaction) => {
-      await sql`
-        select setting.workspace_id
-        from crm.workspace_settings setting
-        where setting.workspace_id in (
-          select reminder.workspace_id from crm.reminders reminder
-          join crm.reminder_occurrences occurrence
-            on occurrence.reminder_id = reminder.id
-          where reminder.is_active and reminder.deleted_at is null
-        )
-        order by setting.workspace_id
-        for share
-      `.execute(transaction);
-      await sql`
-        select preference.member_id
-        from crm.member_preferences preference
-        where preference.member_id in (
-          select occurrence.member_id from crm.reminder_occurrences occurrence
-          join crm.reminders reminder on reminder.id = occurrence.reminder_id
-          where reminder.is_active and reminder.deleted_at is null
-        )
-        order by preference.member_id
-        for share
-      `.execute(transaction);
-      // The scan reaches every workspace at once, so the eligible members come
-      // from the `workspaces` port rather than a membership join here. A
-      // one-off reminder's member counts too: their waiting notice follows
-      // a delivery change like any other.
-      const candidateMembers = await sql<{ readonly member_id: string }>`
-        select distinct occurrence.member_id::text as member_id
+    // The scan reaches every workspace at once, so the eligible members come
+    // from the `workspaces` port rather than a membership join here. A
+    // one-off reminder's member counts too: their waiting notice follows
+    // a delivery change like any other.
+    const candidateMembers = await sql<{ readonly member_id: string }>`
+      select distinct occurrence.member_id::text as member_id
+      from crm.reminders reminder
+      join crm.reminder_occurrences occurrence
+        on occurrence.reminder_id = reminder.id
+      join crm.people person on person.id = reminder.person_id
+      where reminder.is_active and reminder.deleted_at is null
+        and person.archived_at is null and person.deleted_at is null
+    `.execute(this.database);
+    const eligible = await this.recipients.filterEligible({
+      memberIds: candidateMembers.rows.map((row) => row.member_id),
+      transaction: { opaque: this.database },
+    });
+    if (eligible.length === 0) return;
+    const short = await sql<ShortWindowRow>`
+      with eligible as (
+        select * from unnest(
+          ${eligible.map((row) => row.memberId)}::uuid[],
+          ${eligible.map((row) => row.workspaceId)}::uuid[]
+        ) as eligible(member_id, workspace_id)
+      ), windows as (
+        select reminder.workspace_id, reminder.id as reminder_id,
+          occurrence.member_id, reminder.target_kind,
+          count(distinct occurrence.occurs_on) filter (
+            where coalesce(occurrence.lead_time_days, 0) = 0
+              and occurrence.deliver_at >= ${command.now}
+          ) as ahead
         from crm.reminders reminder
+        join crm.people person on person.id = reminder.person_id
         join crm.reminder_occurrences occurrence
           on occurrence.reminder_id = reminder.id
-        join crm.people person on person.id = reminder.person_id
-        where reminder.is_active and reminder.deleted_at is null
-          and person.archived_at is null and person.deleted_at is null
-      `.execute(transaction);
-      const eligible = await this.recipients.filterEligible({
-        memberIds: candidateMembers.rows.map((row) => row.member_id),
-        transaction: { opaque: transaction },
-      });
-      if (eligible.length === 0) return;
-      const eligibleMemberIds = eligible.map((row) => row.memberId);
-      const eligibleWorkspaceIds = eligible.map((row) => row.workspaceId);
-      const channels = await recipientChannels(
-        this.preferences,
-        { opaque: transaction },
-        eligible,
-      );
-      // An important date notifies on the day plus each active lead rule.
-      const candidates = await sql<ReplenishmentRow>`
-        select distinct reminder.id::text as reminder_id,
-          occurrence.member_id::text, reminder.anchor_on::text,
-          reminder.recurrence_unit, reminder.recurrence_interval,
-          lead.days_before as lead_time_days,
-          coalesce(
-            reminder.send_time, setting.default_reminder_time, '12:00'::time
-          )::text as send_time, reminder.title,
-          coalesce(preference.timezone, setting.default_timezone, 'UTC') as timezone
-        from crm.reminders reminder
-        join crm.reminder_occurrences occurrence
-          on occurrence.reminder_id = reminder.id
-        join crm.people person on person.id = reminder.person_id
-        join unnest(${eligibleMemberIds}::uuid[], ${eligibleWorkspaceIds}::uuid[])
-          as eligible(member_id, workspace_id)
-          on eligible.member_id = occurrence.member_id
+        join eligible on eligible.member_id = occurrence.member_id
           and eligible.workspace_id = reminder.workspace_id
-        left join crm.member_preferences preference
-          on preference.member_id = occurrence.member_id
-        left join crm.workspace_settings setting
-          on setting.workspace_id = reminder.workspace_id
-        cross join lateral (
-          select null::int as days_before
-          where reminder.target_kind <> 'person_date'
-          union
-          select 0 where reminder.target_kind = 'person_date'
-          union
-          select rule.days_before from crm.reminder_rules rule
-          where reminder.target_kind = 'person_date'
-            and rule.workspace_id = reminder.workspace_id and rule.is_active
-        ) lead
         where reminder.is_active and reminder.deleted_at is null
           and reminder.recurrence_unit <> 'none'
           and person.archived_at is null and person.deleted_at is null
-      `.execute(transaction);
-      for (const candidate of candidates.rows) {
-        let occurrences: readonly CalendarOccurrence[];
-        try {
-          occurrences = generateCalendarOccurrences({
-            anchorOn: candidate.anchor_on,
-            count: 8,
-            from: command.now.toISOString(),
-            recurrenceInterval: candidate.recurrence_interval,
-            recurrenceUnit: candidate.recurrence_unit,
-            sendTime: candidate.send_time,
-            timezone: candidate.timezone,
-          });
-        } catch {
-          continue;
-        }
-        const candidateChannels = channels.get(candidate.member_id) ??
-          ["in_app"];
-        for (const occurrence of occurrences) {
-          const deliverAt = leadDeliveryAt(
-            occurrence.occursOn,
-            candidate.lead_time_days,
-            candidate.send_time,
-            candidate.timezone,
-          );
-          // A lead window that already passed is not announced late.
-          if (Date.parse(deliverAt) < command.now.valueOf()) continue;
-          // One statement per date, so `both` mints both channels. A date
-          // generated earlier keeps its rows; `rechannelWaiting` below moves
-          // them onto the channels chosen now.
-          await sql`
-            insert into crm.reminder_occurrences (
-              reminder_id, member_id, occurs_on, deliver_at, lead_time_days,
-              channel, status, title_snapshot, body_snapshot, created_at,
-              updated_at
-            ) select
-              ${candidate.reminder_id}::uuid, ${candidate.member_id}::uuid,
-              ${occurrence.occursOn}::date,
-              ${deliverAt}::timestamptz, ${candidate.lead_time_days}::int,
-              channel, 'pending', ${candidate.title},
-              ${`Reminder for ${candidate.title}`}, ${command.now},
-              ${command.now}
-            from unnest(${candidateChannels}::text[]) as channel
-            where not exists (
-              select 1 from crm.reminder_occurrences existing
-              where existing.reminder_id = ${candidate.reminder_id}::uuid
-                and existing.member_id = ${candidate.member_id}::uuid
-                and existing.occurs_on = ${occurrence.occursOn}::date
-                and coalesce(existing.lead_time_days, -1) =
-                  coalesce(${candidate.lead_time_days}::int, -1)
+        group by reminder.workspace_id, reminder.id, occurrence.member_id,
+          reminder.target_kind
+      )
+      select windows.workspace_id::text, windows.reminder_id::text,
+        windows.member_id::text,
+        (case when windows.target_kind = 'person_date' then 1 + (
+          select count(*) from crm.reminder_rules rule
+          where rule.workspace_id = windows.workspace_id and rule.is_active
+            and rule.days_before <> 0
+        ) else 1 end)::int as notices
+      from windows
+      where windows.ahead < ${REMINDER_WINDOW_OCCURRENCES}
+        -- A lead rule added after a date was scheduled still owes it an
+        -- advance notice. That notice is the day-of instant moved back by
+        -- whole days, which a daylight-saving change shifts by hours at most;
+        -- the margin asks too often rather than too rarely.
+        or (windows.target_kind = 'person_date' and exists (
+          select 1
+          from crm.reminder_occurrences day_of
+          join crm.reminder_rules rule
+            on rule.workspace_id = windows.workspace_id and rule.is_active
+            and rule.days_before > 0
+          where day_of.reminder_id = windows.reminder_id
+            and day_of.member_id = windows.member_id
+            and coalesce(day_of.lead_time_days, 0) = 0
+            and day_of.deliver_at - make_interval(days => rule.days_before)
+              > ${command.now}::timestamptz - interval '3 hours'
+            and not exists (
+              select 1 from crm.reminder_occurrences lead
+              where lead.reminder_id = day_of.reminder_id
+                and lead.member_id = day_of.member_id
+                and lead.occurs_on = day_of.occurs_on
+                and lead.lead_time_days = rule.days_before
             )
-            on conflict do nothing
-          `.execute(transaction);
-        }
-      }
-      // Withdrawn only now, so a date whose sole notices belonged to a removed
-      // rule was still a candidate above and kept its day-of notice.
-      await sql`
-        delete from crm.reminder_occurrences occurrence
-        using crm.reminders reminder
-        where reminder.id = occurrence.reminder_id
-          and reminder.target_kind = 'person_date'
-          and occurrence.status = 'pending'
-          and occurrence.lead_time_days <> 0
-          and not exists (
-            select 1 from crm.reminder_rules rule
-            where rule.workspace_id = reminder.workspace_id
-              and rule.is_active
-              and rule.days_before = occurrence.lead_time_days
-          )
-      `.execute(transaction);
-      await rechannelWaiting(transaction, eligible, channels, command.now);
-    });
+        ))
+      order by 1, 2, 3
+    `.execute(this.database);
+    // Sized per channel: a member on both channels doubles a batch, so one
+    // insert carries at most twice `TOP_UP_CHUNK_ROWS` rows.
+    const windows = short.rows.map((row) => ({
+      memberId: row.member_id,
+      reminderId: row.reminder_id,
+      rows: REMINDER_WINDOW_OCCURRENCES * row.notices,
+      workspaceId: row.workspace_id,
+    }));
+    for (const batch of topUpBatches(windows)) {
+      // One short transaction per batch.
+      await this.database.transaction().execute((transaction) =>
+        topUpWindows(
+          transaction,
+          this.recipients,
+          this.preferences,
+          batch,
+          command.now,
+        )
+      );
+    }
+    // Withdrawn only now, so a date whose sole notices belonged to a removed
+    // rule was still short above and kept its day-of notice.
+    await withdrawRetiredLeadNotices(this.database);
+    const members = new Map<string, string[]>();
+    for (const recipient of eligible) {
+      const workspace = members.get(recipient.workspaceId) ?? [];
+      workspace.push(recipient.memberId);
+      members.set(recipient.workspaceId, workspace);
+    }
+    for (const [workspaceId, memberIds] of members) {
+      await this.database.transaction().execute(async (transaction) => {
+        const current = await lockedRecipients(
+          transaction,
+          this.recipients,
+          this.preferences,
+          workspaceId,
+          memberIds,
+        );
+        await rechannelWaiting(
+          transaction,
+          current.eligible,
+          current.channels,
+          command.now,
+        );
+      });
+    }
   }
 
   async claimDue(

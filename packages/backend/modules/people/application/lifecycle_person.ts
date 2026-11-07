@@ -43,6 +43,7 @@ import type {
 import type {
   PersonLifecycleLock,
   PersonLifecycleRepository,
+  PersonRestorePublisher,
 } from "../ports/person_lifecycle_repository.ts";
 import type { ActorRevalidation } from "../../workspaces/public.ts";
 
@@ -60,6 +61,8 @@ export interface PersonLifecycleDependencies {
   /** The workspace gender vocabulary an edited identity refers to. */
   readonly genders: PersonGenderOptions;
   readonly repository: PersonLifecycleRepository;
+  /** Planning's side of a restore; a composition without planning has none. */
+  readonly restorePublisher?: PersonRestorePublisher;
   readonly transaction: PeopleTransactionRunner;
 }
 
@@ -230,9 +233,16 @@ export function createPersonLifecycle(
       input.expectedUpdatedAt,
       transaction,
     );
-    return person
-      ? { person, status: transitionState(action) }
-      : { status: "stale" };
+    if (!person) return { status: "stale" };
+    if (action === "restore") {
+      await dependencies.restorePublisher?.restored({
+        ...actor,
+        occurredAt: dependencies.clock.now(),
+        personId,
+        transaction,
+      });
+    }
+    return { person, status: transitionState(action) };
   };
 
   return {

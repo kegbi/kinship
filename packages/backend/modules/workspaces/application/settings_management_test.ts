@@ -88,6 +88,10 @@ function fixture(
       },
     },
     planningPublisher: {
+      deliveryChanged() {
+        effects.push("planning:member-delivery");
+        return Promise.resolve();
+      },
       timezoneChanged() {
         effects.push("planning:member-timezone");
         return Promise.resolve();

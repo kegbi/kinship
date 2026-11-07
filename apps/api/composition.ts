@@ -119,6 +119,7 @@ import type {
 import {
   composePlanning,
   personDateReminderPublisher,
+  personRestoreReminderPublisher,
   planningPersonMergeParticipant,
 } from "../../packages/backend/modules/planning/composition.ts";
 import type {
@@ -964,6 +965,10 @@ export function createConfiguredApiApp(
     mergeParticipants: personMergeParticipants(),
     profileFactWorkspace: configuration.profileFacts,
     importContactTypes: configuration.contactMethodTypes,
+    restorePublisher: personRestoreReminderPublisher(
+      shared,
+      configuration.reminderDelivery,
+    ),
   });
   const planning = composePlanning(shared, {
     importPeople: persons,

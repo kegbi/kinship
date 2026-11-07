@@ -98,6 +98,7 @@ export type {
 export type {
   PersonLifecycleLock,
   PersonLifecycleRepository,
+  PersonRestorePublisher,
 } from "./ports/person_lifecycle_repository.ts";
 export type {
   ImportantDateContextLock,

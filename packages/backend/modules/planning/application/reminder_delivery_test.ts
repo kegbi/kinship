@@ -13,14 +13,77 @@ Deno.test("PLANNING-002 exposes duplicate-safe reminder delivery", () => {
   }
 });
 
-Deno.test("PLANNING-002 worker replenishes a bounded rolling occurrence window before claiming", async () => {
+/** A worker whose repository records the order of its calls. */
+function recordingWorker(clock: { now(): Date }) {
+  const calls: string[] = [];
+  const repository = {
+    claimDue: () => {
+      calls.push("claimDue");
+      return Promise.resolve([]);
+    },
+    finalize: () => Promise.resolve(true),
+    replenish: () => {
+      calls.push("replenish");
+      return Promise.resolve();
+    },
+  } as unknown as planning.ReminderDeliveryRepository;
+  const worker = planning.createReminderDeliveryWorker({
+    audit: { record: () => Promise.resolve() },
+    clock,
+    provider: {
+      deliver: () =>
+        Promise.resolve({ receipt: "unused", status: "confirmed" }),
+      reconcile: () =>
+        Promise.resolve({ receipt: "unused", status: "confirmed" }),
+    },
+    repository,
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+  });
+  return { calls, worker };
+}
+
+Deno.test("[AUD-W1] a tick claims due work before it replenishes the rolling window", async () => {
+  const { calls, worker } = recordingWorker(
+    fixedClock("2026-10-20T00:30:00Z"),
+  );
+  await worker.tick({ owner: "rolling-window" });
+  assertEquals(calls, ["claimDue", "replenish"]);
+});
+
+Deno.test("[AUD-W1] the rolling window is replenished at most once each clock hour", async () => {
+  let now = new Date("2026-10-20T00:30:00Z");
+  const { calls, worker } = recordingWorker({ now: () => now });
+  const replenishedAt = async (instant: string) => {
+    now = new Date(instant);
+    calls.length = 0;
+    await worker.tick({ owner: "hourly" });
+    return calls.includes("replenish");
+  };
+  // A worker that just started looks once: it cannot know what changed
+  // while it was away.
+  assertEquals(await replenishedAt("2026-10-20T00:30:00Z"), true);
+  assertEquals(await replenishedAt("2026-10-20T00:30:05Z"), false);
+  assertEquals(await replenishedAt("2026-10-20T00:59:59Z"), false);
+  // A new hour is where every whole-hour zone's local date turns over.
+  assertEquals(await replenishedAt("2026-10-20T01:00:00Z"), true);
+  assertEquals(await replenishedAt("2026-10-20T01:30:00Z"), false);
+  assertEquals(await replenishedAt("2026-10-20T03:10:00Z"), true);
+  // A clock set back is a different hour too, and is looked at once.
+  assertEquals(await replenishedAt("2026-10-20T02:10:00Z"), true);
+  assertEquals(await replenishedAt("2026-10-20T02:20:00Z"), false);
+});
+
+Deno.test("[AUD-W1] a replenishment that fails is tried again on the next tick", async () => {
+  let failures = 1;
   let replenishments = 0;
   const repository = {
     claimDue: () => Promise.resolve([]),
     finalize: () => Promise.resolve(true),
     replenish: () => {
       replenishments += 1;
-      return Promise.resolve();
+      return failures-- > 0
+        ? Promise.reject(new Error("replenish failed"))
+        : Promise.resolve();
     },
   } as unknown as planning.ReminderDeliveryRepository;
   const worker = planning.createReminderDeliveryWorker({
@@ -35,12 +98,12 @@ Deno.test("PLANNING-002 worker replenishes a bounded rolling occurrence window b
     repository,
     transaction: { run: (work) => work({ opaque: "tx" }) },
   });
-  await worker.tick({ owner: "rolling-window" });
-  if (replenishments !== 1) {
-    throw new Error(
-      `expected one rolling replenishment, got ${replenishments}`,
-    );
-  }
+  let failed = false;
+  await worker.tick({ owner: "retry" }).catch(() => failed = true);
+  await worker.tick({ owner: "retry" });
+  await worker.tick({ owner: "retry" });
+  assert(failed, "a failed replenishment is reported");
+  assertEquals(replenishments, 2, "retried once, then left for the hour");
 });
 
 Deno.test("PLANNING-002 reconciles an external effect before commit without duplicating it", async () => {

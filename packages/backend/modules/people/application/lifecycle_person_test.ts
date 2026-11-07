@@ -204,6 +204,40 @@ Deno.test("PEOPLE-004 archive and restore transitions are idempotent", async () 
   );
 });
 
+Deno.test("[AUD-W1] only a restore that happens tells planning, in its transaction", async () => {
+  const context = fake();
+  const published: { personId: string; transaction: unknown }[] = [];
+  const people = createPersonLifecycle({
+    ...context.dependencies,
+    restorePublisher: {
+      restored: (command) => {
+        published.push({
+          personId: command.personId,
+          transaction: command.transaction,
+        });
+        return Promise.resolve();
+      },
+    },
+  });
+  const archived = await people.archive(actor, personId, {
+    expectedUpdatedAt: updatedAt,
+  });
+  assert(archived.status === "archived", "active person is archived");
+  assert(published.length < 1, "an archive publishes nothing");
+  const restored = await people.restore(actor, personId, {
+    expectedUpdatedAt: archived.person.updatedAt,
+  });
+  assert(restored.status === "restored", "archived person is restored");
+  await people.restore(actor, personId, {
+    expectedUpdatedAt: archived.person.updatedAt,
+  });
+  assert(
+    published.length === 1 && published[0]!.personId === personId &&
+      published[0]!.transaction !== undefined,
+    `one restore published once: ${JSON.stringify(published)}`,
+  );
+});
+
 Deno.test("PEOPLE-004 previews retained dependents and requires exact deletion confirmation", async () => {
   const context = fake();
   const people = createPersonLifecycle(context.dependencies);

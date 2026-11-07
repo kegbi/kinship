@@ -48,3 +48,18 @@ export interface PersonLifecycleRepository {
     },
   ): Promise<void>;
 }
+
+/**
+ * Planning's side of a restore, in the same transaction: while a person is
+ * archived their recurring reminders gain no new dates, so the dates a long
+ * archive let pass are refilled the moment they are back.
+ */
+export interface PersonRestorePublisher {
+  restored(
+    command: PeopleActor & {
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly transaction: PeopleTransaction;
+    },
+  ): Promise<void>;
+}

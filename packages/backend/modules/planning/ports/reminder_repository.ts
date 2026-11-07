@@ -193,6 +193,16 @@ export interface ReminderRepository {
       readonly transaction: PlanningTransaction;
     },
   ): Promise<void>;
+  /**
+   * Moves the member's notices still waiting onto the channels they choose
+   * now, as the worker's replenishment would.
+   */
+  rechannelMember(
+    command: PlanningActor & {
+      readonly now: Date;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<void>;
   regenerateForWorkspaceTimezone(
     command: {
       readonly now: Date;

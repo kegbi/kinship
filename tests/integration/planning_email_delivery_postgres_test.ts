@@ -19,7 +19,12 @@
 
 import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import { InAppReminderDelivery } from "../../packages/backend/modules/planning/adapters/in_app/reminder_delivery.ts";
-import { PostgresInAppReminderEffectStore } from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import {
+  PostgresInAppReminderEffectStore,
+  PostgresReminderDeliveryRepository,
+} from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import {
   createReminderDeliveryWorker,
   digestIdempotencyKey,
@@ -1000,6 +1005,97 @@ Deno.test("[PLANNING-003] a re-channel never leaves a date without a live notice
       neighbours.every((state) => state.channel === "in_app"),
     `another workspace's member keeps their own choice: ${
       JSON.stringify(neighbours)
+    }`,
+  );
+});
+
+Deno.test("[AUD-W1] a delivery change re-channels waiting notices in the same save", async () => {
+  const { fixture, personId } = await signedUp("email-inline");
+  await choose(fixture, { digestTime: null, reminderDelivery: "in_app" });
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "week",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Inline weekly",
+  });
+  assert(created.status === 201, `weekly reminder created: ${created.status}`);
+  const weekly = (await created.json() as { reminder: { id: string } })
+    .reminder;
+  // No worker runs after the choice is saved.
+  await choose(fixture, { digestTime: null, reminderDelivery: "email" });
+  const waiting = (await occurrencesOf(weekly.id))
+    .filter((state) => state.status === "pending");
+  assert(
+    waiting.length > 1 && waiting.every((state) => state.channel === "email"),
+    `the saved choice applies to every waiting notice: ${
+      JSON.stringify(waiting)
+    }`,
+  );
+});
+
+Deno.test("[AUD-W1] a delivery change saved during a replenishment is not reverted", async () => {
+  const { fixture, personId } = await signedUp("email-race");
+  await choose(fixture, { digestTime: null, reminderDelivery: "in_app" });
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "week",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Race weekly",
+  });
+  assert(created.status === 201, `weekly reminder created: ${created.status}`);
+  const weekly = (await created.json() as { reminder: { id: string } })
+    .reminder;
+  // The window fell short, so the replenishment also tops it up.
+  await sql`
+    delete from crm.reminder_occurrences
+    where reminder_id = ${weekly.id}::uuid and occurs_on > (
+      select min(occurs_on) + 14 from crm.reminder_occurrences
+      where reminder_id = ${weekly.id}::uuid
+    )
+  `;
+  // The replenishment's first read of delivery choices stalls after it has
+  // read them, while the member saves the opposite choice.
+  let release!: () => void;
+  const latch = new Promise<void>((resolve) => release = resolve);
+  let reads = 0;
+  const preferences = new PostgresReminderDeliveryPreferences();
+  const stalled = new PostgresReminderDeliveryRepository(
+    deliveryConnection.db,
+    new PostgresActorRevalidation(),
+    {
+      listDeliveryPreferences: async (command) => {
+        const choices = await preferences.listDeliveryPreferences(command);
+        if (reads++ === 0) await latch;
+        return choices;
+      },
+    },
+  );
+  const replenishing = stalled.replenish({ now: new Date() });
+  while (reads === 0) await new Promise((resolve) => setTimeout(resolve, 10));
+  const saving = choose(fixture, {
+    digestTime: null,
+    reminderDelivery: "email",
+  });
+  // A save that waits for the replenishment is released with it.
+  await Promise.race([
+    saving,
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+  release();
+  await Promise.all([replenishing, saving]);
+
+  const waiting = (await occurrencesOf(weekly.id))
+    .filter((state) => state.status === "pending");
+  assert(
+    waiting.length >= 8 && waiting.every((state) => state.channel === "email"),
+    `every waiting notice is on the channel saved last: ${
+      JSON.stringify(waiting.map((state) => state.channel))
     }`,
   );
 });

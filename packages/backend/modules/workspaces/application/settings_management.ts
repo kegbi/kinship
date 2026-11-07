@@ -26,6 +26,7 @@ import {
   isSchedulableTimezone,
   type ManagedMember,
   managedMembers,
+  memberDeliveryChanged,
   type MemberPreferencesUpdate,
   memberTimezoneChanged,
   type WorkspaceConfiguration,
@@ -191,6 +192,12 @@ export function createSettingsManagement(
         );
         if (memberTimezoneChanged(previous, preferences)) {
           await dependencies.planningPublisher?.timezoneChanged(
+            actor,
+            transaction,
+          );
+        }
+        if (memberDeliveryChanged(previous, preferences)) {
+          await dependencies.planningPublisher?.deliveryChanged(
             actor,
             transaction,
           );

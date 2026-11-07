@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { refreshLeadNotices } from "./reminder_repository.ts";
 import {
   UNIQUE_CONFLICT,
   writeWithUniqueConflict,
@@ -107,9 +108,9 @@ export class PostgresReminderRulePersonalization
       );
       if (created === UNIQUE_CONFLICT) return { status: "conflict" };
       const row = created.rows[0];
-      return row
-        ? { entry: entry(row), status: "saved" }
-        : { status: "conflict" };
+      if (!row) return { status: "conflict" };
+      await refreshLeadNotices(command.transaction, command.workspaceId);
+      return { entry: entry(row), status: "saved" };
     }
     if (!command.id || !command.expectedUpdatedAt) return { status: "invalid" };
     const row = await find({ ...command, id: command.id }, true);
@@ -120,6 +121,7 @@ export class PostgresReminderRulePersonalization
     if (command.action === "delete") {
       await sql`delete from crm.reminder_rules where id = ${command.id}::uuid
         and workspace_id = ${command.workspaceId}::uuid`.execute(database);
+      await refreshLeadNotices(command.transaction, command.workspaceId);
       return { id: command.id, status: "deleted" };
     }
     const daysBefore = command.daysBefore ?? row.daysBefore;
@@ -139,8 +141,10 @@ export class PostgresReminderRulePersonalization
     );
     if (updated === UNIQUE_CONFLICT) return { status: "conflict" };
     const value = updated.rows[0];
-    return value
-      ? { entry: entry(value), status: "saved" }
-      : { status: "conflict" };
+    if (!value) return { status: "conflict" };
+    // A rule's notices follow it at once, not at the worker's next hourly
+    // replenishment (AUD-W1).
+    await refreshLeadNotices(command.transaction, command.workspaceId);
+    return { entry: entry(value), status: "saved" };
   }
 }

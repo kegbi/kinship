@@ -557,6 +557,7 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
         reminder: { ...reminder, isActive: false },
         status: "saved" as const,
       }),
+    deliveryChanged: () => Promise.resolve(),
     timezoneChanged: () => Promise.resolve(),
     workspaceTimezoneChanged: () => Promise.resolve(),
   } as ReminderManagement;

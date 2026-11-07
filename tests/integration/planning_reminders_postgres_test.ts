@@ -13,7 +13,11 @@ import {
 } from "../../packages/backend/modules/planning/public.ts";
 import { InAppReminderDelivery } from "../../packages/backend/modules/planning/adapters/in_app/reminder_delivery.ts";
 import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
-import { PostgresInAppReminderEffectStore } from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import {
+  PostgresInAppReminderEffectStore,
+  refreshLeadNotices,
+} from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import { TOP_UP_CHUNK_ROWS } from "../../packages/backend/modules/planning/domain/delivery_rules.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
   type CreatedReminder,
@@ -1239,6 +1243,247 @@ Deno.test("[GAP-023] PostgreSQL pages a person's reminders behind a bound cursor
       `${query} against another reminder listing was answered: ${refused.status}`,
     );
   }
+});
+
+Deno.test("[AUD-W1] a lead rule saved in settings reaches every scheduled date at once", async () => {
+  const fixture = await register(
+    `lead-rule-inline-${crypto.randomUUID()}@example.test`,
+    "Lead rule inline",
+  );
+  const personId = await createPerson(fixture, "Lead rule person");
+  const event = new Date(Date.now() + 60 * 86_400_000);
+  const created = await request(
+    fixture,
+    `/api/v1/people/${personId}/dates`,
+    "POST",
+    {
+      day: event.getUTCDate(),
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "birthday",
+      month: event.getUTCMonth() + 1,
+      precision: "month_day",
+    },
+  );
+  assert(created.status === 201, `birthday saved: ${created.status}`);
+  // The window is full before the rule exists, and no worker runs after it.
+  await deliveryRepository.replenish({ now: new Date() });
+  const notices = async () => {
+    const [row] = await sql<{
+      readonly dates: number;
+      readonly week_ahead: number;
+    }[]>`
+      select count(distinct occurrence.occurs_on) filter (
+          where coalesce(occurrence.lead_time_days, 0) = 0
+            and occurrence.deliver_at >= now()
+        )::int as dates,
+        count(*) filter (
+          where occurrence.lead_time_days = 7
+            and occurrence.status = 'pending'
+        )::int as week_ahead
+      from crm.reminder_occurrences occurrence
+      join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      where reminder.person_id = ${personId}::uuid
+    `;
+    return row!;
+  };
+  const before = await notices();
+  assert(
+    before.dates === 8 && before.week_ahead === 0,
+    `the window holds eight dates and no advance notice: ${
+      JSON.stringify(before)
+    }`,
+  );
+  const saved = await request(
+    fixture,
+    "/api/v1/settings/personalization/reminder-rules",
+    "POST",
+    { daysBefore: 7 },
+  );
+  assert(saved.status === 200, `lead rule saved: ${saved.status}`);
+  const rule = (await saved.json() as {
+    readonly entry: { readonly id: string; readonly updatedAt: string };
+  }).entry;
+  const added = await notices();
+  assert(
+    added.week_ahead === added.dates,
+    `every scheduled date gained its advance notice: ${JSON.stringify(added)}`,
+  );
+  const disabled = await request(
+    fixture,
+    `/api/v1/settings/personalization/reminder-rules/${rule.id}`,
+    "PATCH",
+    { expectedUpdatedAt: rule.updatedAt, isActive: false },
+  );
+  assert(disabled.status === 200, `lead rule disabled: ${disabled.status}`);
+  const withdrawn = await notices();
+  assert(
+    withdrawn.week_ahead === 0 && withdrawn.dates === 8,
+    `a disabled rule's notices are withdrawn at once: ${
+      JSON.stringify(withdrawn)
+    }`,
+  );
+});
+
+Deno.test("[AUD-W1] a lead rule's notices are inserted in bounded chunks", async () => {
+  const fixture = await register(
+    `lead-rule-chunks-${crypto.randomUUID()}@example.test`,
+    "Lead rule chunks",
+  );
+  const personId = await createPerson(fixture, "Chunk person");
+  const event = new Date(Date.now() + 60 * 86_400_000);
+  const created = await request(
+    fixture,
+    `/api/v1/people/${personId}/dates`,
+    "POST",
+    {
+      day: event.getUTCDate(),
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "birthday",
+      month: event.getUTCMonth() + 1,
+      precision: "month_day",
+    },
+  );
+  assert(created.status === 201, `birthday saved: ${created.status}`);
+  // A hundred more people with the same birthday, each with its own
+  // scheduled day-of notices, as a large workspace holds.
+  const copies = Array.from({ length: 100 }, () => ({
+    date: crypto.randomUUID(),
+    person: crypto.randomUUID(),
+    reminder: crypto.randomUUID(),
+  }));
+  const people = copies.map((copy) => copy.person);
+  const dates = copies.map((copy) => copy.date);
+  const reminders = copies.map((copy) => copy.reminder);
+  await sql`
+    insert into crm.people (id, workspace_id, given_name)
+    select id, ${fixture.workspaceId}::uuid, 'Copy'
+    from unnest(${people}::uuid[]) as id
+  `;
+  await sql`
+    insert into crm.person_dates (id, person_id, kind, month, day, precision)
+    select copy.date_id, copy.person_id, source.kind, source.month,
+      source.day, source.precision
+    from unnest(${dates}::uuid[], ${people}::uuid[])
+      as copy(date_id, person_id)
+    cross join crm.person_dates source
+    where source.person_id = ${personId}::uuid
+  `;
+  await sql`
+    insert into crm.reminders (
+      id, workspace_id, person_id, person_date_id, target_kind, title,
+      anchor_on, recurrence_unit, recurrence_interval, send_time, is_active
+    )
+    select copy.reminder_id, source.workspace_id, copy.person_id,
+      copy.date_id, source.target_kind, source.title, source.anchor_on,
+      source.recurrence_unit, source.recurrence_interval, source.send_time,
+      true
+    from unnest(${reminders}::uuid[], ${people}::uuid[], ${dates}::uuid[])
+      as copy(reminder_id, person_id, date_id)
+    cross join crm.reminders source
+    where source.person_id = ${personId}::uuid
+  `;
+  await sql`
+    insert into crm.reminder_occurrences (
+      reminder_id, member_id, occurs_on, deliver_at, channel, status,
+      title_snapshot, created_at, updated_at
+    )
+    select copy.reminder_id, source.member_id, source.occurs_on,
+      source.deliver_at, source.channel, 'pending', source.title_snapshot,
+      now(), now()
+    from unnest(${reminders}::uuid[]) as copy(reminder_id)
+    cross join crm.reminder_occurrences source
+    join crm.reminders reminder on reminder.id = source.reminder_id
+    where reminder.person_id = ${personId}::uuid
+  `;
+  // Every window holds its eight dates before the rule exists.
+  await deliveryRepository.replenish({ now: new Date() });
+  await sql`
+    insert into crm.reminder_rules (workspace_id, days_before, is_active)
+    values (${fixture.workspaceId}::uuid, 7, true)
+  `;
+  const statements = new Map<string, string>();
+  const inserted: number[] = [];
+  const counted = deliveryConnection.db.withPlugin({
+    transformQuery: (args) => {
+      const node = args.node as { readonly sqlFragments?: readonly string[] };
+      statements.set(args.queryId.queryId, node.sqlFragments?.join("?") ?? "");
+      return args.node;
+    },
+    transformResult: (args) => {
+      const text = statements.get(args.queryId.queryId) ?? "";
+      if (/^\s*insert into crm\.reminder_occurrences/.test(text)) {
+        inserted.push(Number(args.result.numAffectedRows ?? 0));
+      }
+      return Promise.resolve(args.result);
+    },
+  });
+  await counted.transaction().execute((transaction) =>
+    refreshLeadNotices({ opaque: transaction }, fixture.workspaceId)
+  );
+  const total = inserted.reduce((sum, rows) => sum + rows, 0);
+  assert(
+    total >= 101 * 8 && inserted.length > 1 &&
+      inserted.every((rows) => rows <= TOP_UP_CHUNK_ROWS),
+    `every advance notice arrives in chunks of at most ${TOP_UP_CHUNK_ROWS}: ${
+      JSON.stringify(inserted)
+    }`,
+  );
+});
+
+Deno.test("[AUD-W1] a restored person's recurring reminder has its next date at once", async () => {
+  const fixture = await register(
+    `restore-window-${crypto.randomUUID()}@example.test`,
+    "Restore window",
+  );
+  const personId = await createPerson(fixture, "Restored person");
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Daily while away",
+  });
+  assert(created.status === 201, `daily reminder created: ${created.status}`);
+  const reminderId = (await created.json() as CreatedReminder).reminder.id;
+  const transition = async (action: "archive" | "restore") => {
+    const read = await request(fixture, `/api/v1/people/${personId}`);
+    const { person } = await read.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    const response = await request(
+      fixture,
+      `/api/v1/people/${personId}/${action}`,
+      "POST",
+      { expectedUpdatedAt: person.updatedAt },
+    );
+    assert(response.status === 200, `${action}: ${response.status}`);
+  };
+  await transition("archive");
+  // A long archive: every date the window held has passed, delivered, so
+  // nothing is left due for a later suite's worker to claim.
+  await sql`
+    update crm.reminder_occurrences set occurs_on = occurs_on - 30,
+      deliver_at = deliver_at - interval '30 days', status = 'sent',
+      sent_at = now(), attempt_count = 1, provider_result_state = 'confirmed',
+      provider_receipt = 'in-app', provider_effect_at = now(),
+      visible_at = now()
+    where reminder_id = ${reminderId}::uuid
+  `;
+  await transition("restore");
+  // No worker runs between the restore and this read.
+  const [ahead] = await sql<{ readonly count: number }[]>`
+    select count(*)::int as count from crm.reminder_occurrences
+    where reminder_id = ${reminderId}::uuid and status = 'pending'
+      and deliver_at > now()
+  `;
+  assert(
+    ahead!.count === 8,
+    `the restore refills the window at once: ${ahead!.count} dates ahead`,
+  );
 });
 
 Deno.test({

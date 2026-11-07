@@ -28,6 +28,7 @@ export function createReminderManagement(
     setActive: definitions.setActive,
     listPerson: definitions.listPerson,
     interactionRecorded: cadences.interactionRecorded,
+    deliveryChanged: definitions.deliveryChanged,
     timezoneChanged: definitions.timezoneChanged,
     workspaceTimezoneChanged: definitions.workspaceTimezoneChanged,
   };

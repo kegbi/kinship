@@ -283,6 +283,41 @@ test(
        where workspace_id = '${workspaceId}'::uuid and action = 'perf.history'`,
     )).toBe(String(profile.datasets.medium.historyRecords));
     assertQueryCeiling(workspaceId);
+    // AUD-W1: every medium-profile person has a weekly reminder whose rolling
+    // window is already full, so the worker's due-to-delivery ceiling below is
+    // measured against recurring reminders, not only a one-off one.
+    databaseSql(`
+      with recurring as (
+        insert into crm.reminders (
+          workspace_id, person_id, target_kind, title, anchor_on,
+          recurrence_unit, recurrence_interval, send_time,
+          created_by_member_id
+        )
+        select '${workspaceId}'::uuid, person.id, 'person',
+          'Capacity weekly ' || person.given_name, current_date + 1, 'week',
+          1, '09:00', '${memberId}'::uuid
+        from crm.people person
+        where person.workspace_id = '${workspaceId}'::uuid
+        returning id, title, anchor_on
+      )
+      insert into crm.reminder_occurrences (
+        reminder_id, member_id, occurs_on, deliver_at, status, title_snapshot
+      )
+      select recurring.id, '${memberId}'::uuid,
+        recurring.anchor_on + week * 7,
+        (recurring.anchor_on + week * 7 + time '09:00') at time zone 'UTC',
+        'pending', recurring.title
+      from recurring cross join generate_series(0, 7) week;
+    `);
+    const recurringOccurrences = databaseValue(`
+      select count(*) from crm.reminder_occurrences occurrence
+      join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      where reminder.workspace_id = '${workspaceId}'::uuid
+        and reminder.recurrence_unit = 'week'
+    `);
+    expect(recurringOccurrences).toBe(
+      String(profile.datasets.medium.people * 8),
+    );
 
     databaseSql(`
       insert into crm.people (
@@ -420,5 +455,13 @@ test(
     expect(performance.now() - reminderStartedAt).toBeLessThanOrEqual(
       profile.functionalCeilingsMs.workerDueToDelivery,
     );
+    // The tick's replenishment found the full windows full: nothing was
+    // duplicated, and nothing was dropped.
+    expect(databaseValue(`
+      select count(*) from crm.reminder_occurrences occurrence
+      join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      where reminder.workspace_id = '${workspaceId}'::uuid
+        and reminder.recurrence_unit = 'week'
+    `)).toBe(recurringOccurrences);
   },
 );

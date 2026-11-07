@@ -59,6 +59,7 @@ import {
   personLifecycleAuditFrom,
   personMergeAuditFrom,
   type PersonMergeParticipant,
+  type PersonRestorePublisher,
   personStarAuditFrom,
   profileFactAuditFrom,
   type ProfileFactWorkspaceBoundary,
@@ -102,6 +103,8 @@ export interface PeoplePorts {
   readonly logger?: Logger;
   /** The workspace vocabulary a profile fact is validated against. */
   readonly profileFactWorkspace: ProfileFactWorkspaceBoundary;
+  /** Planning's publisher for the reminders a restored person resumes. */
+  readonly restorePublisher?: PersonRestorePublisher;
   readonly importContactTypes: ContactMethodTypeCatalog;
 }
 
@@ -121,6 +124,9 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
     clock: shared.clock,
     genders: ports.genderOptions,
     repository: new PostgresPersonLifecycleRepository(),
+    ...(ports.restorePublisher
+      ? { restorePublisher: ports.restorePublisher }
+      : {}),
     transaction: shared.peopleTransaction,
   });
   const profileFacts = createProfileFactManagement({

@@ -637,7 +637,7 @@ these:
 
 ### Lane W — Worker and planning
 
-- [ ] **AUD-W1 — Reminder replenishment runs on demand and holds no long
+- [x] **AUD-W1 — Reminder replenishment runs on demand and holds no long
       locks.** M. Urgent. Depends: none. Closes: BEQ-01, BEQ-02.
   - Problem:
     - `tick()` calls `replenish` before `claimDue` every 5 s
@@ -672,6 +672,17 @@ these:
     `tests/e2e/perf.PERF-001.spec.ts` with recurring reminders at the medium
     profile and keep `workerDueToDelivery` at or under 10 s; E2E
     `reminders.PLANNING-002` and `reminder-email.PLANNING-003`.
+  - Delivered 2026-11-07: ten `[AUD-W1]` unit and integration tests (constant
+    statements per tick independent of N, a preference write not held behind a
+    replenish, claim before replenish, hourly sweep, a delivery change or a
+    restore applied at once, lead notices in bounded chunks), planning
+    integration 63 passed (only the known REL-101 and REL-103), planning,
+    people, and workspaces unit tests; PERF-001 with 2,000 recurring reminders
+    plus PLANNING-002 and PLANNING-003 4 passed on Chromium with
+    `workerDueToDelivery` within 10 s; changed files 98% lines, 93.9% branches,
+    99.4% functions; contracts, fmt, architecture, and lint (only REL-096). At
+    the large profile a steady-state replenish costs 7 statements and about 145
+    ms, so `reminders.generated_through` is not needed.
 
 - [ ] **AUD-W2 — The worker claims through the due index and survives
       failures.** S. Normal. Depends: AUD-W1. Closes: BEQ-08, BEQ-09.

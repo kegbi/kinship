@@ -226,8 +226,10 @@ export function deliveryAuditAction(
  *
  * Email needs somewhere to go: a member without a verified address keeps
  * in-app reminders whatever they chose, so no reminder is lost. Waiting
- * occurrences move onto these channels on the worker's next replenishment;
- * one already attempted, sent, or due keeps its channel.
+ * occurrences move onto these channels when the member saves a new choice,
+ * and on the worker's next hourly replenishment after an address stops or
+ * starts being verified; one already attempted, sent, or due keeps its
+ * channel.
  */
 export function deliveryChannels(input: {
   readonly hasVerifiedEmail: boolean;
@@ -355,4 +357,49 @@ export async function digestIdempotencyKey(input: {
       (byte) => byte.toString(16).padStart(2, "0"),
     ).join("")
   }`;
+}
+
+/** How many dates ahead the rolling occurrence window keeps per reminder. */
+export const REMINDER_WINDOW_OCCURRENCES = 8;
+
+/** About how many occurrence rows one replenishment inserts per channel. */
+export const TOP_UP_CHUNK_ROWS = 500;
+
+/** One member's window of one recurring reminder that fell short. */
+export interface ShortReminderWindow {
+  readonly memberId: string;
+  readonly reminderId: string;
+  /** The most rows refilling it may insert per channel: dates × notices. */
+  readonly rows: number;
+  readonly workspaceId: string;
+}
+
+/**
+ * Splits short windows, ordered by workspace, into batches that each stay in
+ * one workspace and insert at most `limit` rows, so every replenishment
+ * transaction is short and locks one workspace's settings only. A window
+ * that alone is larger than the limit is a batch of its own.
+ */
+export function topUpBatches<
+  Window extends Pick<ShortReminderWindow, "rows" | "workspaceId">,
+>(
+  windows: readonly Window[],
+  limit = TOP_UP_CHUNK_ROWS,
+): readonly (readonly Window[])[] {
+  const batches: Window[][] = [];
+  let size = 0;
+  for (const window of windows) {
+    const current = batches.at(-1);
+    if (
+      current?.[0]?.workspaceId === window.workspaceId &&
+      size + window.rows <= limit
+    ) {
+      current.push(window);
+      size += window.rows;
+    } else {
+      batches.push([window]);
+      size = window.rows;
+    }
+  }
+  return batches;
 }

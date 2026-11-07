@@ -14,6 +14,7 @@ import { InAppReminderDelivery } from "./adapters/in_app/reminder_delivery.ts";
 import { PostgresPersonDateReminderPublisher } from "./adapters/postgres/person_date_reminders.ts";
 import {
   PostgresInAppReminderEffectStore,
+  PostgresPersonRestoreReminderPublisher,
   PostgresReminderDeliveryRepository,
   PostgresReminderRepository,
   PostgresReminderWorkspaceBoundary,
@@ -43,6 +44,20 @@ export function personDateReminderPublisher(
   deliveryPreferences: ReminderDeliveryPreferences,
 ): PostgresPersonDateReminderPublisher {
   return new PostgresPersonDateReminderPublisher(
+    shared.actors,
+    deliveryPreferences,
+  );
+}
+
+/**
+ * The reminders a restored person resumes. Like the date publisher, people
+ * publishes through it and a root can build it first.
+ */
+export function personRestoreReminderPublisher(
+  shared: SharedComposition,
+  deliveryPreferences: ReminderDeliveryPreferences,
+): PostgresPersonRestoreReminderPublisher {
+  return new PostgresPersonRestoreReminderPublisher(
     shared.actors,
     deliveryPreferences,
   );

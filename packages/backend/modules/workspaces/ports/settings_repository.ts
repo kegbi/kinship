@@ -11,9 +11,10 @@
  *
  * `SettingsPlanningPublisher` is the one outbound contract here. Changing a
  * timezone or the default reminder time moves when everybody's reminders are
- * due, and planning owns that; the change is published inside the transaction
- * that made it, so a rescheduled workspace and its reminders cannot come
- * apart.
+ * due, and changing a member's reminder delivery moves their waiting notices
+ * to other channels; planning owns both, and the change is published inside
+ * the transaction that made it, so a rescheduled workspace and its reminders
+ * cannot come apart.
  */
 
 import type {
@@ -94,6 +95,14 @@ export interface SettingsAudit {
 }
 
 export interface SettingsPlanningPublisher {
+  /**
+   * A member chose another reminder delivery: their notices still waiting
+   * move onto the channels chosen now, inside the same transaction.
+   */
+  deliveryChanged(
+    actor: SettingsActor,
+    transaction: SettingsTransaction,
+  ): Promise<void>;
   timezoneChanged(
     actor: SettingsActor,
     transaction: SettingsTransaction,

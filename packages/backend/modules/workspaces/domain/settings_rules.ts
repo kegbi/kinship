@@ -130,6 +130,14 @@ export function memberTimezoneChanged(
   return previous?.timezone !== next.timezone;
 }
 
+/** True when a member's preferences change how their reminders are sent. */
+export function memberDeliveryChanged(
+  previous: ResolvedMemberPreferences | undefined,
+  next: ResolvedMemberPreferences,
+): boolean {
+  return previous?.reminderDelivery !== next.reminderDelivery;
+}
+
 /** True when a workspace change moves when reminders are due. */
 export function workspaceScheduleChanged(
   previous: WorkspaceConfiguration | undefined,

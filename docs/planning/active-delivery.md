@@ -1681,7 +1681,11 @@ Playwright test carrying its stable flow ID.
       The ninth-occurrence lifecycle case finds 13 distinct occurrences rather
       than its expected rolling count, with its ninth instant at
       `2026-11-02 01:30:00+00`. The same filtered test fails at pre-API-plan
-      `b4e4cc1`. Diagnose its horizon and timezone contract separately.
+      `b4e4cc1`. Since AUD-W1 it instead reports
+      `{"count":8,"distinct_count":8,"ninth_at":"2026-11-15 01:30:00+00"}`: the
+      replenishment's shortfall query treats eight future dates as a full
+      window, so no ninth row is added. Diagnose its horizon and timezone
+      contract separately.
 
 - [ ] **REL-104 — WebKit native downloads fail with the loopback TLS fixture.**
       The API-002 visitor receives valid gateway JSON but never receives a

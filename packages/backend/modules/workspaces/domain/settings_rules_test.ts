@@ -3,6 +3,7 @@ import {
   FALLBACK_TIMEZONE,
   isSchedulableTimezone,
   managedMembers,
+  memberDeliveryChanged,
   memberTimezoneChanged,
   type ResolvedMemberPreferences,
   type WorkspaceConfiguration,
@@ -109,6 +110,20 @@ const CONFIGURATION: WorkspaceConfiguration = {
   defaultTimezone: "Europe/Berlin",
   name: "Home",
 };
+
+Deno.test("[AUD-W1] planning is told only when a member's reminder delivery changes", () => {
+  assertEquals(memberDeliveryChanged(PREFERENCES, PREFERENCES), false);
+  assertEquals(
+    memberDeliveryChanged(PREFERENCES, {
+      ...PREFERENCES,
+      reminderDelivery: PREFERENCES.reminderDelivery === "email"
+        ? "in_app"
+        : "email",
+    }),
+    true,
+  );
+  assertEquals(memberDeliveryChanged(undefined, PREFERENCES), true);
+});
 
 Deno.test("[GAP-018] planning is told when the workspace moves when reminders are due", () => {
   assertEquals(workspaceScheduleChanged(CONFIGURATION, CONFIGURATION), false);

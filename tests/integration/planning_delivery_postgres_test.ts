@@ -13,8 +13,13 @@ import {
 } from "../../packages/backend/modules/planning/public.ts";
 import { InAppReminderDelivery } from "../../packages/backend/modules/planning/adapters/in_app/reminder_delivery.ts";
 import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
-import { PostgresInAppReminderEffectStore } from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import {
+  PostgresInAppReminderEffectStore,
+  PostgresReminderDeliveryRepository,
+} from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   configured,
   type CreatedReminder,
@@ -683,6 +688,126 @@ Deno.test("PLANNING-002 PostgreSQL cancels an expired unattempted claim after di
       JSON.stringify({ staleEffectResult, staleFinalize })
     }`,
   );
+});
+
+/** Creates `count` weekly reminders for `personId` through the API. */
+async function addWeeklyReminders(
+  fixture: Awaited<ReturnType<typeof register>>,
+  personId: string,
+  count: number,
+): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    const created = await request(fixture, "/api/v1/reminders", "POST", {
+      anchorOn: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "week",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title: `Weekly ${index}`,
+    });
+    assert(
+      created.status === 201,
+      `weekly reminder created: ${created.status}`,
+    );
+  }
+}
+
+Deno.test("[AUD-W1] a tick over topped-up recurring reminders costs the same whatever their number", async () => {
+  const fixture = await register(
+    `steady-tick-${crypto.randomUUID()}@example.test`,
+    "Steady tick",
+  );
+  const personId = await createPerson(fixture, "Steady person");
+  let statements = 0;
+  const counted = deliveryConnection.db.withPlugin({
+    transformQuery: (args) => {
+      statements += 1;
+      return args.node;
+    },
+    transformResult: (args) => Promise.resolve(args.result),
+  });
+  const repository = new PostgresReminderDeliveryRepository(
+    counted,
+    new PostgresActorRevalidation(),
+    new PostgresReminderDeliveryPreferences(),
+  );
+  const now = new Date();
+  // A fresh worker replenishes on its first tick, so this counts the
+  // replenishment as well as the claim.
+  const steadyTick = async () => {
+    const worker = () =>
+      createReminderDeliveryWorker({
+        audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
+        clock: { now: () => now },
+        provider: new DurableFakeProvider(),
+        repository,
+        transaction: deliveryTransaction,
+      });
+    await worker().tick({ owner: "steady-warm" });
+    statements = 0;
+    await worker().tick({ owner: "steady-count" });
+    return statements;
+  };
+
+  await addWeeklyReminders(fixture, personId, 2);
+  const few = await steadyTick();
+  await addWeeklyReminders(fixture, personId, 10);
+  const many = await steadyTick();
+  assertEquals(
+    many,
+    few,
+    "ten more topped-up reminders changed how many statements a tick sends",
+  );
+});
+
+Deno.test("[AUD-W1] a preference write is not held behind an open replenishment", async () => {
+  const fixture = await register(
+    `open-replenish-${crypto.randomUUID()}@example.test`,
+    "Open replenish",
+  );
+  const personId = await createPerson(fixture, "Open replenish person");
+  await addWeeklyReminders(fixture, personId, 1);
+  // The replenishment is held open while it asks `workspaces` who may still
+  // be delivered to.
+  let asked!: () => void;
+  const askedReady = new Promise<void>((resolve) => asked = resolve);
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => release = resolve);
+  const recipients = new PostgresActorRevalidation();
+  const held = new PostgresReminderDeliveryRepository(
+    deliveryConnection.db,
+    {
+      filterEligible: async (command) => {
+        asked();
+        await released;
+        return await recipients.filterEligible(command);
+      },
+      listEligible: (command) => recipients.listEligible(command),
+    },
+    new PostgresReminderDeliveryPreferences(),
+  );
+  const replenishing = held.replenish({ now: new Date() });
+  try {
+    await askedReady;
+    const started = performance.now();
+    const written = await Promise.race([
+      sql`
+        update crm.member_preferences set updated_at = now()
+        where member_id = ${fixture.memberId}::uuid
+      `.then(() => performance.now() - started),
+      new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), 1_000)
+      ),
+    ]);
+    assert(
+      written !== undefined && written < 1_000,
+      "a member_preferences update waited behind an open replenishment",
+    );
+  } finally {
+    release();
+    await replenishing;
+  }
 });
 
 Deno.test({

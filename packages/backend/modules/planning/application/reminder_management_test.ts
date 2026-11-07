@@ -87,6 +87,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
         regenerations += 1;
         return Promise.resolve();
       },
+      rechannelMember: () => Promise.resolve(),
       regenerateForWorkspaceTimezone: () => Promise.resolve(),
       setReminderActive: (command) =>
         Promise.resolve(
