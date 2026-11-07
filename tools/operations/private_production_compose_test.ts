@@ -1,17 +1,26 @@
+import {
+  assertHardened,
+  assertTunedPostgres,
+  type HardenedService,
+} from "./compose_hardening.ts";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
 interface ComposeModel {
   readonly services: Readonly<
-    Record<string, {
-      readonly depends_on?: Readonly<Record<string, unknown>>;
-      readonly environment?: Readonly<Record<string, string>>;
-      readonly healthcheck?: unknown;
-      readonly image?: string;
-      readonly read_only?: boolean;
-      readonly stop_grace_period?: string;
-    }>
+    Record<
+      string,
+      HardenedService & {
+        readonly depends_on?: Readonly<Record<string, unknown>>;
+        readonly environment?: Readonly<Record<string, string>>;
+        readonly healthcheck?: unknown;
+        readonly image?: string;
+        readonly read_only?: boolean;
+        readonly stop_grace_period?: string;
+      }
+    >
   >;
 }
 
@@ -89,6 +98,34 @@ Deno.test("GAP-041 dev and test share one local support definition", async () =>
     assert(
       shared(development) === shared(test),
       `dev and test render ${name} from the same compose.support.yaml definition`,
+    );
+  }
+});
+
+Deno.test("[AUD-G4] every service drops capabilities, forbids privilege gain, and has memory and pid limits", async () => {
+  for (
+    const files of [
+      ["compose.yaml"],
+      ["compose.yaml", "compose.dev.yaml"],
+      ["compose.yaml", "compose.test.yaml"],
+    ] as const
+  ) {
+    const model = await renderCompose(files);
+    assertHardened(model.services, files.join(" + "));
+  }
+});
+
+Deno.test("[AUD-G4] PostgreSQL starts tuned with pg_stat_statements preloaded", async () => {
+  for (
+    const files of [
+      ["compose.yaml"],
+      ["compose.yaml", "compose.dev.yaml"],
+      ["compose.yaml", "compose.test.yaml"],
+    ] as const
+  ) {
+    assertTunedPostgres(
+      (await renderCompose(files)).services,
+      files.join(" + "),
     );
   }
 });

@@ -66,6 +66,35 @@ keyset holding one of them, as the active key or a retained one. The denylist in
 and `deno task ops preflight`; a new secret joins it by listing its published
 fill there.
 
+## Gateway Trusted Proxy
+
+`GATEWAY_TRUSTED_PROXY` (Dokploy gateway and preflight only; AUD-G4, SECA-06) is
+the one address whose `X-Forwarded-For` the gateway believes. nginx keys its
+rate limits on the client address, and the API's per-address sign-in budget
+reads the address the gateway forwards as `X-Kinship-Client-Address`, so behind
+an untrusted edge every visitor shares the proxy's address and five failures
+lock an account for all of them; trusting too much lets any peer choose its own
+address.
+
+- Source: the deployment's `runtime.env`, interpolated by
+  `compose.dokploy.yaml`. It is not a secret, and it has no default: Compose
+  refuses to render the gateway or the preflight without it.
+- Rendering: the gateway image carries the reviewed `gateway/dokploy-proxy.conf`
+  as `/etc/nginx/trusted-proxy-templates/dokploy.conf.template`. Only
+  `compose.dokploy.yaml` points the nginx entrypoint's template step at it, with
+  `NGINX_ENVSUBST_FILTER` admitting this one variable, and writes the result
+  into a private tmpfs at `/etc/nginx/trusted-proxy.d`, the directory
+  `gateway/nginx.conf` includes. The base, development, and test gateways set no
+  template directory and trust no proxy.
+- Validation: `tools/operations/dokploy_preflight.ts` blocks the deployment
+  (`gateway-trusted-proxy`) unless the value is one canonical IPv4 or IPv6
+  literal: no prefix length, hostname, list, `unix:`, unspecified address,
+  surrounding whitespace, or non-canonical spelling. The backup waiver never
+  covers it. Every service the gateway waits for depends on the preflight.
+- Failure is closed: a value nginx cannot parse stops the gateway, and an
+  unwritable output directory renders nothing, so the gateway trusts no proxy
+  rather than a broader one.
+
 ## Runtime Schema
 
 Each process defines a Zod schema at its composition boundary and transforms raw

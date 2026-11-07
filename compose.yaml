@@ -7,6 +7,28 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-kinship}
       POSTGRES_USER: ${POSTGRES_USER:-kinship}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    # AUD-G4 (BEQ-15): tuned for the 2 GiB limit below and SSD storage. The
+    # pools open at most 8 API, 8 worker, and 1 migration connections, so
+    # 16 MB of work_mem per sort or hash stays far inside the limit. Slow
+    # statements are logged without their bind values, which carry CRM data.
+    # Preloading pg_stat_statements does not create the extension; an
+    # operator creates it in the `postgres` maintenance database, never the
+    # application database (docs/architecture/observability.md).
+    command: [
+      "postgres",
+      "-c",
+      "shared_buffers=512MB",
+      "-c",
+      "work_mem=16MB",
+      "-c",
+      "random_page_cost=1.1",
+      "-c",
+      "shared_preload_libraries=pg_stat_statements",
+      "-c",
+      "log_min_duration_statement=250ms",
+      "-c",
+      "log_parameter_max_length=0",
+    ]
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
@@ -16,6 +38,17 @@ services:
       retries: 30
       start_period: 2s
     stop_grace_period: 10s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # The entrypoint starts as root: it owns the data and socket directories,
+    # walks an existing 0700 data directory, and then drops to `postgres`.
+    cap_add: [CHOWN, DAC_READ_SEARCH, SETGID, SETUID]
+    mem_limit: 2g
+    pids_limit: 256
+    # A parallel hash join's dynamic shared memory (about work_mem x 2 x 3
+    # processes, 96 MB at 16 MB) lives in /dev/shm, which Docker otherwise
+    # caps at 64 MB. It is charged to the 2 GiB limit only as it is used.
+    shm_size: 256m
 
   migrate:
     build:
@@ -40,6 +73,10 @@ services:
         condition: service_healthy
     read_only: true
     restart: "no"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    pids_limit: 128
 
   api:
     networks:
@@ -93,6 +130,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 1g
+    pids_limit: 256
 
   worker:
     build:
@@ -133,6 +174,10 @@ services:
     read_only: true
     restart: unless-stopped
     stop_grace_period: 10s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    pids_limit: 256
 
   web:
     networks:
@@ -162,6 +207,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    pids_limit: 128
 
   gateway:
     build:
@@ -200,6 +249,10 @@ services:
     tmpfs:
       - /tmp:size=16m
       - /var/cache/nginx:size=16m
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 64
 
 volumes:
   postgres-data:

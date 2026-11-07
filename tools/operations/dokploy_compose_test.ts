@@ -1,8 +1,28 @@
+import { assertHardened, assertTunedPostgres } from "./compose_hardening.ts";
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-function renderCompose(overrides: Record<string, string> = {}) {
+function renderCompose(overrides: Record<string, string | undefined> = {}) {
+  const env: Record<string, string | undefined> = {
+    POSTGRES_PASSWORD: "compose-validation-only",
+    POSTGRES_DB: "kinship",
+    POSTGRES_USER: "kinship",
+    PUBLIC_WEB_ORIGIN: "https://kinship.example.test",
+    GATEWAY_TLS_CERTIFICATE_PATH: "../files/gateway.crt",
+    GATEWAY_TLS_PRIVATE_KEY_PATH: "../files/gateway.key",
+    RUSTFS_ADMIN_ACCESS_KEY: "validation-admin",
+    RUSTFS_ADMIN_SECRET_KEY: "validation-admin-secret",
+    OBJECT_STORAGE_ACCESS_KEY: "validation-app",
+    OBJECT_STORAGE_SECRET_KEY: "validation-app-secret",
+    OBJECT_STORAGE_BUCKET: "kinship-files",
+    OBJECT_STORAGE_HOST: "kinship-storage",
+    SMTP_PORT: "465",
+    SMTP_SECURITY: "tls",
+    GATEWAY_TRUSTED_PROXY: "10.0.1.40",
+    ...overrides,
+  };
   return new Deno.Command("docker", {
     args: [
       "compose",
@@ -12,23 +32,11 @@ function renderCompose(overrides: Record<string, string> = {}) {
       "--format",
       "json",
     ],
-    env: {
-      POSTGRES_PASSWORD: "compose-validation-only",
-      POSTGRES_DB: "kinship",
-      POSTGRES_USER: "kinship",
-      PUBLIC_WEB_ORIGIN: "https://kinship.example.test",
-      GATEWAY_TLS_CERTIFICATE_PATH: "../files/gateway.crt",
-      GATEWAY_TLS_PRIVATE_KEY_PATH: "../files/gateway.key",
-      RUSTFS_ADMIN_ACCESS_KEY: "validation-admin",
-      RUSTFS_ADMIN_SECRET_KEY: "validation-admin-secret",
-      OBJECT_STORAGE_ACCESS_KEY: "validation-app",
-      OBJECT_STORAGE_SECRET_KEY: "validation-app-secret",
-      OBJECT_STORAGE_BUCKET: "kinship-files",
-      OBJECT_STORAGE_HOST: "kinship-storage",
-      SMTP_PORT: "465",
-      SMTP_SECURITY: "tls",
-      ...overrides,
-    },
+    env: Object.fromEntries(
+      Object.entries(env).filter((entry): entry is [string, string] =>
+        entry[1] !== undefined
+      ),
+    ),
     stdout: "piped",
     stderr: "piped",
   }).output();
@@ -151,18 +159,78 @@ Deno.test("OPS-001E Dokploy keeps storage private and gates application startup 
     storage.healthcheck.test.includes("--cacert"),
     "storage health verifies CA",
   );
-  const gateway = await Deno.readTextFile("gateway/nginx.conf");
-  const proxy = await Deno.readTextFile("gateway/dokploy-proxy.conf");
+});
+
+Deno.test("[AUD-G4] Dokploy hardens every service and inherits the tuned PostgreSQL", async () => {
+  const output = await renderCompose();
+  assert(output.success, "Dokploy Compose must render successfully");
+  const { services } = JSON.parse(new TextDecoder().decode(output.stdout));
+  assertHardened(services, "compose.dokploy.yaml");
+  assertTunedPostgres(services, "compose.dokploy.yaml");
+});
+
+Deno.test("[AUD-G4] the trusted proxy comes from deployment configuration and fails closed", async () => {
+  for (const value of [undefined, ""]) {
+    const output = await renderCompose({ GATEWAY_TRUSTED_PROXY: value });
+    assert(!output.success, "the trusted proxy has no default");
+    assert(
+      new TextDecoder().decode(output.stderr).includes("GATEWAY_TRUSTED_PROXY"),
+      "the refusal names the missing setting",
+    );
+  }
+  const output = await renderCompose({ GATEWAY_TRUSTED_PROXY: "10.0.7.9" });
+  assert(output.success, "a configured proxy renders");
+  const { services } = JSON.parse(new TextDecoder().decode(output.stdout));
+  for (const name of ["preflight", "gateway"]) {
+    assert(
+      services[name].environment.GATEWAY_TRUSTED_PROXY === "10.0.7.9",
+      `${name} receives the configured proxy`,
+    );
+  }
+  const gateway = services.gateway;
+  const directory = "/etc/nginx/trusted-proxy.d";
   assert(
-    gateway.includes("include /etc/nginx/trusted-proxy.d/*.conf;"),
+    gateway.environment.NGINX_ENVSUBST_OUTPUT_DIR === directory &&
+      // `config` prints Compose's escaped form; the container gets one `$`.
+      gateway.environment.NGINX_ENVSUBST_FILTER === "^GATEWAY_TRUSTED_PROXY$$",
+    "nginx renders only the trusted proxy into the included directory",
+  );
+  assert(
+    gateway.tmpfs.some((entry: string) => entry.startsWith(`${directory}:`)),
+    "the rendered include lives in a private tmpfs on a read-only gateway",
+  );
+  assert(gateway.read_only === true, "the gateway stays read-only");
+  assert(
+    services.preflight.command.some((argument: string) =>
+      argument.startsWith("--allow-env=") &&
+      argument.split(",").includes("GATEWAY_TRUSTED_PROXY")
+    ),
+    "preflight may read the proxy it validates",
+  );
+  const nginx = await Deno.readTextFile("gateway/nginx.conf");
+  const template = await Deno.readTextFile("gateway/dokploy-proxy.conf");
+  assert(
+    nginx.includes(`include ${directory}/*.conf;`),
     "proxy trust is opt-in",
   );
   assert(
-    proxy.includes("set_real_ip_from 10.0.1.40;"),
-    "trust the observed Traefik address only",
+    template.includes("set_real_ip_from ${GATEWAY_TRUSTED_PROXY};"),
+    "the template trusts exactly the configured address",
   );
   assert(
-    !proxy.includes("/0") && !proxy.includes("/8") && !proxy.includes("/16"),
-    "never trust a broad network",
+    !/\d+\.\d+\.\d+\.\d+/.test(template),
+    "the template carries no literal address",
+  );
+  const dockerfile = await Deno.readTextFile("Dockerfile.web");
+  assert(
+    dockerfile.includes(
+      "COPY gateway/dokploy-proxy.conf /etc/nginx/trusted-proxy-templates/dokploy.conf.template",
+    ),
+    "the gateway image carries the reviewed template outside nginx's default template directory",
+  );
+  assert(
+    gateway.environment.NGINX_ENVSUBST_TEMPLATE_DIR ===
+      "/etc/nginx/trusted-proxy-templates",
+    "only Dokploy points nginx at the template",
   );
 });

@@ -52,7 +52,10 @@ so the images keep their per-service names. Node images use the exact
 one-shot initializer. It uses the pinned Deno runtime and a SHA-256-verified
 official `mc` release; the client binary is absent from application images.
 The Dokploy edge terminates Let's Encrypt TLS at gateway's private HTTP port,
-and the optional trusted-proxy include allows only its verified exact address.
+and the gateway trusts forwarded client addresses only from the one exact
+address in `GATEWAY_TRUSTED_PROXY`, rendered from the reviewed
+`gateway/dokploy-proxy.conf` template (see Container Hardening and
+[configuration-and-secrets.md](configuration-and-secrets.md#gateway-trusted-proxy)).
 Browsers there speak whatever protocol the edge negotiates, not the gateway's;
 see the HTTP/2 item under Gateway Hardening.
 Only gateway joins the external edge network. Storage credentials and private
@@ -125,6 +128,42 @@ AUD-G2 (2026-11-07 audit: FEQ-12 and FER-08) implements decision D4 of the [audi
 
   A location serves every method on its path, so the token list, the feed status, and the feed revocation on those paths stay uncompressed too; they are small. The contract test fails when a marked route's path is compressed, when any other API path is not, or when the registry's marks drift from D4's list, so a new or moved route must be marked before it ships. The renderer pages, which include the invitation page carrying its token in the path, keep nginx's uncompressed default.
 - **Brotli at the edge.** The pinned nginx image has no brotli module, so the gateway offers gzip only. FER-08 measured brotli level 11 at about 12–17% fewer bytes than gzip for scripts and styles. The Dokploy edge is Traefik, which this repository does not configure; an operator may add its `compress` middleware with brotli. That middleware leaves a response that already carries `Content-Encoding` alone, so the gateway's gzip passes through, but it would compress the excluded answers, which arrive uncompressed. An edge compressor must therefore be attached only to a router that excludes the paths above, or not at all. Until an operator measures and records one here, the edge adds no compression.
+
+## Container Hardening
+
+AUD-G4 (2026-11-07 audit: SECA-13 item 7, the trusted-proxy part of SECA-06, and the tuning and observability part of BEQ-15) hardens every service in `compose.yaml`, `compose.support.yaml`, and `compose.dokploy.yaml`. The Dokploy services that `extends:` a base service inherit its settings. The `operations-compose` tests render the base, development, test, and Dokploy configurations and reject a service without them; `tools/configuration_contract_test.ts` checks the defining files.
+
+- **No privilege gain.** Every service sets `security_opt: [no-new-privileges:true]`, so no setuid binary or file capability can raise a process above what it started with.
+- **No capabilities.** Every service sets `cap_drop: [ALL]`. Only PostgreSQL adds any back: its entrypoint starts as root, takes ownership of the data and socket directories (`CHOWN`), walks an existing 0700 data directory (`DAC_READ_SEARCH`), and drops to the `postgres` user (`SETGID`, `SETUID`). The entrypoint's `chmod 0700` of an existing data directory then logs `Operation not permitted` on each restart and continues; initdb already created it 0700, and PostgreSQL itself refuses a data directory with wider permissions. Every other image runs as a non-root user on unprivileged ports (`8000`, `4321`, `8080`, `8443`, `9000`), or, like Mailpit, as a root that needs no privilege.
+- **Memory and process limits.** `mem_limit` and `pids_limit` bound each service, so a leak or a runaway fork cannot take the host or its neighbours down. A tmpfs counts against its service's memory limit.
+
+| Service | `mem_limit` | `pids_limit` | `cap_add` | Idle use (test stack) |
+| --- | --- | --- | --- | --- |
+| `postgres` | `2g` | 256 | `CHOWN`, `DAC_READ_SEARCH`, `SETGID`, `SETUID` | 236 MiB, 11 pids |
+| `migrate` | `512m` | 128 | none | one-shot |
+| `api` | `1g` | 256 | none | 98 MiB, 7 pids |
+| `worker` | `512m` | 256 | none | 59 MiB, 7 pids |
+| `web` | `512m` | 128 | none | 32 MiB, 11 pids |
+| `gateway` | `256m` | 64 | none | 4 MiB, 2 pids |
+| `mailpit` | `256m` | 64 | none | 10 MiB, 14 pids |
+| `object-store`, `kinship-storage` | `1g` | 512 | none | 134 MiB, 69 pids |
+| `preflight`, `storage-init` (Dokploy) | `256m` | 128 | none | one-shot |
+
+The API's limit leaves room for Argon2id password hashing at 19 MiB per hash; the measured peak under concurrent sign-ins grows with the host CPU count, about 19 MiB per CPU (630 MiB at 256 concurrent on 32 CPUs), so a host with many more CPUs needs a larger limit. The object store's pid limit covers its Tokio runtime, which starts a worker thread per host CPU. PostgreSQL's limit holds 512 MB of shared buffers, up to 256 MB of `/dev/shm` (charged only as parallel queries use it), its pooled backends, and the test overlay's tmpfs data directory; it peaked at 789 MiB on the test stack under PERF-001.
+
+### PostgreSQL
+
+`compose.yaml` starts PostgreSQL with explicit settings and a larger shared-memory mount, which `compose.dokploy.yaml` inherits:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `shared_buffers` | `512MB` | A quarter of the 2 GiB limit; the stock 128 MB is sized for a much smaller host. |
+| `work_mem` | `16MB` | Per sort or hash node. The pools open at most 8 API, 8 worker, and 1 migration connection, so even several nodes each stay far inside the limit. |
+| `shm_size` (service) | `256m` | A parallel hash join keeps its dynamic shared memory in `/dev/shm`: about `work_mem` × `hash_mem_multiplier` (2) × 3 processes (2 workers and the leader), 96 MB at 16 MB. Docker's default 64 MB fails it with `could not resize shared memory segment`. |
+| `random_page_cost` | `1.1` | SSD storage, where a random read costs about what a sequential one does; the stock 4 makes the planner shun index scans. |
+| `shared_preload_libraries` | `pg_stat_statements` | Loads statement statistics at start; see [observability.md](observability.md#database-statements). |
+| `log_min_duration_statement` | `250ms` | Logs a statement that takes longer than the `representativeQuery` ceiling of `docs/planning/mvp-capacity-profile.json`. |
+| `log_parameter_max_length` | `0` | A logged statement never carries its bind values, which hold CRM data. |
 
 ## Network Exposure
 

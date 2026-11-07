@@ -2208,7 +2208,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/operations/dokploy_compose_test.ts",
         "tools/operations/object_storage_compose_test.ts",
       ],
-      permissions: { run: ["docker"], read: ["gateway"] },
+      permissions: { run: ["docker"], read: ["gateway", "Dockerfile.web"] },
     },
   },
   {

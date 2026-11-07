@@ -16,7 +16,7 @@ services:
     command: [
       "deno",
       "run",
-      "--allow-env=READABLE_STREAM,APP_ENV,AUTH_MFA_ENCRYPTION_KEYSET,AUTH_MINIMUM_RESPONSE_MS,AUTH_SIGN_IN_DEVICE_KEYSET,AUTH_THROTTLE_SUBJECT_KEYSET,DATABASE_URL,GATEWAY_TLS_CERTIFICATE_PATH,GATEWAY_TLS_PRIVATE_KEY_PATH,INTEGRATIONS_DAV_ENABLED,INTEGRATIONS_ENCRYPTION_KEYSET,OBJECT_STORAGE_ACCESS_KEY,OBJECT_STORAGE_BUCKET,OBJECT_STORAGE_HOST,OBJECT_STORAGE_PORT,OBJECT_STORAGE_REQUEST_TIMEOUT_MS,OBJECT_STORAGE_SECRET_KEY,OBJECT_STORAGE_USE_SSL,POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER,PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST,PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED,PRIVATE_PRODUCTION_SECRET_STORE_READY,PUBLIC_WEB_ORIGIN,SMTP_FROM,SMTP_HOST,SMTP_PASSWORD,SMTP_PORT,SMTP_SECURITY,SMTP_USERNAME,KINSHIP_ALLOW_NO_BACKUP",
+      "--allow-env=READABLE_STREAM,APP_ENV,AUTH_MFA_ENCRYPTION_KEYSET,AUTH_MINIMUM_RESPONSE_MS,AUTH_SIGN_IN_DEVICE_KEYSET,AUTH_THROTTLE_SUBJECT_KEYSET,DATABASE_URL,GATEWAY_TLS_CERTIFICATE_PATH,GATEWAY_TLS_PRIVATE_KEY_PATH,INTEGRATIONS_DAV_ENABLED,INTEGRATIONS_ENCRYPTION_KEYSET,OBJECT_STORAGE_ACCESS_KEY,OBJECT_STORAGE_BUCKET,OBJECT_STORAGE_HOST,OBJECT_STORAGE_PORT,OBJECT_STORAGE_REQUEST_TIMEOUT_MS,OBJECT_STORAGE_SECRET_KEY,OBJECT_STORAGE_USE_SSL,POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER,PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST,PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED,PRIVATE_PRODUCTION_SECRET_STORE_READY,PUBLIC_WEB_ORIGIN,GATEWAY_TRUSTED_PROXY,SMTP_FROM,SMTP_HOST,SMTP_PASSWORD,SMTP_PORT,SMTP_SECURITY,SMTP_USERNAME,KINSHIP_ALLOW_NO_BACKUP",
       "--allow-read=/app/docs/planning/private-production-profile.json,/app/docs/planning/mvp-capacity-profile.json",
       "tools/operations/dokploy_preflight.ts",
     ]
@@ -50,11 +50,16 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       GATEWAY_TLS_CERTIFICATE_PATH: ${GATEWAY_TLS_CERTIFICATE_PATH:?Set certificate path}
       GATEWAY_TLS_PRIVATE_KEY_PATH: ${GATEWAY_TLS_PRIVATE_KEY_PATH:?Set key path}
+      GATEWAY_TRUSTED_PROXY: ${GATEWAY_TRUSTED_PROXY:?Set the exact Dokploy edge proxy address}
       PRIVATE_PRODUCTION_SECRET_STORE_READY: ${PRIVATE_PRODUCTION_SECRET_STORE_READY:-false}
       PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST: ${PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST:-false}
       PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED: ${PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED:-false}
       KINSHIP_ALLOW_NO_BACKUP: ${KINSHIP_ALLOW_NO_BACKUP:-false}
     read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 128
   api:
     extends: { file: compose.yaml, service: api }
     restart: unless-stopped
@@ -81,8 +86,17 @@ services:
     extends: { file: compose.yaml, service: gateway }
     restart: unless-stopped
     networks: [default, dokploy-network]
-    volumes:
-      - ../files/dokploy-proxy.conf:/etc/nginx/trusted-proxy.d/dokploy.conf:ro
+    # AUD-G4: the nginx entrypoint renders the image's reviewed
+    # gateway/dokploy-proxy.conf template with only GATEWAY_TRUSTED_PROXY into
+    # the directory nginx.conf includes. The preflight, which every service
+    # the gateway waits for depends on, refuses anything but one exact address.
+    environment:
+      GATEWAY_TRUSTED_PROXY: ${GATEWAY_TRUSTED_PROXY:?Set the exact Dokploy edge proxy address}
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/trusted-proxy-templates
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/trusted-proxy.d
+      NGINX_ENVSUBST_FILTER: ^GATEWAY_TRUSTED_PROXY$$
+    tmpfs:
+      - /etc/nginx/trusted-proxy.d:size=64k,uid=101,gid=101,mode=0755
   kinship-storage:
     extends: { file: compose.support.yaml, service: object-store }
     restart: unless-stopped
@@ -127,6 +141,10 @@ services:
     tmpfs:
       - /tmp:size=16m
     restart: "no"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 128
 volumes:
   postgres-data:
   object-storage-data:

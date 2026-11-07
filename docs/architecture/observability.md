@@ -188,6 +188,39 @@ authentication, invitation acceptance, legal acceptance) and the lifecycle
 events built from a resolved session rather than an actor; the Astro renderer's
 server-side API calls; the workspace-cleanup reconciler, which logs nothing yet.
 
+### Database Statements
+
+AUD-G4 (BEQ-15) makes PostgreSQL observable without an application change or a
+schema change; the settings and their reasons are in
+[compose-contract.md](compose-contract.md#postgresql).
+
+- **Statement statistics.** `compose.yaml` and `compose.dokploy.yaml` start the
+  server with `shared_preload_libraries=pg_stat_statements`, so it aggregates
+  calls, rows, and execution time per normalized statement from the first start.
+  Preloading does not create the extension, and no migration does: the canonical
+  schema stays unchanged. The statistics are cluster-wide, so an operator
+  creates the extension once in the `postgres` maintenance database, never in
+  the application database, and reads every database's statements there:
+
+  ```sql
+  -- psql -d postgres
+  CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+  SELECT d.datname, s.calls, round(s.mean_exec_time) AS mean_ms, s.query
+  FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
+  ORDER BY s.total_exec_time DESC LIMIT 20;
+  ```
+
+  The view stores statement text with `$n` placeholders, never a value the
+  application binds.
+- **Slow-statement log.** `log_min_duration_statement=250ms` writes one
+  `duration: … statement:` line to the container log for any statement slower
+  than the capacity profile's `representativeQuery` ceiling, and
+  `log_parameter_max_length=0` leaves out its bind values. The application binds
+  every value, so the line shows the statement text with `$n` placeholders. A
+  statement an operator types with literals in `psql` is logged as typed.
+- These are database-side signals, not the "database pool saturation and query
+  duration buckets" metrics above: there is still no metrics port.
+
 ### Not Implemented
 
 - There is no metrics port and no tracing port. Worker counts and durations are

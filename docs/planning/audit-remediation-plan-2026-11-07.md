@@ -1287,7 +1287,7 @@ these:
       --module=api` cannot start on this host before or
       after (REL-105).
 
-- [ ] **AUD-G4 — Containers and PostgreSQL are hardened and observable.** S–M.
+- [x] **AUD-G4 — Containers and PostgreSQL are hardened and observable.** S–M.
       Normal. Depends: none. Closes: SECA-13 item 7, SECA-06 (the trusted-proxy
       part), and the tuning and observability part of BEQ-15.
   - Scope:
@@ -1305,6 +1305,20 @@ these:
     assert the hardening keys and the preloaded `pg_stat_statements`.
   - Verify: `test:unit --module=api` and `--module=operations-compose`;
     `deno task build`; a stack smoke test (`up --wait`, then `/gateway-health`).
+  - Delivered 2026-11-08: every service runs with `no-new-privileges`,
+    `cap_drop: [ALL]`, and memory and pid limits (PostgreSQL adds back only
+    CHOWN, DAC_READ_SEARCH, SETGID, and SETUID); PostgreSQL starts with
+    `shared_buffers=512MB`, `work_mem=16MB`, `random_page_cost=1.1`, preloaded
+    `pg_stat_statements`, `log_min_duration_statement=250ms`,
+    `log_parameter_max_length=0`, and `shm_size: 256m` so parallel hash joins
+    fit, in every Compose variant including Dokploy; the Dokploy trusted proxy
+    comes from `GATEWAY_TRUSTED_PROXY`, which has no default and which the
+    preflight requires to be one exact address (operators set it in
+    `runtime.env` and drop the old file mount). Operations-compose 10,
+    configuration and preflight 12, api unit only REL-106, build only REL-098, a
+    stack smoke under the hardened stack passed 9, and fmt, contracts,
+    architecture, and lint (only REL-096) are clean. CRM values in PostgreSQL
+    error DETAIL lines are parked (REL-115).
 
 - [ ] **AUD-G5 — The renderer serves only `/privacy` and `/terms` (ADR 0007).**
       M. Low. Depends: AUD-G1, AUD-G2, AUD-F6. Closes: FER-03, FER-10.

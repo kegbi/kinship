@@ -55,11 +55,16 @@ not use `down --volumes`, Docker prune, or a fresh project name to redeploy.
 Configure the domain with HTTPS and Let's Encrypt, targeting `gateway:8080`.
 Only gateway joins external `dokploy-network`; API, renderer, database, and
 storage have no public ports. The inherited gateway TLS listener on loopback
-8443 remains available. Mount the reviewed `gateway/dokploy-proxy.conf` through
-Dokploy File Mounts at `../files/dokploy-proxy.conf`. It trusts only the
-observed Traefik address `10.0.1.40`; reverify that address when recreating the
-proxy. Do not replace it with a Docker subnet or accept client-supplied
-forwarding headers from other peers.
+8443 remains available. The gateway trusts `X-Forwarded-For` only from the
+Traefik address in `GATEWAY_TRUSTED_PROXY` (AUD-G4): the gateway image renders
+its reviewed `gateway/dokploy-proxy.conf` template with that one value, and no
+file mount is involved. Set it in `runtime.env` to the exact address Traefik
+uses on `dokploy-network` (observed as `10.0.1.40`; confirm it with
+`docker inspect` on the Traefik container), and reverify it whenever the proxy
+is recreated. It has no default: Compose refuses to render without it, and the
+preflight refuses anything but one exact IPv4 or IPv6 address, so a Docker
+subnet, a hostname, or a list never reaches nginx. An old
+`../files/dokploy-proxy.conf` file mount is no longer read; remove it.
 
 Use Dokploy File Mounts for `../files/runtime.env`, `../files/ca.crt`,
 `../files/gateway.crt`, `../files/gateway.key`,
@@ -73,12 +78,13 @@ source control.
 `runtime.env` supplies the generated PostgreSQL/authentication/storage values,
 `APP_ENV=production`, `PUBLIC_WEB_ORIGIN=https://kinship.homelaboss.com`,
 `OBJECT_STORAGE_HOST=kinship-storage`, `OBJECT_STORAGE_PORT=9000`,
-`OBJECT_STORAGE_USE_SSL=true`, and the two gateway certificate paths above. Keep
-the owner's SMTP variables in Dokploy's existing service environment (`.env`),
-including explicit `SMTP_PORT` and `SMTP_SECURITY=tls`; Compose refuses missing
-or empty values so preflight and both mail-sending processes receive the same
-settings. Project variables are not implicitly inherited. Do not print either
-environment file or resolved `docker compose config` output.
+`OBJECT_STORAGE_USE_SSL=true`, the two gateway certificate paths above, and
+`GATEWAY_TRUSTED_PROXY`. Keep the owner's SMTP variables in Dokploy's existing
+service environment (`.env`), including explicit `SMTP_PORT` and
+`SMTP_SECURITY=tls`; Compose refuses missing or empty values so preflight and
+both mail-sending processes receive the same settings. Project variables are not
+implicitly inherited. Do not print either environment file or resolved
+`docker compose config` output.
 
 In the service checkout, use this exact argument order, replacing only the
 project placeholder with the existing Dokploy project name:

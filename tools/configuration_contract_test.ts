@@ -1,3 +1,4 @@
+import { parse as parseYaml } from "@std/yaml";
 import {
   COVERAGE_AGGREGATE,
   INTEGRATION_PERMISSIONS,
@@ -519,5 +520,45 @@ Deno.test("[AUD-K6] every launcher states APP_ENV, and only production is a defa
       !/APP_ENV:-(?!production\})/.test(await read(path)),
       `${path} defaults APP_ENV to nothing but production`,
     );
+  }
+});
+
+Deno.test("[AUD-G4] each service's defining Compose file hardens it and PostgreSQL preloads pg_stat_statements", async () => {
+  type Service = {
+    readonly cap_drop?: readonly string[];
+    readonly command?: readonly string[];
+    readonly mem_limit?: string;
+    readonly pids_limit?: number;
+    readonly security_opt?: readonly string[];
+    readonly shm_size?: string;
+  };
+  for (const path of ["compose.yaml", "compose.support.yaml"]) {
+    const { services } = parseYaml(
+      await Deno.readTextFile(new URL(`../${path}`, import.meta.url)),
+    ) as { services: Record<string, Service> };
+    for (const [name, service] of Object.entries(services)) {
+      assert(
+        service.security_opt?.includes("no-new-privileges:true") &&
+          JSON.stringify(service.cap_drop) === '["ALL"]',
+        `${path} ${name} drops every capability and forbids privilege gain`,
+      );
+      assert(
+        /^\d+[mg]$/.test(service.mem_limit ?? "") &&
+          Number.isInteger(service.pids_limit),
+        `${path} ${name} states its memory and pid limits`,
+      );
+    }
+    if (path === "compose.yaml") {
+      const command = services.postgres?.command ?? [];
+      assert(
+        command.includes("shared_preload_libraries=pg_stat_statements") &&
+          command.includes("log_parameter_max_length=0"),
+        "PostgreSQL preloads pg_stat_statements and logs no bind values",
+      );
+      assert(
+        services.postgres?.shm_size === "256m",
+        "PostgreSQL has 256 MiB of /dev/shm for parallel hash joins",
+      );
+    }
   }
 });

@@ -17,6 +17,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=32m
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 64
   object-store:
     image: rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21
     environment:
@@ -35,3 +39,7 @@ services:
       retries: 30
       start_period: 2s
     stop_grace_period: 10s
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 1g
+    pids_limit: 512
