@@ -1288,6 +1288,7 @@ flows:
       - Display the secret exactly once.
       - Store only the protected verifier representation.
       - Revoke the token and reject subsequent use.
+      - List every token in the workspace with its issuer, scopes, last use, and expiry, and revoke any of them; suspending a member or their leaving revokes theirs.
     alternateOutcomes: [invalid-scope, expired-token, revoked-token]
     result: Programmatic access is scoped, auditable, and revocable.
     auditEffect: api-token-created-or-revoked

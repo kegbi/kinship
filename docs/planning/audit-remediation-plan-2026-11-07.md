@@ -473,7 +473,7 @@ these:
   - Verify: `test:integration --module=workspaces` and `--module=identity`; the
     mail adapter's unit tests; E2E `invitations.AUTH-002`.
 
-- [ ] **AUD-M4 — Owners and admins manage every API token in the workspace.** M.
+- [x] **AUD-M4 — Owners and admins manage every API token in the workspace.** M.
       Normal. Depends: none. Closes: SECT-07.
   - Scope:
     - Owners and admins can list every token in the workspace (issuer, scopes,
@@ -487,6 +487,17 @@ these:
   - Verify: `test:integration --module=api-access`
     (`api_tokens_postgres_test.ts`); contracts; the web unit tests; E2E
     `api-tokens.API-001`.
+  - Delivered 2026-11-07: three `[AUD-M4]` integration tests (an owner lists and
+    revokes a demoted admin's token with its issuer; a second admin revokes
+    another admin's token and a foreign owner cannot; suspension or leaving
+    revokes the member's tokens in that workspace only), api-access integration
+    13, api-access unit 34, workspaces unit 160, api unit 473 (only the
+    `baseline_test.ts` permission gap), web unit 1720 (only the 4 baseline
+    failures); E2E API-001 passed on Chromium; changed api-access files at least
+    97% lines, 86.7% branches, 100% functions; contracts, fmt, architecture, and
+    lint (only REL-096). Members keep no token-management access, as
+    `api-tokens.manage` is owner and admin only; suspension also revokes the
+    member's calendar feeds, which reinstatement does not revive.
 
 ### Lane K — HTTP kit and session pipeline
 

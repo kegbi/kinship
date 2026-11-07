@@ -99,6 +99,7 @@ function fixture(options: { readonly standing?: "active" | "revoked" } = {}) {
         return Promise.resolve();
       },
       revoke: () => Promise.resolve({ status: "not-found" as const }),
+      revokeHeldBy: () => Promise.resolve([]),
     },
     secrets: {
       create: () => {

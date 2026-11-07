@@ -24,6 +24,10 @@ interface TokenRow {
   readonly scopes: StoredTokenScope[];
 }
 
+interface IssuedRow extends TokenRow {
+  readonly user_id: string;
+}
+
 interface AuthenticationRow extends TokenRow {
   readonly hash: string;
   readonly user_id: string;
@@ -108,15 +112,14 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
   }
 
   async list(command: Parameters<ApiTokenRepository["list"]>[0]) {
-    const result = await sql<TokenRow>`
-      select ${columns}
+    const result = await sql<IssuedRow>`
+      select ${columns}, token.user_id::text as user_id
       from crm.api_tokens token
-      where token.user_id = ${command.userId}::uuid
-        and token.workspace_id = ${command.workspaceId}::uuid
+      where token.workspace_id = ${command.workspaceId}::uuid
         and not (${CALENDAR_FEED_SCOPE} = any(token.scopes))
       order by token.created_at desc, token.id desc
     `.execute(databaseFromSession(command.transaction));
-    return result.rows.map(record);
+    return result.rows.map((row) => ({ ...record(row), userId: row.user_id }));
   }
 
   async markUsed(command: Parameters<ApiTokenRepository["markUsed"]>[0]) {
@@ -138,7 +141,6 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
       update crm.api_tokens token
       set revoked_at = ${command.occurredAt}, updated_at = ${command.occurredAt}
       where token.id = ${command.id}::uuid
-        and token.user_id = ${command.userId}::uuid
         and token.workspace_id = ${command.workspaceId}::uuid
         and token.revoked_at is null
         and not (${CALENDAR_FEED_SCOPE} = any(token.scopes))
@@ -148,6 +150,20 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
     return value
       ? { record: record(value), status: "revoked" as const }
       : { status: "not-found" as const };
+  }
+
+  async revokeHeldBy(
+    command: Parameters<ApiTokenRepository["revokeHeldBy"]>[0],
+  ) {
+    const result = await sql<TokenRow>`
+      update crm.api_tokens token
+      set revoked_at = ${command.occurredAt}, updated_at = ${command.occurredAt}
+      where token.user_id = ${command.userId}::uuid
+        and token.workspace_id = ${command.workspaceId}::uuid
+        and token.revoked_at is null
+      returning ${columns}
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map(record);
   }
 }
 

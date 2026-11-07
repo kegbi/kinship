@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ApiTokenRecord } from "../../../../../../packages/contracts/generated/auth-client.ts";
+import type { ApiTokenListEntry } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import {
   apiAccessReducer,
   initialApiAccess,
   recordActivity,
+  recordIssuer,
   recordScope,
 } from "./api-access.ts";
 
@@ -11,9 +12,10 @@ const utc = { effectiveTimezone: "UTC", locale: "en" };
 const record = {
   createdAt: "2026-08-24T10:00:00.000Z",
   id: "t",
+  issuer: { email: "ada@example.test", name: "Ada Lovelace" },
   name: "Desktop",
   scopes: ["people:read"],
-} as ApiTokenRecord;
+} as ApiTokenListEntry;
 
 describe("API-001 API access state", () => {
   it("moves through its phases and keeps the secret until dismissed", () => {
@@ -69,5 +71,17 @@ describe("API-001 API access state", () => {
     expect(
       recordActivity({ ...record, revokedAt: "2026-08-24T13:00:00.000Z" }, utc),
     ).toBe("Revoked Aug 24, 2026, 1:00 PM");
+  });
+
+  it("[AUD-M4] names who created each token, by address when the name is blank", () => {
+    expect(recordIssuer(record)).toBe(
+      "Created by Ada Lovelace · ada@example.test",
+    );
+    expect(
+      recordIssuer({
+        ...record,
+        issuer: { email: "ada@example.test", name: "" },
+      }),
+    ).toBe("Created by ada@example.test");
   });
 });

@@ -87,6 +87,18 @@ function fixture(
         );
       },
     },
+    memberCredentials: {
+      revokeMemberCredentials(command) {
+        assert(
+          command.transaction === transaction,
+          "credential revocation shares the member update's transaction",
+        );
+        effects.push(
+          `credentials:revoke:${command.subjectUserId}:by:${command.actor.memberId}`,
+        );
+        return Promise.resolve();
+      },
+    },
     planningPublisher: {
       deliveryChanged() {
         effects.push("planning:member-delivery");
@@ -286,6 +298,29 @@ Deno.test("WORKSPACE-001 preserves the actor role when applying a target role", 
   assert(
     result.email === "member@example.test" && result.name === "Member Example",
     "identity display data is composed after the membership mutation",
+  );
+});
+
+Deno.test("[AUD-M4] suspending a member revokes their credentials in the same transaction; a role change does not", async () => {
+  const demoted = fixture();
+  await demoted.service.updateMember(actor, "member-b", {
+    role: "member",
+    status: "active",
+  });
+  assert(
+    !demoted.effects.some((effect) => effect.startsWith("credentials:")),
+    `a demotion leaves tokens to use-time role checks: ${demoted.effects}`,
+  );
+  const suspended = fixture();
+  const result = await suspended.service.updateMember(actor, "member-b", {
+    role: "admin",
+    status: "suspended",
+  });
+  assert(typeof result !== "string", "member suspension succeeds");
+  assert(
+    suspended.effects.join(",") ===
+      "tx:begin,workspace:update:owner->admin:suspended,credentials:revoke:user-b:by:member-a,identity:display:user-b,audit:workspace.member-updated,tx:commit",
+    `suspension revokes the member's credentials atomically: ${suspended.effects}`,
   );
 });
 

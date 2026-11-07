@@ -49,7 +49,7 @@ export {
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ApiTokenHttpServices {
-  readonly apiTokens: ApiTokenManagement;
+  readonly apiTokens: Pick<ApiTokenManagement, "create" | "list" | "revoke">;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }

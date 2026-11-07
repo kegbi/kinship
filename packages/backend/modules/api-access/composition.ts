@@ -3,6 +3,8 @@
  *
  * Only a declared composition root imports this file. The throttle keyset
  * arrives as a port: which keyset a deployment runs with is a root's decision.
+ * So do the issuers' names the workspace-wide token list shows, which identity
+ * owns.
  */
 
 import type { SharedComposition } from "../../platform/composition.ts";
@@ -20,8 +22,10 @@ import {
   createApiTokenManagement,
   createCalendarFeedTokens,
 } from "./public.ts";
+import type { ApiTokenIssuers } from "./ports/issuers.ts";
 
 export interface ApiAccessPorts {
+  readonly issuers: ApiTokenIssuers;
   readonly subjectKeyset: AuthenticationSubjectKeyset;
 }
 
@@ -35,6 +39,7 @@ export function composeApiAccess(
     audit: apiTokenAuditFrom(shared.audit),
     clock: shared.clock,
     ids: { next: () => shared.ids.create() },
+    issuers: ports.issuers,
     repository: new PostgresApiTokenRepository(),
     secrets: new WebCryptoApiTokenSecrets(),
     transaction: new PostgresApiTokenTransaction(shared.database),

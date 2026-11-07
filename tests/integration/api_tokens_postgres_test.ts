@@ -22,14 +22,18 @@ import {
 import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import {
+  PostgresInvitationIdentity,
+} from "../../packages/backend/modules/identity/adapters/postgres/invitation_identity.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  addMembership,
   openSql,
   requireDatabaseUrl,
   revocableActor,
   revokeMembership,
 } from "../support/database.ts";
-import { apiSupport, type SignedInFixture } from "../support/api.ts";
+import { apiSupport, PASSWORD, type SignedInFixture } from "../support/api.ts";
 import type { Task } from "../../packages/contracts/generated/auth-client.ts";
 
 const databaseUrl = requireDatabaseUrl();
@@ -1387,6 +1391,7 @@ Deno.test({
         audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
+        issuers: new PostgresInvitationIdentity(),
         repository: new PostgresApiTokenRepository(),
         secrets: new WebCryptoApiTokenSecrets(),
         transaction: new PostgresApiTokenTransaction(connection.db),
@@ -1448,6 +1453,7 @@ Deno.test({
         audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => now },
         ids: { next: () => crypto.randomUUID() },
+        issuers: new PostgresInvitationIdentity(),
         repository: new PostgresApiTokenRepository(),
         secrets: new WebCryptoApiTokenSecrets(),
         transaction: new PostgresApiTokenTransaction(connection.db),
@@ -1541,6 +1547,7 @@ Deno.test({
         audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
+        issuers: new PostgresInvitationIdentity(),
         repository,
         secrets: new WebCryptoApiTokenSecrets(),
         transaction: transactions,
@@ -1600,6 +1607,7 @@ Deno.test({
         audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
         clock: { now: () => now },
         ids: { next: () => crypto.randomUUID() },
+        issuers: new PostgresInvitationIdentity(),
         repository: new PostgresApiTokenRepository(),
         secrets: new WebCryptoApiTokenSecrets(),
         transaction: new PostgresApiTokenTransaction(connection.db),
@@ -1703,6 +1711,250 @@ Deno.test("[AUD-K1] PostgreSQL holds a token to the legal documents a cookie owe
     await sql`delete from crm.legal_documents where id = ${documentId}::uuid`;
   }
   assert((await bearer()).status === 200, "withdrawn terms admit the token");
+});
+
+// --- AUD-M4 --------------------------------------------------------------
+
+interface ListedToken {
+  readonly id: string;
+  readonly issuer: { readonly email: string; readonly name: string };
+  readonly revokedAt?: string;
+}
+
+/** Joins an existing identity to a workspace and signs it in there. */
+async function joinWorkspace(
+  identity: SignedInFixture,
+  workspaceId: string,
+  role: "admin" | "member" | "owner",
+): Promise<SignedInFixture> {
+  const memberId = await addMembership(sql, identity.userId, workspaceId, role);
+  return { ...identity, memberId, role, workspaceId };
+}
+
+function tokenBearer(secret: string, workspaceId: string) {
+  return configured.app.request("http://localhost/api/v1/people", {
+    headers: {
+      authorization: `Bearer ${secret}`,
+      "X-Workspace-Id": workspaceId,
+    },
+  });
+}
+
+async function mintToken(fixture: SignedInFixture, name: string) {
+  const response = await management(fixture, undefined, "POST", {
+    name,
+    scopes: ["people:read"],
+  });
+  assert(response.status === 201, `${name} minted: ${response.status}`);
+  return await response.json() as {
+    readonly record: { readonly id: string };
+    readonly secret: string;
+  };
+}
+
+Deno.test("[API-001] AUD-M4 an owner lists and revokes a demoted admin's token", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`oversight-${suffix}@example.test`, "Oversight");
+  const adminEmail = `oversight-admin-${suffix}@example.test`;
+  const admin = await joinWorkspace(
+    await register(adminEmail, "Admin home"),
+    owner.workspaceId,
+    "admin",
+  );
+  const adminToken = await mintToken(admin, "Admin automation");
+  const ownerToken = await mintToken(owner, "Owner automation");
+
+  const demoted = await api.request(
+    owner,
+    `/api/v1/settings/members/${admin.memberId}`,
+    "PATCH",
+    { role: "member", status: "active" },
+  );
+  assert(demoted.status === 200, `the owner demotes A: ${demoted.status}`);
+  assert(
+    (await tokenBearer(adminToken.secret, owner.workspaceId)).status === 200,
+    "demotion applies at use time; A's token reads as a member",
+  );
+
+  const listed = await management(owner);
+  const body = await listed.json() as { readonly records: ListedToken[] };
+  const adminRecord = body.records?.find((record) =>
+    record.id === adminToken.record.id
+  );
+  assert(
+    listed.status === 200 && adminRecord?.issuer?.email === adminEmail &&
+      adminRecord.issuer.name === "API Tester" &&
+      body.records.some((record) => record.id === ownerToken.record.id),
+    `the owner's list shows A's token with its issuer: ${JSON.stringify(body)}`,
+  );
+  assert(
+    (await management(admin)).status === 403,
+    "a member still cannot list the workspace's tokens",
+  );
+  assert(
+    (await management(
+      admin,
+      `/api/v1/settings/api-tokens/${ownerToken.record.id}`,
+      "DELETE",
+    )).status === 403,
+    "a member cannot revoke the owner's token",
+  );
+
+  const revoked = await management(
+    owner,
+    `/api/v1/settings/api-tokens/${adminToken.record.id}`,
+    "DELETE",
+  );
+  assert(revoked.status === 200, `the owner revokes A's token`);
+  assert(
+    (await tokenBearer(adminToken.secret, owner.workspaceId)).status === 401,
+    "A's revoked token no longer authenticates",
+  );
+  assert(
+    (await tokenBearer(ownerToken.secret, owner.workspaceId)).status === 200,
+    "the owner's own token is untouched",
+  );
+  const audit = await sql<{ action: string; actor_member_id: string }[]>`
+    select action, actor_member_id::text from crm.audit_events
+    where subject_id = ${adminToken.record.id}::uuid order by occurred_at
+  `;
+  assert(
+    audit.map((row) => row.action).join() ===
+        "api-token-created,api-token-revoked" &&
+      audit[1]?.actor_member_id === owner.memberId,
+    `the revocation is audited against the owner: ${JSON.stringify(audit)}`,
+  );
+});
+
+Deno.test("[API-001] AUD-M4 an admin revokes another admin's token, and a foreign owner cannot", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`peer-${suffix}@example.test`, "Peers");
+  const firstEmail = `peer-first-${suffix}@example.test`;
+  const secondEmail = `peer-second-${suffix}@example.test`;
+  const first = await joinWorkspace(
+    await register(firstEmail, "First home"),
+    owner.workspaceId,
+    "admin",
+  );
+  const second = await joinWorkspace(
+    await register(secondEmail, "Second home"),
+    owner.workspaceId,
+    "admin",
+  );
+  const foreign = await register(`peer-foreign-${suffix}@example.test`, "Far");
+  const token = await mintToken(first, "First admin token");
+  const listed = await management(second);
+  const records = (await listed.json() as { records: ListedToken[] }).records;
+  assert(
+    records.some((record) => record.id === token.record.id),
+    "a second admin sees the first admin's token",
+  );
+  assert(
+    !(await (await management(foreign)).text()).includes(token.record.id),
+    "a foreign owner's list never shows it",
+  );
+  assert(
+    (await management(
+      foreign,
+      `/api/v1/settings/api-tokens/${token.record.id}`,
+      "DELETE",
+    )).status === 404,
+    "a foreign owner cannot revoke it",
+  );
+  assert(
+    (await management(
+      second,
+      `/api/v1/settings/api-tokens/${token.record.id}`,
+      "DELETE",
+    )).status === 200,
+    "the second admin revokes it",
+  );
+});
+
+Deno.test("[API-001] AUD-M4 suspending or leaving revokes the member's tokens in that workspace only", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`removal-${suffix}@example.test`, "Removal");
+  const suspendedEmail = `removal-suspended-${suffix}@example.test`;
+  const leaverEmail = `removal-leaver-${suffix}@example.test`;
+  const suspendedHome = await register(suspendedEmail, "Suspended home");
+  const suspended = await joinWorkspace(
+    suspendedHome,
+    owner.workspaceId,
+    "admin",
+  );
+  const leaverHome = await register(leaverEmail, "Leaver home");
+  const leaver = await joinWorkspace(
+    leaverHome,
+    owner.workspaceId,
+    "admin",
+  );
+  const suspendedToken = await mintToken(suspended, "Suspended token");
+  const homeToken = await mintToken(suspendedHome, "Home token");
+  const leaverToken = await mintToken(leaver, "Leaver token");
+  const feed = await api.request(
+    leaver,
+    "/api/v1/settings/calendar-feed",
+    "POST",
+  );
+  assert(feed.status === 201, `the leaver has a calendar feed: ${feed.status}`);
+
+  for (
+    const status of [
+      { role: "admin", status: "suspended" },
+      { role: "member", status: "active" },
+    ]
+  ) {
+    const updated = await api.request(
+      owner,
+      `/api/v1/settings/members/${suspended.memberId}`,
+      "PATCH",
+      status,
+    );
+    assert(updated.status === 200, `member updated: ${updated.status}`);
+  }
+  assert(
+    (await tokenBearer(suspendedToken.secret, owner.workspaceId)).status ===
+      401,
+    "a suspended and reinstated member's token stays dead",
+  );
+  assert(
+    (await tokenBearer(homeToken.secret, suspendedHome.workspaceId))
+      .status === 200,
+    "the same person's token in their own workspace is untouched",
+  );
+
+  const left = await api.request(
+    leaver,
+    "/api/v1/settings/personal-lifecycle/leave",
+    "POST",
+    { confirmation: "LEAVE Removal", password: PASSWORD },
+  );
+  assert(left.status === 200, `the admin leaves: ${left.status}`);
+  const rows = await sql<{ id: string; revoked: boolean; scopes: string[] }[]>`
+    select id::text, revoked_at is not null revoked, scopes from crm.api_tokens
+    where workspace_id = ${owner.workspaceId}::uuid
+      and user_id in (${suspended.userId}::uuid, ${leaver.userId}::uuid)
+  `;
+  assert(
+    rows.length === 3 && rows.every((row) => row.revoked),
+    `every token and feed of a removed member is revoked: ${
+      JSON.stringify(rows)
+    }`,
+  );
+  assert(
+    (await tokenBearer(leaverToken.secret, owner.workspaceId)).status === 401,
+    "the leaver's token no longer authenticates",
+  );
+  const audit = await sql<{ subject_id: string }[]>`
+    select subject_id::text from crm.audit_events
+    where action = 'api-token-revoked' and workspace_id = ${owner.workspaceId}::uuid
+  `;
+  assert(
+    [suspendedToken.record.id, leaverToken.record.id].every((id) =>
+      audit.some((row) => row.subject_id === id)
+    ),
+    `each revocation is audited: ${JSON.stringify(audit)}`,
+  );
 });
 
 Deno.test({

@@ -4,7 +4,15 @@
  * Three of the four paths have the same shape: refuse a member outright, open
  * one transaction, re-establish the caller's standing inside it, do the work,
  * and record the audit event beside it. Only the listing takes no lock, so a
- * page of tokens cannot block one being minted.
+ * page of tokens cannot block one being minted. Listing and revoking reach
+ * every personal token of the workspace, not only the caller's: the owner and
+ * administrators are the ones who can see a credential somebody else left
+ * behind and kill it (SECT-07), and each listed token names its issuer.
+ *
+ * `revokeMemberCredentials` is the workspaces module's hook. When a member is
+ * suspended, leaves, or deletes their account, every token and feed they hold
+ * in that workspace is revoked in the transaction that removed them, so
+ * reinstating somebody never brings an old credential back to life.
  *
  * `authenticate` is the fourth and reads the other way round. Nobody has
  * established an actor yet — all that has arrived is a string somebody pasted
@@ -19,8 +27,10 @@ import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
   type ApiTokenInput,
+  type ApiTokenListEntry,
   type ApiTokenRecord,
   type ApiTokenScope,
+  listedTokens,
   parseToken,
   renderToken,
   validateApiToken,
@@ -32,6 +42,7 @@ import type {
   ApiTokenTransaction,
   ApiTokenTransactionRunner,
 } from "../ports/context.ts";
+import type { ApiTokenIssuers } from "../ports/issuers.ts";
 import type { ApiTokenSecrets } from "../ports/secrets.ts";
 import { authenticatePresented } from "./token_authentication.ts";
 import {
@@ -47,6 +58,7 @@ export interface ApiTokenDependencies {
   readonly audit: ApiTokenAudit;
   readonly clock: Clock;
   readonly ids: { next(): string };
+  readonly issuers: ApiTokenIssuers;
   readonly repository: ApiTokenRepository;
   readonly secrets: ApiTokenSecrets;
   readonly transaction: ApiTokenTransactionRunner;
@@ -70,13 +82,27 @@ export interface ApiTokenManagement {
     | Failure<"forbidden", "invalid">
   >;
   list(actor: ApiTokenActor): Promise<
-    | { readonly records: readonly ApiTokenRecord[]; readonly status: "ready" }
+    | {
+      readonly records: readonly ApiTokenListEntry[];
+      readonly status: "ready";
+    }
     | Failure<"forbidden">
   >;
   revoke(actor: ApiTokenActor, id: string): Promise<
     | { readonly record: ApiTokenRecord; readonly status: "revoked" }
     | Failure<"forbidden" | "not-found">
   >;
+  /**
+   * Revokes every token `subjectUserId` holds in the actor's workspace,
+   * inside the caller's transaction, audited against the actor. The caller
+   * has already decided the member is gone; nothing is re-checked here.
+   */
+  revokeMemberCredentials(command: {
+    readonly actor: ApiTokenActor;
+    readonly occurredAt: Date;
+    readonly subjectUserId: string;
+    readonly transaction: ApiTokenTransaction;
+  }): Promise<void>;
 }
 
 export function createApiTokenManagement(
@@ -142,11 +168,19 @@ export function createApiTokenManagement(
         if (!await active(actor, transaction, false)) {
           return { status: "forbidden" as const };
         }
-        const records = await dependencies.repository.list({
-          ...actor,
+        const issued = await dependencies.repository.list({
           transaction,
+          workspaceId: actor.workspaceId,
         });
-        return { records, status: "ready" as const };
+        const issuers = await dependencies.issuers
+          .listIdentityDisplaySummaries({
+            transaction,
+            userIds: [...new Set(issued.map((record) => record.userId))],
+          });
+        return {
+          records: listedTokens(issued, issuers),
+          status: "ready" as const,
+        };
       });
     },
     revoke: async (actor, id) => {
@@ -157,10 +191,10 @@ export function createApiTokenManagement(
           return { status: "forbidden" as const };
         }
         const result = await dependencies.repository.revoke({
-          ...actor,
           id,
           occurredAt: now,
           transaction,
+          workspaceId: actor.workspaceId,
         });
         if (result.status !== "revoked") return result;
         await dependencies.audit.record({
@@ -172,6 +206,23 @@ export function createApiTokenManagement(
         });
         return result;
       });
+    },
+    revokeMemberCredentials: async (command) => {
+      const revoked = await dependencies.repository.revokeHeldBy({
+        occurredAt: command.occurredAt,
+        transaction: command.transaction,
+        userId: command.subjectUserId,
+        workspaceId: command.actor.workspaceId,
+      });
+      for (const record of revoked) {
+        await dependencies.audit.record({
+          action: "revoked",
+          actor: command.actor,
+          occurredAt: command.occurredAt,
+          record,
+          transaction: command.transaction,
+        });
+      }
     },
   };
 }

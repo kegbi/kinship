@@ -139,6 +139,7 @@ export type {
   CurrencyBoundaryTransaction,
   WorkspaceCurrencyBoundary,
 } from "./ports/currency_boundary.ts";
+export type { MemberCredentialRevocation } from "./ports/member_credentials.ts";
 export type {
   WorkspaceCalendarBoundary,
   WorkspaceCalendarTransaction,

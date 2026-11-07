@@ -42,6 +42,17 @@ export const apiTokenRecord = z.strictObject({
   scopes: z.array(apiTokenScope).min(1),
 }).meta({ id: "ApiTokenRecord" });
 
+/**
+ * One token of the workspace in the owner's and administrators' overview
+ * (SECT-07): the record and the member who minted it.
+ */
+export const apiTokenListEntry = apiTokenRecord.extend({
+  issuer: z.strictObject({
+    email: z.string().min(1),
+    name: z.string(),
+  }),
+}).meta({ id: "ApiTokenListEntry" });
+
 export const apiTokenCreated = z.strictObject({
   record: apiTokenRecord,
   secret: z.string().min(64),
@@ -49,7 +60,7 @@ export const apiTokenCreated = z.strictObject({
 }).meta({ id: "ApiTokenCreated" });
 
 export const apiTokenList = z.strictObject({
-  records: z.array(apiTokenRecord),
+  records: z.array(apiTokenListEntry),
   scopes: z.array(apiTokenScope),
   status: z.literal("ready"),
 }).meta({ id: "ApiTokenList" });

@@ -35,7 +35,8 @@ import {
   type TokenAuthentication,
 } from "./token_authentication.ts";
 
-export interface CalendarFeedTokenDependencies extends ApiTokenDependencies {
+export interface CalendarFeedTokenDependencies
+  extends Omit<ApiTokenDependencies, "issuers"> {
   readonly calendarFeeds: CalendarFeedRepository;
 }
 

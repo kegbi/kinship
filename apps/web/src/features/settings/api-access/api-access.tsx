@@ -1,6 +1,8 @@
 /**
  * The API access page (GAP-033): creating a scoped personal API token,
- * showing its secret once, and revoking tokens.
+ * showing its secret once, and revoking tokens. Owners and administrators see
+ * and revoke every token of the workspace, each named by who created it
+ * (SECT-07).
  *
  * One read slot owns the list. Token changes run one at a time: while one
  * runs, every token control is disabled, and it settles only after the list
@@ -27,6 +29,7 @@ import {
   apiAccessReducer,
   initialApiAccess,
   recordActivity,
+  recordIssuer,
   recordScope,
 } from "./api-access.ts";
 
@@ -280,8 +283,12 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
       >
         <header>
           <p className="scope-label">Workspace-bound</p>
-          <h2 id="api-token-list-heading">Personal API tokens</h2>
+          <h2 id="api-token-list-heading">Workspace API tokens</h2>
         </header>
+        <p>
+          Every personal API token in this workspace, whoever created it. Revoke
+          any you do not recognize.
+        </p>
         <p
           data-api-empty=""
           hidden={state.records === undefined || records.length > 0}
@@ -289,7 +296,7 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
           No API tokens yet.
         </p>
         <ul
-          aria-label="Personal API tokens"
+          aria-label="Workspace API tokens"
           className="api-token-list"
           data-api-list=""
         >
@@ -297,6 +304,7 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
             <li key={record.id}>
               <div>
                 <strong>{record.name}</strong>
+                <span>{recordIssuer(record)}</span>
                 <span>{recordScope(record, state.timePreferences)}</span>
                 <small>{recordActivity(record, state.timePreferences)}</small>
               </div>

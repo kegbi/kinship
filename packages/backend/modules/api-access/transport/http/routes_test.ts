@@ -14,7 +14,6 @@ function fixture(role: "owner" | "member" = "owner") {
   const calls: string[] = [];
   const services: ApiTokenHttpServices = {
     apiTokens: {
-      authenticate: () => Promise.resolve({ status: "invalid" }),
       create: (_actor, input) => {
         calls.push(`create:${input.scopes.join(",")}`);
         return Promise.resolve({

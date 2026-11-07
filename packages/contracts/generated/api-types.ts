@@ -2108,10 +2108,28 @@ export interface components {
             readonly status: "created";
         };
         readonly ApiTokenList: {
-            readonly records: readonly components["schemas"]["ApiTokenRecord"][];
+            readonly records: readonly components["schemas"]["ApiTokenListEntry"][];
             readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
             /** @constant */
             readonly status: "ready";
+        };
+        readonly ApiTokenListEntry: {
+            /** Format: date-time */
+            readonly createdAt: string;
+            /** Format: date-time */
+            readonly expiresAt?: string;
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: date-time */
+            readonly lastUsedAt?: string;
+            readonly name: string;
+            /** Format: date-time */
+            readonly revokedAt?: string;
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
+            readonly issuer: {
+                readonly email: string;
+                readonly name: string;
+            };
         };
         readonly ApiTokenRecord: {
             /** Format: date-time */
@@ -13002,7 +13020,7 @@ export interface operations {
         };
         readonly requestBody?: never;
         readonly responses: {
-            /** @description Personal API token metadata */
+            /** @description Every personal API token of the workspace, with its issuer, for an owner or administrator */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;

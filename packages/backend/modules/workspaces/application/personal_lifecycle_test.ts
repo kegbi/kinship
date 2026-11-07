@@ -88,6 +88,16 @@ function fixture(options: {
         return Promise.resolve(options.verified ?? true);
       },
     },
+    memberCredentials: {
+      revokeMemberCredentials(command) {
+        effects.push(
+          `credentials-revoked:${command.actor.workspaceId}:${command.actor.memberId}:${
+            command.subjectUserId === actor.userId
+          }`,
+        );
+        return Promise.resolve();
+      },
+    },
     memberships: {
       inspect(command) {
         effects.push(command.lock ? "memberships-locked" : "memberships-read");
@@ -190,6 +200,8 @@ Deno.test("personal lifecycle deletes all memberships and identity in one ordere
     "memberships-locked",
     "audit:identity.deletion-attempted:completed",
     "audit:identity.deletion-attempted:completed",
+    `credentials-revoked:${current.workspaceId}:${current.memberId}:true`,
+    `credentials-revoked:${next.workspaceId}:${next.memberId}:true`,
     "leave-all",
     "identity-delete",
   ], "deletion effects");
@@ -214,6 +226,7 @@ Deno.test("personal lifecycle leaves current workspace and selects the next memb
     "memberships-locked",
     "leave-current",
     "audit:workspace.member-left:",
+    `credentials-revoked:${current.workspaceId}:${current.memberId}:true`,
   ], "leave effects");
 });
 
@@ -237,6 +250,7 @@ Deno.test("personal lifecycle signs out after leaving the only non-owned workspa
     "memberships-locked",
     "leave-current",
     "audit:workspace.member-left:",
+    `credentials-revoked:${current.workspaceId}:${current.memberId}:true`,
     "sessions-revoked",
   ], "last membership effects");
 });
@@ -343,6 +357,7 @@ Deno.test("personal lifecycle step-up reports the throttle and releases a reserv
         revokeSessions: () => Promise.resolve(),
         verifyPassword: () => Promise.resolve(true),
       },
+      memberCredentials: { revokeMemberCredentials: () => Promise.resolve() },
       memberships: {
         inspect() {
           if (options.inspectThrows) {

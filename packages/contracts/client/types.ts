@@ -123,6 +123,8 @@ export type ApiTokenScope =
 
 export type ApiTokenRecord = components["schemas"]["ApiTokenRecord"];
 
+export type ApiTokenListEntry = components["schemas"]["ApiTokenListEntry"];
+
 export type ApiTokenList = components["schemas"]["ApiTokenList"];
 
 export type ApiTokenCreated = components["schemas"]["ApiTokenCreated"];

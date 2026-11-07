@@ -39,6 +39,7 @@ const record = {
   createdAt: "2026-08-24T10:00:00.000Z",
   expiresAt: "2026-09-24T10:00:00.000Z",
   id: tokenId,
+  issuer: { email: "admin@example.test", name: "Grace Admin" },
   name: "Desktop read",
   scopes: ["people:read"],
 };
@@ -259,6 +260,12 @@ describe("API-001 personal API tokens", () => {
       "people:read · Expires Sep 24, 2026, 10:00 AM",
     );
     expect(list().textContent).toContain("Never used");
+    expect(list().textContent).toContain(
+      "Created by Grace Admin · admin@example.test",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Workspace API tokens" }),
+    ).toBeTruthy();
     expect(list().textContent).not.toContain(secret);
     expect(screen.getByLabelText<HTMLInputElement>("Token name").value).toBe(
       "",

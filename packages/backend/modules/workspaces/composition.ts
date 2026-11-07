@@ -68,6 +68,7 @@ import {
   invitationAuditFrom,
   type InvitationMail,
   type InvitationTokens,
+  type MemberCredentialRevocation,
   personalLifecycleAuditFrom,
   registrationAuditFrom,
   settingsAuditFrom,
@@ -219,6 +220,8 @@ export interface WorkspacePorts {
   /** Every module's share of a workspace cascade, assembled by the root. */
   readonly impact: WorkspaceLifecycleCascadeParticipants;
   readonly mail: VerificationMail;
+  /** API access's hook: a removed member's tokens are revoked (SECT-07). */
+  readonly memberCredentials: MemberCredentialRevocation;
   /** Planning's late-bound hook for a timezone change. */
   readonly planningPublisher: SettingsPlanningPublisher;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
@@ -296,6 +299,7 @@ export function composeWorkspaces(
       authenticationAudit,
       clock: shared.clock,
       identity: ports.identity.personalLifecycle,
+      memberCredentials: ports.memberCredentials,
       memberships: new PostgresPersonalLifecycleMemberships(),
       transaction: shared.transaction,
     }),
@@ -324,6 +328,7 @@ export function composeWorkspaces(
       currencies: workspaceCurrencies(),
       identity: ports.identity.accountSettings,
       identityDisplay: ports.identity.invitations,
+      memberCredentials: ports.memberCredentials,
       planningPublisher: ports.planningPublisher,
       transaction: shared.transaction,
       workspace: new PostgresWorkspaceSettings(),

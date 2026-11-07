@@ -1,14 +1,16 @@
 /**
- * The API access page's state (GAP-033): the member's personal API tokens,
- * the one-time secret of the token just created, the page's one status
- * line, and the one token change that may run at a time. A pure reducer with
- * the words the page shows; `api-access.tsx` renders it.
+ * The API access page's state (GAP-033): every personal API token of the
+ * workspace, each with who created it (SECT-07), the one-time secret of the
+ * token just created, the page's one status line, and the one token change
+ * that may run at a time. A pure reducer with the words the page shows;
+ * `api-access.tsx` renders it.
  *
  * The secret lives only here, in memory, until it is dismissed or the page
  * is left; it never reaches the list.
  */
 
 import type {
+  ApiTokenListEntry,
   ApiTokenRecord,
   ApiTokenScope,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
@@ -19,7 +21,7 @@ import {
 
 export interface ApiAccessState {
   readonly phase: "loading" | "ready" | "no-session" | "member";
-  readonly records: readonly ApiTokenRecord[] | undefined;
+  readonly records: readonly ApiTokenListEntry[] | undefined;
   readonly scopes: readonly ApiTokenScope[] | undefined;
   readonly timePreferences: TimePreferences | undefined;
   readonly secret: string | undefined;
@@ -36,7 +38,7 @@ export type ApiAccessAction =
   | { readonly type: "member" }
   | {
     readonly type: "loaded";
-    readonly records: readonly ApiTokenRecord[];
+    readonly records: readonly ApiTokenListEntry[];
     readonly scopes: readonly ApiTokenScope[];
   }
   | { readonly type: "status"; readonly message: string }
@@ -177,4 +179,12 @@ export function recordActivity(
     return `Last used ${formatInstant(record.lastUsedAt, timePreferences)}`;
   }
   return "Never used";
+}
+
+/** Who created a token, so an owner can tell whose credential it is. */
+export function recordIssuer(record: ApiTokenListEntry): string {
+  const { email, name } = record.issuer;
+  return name.trim()
+    ? `Created by ${name.trim()} · ${email}`
+    : `Created by ${email}`;
 }

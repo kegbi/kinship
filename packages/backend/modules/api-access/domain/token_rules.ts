@@ -66,6 +66,34 @@ export interface ApiTokenRecord {
   readonly scopes: readonly StoredTokenScope[];
 }
 
+/** Who minted a token, as the workspace-wide list names them (SECT-07). */
+export interface ApiTokenIssuer {
+  readonly email: string;
+  readonly name: string;
+}
+
+/** One token of the workspace, as an owner or administrator sees it listed. */
+export interface ApiTokenListEntry extends ApiTokenRecord {
+  readonly issuer: ApiTokenIssuer;
+}
+
+/**
+ * Names each listed token's issuer. The list is the owner's overview of every
+ * credential in the workspace, so a token whose issuer cannot be named is a
+ * broken read and is raised, never shown anonymously or quietly dropped.
+ */
+export function listedTokens(
+  records: readonly (ApiTokenRecord & { readonly userId: string })[],
+  issuers: readonly (ApiTokenIssuer & { readonly userId: string })[],
+): readonly ApiTokenListEntry[] {
+  const byUserId = new Map(issuers.map((issuer) => [issuer.userId, issuer]));
+  return records.map(({ userId, ...record }) => {
+    const issuer = byUserId.get(userId);
+    if (!issuer) throw new Error("API token issuer is unavailable.");
+    return { ...record, issuer: { email: issuer.email, name: issuer.name } };
+  });
+}
+
 /** A member's calendar feed, as its settings section shows it. */
 export interface CalendarFeedRecord {
   readonly createdAt: string;

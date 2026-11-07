@@ -21,16 +21,28 @@ const owner = {
   workspaceId: "10000000-0000-4000-8000-000000000003",
 };
 
-function fixture() {
+function fixture(standing: "active" | "revoked" = "active") {
   const records = inMemoryRepository<ApiTokenRecord>((record) => record.id);
   const audit = recordingAudit<{ readonly action: string }, void>();
   const rawSecret = "first-secret-with-enough-entropy";
+  const lookups: (readonly string[])[] = [];
+  const held: { readonly userId: string; readonly workspaceId: string }[] = [];
   const dependencies: ApiTokenDependencies = {
     actorContext: { describe: () => Promise.resolve(owner) },
-    actors: { revalidate: () => Promise.resolve("active" as const) },
+    actors: { revalidate: () => Promise.resolve(standing) },
     audit,
     clock: fixedClock("2026-08-24T10:00:00.000Z"),
     ids: { next: () => "10000000-0000-4000-8000-000000000004" },
+    issuers: {
+      listIdentityDisplaySummaries: ({ userIds }) => {
+        lookups.push(userIds);
+        return Promise.resolve([{
+          email: "owner@example.test",
+          name: "Ada Owner",
+          userId: owner.userId,
+        }]);
+      },
+    },
     repository: {
       create: (command) => {
         const record: ApiTokenRecord = {
@@ -59,7 +71,10 @@ function fixture() {
             : { status: "not-found" as const },
         );
       },
-      list: () => Promise.resolve(records.list()),
+      list: () =>
+        Promise.resolve(
+          records.list().map((record) => ({ ...record, userId: owner.userId })),
+        ),
       markUsed: () => Promise.resolve(),
       revoke: ({ id, occurredAt }) => {
         const current = records.find(id);
@@ -69,6 +84,16 @@ function fixture() {
         const record = { ...current, revokedAt: occurredAt.toISOString() };
         records.save(record);
         return Promise.resolve({ record, status: "revoked" as const });
+      },
+      revokeHeldBy: ({ occurredAt, userId, workspaceId }) => {
+        held.push({ userId, workspaceId });
+        const revoked = records.list().filter((record) => !record.revokedAt)
+          .map((record) => ({
+            ...record,
+            revokedAt: occurredAt.toISOString(),
+          }));
+        for (const record of revoked) records.save(record);
+        return Promise.resolve(revoked);
       },
     },
     secrets: {
@@ -80,6 +105,8 @@ function fixture() {
   };
   return {
     audit,
+    held,
+    lookups,
     management: createApiTokenManagement(dependencies),
     records: records.entries,
   };
@@ -111,10 +138,69 @@ Deno.test("API tokens reveal a scoped secret once and expose metadata afterward"
       id: "10000000-0000-4000-8000-000000000004",
       name: "Desktop export",
       scopes: ["people:read"],
+      issuer: { email: "owner@example.test", name: "Ada Owner" },
     }],
     status: "ready",
   });
+  assertEquals(state.lookups, [[owner.userId]]);
   assertEquals(state.audit.actions, ["created"]);
+});
+
+Deno.test("[AUD-M4] an administrator lists every token with its issuer, asking once per issuer", async () => {
+  const state = fixture();
+  await state.management.create(owner, {
+    name: "First",
+    scopes: ["people:read"],
+  });
+  state.records.set("10000000-0000-4000-8000-000000000005", {
+    createdAt: "2026-08-24T10:00:00.000Z",
+    id: "10000000-0000-4000-8000-000000000005",
+    name: "Second",
+    scopes: ["tasks:read"],
+  });
+  const listed = await state.management.list({ ...owner, role: "admin" });
+  assertEquals(
+    listed.status === "ready"
+      ? listed.records.map((record) => record.issuer.name)
+      : listed.status,
+    ["Ada Owner", "Ada Owner"],
+  );
+  assertEquals(state.lookups, [[owner.userId]]);
+});
+
+Deno.test("[AUD-M4] a removed member's credentials are revoked and each one audited", async () => {
+  const state = fixture();
+  await state.management.create(owner, {
+    name: "Held",
+    scopes: ["people:read"],
+  });
+  const admin = {
+    ...owner,
+    memberId: crypto.randomUUID(),
+    role: "admin" as const,
+  };
+  await state.management.revokeMemberCredentials({
+    actor: admin,
+    occurredAt: new Date("2026-08-24T11:00:00.000Z"),
+    subjectUserId: owner.userId,
+    transaction: {} as never,
+  });
+  assertEquals(state.held, [{
+    userId: owner.userId,
+    workspaceId: owner.workspaceId,
+  }]);
+  assertEquals(
+    [...state.records.values()].map((record) => record.revokedAt),
+    ["2026-08-24T11:00:00.000Z"],
+  );
+  assertEquals(state.audit.actions, ["created", "revoked"]);
+  await state.management.revokeMemberCredentials({
+    actor: admin,
+    occurredAt: new Date("2026-08-24T12:00:00.000Z"),
+    subjectUserId: owner.userId,
+    transaction: {} as never,
+  });
+  assertEquals(state.audit.actions, ["created", "revoked"]);
 });
 
 Deno.test("owners and administrators deliberately mint independent person read grants; members cannot", async () => {
@@ -269,4 +355,25 @@ Deno.test("API tokens reject invalid grants and stop authenticating after revoca
     status: "invalid",
   });
   assertEquals(state.audit.actions, ["created", "revoked"]);
+});
+
+Deno.test("[AUD-M4] a caller who lost their standing reaches no token, and an unknown one is not found", async () => {
+  const lapsed = fixture("revoked");
+  assertEquals(
+    await lapsed.management.create(owner, {
+      name: "Lapsed",
+      scopes: ["people:read"],
+    }),
+    { status: "forbidden" },
+  );
+  assertEquals(await lapsed.management.list(owner), { status: "forbidden" });
+  assertEquals(await lapsed.management.revoke(owner, crypto.randomUUID()), {
+    status: "forbidden",
+  });
+  assertEquals(lapsed.audit.actions, []);
+  const current = fixture();
+  assertEquals(await current.management.revoke(owner, crypto.randomUUID()), {
+    status: "not-found",
+  });
+  assertEquals(current.audit.actions, []);
 });

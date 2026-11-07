@@ -15,7 +15,9 @@
  * Leaving ends one of two ways: into the next workspace this person is still
  * an active member of, or, when there is none, signed out entirely — every
  * session revoked in the same transaction, because an account with no
- * memberships has nothing to be signed in to.
+ * memberships has nothing to be signed in to. Either way, and for every
+ * workspace an account deletion leaves, the API tokens and calendar feed the
+ * person held there are revoked in the same transaction (SECT-07).
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -25,12 +27,14 @@ import {
   deleteIdentityConfirmation,
   leaveWorkspaceConfirmation,
   nextMembership,
+  type PersonalLifecycleMembership,
 } from "../domain/personal_lifecycle_rules.ts";
 import type {
   PersonalLifecycleActor,
   PersonalLifecycleTransaction,
   PersonalLifecycleTransactionRunner,
 } from "../ports/context.ts";
+import type { MemberCredentialRevocation } from "../ports/member_credentials.ts";
 import type {
   PersonalLifecycleAudit,
   PersonalLifecycleMemberships,
@@ -50,6 +54,7 @@ export interface PersonalLifecycleDependencies {
   >;
   readonly clock: Clock;
   readonly identity: IdentityPersonalLifecycleFacade;
+  readonly memberCredentials: MemberCredentialRevocation;
   readonly memberships: PersonalLifecycleMemberships;
   readonly transaction: PersonalLifecycleTransactionRunner;
 }
@@ -57,6 +62,28 @@ export interface PersonalLifecycleDependencies {
 export function createPersonalLifecycle(
   dependencies: PersonalLifecycleDependencies,
 ) {
+  /** Revokes what the person held in one workspace they no longer belong to. */
+  const revokeCredentials = (
+    userId: string,
+    membership: Pick<
+      PersonalLifecycleMembership,
+      "memberId" | "role" | "workspaceId"
+    >,
+    occurredAt: Date,
+    transaction: PersonalLifecycleTransaction,
+  ) =>
+    dependencies.memberCredentials.revokeMemberCredentials({
+      actor: {
+        memberId: membership.memberId,
+        role: membership.role,
+        userId,
+        workspaceId: membership.workspaceId,
+      },
+      occurredAt,
+      subjectUserId: userId,
+      transaction,
+    });
+
   const withStepUp = async <T>(
     actor: PersonalLifecycleActor,
     password: string,
@@ -220,6 +247,7 @@ export function createPersonalLifecycle(
           transaction,
           workspaceId: current.workspaceId,
         });
+        await revokeCredentials(actor.userId, current, occurredAt, transaction);
         const next = nextMembership(snapshot.memberships, current);
         if (!next) {
           await dependencies.identity.revokeSessions({
@@ -290,6 +318,14 @@ export function createPersonalLifecycle(
             transaction,
             workspaceId: membership.workspaceId,
           });
+        }
+        for (const membership of snapshot.memberships) {
+          await revokeCredentials(
+            actor.userId,
+            membership,
+            occurredAt,
+            transaction,
+          );
         }
         await dependencies.memberships.leaveAll({
           leftAt: occurredAt,

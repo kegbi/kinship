@@ -1029,7 +1029,11 @@ export function composeApiServices(
     mail: passwordResetMail(mail),
     mfaKeyset,
   });
-  const apiAccess = composeApiAccess(shared, { subjectKeyset });
+  const apiAccess = composeApiAccess(shared, {
+    // The names the workspace-wide token list shows beside each token.
+    issuers: identity.invitations,
+    subjectKeyset,
+  });
   const configuration = composeWorkspaceBoundaries();
   const persons = personBoundary();
   const files = composeFiles(shared, {
@@ -1162,6 +1166,9 @@ export function composeApiServices(
       relationships: relationships.lifecycleImpact,
     },
     mail,
+    // API access's hook: suspending a member, or their leaving, revokes the
+    // tokens and calendar feed they held in that workspace.
+    memberCredentials: apiAccess.apiTokens,
     // Planning's hook: changing a timezone reschedules the reminders it owns.
     planningPublisher: planning.reminders,
     responseEqualizer: options.responseEqualizer ??

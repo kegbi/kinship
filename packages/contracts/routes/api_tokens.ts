@@ -32,7 +32,8 @@ export const getApiTokens = defineRoute({
   },
   responses: {
     200: {
-      description: "Personal API token metadata",
+      description:
+        "Every personal API token of the workspace, with its issuer, for an owner or administrator",
       content: {
         "application/json": apiTokenList,
       },

@@ -67,6 +67,12 @@ test(
     ).toBe(secret);
     await expect(page.locator("[data-api-list]")).toContainText("Desktop read");
     await expect(page.locator("[data-api-list]")).toContainText("No expiry");
+    await expect(
+      page.getByRole("heading", { name: "Workspace API tokens" }),
+    ).toBeVisible();
+    await expect(
+      page.locator("[data-api-list] li", { hasText: "Desktop read" }),
+    ).toContainText(`Created by API Owner · ${email}`);
     await expect(page.locator("[data-api-list]")).not.toContainText(secret);
 
     const programmatic = await page.request.get(`${origin}/api/v1/people`, {

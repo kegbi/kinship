@@ -11,7 +11,7 @@ import {
 
 <ApplicationLayout
   current="settings"
-  description="Create, inspect, and revoke scoped personal API tokens."
+  description="Create scoped personal API tokens, and inspect and revoke every token in the workspace."
   pageId="settings.api-access"
   title="API access — Kinship"
 >
@@ -47,9 +47,10 @@ import {
     </section>
 
     <section class="api-access-section" aria-labelledby="api-token-list-heading">
-      <header><p class="scope-label">Workspace-bound</p><h2 id="api-token-list-heading">Personal API tokens</h2></header>
+      <header><p class="scope-label">Workspace-bound</p><h2 id="api-token-list-heading">Workspace API tokens</h2></header>
+      <p>Every personal API token in this workspace, whoever created it. Revoke any you do not recognize.</p>
       <p data-api-empty hidden>No API tokens yet.</p>
-      <ul data-api-list class="api-token-list" aria-label="Personal API tokens"></ul>
+      <ul data-api-list class="api-token-list" aria-label="Workspace API tokens"></ul>
     </section>
     </div>
       </div>

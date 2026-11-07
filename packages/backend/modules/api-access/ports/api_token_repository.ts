@@ -1,9 +1,12 @@
 /**
  * How the module stores personal access tokens.
  *
- * Every method except two takes the actor, because a token belongs to a
- * workspace and the repository scopes each row by the standing the use case
- * just established. The two exceptions are the authentication path:
+ * `create` takes the actor, because a token belongs to its issuer and its
+ * workspace. Listing and revoking are scoped by the workspace alone: owners
+ * and administrators oversee every token in it (SECT-07), and the use case has
+ * already established that the caller is one. `revokeHeldBy` ends every
+ * credential one user holds in a workspace when they stop belonging to it.
+ * The two methods that take no workspace are the authentication path:
  * `findForAuthentication` is reached by somebody who has presented a token and
  * nothing else, so it looks the row up by identifier alone and answers with
  * the user and workspace it names, and `markUsed` records that the token was
@@ -46,9 +49,11 @@ export interface ApiTokenRepository {
     }
     | Failure<"not-found">
   >;
-  list(
-    command: ApiTokenActor & { readonly transaction: ApiTokenTransaction },
-  ): Promise<readonly ApiTokenRecord[]>;
+  /** Every personal token of the workspace, newest first, with its issuer. */
+  list(command: {
+    readonly transaction: ApiTokenTransaction;
+    readonly workspaceId: string;
+  }): Promise<readonly IssuedApiTokenRecord[]>;
   /**
    * Records the use at `occurredAt` only when the stored last use is missing,
    * earlier than `staleBefore`, or later than `occurredAt` (a skewed clock);
@@ -60,14 +65,29 @@ export interface ApiTokenRepository {
     readonly staleBefore: Date;
     readonly transaction: ApiTokenTransaction;
   }): Promise<void>;
-  revoke(
-    command: ApiTokenActor & {
-      readonly id: string;
-      readonly occurredAt: Date;
-      readonly transaction: ApiTokenTransaction;
-    },
-  ): Promise<
+  /** Revokes one live personal token of the workspace, whoever issued it. */
+  revoke(command: {
+    readonly id: string;
+    readonly occurredAt: Date;
+    readonly transaction: ApiTokenTransaction;
+    readonly workspaceId: string;
+  }): Promise<
     | { readonly record: ApiTokenRecord; readonly status: "revoked" }
-    | Failure<"forbidden" | "not-found">
+    | Failure<"not-found">
   >;
+  /**
+   * Revokes every live token `userId` holds in the workspace, calendar feeds
+   * included, and answers with the rows it revoked.
+   */
+  revokeHeldBy(command: {
+    readonly occurredAt: Date;
+    readonly transaction: ApiTokenTransaction;
+    readonly userId: string;
+    readonly workspaceId: string;
+  }): Promise<readonly ApiTokenRecord[]>;
+}
+
+/** A listed token and the user who minted it. */
+export interface IssuedApiTokenRecord extends ApiTokenRecord {
+  readonly userId: string;
 }

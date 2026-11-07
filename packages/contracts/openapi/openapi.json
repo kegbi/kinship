@@ -12083,7 +12083,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Personal API token metadata",
+            "description": "Every personal API token of the workspace, with its issuer, for an owner or administrator",
             "content": {
               "application/json": {
                 "schema": {
@@ -17952,7 +17952,7 @@
           "records": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ApiTokenRecord"
+              "$ref": "#/components/schemas/ApiTokenListEntry"
             }
           },
           "scopes": {
@@ -17978,6 +17978,77 @@
           "records",
           "scopes",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "ApiTokenListEntry": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "people:read",
+                "people:profile:read",
+                "relationships:read",
+                "tasks:read",
+                "tasks:create",
+                "tasks:write",
+                "interactions:create"
+              ]
+            }
+          },
+          "issuer": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name",
+          "scopes",
+          "issuer"
         ],
         "additionalProperties": false
       },

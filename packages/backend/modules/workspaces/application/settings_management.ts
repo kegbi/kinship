@@ -46,6 +46,7 @@ import type {
   WorkspaceSettingsRepository,
 } from "../ports/settings_repository.ts";
 import type { WorkspaceCurrencyBoundary } from "../ports/currency_boundary.ts";
+import type { MemberCredentialRevocation } from "../ports/member_credentials.ts";
 import type {
   IdentityAccountSettingsFacade,
   IdentityProfile,
@@ -87,6 +88,8 @@ export interface SettingsManagementDependencies {
   readonly currencies: Pick<WorkspaceCurrencyBoundary, "listSupported">;
   readonly identity: IdentityAccountSettingsFacade;
   readonly identityDisplay: SettingsIdentityDirectory;
+  /** Ends a suspended member's API credentials in the workspace (SECT-07). */
+  readonly memberCredentials: MemberCredentialRevocation;
   readonly planningPublisher?: SettingsPlanningPublisher;
   readonly transaction: SettingsTransactionRunner;
   readonly workspace: WorkspaceSettingsRepository;
@@ -320,6 +323,14 @@ export function createSettingsManagement(
             transaction,
           });
           if (typeof result === "string") return result;
+          if (result.status === "suspended") {
+            await dependencies.memberCredentials.revokeMemberCredentials({
+              actor,
+              occurredAt: dependencies.clock.now(),
+              subjectUserId: result.userId,
+              transaction,
+            });
+          }
           const [member] = await composeMembers(transaction, [result]);
           if (!member) throw new Error("Updated member is unavailable.");
           await audit(

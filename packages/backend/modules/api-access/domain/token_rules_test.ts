@@ -1,8 +1,9 @@
-import { assertEquals } from "../../../testing/assert.ts";
+import { assertEquals, assertThrows } from "../../../testing/assert.ts";
 import {
   API_TOKEN_SCOPES,
   type ApiTokenRecord,
   CALENDAR_FEED_SCOPE,
+  listedTokens,
   parseCalendarFeedToken,
   parseToken,
   renderCalendarFeedToken,
@@ -237,5 +238,17 @@ Deno.test("[INTEGRATION-002] the calendar scope opens only a calendar token", ()
   assertEquals(
     usable({ ...command, record: RECORD, requiredScope: CALENDAR_FEED_SCOPE }),
     false,
+  );
+});
+
+Deno.test("[AUD-M4] each listed token names its issuer, and an unnamed one is a broken read", () => {
+  const issuer = { email: "ada@example.test", name: "Ada", userId: "u1" };
+  assertEquals(
+    listedTokens([{ ...RECORD, userId: "u1" }], [issuer]),
+    [{ ...RECORD, issuer: { email: "ada@example.test", name: "Ada" } }],
+  );
+  assertThrows(
+    () => listedTokens([{ ...RECORD, userId: "u2" }], [issuer]),
+    "a token without a named issuer was listed",
   );
 });
