@@ -22,6 +22,16 @@
 /** How long a verification link, from either flow, works for. */
 export const VERIFICATION_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
+/**
+ * Registration mail one address may be sent in a rolling day (SECA-03,
+ * AUD-M3): a verification link or the "you already have an account" notice,
+ * from registering, from asking for another link, or from registering through
+ * an invitation. Every request that could send one counts, whatever the
+ * address turns out to be, so reaching the ceiling says nothing about whether
+ * the address has an account.
+ */
+export const REGISTRATION_MAIL_DAILY_CEILING = 10;
+
 /** When a verification link issued now stops working. */
 export function verificationExpiry(now: Date): Date {
   return new Date(now.getTime() + VERIFICATION_WINDOW_MS);

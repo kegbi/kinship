@@ -17,6 +17,18 @@ export class PostgresInvitationIdentity implements InvitationIdentityFacade {
     return result.rows[0]?.userId;
   }
 
+  async isAddressVerifiedBy(
+    command: Parameters<InvitationIdentityFacade["isAddressVerifiedBy"]>[0],
+  ): Promise<boolean> {
+    const result = await sql<{ readonly established: boolean }>`
+      select true established from crm.users
+      where id = ${command.userId}::uuid and status = 'active'
+        and email_verified_at is not null
+        and email_verified_at <= ${command.verifiedBy}
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]?.established === true;
+  }
+
   async isVerifiedInvitationIdentity(
     command: Parameters<
       InvitationIdentityFacade["isVerifiedInvitationIdentity"]

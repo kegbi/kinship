@@ -15,6 +15,7 @@ import {
   PostgresCalendarFeedRepository,
 } from "./adapters/postgres/api_token_repository.ts";
 import { PostgresAuthenticationAttemptBudget } from "./adapters/postgres/authentication_attempt_budget.ts";
+import { PostgresOutboundMailBudget } from "./adapters/postgres/outbound_mail_budget.ts";
 import {
   apiTokenAuditFrom,
   AuthenticationSubjectDigester,
@@ -62,6 +63,11 @@ export function composeApiAccess(
       digester,
       signInDevices,
     ),
+    /**
+     * The daily invitation and registration-mail budgets (SECA-03), which
+     * workspaces' invitation and registration flows consume.
+     */
+    mailBudget: new PostgresOutboundMailBudget(shared.database, digester),
     /** The device tokens the budget recognizes, issued after a sign-in. */
     signInDevices,
   };

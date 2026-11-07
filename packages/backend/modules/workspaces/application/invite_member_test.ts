@@ -54,6 +54,10 @@ interface InvitationDependenciesUnderTest
     findIdentityIdByEmail(command: {
       readonly email: string;
     }): Promise<string | undefined>;
+    isAddressVerifiedBy(command: {
+      readonly userId: string;
+      readonly verifiedBy: Date;
+    }): Promise<boolean>;
     isVerifiedInvitationIdentity(command: {
       readonly expectedEmail: string;
       readonly userId: string;
@@ -95,7 +99,9 @@ interface InvitationCoordinatorUnderTest {
 
 function dependencies(overrides: {
   readonly accept?: InvitationAcceptance;
+  readonly budget?: "admitted" | "exhausted";
   readonly claim?: "available" | "pending" | "registered";
+  readonly established?: boolean;
   readonly create?: "already-member" | "created" | "forbidden";
   readonly inspect?: InvitationInspection;
   readonly mailFails?: boolean;
@@ -173,6 +179,12 @@ function dependencies(overrides: {
           effects.push(`identity.find:${command.email}`);
           return Promise.resolve(undefined);
         },
+        isAddressVerifiedBy(command) {
+          effects.push(
+            `identity.established:${command.userId}:${command.verifiedBy.toISOString()}`,
+          );
+          return Promise.resolve(overrides.established ?? true);
+        },
         isVerifiedInvitationIdentity(command) {
           effects.push(
             `identity.eligible:${command.userId}:${command.expectedEmail}`,
@@ -207,6 +219,18 @@ function dependencies(overrides: {
           return overrides.verificationMailFails
             ? Promise.reject(new Error("provider detail"))
             : Promise.resolve();
+        },
+      },
+      mailBudget: {
+        reserve(reservation) {
+          effects.push(
+            `budget:${reservation.scope}:${reservation.recipient}:${reservation.recipientCeiling}:${
+              reservation.sender
+                ? `${reservation.sender.workspaceId}/${reservation.sender.memberId}/${reservation.sender.ceiling}`
+                : "-"
+            }:${reservation.windowMilliseconds}`,
+          );
+          return Promise.resolve(overrides.budget ?? "admitted");
         },
       },
       pendingWorkspaces: {
@@ -339,6 +363,165 @@ Deno.test("AUTH-002 creates a bounded invitation and exposes raw token only to m
     "raw token reaches only post-commit delivery",
   );
 });
+
+Deno.test("[AUD-M3] an invitation spends the workspace quota and the recipient cap before anything is written", async () => {
+  const { deps, effects } = dependencies();
+  await createWorkspaceInvitationCoordinator(deps).create({
+    actor: owner,
+    email: "invitee@example.test",
+    role: "member",
+    workspaceName: "Circle",
+  });
+  const budget = effects.findIndex((effect) => effect.startsWith("budget:"));
+  assert(
+    effects.includes(
+      `identity.established:${owner.userId}:2026-08-14T12:00:00.000Z`,
+    ),
+    "the inviter must have verified their address a day before now",
+  );
+  assert(
+    effects[budget] ===
+      `budget:invitation:invitee@example.test:3:${owner.workspaceId}/${owner.memberId}/20:86400000`,
+    `the reservation names both daily limits, got ${effects[budget]}`,
+  );
+  assert(
+    budget < effects.indexOf("token.create") &&
+      budget < effects.findIndex((effect) => effect.startsWith("create:")),
+    "the budget is spent before a token or an invitation exists",
+  );
+});
+
+for (
+  const [name, overrides, expected] of [
+    [
+      "an inviter verified less than a day ago",
+      { established: false },
+      "inviter-not-established",
+    ],
+    [
+      "an invitation past a daily limit",
+      { budget: "exhausted" },
+      "limit-reached",
+    ],
+  ] as const
+) {
+  Deno.test(`[AUD-M3] ${name} is refused and sends nothing`, async () => {
+    const { deps, effects } = dependencies(overrides);
+    const result = await createWorkspaceInvitationCoordinator(deps).create({
+      actor: owner,
+      email: "invitee@example.test",
+      role: "member",
+      workspaceName: "Circle",
+    });
+    assert(result === expected, `refused as ${expected}, got ${result}`);
+    assert(
+      !effects.some((effect) =>
+        effect === "token.create" || effect.startsWith("create:") ||
+        effect.startsWith("identity.find:") || effect.startsWith("mail:")
+      ),
+      `nothing is written or sent: ${effects.join(",")}`,
+    );
+    assert(
+      overrides.budget === "exhausted" ||
+        !effects.some((effect) => effect.startsWith("budget:")),
+      "an inviter refused for their age spends none of the budget",
+    );
+  });
+}
+
+Deno.test("[AUD-M3] an invitee past the address's registration-mail ceiling is refused before anything is written", async () => {
+  const { deps, effects } = dependencies({ budget: "exhausted" });
+  const coordinator = createWorkspaceInvitationCoordinator(
+    deps,
+  ) as unknown as InvitationCoordinatorUnderTest;
+  const result = await coordinator.registerInvitee({
+    email: "invitee@example.test",
+    firstName: "New",
+    lastName: "Invitee",
+    passwordHash: "argon2id-hash",
+    registrantVerifier: "registrant-verifier",
+    token: "raw-token",
+  });
+  assert(result === "mail-limit-reached", `refused, got ${result}`);
+  const budget = effects.indexOf(
+    "budget:registration:invitee@example.test:10:-:86400000",
+  );
+  assert(
+    budget > effects.indexOf("inspect:hash:raw-token") &&
+      effects.indexOf("inspect:hash:raw-token") >= 0,
+    `the budget is asked only after the invitation is read: ${
+      effects.join(",")
+    }`,
+  );
+  assert(
+    !effects.some((effect) =>
+      effect.startsWith("identity.") || effect === "token.create" ||
+      effect.startsWith("verification-mail:")
+    ),
+    `nothing is written or sent: ${effects.join(",")}`,
+  );
+
+  const retried = dependencies({ budget: "exhausted" });
+  const retry = await createWorkspaceInvitationCoordinator(retried.deps)
+    .retryInviteeVerification("raw-token");
+  assert(retry === "mail-limit-reached", `retry refused, got ${retry}`);
+  assert(
+    retried.effects.includes(
+      "budget:registration:invitee@example.test:10:-:86400000",
+    ) &&
+      !retried.effects.some((effect) =>
+        effect === "identity.verification.retry" || effect === "token.create" ||
+        effect.startsWith("verification-mail:")
+      ),
+    `the refused retry writes no token and sends nothing: ${
+      retried.effects.join(",")
+    }`,
+  );
+});
+
+for (
+  const [name, inspect, expected] of [
+    ["an expired invitation", { status: "expired" }, "expired"],
+    ["a made-up token", { status: "invalid" }, "invalid"],
+    ["a revoked invitation", { status: "revoked" }, "revoked"],
+    ["a used invitation", { status: "used" }, "used"],
+    ["another address's invitation", {
+      email: "someone-else@example.test",
+      role: "member",
+      status: "pending",
+      workspaceName: "Circle",
+    }, "wrong-user"],
+  ] as const
+) {
+  Deno.test(`[AUD-M3] ${name} answers as before and spends no registration mail, even past the ceiling`, async () => {
+    const { deps, effects } = dependencies({ budget: "exhausted", inspect });
+    const coordinator = createWorkspaceInvitationCoordinator(
+      deps,
+    ) as unknown as InvitationCoordinatorUnderTest;
+    const result = await coordinator.registerInvitee({
+      email: "invitee@example.test",
+      firstName: "New",
+      lastName: "Invitee",
+      passwordHash: "argon2id-hash",
+      registrantVerifier: "registrant-verifier",
+      token: "raw-token",
+    });
+    assert(result === expected, `answered ${expected}, got ${result}`);
+    assert(
+      !effects.some((effect) => effect.startsWith("budget:")),
+      `no budget is spent: ${effects.join(",")}`,
+    );
+    if (inspect.status === "pending") return;
+    const retried = dependencies({ budget: "exhausted", inspect });
+    const retry = await createWorkspaceInvitationCoordinator(retried.deps)
+      .retryInviteeVerification("raw-token");
+    assert(retry === expected, `retry answered ${expected}, got ${retry}`);
+    assert(
+      !retried.effects.some((effect) => effect.startsWith("budget:")),
+      `the retry spends no budget: ${retried.effects.join(",")}`,
+    );
+  });
+}
 
 Deno.test("AUTH-002 rolls back when an exact acceptance postcondition fails", async () => {
   const { deps, effects } = dependencies({

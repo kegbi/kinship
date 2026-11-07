@@ -1,6 +1,7 @@
 import {
   buildInvitationMessage,
   buildVerificationMessage,
+  invitationWorkspaceLabel,
   plainSmtpPolicy,
   resolveSmtpVerificationMailOptions,
   smtpTimeouts,
@@ -46,6 +47,98 @@ Deno.test("invitation email carries one encoded path token and an expiry", () =>
     !mail.includes("token_hash"),
     "storage material never enters delivery",
   );
+});
+
+Deno.test("[AUD-M3] SECA-03 an invitation's Subject is fixed and its workspace name is truncated and defused in the body", () => {
+  const names = [
+    "Security alert: sign in at https://kinship-login.evil.example now",
+    "Verify at www.evil.example/login or kinship-login.evil.example today",
+    "mailto:victim@example.test ftp://files.evil.example",
+    "Ünïcode wörkspace — family",
+    `Long ${"x".repeat(200)}`,
+    "Family circle",
+  ];
+  for (const workspaceName of names) {
+    const mail = buildInvitationMessage(
+      { from: "hello@kinship.test", webOrigin: "https://kinship.test" },
+      {
+        email: "invitee@example.test",
+        expiresAt: new Date("2026-08-22T12:00:00Z"),
+        token: "raw-token",
+        workspaceName,
+      },
+    );
+    const [headers = "", body = ""] = mail.split("\r\n\r\n");
+    const subjects = headers.split("\r\n").filter((line) =>
+      line.startsWith("Subject:")
+    );
+    assert(
+      subjects.length === 1 &&
+        subjects[0] === "Subject: You were invited to a Kinship workspace",
+      `the Subject is fixed for ${JSON.stringify(workspaceName)}`,
+    );
+    assert(
+      !headers.includes(workspaceName.slice(0, 12)),
+      "the workspace name appears in no header",
+    );
+    const links = body.match(/[a-z][a-z0-9+.-]*:\/\/\S+|www\.\S+/gi) ?? [];
+    assert(
+      links.length === 1 &&
+        links[0] === "https://kinship.test/invite/raw-token",
+      `the only link in the body is the invitation, got ${
+        JSON.stringify(links)
+      }`,
+    );
+    for (const host of ["evil.example", "@example.test"]) {
+      assert(!body.includes(host), `${host} is neutralized in the body`);
+    }
+    const line = body.split("\r\n").find((candidate) =>
+      candidate.startsWith("You were invited")
+    ) ?? "";
+    const named = /“(.*)”/.exec(line)?.[1] ?? "";
+    assert(
+      named.length > 0 && [...named].length <= 60,
+      `the workspace name is quoted and truncated, got ${JSON.stringify(line)}`,
+    );
+  }
+  const plain = buildInvitationMessage(
+    { from: "hello@kinship.test", webOrigin: "https://kinship.test" },
+    {
+      email: "invitee@example.test",
+      expiresAt: new Date("2026-08-22T12:00:00Z"),
+      token: "raw-token",
+      workspaceName: "Family circle",
+    },
+  );
+  assert(
+    plain.includes("“Family circle”"),
+    "an ordinary name is shown unchanged in the body",
+  );
+  // Lookalike dots, bare addresses, and a mark hidden after a dot are links
+  // to a mail client too.
+  for (
+    const [name, expected] of [
+      ["login at evil\u3002com", "login at [link removed]"],
+      ["login at evil\uFF0Ecom", "login at [link removed]"],
+      ["login at evil\uFF61com", "login at [link removed]"],
+      ["login at 203.0.113.5", "login at [link removed]"],
+      ["visit 192.168.10.20/login", "visit [link removed]"],
+      ["localhost:8080/x", "[link removed]"],
+      ["evil.\u0301com", "[link removed]"],
+      ["evil\u0301.com", "[link removed]"],
+      ["Smith Family", "Smith Family"],
+      ["St. Mary's", "St. Mary's"],
+      ["The Smiths. Friends and family", "The Smiths. Friends and family"],
+    ] as const
+  ) {
+    const label = invitationWorkspaceLabel(name);
+    assert(
+      label === expected,
+      `${JSON.stringify(name)} is quoted as ${JSON.stringify(expected)}, got ${
+        JSON.stringify(label)
+      }`,
+    );
+  }
 });
 
 Deno.test("SMTP read timeout closes a stalled connection promptly", async () => {

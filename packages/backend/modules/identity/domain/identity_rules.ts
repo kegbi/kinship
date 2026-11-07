@@ -32,6 +32,18 @@ export class IdentityConflictError extends Error {
 /** How long a password reset link works for. */
 export const PASSWORD_RESET_WINDOW_MS = 60 * 60_000;
 
+/**
+ * How many reset requests one address may make: three in any fifteen
+ * minutes, and ten in any rolling day (SECA-03, AUD-M3). A request past either
+ * writes nothing and sends nothing, and is answered exactly as one that sent a
+ * link, so neither limit says whether the address has an account. A reset
+ * link carried by a "you already have an account" notice is a request too.
+ */
+export const PASSWORD_RESET_REQUEST_LIMITS = {
+  burst: { count: 3, windowMilliseconds: 15 * 60_000 },
+  daily: { count: 10, windowMilliseconds: 24 * 60 * 60_000 },
+} as const;
+
 /** The constant-time answer window, and the bounds it has to fall inside. */
 export const PASSWORD_RESET_DELIVERY_WINDOW = {
   default: 1_500,

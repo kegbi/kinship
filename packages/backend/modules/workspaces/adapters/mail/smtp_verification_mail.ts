@@ -252,6 +252,45 @@ export function buildPasswordChangedMessage(
   ].join("\r\n");
 }
 
+/** The longest workspace name an invitation quotes, in characters. */
+export const INVITATION_WORKSPACE_NAME_LIMIT = 60;
+
+/**
+ * A token a mail client would turn into a link, or an address to write to: a
+ * scheme, `www.`, an `@`, `localhost` with or without a port, or a dot between
+ * two letters or digits — a host name or a dotted IPv4 address.
+ */
+const LINK_LIKE =
+  /^(?:[a-z][a-z0-9+.-]*:\/\/|www\.|(?:mailto|tel|sms|data|javascript):)|@|[\p{L}\p{M}\p{N}]\.[\p{L}\p{N}]|(?:^|[^\p{L}\p{N}])localhost(?::\d+)?(?![\p{L}\p{N}])/iu;
+
+/** Full stops NFKC leaves alone that a mail client may still read as one. */
+const DOT_LOOKALIKES = /[\u3002\uFF0E\uFF61]/gu;
+
+/**
+ * A workspace name as an invitation may quote it (SECA-03). The name is
+ * whatever its owner typed, so it is shown only in the body, never in a
+ * header: it is NFKC-normalized with lookalike full stops read as `.` and
+ * marks after a dot dropped, control and formatting characters are dropped,
+ * anything a mail client would make a link of — a URL, a bare host name or IP
+ * address, `localhost`, an address — is replaced, and what is left is cut to
+ * `INVITATION_WORKSPACE_NAME_LIMIT`.
+ */
+export function invitationWorkspaceLabel(name: string): string {
+  const words = name.normalize("NFKC").replace(DOT_LOOKALIKES, ".")
+    .replace(/\.\p{M}+/gu, ".")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ").split(/\s+/u)
+    .filter(Boolean)
+    .map((word) => LINK_LIKE.test(word) ? "[link removed]" : word);
+  const label = words.join(" ");
+  const characters = [...label];
+  return characters.length <= INVITATION_WORKSPACE_NAME_LIMIT
+    ? label
+    : `${
+      characters.slice(0, INVITATION_WORKSPACE_NAME_LIMIT - 1).join("")
+        .trimEnd()
+    }…`;
+}
+
 export function buildInvitationMessage(
   options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
   message: {
@@ -268,11 +307,13 @@ export function buildInvitationMessage(
   return [
     `From: Kinship <${safeHeader(options.from)}>`,
     `To: ${safeHeader(message.email)}`,
-    `Subject: Join ${safeHeader(message.workspaceName)} on Kinship`,
+    "Subject: You were invited to a Kinship workspace",
     "Content-Type: text/plain; charset=utf-8",
     "MIME-Version: 1.0",
     "",
-    `You were invited to join ${message.workspaceName} on Kinship:`,
+    `You were invited to join the Kinship workspace “${
+      invitationWorkspaceLabel(message.workspaceName)
+    }”:`,
     invitationUrl.toString(),
     "",
     `This single-use link expires at ${message.expiresAt.toISOString()}.`,

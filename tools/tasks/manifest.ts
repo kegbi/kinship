@@ -989,6 +989,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/product/PRODUCT-001/release_contract_test.ts",
         "tests/integration/registration_postgres_test.ts",
         "tests/integration/registration_takeover_postgres_test.ts",
+        "tests/integration/registration_mail_ceiling_postgres_test.ts",
         "tests/integration/authentication_budget_postgres_test.ts",
         "tests/integration/authentication_sign_in_postgres_test.ts",
         "tests/integration/files_postgres_test.ts",
@@ -1009,6 +1010,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/interactions_activities_postgres_test.ts",
         "tests/integration/interactions_communications_postgres_test.ts",
         "tests/integration/invitation_postgres_test.ts",
+        "tests/integration/invitation_mail_relay_postgres_test.ts",
         "tests/integration/journal_postgres_test.ts",
         "tests/integration/life_events_postgres_test.ts",
         "tests/integration/people_directory_postgres_test.ts",
@@ -1990,6 +1992,8 @@ export const MODULES: readonly TaskModule[] = [
     integration: [
       "tests/integration/registration_postgres_test.ts",
       "tests/integration/registration_takeover_postgres_test.ts",
+      // SECA-03 (AUD-M3): the per-address registration and reset ceilings.
+      "tests/integration/registration_mail_ceiling_postgres_test.ts",
     ],
     coverage: {
       directory: "identity-domain",
@@ -2044,7 +2048,11 @@ export const MODULES: readonly TaskModule[] = [
         net: ["127.0.0.1"],
       },
     },
-    integration: ["tests/integration/invitation_postgres_test.ts"],
+    integration: [
+      "tests/integration/invitation_postgres_test.ts",
+      // SECA-03 (AUD-M3): the invitation quota, recipient cap, and inviter age.
+      "tests/integration/invitation_mail_relay_postgres_test.ts",
+    ],
     coverage: {
       directory: "workspaces-domain",
       threshold: 95,

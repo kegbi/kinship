@@ -83,13 +83,18 @@ function hex(bytes: Uint8Array): string {
 export class AuthenticationSubjectDigester {
   constructor(private readonly keyset: AuthenticationSubjectKeyset) {}
 
+  /**
+   * Every digest `rawSubject` may have been recorded under, active key first.
+   * `mail` is an address a mail budget counts (SECA-03); it is normalized as a
+   * sign-in address is, and kept apart from it by its own domain label.
+   */
   async digestCandidates(
-    scope: "mfa" | "password",
+    scope: "mail" | "mfa" | "password",
     rawSubject: string,
   ): Promise<readonly string[]> {
-    const subject = scope === "password"
-      ? rawSubject.trim().toLowerCase()
-      : rawSubject;
+    const subject = scope === "mfa"
+      ? rawSubject
+      : rawSubject.trim().toLowerCase();
     const versions = [
       this.keyset.activeVersion,
       ...[...this.keyset.keys.keys()].filter((version) =>

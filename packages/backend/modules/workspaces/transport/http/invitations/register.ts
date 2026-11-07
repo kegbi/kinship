@@ -81,6 +81,17 @@ export const DELIVERY_RATE_LIMITED: ProblemDefinition = {
   status: 429,
   title: "Verification retry delayed",
 };
+/**
+ * The invited address has had its registration mail for the day (SECA-03):
+ * the ceiling public registration spends too.
+ */
+export const VERIFICATION_MAIL_LIMIT_REACHED: ProblemDefinition = {
+  code: "verification_mail_limit_reached",
+  detail:
+    "No more verification emails can be sent to this address today. Try again tomorrow.",
+  status: 429,
+  title: "Verification email limit reached",
+};
 export const DELIVERY_STILL_FAILING: ProblemDefinition = {
   code: "invitation_verification_delivery_failed",
   detail:
@@ -142,6 +153,9 @@ export function createInvitationRegistrationRoutes(
       }
       return context.json({ status: "verification-required" }, 202);
     }
+    if (result === "mail-limit-reached") {
+      return definedProblem(context, VERIFICATION_MAIL_LIMIT_REACHED);
+    }
     return registrationFailure(context, result);
   });
 
@@ -162,6 +176,9 @@ export function createInvitationRegistrationRoutes(
       }
       if (result === "rate-limited") {
         return definedProblem(context, DELIVERY_RATE_LIMITED);
+      }
+      if (result === "mail-limit-reached") {
+        return definedProblem(context, VERIFICATION_MAIL_LIMIT_REACHED);
       }
       if (result === "delivery-failed") {
         return definedProblem(context, DELIVERY_STILL_FAILING);

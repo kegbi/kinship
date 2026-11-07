@@ -116,6 +116,73 @@ from the per-address limit. It is not a session.
   token lifetime, then remove them. Losing or retiring the keyset only returns
   browsers to the per-account ceiling.
 
+## Outbound Mail Limits
+
+The product never relays mail on a caller's say-so (SECA-03, AUD-M3). These
+limits are fixed policy, not configuration: no variable raises or disables them,
+in any environment. Every window is a rolling 24 hours, so no time zone or
+midnight is involved.
+
+| Limit                                               | Value                                        | Counted in                                                                      |
+| --------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------- |
+| Invitations sent by one workspace                   | 20 per rolling 24 hours                      | `crm.api_request_logs`, `mail-budget/invitation` rows by `workspace_id`         |
+| Invitations received by one address, all workspaces | 3 per rolling 24 hours                       | the same rows, by the recipient's digest                                        |
+| Inviter's address verified for at least             | 24 hours                                     | `crm.users.email_verified_at`                                                   |
+| Registration mail to one address                    | 10 per rolling 24 hours                      | `crm.api_request_logs`, `mail-budget/registration` rows by the address's digest |
+| Password-reset requests for one address             | 3 per 15 minutes and 10 per rolling 24 hours | `crm.password_reset_requests`                                                   |
+
+- **Invitations.** An owner or admin whose address was verified less than 24
+  hours ago is refused with `403 inviter_not_established`. An invitation past
+  the workspace quota or the recipient cap is refused with
+  `429 invitation_limit_reached`; one problem covers both, so the answer never
+  says which limit was reached or anything about the recipient's account. A
+  refusal writes no invitation and sends no mail, and only admitted invitations
+  are counted. The Subject is always "You were invited to a Kinship workspace";
+  the workspace name appears only in the body, at most 60 characters, with any
+  URL, bare host name, or address in it replaced by `[link removed]`.
+- **Registration mail** is a verification link or the "you already have an
+  account" notice. Registering and asking for another verification link each
+  spend one, counted per request whatever the address turns out to be. Past the
+  ceiling, public registration and its retry still answer the same `202` inside
+  the response equalizer, but write and send nothing, so a fresh, a pending, and
+  a registered address are indistinguishable. Registering through an invitation
+  and asking for that verification link again spend one only for a pending
+  invitation to that very address; an invalid, expired, revoked, used, or
+  mismatched invitation answers as it always did and spends nothing. Past the
+  ceiling the invitee routes answer `429 verification_mail_limit_reached` and
+  write no account or token.
+- **Password resets.** A request past either limit writes and sends nothing and
+  is answered exactly as one that sent a link. A reset link carried by an
+  "account exists" notice is a request too.
+
+`crm.api_request_logs` has no scope column in schema v12, so a mail budget is a
+distinct `path` that no HTTP route has (`mail-budget/invitation`,
+`mail-budget/registration`), with `method = 'POST'` and `status_code = 202`, as
+the sign-in throttle separates its scopes by path (AUD-A3). The address is kept
+only as its versioned HMAC under `AUTH_THROTTLE_SUBJECT_KEYSET`, labelled
+`kinship.authentication.mail.v1`; every retained key's digest is counted, so a
+rotation does not reset a budget. A future retention job must keep these rows
+for at least 24 hours.
+
+A per-address ceiling can be spent by somebody else: anyone may exhaust an
+address's registration mail for the day, or invite it three times. That delays
+its owner by at most a day; the alternative is an unbounded relay. It reveals
+nothing about whether the address has an account. It does reveal one thing,
+inherent to a cap shared by every workspace: an established owner or admin whose
+own workspace quota is not exhausted, and who is still refused with
+`429 invitation_limit_reached`, learns that other workspaces invited the address
+within the last 24 hours. Registering through an invitation spends registration
+mail only once the invitation is known to be pending for that very address, so a
+made-up or mismatched token measures nothing.
+
+Known limit: the caps count an address as typed, trimmed and lower-cased. A
+provider's sub-addresses (`name+tag@`, or dots ignored by some providers) reach
+one mailbox under many addresses, so each such alias has its own per-recipient
+cap and registration-mail ceiling, and one mailbox can be sent that much per
+alias. Each workspace's quota still bounds what that workspace sends, but
+workspaces held by plus-aliased accounts of one person are counted apart.
+Folding aliases would mean guessing each provider's rules, so it is not done.
+
 ## Redaction
 
 Structured telemetry uses an allowlist of fields. At minimum, redact:

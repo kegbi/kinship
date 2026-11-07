@@ -55,7 +55,7 @@ export const createWorkspaceInvitation = defineRoute({
         }),
       },
     },
-    ...problemResponses(400, 401, 403, 409, 503),
+    ...problemResponses(400, 401, 403, 409, 429, 503),
   },
 });
 
@@ -207,7 +207,7 @@ export const registerInvitedIdentity = defineRoute({
         "application/json": registrationAccepted,
       },
     },
-    ...problemResponses(400, 404, 409, 410, 503),
+    ...problemResponses(400, 404, 409, 410, 429, 503),
   },
 });
 

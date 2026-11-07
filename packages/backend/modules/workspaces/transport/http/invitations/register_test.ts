@@ -110,3 +110,61 @@ Deno.test("invited registration reports post-commit mail failure and scoped retr
   );
   assertStatus(success, 202, "a later bounded retry can succeed");
 });
+
+Deno.test("[AUD-M3] SECA-03 an invitee past the address's registration-mail ceiling is told so on both routes", async () => {
+  const token = "a-valid-private-invitation-token-0000000000";
+  const app = createInvitationRoutes(services({
+    registerInvitee: () => Promise.resolve("mail-limit-reached"),
+    retryInviteeVerification: () => Promise.resolve("mail-limit-reached"),
+  }));
+  const registration = await app.request(
+    "https://kinship.test/api/v1/workspace-invitations/register",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://kinship.test",
+      },
+      body: JSON.stringify({
+        email: "invitee@example.test",
+        firstName: "New",
+        lastName: "Invitee",
+        password: "correct horse battery staple",
+        token,
+      }),
+    },
+  );
+  const retry = await app.request(
+    "https://kinship.test/api/v1/workspace-invitations/verification-delivery",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `kinship_invitation=${token}`,
+        origin: "https://kinship.test",
+      },
+      body: "{}",
+    },
+  );
+  for (
+    const [label, response] of [["register", registration], [
+      "retry",
+      retry,
+    ]] as const
+  ) {
+    const body = await response.json() as { readonly code?: string };
+    assert(
+      response.status === 429 &&
+        body.code === "verification_mail_limit_reached",
+      `${label} answers the documented ceiling, got ${response.status} ${
+        JSON.stringify(body)
+      }`,
+    );
+  }
+  assert(
+    !(registration.headers.get("set-cookie") ?? "").includes(
+      "kinship_invitation=",
+    ),
+    "a refused registration leaves no continuation behind",
+  );
+});

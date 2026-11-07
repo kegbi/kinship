@@ -43,7 +43,10 @@ flows:
     priority: P0
     actor: workspace-admin
     trigger: An owner or admin invites another person.
-    preconditions: [active-admin-membership]
+    preconditions: [
+      active-admin-membership,
+      inviter-address-verified-at-least-24-hours,
+    ]
     steps:
       - Create a single-use invitation.
       - Deliver or expose the invitation link.
@@ -54,6 +57,8 @@ flows:
       revoked-token,
       already-a-member,
       wrong-authenticated-user,
+      inviter-not-established,
+      invitation-limit-reached,
     ]
     result: The invitee has one active membership and the invitation cannot be reused.
     auditEffect: workspace-member-joined

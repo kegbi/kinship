@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { PASSWORD_RESET_REQUEST_LIMITS } from "../../domain/identity_rules.ts";
 import type { PasswordRecoveryRepository } from "../../ports/password_recovery.ts";
 
 export class PostgresPasswordRecoveryRepository
@@ -11,12 +12,28 @@ export class PostgresPasswordRecoveryRepository
     await sql`
       select pg_advisory_xact_lock(hashtextextended(lower(${command.email}), 0))
     `.execute(database);
-    const recent = await sql<{ readonly count: number }>`
-      select count(*)::int count from crm.password_reset_requests
+    const { burst, daily } = PASSWORD_RESET_REQUEST_LIMITS;
+    const since = (windowMilliseconds: number) =>
+      new Date(command.now.getTime() - windowMilliseconds);
+    const recent = await sql<
+      { readonly burst: number; readonly daily: number }
+    >`
+      select
+        count(*) filter (
+          where created_at > ${since(burst.windowMilliseconds)}
+        )::int burst,
+        count(*)::int daily
+      from crm.password_reset_requests
       where email = ${command.email}
-        and created_at > ${new Date(command.now.getTime() - 15 * 60_000)}
+        and created_at > ${since(daily.windowMilliseconds)}
     `.execute(database);
-    if ((recent.rows[0]?.count ?? 0) >= 3) return {};
+    const counted = recent.rows[0];
+    if (
+      (counted?.burst ?? 0) >= burst.count ||
+      (counted?.daily ?? 0) >= daily.count
+    ) {
+      return {};
+    }
     const user = await sql<
       { readonly email: string; readonly user_id: string }
     >`

@@ -34,6 +34,7 @@ Deno.test("verification delivery retries preserve links and bound provider work"
 });
 
 function fakeDependencies(failAt?: string, options: {
+  readonly budget?: "admitted" | "exhausted";
   readonly claim?: "available" | "pending" | "registered";
   readonly recoverable?: boolean;
   readonly withoutAccountExistsMail?: boolean;
@@ -52,6 +53,14 @@ function fakeDependencies(failAt?: string, options: {
     effects,
     deps: {
       clock: fixedClock("2026-08-14T12:00:00.000Z"),
+      mailBudget: {
+        reserve(reservation) {
+          effect(
+            `budget:${reservation.scope}:${reservation.recipient}:${reservation.recipientCeiling}:${reservation.windowMilliseconds}`,
+          );
+          return Promise.resolve(options.budget ?? "admitted");
+        },
+      },
       responseEqualizer: {
         async run(work) {
           effects.push("equalizer.begin");
@@ -230,7 +239,7 @@ Deno.test("first workspace registration coordinates every required effect in one
   );
   assert(
     effects.join(",") ===
-      "equalizer.begin,transaction.begin,identity.claim,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail,equalizer.end",
+      "equalizer.begin,budget:registration:owner@example.test:10:86400000,transaction.begin,identity.claim,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail,equalizer.end",
     `unexpected effect order: ${effects.join(",")}`,
   );
 });
@@ -341,7 +350,7 @@ Deno.test("AUD-A1 a pending registration is replaced, workspaces before identity
   const result = await createFirstWorkspaceRegistration(deps)(registration);
   assert(result.status === "verification-required", "the address is free");
   assert(
-    effects.slice(2, 6).join(",") ===
+    effects.slice(3, 7).join(",") ===
       "identity.claim,workspace.discard:pending-user,identity.discard:pending-user,identity",
     `the squatter is discarded before the new identity: ${effects.join(",")}`,
   );
@@ -360,7 +369,7 @@ Deno.test("AUD-A1 an existing account answers the same and is mailed a reset lin
   );
   assert(
     effects.join(",") ===
-      "equalizer.begin,transaction.begin,identity.claim,identity.recovery:hashed-verification-token,transaction.commit,mail.account-exists:raw-verification-token,equalizer.end",
+      "equalizer.begin,budget:registration:owner@example.test:10:86400000,transaction.begin,identity.claim,identity.recovery:hashed-verification-token,transaction.commit,mail.account-exists:raw-verification-token,equalizer.end",
     `only a reset request is written and the owner told: ${effects.join(",")}`,
   );
 });
@@ -491,4 +500,54 @@ Deno.test("AUD-A1 a retry answers inside the equalizer without waiting for the p
   );
   release();
   await pending;
+});
+
+Deno.test("[AUD-M3] past the address's daily ceiling every registration answers alike and nothing is written or sent", async () => {
+  const answers: string[] = [];
+  for (const [label, options] of PROVIDER_PARITY_CASES) {
+    const { deps, effects } = fakeDependencies(undefined, {
+      ...options,
+      budget: "exhausted",
+    });
+    let calls = 0;
+    const count = () => {
+      calls += 1;
+      return Promise.resolve();
+    };
+    const result = await createFirstWorkspaceRegistration({
+      ...deps,
+      mail: { sendAccountExists: count, sendVerification: count },
+    })(registration);
+    answers.push(JSON.stringify(result));
+    assert(
+      calls === 0 &&
+        effects.join(",") ===
+          "equalizer.begin,budget:registration:owner@example.test:10:86400000,equalizer.end",
+      `${label}: only the budget is asked, inside the equalizer: ${
+        effects.join(",")
+      }`,
+    );
+  }
+  assert(
+    new Set(answers).size === 1 &&
+      answers[0] === JSON.stringify({ status: "verification-required" }),
+    `every address answers the same: ${answers.join(" ")}`,
+  );
+
+  const { deps, effects } = fakeDependencies(undefined, {
+    budget: "exhausted",
+  });
+  await createVerificationDeliveryRetry(deps)("owner@example.test");
+  assert(
+    effects.join(",") ===
+      "equalizer.begin,budget:registration:owner@example.test:10:86400000,equalizer.end",
+    `a retry past the ceiling issues and sends nothing: ${effects.join(",")}`,
+  );
+});
+
+Deno.test("[AUD-M3] a budget that cannot be reached fails the registration as nothing created", async () => {
+  const error = await registrationFailure(
+    fakeDependencies("budget:registration:owner@example.test:10:86400000").deps,
+  );
+  assert(error instanceof RegistrationError, "the registration is refused");
 });

@@ -20,6 +20,24 @@ import type { InvitationRole, WorkspaceRole } from "./roles.ts";
 /** How long an invitation link works for. */
 export const INVITATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
 
+/**
+ * The mail an invitation may send (SECA-03, AUD-M3). Every limit counts over
+ * a rolling day, so there is no midnight to wait for and no time zone to ask
+ * about.
+ */
+export const MAIL_BUDGET_WINDOW_MS = 24 * 60 * 60 * 1_000;
+/** Invitations one workspace may send in a rolling day. */
+export const INVITATION_WORKSPACE_DAILY_QUOTA = 20;
+/** Invitations one address may receive in a rolling day, from every workspace. */
+export const INVITATION_RECIPIENT_DAILY_CAP = 3;
+/** How long an inviter's address must have been verified before they invite. */
+export const INVITER_MINIMUM_VERIFIED_AGE_MS = 24 * 60 * 60 * 1_000;
+
+/** The instant an inviter acting now must have verified their address by. */
+export function inviterVerifiedBy(now: Date): Date {
+  return new Date(now.getTime() - INVITER_MINIMUM_VERIFIED_AGE_MS);
+}
+
 /** When an invitation issued now stops working. */
 export function invitationExpiry(now: Date): Date {
   return new Date(now.getTime() + INVITATION_WINDOW_MS);
@@ -122,12 +140,26 @@ export type VerifiedEntryAcceptance = InvitationAcceptance | {
   readonly workspaceName: string;
 };
 
+/**
+ * How sending an invitation ends. `limit-reached` is either daily limit — the
+ * workspace's or the recipient's — and never says which, nor anything about
+ * the recipient's account (SECA-03).
+ */
+export type InvitationCreationResult =
+  | "already-member"
+  | "created"
+  | "delivery-failed"
+  | "forbidden"
+  | "inviter-not-established"
+  | "limit-reached";
+
 /** How registering from an invitation ends. */
 export type InvitationRegistrationResult =
   | "delivery-failed"
   | "expired"
   | "identity-unavailable"
   | "invalid"
+  | "mail-limit-reached"
   | "revoked"
   | "used"
   | "verification-required"
@@ -138,6 +170,7 @@ export type InvitationVerificationDeliveryResult =
   | "delivery-failed"
   | "expired"
   | "invalid"
+  | "mail-limit-reached"
   | "rate-limited"
   | "revoked"
   | "sent"

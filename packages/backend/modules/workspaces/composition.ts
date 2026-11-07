@@ -70,6 +70,7 @@ import {
   type InvitationMail,
   type InvitationTokens,
   type MemberCredentialRevocation,
+  type OutboundMailBudget,
   personalLifecycleAuditFrom,
   type RecentPersonScope,
   registrationAuditFrom,
@@ -223,6 +224,8 @@ export interface WorkspacePorts {
   /** Every module's share of a workspace cascade, assembled by the root. */
   readonly impact: WorkspaceLifecycleCascadeParticipants;
   readonly mail: VerificationMail;
+  /** API access's durable daily mail budgets (SECA-03, AUD-M3). */
+  readonly mailBudget: OutboundMailBudget;
   /** API access's hook: a removed member's tokens are revoked (SECT-07). */
   readonly memberCredentials: MemberCredentialRevocation;
   /** Planning's late-bound hook for a timezone change. */
@@ -248,6 +251,7 @@ export function composeWorkspaces(
     identity: ports.identity.registration,
     ids: shared.ids,
     mail: ports.mail,
+    mailBudget: ports.mailBudget,
     responseEqualizer: ports.responseEqualizer,
     tokens: ports.tokens,
     transaction: shared.transaction,
@@ -281,6 +285,8 @@ export function composeWorkspaces(
           ports.identity.registration.discardPendingUser(command),
         findIdentityIdByEmail: (command) =>
           ports.identity.invitations.findIdentityIdByEmail(command),
+        isAddressVerifiedBy: (command) =>
+          ports.identity.invitations.isAddressVerifiedBy(command),
         isVerifiedInvitationIdentity: (command) =>
           ports.identity.invitations.isVerifiedInvitationIdentity(command),
         issueSession: (command) =>
@@ -289,6 +295,7 @@ export function composeWorkspaces(
           ports.identity.invitations.listIdentityDisplaySummaries(command),
       },
       mail: invitationMail(ports.mail),
+      mailBudget: ports.mailBudget,
       pendingWorkspaces: registrationDependencies.workspace,
       repository: new PostgresWorkspaceInvitations(),
       tokens: ports.tokens,

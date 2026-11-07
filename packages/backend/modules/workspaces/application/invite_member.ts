@@ -25,17 +25,29 @@
  * invitation and then could not send the email reports `delivery-failed`; it
  * does not roll the invitation back, because the invitation is real and can be
  * re-sent.
+ *
+ * Nothing here relays mail for whoever asks (SECA-03). An invitation is sent
+ * only by an inviter whose address was verified at least a day ago, and only
+ * within the workspace's daily quota and the recipient's daily cap, both
+ * reserved before anything is written. Registering through an invitation, and
+ * asking for its verification link again, spend the invited address's
+ * registration-mail ceiling, the one public registration spends.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
 import {
+  INVITATION_RECIPIENT_DAILY_CAP,
+  INVITATION_WORKSPACE_DAILY_QUOTA,
   type InvitationAcceptance,
+  type InvitationCreationResult,
   invitationExpiry,
   type InvitationInspection,
   type InvitationRegistrationResult,
   invitationSummary,
   type InvitationVerificationDeliveryResult,
+  inviterVerifiedBy,
+  MAIL_BUDGET_WINDOW_MS,
   memberDirectory,
   sameMailbox,
   type VerifiedEntryAcceptance,
@@ -54,6 +66,7 @@ import type {
   InvitationTokens,
   WorkspaceInvitationRepository,
 } from "../ports/invitation_repository.ts";
+import type { OutboundMailBudget } from "../ports/mail_budget.ts";
 import type { WorkspaceRegistrationWriter } from "../ports/registration_repository.ts";
 import type {
   IdentityAuthenticationFacade,
@@ -63,7 +76,10 @@ import type {
 } from "../../identity/public.ts";
 import { IdentityConflictError } from "../../identity/public.ts";
 import { completeAcceptance } from "./invitation_acceptance.ts";
-import { claimAddressForRegistration } from "./register_first_workspace.ts";
+import {
+  claimAddressForRegistration,
+  reserveRegistrationMail,
+} from "./register_first_workspace.ts";
 
 export interface WorkspaceInvitationDependencies {
   readonly audit: InvitationAudit;
@@ -78,6 +94,8 @@ export interface WorkspaceInvitationDependencies {
     >
     & InvitationIdentityFacade;
   readonly mail: InvitationMail;
+  /** The durable daily budgets every invitation mail spends (SECA-03). */
+  readonly mailBudget: OutboundMailBudget;
   /** Where a replaced pending registration's workspaces are removed. */
   readonly pendingWorkspaces: Pick<
     WorkspaceRegistrationWriter,
@@ -106,7 +124,7 @@ export function createWorkspaceInvitationCoordinator(
     readonly email: string;
     readonly role: InvitationRole;
     readonly workspaceName: string;
-  }): Promise<"already-member" | "created" | "delivery-failed" | "forbidden">;
+  }): Promise<InvitationCreationResult>;
   inspect(token: string): Promise<InvitationInspection>;
   list(
     actor: InvitationActor,
@@ -130,6 +148,17 @@ export function createWorkspaceInvitationCoordinator(
   return {
     async registerInvitee(command) {
       const tokenHash = await dependencies.tokens.hash(command.token);
+      // Only a pending invitation for this very address may spend the
+      // address's registration mail, so a made-up token measures nothing.
+      const invited = await pendingInvitation(dependencies, tokenHash);
+      if (invited.status !== "pending") return invited.status;
+      if (!sameMailbox(invited.email, command.email)) return "wrong-user";
+      if (
+        await reserveRegistrationMail(dependencies, command.email) !==
+          "admitted"
+      ) {
+        return "mail-limit-reached";
+      }
       const verificationToken = await dependencies.tokens.create();
       const now = dependencies.clock.now();
       const expiresAt = verificationExpiry(now);
@@ -206,6 +235,19 @@ export function createWorkspaceInvitationCoordinator(
       const invitationTokenHash = await dependencies.tokens.hash(
         invitationToken,
       );
+      // As above: reserve only for a pending invitation, and before a
+      // verification token exists, so a refusal leaves nothing behind.
+      const invited = await pendingInvitation(
+        dependencies,
+        invitationTokenHash,
+      );
+      if (invited.status !== "pending") return invited.status;
+      if (
+        await reserveRegistrationMail(dependencies, invited.email) !==
+          "admitted"
+      ) {
+        return "mail-limit-reached";
+      }
       const verificationToken = await dependencies.tokens.create();
       const now = dependencies.clock.now();
       const expiresAt = verificationExpiry(now);
@@ -301,8 +343,31 @@ export function createWorkspaceInvitationCoordinator(
     },
     async create(command) {
       if (!privileged(command.actor)) return "forbidden";
+      const now = dependencies.clock.now();
+      const established = await dependencies.transaction.run((transaction) =>
+        dependencies.identity.isAddressVerifiedBy({
+          transaction,
+          userId: command.actor.userId,
+          verifiedBy: inviterVerifiedBy(now),
+        })
+      );
+      if (!established) return "inviter-not-established";
+      const budget = await dependencies.mailBudget.reserve({
+        occurredAt: now,
+        recipient: command.email,
+        recipientCeiling: INVITATION_RECIPIENT_DAILY_CAP,
+        scope: "invitation",
+        sender: {
+          ceiling: INVITATION_WORKSPACE_DAILY_QUOTA,
+          memberId: command.actor.memberId,
+          userId: command.actor.userId,
+          workspaceId: command.actor.workspaceId,
+        },
+        windowMilliseconds: MAIL_BUDGET_WINDOW_MS,
+      });
+      if (budget !== "admitted") return "limit-reached";
       const token = await dependencies.tokens.create();
-      const expiresAt = invitationExpiry(dependencies.clock.now());
+      const expiresAt = invitationExpiry(now);
       const result = await dependencies.transaction.run(async (transaction) => {
         const existingUserId = await dependencies.identity
           .findIdentityIdByEmail({ email: command.email, transaction });
@@ -416,4 +481,19 @@ export function createWorkspaceInvitationCoordinator(
       });
     },
   };
+}
+
+/**
+ * What a token names, read on its own before any mail budget is spent
+ * (SECA-03). The transaction that then writes reads it again, so this only
+ * decides whether the request may spend at all.
+ */
+function pendingInvitation(
+  dependencies: WorkspaceInvitationDependencies,
+  tokenHash: string,
+): Promise<InvitationInspection> {
+  const now = dependencies.clock.now();
+  return dependencies.transaction.run((transaction) =>
+    dependencies.repository.inspect({ now, tokenHash, transaction })
+  );
 }

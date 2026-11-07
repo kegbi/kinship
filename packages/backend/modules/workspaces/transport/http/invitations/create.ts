@@ -11,6 +11,11 @@
  * An email that already has a membership record is a conflict rather than a
  * second invitation, because a membership's lifecycle is managed explicitly.
  *
+ * Invitation mail is bounded (SECA-03): an inviter whose address was verified
+ * less than a day ago is refused, and so is an invitation past the
+ * workspace's daily quota or the recipient's daily cap. The two limits answer
+ * one problem, which says nothing about the recipient's account.
+ *
  * Both paths and the shape an invitation is asked for in came from
  * `packages/contracts` (GAP-022).
  */
@@ -64,6 +69,20 @@ export const INVITATION_FORBIDDEN: ProblemDefinition = {
   detail: "Only an active workspace owner or admin may invite members.",
   status: 403,
   title: "Invitation forbidden",
+};
+export const INVITER_NOT_ESTABLISHED: ProblemDefinition = {
+  code: "inviter_not_established",
+  detail:
+    "You can send invitations once your email address has been verified for a day.",
+  status: 403,
+  title: "Invitation forbidden",
+};
+export const INVITATION_LIMIT_REACHED: ProblemDefinition = {
+  code: "invitation_limit_reached",
+  detail:
+    "No more invitations can be sent from this workspace or to this address today. Try again tomorrow.",
+  status: 429,
+  title: "Invitation limit reached",
 };
 export const INVITATION_DELIVERY_FAILED: ProblemDefinition = {
   code: "invitation_delivery_failed",
@@ -144,6 +163,12 @@ export function createInvitationCreationRoutes(
     }
     if (result === "forbidden") {
       return definedProblem(context, INVITATION_FORBIDDEN);
+    }
+    if (result === "inviter-not-established") {
+      return definedProblem(context, INVITER_NOT_ESTABLISHED);
+    }
+    if (result === "limit-reached") {
+      return definedProblem(context, INVITATION_LIMIT_REACHED);
     }
     return definedProblem(
       context,

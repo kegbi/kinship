@@ -23,6 +23,13 @@
  * a different error from a failed registration: the account exists, so the
  * person has to be told to ask for another link, not to register again.
  *
+ * Every registration, and every retry, first spends one of the address's
+ * registration mails for the day (SECA-03). The budget counts requests, not
+ * outcomes, so a fresh, a pending, and a registered address reach the ceiling
+ * on the same request; past it nothing is written and nothing is sent, and the
+ * caller gets the same `verification-required` inside the same equalizer —
+ * the ceiling cannot become the account oracle SECA-02 closed.
+ *
  * The retry is deliberately quiet. It never says whether the address is
  * registered, whether a link was actually issued, or whether the email went
  * out, because the answer to all three belongs to whoever holds the mailbox.
@@ -32,10 +39,12 @@
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import { MAIL_BUDGET_WINDOW_MS } from "../domain/invitation_rules.ts";
 import {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   type FirstWorkspaceRegistrationCommand,
   type FirstWorkspaceRegistrationResult,
+  REGISTRATION_MAIL_DAILY_CEILING,
   RegistrationError,
   VerificationDeliveryError,
   verificationExpiry,
@@ -50,6 +59,7 @@ import type {
   VerificationTokens,
   WorkspaceRegistrationWriter,
 } from "../ports/registration_repository.ts";
+import type { OutboundMailBudget } from "../ports/mail_budget.ts";
 import type { AuthenticationResponseEqualizer } from "../ports/session.ts";
 import type { IdentityRegistrationFacade } from "../../identity/public.ts";
 
@@ -59,6 +69,8 @@ export interface RegistrationDependencies {
   readonly identity: IdentityRegistrationFacade;
   readonly ids: IdGenerator;
   readonly mail: VerificationMail;
+  /** The address's daily registration-mail ceiling (SECA-03). */
+  readonly mailBudget: OutboundMailBudget;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
   readonly tokens: VerificationTokens;
   readonly transaction: RegistrationTransactionRunner;
@@ -123,6 +135,12 @@ export function createFirstWorkspaceRegistration(
 ) => Promise<FirstWorkspaceRegistrationResult> {
   return (command) =>
     dependencies.responseEqualizer.run(async () => {
+      if (
+        await reserveRegistrationMail(dependencies, command.email) !==
+          "admitted"
+      ) {
+        return { status: "verification-required" };
+      }
       let delivery: RegistrationDelivery;
       try {
         delivery = await dependencies.transaction.run((transaction) =>
@@ -266,6 +284,11 @@ export function createVerificationDeliveryRetry(
 ): (email: string) => Promise<void> {
   return (email) =>
     dependencies.responseEqualizer.run(async () => {
+      if (
+        await reserveRegistrationMail(dependencies, email) !== "admitted"
+      ) {
+        return;
+      }
       const now = dependencies.clock.now();
       const expiresAt = verificationExpiry(now);
       const token = await dependencies.tokens.create();
@@ -289,4 +312,25 @@ export function createVerificationDeliveryRetry(
         })
       ).catch(() => undefined);
     });
+}
+
+/**
+ * Spends one of `email`'s registration mails for the day. A budget that cannot
+ * be reached refuses the registration as any other failure would.
+ */
+export async function reserveRegistrationMail(
+  dependencies: Pick<RegistrationDependencies, "clock" | "mailBudget">,
+  email: string,
+): Promise<"admitted" | "exhausted"> {
+  try {
+    return await dependencies.mailBudget.reserve({
+      occurredAt: dependencies.clock.now(),
+      recipient: email,
+      recipientCeiling: REGISTRATION_MAIL_DAILY_CEILING,
+      scope: "registration",
+      windowMilliseconds: MAIL_BUDGET_WINDOW_MS,
+    });
+  } catch {
+    throw new RegistrationError();
+  }
 }

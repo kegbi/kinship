@@ -139,3 +139,38 @@ Deno.test("[SECT-04] revoking an invitation is origin/session protected and answ
   );
   assert(calls.length === before, "neither refusal reaches the use case");
 });
+
+Deno.test("[AUD-M3] SECA-03 a refused invitation answers its documented problem", async () => {
+  for (
+    const [result, status, code] of [
+      ["inviter-not-established", 403, "inviter_not_established"],
+      ["limit-reached", 429, "invitation_limit_reached"],
+    ] as const
+  ) {
+    const app = createInvitationRoutes(services({
+      create: () => Promise.resolve(result),
+    }));
+    const response = await app.request(
+      "https://kinship.test/api/v1/workspace-invitations",
+      {
+        method: "POST",
+        headers: secureHeaders,
+        body: JSON.stringify({ email: "invitee@example.test", role: "member" }),
+      },
+    );
+    const body = await response.json() as {
+      readonly code?: string;
+      readonly status?: number;
+    };
+    assert(
+      response.status === status && body.status === status &&
+        body.code === code &&
+        (response.headers.get("content-type") ?? "").includes(
+          "application/problem+json",
+        ),
+      `${result} answers ${status} ${code}, got ${response.status} ${
+        JSON.stringify(body)
+      }`,
+    );
+  }
+});

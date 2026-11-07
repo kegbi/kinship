@@ -145,6 +145,11 @@ Deno.test({
       "employer@example.test",
       "Employer Confidential WS",
     );
+    // Only an address verified for a day may invite (SECA-03, AUD-M3).
+    await sql`
+      update crm.users set email_verified_at = now() - interval '25 hours'
+      where email = 'employer@example.test'
+    `;
     const victim = "invited-victim@example.test";
     const invited = await post(
       "/api/v1/workspace-invitations",

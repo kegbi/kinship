@@ -1181,6 +1181,9 @@ export function composeApiServices(
       relationships: relationships.lifecycleImpact,
     },
     mail,
+    // API access's durable daily mail budgets (SECA-03): the invitation
+    // quota and recipient cap, and each address's registration-mail ceiling.
+    mailBudget: apiAccess.mailBudget,
     // API access's hook: suspending a member, or their leaving, revokes the
     // tokens and calendar feed they held in that workspace.
     memberCredentials: apiAccess.apiTokens,

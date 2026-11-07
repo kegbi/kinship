@@ -28,6 +28,12 @@ async function registerAccount(
       headers: { origin },
     })).status(),
   ).toBe(200);
+  // Only an address verified for a day may send invitations (SECA-03).
+  databaseSql(
+    `update crm.users set email_verified_at = now() - interval '25 hours' where email = ${
+      sqlLiteral(email)
+    }`,
+  );
 }
 
 async function invitationLink(

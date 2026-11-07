@@ -67,8 +67,23 @@ const configured = createConfiguredApiApp(
 );
 const api = apiSupport(configured.app, mail, sql);
 
-const registerVerifySignIn = (email: string, workspaceName: string) =>
-  api.register(email, workspaceName);
+/**
+ * Registers, verifies, and signs in, then dates the verification a day back:
+ * only an address verified for a day may invite (SECA-03, AUD-M3).
+ */
+async function registerVerifySignIn(email: string, workspaceName: string) {
+  const registered = await api.register(email, workspaceName);
+  await sql`
+    update crm.users set email_verified_at = now() - interval '25 hours'
+    where email = ${email}
+  `;
+  return registered;
+}
+
+/** Admits every invitation, for the fixtures that compose their own. */
+const unboundedMail = {
+  reserve: () => Promise.resolve("admitted" as const),
+};
 
 async function invite(
   cookie: string,
@@ -589,6 +604,7 @@ Deno.test({
             createRetryVerificationToken: () => Promise.resolve(undefined),
             findIdentityIdByEmail: (command) =>
               new PostgresInvitationIdentity().findIdentityIdByEmail(command),
+            isAddressVerifiedBy: () => Promise.resolve(true),
             isVerifiedInvitationIdentity: (command) =>
               new PostgresInvitationIdentity()
                 .isVerifiedInvitationIdentity(command),
@@ -602,6 +618,7 @@ Deno.test({
             sendInvitation: () => Promise.resolve(),
             sendVerification: () => Promise.resolve(),
           },
+          mailBudget: unboundedMail,
           pendingWorkspaces: new PostgresWorkspaceRegistration(),
           repository,
           tokens: new SecureTokenService(new WebCryptoRandomSource()),
@@ -806,6 +823,11 @@ Deno.test({
           PostgresInvitationIdentity["findIdentityIdByEmail"]
         >[0],
       ) => invitationIdentity.findIdentityIdByEmail(command),
+      isAddressVerifiedBy: (
+        command: Parameters<
+          PostgresInvitationIdentity["isAddressVerifiedBy"]
+        >[0],
+      ) => invitationIdentity.isAddressVerifiedBy(command),
       isVerifiedInvitationIdentity: (
         command: Parameters<
           PostgresInvitationIdentity["isVerifiedInvitationIdentity"]
@@ -845,6 +867,7 @@ Deno.test({
         sendInvitation: () => Promise.resolve(),
         sendVerification: () => Promise.resolve(),
       },
+      mailBudget: unboundedMail,
       pendingWorkspaces: new PostgresWorkspaceRegistration(),
       repository: baseRepository,
       tokens,
@@ -880,6 +903,7 @@ Deno.test({
         },
         sendVerification: () => Promise.resolve(),
       },
+      mailBudget: unboundedMail,
       pendingWorkspaces: new PostgresWorkspaceRegistration(),
       repository: creationRepository,
       tokens,

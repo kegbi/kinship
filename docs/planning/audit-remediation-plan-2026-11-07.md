@@ -364,7 +364,8 @@ these:
       - unverified users older than 7 days, with their tokens;
       - sessions expired or revoked more than 30 days ago;
       - reset requests and verification tokens older than 7 days;
-      - `api_request_logs` older than the throttle window plus a margin.
+      - `api_request_logs` older than the throttle window plus a margin, keeping
+        `mail-budget/*` rows (AUD-M3) at least 24 hours.
     - Add a durable per-address, per-day registration budget, reusing the
       attempt-budget table with a new scope.
     - Record the retention windows in
@@ -487,7 +488,7 @@ these:
     workspace-settings save still locks the member before the workspace
     (REL-109's repair should lock the workspace first).
 
-- [ ] **AUD-M3 — Invitation and account mail cannot be used as a relay.** M.
+- [x] **AUD-M3 — Invitation and account mail cannot be used as a relay.** M.
       Normal. Depends: AUD-A1, AUD-M2. Closes: SECA-03.
   - Scope:
     - Add a durable per-workspace daily invitation quota and a per-recipient
@@ -501,6 +502,20 @@ these:
     and sends no mail, and no Subject contains the workspace name.
   - Verify: `test:integration --module=workspaces` and `--module=identity`; the
     mail adapter's unit tests; E2E `invitations.AUTH-002`.
+  - Delivered 2026-11-08: invitations count against a durable per-workspace
+    daily quota and a cross-workspace per-recipient cap, come only from an
+    inviter verified for 24 hours, and carry a fixed Subject with the workspace
+    name in the body only, truncated and with links (Unicode dot lookalikes,
+    bare IPs, and `localhost` included) removed; verification, account-exists,
+    and reset mail have per-address daily ceilings that answer identically for
+    fresh, pending, and registered addresses, and invitee registration reads the
+    invitation before it spends budget, so a made-up token reveals no ceiling;
+    concurrent reservations never pass a ceiling. Integration workspaces 18 and
+    identity 10 (only REL-099), unit workspaces 180, identity 12, api-access 37;
+    AUTH-002 passed and flows trace; contracts, fmt, architecture, and lint
+    (only REL-096). AUTH-001's "verifying in another browser" URL poll races the
+    reset page's token removal on the base as well (AUD-G5 awaits the
+    navigation). Plus-addressing is a documented limit.
 
 - [x] **AUD-M4 — Owners and admins manage every API token in the workspace.** M.
       Normal. Depends: none. Closes: SECT-07.

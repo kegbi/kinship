@@ -72,6 +72,11 @@ export type {
   AuthenticationResponseEqualizer,
   SignInDeviceIssuer,
 } from "./ports/session.ts";
+/** The durable mail budget api-access keeps (SECA-03, AUD-M3). */
+export type {
+  MailBudgetReservation,
+  OutboundMailBudget,
+} from "./ports/mail_budget.ts";
 export { createSettingsManagement } from "./application/settings_management.ts";
 export type {
   MemberSessionSummary,
