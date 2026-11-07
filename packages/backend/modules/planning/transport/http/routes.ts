@@ -236,6 +236,13 @@ const REMINDER_QUERY_INVALID: ProblemDefinition = {
   status: 400,
   title: "Invalid reminder query",
 };
+/** The person a reminder listing names is not in the active workspace. */
+const REMINDER_PERSON_NOT_FOUND: ProblemDefinition = {
+  code: "person_not_found",
+  detail: "No person with this identifier exists in the current workspace.",
+  status: 404,
+  title: "Person not found",
+};
 const REMINDER_CALENDAR_INVALID: ProblemDefinition = {
   code: "reminder_request_invalid",
   detail: "Use supported calendar fields and canonical identifiers.",
@@ -309,6 +316,7 @@ export const PLANNING_PROBLEMS: readonly ProblemDefinition[] = [
   REMINDER_ACTIVE_INVALID,
   REMINDER_CALENDAR_INVALID,
   REMINDER_OCCURRENCE_INVALID,
+  REMINDER_PERSON_NOT_FOUND,
   REMINDER_QUERY_INVALID,
   REMINDERS_NOTHING_CHANGED,
   REMINDERS_NOTHING_SAVED,
@@ -379,6 +387,9 @@ export function createPlanningRoutes(
       }
       if (result.status === "validation-error") {
         return definedProblem(context, REMINDER_QUERY_INVALID);
+      }
+      if (result.status === "not-found") {
+        return definedProblem(context, REMINDER_PERSON_NOT_FOUND);
       }
       if (result.status !== "ready") return reminderFailure(context, result);
       context.header("Cache-Control", "private, no-store");

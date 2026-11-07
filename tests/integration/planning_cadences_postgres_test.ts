@@ -16,6 +16,7 @@ import { InAppReminderDelivery } from "../../packages/backend/modules/planning/a
 import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import {
+  mergeStayInTouchCadences,
   PostgresInAppReminderEffectStore,
   PostgresReminderRepository,
 } from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
@@ -831,6 +832,70 @@ Deno.test("PLANNING-002 PostgreSQL regenerates inherited send time without reset
   assert(
     JSON.stringify(attemptedAfter) === JSON.stringify(attemptedBefore),
     "default-time-only change reset attempted work",
+  );
+});
+
+Deno.test("[AUD-W3] a person merge takes a duplicate's last contact only from its own workspace", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `cadence-merge-${suffix}@example.test`,
+    "Cadence merge",
+  );
+  const foreign = await register(
+    `cadence-merge-foreign-${suffix}@example.test`,
+    "Foreign cadence merge",
+  );
+  const primaryId = await createPerson(fixture, "Merge primary");
+  const duplicateId = await createPerson(fixture, "Merge duplicate");
+  const foreignId = await createPerson(foreign, "Foreign duplicate");
+  for (
+    const [caller, personId] of [
+      [fixture, primaryId],
+      [fixture, duplicateId],
+      [foreign, foreignId],
+    ] as const
+  ) {
+    assert(
+      (await request(caller, "/api/v1/stay-in-touch-cadences", "POST", {
+        intervalCount: 1,
+        intervalUnit: "month",
+        personId,
+        requestId: crypto.randomUUID(),
+      })).status === 201,
+      "merge cadence fixture created",
+    );
+  }
+  await sql`
+    update crm.stay_in_touch_cadences set last_contacted_at = case person_id
+      when ${primaryId}::uuid then '2026-01-01T00:00:00Z'::timestamptz
+      when ${duplicateId}::uuid then '2026-03-01T00:00:00Z'::timestamptz
+      else '2026-06-01T00:00:00Z'::timestamptz end
+    where person_id = any(${[primaryId, duplicateId, foreignId]}::uuid[])
+  `;
+  const lastContact = async () => {
+    const [row] = await sql<{ readonly contacted: string }[]>`
+      select to_char(last_contacted_at at time zone 'UTC', 'YYYY-MM-DD')
+        as contacted
+      from crm.stay_in_touch_cadences where person_id = ${primaryId}::uuid
+    `;
+    return row?.contacted;
+  };
+  const merge = (duplicate: string) =>
+    mergeStayInTouchCadences({
+      duplicateId: duplicate,
+      memberId: fixture.memberId,
+      occurredAt: new Date("2026-07-01T00:00:00Z"),
+      primaryId,
+      transaction: { opaque: deliveryConnection.db },
+      workspaceId: fixture.workspaceId,
+    });
+  await merge(foreignId);
+  const afterForeign = await lastContact();
+  await merge(duplicateId);
+  const afterOwn = await lastContact();
+  assert(
+    afterForeign === "2026-01-01" && afterOwn === "2026-03-01",
+    `the merge read another workspace's cadence: ${afterForeign}, ${afterOwn}`,
   );
 });
 

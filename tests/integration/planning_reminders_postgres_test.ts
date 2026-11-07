@@ -1486,6 +1486,42 @@ Deno.test("[AUD-W1] a restored person's recurring reminder has its next date at 
   );
 });
 
+Deno.test("[AUD-W3] a person's reminders answer 404 for an unknown or foreign person", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `reminder-person-${suffix}@example.test`,
+    "Reminder person check",
+  );
+  const foreign = await register(
+    `reminder-person-foreign-${suffix}@example.test`,
+    "Reminder person check foreign",
+  );
+  const foreignPersonId = await createPerson(
+    foreign,
+    "Foreign reminder person",
+  );
+  await createReminder(foreign, foreignPersonId, "Foreign reminder");
+  for (const subject of [crypto.randomUUID(), foreignPersonId]) {
+    const answered = await request(
+      fixture,
+      `/api/v1/people/${subject}/reminders`,
+    );
+    const problem = await answered.json() as { readonly code?: string };
+    assert(
+      answered.status === 404 && problem.code === "person_not_found",
+      `reminders for a person outside the workspace answered ${answered.status} ${
+        JSON.stringify(problem)
+      }`,
+    );
+  }
+  const personId = await createPerson(fixture, "Known reminder person");
+  const known = await request(fixture, `/api/v1/people/${personId}/reminders`);
+  assert(
+    known.status === 200,
+    `a known person's reminders answered ${known.status}`,
+  );
+});
+
 Deno.test({
   name: "PLANNING-001 PostgreSQL reminders resources close",
   sanitizeOps: false,

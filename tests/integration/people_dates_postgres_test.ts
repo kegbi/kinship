@@ -615,6 +615,197 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "[AUD-W3] a reminder in another workspace that names a person date is untouched by that date's changes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const suffix = crypto.randomUUID();
+    const owner = await register(
+      `date-reminder-scope-${suffix}@example.test`,
+      "Date reminder scope",
+    );
+    const foreign = await register(
+      `date-reminder-scope-foreign-${suffix}@example.test`,
+      "Foreign date reminder scope",
+    );
+    const personIdOf = async (response: Response) =>
+      (await response.json() as {
+        readonly person: { readonly id: string };
+      }).person.id;
+    const personId = await personIdOf(
+      await createPerson(owner, { givenName: "Grace", isPartial: false }),
+    );
+    const foreignPersonId = await personIdOf(
+      await createPerson(foreign, { givenName: "Hidden", isPartial: false }),
+    );
+    const created = await importantDateRequest(owner, personId, "POST", {
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "custom",
+      label: "Anniversary",
+      precision: "year",
+      year: 2001,
+    });
+    assert(created.status === 201, `the date creates: ${created.status}`);
+    const date = (await created.json() as {
+      readonly date: { readonly id: string; readonly updatedAt: string };
+    }).date;
+    // A forged definition: the other workspace's reminder names this date.
+    // v12 has no composite key that refuses it, so only the statements can.
+    const [forged] = await sql<{ readonly id: string }[]>`
+      insert into crm.reminders (
+        workspace_id, person_id, person_date_id, target_kind, title,
+        anchor_on, recurrence_unit, recurrence_interval, is_active,
+        can_delete, created_at, updated_at
+      ) values (
+        ${foreign.workspaceId}::uuid, ${foreignPersonId}::uuid,
+        ${date.id}::uuid, 'person_date', 'Foreign definition',
+        '2031-01-01', 'year', 1, true, false,
+        '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+      ) returning id::text
+    `;
+    assert(forged, "the forged foreign reminder is stored");
+    await sql`
+      insert into crm.reminder_occurrences (
+        reminder_id, member_id, occurs_on, deliver_at, channel, status,
+        title_snapshot, created_at, updated_at
+      ) values (
+        ${forged.id}::uuid, ${foreign.memberId}::uuid, '2031-01-01',
+        '2031-01-01T09:00:00Z', 'in_app', 'pending', 'Foreign definition',
+        now(), now()
+      )
+    `;
+    const foreignState = async () =>
+      JSON.stringify(
+        await sql`
+          select reminder.person_id::text, reminder.person_date_id::text,
+            reminder.title, reminder.anchor_on::text, reminder.is_active,
+            reminder.deleted_at, reminder.updated_at,
+            (select count(*)::int from crm.reminder_occurrences occurrence
+              where occurrence.reminder_id = reminder.id
+                and occurrence.status = 'pending') as pending
+          from crm.reminders reminder where reminder.id = ${forged.id}::uuid
+        `,
+      );
+    const before = await foreignState();
+
+    const scheduled = await importantDateRequest(
+      owner,
+      personId,
+      "PATCH",
+      {
+        day: 14,
+        expectedUpdatedAt: date.updatedAt,
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "custom",
+        label: "Anniversary",
+        month: 6,
+        precision: "full",
+        year: 2001,
+      },
+      date.id,
+    );
+    assert(
+      scheduled.status === 200,
+      `the date becomes schedulable: ${scheduled.status}`,
+    );
+    const afterSchedule = await foreignState();
+    const [own] = await sql<{ readonly count: number }[]>`
+      select count(*)::int from crm.reminders
+      where person_date_id = ${date.id}::uuid
+        and workspace_id = ${owner.workspaceId}::uuid
+        and person_id = ${personId}::uuid and is_active
+    `;
+    assert(
+      afterSchedule === before && own?.count === 1,
+      `scheduling the date touched the foreign reminder or missed its own: ${before} -> ${afterSchedule}, own ${own?.count}`,
+    );
+
+    const scheduledDate = (await scheduled.json() as {
+      readonly date: { readonly updatedAt: string };
+    }).date;
+    const unscheduled = await importantDateRequest(
+      owner,
+      personId,
+      "PATCH",
+      {
+        expectedUpdatedAt: scheduledDate.updatedAt,
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "custom",
+        label: "Anniversary",
+        precision: "year",
+        year: 2001,
+      },
+      date.id,
+    );
+    assert(
+      unscheduled.status === 200,
+      `the date returns to year-only: ${unscheduled.status}`,
+    );
+    const afterUnschedule = await foreignState();
+    assert(
+      afterUnschedule === before,
+      `unscheduling the date touched the foreign reminder: ${before} -> ${afterUnschedule}`,
+    );
+
+    const unscheduledDate = (await unscheduled.json() as {
+      readonly date: { readonly updatedAt: string };
+    }).date;
+    const rescheduled = await importantDateRequest(
+      owner,
+      personId,
+      "PATCH",
+      {
+        day: 15,
+        expectedUpdatedAt: unscheduledDate.updatedAt,
+        isAgeBased: false,
+        isYearApproximate: false,
+        kind: "custom",
+        label: "Anniversary",
+        month: 6,
+        precision: "full",
+        year: 2001,
+      },
+      date.id,
+    );
+    assert(
+      rescheduled.status === 200,
+      `the date is scheduled again: ${rescheduled.status}`,
+    );
+    const afterReschedule = await foreignState();
+    assert(
+      afterReschedule === before,
+      `rescheduling the date touched the foreign reminder: ${before} -> ${afterReschedule}`,
+    );
+
+    // Deleting the date cascades away every row that names it, so only the
+    // workspace's own definition is asserted here.
+    const rescheduledDate = (await rescheduled.json() as {
+      readonly date: { readonly updatedAt: string };
+    }).date;
+    const deleted = await importantDateRequest(
+      owner,
+      personId,
+      "DELETE",
+      { expectedUpdatedAt: rescheduledDate.updatedAt },
+      date.id,
+    );
+    const [remaining] = await sql<{ readonly count: number }[]>`
+      select count(*)::int from crm.reminders
+      where workspace_id = ${owner.workspaceId}::uuid
+        and person_id = ${personId}::uuid
+    `;
+    assert(
+      deleted.status === 200 && remaining?.count === 0,
+      `deleting an undelivered date kept its definition: ${deleted.status}, ${remaining?.count}`,
+    );
+  },
+});
+
+Deno.test({
   name: "PEOPLE-001 PostgreSQL dates resources close",
   sanitizeOps: false,
   sanitizeResources: false,

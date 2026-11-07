@@ -60,7 +60,7 @@ export const listPersonReminders = defineRoute({
         "application/json": personReminders,
       },
     },
-    ...problemResponses(400, 401, 403, 503),
+    ...problemResponses(400, 401, 403, 404, 503),
   },
 });
 

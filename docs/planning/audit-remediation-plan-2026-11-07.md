@@ -794,7 +794,7 @@ these:
     throws is logged while the loop continues.
   - Verify: `test:unit --module=planning`; `test:integration --module=planning`.
 
-- [ ] **AUD-W3 — Planning statements prove their workspace, and unknown people
+- [x] **AUD-W3 — Planning statements prove their workspace, and unknown people
       answer 404.** S. Normal. Depends: AUD-W1. Closes: SECT-11, and the
       planning statements of SECT-09.
   - Scope:
@@ -807,6 +807,16 @@ these:
     from another workspace is untouched by the person-date path.
   - Verify: `test:integration --module=planning`; the people-dates tests;
     contracts.
+  - Delivered 2026-11-07: `[AUD-W3]` tests (reminders for an unknown or foreign
+    person answer `404 person_not_found` alike; another workspace's reminder
+    that names a person date is untouched by that date's changes; a cadence
+    merge takes a duplicate's last contact only from its own workspace),
+    planning integration 65 (only the known REL-101 and REL-103), people-dates
+    and person-merge files 16, planning unit, api unit 487 (only REL-106);
+    contracts document the 404; changed planning files at least 84.6% branches,
+    87.5% functions, 89.1% lines; fmt, architecture, and lint (only REL-096).
+    The two occurrence statements without a workspace column receive only an
+    already-scoped reminder id.
 
 ### Lane Q — Query shape and read models
 

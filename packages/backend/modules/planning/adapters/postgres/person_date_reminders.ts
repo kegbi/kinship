@@ -41,6 +41,7 @@ export class PostgresPersonDateReminderPublisher
       select id::text, is_active
       from crm.reminders
       where person_date_id = ${personDateId}::uuid
+        and workspace_id = ${command.workspaceId}::uuid
       order by created_at, id
       for update
     `.execute(database);
@@ -64,7 +65,7 @@ export class PostgresPersonDateReminderPublisher
       await sql`
         update crm.reminders set person_id = ${personId}::uuid,
           updated_at = ${command.occurredAt}::timestamptz
-        where id = ${reminderId}::uuid
+        where id = ${reminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
       `.execute(database);
       return;
     }
@@ -84,17 +85,19 @@ export class PostgresPersonDateReminderPublisher
             target_kind = 'person', person_date_id = null,
             is_active = false, deleted_at = ${command.occurredAt}::timestamptz,
             updated_at = ${command.occurredAt}::timestamptz
-          where id = ${reminderId}::uuid
+          where id = ${reminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
         `.execute(database);
       } else if (!command.after) {
-        await sql`delete from crm.reminders where id = ${reminderId}::uuid`
-          .execute(database);
+        await sql`
+          delete from crm.reminders
+          where id = ${reminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
+        `.execute(database);
       } else {
         await sql`
           update crm.reminders set is_active = false,
             deleted_at = ${command.occurredAt}::timestamptz,
             updated_at = ${command.occurredAt}::timestamptz
-          where id = ${reminderId}::uuid
+          where id = ${reminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
         `.execute(database);
       }
       return;
@@ -143,7 +146,7 @@ export class PostgresPersonDateReminderPublisher
           anchor_on = ${occursOn}::date, recurrence_unit = 'year',
           recurrence_interval = 1, is_active = true, can_delete = false,
           deleted_at = null, updated_at = ${command.occurredAt}::timestamptz
-        where id = ${activeReminderId}::uuid
+        where id = ${activeReminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
       `.execute(database);
     } else {
       const inserted = await sql<ReminderRow>`
@@ -262,7 +265,7 @@ export class PostgresPersonDateReminderPublisher
         ),
         anchor_on
       )
-      where id = ${activeReminderId}::uuid
+      where id = ${activeReminderId}::uuid and workspace_id = ${command.workspaceId}::uuid
     `.execute(database);
   }
 }

@@ -915,6 +915,22 @@ Deno.test("[GAP-023] HTTP pages a person's reminders and bounds every list", asy
   );
 });
 
+Deno.test("[AUD-W3] HTTP answers a person's reminders for an unknown person with 404 person_not_found", async () => {
+  const reminders = {
+    listPerson: () => Promise.resolve({ status: "not-found" as const }),
+  } as unknown as ReminderManagement;
+  const app = createPlanningRoutes({ ...services(), reminders });
+  const answered = await app.request(
+    `http://localhost/api/v1/people/${personId}/reminders`,
+    { headers },
+  );
+  const problem = await answered.json() as { readonly code?: string };
+  assert(
+    answered.status === 404 && problem.code === "person_not_found",
+    `an unknown person's reminders answered ${answered.status} ${problem.code}`,
+  );
+});
+
 Deno.test("[PLANNING-003] REL-088 HTTP acknowledges an undelivered reminder and refuses everything else", async () => {
   const occurrenceId = crypto.randomUUID();
   const asked: unknown[] = [];

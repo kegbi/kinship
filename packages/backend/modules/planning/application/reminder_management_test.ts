@@ -212,6 +212,11 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
   const active = await management.setActive(actor, reminder.id, true);
   const disabled = await management.setActive(actor, reminder.id, false);
   const listed = await management.listPerson(actor, personId);
+  personStatus = "not-found";
+  const unknownList = await management.listPerson(actor, personId);
+  personStatus = "archived";
+  const archivedList = await management.listPerson(actor, personId);
+  personStatus = "ready";
   await management.interactionRecorded({
     happenedAt: "invalid",
     memberId: actor.memberId,
@@ -247,7 +252,8 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
     forbiddenList.status !== "forbidden" ||
     missingSave.status !== "not-found" || active.status !== "saved" ||
     disabled.status !== "saved" ||
-    listed.status !== "ready" || cancellations !== 1 ||
+    listed.status !== "ready" || unknownList.status !== "not-found" ||
+    archivedList.status !== "ready" || cancellations !== 1 ||
     interactions.length !== 1 ||
     interactions[0]?.join(",") !== [personId, reminder.id].sort().join(",") ||
     regenerations !== 1 ||
@@ -256,6 +262,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
     throw new Error(JSON.stringify({
       active,
       archived,
+      archivedList,
       audits,
       cancellations,
       conflict,
@@ -275,6 +282,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
       missingSave,
       replayed,
       replayedCadence,
+      unknownList,
       withoutOccurrence,
     }));
   }

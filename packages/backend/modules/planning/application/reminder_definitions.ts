@@ -215,6 +215,17 @@ export function createReminderDefinitions(
         if (!await actorIsActive(dependencies, actor, transaction)) {
           return { status: "forbidden" as const };
         }
+        // An archived person's reminders stay readable; only a person the
+        // workspace does not hold answers as missing, like every person route.
+        const person = await dependencies.people.inspect({
+          ...actor,
+          lock: false,
+          personIds: [subject],
+          transaction,
+        });
+        if (person.status === "not-found") {
+          return { status: "not-found" as const };
+        }
         const { next, ...result } = await dependencies.repository.listPerson({
           ...actor,
           ...(after ? { after } : {}),

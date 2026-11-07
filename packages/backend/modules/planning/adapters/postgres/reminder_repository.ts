@@ -1832,10 +1832,15 @@ export async function mergeStayInTouchCadences(command: {
       select kept.id, kept.interval_count, kept.interval_unit,
         duplicate.last_contacted_at as contacted, context.timezone
       from crm.stay_in_touch_cadences kept
+      join crm.people kept_person on kept_person.id = kept.person_id
       join crm.stay_in_touch_cadences duplicate
         on duplicate.person_id = ${command.duplicateId}::uuid
+      join crm.people duplicate_person
+        on duplicate_person.id = duplicate.person_id
       cross join context
       where kept.person_id = ${command.primaryId}::uuid
+        and kept_person.workspace_id = ${command.workspaceId}::uuid
+        and duplicate_person.workspace_id = ${command.workspaceId}::uuid
         and duplicate.last_contacted_at is not null
         and (kept.last_contacted_at is null
           or duplicate.last_contacted_at > kept.last_contacted_at)

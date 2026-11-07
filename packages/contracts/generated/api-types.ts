@@ -11765,6 +11765,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;

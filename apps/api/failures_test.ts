@@ -251,6 +251,7 @@ Deno.test("[GAP-019] the problems planning answers on its own are unchanged", ()
       "400 | reminder_request_invalid | Invalid reminder | Use a canonical reminder and explicit active state.",
       "400 | reminder_request_invalid | Invalid reminder | Use supported calendar fields and canonical identifiers.",
       "400 | reminder_request_invalid | Invalid reminder | Use a canonical reminder occurrence.",
+      "404 | person_not_found | Person not found | No person with this identifier exists in the current workspace.",
       "400 | reminder_query_invalid | Invalid reminder query | Use a canonical person identifier, a current page cursor, and a bounded limit.",
       "503 | reminders_unavailable | Reminders unavailable | Nothing was changed.",
       "503 | reminders_unavailable | Reminders unavailable | Nothing was saved.",
