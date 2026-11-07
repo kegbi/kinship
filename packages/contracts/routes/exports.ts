@@ -107,6 +107,7 @@ export const createExportDownload = defineRoute({
   method: "post",
   path: "/api/v1/exports/{exportId}/downloads",
   operationId: "createExportDownload",
+  secrecy: "issues-secret",
   security: [{ kinship_session: [] }],
   request: {
     params: z.object({

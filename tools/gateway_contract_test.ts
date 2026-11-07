@@ -4,6 +4,8 @@ import { problemBody } from "../packages/http-kit/problem.ts";
 import { REQUEST_TOO_LARGE } from "../packages/http-kit/body_limit.ts";
 import { PERSON_FILE_MAX_BYTES } from "../packages/backend/modules/files/public.ts";
 import { calendarFeedFile } from "../packages/contracts/schemas/calendar_feeds.ts";
+import type { RouteDescriptor } from "../packages/contracts/registry.ts";
+import { API_ROUTES } from "../packages/contracts/routes/mod.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -1056,6 +1058,181 @@ Deno.test("[AUD-G1] a person file up to its limit passes the gateway and a large
       SECURITY_HEADERS_INCLUDE.test(refusal),
     "the oversized-body answer is an uncached problem with the browser policy",
   );
+});
+
+/** A request path for a route's template, each parameter a well-formed id. */
+function samplePath(route: RouteDescriptor): string {
+  return route.path.replace(
+    /\{[^}]+\}/g,
+    "393de041-31ca-47c3-95d4-ae37b7473e2e",
+  );
+}
+
+/**
+ * The location nginx picks for a path: an exact match, else the longest
+ * prefix when it is `^~`, else the first regular expression that matches in
+ * file order, else the longest prefix.
+ */
+function servingLocation(
+  locations: readonly NginxLocation[],
+  path: string,
+): NginxLocation | undefined {
+  const exact = locations.find(({ selector }) => selector === `= ${path}`);
+  if (exact) return exact;
+  const prefixes = locations.flatMap((location) => {
+    const prefix = location.selector.match(/^(?:\^~ )?(\/\S*)$/)?.[1];
+    return prefix !== undefined && path.startsWith(prefix)
+      ? [{ location, prefix }]
+      : [];
+  }).sort((a, b) => b.prefix.length - a.prefix.length);
+  const longest = prefixes[0]?.location;
+  if (longest?.selector.startsWith("^~ ")) return longest;
+  const regex = locations.find(({ selector }) => {
+    const pattern = selector.match(/^~ (?:"(.+)"|(\S+))$/);
+    const source = pattern?.[1] ?? pattern?.[2];
+    return source !== undefined && new RegExp(source).test(path);
+  });
+  return regex ?? longest;
+}
+
+/** A location's directives without comments and its `gzip` switch. */
+function withoutGzip(location: string): string[] {
+  return location.split("\n").map((line) => line.trim()).filter((line) =>
+    line !== "" && !line.startsWith("#") && !/^gzip (on|off);$/.test(line)
+  );
+}
+
+Deno.test("[AUD-G2] the gateway compresses API JSON except secret-bearing answers", async () => {
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const http = gateway.slice(0, gateway.indexOf("\n  server {"));
+  const types = http.match(/^ {2}gzip_types ([^;]+);$/m)?.[1]?.split(/\s+/) ??
+    [];
+  for (
+    const type of [
+      "text/css",
+      "application/javascript",
+      "text/javascript",
+      "application/json",
+      "image/svg+xml",
+    ]
+  ) {
+    assert(types.includes(type), `gzip_types includes ${type}`);
+  }
+
+  // D4 names exactly these secret issuers; the credential endpoints are the
+  // ones the stricter rate-limit zone already counts.
+  const issuers = API_ROUTES.filter((route) =>
+    route.secrecy === "issues-secret"
+  ).map((route) => route.operationId).sort();
+  assert(
+    JSON.stringify(issuers) ===
+      JSON.stringify([
+        "createApiToken",
+        "createCalendarFeed",
+        "createExportDownload",
+        "rotateCalendarFeed",
+      ]),
+    `the registry marks D4's secret issuers: ${issuers}`,
+  );
+  const credentials = API_ROUTES.filter((route) =>
+    route.secrecy === "credential"
+  ).map((route) => route.path).sort();
+  assert(
+    JSON.stringify(credentials) ===
+      JSON.stringify(CREDENTIAL_ROUTES.map(([, path]) => path).sort()),
+    `the registry marks every credential endpoint: ${credentials}`,
+  );
+
+  // A location serves every method on a path, so a path any secret-bearing
+  // route answers on stays uncompressed for all of them.
+  const excluded = new Set(
+    API_ROUTES.filter((route) => route.secrecy !== undefined).map(samplePath),
+  );
+  const locations = nginxLocations(gateway);
+  // The container probes (`/livez`, `/readyz`) are not behind the gateway.
+  const proxied = API_ROUTES.filter((route) =>
+    route.path.startsWith("/api/v1/")
+  );
+  assert(
+    proxied.length === API_ROUTES.length - 2,
+    `every route but the two probes is behind the gateway (${proxied.length})`,
+  );
+  for (const route of proxied) {
+    const path = samplePath(route);
+    const location = servingLocation(locations, path);
+    const name = `${route.method.toUpperCase()} ${route.path}`;
+    assert(
+      location && /^\s*proxy_pass \$api_upstream;$/m.test(location.body),
+      `${name} reaches the API`,
+    );
+    const gzip = location.body.match(/^\s*gzip (on|off);$/m)?.[1];
+    assert(
+      gzip === (excluded.has(path) ? "off" : "on"),
+      `${name} must ${
+        excluded.has(path) ? "never" : "always"
+      } be compressed (${location.selector}: gzip ${gzip})`,
+    );
+  }
+
+  // The exclusion is one location that proxies and limits exactly like
+  // /api/v1/, so it keeps the rate limits, body rules, and refusals.
+  const exclusions = locations.filter(({ body }) =>
+    /^\s*gzip off;$/m.test(body)
+  );
+  assert(exclusions.length === 1, "one location turns compression off");
+  assert(
+    JSON.stringify(withoutGzip(exclusions[0]!.body)) ===
+      JSON.stringify(withoutGzip(nginxLocation(gateway, "/api/v1/"))),
+    `the uncompressed location proxies exactly like /api/v1/: ${
+      withoutGzip(exclusions[0]!.body)
+    }`,
+  );
+  for (const path of ORDINARY_API_PATHS) {
+    assert(
+      servingLocation(locations, path) !== exclusions[0],
+      `${path} is compressed`,
+    );
+  }
+
+  // Renderer pages and the gateway's own answers keep nginx's default.
+  for (const { selector, body } of locations) {
+    if (
+      /^\s*proxy_pass \$web_upstream;$/m.test(body) || selector.startsWith("@")
+    ) {
+      assert(!/^\s*gzip on;$/m.test(body), `${selector} stays uncompressed`);
+    }
+  }
+});
+
+Deno.test("[AUD-G2] static assets are compressed once at build time and served pre-compressed", async () => {
+  const [gateway, web] = await Promise.all([
+    Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
+    Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)),
+  ]);
+  const server = gateway.slice(gateway.indexOf("\n  server {"));
+  assert(
+    /^ {4}gzip_static on;$/m.test(server) && !/gzip_static off/.test(gateway),
+    "every static location serves a file's pre-compressed sibling",
+  );
+  const build =
+    web.split(/^(?=FROM )/m).find((stage) =>
+      /^FROM \S+ AS build$/m.test(stage)
+    ) ?? "";
+  const compress = build.match(/^RUN find apps\/web\/dist\/client .*$/m)?.[0] ??
+    "";
+  assert(
+    build.indexOf("astro build") < build.indexOf(compress) &&
+      /\bgzip -9 -k -n\b/.test(compress),
+    `the build compresses its client output at level 9 and keeps each original: ${compress}`,
+  );
+  for (const extension of ["html", "css", "js", "json", "svg"]) {
+    assert(
+      compress.includes(`-name '*.${extension}'`),
+      `the build pre-compresses .${extension} files`,
+    );
+  }
 });
 
 Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", async () => {

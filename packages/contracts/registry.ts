@@ -67,6 +67,23 @@ export interface RouteRequest {
 /** One OpenAPI security requirement: a scheme name to the scopes it needs. */
 export type SecurityRequirement = Readonly<Record<string, readonly string[]>>;
 
+/**
+ * What makes a route's exchange secret-bearing (decision D4 of the 2026-11-07
+ * audit remediation plan).
+ *
+ * - `issues-secret`: a success body carries a secret minted for the request,
+ *   such as a new API token or a calendar feed's subscription URL.
+ * - `credential`: the request presents a credential: sign-in, MFA,
+ *   registration and email verification, password reset, and each step of
+ *   accepting an invitation.
+ *
+ * The gateway never compresses either kind of answer, so a body that holds a
+ * secret never shares a compression context with text an attacker chose
+ * (BREACH). `tools/gateway_contract_test.ts` derives the gateway's exclusion
+ * from this field.
+ */
+export type RouteSecrecy = "issues-secret" | "credential";
+
 /** A route, as the app mounts it and the generator documents it. */
 export interface RouteDescriptor {
   readonly method: HttpMethod;
@@ -85,6 +102,8 @@ export interface RouteDescriptor {
    * documented.
    */
   readonly undocumented?: string;
+  /** Set only on a secret-bearing route; see `RouteSecrecy`. */
+  readonly secrecy?: RouteSecrecy;
 }
 
 const PATH_PARAMETER = /\{([^}]*)\}/g;

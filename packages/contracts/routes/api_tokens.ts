@@ -46,6 +46,7 @@ export const createApiToken = defineRoute({
   method: "post",
   path: "/api/v1/settings/api-tokens",
   operationId: "createApiToken",
+  secrecy: "issues-secret",
   security: [{ kinship_session: [] }],
   request: {
     headers: originAndWorkspaceHeaders,

@@ -61,6 +61,7 @@ export const acceptWorkspaceInvitation = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/accept",
   operationId: "acceptWorkspaceInvitation",
+  secrecy: "credential",
   description:
     "Atomically consumes a single-use invitation for the authenticated intended user.",
   security: [{ kinship_session: [] }, { kinship_entry: [] }],
@@ -88,6 +89,7 @@ export const authenticateWorkspaceInvitation = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/authenticate",
   operationId: "authenticateWorkspaceInvitation",
+  secrecy: "credential",
   description:
     "Runs the equalized password challenge for the verified identity matching a pending invitation, without creating a normal workspace session.",
   request: {
@@ -125,6 +127,7 @@ export const inspectWorkspaceInvitation = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/inspect",
   operationId: "inspectWorkspaceInvitation",
+  secrecy: "credential",
   description:
     "Inspects an invitation using a bearer token in the request body so gateway logs never contain it.",
   request: {
@@ -151,6 +154,7 @@ export const completeWorkspaceInvitationMfa = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/mfa",
   operationId: "completeWorkspaceInvitationMfa",
+  secrecy: "credential",
   description:
     "Completes the equalized MFA challenge for the identity matching the scoped pending invitation.",
   security: [{ kinship_mfa: [], kinship_invitation: [] }],
@@ -182,6 +186,7 @@ export const registerInvitedIdentity = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/register",
   operationId: "registerInvitedIdentity",
+  secrecy: "credential",
   description:
     "Creates a pending identity for an invitation without creating another workspace.",
   request: {
@@ -208,6 +213,7 @@ export const retryInvitedVerificationDelivery = defineRoute({
   method: "post",
   path: "/api/v1/workspace-invitations/verification-delivery",
   operationId: "retryInvitedVerificationDelivery",
+  secrecy: "credential",
   description:
     "Retries verification delivery only for the identity bound to the scoped pending invitation cookie.",
   security: [{ kinship_invitation: [] }],

@@ -1062,7 +1062,7 @@ these:
     failures in `baseline_test.ts` and the gateway compression test. The Dokploy
     edge's HTTP/2 is documented as unverified, with the operator check.
 
-- [ ] **AUD-G2 — Responses are compressed where it is safe.** S. Normal.
+- [x] **AUD-G2 — Responses are compressed where it is safe.** S. Normal.
       Depends: AUD-G1. Closes: FEQ-12, FER-08.
   - Scope:
     - Pre-compress static assets at build time (gzip level 9 or zopfli) and
@@ -1077,6 +1077,17 @@ these:
     static `.js` is served from `.gz`.
   - Verify: the gateway contract tests; `deno task build`; E2E
     `api-tokens.API-001` and `calendar-feed.INTEGRATION-002`.
+  - Delivered 2026-11-07: D4 applied: the gateway gzips JSON and SVG and serves
+    build-time `.gz` siblings with `gzip_static`; the four secret-issuing routes
+    and the 13 credential endpoints, tagged `secrecy` in the route registry, are
+    served uncompressed through one location with full `/api/v1/` parity;
+    gateway contract 19 and the live real-nginx `[AUD-G2]` test pass (the
+    compression test no longer needs host temp writes), api unit 478 (only the
+    `baseline_test.ts` permission gap), build with only the known REL-098; E2E
+    API-001 and INTEGRATION-002 3 passed on Chromium; fmt, architecture, and
+    lint (only REL-096). Open follow-ups: tag `consumeApplicationEntry` or
+    document why it is not a credential endpoint, and pin `NGINX_IMAGE` to
+    `Dockerfile.web`.
 
 - [ ] **AUD-G3 — The CSP drops `style-src 'unsafe-inline'`.** S. Normal.
       Depends: AUD-G1. Closes: FER-15, SECA-13 item 4.

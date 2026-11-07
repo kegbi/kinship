@@ -27,6 +27,7 @@ export const completeMfa = defineRoute({
   method: "post",
   path: "/api/v1/mfa-challenges",
   operationId: "completeMfa",
+  secrecy: "credential",
   security: [{ kinship_mfa: [] }],
   request: {
     headers: originHeaders,
@@ -53,6 +54,7 @@ export const requestPasswordReset = defineRoute({
   method: "post",
   path: "/api/v1/password-reset-requests",
   operationId: "requestPasswordReset",
+  secrecy: "credential",
   request: {
     headers: originHeaders,
     body: {
@@ -77,6 +79,7 @@ export const resetPassword = defineRoute({
   method: "post",
   path: "/api/v1/password-resets",
   operationId: "resetPassword",
+  secrecy: "credential",
   request: {
     headers: originHeaders,
     body: {
@@ -126,6 +129,7 @@ export const signIn = defineRoute({
   method: "post",
   path: "/api/v1/sessions",
   operationId: "signIn",
+  secrecy: "credential",
   request: {
     headers: originHeaders,
     body: {

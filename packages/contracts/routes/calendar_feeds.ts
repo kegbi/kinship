@@ -41,6 +41,7 @@ export const createCalendarFeed = defineRoute({
   method: "post",
   path: "/api/v1/settings/calendar-feed",
   operationId: "createCalendarFeed",
+  secrecy: "issues-secret",
   security: [{ kinship_session: [] }],
   request: { headers: originAndWorkspaceHeaders },
   responses: {
@@ -56,6 +57,7 @@ export const rotateCalendarFeed = defineRoute({
   method: "post",
   path: "/api/v1/settings/calendar-feed/rotation",
   operationId: "rotateCalendarFeed",
+  secrecy: "issues-secret",
   security: [{ kinship_session: [] }],
   request: { headers: originAndWorkspaceHeaders },
   responses: {

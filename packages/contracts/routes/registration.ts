@@ -45,6 +45,7 @@ export const retryVerificationDelivery = defineRoute({
   method: "post",
   path: "/api/v1/email-verification-deliveries",
   operationId: "retryVerificationDelivery",
+  secrecy: "credential",
   description:
     "Asks for another verification link. Requires the exact Origin header configured for the public web origin. Answers the same whether or not the address has a pending registration.",
   request: {
@@ -73,6 +74,7 @@ export const verifyEmail = defineRoute({
   method: "post",
   path: "/api/v1/email-verifications",
   operationId: "verifyEmail",
+  secrecy: "credential",
   description:
     "Verifies an address from its emailed link. Requires the exact Origin header configured for the public web origin. With the registering browser's HttpOnly kinship_registrant cookie it answers `verified` and sets the one-time kinship_entry handoff; without it the address is still verified, but the registrant's password is discarded and it answers `password-required` with the password-reset step to continue at.",
   request: {
@@ -100,6 +102,7 @@ export const createFirstWorkspace = defineRoute({
   method: "post",
   path: "/api/v1/registrations",
   operationId: "createFirstWorkspace",
+  secrecy: "credential",
   description:
     "Registers a first workspace. Requires the exact Origin header configured for the public web origin. Answers the same 202 whether or not the address already has an account, and sets the HttpOnly kinship_registrant cookie that a verification from the same browser presents.",
   request: {

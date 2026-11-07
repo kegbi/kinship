@@ -6,6 +6,7 @@ import {
   removeE2eTls,
   tearDownE2eComposeProject,
 } from "./e2e.ts";
+import { API_ROUTES } from "../packages/contracts/routes/mod.ts";
 
 /** A request identifier a client chose; the gateway must not forward it. */
 const CLIENT_REQUEST_ID = "client-chosen-request-id";
@@ -823,6 +824,7 @@ async function compressionResponse(
   path: string,
   encoding: string,
   via = false,
+  post = false,
 ) {
   const output = await docker([
     "exec",
@@ -834,6 +836,9 @@ async function compressionResponse(
     "--header",
     `Accept-Encoding: ${encoding}`,
     ...(via ? ["--header", "Via: 1.1 edge-proxy"] : []),
+    ...(post
+      ? ["--header", "Content-Type: application/json", "--post-data", "{}"]
+      : []),
     `http://127.0.0.1:8080${path}`,
   ]);
   const [head = "", encoded = ""] = output.split("\nBODY\n");
@@ -1113,25 +1118,31 @@ Deno.test({
   },
 });
 
-Deno.test("static gateway compression negotiates behind a proxy without compressing private responses", async () => {
+/** Every route a secret-bearing exchange answers on, as a request it accepts. */
+const SECRET_BEARING_REQUESTS = API_ROUTES.filter((route) =>
+  route.secrecy !== undefined
+).map((route) => ({
+  method: route.method,
+  path: route.path.replace(
+    /\{[^}]+\}/g,
+    "393de041-31ca-47c3-95d4-ae37b7473e2e",
+  ),
+}));
+
+Deno.test("[AUD-G2] real Nginx compresses static files and API JSON behind a proxy, serves pre-compressed assets, and never compresses a secret", async () => {
   const id = `kinship-compression-${Deno.pid}-${Date.now()}`;
   const tls = await createE2eTls(`kinship-e2e-${Deno.pid}-${Date.now()}`);
-  const fixture = await Deno.makeTempDir({ prefix: `${id}-` });
-  if (Deno.build.os !== "windows") await Deno.chmod(fixture, 0o755);
   const containers: string[] = [];
   let networkCreated = false;
-  const image =
-    (await Deno.readTextFile(new URL("../Dockerfile.web", import.meta.url)))
-      .match(/^FROM (nginx:[^ ]+) AS gateway$/m)?.[1];
-  assert(image, "the gateway uses its pinned nginx image");
-  const body = "<p>Kinship static profile, people and reminders.</p>\n".repeat(
-    400,
-  );
+  const line = "<p>Kinship static profile, people and reminders.</p>";
+  const body = `${line}\n`.repeat(400);
   const uuid = "393de041-31ca-47c3-95d4-ae37b7473e2e";
   const files = [
     ["index.html", "/"],
     ["_astro/fixture.css", "/_astro/fixture.css"],
     ["_astro/fixture.js", "/_astro/fixture.js"],
+    ["images/fixture.svg", "/images/fixture.svg"],
+    ["docs/api/openapi.json", "/docs/api/openapi.json"],
     ["internal/person-profile-shell/index.html", `/app/people/${uuid}`],
     ["internal/person-audit-shell/index.html", `/app/people/${uuid}/audit`],
     [
@@ -1141,18 +1152,40 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
     ["internal/import-report-shell/index.html", `/app/settings/import/${uuid}`],
     ["internal/journal-item-shell/index.html", `/app/journal/${uuid}`],
   ] as const;
+  // The build pre-compresses this one, as `Dockerfile.web` does every asset.
+  const precompressed = "/usr/share/nginx/html/_astro/fixture.js.gz";
+  // The static root is a tmpfs the gateway fills before nginx starts, so the
+  // fixture needs no host directory.
+  const fill = [
+    ...files.map(([file]) =>
+      `mkdir -p "/usr/share/nginx/html/${
+        file.split("/").slice(0, -1).join("/")
+      }" && yes '${line}' | head -n 400 > "/usr/share/nginx/html/${file}"`
+    ),
+    `gzip -9 -c /usr/share/nginx/html/_astro/fixture.js > ${precompressed}`,
+  ].join(" && ");
+  // Upstream answers stay small: Windows caps a command line at 32 KiB.
+  const json = `{"records":[${
+    Array.from(
+      { length: 40 },
+      (_, index) =>
+        `{"id":${index},"name":"Kinship person","note":"Remember the birthday."}`,
+    ).join(",")
+  }],"status":"ready"}`;
+  const html = `${line}\n`.repeat(40);
+  const calendar = "BEGIN:VEVENT\nSUMMARY:Kinship reminder\nEND:VEVENT\n"
+    .repeat(40);
   try {
-    for (const [file] of files) {
-      await Deno.mkdir(`${fixture}/${file.split("/").slice(0, -1).join("/")}`, {
-        recursive: true,
-      });
-      await Deno.writeTextFile(`${fixture}/${file}`, body);
-    }
     await docker(["network", "create", id]);
     networkCreated = true;
     const upstream = `${id}-upstream`;
-    const upstreamConfig =
-      `events {} http { server { listen 8000; listen 4321; root /usr/share/nginx/html; default_type text/html; location / { try_files /index.html =404; } } }`;
+    // The API answers JSON (an iCalendar feed for the feed path) to every
+    // method; the renderer answers HTML.
+    const upstreamConfig = `events {} http { ` +
+      `server { listen 8000; default_type application/json; ` +
+      `location / { return 200 '${json}'; } ` +
+      `location /api/v1/calendar-feeds/ { default_type text/calendar; return 200 '${calendar}'; } } ` +
+      `server { listen 4321; default_type text/html; location / { return 200 '${html}'; } } }`;
     await docker([
       "run",
       "--detach",
@@ -1164,11 +1197,9 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
       "kinship-private-api",
       "--network-alias",
       "kinship-private-web",
-      "--mount",
-      `type=bind,source=${fixture},target=/usr/share/nginx/html,readonly`,
       "--entrypoint",
       "sh",
-      image,
+      NGINX_IMAGE,
       "-c",
       `printf '%s' "$1" >/tmp/upstream.conf; exec nginx -c /tmp/upstream.conf -g 'daemon off;'`,
       "sh",
@@ -1185,6 +1216,8 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
       id,
       "--user",
       "nginx",
+      "--tmpfs",
+      "/usr/share/nginx/html:rw,mode=1777",
       ...[
         [await Deno.realPath("gateway/nginx.conf"), "/etc/nginx/nginx.conf"],
         [
@@ -1193,11 +1226,14 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
         ],
         [tls.certificate, "/run/secrets/gateway_tls_certificate"],
         [tls.privateKey, "/run/secrets/gateway_tls_private_key"],
-        [fixture, "/usr/share/nginx/html"],
       ].flatMap((
         [source, target],
       ) => ["--mount", `type=bind,source=${source},target=${target},readonly`]),
-      image,
+      "--entrypoint",
+      "sh",
+      NGINX_IMAGE,
+      "-c",
+      `${fill} && exec nginx -g 'daemon off;'`,
     ]);
     containers.push(gateway);
     const origin = gateway;
@@ -1214,6 +1250,17 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
+    const gunzip = (bytes: Uint8Array<ArrayBuffer>) =>
+      new Response(
+        new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")),
+      ).text();
+    const prebuilt = Uint8Array.from(
+      atob((await docker(["exec", gateway, "base64", precompressed])).replace(
+        /\s/g,
+        "",
+      )),
+      (c) => c.charCodeAt(0),
+    );
     for (const [, path] of files) {
       const identity = await compressionResponse(origin, path, "identity");
       assert(
@@ -1232,17 +1279,21 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
           `${path} negotiates gzip (Via=${via})`,
         );
         assert(
-          await new Response(
-            new Blob([compressed.body]).stream().pipeThrough(
-              new DecompressionStream("gzip"),
-            ),
-          ).text() === body,
+          await gunzip(compressed.body) === body,
           `${path} gzip decodes to identity`,
         );
         assert(
           compressed.body.length < identity.body.length / 2,
           `${path} reduces transfer bytes`,
         );
+        if (path === "/_astro/fixture.js") {
+          // gzip_static sends the build's file as it is, not a fresh stream.
+          assert(
+            compressed.body.length === prebuilt.length &&
+              compressed.body.every((byte, index) => byte === prebuilt[index]),
+            `${path} is served from its pre-compressed .gz (Via=${via})`,
+          );
+        }
         if (path === "/" && !via) {
           console.info(
             `Static fixture: ${identity.body.length} identity bytes, ${compressed.body.length} gzip bytes`,
@@ -1287,16 +1338,95 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
         `${path} respects gzip refusal`,
       );
     }
+
+    // D4: API JSON is compressed, on the ordinary and the upload locations.
     for (
-      const path of [
-        "/auth/mfa",
-        "/auth/verify-email",
-        "/auth/reset-password",
-        "/invite/fixture",
-        "/app/compliance",
-        "/api/v1/health",
-        "/api/v1/calendar-feeds/fixture.ics",
-      ]
+      const [path, post] of [
+        ["/api/v1/people", false],
+        ["/api/v1/health", false],
+        [`/api/v1/people/${uuid}/files`, true],
+        ["/api/v1/workspace-invitations", true],
+      ] as const
+    ) {
+      for (const via of [false, true]) {
+        const response = await compressionResponse(
+          origin,
+          path,
+          "gzip",
+          via,
+          post,
+        );
+        assert(
+          response.status === 200 &&
+            response.headers["content-encoding"] === "gzip" &&
+            String(response.headers.vary).includes("Accept-Encoding"),
+          `${path} JSON negotiates gzip (Via=${via})`,
+        );
+        assert(
+          await gunzip(response.body) === json,
+          `${path} gzip decodes to the API's JSON`,
+        );
+        assert(
+          response.headers["content-security-policy"] &&
+            response.headers["x-content-type-options"] === "nosniff",
+          `${path} keeps the browser policy`,
+        );
+      }
+      const refused = await compressionResponse(
+        origin,
+        path,
+        "gzip;q=0, identity",
+        false,
+        post,
+      );
+      assert(
+        !refused.headers["content-encoding"] &&
+          new TextDecoder().decode(refused.body) === json,
+        `${path} respects gzip refusal`,
+      );
+    }
+
+    // D4: a body carrying a secret, or answering a credential, never shares a
+    // compression context with anything else (the route registry names them).
+    assert(
+      SECRET_BEARING_REQUESTS.length >= 17,
+      `the registry names every secret-bearing route (${SECRET_BEARING_REQUESTS.length})`,
+    );
+    for (const { method, path } of SECRET_BEARING_REQUESTS) {
+      assert(method === "post", `${path} is sent as busybox wget can`);
+      for (const via of [false, true]) {
+        const response = await compressionResponse(
+          origin,
+          path,
+          "gzip",
+          via,
+          true,
+        );
+        assert(
+          response.status === 200 && !response.headers["content-encoding"] &&
+            new TextDecoder().decode(response.body) === json,
+          `POST ${path} stays uncompressed (Via=${via})`,
+        );
+        assert(
+          response.headers["content-security-policy"] &&
+            response.headers["x-content-type-options"] === "nosniff",
+          `POST ${path} keeps the browser policy`,
+        );
+      }
+    }
+
+    for (
+      const [path, expected] of [
+        ["/auth/mfa", html],
+        ["/auth/verify-email", html],
+        ["/auth/reset-password", html],
+        ["/invite/fixture", html],
+        ["/app/compliance", html],
+        [
+          "/api/v1/calendar-feeds/kin_cal_0f8b2c1e-5d4a-4b3c-9a21-7e6d5c4b3a29.fixture_Calendar-Feed.ics",
+          calendar,
+        ],
+      ] as const
     ) {
       const response = await compressionResponse(origin, path, "gzip", true);
       assert(
@@ -1304,7 +1434,7 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
         `${path} stays uncompressed`,
       );
       assert(
-        new TextDecoder().decode(response.body) === body,
+        new TextDecoder().decode(response.body) === expected,
         `${path} retains upstream bytes`,
       );
       if (!path.startsWith("/api/")) {
@@ -1320,6 +1450,5 @@ Deno.test("static gateway compression negotiates behind a proxy without compress
     }
     if (networkCreated) await docker(["network", "rm", id]);
     await removeE2eTls(tls);
-    await Deno.remove(fixture, { recursive: true });
   }
 });

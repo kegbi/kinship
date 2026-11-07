@@ -12,6 +12,12 @@ COPY apps/web ./apps/web
 COPY packages/contracts ./packages/contracts
 RUN corepack enable && pnpm install --frozen-lockfile
 RUN pnpm exec astro build --root apps/web
+# FER-08: the gateway sends each text asset's `.gz` sibling (gzip_static), so
+# it is compressed once here at level 9 instead of at level 5 per request.
+# `-k` keeps the original for a client that refuses gzip, `-n` leaves names
+# and times out of the archive, and files under nginx's 1 KiB gzip_min_length
+# stay as they are.
+RUN find apps/web/dist/client -type f \( -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.json' -o -name '*.svg' \) -size +1k -exec gzip -9 -k -n {} +
 
 FROM nginx:1.29.1-alpine3.22@sha256:42a516af16b852e33b7682d5ef8acbd5d13fe08fecadc7ed98605ba5e3b26ab8 AS gateway
 
