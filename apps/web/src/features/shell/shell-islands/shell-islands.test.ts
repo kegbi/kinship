@@ -33,7 +33,7 @@ vi.mock(
 
 import { workspaceSession } from "../../../testing/fixtures.ts";
 import { drawShell, element } from "../../../testing/render.tsx";
-import { ACCESS_TEMPLATES } from "../../../testing/shell.ts";
+import { ACCESS_TEMPLATES, TOAST_REGION } from "../../../testing/shell.ts";
 import type { ShellIslandLoaders } from "./shell-islands.ts";
 
 /**
@@ -82,7 +82,8 @@ function markup(): void {
       </header>
       <main><a href="/app/people">People</a></main>
       <div data-quick-capture-root></div>
-    </div>`);
+    </div>
+    ${TOAST_REGION}`);
 }
 
 const session = workspaceSession({ member: { id: "member", role: "owner" } });
@@ -96,6 +97,40 @@ function ready(role: "member" | "owner" = "owner"): WorkspaceSessionResolution {
 
 /** Lets any import or idle callback the shell started run to its end. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+/** The toasts the page shows, by message. */
+const toasts = () =>
+  [...document.querySelectorAll("#app-toasts .app-toast-message")].map((item) =>
+    item.textContent
+  );
+
+/** A module load the test answers when it chooses. */
+function gated<T>(): { load: () => Promise<T>; release: (module: T) => void } {
+  let release!: (module: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    release = resolve;
+  });
+  return { load: () => promise, release };
+}
+
+/**
+ * A palette mock that draws its own field, as the island does, takes the
+ * focus when the static field had it, and records the keys it receives.
+ */
+function drawingPalette(): string[] {
+  const keys: string[] = [];
+  islands.mountSearch.mockImplementation(() => {
+    const container = element("[data-global-people-search]");
+    const hadFocus = container.contains(document.activeElement);
+    container.innerHTML =
+      '<input id="global-people-search-input" role="combobox" aria-label="Find a person" />';
+    const field = element<HTMLInputElement>("#global-people-search-input");
+    field.addEventListener("keydown", (event) => keys.push(event.key));
+    if (hadFocus) field.focus();
+    return () => undefined;
+  });
+  return keys;
+}
 
 /** Every intent a member could show toward the shell's three controls. */
 function touchEverything(): void {
@@ -318,6 +353,202 @@ describe("FER-01 the people palette mounts on first intent", () => {
     await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
   });
 
+  it.each([
+    ["holds the focus and a query", true, "Ada"],
+    ["holds the focus", true, ""],
+    ["holds a query", false, "Ada"],
+  ])(
+    "APR-008 mounts with no further event when the session is ready while the field %s",
+    async (_label, focused, query) => {
+      markup();
+      const field = element<HTMLInputElement>("#global-people-search-input");
+      field.value = query;
+      if (focused) field.focus();
+      await startApplicationShell(loaders());
+      await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+      expect(islands.mountSearch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("waits for an intent when the field is empty and elsewhere has the focus", async () => {
+    markup();
+    element("main a").focus();
+    await startApplicationShell(loaders());
+    await settle();
+    expect(islands.mountSearch).not.toHaveBeenCalled();
+  });
+
+  it("APR-008 replays an ArrowDown pressed while its module loads on the mounted field", async () => {
+    markup();
+    const keys = drawingPalette();
+    const search = gated<
+      { mountGlobalPeopleSearch: typeof islands.mountSearch }
+    >();
+    await startApplicationShell(loaders({ search: search.load }));
+    const field = element("#global-people-search-input");
+    field.focus();
+    field.dispatchEvent(new Event("focusin", { bubbles: true }));
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
+    );
+    search.release({ mountGlobalPeopleSearch: islands.mountSearch });
+    await vi.waitFor(() => expect(keys).toEqual(["ArrowDown"]));
+    expect(islands.mountSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays no key the shortcut handled", async () => {
+    markup();
+    const keys = drawingPalette();
+    const search = gated<
+      { mountGlobalPeopleSearch: typeof islands.mountSearch }
+    >();
+    await startApplicationShell(loaders({ search: search.load }));
+    const field = element("#global-people-search-input");
+    field.focus();
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        key: "k",
+      }),
+    );
+    search.release({ mountGlobalPeopleSearch: islands.mountSearch });
+    await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+    await settle();
+    expect(keys).toEqual([]);
+  });
+
+  it("replays no key once the focus has left the field", async () => {
+    markup();
+    const keys = drawingPalette();
+    const search = gated<
+      { mountGlobalPeopleSearch: typeof islands.mountSearch }
+    >();
+    await startApplicationShell(loaders({ search: search.load }));
+    const field = element("#global-people-search-input");
+    field.focus();
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
+    );
+    element("main a").focus();
+    search.release({ mountGlobalPeopleSearch: islands.mountSearch });
+    await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+    await settle();
+    expect(keys).toEqual([]);
+  });
+
+  it("APR-008 shows a toast when its module could not load on an intent, not on a passing pointer, and tries again on the next", async () => {
+    markup();
+    const search = vi.fn<ShellIslandLoaders["search"]>()
+      .mockRejectedValue(new Error("offline"));
+    await startApplicationShell(loaders({ search }));
+    await settle();
+    expect(toasts()).toEqual([]);
+    const field = element("#global-people-search-input");
+    field.dispatchEvent(new Event("pointerenter", { bubbles: true }));
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(toasts()).toEqual([]);
+    field.dispatchEvent(new Event("focusin", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(toasts()).toEqual([
+        "Search could not load. Check your connection and try again.",
+      ])
+    );
+    search.mockResolvedValue({ mountGlobalPeopleSearch: islands.mountSearch });
+    field.dispatchEvent(new Event("focusin", { bubbles: true }));
+    await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+  });
+
+  it("forgets who pressed Ctrl+K when its module could not load, so a later hover only mounts it", async () => {
+    markup();
+    const search = vi.fn<ShellIslandLoaders["search"]>()
+      .mockRejectedValue(new Error("offline"));
+    await startApplicationShell(loaders({ search }));
+    await settle();
+    const link = element("main a");
+    link.focus();
+    link.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        key: "k",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(toasts()).toEqual([
+        "Search could not load. Check your connection and try again.",
+      ])
+    );
+    search.mockResolvedValue({ mountGlobalPeopleSearch: islands.mountSearch });
+    element("#global-people-search-input").dispatchEvent(
+      new Event("pointerenter", { bubbles: true }),
+    );
+    await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+    expect(islands.mountSearch).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it("forgets a click on its Search button when its module could not load, so a later hover only mounts it", async () => {
+    markup();
+    const opened = vi.fn();
+    islands.mountSearch.mockImplementation(() => {
+      const container = element("[data-global-people-search]");
+      container.innerHTML =
+        '<input id="global-people-search-input" role="combobox" aria-label="Find a person" /><button data-global-people-search-open type="button">Search</button>';
+      element("[data-global-people-search-open]").addEventListener(
+        "click",
+        opened,
+      );
+      return () => undefined;
+    });
+    const search = vi.fn<ShellIslandLoaders["search"]>()
+      .mockRejectedValue(new Error("offline"));
+    await startApplicationShell(loaders({ search }));
+    await settle();
+    element("[data-global-people-search-open]").click();
+    await vi.waitFor(() => expect(toasts()).toHaveLength(1));
+    search.mockResolvedValue({ mountGlobalPeopleSearch: islands.mountSearch });
+    element("#global-people-search-input").dispatchEvent(
+      new Event("pointerenter", { bubbles: true }),
+    );
+    await vi.waitFor(() => expect(islands.mountSearch).toHaveBeenCalled());
+    await settle();
+    expect(opened).not.toHaveBeenCalled();
+  });
+
+  it("says once that its module could not load however many keys are pressed, and again once that toast is dismissed", async () => {
+    markup();
+    const search = vi.fn<ShellIslandLoaders["search"]>()
+      .mockRejectedValue(new Error("offline"));
+    await startApplicationShell(loaders({ search }));
+    await settle();
+    const field = element("#global-people-search-input");
+    field.focus();
+    field.dispatchEvent(new Event("focusin", { bubbles: true }));
+    await settle();
+    for (const key of ["A", "d", "a", "ArrowDown"]) {
+      field.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+      await settle();
+    }
+    expect(search.mock.calls.length).toBeGreaterThanOrEqual(5);
+    expect(toasts()).toEqual([
+      "Search could not load. Check your connection and try again.",
+    ]);
+    element<HTMLButtonElement>(".app-toast-dismiss").click();
+    expect(toasts()).toEqual([]);
+    const tried = search.mock.calls.length;
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "x" }),
+    );
+    await vi.waitFor(() => expect(search.mock.calls.length).toBe(tried + 1));
+    await settle();
+    expect(toasts()).toEqual([
+      "Search could not load. Check your connection and try again.",
+    ]);
+  });
+
   it("does nothing on a page without the header's search", async () => {
     markup();
     element("[data-global-people-search]").remove();
@@ -445,9 +676,30 @@ describe("FER-01 Quick capture loads on the first click", () => {
       expect(opener.hasAttribute("aria-busy")).toBe(false)
     );
     expect(islands.mountCapture).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([
+      "Quick capture could not load. Check your connection and try again.",
+    ]);
     opener.click();
     await vi.waitFor(() =>
       expect(islands.mountCapture).toHaveBeenCalledWith(opener)
     );
+  });
+
+  it("says once that it could not load however many times it is clicked", async () => {
+    markup();
+    const capture = vi.fn<ShellIslandLoaders["capture"]>()
+      .mockRejectedValue(new Error("offline"));
+    await startApplicationShell(loaders({ capture }));
+    const opener = element<HTMLButtonElement>("[data-quick-capture]");
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      opener.click();
+      await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(attempt));
+      await vi.waitFor(() =>
+        expect(opener.hasAttribute("aria-busy")).toBe(false)
+      );
+    }
+    expect(toasts()).toEqual([
+      "Quick capture could not load. Check your connection and try again.",
+    ]);
   });
 });

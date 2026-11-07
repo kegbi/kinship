@@ -984,6 +984,32 @@ these:
     (only REL-096). Open follow-ups for a later web ticket: an early Ctrl+K
     focus return, an intent before the session is ready, and a toast on a failed
     island import.
+  - [x] **AUD-F2-fix — The lazy palette never drops an early intent.** S.
+        Normal. Depends: AUD-F2. Closes: the AUTH-004 APR-008 flake and AUD-F2's
+        review follow-ups.
+    - Scope: (a) when the session becomes ready while the static search field
+      holds focus or holds typed text, mount immediately and carry the typed
+      query; queue a key pressed while the import loads and replay it after
+      mount; (b) after an early Ctrl+K, return focus to the mounted field or
+      button on Escape; (c) show the existing toast when an island import fails,
+      and allow a retry; remove the unused re-export; give the idle wait a
+      bounded timeout; make AUTH-004's palette step robust without weakening it.
+    - RED: unit tests for (a) a focused field with typed text mounts with no
+      further event when the session resolves, (a) an ArrowDown pressed during
+      the import is replayed, (b) Escape after an early Ctrl+K returns focus to
+      the mounted input, (c) a rejected import shows the toast and a later
+      intent retries.
+    - Verify: `test:unit --module=web`; `deno task build`; E2E
+      `settings.AUTH-004`, `search.SEARCH-001`, and `shell.TODAY-001`
+      (Chromium), with AUTH-004 run 5 times in a row green.
+    - Delivered 2026-11-08: the palette mounts at once when the session resolves
+      while the static field is focused or holds text, carrying the query, and
+      replays a key pressed during the import; Escape after an early Ctrl+K
+      returns focus to the mounted field, and a failed import shows the toast
+      and retries on the next intent; AUTH-004 ran 5 times in a row green (21
+      passed), with SEARCH-001 and TODAY-001 (8 passed) under AUD-G3's CSP
+      collector; web unit and build show only REL-107 and REL-098, and fmt,
+      contracts, architecture, and lint (only REL-096) are clean.
 
 - [ ] **AUD-F3 — Preferences come with the session, and each document reads the
       session once.** M. High. Depends: AUD-F1, AUD-F2. Closes: FEQ-02, FEQ-03,

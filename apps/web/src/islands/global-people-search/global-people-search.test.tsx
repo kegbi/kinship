@@ -578,6 +578,33 @@ describe("UXD-004 global people search", () => {
     },
   );
 
+  it.each(
+    [
+      ["field", "combobox"],
+      ["Search button", "button"],
+    ] as const,
+  )(
+    "APR-008 returns the focus to the mounted %s after a Ctrl+K pressed on the static one before it mounted",
+    async (_label, role) => {
+      markup();
+      stubPeople([], [{ archived: false, id: adaId, name: "Ada Lovelace" }]);
+      const staticOpener = screen.getByRole(role, { name: "Find a person" });
+      staticOpener.focus();
+      await mountSettled(() =>
+        Promise.resolve(mountGlobalPeopleSearch(vi.fn(), staticOpener))
+      );
+      expect(palette()).not.toBeNull();
+      await waitFor(() =>
+        expect(screen.getAllByRole("option")).toHaveLength(1)
+      );
+      key(document.activeElement!, { key: "Escape" });
+      await waitFor(() => expect(palette()).toBeNull());
+      const mounted = screen.getByRole(role, { name: "Find a person" });
+      expect(mounted).not.toBe(staticOpener);
+      await waitFor(() => expect(document.activeElement).toBe(mounted));
+    },
+  );
+
   it("returns the focus and an empty field to the header after typing there", async () => {
     markup();
     stubPeople([directoryPerson(adaId, "Ada", "Lovelace")]);

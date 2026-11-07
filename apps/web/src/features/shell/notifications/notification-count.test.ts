@@ -21,6 +21,7 @@ vi.mock(
 
 import { deferred } from "../../../testing/api.ts";
 import { drawShell, element } from "../../../testing/render.tsx";
+import { TOAST_REGION } from "../../../testing/shell.ts";
 import {
   mountNotificationCount,
   type NotificationPanelModule,
@@ -31,7 +32,7 @@ const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 /** The header slot as ApplicationLayout.astro draws it. */
 function markup(): void {
   drawShell(
-    `<div class="notification-bell" data-notification-bell><button class="notification-bell-button" type="button" aria-label="Notifications" disabled><span class="desktop-action-label">Notifications</span><span class="notification-bell-badge" aria-hidden="true" hidden></span></button></div>`,
+    `<div class="notification-bell" data-notification-bell><button class="notification-bell-button" type="button" aria-label="Notifications" disabled><span class="desktop-action-label">Notifications</span><span class="notification-bell-badge" aria-hidden="true" hidden></span></button></div>${TOAST_REGION}`,
   );
 }
 
@@ -45,6 +46,11 @@ const answer = (unreadCount: number) => ({
   ok: true,
   value: page(unreadCount),
 });
+
+const toasts = () =>
+  [...document.querySelectorAll("#app-toasts .app-toast-message")].map((item) =>
+    item.textContent
+  );
 
 const bell = () => element<HTMLButtonElement>(".notification-bell-button");
 const badge = () => element(".notification-bell-badge");
@@ -212,12 +218,32 @@ describe("FER-01 the bell's count before its panel loads", () => {
     await vi.waitFor(() =>
       expect(bell().hasAttribute("aria-busy")).toBe(false)
     );
+    expect(toasts()).toEqual([
+      "Notifications could not load. Check your connection and try again.",
+    ]);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(mocks.notifications).toHaveBeenCalledTimes(1);
     bell().click();
     await vi.waitFor(() =>
       expect(island.mountNotificationBell).toHaveBeenCalled()
     );
+  });
+
+  it("says once that the island could not load however many times the bell is clicked", async () => {
+    markup();
+    const load = vi.fn<() => Promise<NotificationPanelModule>>()
+      .mockRejectedValue(new Error("offline"));
+    stop = mountNotificationCount(WORKSPACE, load, 1_000);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      bell().click();
+      await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(attempt));
+      await vi.waitFor(() =>
+        expect(bell().hasAttribute("aria-busy")).toBe(false)
+      );
+    }
+    expect(toasts()).toEqual([
+      "Notifications could not load. Check your connection and try again.",
+    ]);
   });
 
   it("stays stopped when the island fails to load after the count was stopped", async () => {
@@ -232,6 +258,7 @@ describe("FER-01 the bell's count before its panel loads", () => {
     );
     await vi.advanceTimersByTimeAsync(3_000);
     expect(mocks.notifications).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([]);
   });
 
   it("does nothing on a page without the bell", async () => {

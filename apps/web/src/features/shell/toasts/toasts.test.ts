@@ -3,7 +3,7 @@
 import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TOAST_REGION, TOAST_TEMPLATE } from "../../../testing/shell.ts";
-import { clearToasts, showToast } from "./toasts.ts";
+import { clearToasts, showToast, showToastOnce } from "./toasts.ts";
 
 function region(): HTMLUListElement {
   return document.querySelector<HTMLUListElement>("#app-toasts")!;
@@ -222,5 +222,20 @@ describe("GAP-033 application toasts", () => {
 
     expect(screen.getAllByRole("listitem").map((item) => item.textContent))
       .toEqual(["Two", "Three", "Newest×"]);
+  });
+
+  it("AUD-F2 adds no second toast with a message one still shown says, and says it again once that one is gone", () => {
+    showToastOnce({ message: "Offline", tone: "error" });
+    showToast({ message: "Saved" });
+    showToastOnce({ message: "Offline", tone: "error" });
+
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent))
+      .toEqual(["Offline×", "Saved×"]);
+
+    region().querySelector<HTMLButtonElement>(".app-toast-dismiss")!.click();
+    showToastOnce({ message: "Offline", tone: "error" });
+
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent))
+      .toEqual(["Saved×", "Offline×"]);
   });
 });

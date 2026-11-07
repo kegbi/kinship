@@ -159,6 +159,21 @@ export function showToast(options: ToastOptions): void {
   schedule(record);
 }
 
+/**
+ * Adds a toast unless the region still shows one with the same message, so a
+ * failure that every retry repeats is said once until it is dismissed
+ * (AUD-F2).
+ */
+export function showToastOnce(options: ToastOptions): void {
+  const shown = document.querySelectorAll(
+    "#app-toasts > .app-toast > .app-toast-message",
+  );
+  if ([...shown].some((message) => message.textContent === options.message)) {
+    return;
+  }
+  showToast(options);
+}
+
 /** Removes every toast and its pending timer. */
 export function clearToasts(): void {
   for (const record of [...records.values()]) removeToast(record.item);

@@ -108,17 +108,21 @@ interface Request {
   readonly query: string;
 }
 
-/** Who opened the palette, and so takes the focus back when it closes. */
-type Opener = HTMLElement | "field" | undefined;
+/**
+ * Who opened the palette, and so takes the focus back when it closes: an
+ * element, or the island's own header field or Search button.
+ */
+type Opener = HTMLElement | "button" | "field" | undefined;
 
 export interface GlobalPeopleSearchProps {
   /** Whether the header field had the focus before the island mounted. */
   readonly initialFocus: boolean;
   /**
    * Who pressed Ctrl+K before the island mounted (FER-01): the palette opens
-   * at once and hands the focus back to them, or to no one for `null`.
+   * at once and hands the focus back to them — to the island's own field or
+   * button for the static one it replaced (APR-008) — or to no one for `null`.
    */
-  readonly initialOpener?: HTMLElement | null | undefined;
+  readonly initialOpener?: HTMLElement | "button" | "field" | null | undefined;
   /** What was typed into the header field before the island mounted. */
   readonly initialQuery: string;
   readonly navigate: (path: string) => void;
@@ -323,6 +327,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
     status: "loading",
   });
   const fieldRef = useRef<HTMLInputElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const paletteFieldRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const opener = useRef<Opener>(
@@ -547,6 +552,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
         })}
         data-global-people-search-open=""
         onClick={(event) => openPalette(event.currentTarget)}
+        ref={buttonRef}
         type="button"
       >
         <span>Search</span>
@@ -570,6 +576,7 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
             const by = opener.current;
             opener.current = undefined;
             if (by === "field") return fieldRef.current ?? false;
+            if (by === "button") return buttonRef.current ?? false;
             return by?.isConnected ? by : false;
           }}
           id={DIALOG_ID}

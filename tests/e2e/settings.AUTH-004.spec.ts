@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";
+import { activateGlobalSearch } from "./support/islands.ts";
 import {
   expectAccessible,
   recordPolicyViolations,
@@ -426,6 +427,8 @@ test(
     await page.goto(`/app/people/${adaId}`);
     await expect(page.locator("#person-profile-name")).toHaveText("Zulu Ada");
     await recordedView;
+    // The palette mounts on intent (FER-01); ArrowDown then opens it.
+    await activateGlobalSearch(page);
     await page.getByRole("combobox", { name: "Find a person" }).press(
       "ArrowDown",
     );

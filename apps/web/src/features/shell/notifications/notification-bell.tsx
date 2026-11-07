@@ -49,8 +49,6 @@ import {
   notificationText,
 } from "./notifications.ts";
 
-export { NOTIFICATION_REFRESH_MS };
-
 export const NOTIFICATION_BELL_ISLAND = "notification-bell";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {

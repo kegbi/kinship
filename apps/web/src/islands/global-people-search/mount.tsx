@@ -7,7 +7,8 @@
  * and it replaces them with the island in one task. A query typed into the
  * static field before the island mounted fired no handler; it is carried
  * over, and a field that had the focus opens the palette with it (REL-039);
- * a Search button that had the focus keeps it.
+ * a Search button that had the focus keeps it. A Ctrl+K pressed on either
+ * before it mounted returns the focus to the one that replaces it.
  */
 
 import { mountIsland } from "../core/index.ts";
@@ -32,23 +33,36 @@ export function mountGlobalPeopleSearch(
   const field = container.querySelector<HTMLInputElement>(
     "#global-people-search-input",
   );
-  const openButton = "[data-global-people-search-open]";
+  const staticButton = container.querySelector<HTMLElement>(
+    "[data-global-people-search-open]",
+  );
   const buttonFocused = document.activeElement !== null &&
-    document.activeElement === container.querySelector(openButton);
+    document.activeElement === staticButton;
+  // Ctrl+K pressed on the static field or button: the island replaces them,
+  // so the palette hands the focus back to its own (APR-008).
+  const opener = !initialOpener
+    ? initialOpener
+    : initialOpener === field
+    ? "field"
+    : initialOpener === staticButton
+    ? "button"
+    : initialOpener;
   const unmount = mountIsland(
     container,
     GLOBAL_PEOPLE_SEARCH_ISLAND,
     <GlobalPeopleSearch
       initialFocus={field !== null && document.activeElement === field}
-      initialOpener={initialOpener}
+      initialOpener={opener}
       initialQuery={field?.value ?? ""}
       navigate={navigate}
     />,
   );
   // Focusing the compact Search button is what mounted the island; the
-  // focus stays on the button that replaces it.
-  if (buttonFocused) {
-    container.querySelector<HTMLButtonElement>(openButton)?.focus();
+  // focus stays on the button that replaces it unless the palette opened.
+  if (buttonFocused && opener === undefined) {
+    container.querySelector<HTMLButtonElement>(
+      "[data-global-people-search-open]",
+    )?.focus();
   }
   return unmount;
 }

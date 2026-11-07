@@ -12,7 +12,7 @@
  * (`notification-bell.tsx`), which opens the panel with the page read here
  * and owns every later read. The count stops reading before it loads the
  * island, so one owner at a time polls; if the island cannot load, the count
- * keeps the bell and a later click tries again.
+ * keeps the bell, a toast says so, and a later click tries again.
  */
 
 import {
@@ -20,6 +20,7 @@ import {
   type NotificationsPage,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { whenIdle } from "../../../lib/idle.ts";
+import { showToastOnce } from "../toasts/toasts.ts";
 import {
   badgeText,
   bellLabel,
@@ -93,6 +94,11 @@ export function mountNotificationCount(
       if (stopped) return;
       handedOver = false;
       poll();
+      showToastOnce({
+        message:
+          "Notifications could not load. Check your connection and try again.",
+        tone: "error",
+      });
     }
   };
 
