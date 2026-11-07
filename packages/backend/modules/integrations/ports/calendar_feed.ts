@@ -26,4 +26,12 @@ export interface CalendarFeedSource {
     | (CalendarFeedContent & { readonly status: "ready" })
     | { readonly status: "forbidden" | "unavailable" }
   >;
+  /**
+   * An opaque string that changes whenever what `read` would answer does,
+   * cheap enough to compute on every poll (BEQ-14).
+   */
+  revision(actor: DavActor): Promise<
+    | { readonly revision: string; readonly status: "ready" }
+    | { readonly status: "forbidden" | "unavailable" }
+  >;
 }

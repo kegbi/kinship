@@ -357,3 +357,41 @@ Deno.test("[GAP-023] file listing forwards one page and refuses a malformed quer
     );
   }
 });
+
+Deno.test("[PEOPLE-007] D3: an avatar's content is cached privately for a day; a document is never stored", async () => {
+  const served = (kind: "avatar" | "document" | "photo") =>
+    app({
+      download: () =>
+        Promise.resolve({
+          bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+          file: { ...visibleFile, kind, mimeType: "image/png" },
+          status: "ready",
+        }),
+    }).request(
+      `http://localhost/api/v1/people/${personId}/files/${fileId}/content`,
+      {
+        headers: {
+          cookie: "kinship_session=session",
+          "X-Workspace-Id": workspaceId,
+        },
+      },
+    );
+
+  const avatar = await served("avatar");
+  assertStatus(avatar, 200, "the avatar is served");
+  assert(
+    avatar.headers.get("cache-control") ===
+      "private, max-age=86400, immutable",
+    `an avatar's file id is its version: ${
+      avatar.headers.get("cache-control")
+    }`,
+  );
+  for (const kind of ["document", "photo"] as const) {
+    const response = await served(kind);
+    assertStatus(response, 200, `the ${kind} is served`);
+    assert(
+      response.headers.get("cache-control") === "private, no-store",
+      `a ${kind} stays out of every cache`,
+    );
+  }
+});

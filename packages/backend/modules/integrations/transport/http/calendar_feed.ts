@@ -12,10 +12,11 @@
  * - It never logs one. The request log records the registered pattern,
  *   `/api/v1/calendar-feeds/:feedFile`, never the path; the gateway logs
  *   `/api/v1/*`.
- * - It is cheap to poll. The body is deterministic, so a strong entity tag is
- *   a hash of it, and a client presenting that tag gets a 304. The answer may
- *   be cached privately for five minutes. `Referrer-Policy: no-referrer` is
- *   the gateway's, which owns that header on every response.
+ * - It is cheap to poll. The publication derives a strong entity tag from the
+ *   read model's revision before reading any event, and a client presenting
+ *   that tag gets a 304 without the feed being read or rendered (BEQ-14). The
+ *   answer may be cached privately for five minutes. `Referrer-Policy:
+ *   no-referrer` is the gateway's, which owns that header on every response.
  */
 
 import { Hono } from "hono";
@@ -55,18 +56,6 @@ export const CALENDAR_FEED_PROBLEMS: readonly ProblemDefinition[] = [
 
 const CACHE_CONTROL = "private, max-age=300";
 
-/** A strong entity tag: the body's SHA-256, base64url. */
-async function strongTag(body: string): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
-  );
-  let binary = "";
-  for (const byte of digest) binary += String.fromCharCode(byte);
-  return `"${
-    btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
-  }"`;
-}
-
 /** Whether `If-None-Match` names this tag, compared weakly (RFC 9110 §13.1.2). */
 function unchanged(header: string | undefined, tag: string): boolean {
   if (header === undefined) return false;
@@ -86,21 +75,20 @@ export function createCalendarFeedRoutes(
       return definedProblem(context, CALENDAR_FEED_NOT_FOUND);
     }
     const secret = file.data.slice(0, -".ics".length);
-    const result = await services.calendarFeed.publish(secret).catch(() =>
-      undefined
-    );
+    const presented = context.req.header("If-None-Match");
+    const result = await services.calendarFeed.publish(
+      secret,
+      (tag) => unchanged(presented, tag),
+    ).catch(() => undefined);
     if (!result || result.status === "unavailable") {
       return definedProblem(context, CALENDAR_FEED_UNAVAILABLE);
     }
     if (result.status === "not-found") {
       return definedProblem(context, CALENDAR_FEED_NOT_FOUND);
     }
-    const tag = await strongTag(result.body);
     context.header("Cache-Control", CACHE_CONTROL);
-    context.header("ETag", tag);
-    if (unchanged(context.req.header("If-None-Match"), tag)) {
-      return context.body(null, 304);
-    }
+    context.header("ETag", result.tag);
+    if (result.status === "not-modified") return context.body(null, 304);
     context.header("Content-Type", "text/calendar; charset=utf-8");
     return context.body(result.body, 200);
   });

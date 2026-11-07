@@ -433,9 +433,44 @@ row scoped `calendar.read`, spelled `kin_cal_…` so the personal-token parser
 refuses it; the route reads no session or cookie, answers 404 for every refusal,
 and is logged only as its route pattern by the API and as `/api/v1/*` by the
 gateway. The `calendar-feed` read model reads the events, and `integrations`
-writes them as iCalendar with a strong entity tag of the body. The feed is a
-personal setting, managed from `settings.preferences` beside reminder delivery,
-never from the admin-only `settings.integrations` page.
+writes them as iCalendar. The feed is a personal setting, managed from
+`settings.preferences` beside reminder delivery, never from the admin-only
+`settings.integrations` page.
+
+The feed's strong entity tag is computed before any event is read (BEQ-14). The
+read model's cheap revision is one aggregate statement over exactly the rows the
+feed publishes, with the member's today and the workspace's name. For each row
+set it takes the count, the latest `updated_at` among every row an event is
+drawn from (occurrence, reminder, and person; date and person), and an
+order-independent checksum: the sum of a 64-bit hash of each such row's id and
+`updated_at`. The tag hashes that revision with the public origin and the
+rendering's format version. A poll whose `If-None-Match` holds the tag answers
+304 after the token check, the member's standing, and that one statement,
+without reading, rendering, or hashing the events. A row joining or leaving the
+published set, as when one person is archived and another restored, and a row
+rewritten with any different `updated_at`, older ones from a Monica import
+included, change the checksum even when the count and latest change stay the
+same. A write that changes a published row without changing its `updated_at` is
+seen only at the next change or the next day. Responses are
+`private, max-age=300`.
+
+Browser caching follows decision D3 of the
+[audit remediation plan](../planning/audit-remediation-plan-2026-11-07.md):
+avatars only.
+
+- An avatar's bytes carry `Cache-Control: private, max-age=86400, immutable`.
+  They are served by `GET /api/v1/people/{personId}/files/{fileId}/content` for
+  a file of kind `avatar`. The URL names the file id, a stored file's bytes
+  never change under its id, and a new image is a new file id, so the browser
+  may reuse it across pages without revalidating. `private` keeps it out of
+  shared caches.
+- Every JSON read and every other download, including photos, documents, vCards,
+  and exports, stays `Cache-Control: private, no-store`. These carry personal
+  data that must not persist in a shared computer's disk cache. JSON carries no
+  `ETag`: a validator would require the browser to store the body.
+- The gateway passes the API's `Cache-Control` through unchanged and adds the
+  one `X-Content-Type-Options: nosniff` to every response, downloads included.
+  The API therefore emits no `nosniff` of its own (SECA-13).
 
 ## Pagination
 

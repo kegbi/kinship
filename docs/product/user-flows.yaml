@@ -1381,7 +1381,8 @@ flows:
       # all answer the same 404, so the route never confirms a secret exists.
       revoked-link-not-found,
       rotated-link-old-url-not-found,
-      # A strong entity tag of the body; a matching If-None-Match answers 304.
+      # A strong entity tag computed from the feed's revision before any event
+      # is read; a matching If-None-Match answers 304 without rendering.
       not-modified,
       archived-or-deleted-people-excluded,
       # Deceased people keep their dates, as the person workspace and Today do.

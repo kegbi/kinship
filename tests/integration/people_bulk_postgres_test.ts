@@ -406,7 +406,11 @@ Deno.test("[PEOPLE-009] the selection vCard holds the selected cards in order an
     "text/vcard; charset=utf-8",
   );
   assertEquals(response.headers.get("cache-control"), "private, no-store");
-  assertEquals(response.headers.get("x-content-type-options"), "nosniff");
+  assertEquals(
+    response.headers.get("x-content-type-options"),
+    null,
+    "the gateway adds the one nosniff (SECA-13)",
+  );
   assert(
     response.headers.get("content-disposition")?.startsWith("attachment;") ===
       true,

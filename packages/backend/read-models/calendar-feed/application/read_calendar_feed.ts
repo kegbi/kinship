@@ -9,6 +9,12 @@
  * visible; this file bounds the read and names each date by the same
  * vocabulary planning titles its important-date reminders with, so the feed
  * and the reminder say "Birthday" alike.
+ *
+ * `revision` is the feed's cheap validator (BEQ-14): for the same actor and
+ * the same window it names everything the body depends on that can change —
+ * the member's today, the workspace's name, and each row set's size, latest
+ * change, and checksum of its rows — as one opaque string, so a calendar that already holds the
+ * current body is answered without the events being read.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -17,6 +23,7 @@ import type { ImportantDateKind } from "../../../modules/people/public.ts";
 import type { ActorRevalidation } from "../../../modules/workspaces/public.ts";
 import type {
   CalendarFeedActor,
+  CalendarFeedCriteria,
   CalendarFeedReminderRow,
   CalendarFeedRepository,
 } from "../ports/calendar_feed_repository.ts";
@@ -54,6 +61,10 @@ export type CalendarFeedResult =
     readonly truncated?: { readonly limit: number };
   };
 
+export type CalendarFeedRevision =
+  | Failure<"forbidden" | "unavailable">
+  | { readonly revision: string; readonly status: "ready" };
+
 /** The vocabulary's name for a date: planning's reminder title, exactly. */
 export function importantDateLabel(
   kind: ImportantDateKind,
@@ -75,19 +86,53 @@ export function createCalendarFeed(dependencies: {
     ): Promise<T>;
   };
 }) {
+  /** The bounded window for a member who still stands, or `undefined`. */
+  const criteria = async (
+    actor: CalendarFeedActor,
+  ): Promise<CalendarFeedCriteria | undefined> => {
+    const standing = await dependencies.transaction.run((transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    );
+    if (standing !== "active") return undefined;
+    return {
+      ...actor,
+      limit: CALENDAR_FEED_EVENT_LIMIT,
+      now: dependencies.clock.now(),
+      windowDaysAfter: CALENDAR_FEED_WINDOW_DAYS_AFTER,
+      windowDaysBefore: CALENDAR_FEED_WINDOW_DAYS_BEFORE,
+    };
+  };
+
   return {
+    revision: async (
+      actor: CalendarFeedActor,
+    ): Promise<CalendarFeedRevision> => {
+      const window = await criteria(actor);
+      if (!window) return { status: "forbidden" };
+      const found = await dependencies.repository.revision(window);
+      if (found.status !== "ready") return { status: "unavailable" };
+      return {
+        revision: JSON.stringify([
+          found.today,
+          found.calendarName,
+          found.reminders.count,
+          found.reminders.updatedAt ?? null,
+          found.reminders.checksum,
+          found.dates.count,
+          found.dates.updatedAt ?? null,
+          found.dates.checksum,
+          window.limit,
+          window.windowDaysBefore,
+          window.windowDaysAfter,
+        ]),
+        status: "ready",
+      };
+    },
+
     read: async (actor: CalendarFeedActor): Promise<CalendarFeedResult> => {
-      const standing = await dependencies.transaction.run((transaction) =>
-        dependencies.actors.revalidate({ ...actor, lock: false, transaction })
-      );
-      if (standing !== "active") return { status: "forbidden" };
-      const rows = await dependencies.repository.read({
-        ...actor,
-        limit: CALENDAR_FEED_EVENT_LIMIT,
-        now: dependencies.clock.now(),
-        windowDaysAfter: CALENDAR_FEED_WINDOW_DAYS_AFTER,
-        windowDaysBefore: CALENDAR_FEED_WINDOW_DAYS_BEFORE,
-      });
+      const window = await criteria(actor);
+      if (!window) return { status: "forbidden" };
+      const rows = await dependencies.repository.read(window);
       if (rows.status !== "ready") return { status: "unavailable" };
       return {
         calendarName: rows.calendarName,

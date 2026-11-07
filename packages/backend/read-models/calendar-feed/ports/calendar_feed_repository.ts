@@ -58,8 +58,39 @@ export interface CalendarFeedRows {
   readonly truncated: boolean;
 }
 
+/**
+ * How many rows one set has, the latest change among them, and an
+ * order-independent checksum of each row's identity and last change, so a
+ * set whose membership changes, or whose row is rewritten with an older
+ * change, is another revision even when its size and latest change are not.
+ */
+export interface CalendarFeedRowSetRevision {
+  /** Decimal; `"0"` when the set is empty. */
+  readonly checksum: string;
+  readonly count: number;
+  /** Absent when the set is empty. */
+  readonly updatedAt?: string;
+}
+
+/**
+ * Everything the feed's body depends on that can change, without the rows
+ * themselves (BEQ-14): the cheap validator a poll is compared against.
+ */
+export interface CalendarFeedRevisionRow {
+  readonly calendarName: string;
+  readonly dates: CalendarFeedRowSetRevision;
+  readonly reminders: CalendarFeedRowSetRevision;
+  readonly status: "ready";
+  /** The member's today, `YYYY-MM-DD`, which moves the window. */
+  readonly today: string;
+}
+
 export interface CalendarFeedRepository {
   read(
     criteria: CalendarFeedCriteria,
   ): Promise<CalendarFeedRows | { readonly status: "timed-out" }>;
+  /** The validator over exactly the rows `read` would publish. */
+  revision(
+    criteria: CalendarFeedCriteria,
+  ): Promise<CalendarFeedRevisionRow | { readonly status: "timed-out" }>;
 }

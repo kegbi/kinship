@@ -10,6 +10,7 @@ const SECRET =
   "kin_cal_40000000-0000-4000-8000-000000000001.Zm9yLXRoZS1jYWxlbmRhci1vbmx5";
 const PATH = `/api/v1/calendar-feeds/${SECRET}.ics`;
 const BODY = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+const TAG = '"Q2FsZW5kYXItZmVlZC1yZXZpc2lvbi10YWctdmFsdWUx"';
 
 function app(publish: CalendarFeedPublication["publish"]) {
   const presented: string[] = [];
@@ -21,9 +22,9 @@ function app(publish: CalendarFeedPublication["publish"]) {
     "/",
     createCalendarFeedRoutes({
       calendarFeed: {
-        publish: (secret) => {
+        publish: (secret, held) => {
           presented.push(secret);
-          return publish(secret);
+          return publish(secret, held);
         },
       },
     }),
@@ -31,16 +32,13 @@ function app(publish: CalendarFeedPublication["publish"]) {
   return { api, lines, presented };
 }
 
-const ready = () => Promise.resolve({ body: BODY, status: "ready" as const });
-
-async function strongTag(body: string): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
+/** The publication: a 304 when the caller holds `TAG`, else the body. */
+const ready: CalendarFeedPublication["publish"] = (_secret, held) =>
+  Promise.resolve(
+    held?.(TAG)
+      ? { status: "not-modified" as const, tag: TAG }
+      : { body: BODY, status: "ready" as const, tag: TAG },
   );
-  const text = btoa(String.fromCharCode(...digest)).replaceAll("+", "-")
-    .replaceAll("/", "_").replace(/=+$/, "");
-  return `"${text}"`;
-}
 
 Deno.test("[INTEGRATION-002] the feed answers text/calendar with a strong tag and no session", async () => {
   const { api, presented } = app(ready);
@@ -53,13 +51,13 @@ Deno.test("[INTEGRATION-002] the feed answers text/calendar with a strong tag an
     "text/calendar; charset=utf-8",
   );
   assertEquals(response.headers.get("cache-control"), "private, max-age=300");
-  assertEquals(response.headers.get("etag"), await strongTag(BODY));
+  assertEquals(response.headers.get("etag"), TAG, "the publication's tag");
   assertEquals(response.headers.get("set-cookie"), null);
 });
 
 Deno.test("[INTEGRATION-002] a matching If-None-Match answers 304 with no body", async () => {
   const { api } = app(ready);
-  const tag = await strongTag(BODY);
+  const tag = TAG;
   for (const presented of [tag, `W/${tag}`, `"other", ${tag}`, "*"]) {
     const response = await api.request(`http://localhost${PATH}`, {
       headers: { "If-None-Match": presented },
@@ -76,6 +74,9 @@ Deno.test("[INTEGRATION-002] a matching If-None-Match answers 304 with no body",
     headers: { "If-None-Match": '"stale"' },
   });
   assertEquals(changed.status, 200, "a stale tag gets the new body");
+  assertEquals(await changed.text(), BODY);
+  const plain = await api.request(`http://localhost${PATH}`);
+  assertEquals(plain.status, 200, "no If-None-Match holds nothing");
 });
 
 Deno.test("[INTEGRATION-002] a refused, malformed, or unavailable feed never confirms a secret", async () => {
@@ -118,7 +119,7 @@ Deno.test("[INTEGRATION-002] the API request log never carries the feed secret",
   const served = app(ready);
   await served.api.request(`http://localhost${PATH}`);
   await served.api.request(`http://localhost${PATH}`, {
-    headers: { "If-None-Match": await strongTag(BODY) },
+    headers: { "If-None-Match": TAG },
   });
   const refused = app(() => Promise.resolve({ status: "not-found" as const }));
   await refused.api.request(`http://localhost${PATH}`);

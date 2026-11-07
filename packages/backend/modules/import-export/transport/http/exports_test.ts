@@ -396,7 +396,8 @@ Deno.test("[PEOPLE-009] the selection vCard is one download that counts who was 
   assert(
     download.headers.get("content-type") === "text/vcard; charset=utf-8" &&
       download.headers.get("cache-control") === "private, no-store" &&
-      download.headers.get("x-content-type-options") === "nosniff" &&
+      // The gateway adds the one nosniff (SECA-13).
+      download.headers.get("x-content-type-options") === null &&
       download.headers.get("content-disposition")?.includes(
           "kinship-people-1.vcf",
         ) === true,

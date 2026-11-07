@@ -8,8 +8,15 @@
  * is `reminder-<reminderId>-<occurs_on>@<host>`, one day, so the email and
  * in-app occurrences of the same day are one event. `DTSTAMP` is the source
  * row's own last change, never the time of the request, so the document —
- * and the entity tag the route derives from it — changes only when what it
- * says does.
+ * and the entity tag derived from it — changes only when what it says does.
+ *
+ * The entity tag is not a hash of the body, because a poll that matched would
+ * still pay for reading and rendering every event (BEQ-14). It is a hash of
+ * the read model's revision — the member's today, the workspace's name, and
+ * each row set's size and latest change — with the origin links open at and
+ * `CALENDAR_FEED_FORMAT`, so the same inputs always render the same bytes.
+ * Change the format's version whenever the rendering here changes, or a
+ * calendar holding the old body would be told it is current.
  *
  * A date with no year starts in `CALENDAR_FEED_BASE_YEAR` and says so. That
  * year is a leap year so a Feb 29 date keeps its own day; RFC 5545 skips a
@@ -22,6 +29,32 @@ import { type ICalendarEvent, renderCalendar } from "./ical.ts";
 
 /** Where a date with an unknown year starts. A leap year, for Feb 29. */
 export const CALENDAR_FEED_BASE_YEAR = 2000;
+
+/** The rendering's version, part of every entity tag. Bump it on any change. */
+export const CALENDAR_FEED_FORMAT = "kinship-calendar-feed/1";
+
+/**
+ * The strong entity tag of the body these inputs render: SHA-256, base64url,
+ * over the format, the origin, and the read model's revision.
+ */
+export async function calendarFeedTag(
+  revision: string,
+  origin: string,
+): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        JSON.stringify([CALENDAR_FEED_FORMAT, origin, revision]),
+      ),
+    ),
+  );
+  let binary = "";
+  for (const byte of digest) binary += String.fromCharCode(byte);
+  return `"${
+    btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+  }"`;
+}
 
 /** One person's month-and-day date, as the read model lists it. */
 export interface CalendarFeedDate {

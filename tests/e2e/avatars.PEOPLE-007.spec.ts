@@ -115,6 +115,19 @@ test(
     await expect(image).not.toHaveAttribute("src", first!);
     const current = await image.getAttribute("src");
 
+    // D3 through the gateway: the avatar may be reused for a day, privately,
+    // and the gateway's one nosniff is its only copy (SECA-13).
+    const served = await page.request.get(current!);
+    expect(served.status()).toBe(200);
+    expect(served.headers()["cache-control"]).toBe(
+      "private, max-age=86400, immutable",
+    );
+    expect(
+      served.headersArray().filter(({ name }) =>
+        name.toLowerCase() === "x-content-type-options"
+      ).map(({ value }) => value),
+    ).toEqual(["nosniff"]);
+
     // The directory and the people palette draw the same image.
     await settlePersonWorkspace(page);
     await page.goto("/app/people");
@@ -133,7 +146,12 @@ test(
     await page.keyboard.press("Escape");
 
     // Bytes that went missing from the object store fall back to initials.
+    // D3: the image is in this browser's private cache now, because its file
+    // id never names other bytes, so only a browser that asks again learns
+    // they are gone. A route turns Playwright's HTTP cache off for the page.
     const fileId = current!.split("/")[6]!;
+    const content = `**/api/v1/people/${personId}/files/${fileId}/content`;
+    await page.route(content, (route) => route.continue());
     databaseSql(
       `update crm.files set storage_key = storage_key || '-gone'
        where id = ${sqlLiteral(fileId)}::uuid`,
@@ -146,6 +164,7 @@ test(
         `select status from crm.files where id = ${sqlLiteral(fileId)}::uuid`,
       )
     ).toBe("missing");
+    await page.unroute(content);
     await settlePersonWorkspace(page);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Ada Lovelace" }))

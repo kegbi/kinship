@@ -664,7 +664,7 @@ these:
   - Verify: `test:unit --module=api` (`security_config_test.ts`) and
     `--module=preflight`; `deno task dev` still starts.
 
-- [ ] **AUD-K7 — Conditional requests and safe caching.** S–M. Normal. Depends:
+- [x] **AUD-K7 — Conditional requests and safe caching.** S–M. Normal. Depends:
       none. Closes: FEQ-08, BEQ-14, and SECA-13 item 1.
   - Scope:
     - Apply D3 (avatars only). Avatar content gets
@@ -680,6 +680,17 @@ these:
     avatar carries the cache header; a download carries one `nosniff`.
   - Verify: `test:integration --module=calendar-feed` and `--module=files`; E2E
     `calendar-feed.INTEGRATION-002` and `avatars.PEOPLE-007`.
+  - Delivered 2026-11-07: D3 applied (avatar content
+    `private, max-age=86400, immutable`; JSON and documents stay
+    `private, no-store`; FEQ-08's JSON ETag item Decided on privacy grounds);
+    the calendar feed answers a matching tag with 304 without running its feed
+    statement, and the tag moves on any membership, archive, or older-timestamp
+    rewrite (per-row checksum); a refused or rotated secret is 404 even with its
+    last tag; downloads carry one `nosniff`; calendar-feed unit 15 and
+    integration 14, file suites 24, api unit 476 (only the `baseline_test.ts`
+    permission gap); E2E INTEGRATION-002 and PEOPLE-007 3 passed on Chromium;
+    calendar-feed coverage 99.4% lines, 97.7% branches, 100% functions;
+    contracts, fmt, architecture, and lint (only REL-096).
 
 ### Lane W — Worker and planning
 

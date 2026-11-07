@@ -278,11 +278,13 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
         fileId.data,
       ).catch(() => ({ status: "unavailable" as const }));
       if (result.status !== "ready") return failure(context, result);
+      // D3: an avatar is drawn on every page a person appears on, and its
+      // file id is its version, so only an avatar may be reused.
       return fileDownload({
         bytes: result.bytes,
         filename: result.file.filename,
         mimeType: result.file.mimeType,
-      });
+      }, { immutable: result.file.kind === "avatar" });
     },
   );
 

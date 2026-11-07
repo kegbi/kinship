@@ -18,7 +18,12 @@ import {
   CALENDAR_FEED_STATEMENT_TIMEOUT_MS,
   PostgresCalendarFeedRepository,
 } from "../../packages/backend/read-models/calendar-feed/adapters/postgres/calendar_feed_repository.ts";
-import { createCalendarFeed } from "../../packages/backend/read-models/calendar-feed/public.ts";
+import {
+  type CalendarFeedCriteria,
+  createCalendarFeed,
+} from "../../packages/backend/read-models/calendar-feed/public.ts";
+import { createCalendarFeedPublication } from "../../packages/backend/modules/integrations/public.ts";
+import { createCalendarFeedRoutes } from "../../packages/backend/modules/integrations/transport/http/calendar_feed.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
@@ -243,6 +248,10 @@ Deno.test("[INTEGRATION-002] a member subscribes, rotates, and revokes; old link
     409,
     "one live feed per member and workspace",
   );
+  const held = await fetchFeed(url);
+  const heldTag = held.headers.get("etag");
+  assert(heldTag, "the old link's last tag");
+  await held.body?.cancel();
   const rotated = await api.request(
     fixture,
     "/api/v1/settings/calendar-feed/rotation",
@@ -252,6 +261,11 @@ Deno.test("[INTEGRATION-002] a member subscribes, rotates, and revokes; old link
   const next = (await rotated.json() as { url: string }).url;
   assert(next !== url, "rotation mints a new secret");
   assertEquals((await fetchFeed(url)).status, 404, "the old link is dead");
+  assertEquals(
+    (await fetchFeed(url, { "If-None-Match": heldTag })).status,
+    404,
+    "even presenting its last tag, never 304",
+  );
   assertEquals((await fetchFeed(next)).status, 200);
 
   assertEquals(
@@ -525,6 +539,211 @@ Deno.test("[INTEGRATION-002] an unchanged feed answers 304 and a change moves it
   assertEquals(changed.status, 200, "an edit is a new body");
   assert(changed.headers.get("etag") !== tag, "and a new tag");
   assert((await changed.text()).includes("Ada — Relaunch"), "the new label");
+});
+
+/** The feed read model's repository, counting the statement that renders. */
+class CountingFeedRepository extends PostgresCalendarFeedRepository {
+  renders = 0;
+  override async read(criteria: CalendarFeedCriteria) {
+    this.renders += 1;
+    return await super.read(criteria);
+  }
+}
+
+Deno.test("[INTEGRATION-002] BEQ-14 a matching tag answers 304 without running the feed statement", async () => {
+  const fixture = await owner("feed-validator");
+  const ada = await person(fixture, "Ada");
+  const dateId = await date(ada, { day: 9, label: "Launch", month: 9 });
+  const remind = await reminder(fixture, ada, "Call Ada");
+  await occurrence(remind, fixture.memberId, day(3));
+  const actors = new PostgresActorRevalidation();
+  const tokens = createCalendarFeedTokens({
+    actorContext: actors,
+    actors,
+    audit: apiTokenAuditFrom(new PostgresAuditEventRecorder()),
+    calendarFeeds: new PostgresFeedTokenRepository(),
+    clock: { now: () => new Date() },
+    ids: { next: () => crypto.randomUUID() },
+    repository: new PostgresApiTokenRepository(),
+    secrets: new WebCryptoApiTokenSecrets(),
+    transaction: new PostgresApiTokenTransaction(connection.db),
+  });
+  const repository = new CountingFeedRepository(connection.db);
+  const routes = createCalendarFeedRoutes({
+    calendarFeed: createCalendarFeedPublication({
+      authority: tokens,
+      origin: ORIGIN,
+      source: createCalendarFeed({
+        actors,
+        clock: { now: () => new Date() },
+        repository,
+        transaction: new PostgresPeopleTransaction(connection.db),
+      }),
+    }),
+  });
+  const created = await tokens.create({ ...fixture, role: "owner" });
+  assert(created.status === "created", "feed minted");
+  const url = `${ORIGIN}/api/v1/calendar-feeds/${created.secret}.ics`;
+  const poll = (headers: Record<string, string> = {}) =>
+    routes.request(url, { headers });
+
+  const first = await poll();
+  assertEquals(first.status, 200);
+  const body = await first.text();
+  const tag = first.headers.get("etag");
+  assert(tag && /^"[A-Za-z0-9_-]{43}"$/.test(tag), `a strong tag: ${tag}`);
+  assertEquals(repository.renders, 1, "the first poll renders the feed");
+
+  const unchanged = await poll({ "If-None-Match": tag });
+  assertEquals(unchanged.status, 304, "nothing changed");
+  assertEquals(await unchanged.text(), "");
+  assertEquals(unchanged.headers.get("etag"), tag);
+  assertEquals(
+    unchanged.headers.get("cache-control"),
+    "private, max-age=300",
+  );
+  assertEquals(repository.renders, 1, "a 304 never runs the feed statement");
+
+  const again = await poll();
+  assertEquals(again.headers.get("etag"), tag, "the tag is stable");
+  assertEquals(await again.text(), body, "for the same body");
+  assertEquals(repository.renders, 2);
+
+  const changes = [
+    () =>
+      sql`update crm.person_dates set label = 'Relaunch', updated_at = now()
+      where id = ${dateId}`,
+    () =>
+      sql`update crm.people set given_name = 'Augusta', updated_at = now()
+      where id = ${ada}`,
+    () =>
+      sql`update crm.reminders set title = 'Write to Ada', updated_at = now()
+      where id = ${remind}`,
+    () =>
+      sql`update crm.reminder_occurrences set status = 'cancelled'
+      where reminder_id = ${remind}`,
+    () => sql`delete from crm.person_dates where id = ${dateId}`,
+    () =>
+      sql`update crm.workspaces set name = 'Renamed circle'
+      where id = ${fixture.workspaceId}`,
+    // A zone whose today is not UTC's right now: UTC+14 is a day ahead from
+    // 10:00 UTC, and UTC-12 a day behind until 12:00 UTC.
+    () =>
+      sql`update crm.member_preferences set timezone = ${
+        new Date().getUTCHours() >= 10 ? "Pacific/Kiritimati" : "Etc/GMT+12"
+      } where member_id = ${fixture.memberId}`,
+  ];
+  let previous = tag;
+  for (const [index, change] of changes.entries()) {
+    await change();
+    const changed = await poll({ "If-None-Match": previous });
+    const next = changed.headers.get("etag");
+    const text = await changed.text();
+    assertEquals(changed.status, 200, `change ${index} is answered in full`);
+    assert(next && next !== previous, `change ${index} moves the tag`);
+    assert(text.startsWith("BEGIN:VCALENDAR"), `change ${index} renders`);
+    previous = next;
+  }
+});
+
+/**
+ * A person whose one reminder occurs in three days, every row stamped with
+ * `changedAt`, so a test decides which row holds the feed's latest change.
+ */
+async function remindedPerson(
+  fixture: { readonly memberId: string; readonly workspaceId: string },
+  givenName: string,
+  changedAt: string,
+  archived = false,
+): Promise<{ readonly person: string; readonly reminder: string }> {
+  const id = crypto.randomUUID();
+  await sql`
+    insert into crm.people (id, workspace_id, created_by_member_id, given_name,
+      archived_at, updated_at)
+    values (${id}, ${fixture.workspaceId}, ${fixture.memberId}, ${givenName},
+      ${archived ? changedAt : null}, ${changedAt})
+  `;
+  const reminderId = crypto.randomUUID();
+  await sql`
+    insert into crm.reminders (id, workspace_id, person_id, target_kind, title,
+      anchor_on, created_by_member_id, updated_at)
+    values (${reminderId}, ${fixture.workspaceId}, ${id}, 'person',
+      ${`Call ${givenName}`}, current_date, ${fixture.memberId}, ${changedAt})
+  `;
+  await sql`
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+      deliver_at, channel, status, updated_at)
+    values (${reminderId}, ${fixture.memberId}, ${day(3)},
+      ${day(3)}::date + time '09:00', 'in_app', 'pending', ${changedAt})
+  `;
+  return { person: id, reminder: reminderId };
+}
+
+Deno.test("[INTEGRATION-002] BEQ-14 swapping which people are archived moves the tag while another row holds the latest change", async () => {
+  const fixture = await owner("feed-swap");
+  const alpha = await remindedPerson(fixture, "Alpha", "2026-02-01T00:00:00Z");
+  const bravo = await remindedPerson(
+    fixture,
+    "Bravo",
+    "2026-02-01T00:00:00Z",
+    true,
+  );
+  // Charlie's rows hold the latest change before and after the swap.
+  await remindedPerson(fixture, "Charlie", "2099-01-01T00:00:00Z");
+  const url = await createFeed(fixture);
+  const first = await fetchFeed(url);
+  const tag = first.headers.get("etag");
+  const before = await first.text();
+  assert(tag, "a tag");
+  assert(before.includes("SUMMARY:Call Alpha\r\n"), before);
+  assert(!before.includes("SUMMARY:Call Bravo\r\n"), before);
+
+  await sql`
+    update crm.people set archived_at = now(), updated_at = now()
+    where id = ${alpha.person}
+  `;
+  await sql`
+    update crm.people set archived_at = null, updated_at = now()
+    where id = ${bravo.person}
+  `;
+  const polled = await fetchFeed(url, { "If-None-Match": tag });
+  assertEquals(polled.status, 200, "a changed feed is answered in full");
+  assert(polled.headers.get("etag") !== tag, "with a new tag");
+  const after = await polled.text();
+  assert(after.includes("SUMMARY:Call Bravo\r\n"), after);
+  assert(!after.includes("SUMMARY:Call Alpha\r\n"), after);
+});
+
+Deno.test("[INTEGRATION-002] BEQ-14 a published row rewritten with an older change moves the tag", async () => {
+  const fixture = await owner("feed-older");
+  const ada = await remindedPerson(fixture, "Ada", "2026-03-01T00:00:00Z");
+  await remindedPerson(fixture, "Charlie", "2099-01-01T00:00:00Z");
+  const birthday = await date(ada.person, {
+    day: 4,
+    label: "Launch",
+    month: 4,
+  });
+  const url = await createFeed(fixture);
+  let tag = (await fetchFeed(url)).headers.get("etag");
+  assert(tag, "a tag");
+  // As a Monica import does: the source's own, older `updated_at`.
+  const rewrites = [
+    () =>
+      sql`update crm.reminders set title = 'Write to Ada',
+        updated_at = '2026-01-15T00:00:00Z' where id = ${ada.reminder}`,
+    () =>
+      sql`update crm.person_dates set label = 'Relaunch',
+        updated_at = '2026-01-15T00:00:00Z' where id = ${birthday}`,
+  ];
+  for (const [index, rewrite] of rewrites.entries()) {
+    await rewrite();
+    const polled = await fetchFeed(url, { "If-None-Match": tag });
+    assertEquals(polled.status, 200, `rewrite ${index} is answered in full`);
+    const next = polled.headers.get("etag");
+    assert(next && next !== tag, `rewrite ${index} moves the tag`);
+    await polled.body?.cancel();
+    tag = next;
+  }
 });
 
 Deno.test("[INTEGRATION-002] the feed stops at its event cap and says so", async () => {

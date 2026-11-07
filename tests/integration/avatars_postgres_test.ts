@@ -196,7 +196,11 @@ Deno.test("[PEOPLE-007] an avatar is uploaded, drawn, replaced, and removed thro
   const image = await api.request(owner, imageUrl);
   assertEquals(image.status, 200, "the image is served privately");
   assertEquals(image.headers.get("content-type"), "image/png");
-  assertEquals(image.headers.get("cache-control"), "private, no-store");
+  assertEquals(
+    image.headers.get("cache-control"),
+    "private, max-age=86400, immutable",
+    "D3: the file id is the image's version, so the browser reuses it",
+  );
   assertEquals([...new Uint8Array(await image.arrayBuffer())], [...PNG]);
 
   const listed = await api.request(owner, `/api/v1/people/${ada}/files`);

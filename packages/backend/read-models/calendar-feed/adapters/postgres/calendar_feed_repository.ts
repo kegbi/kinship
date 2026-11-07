@@ -25,6 +25,18 @@
  * feed still has a title. The transaction is read-only and bounded by a
  * transaction-local `statement_timeout`; a cancelled read answers
  * `timed-out`.
+ *
+ * `revision` is the feed's cheap validator (BEQ-14): over the same two row
+ * sets, built from the same fragments, it answers only aggregates — how many
+ * rows each has, the latest `updated_at` among every row a published event
+ * is drawn from (occurrence, reminder, and person; date and person), and the
+ * sum of a 64-bit hash of each such row's id and `updated_at` — beside the
+ * member's today and the workspace's name. The sum does not depend on order,
+ * so a row joining or leaving the set, as when one person is archived and
+ * another restored, or a row rewritten with an older `updated_at`, as a
+ * Monica import writes, changes it even when the count and the latest change
+ * do not. A poll whose tag still matches answers 304 without naming,
+ * ordering, or sending a row.
  */
 
 import { type Kysely, sql } from "kysely";
@@ -34,9 +46,11 @@ import { postgresErrorCode } from "../../../../platform/postgres/errors.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import type {
+  CalendarFeedCriteria,
   CalendarFeedDateRow,
   CalendarFeedReminderRow,
   CalendarFeedRepository,
+  CalendarFeedRevisionRow,
 } from "../../ports/calendar_feed_repository.ts";
 
 /** The longest the feed statement may run before PostgreSQL cancels it. */
@@ -62,6 +76,85 @@ interface FeedRow {
   readonly year: number | null;
 }
 
+interface RevisionRow {
+  readonly calendar_name: string;
+  readonly date_checksum: string;
+  readonly date_count: number;
+  readonly dates_updated_at: string | null;
+  readonly reminder_checksum: string;
+  readonly reminder_count: number;
+  readonly reminders_updated_at: string | null;
+  readonly today: string;
+}
+
+/** The workspace's name and the member's today, as planning reckons it. */
+function feedContext(criteria: CalendarFeedCriteria) {
+  return sql`context as (
+    select workspace.name as calendar_name,
+      (${criteria.now}::timestamptz at time zone coalesce(
+        (select preference.timezone from crm.member_preferences preference
+          where preference.member_id = ${criteria.memberId}::uuid),
+        (select setting.default_timezone from crm.workspace_settings setting
+          where setting.workspace_id = workspace.id),
+        'UTC'))::date as today
+    from crm.workspaces workspace
+    where workspace.id = ${criteria.workspaceId}::uuid
+  )`;
+}
+
+/** Every occurrence a reminder day is published from, channels uncollapsed. */
+function reminderOccurrences(criteria: CalendarFeedCriteria) {
+  return sql`from context
+    join crm.reminder_occurrences occurrence
+      on occurrence.member_id = ${criteria.memberId}::uuid
+      and occurrence.occurs_on
+        between context.today - ${criteria.windowDaysBefore}::int
+        and context.today + ${criteria.windowDaysAfter}::int
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+      and reminder.workspace_id = ${criteria.workspaceId}::uuid
+    join crm.people person on person.id = reminder.person_id
+      and person.workspace_id = ${criteria.workspaceId}::uuid
+    where occurrence.status not in ('cancelled', 'skipped')
+      and (reminder.is_active or occurrence.visible_at is not null)
+      and reminder.deleted_at is null
+      and reminder.target_kind <> 'person_date'
+      and person.archived_at is null and person.deleted_at is null`;
+}
+
+/** Every person date the feed publishes as a yearly event. */
+function personDates(criteria: CalendarFeedCriteria) {
+  return sql`from context
+    join crm.people person
+      on person.workspace_id = ${criteria.workspaceId}::uuid
+    join crm.person_dates date on date.person_id = person.id
+    where person.archived_at is null and person.deleted_at is null
+      and date.month is not null and date.day is not null`;
+}
+
+const EMPTY_REVISION: CalendarFeedRevisionRow = {
+  calendarName: "",
+  dates: { checksum: "0", count: 0 },
+  reminders: { checksum: "0", count: 0 },
+  status: "ready",
+  today: "",
+};
+
+/**
+ * The sum of a 64-bit hash of each row's identity and last change, as
+ * decimal text: order-independent, and `0` for no rows. Instants enter as
+ * epoch seconds so the session's time zone cannot move the sum.
+ */
+function rowChecksum(
+  ...rows: readonly (readonly [id: string, updatedAt: string])[]
+) {
+  const parts = rows.map(([id, updatedAt]) =>
+    `${id}::text, extract(epoch from ${updatedAt})::text`
+  ).join(", ");
+  return sql.raw(
+    `coalesce(sum(hashtextextended(concat_ws('|', ${parts}), 0)), 0)::text`,
+  );
+}
+
 export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
   private readonly statementTimeoutMs: number;
 
@@ -73,44 +166,75 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
       CALENDAR_FEED_STATEMENT_TIMEOUT_MS;
   }
 
-  async read(criteria: Parameters<CalendarFeedRepository["read"]>[0]) {
-    try {
-      return await this.database.transaction().execute(async (transaction) => {
-        await sql`set transaction read only`.execute(transaction);
-        await sql`select set_config('statement_timeout',
-          ${String(this.statementTimeoutMs)}, true)`.execute(transaction);
-        const result = await sql<FeedRow>`
-          with context as (
-            select workspace.name as calendar_name,
-              (${criteria.now}::timestamptz at time zone coalesce(
-                (select preference.timezone from crm.member_preferences preference
-                  where preference.member_id = ${criteria.memberId}::uuid),
-                (select setting.default_timezone from crm.workspace_settings setting
-                  where setting.workspace_id = workspace.id),
-                'UTC'))::date as today
-            from crm.workspaces workspace
-            where workspace.id = ${criteria.workspaceId}::uuid
-          ), reminder_days as (
+  async revision(criteria: CalendarFeedCriteria) {
+    return await this.bounded(async (transaction) => {
+      const result = await sql<RevisionRow>`
+        with ${feedContext(criteria)}, reminder_days as (
+          select count(*)::int as count,
+            max(greatest(occurrence.updated_at, reminder.updated_at,
+              person.updated_at)) as latest,
+            ${
+        rowChecksum(
+          ["occurrence.id", "occurrence.updated_at"],
+          ["reminder.id", "reminder.updated_at"],
+          ["person.id", "person.updated_at"],
+        )
+      } as checksum
+          ${reminderOccurrences(criteria)}
+        ), dates as (
+          select count(*)::int as count,
+            max(greatest(date.updated_at, person.updated_at)) as latest,
+            ${
+        rowChecksum(
+          ["date.id", "date.updated_at"],
+          ["person.id", "person.updated_at"],
+        )
+      } as checksum
+          ${personDates(criteria)}
+        )
+        select context.today::text as today, context.calendar_name,
+          reminder_days.count as reminder_count,
+          ${instantColumn("reminder_days.latest")} as reminders_updated_at,
+          reminder_days.checksum as reminder_checksum,
+          dates.count as date_count,
+          ${instantColumn("dates.latest")} as dates_updated_at,
+          dates.checksum as date_checksum
+        from context cross join reminder_days cross join dates
+      `.execute(transaction);
+      const row = result.rows[0];
+      // No row only when the workspace is gone: an empty feed's revision.
+      if (!row) return EMPTY_REVISION;
+      const revision: CalendarFeedRevisionRow = {
+        calendarName: row.calendar_name,
+        dates: {
+          checksum: row.date_checksum,
+          count: row.date_count,
+          ...(row.dates_updated_at ? { updatedAt: row.dates_updated_at } : {}),
+        },
+        reminders: {
+          checksum: row.reminder_checksum,
+          count: row.reminder_count,
+          ...(row.reminders_updated_at
+            ? { updatedAt: row.reminders_updated_at }
+            : {}),
+        },
+        status: "ready",
+        today: row.today,
+      };
+      return revision;
+    });
+  }
+
+  async read(criteria: CalendarFeedCriteria) {
+    return await this.bounded(async (transaction) => {
+      const result = await sql<FeedRow>`
+          with ${feedContext(criteria)}, reminder_days as (
             select distinct on (reminder.id, occurrence.occurs_on)
               reminder.id, occurrence.occurs_on, person.id as person_id,
               coalesce(nullif(reminder.title, ''), occurrence.title_snapshot,
                 'Reminder') as title,
               reminder.updated_at
-            from context
-            join crm.reminder_occurrences occurrence
-              on occurrence.member_id = ${criteria.memberId}::uuid
-              and occurrence.occurs_on
-                between context.today - ${criteria.windowDaysBefore}::int
-                and context.today + ${criteria.windowDaysAfter}::int
-            join crm.reminders reminder on reminder.id = occurrence.reminder_id
-              and reminder.workspace_id = ${criteria.workspaceId}::uuid
-            join crm.people person on person.id = reminder.person_id
-              and person.workspace_id = ${criteria.workspaceId}::uuid
-            where occurrence.status not in ('cancelled', 'skipped')
-              and (reminder.is_active or occurrence.visible_at is not null)
-              and reminder.deleted_at is null
-              and reminder.target_kind <> 'person_date'
-              and person.archived_at is null and person.deleted_at is null
+            ${reminderOccurrences(criteria)}
             order by reminder.id, occurrence.occurs_on
           ), events as (
             select 0 as section, reminder_days.id, reminder_days.person_id,
@@ -132,12 +256,7 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
                 extract(day from context.today)::int) then 0 else 1 end,
               make_date(2000, date.month, 1) + (date.day - 1),
               lower(${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))})
-            from context
-            join crm.people person
-              on person.workspace_id = ${criteria.workspaceId}::uuid
-            join crm.person_dates date on date.person_id = person.id
-            where person.archived_at is null and person.deleted_at is null
-              and date.month is not null and date.day is not null
+            ${personDates(criteria)}
           ), limited as (
             select * from events
             order by section, season, sort_on, sort_name, id
@@ -150,8 +269,8 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
           select section, null::text as calendar_name, id::text,
             person_id::text, person_name, kind, label, year, month, day,
             occurs_on::text, title, ${
-          instantColumn("updated_at")
-        } as updated_at,
+        instantColumn("updated_at")
+      } as updated_at,
             ordinal
           from numbered
           union all
@@ -160,7 +279,23 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
           from context
           order by section, ordinal
         `.execute(transaction);
-        return this.rows(result.rows, criteria.limit);
+      return this.rows(result.rows, criteria.limit);
+    });
+  }
+
+  /**
+   * One read-only transaction under the feed's statement timeout; a
+   * cancelled statement answers `timed-out`.
+   */
+  private async bounded<T>(
+    work: (transaction: Kysely<ApplicationDatabase>) => Promise<T>,
+  ): Promise<T | { readonly status: "timed-out" }> {
+    try {
+      return await this.database.transaction().execute(async (transaction) => {
+        await sql`set transaction read only`.execute(transaction);
+        await sql`select set_config('statement_timeout',
+          ${String(this.statementTimeoutMs)}, true)`.execute(transaction);
+        return await work(transaction);
       });
     } catch (error) {
       if (postgresErrorCode(error) === QUERY_CANCELED) {
