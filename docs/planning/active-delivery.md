@@ -1698,6 +1698,119 @@ Playwright test carrying its stable flow ID.
       stores or replace the original link with a synthetic download to claim a
       green gateway matrix.
 
+- [ ] **REL-105 — Deno spawns and run permissions resolve the nvm shim instead
+      of the real binary on Windows.** Observed during the 2026-11-07
+      audit-remediation run on a Windows 11 host (Git Bash/PowerShell, Deno
+      2.9.6, nvm-installed `deno.exe`); unrelated to the remediation tickets. On
+      this host `deno` on `PATH` resolves to the nvm `.nodejs\deno.exe` shim
+      (546 KB), while `Deno.execPath()` is the real
+      `…\nvm\installs\v24.22.1\node_modules\deno\deno.exe`. Both symptoms below
+      share that root cause.
+
+      Long argument lists: `tools/tasks/run.ts:71` spawns the literal `"deno"`,
+      so the shim receives the full file list and refuses arguments beyond
+      roughly 8,000 characters with "The command line is too long."; spawning
+      `Deno.execPath()` with the same 7,000-, 9,000-, and 20,000-character
+      arguments succeeds. `deno task check` (339–344 files, about 19,600
+      characters), `test:coverage --module=api` (about 20,200 characters), and
+      the aggregate `test:coverage` fail this way although all are below the
+      32,767-character `CreateProcess` limit. The `api` unit set is already
+      about 7,900 characters, so adding one test file to it breaks
+      `test:unit --module=api` here. Observed on `b387d1cf` (baseline) and
+      `c7d88daa` (checkpoint C1); running the same `deno check` file list in
+      chunks of 100 succeeds with only REL-095's error.
+
+      Run permission: the manifest's `--allow-run=deno` resolves to the shim,
+      while code spawns `Deno.execPath()`, so
+      `packages/backend/modules/relationships/application/manage_relationships_test.ts:86`
+      ("relationships and governance have no direct dependency edge") fails with
+      `NotCapable: Requires run access to …deno.exe`, and `deno task dev` fails
+      the same way in `tools/dev.ts` until the real binary's folder is first on
+      `PATH`.
+
+      Spawn one consistent executable, such as `Deno.execPath()`, everywhere
+      (the task runner, `tools/dev.ts`, and tests) and grant run permission for
+      exactly that executable without broadening it or dropping files from any
+      gate. Treat the 32,767-character `CreateProcess` cap only as a secondary
+      limit to watch as file lists grow; if a list approaches it, pass the list
+      another way (for example a response file, a config `include`, or
+      chunking).
+
+- [ ] **REL-106 — The `api` unit manifest lacks a schema catalog read
+      permission.** Observed during the 2026-11-07 audit-remediation run on the
+      REL-105 Windows host; unrelated to the remediation tickets.
+      `tools/migrations/baseline_test.ts:90` ("schema v12 specification reports
+      its exact canonical metrics") fails with
+      `NotCapable: Requires read access to "personal-crm-schema/v12/personal_crm_field_catalog_v12.csv"`.
+      The failure is present since `8b3d2c7b` and reproduces on `b387d1cf`.
+      Grant that read path in the manifest set that runs the test rather than
+      skipping or narrowing the assertion. REL-010 (closed) repaired the same
+      kind of permission gap for the v7 schema files.
+
+- [ ] **REL-107 — Four web unit tests fail at the baseline.** Observed during
+      the 2026-11-07 audit-remediation run on the REL-105 Windows host;
+      unrelated to the remediation tickets. The failing cases are
+      `apps/web/src/lib/application-controls.test.ts` ("keeps application
+      spacing on the approved rhythm"), `form-method-contract.test.ts` ("REL-041
+      island form submission contract > gives every island form a method"), and
+      two in `stylesheet-liveness.test.ts` ("styles only what a production
+      source can draw" and "documents the owner of every stylesheet"). The files
+      they flag include `person-rail.css`, `debt-settlement.tsx`, `shell.css`,
+      and `api-reference.css`. All four reproduce on `b387d1cf` before any
+      remediation change, and they also block `test:coverage --module=web`.
+      Repair the owning contracts or sources separately; do not relax the
+      contracts to pass.
+
+- [ ] **REL-108 — The IMPORT-002 status assertion matches two elements.**
+      Observed during the 2026-11-07 audit-remediation run on the REL-105
+      Windows host; unrelated to the remediation tickets.
+      `tests/e2e/contacts-import.IMPORT-002.spec.ts:25`
+      (`await expect(page.getByText(expected)).toBeVisible()` in `commit`,
+      reached from `importVCard`) fails with "strict mode violation:
+      getByText('2 created, 0 reused') resolved to 2 elements". The checkpoint
+      C1 Chromium run on `c7d88daa` reported 76 passed, 1 skipped, and this
+      failure; one run on `b387d1cf` reproduces the same error. Repair the
+      locator or the duplicate status text without weakening the assertion.
+
+- [ ] **REL-109 — A workspace settings save can deadlock with reminder
+      occurrence inserts.** Found by the AUD-W1 re-check during the 2026-11-07
+      audit-remediation run on the REL-105 Windows host; the risk predates
+      AUD-W1 and is unrelated to the remediation tickets. `updateWorkspace` in
+      `packages/backend/modules/workspaces/adapters/postgres/settings_management.ts`
+      locks the admin's member and workspace rows `for update of wm, w` and then
+      `workspace_settings` `FOR UPDATE`. `reminder_occurrences.member_id`
+      references `workspace_members`, so each occurrence insert takes
+      `FOR KEY SHARE` on that member row. A replenishment holding
+      `workspace_settings FOR SHARE` that inserts for the same admin can
+      deadlock with that save, and PostgreSQL aborts one with 40P01. Lock
+      `for no key update of wm, w`, matching `actor_revalidation.ts`, and prove
+      it with a top-up held open after its locks while the same admin saves
+      workspace settings: both commit and no 40P01 occurs.
+
+- [ ] **REL-110 — The architecture checker ignores `compositionMayImport`.**
+      Found in the AUD-K1 review during the 2026-11-07 audit-remediation run on
+      the REL-105 Windows host; unrelated to the remediation tickets.
+      `tools/architecture/check_boundaries.ts` never reads the token list
+      declared at `docs/architecture/module-boundaries.yaml:92`; the name
+      appears only in a `check_boundaries_test.ts` fixture. Composition imports
+      into a module follow hard-coded rules, and an import whose target lies
+      outside every module, such as `packages/contracts`, skips all checks at
+      `if (target === undefined) continue;`. So `check:architecture` passed
+      while `apps/api/composition.ts` imported `packages/contracts/registry.ts`;
+      that import was removed. Enforce `compositionMayImport` for every import
+      target.
+
+- [ ] **REL-111 — Planned module integration targets are not declared.**
+      Observed during the 2026-11-07 audit-remediation run on the REL-105
+      Windows host; unrelated to the remediation tickets. The plan's Verify
+      lists name `test:integration` with `--module=governance`, `people`,
+      `interactions`, `relationships`, and `files`, but
+      `tools/tasks/manifest.ts` declares no integration suite for them ("No
+      integration suite is declared for …"). Their files run only inside the
+      `api` set, whose run is blocked by REL-095. Declare those module
+      integration suites through the task runner's consistent executable from
+      REL-105, without dropping any file from an existing gate.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
