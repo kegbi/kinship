@@ -14,9 +14,12 @@
  * Two paths deal with somebody who does not have an account yet.
  * `registerInvitee` creates a pending identity against the invited address —
  * and only that address, so an invitation cannot be spent to register a
- * different mailbox — and `acceptVerifiedEntry` is the other end: somebody who
- * has just proved that address hands back the entry token, joins, and is
- * signed in, all in one transaction.
+ * different mailbox. An address held only by somebody else's pending
+ * registration is taken over rather than refused (SECA-01), so a squatter
+ * cannot keep an invitee out or let them in on the squatter's password.
+ * `acceptVerifiedEntry` is the other end: somebody who has just proved that
+ * address hands back the entry token, joins, and is signed in, all in one
+ * transaction.
  *
  * Delivery is always outside the transaction. A workspace that committed an
  * invitation and then could not send the email reports `delivery-failed`; it
@@ -51,6 +54,7 @@ import type {
   InvitationTokens,
   WorkspaceInvitationRepository,
 } from "../ports/invitation_repository.ts";
+import type { WorkspaceRegistrationWriter } from "../ports/registration_repository.ts";
 import type {
   IdentityAuthenticationFacade,
   IdentityRegistrationFacade,
@@ -59,6 +63,7 @@ import type {
 } from "../../identity/public.ts";
 import { IdentityConflictError } from "../../identity/public.ts";
 import { completeAcceptance } from "./invitation_acceptance.ts";
+import { claimAddressForRegistration } from "./register_first_workspace.ts";
 
 export interface WorkspaceInvitationDependencies {
   readonly audit: InvitationAudit;
@@ -73,6 +78,11 @@ export interface WorkspaceInvitationDependencies {
     >
     & InvitationIdentityFacade;
   readonly mail: InvitationMail;
+  /** Where a replaced pending registration's workspaces are removed. */
+  readonly pendingWorkspaces: Pick<
+    WorkspaceRegistrationWriter,
+    "deletePendingWorkspaces"
+  >;
   readonly repository: WorkspaceInvitationRepository;
   readonly tokens: InvitationTokens;
   readonly transaction: RegistrationTransactionRunner;
@@ -106,6 +116,7 @@ export function createWorkspaceInvitationCoordinator(
     readonly firstName: string;
     readonly lastName: string;
     readonly passwordHash: string;
+    readonly registrantVerifier: string;
     readonly token: string;
   }): Promise<InvitationRegistrationResult>;
   retryInviteeVerification(
@@ -130,6 +141,17 @@ export function createWorkspaceInvitationCoordinator(
             if (!sameMailbox(invitation.email, command.email)) {
               return "wrong-user" as const;
             }
+            const address = await claimAddressForRegistration(
+              {
+                identity: dependencies.identity,
+                workspace: dependencies.pendingWorkspaces,
+              },
+              command.email,
+              transaction,
+            );
+            if (address === "registered") {
+              return "identity-unavailable" as const;
+            }
             const userId = dependencies.ids.create();
             const verificationTokenId = dependencies.ids.create();
             await dependencies.identity.createPendingUser({
@@ -138,6 +160,7 @@ export function createWorkspaceInvitationCoordinator(
               firstName: command.firstName,
               lastName: command.lastName,
               passwordHash: command.passwordHash,
+              registrantVerifier: command.registrantVerifier,
               tokenHash: verificationToken.hash,
               transaction,
               userId,

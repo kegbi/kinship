@@ -3,8 +3,10 @@ import { assert } from "../../../testing/assert.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
 
 function recoveryFixture(options: {
+  readonly changed?: (email: string) => Promise<void>;
   readonly deliveryEmail?: string;
   readonly mail: () => Promise<void>;
+  readonly reset?: "expired" | "invalid";
 }) {
   let releaseWindow = (): void => undefined;
   const window = new Promise<void>((resolve) => {
@@ -20,13 +22,23 @@ function recoveryFixture(options: {
       verify: () => Promise.resolve(true),
     },
     ids: { create: () => "00000000-0000-4000-8000-000000000001" },
-    mail: { sendPasswordReset: options.mail },
+    mail: {
+      sendPasswordChanged: (message) =>
+        options.changed?.(message.email) ?? Promise.resolve(),
+      sendPasswordReset: options.mail,
+    },
     repository: {
       createRequest: () =>
         Promise.resolve(
           options.deliveryEmail ? { deliveryEmail: options.deliveryEmail } : {},
         ),
-      resetPassword: () => Promise.resolve("reset"),
+      resetPassword: () =>
+        Promise.resolve(
+          options.reset ?? {
+            email: "owner@example.test",
+            status: "reset" as const,
+          },
+        ),
     },
     tokens: {
       create: () => Promise.resolve({ hash: "token-hash", raw: "token" }),
@@ -87,4 +99,56 @@ Deno.test("password recovery contains provider failures and unknown identities i
     unknownResult.delivery === "not-applicable",
     "unknown identity is never sent mail",
   );
+});
+
+Deno.test("AUD-A1 a completed reset tells the address its password changed", async () => {
+  const told: string[] = [];
+  const { recovery } = recoveryFixture({
+    changed: (email) => {
+      told.push(email);
+      return Promise.resolve();
+    },
+    mail: () => Promise.resolve(),
+  });
+  const outcome = await recovery.reset({
+    password: "a brand new passphrase",
+    token: "token",
+  });
+  assert(outcome === "reset", "the reset completes");
+  assert(told.join(",") === "owner@example.test", "the address is told once");
+});
+
+Deno.test("AUD-A1 a failed password-changed notice does not undo the reset", async () => {
+  const { recovery } = recoveryFixture({
+    changed: () => Promise.reject(new Error("provider detail")),
+    mail: () => Promise.resolve(),
+  });
+  assert(
+    await recovery.reset({ password: "a brand new passphrase", token: "t" }) ===
+      "reset",
+    "the password is already replaced",
+  );
+});
+
+Deno.test("AUD-A1 a refused reset tells nobody", async () => {
+  for (const refusal of ["expired", "invalid"] as const) {
+    const told: string[] = [];
+    const { recovery } = recoveryFixture({
+      changed: (email) => {
+        told.push(email);
+        return Promise.resolve();
+      },
+      mail: () => Promise.resolve(),
+      reset: refusal,
+    });
+    assert(
+      await recovery.reset({
+        password: "a brand new passphrase",
+        token: "t",
+      }) ===
+        refusal,
+      `${refusal} is answered as before`,
+    );
+    assert(told.length === 0, `${refusal} sends no notice`);
+  }
 });

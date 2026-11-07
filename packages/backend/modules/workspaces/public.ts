@@ -8,6 +8,7 @@ export { privileged } from "./domain/roles.ts";
 export {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   RegistrationError,
+  VERIFICATION_WINDOW_MS,
   VerificationDeliveryError,
 } from "./domain/registration_rules.ts";
 export type {

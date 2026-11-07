@@ -5,10 +5,11 @@
  * email it sends. Neither takes a session, because the person using them does
  * not have one yet.
  *
- * Both cookies the registration sets are scoped to the narrowest path that
- * needs them: the invitation token to the invitation routes, and the pending
- * marker to the verification route, so a half-finished registration leaves
- * nothing behind that a wider route could replay.
+ * Every cookie the registration sets is scoped to the narrowest path that
+ * needs it: the invitation token to the invitation routes, and the pending
+ * marker and the registrant verifier (SECA-01) to the verification route, so
+ * a half-finished registration leaves nothing behind that a wider route could
+ * replay.
  *
  * A registration that commits but cannot send its email says so truthfully
  * and keeps both cookies, because the retry route is the invitee's way out.
@@ -33,6 +34,10 @@ import { mount } from "../../../../../../http-kit/route.ts";
 import type { ActorEnv } from "../../../../../../http-kit/session.ts";
 import { parseJsonBody } from "../../../../../../http-kit/validate.ts";
 import { deliveryFailure, registrationFailure } from "./failures.ts";
+import {
+  newRegistrantVerifier,
+  registrantCookie,
+} from "../registrant_cookie.ts";
 import {
   INVITATION_COOKIE,
   INVITATION_COOKIE_SECONDS,
@@ -97,11 +102,13 @@ export function createInvitationRegistrationRoutes(
       return definedProblem(context, REGISTRATION_REQUEST_INVALID);
     }
     const passwordHash = await services.hasher.hash(parsed.data.password);
+    const registrantVerifier = newRegistrantVerifier();
     const result = await services.invitations.registerInvitee({
       email: parsed.data.email,
       firstName: parsed.data.firstName,
       lastName: parsed.data.lastName,
       passwordHash,
+      registrantVerifier,
       token: parsed.data.token,
     }).catch(() => "unavailable" as const);
     if (result === "verification-required" || result === "delivery-failed") {
@@ -122,6 +129,11 @@ export function createInvitationRegistrationRoutes(
           path: VERIFICATION_PATH,
           value: "1",
         }),
+        { append: true },
+      );
+      context.header(
+        "Set-Cookie",
+        registrantCookie(policy, registrantVerifier),
         { append: true },
       );
       context.header("Cache-Control", "private, no-store");

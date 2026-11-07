@@ -299,3 +299,93 @@ Deno.test("SMTP configuration accepts only one safe sender mailbox", () => {
     );
   }
 });
+
+/** An adapter whose provider accepts everything and records each message. */
+function recordingMail(messages: string[]): SmtpVerificationMail {
+  return new SmtpVerificationMail({
+    environment: "test",
+    from: "hello@kinship.test",
+    host: "127.0.0.1",
+    port: 1025,
+    webOrigin: "https://kinship.example",
+  }, () => {
+    const replies = [
+      "220 ready\r\n",
+      "250 hello\r\n",
+      "250 sender\r\n",
+      "250 recipient\r\n",
+      "354 content\r\n",
+      "250 queued\r\n",
+      "221 bye\r\n",
+    ];
+    return Promise.resolve({
+      close: () => undefined,
+      read: (buffer) => {
+        const reply = new TextEncoder().encode(replies.shift()!);
+        buffer.set(reply);
+        return Promise.resolve(reply.length);
+      },
+      write: (buffer) => {
+        messages.push(new TextDecoder().decode(buffer));
+        return Promise.resolve(buffer.length);
+      },
+    });
+  });
+}
+
+Deno.test("AUD-A1 an existing account is told, with a reset link and no verification link", async () => {
+  const messages: string[] = [];
+  await recordingMail(messages).sendAccountExists({
+    email: "owner@example.test",
+    reset: {
+      expiresAt: new Date("2026-08-24T12:00:00Z"),
+      token: "reset token / private",
+    },
+  });
+  const body = messages.find((value) => value.startsWith("From:")) ?? "";
+  assert(
+    body.includes("Subject: You already have a Kinship account") &&
+      body.includes("To: owner@example.test"),
+    "the owner is addressed",
+  );
+  assert(
+    body.includes(
+      "https://kinship.example/auth/reset-password?token=reset+token+%2F+private",
+    ) && body.includes("https://kinship.example/auth/sign-in"),
+    "the email links to sign-in and to an encoded single-use reset",
+  );
+  assert(
+    !body.includes("/auth/verify-email"),
+    "an existing account is never sent a verification link",
+  );
+  assert(body.includes("2026-08-24T12:00:00.000Z"), "the expiry is stated");
+});
+
+Deno.test("AUD-A1 an existing account with no reset to issue is told without a link", async () => {
+  const messages: string[] = [];
+  await recordingMail(messages).sendAccountExists({
+    email: "owner@example.test",
+  });
+  const body = messages.find((value) => value.startsWith("From:")) ?? "";
+  assert(
+    body.includes("Subject: You already have a Kinship account") &&
+      body.includes("https://kinship.example/auth/forgot-password") &&
+      !body.includes("token=") && !body.includes("expires at"),
+    "the owner is told and pointed at the forgot-password page",
+  );
+});
+
+Deno.test("AUD-A1 a password change is announced to the address", async () => {
+  const messages: string[] = [];
+  await recordingMail(messages).sendPasswordChanged({
+    email: "owner@example.test",
+  });
+  const body = messages.find((value) => value.startsWith("From:")) ?? "";
+  assert(
+    body.includes("Subject: Your Kinship password was changed") &&
+      body.includes("To: owner@example.test") &&
+      body.includes("https://kinship.example/auth/forgot-password"),
+    "the address is told and offered a way back in",
+  );
+  assert(!body.includes("token="), "the notice carries no credential");
+});

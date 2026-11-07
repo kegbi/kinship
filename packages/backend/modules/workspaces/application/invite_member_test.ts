@@ -30,6 +30,15 @@ interface InvitationDependenciesUnderTest
   readonly identity: {
     assertPendingUserPostconditions(command: unknown): Promise<void>;
     assertSessionPostcondition(command: unknown): Promise<void>;
+    claimRegistrationAddress(command: {
+      readonly email: string;
+    }): Promise<
+      | { readonly status: "available" }
+      | { readonly status: "pending"; readonly userId: string }
+      | { readonly status: "registered" }
+    >;
+    createExistingAccountRecovery(command: unknown): Promise<undefined>;
+    discardPendingUser(command: { readonly userId: string }): Promise<void>;
     consumeVerifiedIdentityEntry(command: {
       readonly expectedEmail: string;
       readonly rawToken: string;
@@ -70,6 +79,7 @@ interface InvitationCoordinatorUnderTest {
     readonly firstName: string;
     readonly lastName: string;
     readonly passwordHash: string;
+    readonly registrantVerifier: string;
     readonly token: string;
   }): Promise<string>;
   acceptVerifiedEntry(command: {
@@ -85,6 +95,7 @@ interface InvitationCoordinatorUnderTest {
 
 function dependencies(overrides: {
   readonly accept?: InvitationAcceptance;
+  readonly claim?: "available" | "pending" | "registered";
   readonly create?: "already-member" | "created" | "forbidden";
   readonly inspect?: InvitationInspection;
   readonly mailFails?: boolean;
@@ -119,6 +130,22 @@ function dependencies(overrides: {
         },
         assertSessionPostcondition() {
           effects.push("identity.session.postcondition");
+          return Promise.resolve();
+        },
+        claimRegistrationAddress(command) {
+          effects.push(`identity.claim:${command.email}`);
+          const claim = overrides.claim ?? "available";
+          return Promise.resolve(
+            claim === "pending"
+              ? { status: claim, userId: "pending-user" }
+              : { status: claim },
+          );
+        },
+        createExistingAccountRecovery() {
+          return Promise.reject(new Error("not used by invitations"));
+        },
+        discardPendingUser(command) {
+          effects.push(`identity.discard:${command.userId}`);
           return Promise.resolve();
         },
         consumeVerifiedIdentityEntry(command) {
@@ -179,6 +206,12 @@ function dependencies(overrides: {
           return overrides.verificationMailFails
             ? Promise.reject(new Error("provider detail"))
             : Promise.resolve();
+        },
+      },
+      pendingWorkspaces: {
+        deletePendingWorkspaces(command) {
+          effects.push(`workspaces.discard:${command.userId}`);
+          return Promise.resolve();
         },
       },
       repository: {
@@ -378,6 +411,7 @@ Deno.test("AUTH-002 registers an invited identity without creating a workspace",
     firstName: "New",
     lastName: "Invitee",
     passwordHash: "argon2id-hash",
+    registrantVerifier: "registrant-verifier",
     token: "raw-token",
   });
   assert(result === "verification-required", "verification is required");
@@ -385,6 +419,60 @@ Deno.test("AUTH-002 registers an invited identity without creating a workspace",
     effects.includes("identity.pending:invitee@example.test") &&
       effects.includes("identity.pending.postcondition"),
     "only the pending identity and verification authority are created",
+  );
+});
+
+Deno.test("AUD-A1 an invitee replaces somebody else's pending registration", async () => {
+  const { deps, effects } = dependencies({ claim: "pending" });
+  const coordinator = createWorkspaceInvitationCoordinator(
+    deps,
+  ) as unknown as InvitationCoordinatorUnderTest;
+  const result = await coordinator.registerInvitee({
+    email: "invitee@example.test",
+    firstName: "New",
+    lastName: "Invitee",
+    passwordHash: "argon2id-hash",
+    registrantVerifier: "registrant-verifier",
+    token: "raw-token",
+  });
+  assert(result === "verification-required", "the invitee registers");
+  const order = [
+    "identity.claim:invitee@example.test",
+    "workspaces.discard:pending-user",
+    "identity.discard:pending-user",
+    "identity.pending:invitee@example.test",
+  ].map((effect) => effects.indexOf(effect));
+  assert(
+    order.every((index, position) =>
+      index >= 0 && (position === 0 || index > order[position - 1]!)
+    ),
+    `the squatter's workspaces and identity go before the new one: ${
+      effects.join(",")
+    }`,
+  );
+});
+
+Deno.test("AUD-A1 an invitee cannot register over an existing account", async () => {
+  const { deps, effects } = dependencies({ claim: "registered" });
+  const coordinator = createWorkspaceInvitationCoordinator(
+    deps,
+  ) as unknown as InvitationCoordinatorUnderTest;
+  const result = await coordinator.registerInvitee({
+    email: "invitee@example.test",
+    firstName: "New",
+    lastName: "Invitee",
+    passwordHash: "argon2id-hash",
+    registrantVerifier: "registrant-verifier",
+    token: "raw-token",
+  });
+  assert(result === "identity-unavailable", "the existing account is kept");
+  assert(
+    !effects.some((effect) =>
+      effect.startsWith("identity.pending") ||
+      effect.startsWith("identity.discard") ||
+      effect.startsWith("verification-mail:")
+    ),
+    "nothing is written or sent for an existing account",
   );
 });
 

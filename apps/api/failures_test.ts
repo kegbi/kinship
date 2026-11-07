@@ -770,7 +770,6 @@ Deno.test("[GAP-020] the refusals registration.ts answers are unchanged", () => 
     listed(REGISTRATION_PROBLEMS),
     [
       "400 | validation_failed | Invalid delivery request | Provide a valid email address.",
-      "409 | duplicate_email | Registration unavailable | An account already uses that email address.",
       "409 | entry_handoff_invalid | Application entry unavailable | Use the link from a completed verification.",
       "409 | entry_handoff_invalid | Application entry unavailable | This application-entry handoff cannot be used.",
       "503 | entry_handoff_unavailable | Application entry unavailable | Application entry is temporarily unavailable. Please try again.",

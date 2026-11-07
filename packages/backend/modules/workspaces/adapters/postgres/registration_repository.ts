@@ -13,6 +13,27 @@ export class PostgresRegistrationTransaction
 
 export class PostgresWorkspaceRegistration
   implements WorkspaceRegistrationWriter {
+  /**
+   * Removes what a never-verified registration was provisioned with: the
+   * workspaces it created that nobody else belongs to. Such a workspace holds
+   * only the rows registration wrote — settings, the owner's membership and
+   * preferences, the default vocabulary, and its creation audit event — and
+   * they all cascade with it.
+   */
+  async deletePendingWorkspaces(command: {
+    readonly transaction: RegistrationTransaction;
+    readonly userId: string;
+  }): Promise<void> {
+    await sql`
+      delete from crm.workspaces w
+      where w.created_by_user_id = ${command.userId}::uuid
+        and not exists (
+          select 1 from crm.workspace_members m
+          where m.workspace_id = w.id and m.user_id <> ${command.userId}::uuid
+        )
+    `.execute(databaseFromSession(command.transaction));
+  }
+
   async createWorkspace(command: {
     readonly createdByUserId: string;
     readonly name: string;

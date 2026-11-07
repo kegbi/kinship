@@ -39,10 +39,22 @@ export const registrationInput = z.strictObject({
   workspaceName: z.string().trim().min(2).max(120),
 }).meta({ id: "RegistrationInput" });
 
-export const verificationAccepted = z.strictObject({
-  status: z.literal("verified"),
-  next: z.enum(["/app", "/invite/continue"]),
-}).meta({ id: "VerificationAccepted" });
+/**
+ * What a usable verification link answers. `verified` came from the browser
+ * that registered and enters the application or the invitation;
+ * `password-required` did not (SECA-01), so the address is verified but the
+ * registrant's password is gone, and `next` is the single-use reset step.
+ */
+export const verificationAccepted = z.discriminatedUnion("status", [
+  z.strictObject({
+    status: z.literal("verified"),
+    next: z.enum(["/app", "/invite/continue"]),
+  }),
+  z.strictObject({
+    status: z.literal("password-required"),
+    next: z.string().regex(/^\/auth\/reset-password\?token=[A-Za-z0-9_-]+$/),
+  }),
+]).meta({ id: "VerificationAccepted" });
 
 /** The address a delivery retry is asked for, which the document inlines. */
 export const verificationDeliveryInput = z.strictObject({

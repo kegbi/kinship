@@ -434,6 +434,19 @@
     "/api/v1/email-verification-deliveries": {
       "post": {
         "operationId": "retryVerificationDelivery",
+        "description": "Asks for another verification link. Requires the exact Origin header configured for the public web origin. Answers the same whether or not the address has a pending registration.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -485,6 +498,16 @@
               }
             }
           },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "415": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -511,6 +534,19 @@
     "/api/v1/email-verifications": {
       "post": {
         "operationId": "verifyEmail",
+        "description": "Verifies an address from its emailed link. Requires the exact Origin header configured for the public web origin. With the registering browser's HttpOnly kinship_registrant cookie it answers `verified` and sets the one-time kinship_entry handoff; without it the address is still verified, but the registrant's password is discarded and it answers `password-required` with the password-reset step to continue at.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -552,6 +588,16 @@
             }
           },
           "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -11131,6 +11177,19 @@
     "/api/v1/registrations": {
       "post": {
         "operationId": "createFirstWorkspace",
+        "description": "Registers a first workspace. Requires the exact Origin header configured for the public web origin. Answers the same 202 whether or not the address already has an account, and sets the HttpOnly kinship_registrant cookie that a verification from the same browser presents.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": true,
+            "description": "Must exactly match the configured public web origin."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -11144,6 +11203,14 @@
         "responses": {
           "202": {
             "description": "Verification required",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "writeOnly": true,
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -11162,7 +11229,7 @@
               }
             }
           },
-          "409": {
+          "403": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -27829,24 +27896,46 @@
         "additionalProperties": false
       },
       "VerificationAccepted": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "const": "verified"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "verified"
+              },
+              "next": {
+                "type": "string",
+                "enum": [
+                  "/app",
+                  "/invite/continue"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "next"
+            ],
+            "additionalProperties": false
           },
-          "next": {
-            "type": "string",
-            "enum": [
-              "/app",
-              "/invite/continue"
-            ]
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "password-required"
+              },
+              "next": {
+                "type": "string",
+                "pattern": "^\\/auth\\/reset-password\\?token=[A-Za-z0-9_-]+$"
+              }
+            },
+            "required": [
+              "status",
+              "next"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "status",
-          "next"
         ],
-        "additionalProperties": false
+        "type": "object"
       },
       "WorkspaceDeleted": {
         "type": "object",

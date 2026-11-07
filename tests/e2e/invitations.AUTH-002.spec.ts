@@ -29,6 +29,7 @@ async function registerAccount(
   expect(
     (await request.post(`${origin}/api/v1/email-verifications`, {
       data: { token },
+      headers: { origin },
     })).status(),
   ).toBe(200);
 }

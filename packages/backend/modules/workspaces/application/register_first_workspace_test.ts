@@ -33,7 +33,11 @@ Deno.test("verification delivery retries preserve links and bound provider work"
   );
 });
 
-function fakeDependencies(failAt?: string): {
+function fakeDependencies(failAt?: string, options: {
+  readonly claim?: "available" | "pending" | "registered";
+  readonly recoverable?: boolean;
+  readonly withoutAccountExistsMail?: boolean;
+} = {}): {
   readonly deps: RegistrationDependencies;
   readonly effects: string[];
 } {
@@ -48,6 +52,16 @@ function fakeDependencies(failAt?: string): {
     effects,
     deps: {
       clock: fixedClock("2026-08-14T12:00:00.000Z"),
+      responseEqualizer: {
+        async run(work) {
+          effects.push("equalizer.begin");
+          try {
+            return await work();
+          } finally {
+            effects.push("equalizer.end");
+          }
+        },
+      },
       ids: {
         create: () =>
           `00000000-0000-4000-8000-${
@@ -75,7 +89,33 @@ function fakeDependencies(failAt?: string): {
         },
       },
       identity: {
-        createPendingUser() {
+        claimRegistrationAddress() {
+          effect("identity.claim");
+          const claim = options.claim ?? "available";
+          return Promise.resolve(
+            claim === "pending"
+              ? { status: claim, userId: "pending-user" }
+              : { status: claim },
+          );
+        },
+        discardPendingUser(command) {
+          effect(`identity.discard:${command.userId}`);
+          return Promise.resolve();
+        },
+        createExistingAccountRecovery(command) {
+          effect(`identity.recovery:${command.tokenHash}`);
+          return Promise.resolve(
+            options.recoverable === false ? undefined : {
+              email: "owner@example.test",
+              expiresAt: new Date("2026-08-14T13:00:00.000Z"),
+            },
+          );
+        },
+        createPendingUser(command) {
+          assert(
+            command.registrantVerifier === "registrant-verifier",
+            "the registering browser's verifier reaches identity",
+          );
           effect("identity");
           return Promise.resolve({
             userId: "00000000-0000-4000-8000-000000000001",
@@ -95,6 +135,10 @@ function fakeDependencies(failAt?: string): {
         },
       },
       workspace: {
+        deletePendingWorkspaces(command) {
+          effect(`workspace.discard:${command.userId}`);
+          return Promise.resolve();
+        },
         createWorkspace() {
           effect("workspace");
           return Promise.resolve({
@@ -152,6 +196,12 @@ function fakeDependencies(failAt?: string): {
           effect("mail");
           return Promise.resolve();
         },
+        ...(options.withoutAccountExistsMail ? {} : {
+          sendAccountExists(message) {
+            effect(`mail.account-exists:${message.reset?.token ?? "none"}`);
+            return Promise.resolve();
+          },
+        }),
       },
     },
   };
@@ -166,6 +216,7 @@ Deno.test("first workspace registration coordinates every required effect in one
     firstName: "Ada",
     lastName: "Lovelace",
     passwordHash: "$kinship$argon2id$v=1$encoded",
+    registrantVerifier: "registrant-verifier",
     workspaceName: "Ada's circle",
   });
 
@@ -179,13 +230,14 @@ Deno.test("first workspace registration coordinates every required effect in one
   );
   assert(
     effects.join(",") ===
-      "transaction.begin,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail",
+      "equalizer.begin,transaction.begin,identity.claim,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail,equalizer.end",
     `unexpected effect order: ${effects.join(",")}`,
   );
 });
 
 for (
   const failure of [
+    "identity.claim",
     "identity",
     "workspace",
     "membership",
@@ -208,6 +260,7 @@ for (
         firstName: "Ada",
         lastName: "Lovelace",
         passwordHash: "$kinship$argon2id$v=1$encoded",
+        registrantVerifier: "registrant-verifier",
         workspaceName: "Ada's circle",
       });
     } catch (caught) {
@@ -222,8 +275,9 @@ for (
       "failure uses stable safe code",
     );
     assert(
-      effects.at(-1) === "transaction.rollback",
-      "database failure must roll back",
+      effects.at(-2) === "transaction.rollback" &&
+        effects.at(-1) === "equalizer.end",
+      "database failure must roll back inside the equalizer",
     );
     assert(
       !effects.includes("mail"),
@@ -241,6 +295,7 @@ Deno.test("post-commit mail failure preserves committed registration for retry",
       firstName: "Ada",
       lastName: "Lovelace",
       passwordHash: "$kinship$argon2id$v=1$encoded",
+      registrantVerifier: "registrant-verifier",
       workspaceName: "Ada's circle",
     });
   } catch (caught) {
@@ -259,4 +314,181 @@ Deno.test("post-commit mail failure preserves committed registration for retry",
     !effects.includes("transaction.rollback"),
     "mail failure must not roll back committed DB work",
   );
+});
+
+const registration = {
+  email: "owner@example.test",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  passwordHash: "$kinship$argon2id$v=1$encoded",
+  registrantVerifier: "registrant-verifier",
+  workspaceName: "Ada's circle",
+};
+
+async function registrationFailure(
+  deps: RegistrationDependencies,
+): Promise<unknown> {
+  try {
+    await createFirstWorkspaceRegistration(deps)(registration);
+  } catch (caught) {
+    return caught;
+  }
+  return undefined;
+}
+
+Deno.test("AUD-A1 a pending registration is replaced, workspaces before identity", async () => {
+  const { deps, effects } = fakeDependencies(undefined, { claim: "pending" });
+  const result = await createFirstWorkspaceRegistration(deps)(registration);
+  assert(result.status === "verification-required", "the address is free");
+  assert(
+    effects.slice(2, 6).join(",") ===
+      "identity.claim,workspace.discard:pending-user,identity.discard:pending-user,identity",
+    `the squatter is discarded before the new identity: ${effects.join(",")}`,
+  );
+  assert(effects.includes("mail"), "the new registrant is mailed a link");
+});
+
+Deno.test("AUD-A1 an existing account answers the same and is mailed a reset link", async () => {
+  const { deps, effects } = fakeDependencies(undefined, {
+    claim: "registered",
+  });
+  const result = await createFirstWorkspaceRegistration(deps)(registration);
+  assert(
+    JSON.stringify(result) ===
+      JSON.stringify({ status: "verification-required" }),
+    "the caller cannot tell an existing account from a new one",
+  );
+  assert(
+    effects.join(",") ===
+      "equalizer.begin,transaction.begin,identity.claim,identity.recovery:hashed-verification-token,transaction.commit,mail.account-exists:raw-verification-token,equalizer.end",
+    `only a reset request is written and the owner told: ${effects.join(",")}`,
+  );
+});
+
+const PROVIDER_PARITY_CASES = [
+  ["a fresh address", { claim: "available" }],
+  ["a verified address over the reset limit", {
+    claim: "registered",
+    recoverable: false,
+  }],
+  ["an imported address", { claim: "registered", recoverable: false }],
+  ["a resettable address", { claim: "registered" }],
+] as const;
+
+Deno.test("AUD-A1 every registration waits on exactly one provider call, account or not", async () => {
+  for (const [label, options] of PROVIDER_PARITY_CASES) {
+    const { deps, effects } = fakeDependencies(undefined, options);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let calls = 0;
+    const slow = async () => {
+      calls += 1;
+      await gate;
+      effects.push("provider.finished");
+    };
+    const settled = createFirstWorkspaceRegistration({
+      ...deps,
+      mail: { sendVerification: slow, sendAccountExists: slow },
+    })(registration).then((result) => {
+      effects.push("answered");
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(
+      !effects.includes("answered"),
+      `${label}: the answer waits for the provider: ${effects.join(",")}`,
+    );
+    release();
+    const result = await settled;
+    assert(
+      result.status === "verification-required" && calls === 1 &&
+        effects.indexOf("provider.finished") < effects.indexOf("answered"),
+      `${label}: one provider call before the same answer (${calls})`,
+    );
+  }
+});
+
+Deno.test("AUD-A1 a failing provider fails every registration alike, account or not", async () => {
+  for (const [label, options] of PROVIDER_PARITY_CASES) {
+    const { deps } = fakeDependencies(undefined, options);
+    let calls = 0;
+    const failing = () => {
+      calls += 1;
+      return Promise.reject(new Error("provider down"));
+    };
+    const error = await registrationFailure({
+      ...deps,
+      mail: { sendVerification: failing, sendAccountExists: failing },
+    });
+    assert(
+      typeof error === "object" && error !== null && "code" in error &&
+        error.code === "verification_delivery_failed" && calls === 1,
+      `${label}: the same delivery failure after one provider call (${calls})`,
+    );
+  }
+});
+
+Deno.test("AUD-A1 an account that cannot reset is still told, without a reset link", async () => {
+  const messages: unknown[] = [];
+  const { deps } = fakeDependencies(undefined, {
+    claim: "registered",
+    recoverable: false,
+  });
+  await createFirstWorkspaceRegistration({
+    ...deps,
+    mail: {
+      sendVerification: () => Promise.reject(new Error("unexpected")),
+      sendAccountExists(message) {
+        messages.push(message);
+        return Promise.resolve();
+      },
+    },
+  })(registration);
+  assert(
+    JSON.stringify(messages) ===
+      JSON.stringify([{ email: "owner@example.test" }]),
+    `the owner is told with no link to spend: ${JSON.stringify(messages)}`,
+  );
+});
+
+Deno.test("AUD-A1 a failed account-exists email fails like a failed verification email", async () => {
+  for (
+    const [failAt, options] of [
+      [undefined, { claim: "registered", withoutAccountExistsMail: true }],
+      ["mail.account-exists:raw-verification-token", { claim: "registered" }],
+    ] as const
+  ) {
+    const error = await registrationFailure(
+      fakeDependencies(failAt, options).deps,
+    );
+    assert(
+      typeof error === "object" && error !== null && "code" in error &&
+        error.code === "verification_delivery_failed",
+      "both paths report the same delivery failure",
+    );
+  }
+});
+
+Deno.test("AUD-A1 a retry answers inside the equalizer without waiting for the provider", async () => {
+  const { deps, effects } = fakeDependencies();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => (release = resolve));
+  const retry = createVerificationDeliveryRetry({
+    ...deps,
+    mail: {
+      async sendVerification() {
+        effects.push("mail.started");
+        await pending;
+        effects.push("mail.finished");
+      },
+    },
+  });
+  await retry("owner@example.test");
+  assert(
+    !effects.includes("mail.finished") &&
+      effects.indexOf("equalizer.end") > effects.indexOf("transaction.commit"),
+    `the answer does not wait for the provider: ${effects.join(",")}`,
+  );
+  release();
+  await pending;
 });

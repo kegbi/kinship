@@ -93,53 +93,59 @@ test("[AUTH-001] creates and verifies the first workspace", {
   await expect(page.getByRole("status")).toContainText("already used");
 });
 
-test("[AUTH-001] shows safe duplicate and invalid verification states", {
-  annotation: { type: "flow", description: "AUTH-001" },
-}, async ({ page, request, browserName }) => {
-  const email = `auth-001-duplicate-${browserName}-${Date.now()}@example.test`;
-  const input = {
-    email,
-    firstName: "Grace",
-    lastName: "Hopper",
-    password: "a very long test password",
-    workspaceName: "Compiler friends",
-  };
-  const first = await request.post(`${origin}/api/v1/registrations`, {
-    data: input,
-  });
-  expect(first.status()).toBe(202);
+test(
+  "[AUTH-001] answers an existing address like a new one and shows invalid verification",
+  {
+    annotation: { type: "flow", description: "AUTH-001" },
+  },
+  async ({ page, request, browserName }) => {
+    const email =
+      `auth-001-duplicate-${browserName}-${Date.now()}@example.test`;
+    const input = {
+      email,
+      firstName: "Grace",
+      lastName: "Hopper",
+      password: "a very long test password",
+      workspaceName: "Compiler friends",
+    };
+    const first = await request.post(`${origin}/api/v1/registrations`, {
+      data: input,
+      headers: { origin },
+    });
+    expect(first.status()).toBe(202);
 
-  await page.goto("/auth/sign-up");
-  await expect(page.getByRole("link", { name: "Skip to main content" }))
-    .toHaveAttribute("tabindex", "0");
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Skip to main content" }))
-    .toBeFocused();
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  for (
-    const [control, value] of [
-      [page.getByLabel("First name"), input.firstName],
-      [page.getByLabel(/Last name/), input.lastName],
-      [page.getByLabel("Email address"), input.email.toUpperCase()],
-      [page.getByLabel("Workspace name"), input.workspaceName],
-      [page.getByLabel("Password"), input.password],
-    ] as const
-  ) {
-    await expect(control).toBeFocused();
-    await page.keyboard.type(value);
+    await page.goto("/auth/sign-up");
+    await expect(page.getByRole("link", { name: "Skip to main content" }))
+      .toHaveAttribute("tabindex", "0");
     await page.keyboard.press("Tab");
-  }
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("status")).toContainText(
-    "already uses that email",
-  );
+    await expect(page.getByRole("link", { name: "Skip to main content" }))
+      .toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    for (
+      const [control, value] of [
+        [page.getByLabel("First name"), input.firstName],
+        [page.getByLabel(/Last name/), input.lastName],
+        [page.getByLabel("Email address"), input.email.toUpperCase()],
+        [page.getByLabel("Workspace name"), input.workspaceName],
+        [page.getByLabel("Password"), input.password],
+      ] as const
+    ) {
+      await expect(control).toBeFocused();
+      await page.keyboard.type(value);
+      await page.keyboard.press("Tab");
+    }
+    await page.keyboard.press("Enter");
+    // SECA-02: the page cannot tell an existing address from a new one.
+    await expect(page.getByRole("status")).toContainText("Check your email");
+    await expect(page.getByRole("status")).not.toContainText(/already/i);
 
-  await page.goto(
-    "/auth/verify-email?token=this-token-is-long-enough-but-invalid-000000000",
-  );
-  await expect(page.getByRole("status")).toContainText("invalid");
-});
+    await page.goto(
+      "/auth/verify-email?token=this-token-is-long-enough-but-invalid-000000000",
+    );
+    await expect(page.getByRole("status")).toContainText("invalid");
+  },
+);
 
 test("[AUTH-001] sign-up stays usable at a mobile viewport", {
   annotation: { type: "flow", description: "AUTH-001" },
@@ -232,7 +238,10 @@ test("[AUTH-001] renders malicious owner and workspace names as text", {
 }, async ({ page, request, browserName }) => {
   const email = `auth-001-xss-${browserName}-${Date.now()}@example.test`;
   const payload = '<img src=x onerror="window.__kinshipXss=1">';
-  const response = await request.post(`${origin}/api/v1/registrations`, {
+  // Registered from the page's own browser, which keeps the verifier cookie
+  // that the verification below presents.
+  const response = await page.request.post(`${origin}/api/v1/registrations`, {
+    headers: { origin },
     data: {
       email,
       firstName: payload,
@@ -251,3 +260,78 @@ test("[AUTH-001] renders malicious owner and workspace names as text", {
     .toHaveCount(0);
   expect(await page.evaluate(() => "__kinshipXss" in window)).toBe(false);
 });
+
+test(
+  "[AUTH-001] verifying in another browser asks for a password before sign-in",
+  {
+    annotation: { type: "flow", description: "AUTH-001" },
+  },
+  async ({ browser, page, request, browserName }) => {
+    const email =
+      `auth-001-other-browser-${browserName}-${Date.now()}@example.test`;
+    const registrationPassword = "correct horse battery staple";
+    const chosenPassword = "a different passphrase chosen later";
+    // Browser A registers, and keeps the verifier cookie to itself.
+    await page.goto("/auth/sign-up");
+    await page.getByLabel("First name").fill("Ada");
+    await page.getByLabel(/Last name/).fill("Lovelace");
+    await page.getByLabel("Email address").fill(email);
+    await page.getByLabel("Workspace name").fill("Two browser circle");
+    await page.getByLabel("Password").fill(registrationPassword);
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await expect(page.getByRole("status")).toContainText("Check your email");
+    const token = await verificationToken(request, email);
+
+    // Browser B opens the mailed link without that cookie (SECA-01).
+    const other = await browser.newContext({
+      baseURL: origin,
+      ignoreHTTPSErrors: true,
+    });
+    try {
+      const otherPage = await other.newPage();
+      // The page navigates as soon as it reads the answer, so the answer is
+      // captured on its way through rather than read back afterwards.
+      let verified: { status: number; body: { status?: string } } | undefined;
+      await otherPage.route("**/api/v1/email-verifications", async (route) => {
+        const response = await route.fetch();
+        verified = {
+          body: await response.json() as { status?: string },
+          status: response.status(),
+        };
+        await route.fulfill({ response });
+      });
+      await otherPage.goto(
+        `/auth/verify-email?token=${encodeURIComponent(token)}`,
+      );
+      await expect(otherPage).toHaveURL(/\/auth\/reset-password\?token=/);
+      expect(verified).toEqual({
+        body: expect.objectContaining({ status: "password-required" }),
+        status: 200,
+      });
+      await expect(otherPage.locator("body")).toHaveAttribute(
+        "data-page-id",
+        "auth.reset",
+      );
+      await expect(otherPage.getByRole("heading", { level: 1 })).toHaveText(
+        "Choose a new passphrase.",
+      );
+      await otherPage.getByLabel("New password").fill(chosenPassword);
+      await otherPage.getByRole("button", { name: "Reset password" }).click();
+      await expect(otherPage).toHaveURL(/\/auth\/sign-in$/);
+
+      // The registration's password was discarded at verification.
+      await otherPage.getByLabel("Email address").fill(email);
+      await otherPage.getByLabel("Password").fill(registrationPassword);
+      await otherPage.getByRole("button", { name: "Sign in" }).click();
+      await expect(otherPage.getByRole("status")).toContainText(
+        "email address or password is incorrect",
+      );
+
+      await otherPage.getByLabel("Password").fill(chosenPassword);
+      await otherPage.getByRole("button", { name: "Sign in" }).click();
+      await otherPage.waitForURL(/\/app(?:$|\/compliance)/);
+    } finally {
+      await other.close();
+    }
+  },
+);

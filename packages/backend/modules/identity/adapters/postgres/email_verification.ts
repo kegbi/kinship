@@ -14,7 +14,9 @@ import type {
   VerifiedIdentityEntryAuthority,
   VerifiedIdentityEntryFacade,
 } from "../../ports/email_verification.ts";
+import { passwordResetExpiry } from "../../domain/identity_rules.ts";
 import { SecureTokenService } from "../crypto/secure_tokens.ts";
+import { registrantVerifierDigest } from "./registrant_verifier.ts";
 
 interface VerificationRow {
   readonly expires_at: Date;
@@ -36,8 +38,14 @@ export class PostgresEmailVerification
     private readonly workspaces: ApplicationEntryWorkspaces,
   ) {}
 
-  async verify(rawToken: string): Promise<VerificationResult> {
+  async verify(
+    rawToken: string,
+    registrantVerifier?: string,
+  ): Promise<VerificationResult> {
     const tokenHash = await this.tokens.hash(rawToken);
+    const verifierDigest = registrantVerifier === undefined
+      ? undefined
+      : await registrantVerifierDigest(this.tokens, registrantVerifier);
     return await this.database.transaction().execute(async (transaction) => {
       const candidateResult = await sql<VerificationCandidate>`
         select user_id::text
@@ -75,6 +83,22 @@ export class PostgresEmailVerification
       if (new Date(token.expires_at).getTime() <= now.getTime()) {
         return { status: "expired" };
       }
+      const bound = verifierDigest !== undefined && (await sql<{
+            bound: boolean;
+          }>`
+        select exists (
+          select 1 from crm.email_verification_tokens
+          where user_id = ${token.user_id}::uuid
+            and token_hash = ${verifierDigest} and used_at is null
+        ) bound
+      `.execute(transaction)).rows[0]?.bound === true;
+      if (!bound) {
+        return await this.#verifyWithoutRegistrant(
+          transaction,
+          token.user_id,
+          now,
+        );
+      }
       const handoff = await this.tokens.create();
       await sql`
         update crm.users
@@ -97,6 +121,52 @@ export class PostgresEmailVerification
       `.execute(transaction);
       return { status: "verified", entryToken: handoff.raw };
     });
+  }
+
+  /**
+   * A verification from a browser that did not register (SECA-01).
+   *
+   * The address is proved, so it is marked verified, but the password was
+   * chosen by whoever registered and nothing says that was the mailbox owner:
+   * it is discarded, every token and handoff is spent, and the owner is handed
+   * a single-use reset to choose their own password instead of a session.
+   */
+  async #verifyWithoutRegistrant(
+    transaction: Kysely<ApplicationDatabase>,
+    userId: string,
+    now: Date,
+  ): Promise<VerificationResult> {
+    const reset = await this.tokens.create();
+    await sql`
+      update crm.users
+      set email_verified_at = ${now}, password_hash = null,
+        password_changed_at = ${now}, updated_at = ${now}
+      where id = ${userId}::uuid and status = 'active'
+        and email_verified_at is null
+    `.execute(transaction);
+    await sql`
+      update crm.email_verification_tokens
+      set used_at = ${now}
+      where user_id = ${userId}::uuid and used_at is null
+    `.execute(transaction);
+    await sql`
+      update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
+      where user_id = ${userId}::uuid and revoked_at is null
+    `.execute(transaction);
+    await sql`
+      update crm.password_reset_requests set used_at = ${now}
+      where user_id = ${userId}::uuid and used_at is null
+    `.execute(transaction);
+    await sql`
+      insert into crm.password_reset_requests (
+        id, user_id, email, token_hash, requested_ip,
+        expires_at, used_at, created_at
+      )
+      select ${this.ids.create()}::uuid, u.id, u.email, ${reset.hash}, null,
+        ${passwordResetExpiry(now)}, null, ${now}
+      from crm.users u where u.id = ${userId}::uuid
+    `.execute(transaction);
+    return { status: "password-required", resetToken: reset.raw };
   }
 
   async consumeApplicationEntry(

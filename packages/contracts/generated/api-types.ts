@@ -75,6 +75,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Asks for another verification link. Requires the exact Origin header configured for the public web origin. Answers the same whether or not the address has a pending registration. */
         readonly post: operations["retryVerificationDelivery"];
         readonly delete?: never;
         readonly options?: never;
@@ -91,6 +92,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Verifies an address from its emailed link. Requires the exact Origin header configured for the public web origin. With the registering browser's HttpOnly kinship_registrant cookie it answers `verified` and sets the one-time kinship_entry handoff; without it the address is still verified, but the registrant's password is discarded and it answers `password-required` with the password-reset step to continue at. */
         readonly post: operations["verifyEmail"];
         readonly delete?: never;
         readonly options?: never;
@@ -1198,6 +1200,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Registers a first workspace. Requires the exact Origin header configured for the public web origin. Answers the same 202 whether or not the address already has an account, and sets the HttpOnly kinship_registrant cookie that a verification from the same browser presents. */
         readonly post: operations["createFirstWorkspace"];
         readonly delete?: never;
         readonly options?: never;
@@ -4781,6 +4784,10 @@ export interface components {
             readonly status: "verified";
             /** @enum {string} */
             readonly next: "/app" | "/invite/continue";
+        } | {
+            /** @constant */
+            readonly status: "password-required";
+            readonly next: string;
         };
         readonly WorkspaceDeleted: {
             /** @enum {string} */
@@ -5168,7 +5175,10 @@ export interface operations {
     readonly retryVerificationDelivery: {
         readonly parameters: {
             readonly query?: never;
-            readonly header?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+            };
             readonly path?: never;
             readonly cookie?: never;
         };
@@ -5203,6 +5213,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5225,7 +5244,10 @@ export interface operations {
     readonly verifyEmail: {
         readonly parameters: {
             readonly query?: never;
-            readonly header?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+            };
             readonly path?: never;
             readonly cookie?: never;
         };
@@ -5249,6 +5271,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -12352,7 +12383,10 @@ export interface operations {
     readonly createFirstWorkspace: {
         readonly parameters: {
             readonly query?: never;
-            readonly header?: never;
+            readonly header: {
+                /** @description Must exactly match the configured public web origin. */
+                readonly Origin: string;
+            };
             readonly path?: never;
             readonly cookie?: never;
         };
@@ -12365,6 +12399,7 @@ export interface operations {
             /** @description Verification required */
             readonly 202: {
                 headers: {
+                    readonly "Set-Cookie"?: string;
                     readonly [name: string]: unknown;
                 };
                 content: {
@@ -12381,7 +12416,7 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
-            readonly 409: {
+            readonly 403: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

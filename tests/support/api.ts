@@ -96,7 +96,10 @@ export interface ApiSupport {
     workspaceName: string,
     names?: RegistrationNames,
   ): Promise<Response>;
-  /** Verifies the latest captured token for the address. */
+  /**
+   * Verifies the latest captured token for the address, from the browser that
+   * registered it.
+   */
   verify(email: string): Promise<Response>;
   /** Posts a sign-in from the trusted origin. */
   signIn(email: string, options?: SignInOptions): Promise<Response>;
@@ -133,21 +136,33 @@ export function apiSupport(
       method: "POST",
     });
 
+  // The registering browser's verifier, per address, kept as a browser keeps
+  // it: set by the registration, sent back by the verification (SECA-01).
+  const registrants = new Map<string, string>();
+
   const support: ApiSupport = {
-    submitRegistration: (email, workspaceName, names = {}) =>
-      post("/api/v1/registrations", {
+    async submitRegistration(email, workspaceName, names = {}) {
+      const response = await post("/api/v1/registrations", {
         email,
         firstName: names.firstName ?? "Test",
         lastName: names.lastName ?? "Member",
         password: PASSWORD,
         workspaceName,
-      }, { "content-type": "application/json" }),
+      }, originHeaders);
+      const registrant = response.headers.getSetCookie()
+        .map((cookie) => cookie.split(";")[0] ?? "")
+        .find((pair) => pair.startsWith("kinship_registrant="));
+      if (registrant) registrants.set(email.toLowerCase(), registrant);
+      return response;
+    },
 
     async verify(email) {
       const token = mail.latestToken(email);
       assert(token, `verification token captured for ${email}`);
+      const registrant = registrants.get(email.toLowerCase());
       return await post("/api/v1/email-verifications", { token }, {
-        "content-type": "application/json",
+        ...originHeaders,
+        ...(registrant ? { cookie: registrant } : {}),
       });
     },
 

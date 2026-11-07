@@ -6,6 +6,7 @@ export type {
   CreatePendingUserCommand,
   IdentityRegistrationFacade,
   PendingUser,
+  RegistrationAddressClaim,
 } from "./ports/registration.ts";
 export type { PasswordHasher, RandomSource } from "./ports/security.ts";
 export type {

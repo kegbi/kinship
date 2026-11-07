@@ -189,6 +189,68 @@ export function buildPasswordResetMessage(
   ].join("\r\n");
 }
 
+/**
+ * "Somebody tried to register your address" (SECA-02), with a single-use
+ * reset link when one could be issued and the forgot-password page otherwise.
+ */
+export function buildAccountExistsMessage(
+  options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
+  message: {
+    readonly email: string;
+    readonly reset?: { readonly expiresAt: Date; readonly token: string };
+  },
+): string {
+  const signInUrl = new URL("/auth/sign-in", options.webOrigin);
+  const resetUrl = new URL("/auth/reset-password", options.webOrigin);
+  if (message.reset) resetUrl.searchParams.set("token", message.reset.token);
+  const recovery = message.reset
+    ? [
+      "If you have forgotten your password, use this single-use link to choose a new one:",
+      resetUrl.toString(),
+      "",
+      `This link expires at ${message.reset.expiresAt.toISOString()}.`,
+    ]
+    : [
+      "If you have forgotten your password, you can ask for a reset link here:",
+      new URL("/auth/forgot-password", options.webOrigin).toString(),
+      "",
+    ];
+  return [
+    `From: Kinship <${safeHeader(options.from)}>`,
+    `To: ${safeHeader(message.email)}`,
+    "Subject: You already have a Kinship account",
+    "Content-Type: text/plain; charset=utf-8",
+    "MIME-Version: 1.0",
+    "",
+    "Somebody tried to create a Kinship account with this email address,",
+    "but you already have one. Sign in here:",
+    signInUrl.toString(),
+    "",
+    ...recovery,
+    "If you did not try to register, you can ignore this email; nothing has changed.",
+  ].join("\r\n");
+}
+
+/** "Your password was set or changed" (AUD-A1). */
+export function buildPasswordChangedMessage(
+  options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
+  message: { readonly email: string },
+): string {
+  const resetUrl = new URL("/auth/forgot-password", options.webOrigin);
+  return [
+    `From: Kinship <${safeHeader(options.from)}>`,
+    `To: ${safeHeader(message.email)}`,
+    "Subject: Your Kinship password was changed",
+    "Content-Type: text/plain; charset=utf-8",
+    "MIME-Version: 1.0",
+    "",
+    "The password for your Kinship account was just set, and every other browser was signed out.",
+    "",
+    "If this was not you, reset your password now:",
+    resetUrl.toString(),
+  ].join("\r\n");
+}
+
 export function buildInvitationMessage(
   options: Pick<SmtpVerificationMailOptions, "from" | "webOrigin">,
   message: {
@@ -424,6 +486,25 @@ export class SmtpVerificationMail implements VerificationMail {
     await this.#send(
       message.email,
       buildPasswordResetMessage(this.options, message),
+    );
+  }
+
+  async sendAccountExists(message: {
+    readonly email: string;
+    readonly reset?: { readonly expiresAt: Date; readonly token: string };
+  }): Promise<void> {
+    await this.#send(
+      message.email,
+      buildAccountExistsMessage(this.options, message),
+    );
+  }
+
+  async sendPasswordChanged(
+    message: { readonly email: string },
+  ): Promise<void> {
+    await this.#send(
+      message.email,
+      buildPasswordChangedMessage(this.options, message),
     );
   }
 

@@ -10,7 +10,9 @@
  *
  * Resetting hashes the new password and the presented token in parallel and
  * hands both to one repository call, so the token is spent and the password
- * replaced together and a link cannot be used twice.
+ * replaced together and a link cannot be used twice. Once it has committed the
+ * address is told (AUD-A1); that notice is best-effort, because the password
+ * is already replaced and a failed notice must not say otherwise.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -90,7 +92,7 @@ export function createPasswordRecovery(
         dependencies.hasher.hash(command.password),
         dependencies.tokens.hash(command.token),
       ]);
-      return await dependencies.transaction.run((transaction) =>
+      const outcome = await dependencies.transaction.run((transaction) =>
         dependencies.repository.resetPassword({
           newPasswordHash,
           now: dependencies.clock.now(),
@@ -98,6 +100,13 @@ export function createPasswordRecovery(
           transaction,
         })
       );
+      if (typeof outcome === "string") return outcome;
+      await Promise.resolve()
+        .then(() =>
+          dependencies.mail.sendPasswordChanged({ email: outcome.email })
+        )
+        .catch(() => undefined);
+      return "reset";
     },
   };
 }

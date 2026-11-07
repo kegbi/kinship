@@ -11,10 +11,12 @@
  * never drift apart.
  *
  * The two error classes are here because their codes are part of what the
- * delivery layer answers: a duplicate address and a failed registration are
- * told apart by `code`, and a verification email that could not be sent after
- * the workspace was committed is a third thing again — the account exists, so
- * it must not look like a failed registration.
+ * delivery layer answers. There is no "duplicate address" error any more
+ * (SECA-02): a registration for an address that already has an account
+ * answers exactly as a new one does, and the mailbox is told instead. A
+ * verification email that could not be sent after the workspace was committed
+ * is a different thing from a failed registration — the account exists, so it
+ * must not look like a failed one.
  */
 
 /** How long a verification link, from either flow, works for. */
@@ -71,6 +73,11 @@ export interface FirstWorkspaceRegistrationCommand {
   readonly firstName: string;
   readonly lastName: string;
   readonly passwordHash: string;
+  /**
+   * The secret the registering browser keeps in its cookie (SECA-01). Only a
+   * verification that presents it keeps `passwordHash`.
+   */
+  readonly registrantVerifier: string;
   readonly workspaceName: string;
 }
 
@@ -79,20 +86,13 @@ export interface FirstWorkspaceRegistrationResult {
   readonly status: "verification-required";
 }
 
-/** Registration did not happen, and the code says whether to say why. */
+/** Registration did not happen; nothing was written. */
 export class RegistrationError extends Error {
-  readonly code: "duplicate_email" | "registration_failed";
+  readonly code = "registration_failed";
 
-  constructor(
-    code: "duplicate_email" | "registration_failed" = "registration_failed",
-  ) {
-    super(
-      code === "duplicate_email"
-        ? "Email is already registered."
-        : "Registration could not be completed.",
-    );
+  constructor() {
+    super("Registration could not be completed.");
     this.name = "RegistrationError";
-    this.code = code;
   }
 }
 

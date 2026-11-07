@@ -325,6 +325,8 @@ export class CapturedVerificationMail implements VerificationMail {
   readonly #messages = new Map<string, string[]>();
   readonly #passwordResets = new Map<string, string[]>();
   readonly #invitations = new Map<string, string[]>();
+  readonly #accountExists = new Map<string, (string | undefined)[]>();
+  readonly #passwordChanges = new Map<string, number>();
 
   sendVerification(
     message: { readonly email: string; readonly token: string },
@@ -358,6 +360,39 @@ export class CapturedVerificationMail implements VerificationMail {
 
   latestPasswordResetToken(email: string): string | undefined {
     return this.#passwordResets.get(email.toLowerCase())?.at(-1);
+  }
+
+  sendAccountExists(
+    message: {
+      readonly email: string;
+      readonly reset?: { readonly token: string };
+    },
+  ): Promise<void> {
+    const key = message.email.toLowerCase();
+    this.#accountExists.set(key, [
+      ...(this.#accountExists.get(key) ?? []),
+      message.reset?.token,
+    ]);
+    return Promise.resolve();
+  }
+
+  /**
+   * The reset token of every "you already have an account" email, in order;
+   * `undefined` where the email carried no reset link.
+   */
+  accountExistsTokens(email: string): readonly (string | undefined)[] {
+    return this.#accountExists.get(email.toLowerCase()) ?? [];
+  }
+
+  sendPasswordChanged(message: { readonly email: string }): Promise<void> {
+    const key = message.email.toLowerCase();
+    this.#passwordChanges.set(key, (this.#passwordChanges.get(key) ?? 0) + 1);
+    return Promise.resolve();
+  }
+
+  /** How many "your password was changed" emails the address received. */
+  passwordChangeCount(email: string): number {
+    return this.#passwordChanges.get(email.toLowerCase()) ?? 0;
   }
 
   sendInvitation(

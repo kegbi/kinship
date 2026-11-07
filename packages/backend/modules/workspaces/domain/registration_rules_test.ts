@@ -60,14 +60,10 @@ Deno.test("[GAP-018] every workspace starts with the same vocabulary, in order",
   }
 });
 
-Deno.test("[GAP-018] a duplicate address is told apart from a failed registration", () => {
-  const duplicate = new RegistrationError("duplicate_email");
-  assertEquals(duplicate.code, "duplicate_email");
-  assertEquals(duplicate.name, "RegistrationError");
-  assertEquals(duplicate.message, "Email is already registered.");
-
+Deno.test("[AUD-A1] a failed registration has one code, and no duplicate-address variant", () => {
   const failed = new RegistrationError();
   assertEquals(failed.code, "registration_failed");
+  assertEquals(failed.name, "RegistrationError");
   assertEquals(failed.message, "Registration could not be completed.");
   assert(failed instanceof Error, "it is an error");
 });

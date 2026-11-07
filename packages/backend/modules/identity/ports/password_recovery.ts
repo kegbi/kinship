@@ -8,7 +8,10 @@
  *
  * `resetPassword` is one call rather than a read and a write, because the
  * token has to be spent and the password replaced in the same statement or a
- * link could be used twice.
+ * link could be used twice. A reset also serves an account whose password was
+ * discarded at verification (SECA-01): setting the first password is the same
+ * step as replacing one. It answers the address it changed, because the
+ * address is told every time its password is set (AUD-A1).
  *
  * The mail port never learns anything the caller did not already send, and the
  * token service hands out a raw token and its hash together so the raw one can
@@ -35,7 +38,11 @@ export interface PasswordRecoveryRepository {
     readonly now: Date;
     readonly tokenHash: string;
     readonly transaction: IdentityTransaction;
-  }): Promise<"expired" | "invalid" | "reset">;
+  }): Promise<
+    | "expired"
+    | "invalid"
+    | { readonly email: string; readonly status: "reset" }
+  >;
 }
 
 export interface PasswordRecoveryMail {
@@ -44,6 +51,8 @@ export interface PasswordRecoveryMail {
     readonly expiresAt: Date;
     readonly token: string;
   }): Promise<void>;
+  /** Tells the address that its password was just set or replaced. */
+  sendPasswordChanged(message: { readonly email: string }): Promise<void>;
 }
 
 /** Single-use tokens, handed out raw and stored only as a digest. */

@@ -16,13 +16,17 @@ export interface Registration {
   readonly workspaceName: string;
 }
 
-/** Registers a first workspace owner; expects the API's 202. */
+/**
+ * Registers a first workspace owner; expects the API's 202. `request` keeps
+ * the registering browser's verifier cookie, so verify with the same context.
+ */
 export async function register(
   request: APIRequestContext,
   registration: Registration,
 ): Promise<void> {
   expect((await request.post(`${origin}/api/v1/registrations`, {
     data: { ...registration, password },
+    headers: { origin },
   })).status()).toBe(202);
 }
 
@@ -38,6 +42,7 @@ export async function verifyEmail(
 ): Promise<void> {
   expect((await request.post(`${origin}/api/v1/email-verifications`, {
     data: { token: await mailToken(request, email, read, options) },
+    headers: { origin },
   })).status()).toBe(200);
 }
 

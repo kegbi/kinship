@@ -47,6 +47,27 @@ describe("AUTH-001 email verification", () => {
     expect(navigate).toHaveBeenCalledWith("/app");
   });
 
+  it("[AUD-A1] sends a verification from another browser to choose a password", async () => {
+    openPage();
+    stubApi({
+      [VERIFY]: jsonResponse({
+        status: "password-required",
+        next: "/auth/reset-password?token=reset-token",
+      }),
+    });
+    const navigate = vi.fn();
+
+    await mountEmailVerification(navigate);
+
+    expect(status().querySelector("p")?.textContent).toBe(
+      "Email verified. Choose a password to finish setting up your account…",
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(
+      "/auth/reset-password?token=reset-token",
+    );
+  });
+
   it("offers a new account for a link without a token", async () => {
     openPage("");
     const api = stubApi();

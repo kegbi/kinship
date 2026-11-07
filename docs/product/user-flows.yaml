@@ -23,7 +23,9 @@ flows:
       - Create the owner membership atomically.
       - Enter the authenticated application.
     alternateOutcomes: [
-      duplicate-email,
+      existing-account-notified-by-email,
+      pending-registration-replaced,
+      verified-in-another-browser-sets-password,
       invalid-or-expired-verification,
       creation-rollback,
     ]

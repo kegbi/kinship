@@ -119,6 +119,10 @@ export function composeReminderMail(
  */
 export function passwordResetMail(mail: VerificationMail) {
   return {
+    sendPasswordChanged: (message: { readonly email: string }): Promise<void> =>
+      mail.sendPasswordChanged
+        ? mail.sendPasswordChanged(message)
+        : Promise.reject(new Error("Password-changed mail unavailable.")),
     sendPasswordReset: (
       message: Parameters<
         NonNullable<VerificationMail["sendPasswordReset"]>
@@ -235,6 +239,7 @@ export function composeWorkspaces(
     identity: ports.identity.registration,
     ids: shared.ids,
     mail: ports.mail,
+    responseEqualizer: ports.responseEqualizer,
     tokens: ports.tokens,
     transaction: shared.transaction,
     workspace: new PostgresWorkspaceRegistration(),
@@ -246,19 +251,25 @@ export function composeWorkspaces(
       clock: shared.clock,
       ids: shared.ids,
       // One port assembled from four identity facades: the invitation flow
-      // creates a pending user, consumes a verified entry, and issues the
-      // session, and identity keeps those on separate objects.
+      // claims an address, creates a pending user, consumes a verified entry,
+      // and issues the session, and identity keeps those on separate objects.
       identity: {
         assertPendingUserPostconditions: (command) =>
           ports.identity.registration.assertPendingUserPostconditions(command),
         assertSessionPostcondition: (command) =>
           ports.identity.authentication.assertSessionPostcondition(command),
+        claimRegistrationAddress: (command) =>
+          ports.identity.registration.claimRegistrationAddress(command),
         consumeVerifiedIdentityEntry: (command) =>
           ports.identity.verification.consumeVerifiedIdentityEntry(command),
+        createExistingAccountRecovery: (command) =>
+          ports.identity.registration.createExistingAccountRecovery(command),
         createPendingUser: (command) =>
           ports.identity.registration.createPendingUser(command),
         createRetryVerificationToken: (command) =>
           ports.identity.registration.createRetryVerificationToken(command),
+        discardPendingUser: (command) =>
+          ports.identity.registration.discardPendingUser(command),
         findIdentityIdByEmail: (command) =>
           ports.identity.invitations.findIdentityIdByEmail(command),
         isVerifiedInvitationIdentity: (command) =>
@@ -269,6 +280,7 @@ export function composeWorkspaces(
           ports.identity.invitations.listIdentityDisplaySummaries(command),
       },
       mail: invitationMail(ports.mail),
+      pendingWorkspaces: registrationDependencies.workspace,
       repository: new PostgresWorkspaceInvitations(),
       tokens: ports.tokens,
       transaction: shared.transaction,

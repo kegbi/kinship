@@ -8,12 +8,21 @@
  * `packages/contracts` (GAP-022), so what this file mounts and what the
  * document publishes are the one description.
  *
- * The three cookies are the substance. `kinship_entry` is a one-use handoff
- * scoped to the single route that consumes it, so a verified link cannot be
- * replayed anywhere else; `kinship_invitation_pending` is scoped to the
- * verification route alone and is cleared the moment it is read, which is what
- * makes a verified invitee land on the invitation rather than the application;
- * and `kinship_session` is only ever set once the entry handoff has been spent.
+ * The cookies are the substance. `kinship_registrant` is the registering
+ * browser's verifier (SECA-01), scoped to the verification route: a
+ * verification that carries it enters the application, and one that does not
+ * still proves the address but is sent to choose a password, because the
+ * password on the account was chosen by whoever registered. `kinship_entry`
+ * is a one-use handoff scoped to the single route that consumes it, so a
+ * verified link cannot be replayed anywhere else; `kinship_invitation_pending`
+ * is scoped to the verification route alone and is cleared the moment it is
+ * read, which is what makes a verified invitee land on the invitation rather
+ * than the application; and `kinship_session` is only ever set once the entry
+ * handoff has been spent.
+ *
+ * Registration never says whether an address already has an account
+ * (SECA-02), and the three public writes — registering, verifying, and asking
+ * for another link — refuse a request from any other origin (SECA-13).
  */
 
 import { type Context, Hono } from "hono";
@@ -46,13 +55,21 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { matchingOrigin } from "../../../../../http-kit/origin.ts";
+import {
+  matchingOrigin,
+  requireMatchingOrigin,
+} from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import { parseJsonBody } from "../../../../../http-kit/validate.ts";
+import {
+  newRegistrantVerifier,
+  REGISTRANT_COOKIE,
+  registrantCookie,
+} from "./registrant_cookie.ts";
 
 /** The cookie that carries a verified identity to the application entry. */
 const ENTRY_COOKIE = "kinship_entry";
@@ -120,12 +137,6 @@ const REGISTRATION_INVALID: ProblemDefinition = {
   status: 400,
   title: "Invalid registration",
 };
-const DUPLICATE_EMAIL: ProblemDefinition = {
-  code: "duplicate_email",
-  detail: "An account already uses that email address.",
-  status: 409,
-  title: "Registration unavailable",
-};
 const VERIFICATION_DELIVERY_FAILED: ProblemDefinition = {
   code: "verification_delivery_failed",
   detail:
@@ -191,7 +202,6 @@ const DELIVERY_REQUEST_INVALID: ProblemDefinition = {
 /** Every problem this file answers on its own, for the pinning suite. */
 export const REGISTRATION_PROBLEMS: readonly ProblemDefinition[] = [
   DELIVERY_REQUEST_INVALID,
-  DUPLICATE_EMAIL,
   ENTRY_HANDOFF_MISSING,
   ENTRY_HANDOFF_SPENT,
   ENTRY_HANDOFF_UNAVAILABLE,
@@ -223,12 +233,14 @@ export function createRegistrationRoutes(
   services: RegistrationHttpServices,
 ): Hono {
   const routes = new Hono();
+  const origin = requireMatchingOrigin(services.browserSecurity);
 
-  mount(routes, createFirstWorkspace, async (context) => {
+  mount(routes, createFirstWorkspace, origin, async (context) => {
     const parsed = await parseJsonBody(context, registrationInput);
     if ("errors" in parsed) {
       return definedProblem(context, REGISTRATION_INVALID, parsed.errors);
     }
+    const registrantVerifier = newRegistrantVerifier();
     try {
       const passwordHash = await services.hasher.hash(parsed.data.password);
       const result = await services.register({
@@ -236,36 +248,57 @@ export function createRegistrationRoutes(
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
         passwordHash,
+        registrantVerifier,
         workspaceName: parsed.data.workspaceName,
       });
+      context.header(
+        "Set-Cookie",
+        registrantCookie(services.browserSecurity, registrantVerifier),
+      );
       context.header("Cache-Control", "no-store");
-      return context.json(result, 202);
+      return context.json({ status: result.status }, 202);
     } catch (error) {
       if (
-        error instanceof RegistrationError && error.code === "duplicate_email"
-      ) {
-        return definedProblem(context, DUPLICATE_EMAIL);
-      }
-      if (
+        !(error instanceof RegistrationError) &&
         typeof error === "object" && error !== null && "code" in error &&
         error.code === "verification_delivery_failed"
       ) {
+        context.header(
+          "Set-Cookie",
+          registrantCookie(services.browserSecurity, registrantVerifier),
+        );
         return definedProblem(context, VERIFICATION_DELIVERY_FAILED);
       }
       return definedProblem(context, REGISTRATION_FAILED);
     }
   });
 
-  mount(routes, verifyEmail, async (context) => {
+  mount(routes, verifyEmail, origin, async (context) => {
     const parsed = await parseJsonBody(context, verificationInput);
     if ("errors" in parsed) {
       return definedProblem(context, VERIFICATION_LINK_INVALID);
     }
+    const registrantVerifier = cookieValue(
+      context.req.header("Cookie"),
+      REGISTRANT_COOKIE,
+    );
     let result;
     try {
-      result = await services.verification.verify(parsed.data.token);
+      result = await services.verification.verify(
+        parsed.data.token,
+        registrantVerifier || undefined,
+      );
     } catch {
       return definedProblem(context, VERIFICATION_UNAVAILABLE);
+    }
+    if (result.status === "password-required") {
+      context.header("Cache-Control", "no-store");
+      return context.json({
+        status: "password-required",
+        next: `/auth/reset-password?token=${
+          encodeURIComponent(result.resetToken)
+        }`,
+      });
     }
     if (result.status !== "verified") {
       return verificationFailure(context, result);
@@ -284,6 +317,11 @@ export function createRegistrationRoutes(
       ),
     );
     context.header("Cache-Control", "no-store");
+    context.header(
+      "Set-Cookie",
+      registrantCookie(services.browserSecurity, ""),
+      { append: true },
+    );
     if (hasInvitation) {
       context.header(
         "Set-Cookie",
@@ -348,7 +386,7 @@ export function createRegistrationRoutes(
     });
   });
 
-  mount(routes, retryVerificationDelivery, async (context) => {
+  mount(routes, retryVerificationDelivery, origin, async (context) => {
     const parsed = await parseJsonBody(context, verificationDeliveryInput);
     if ("errors" in parsed) {
       return definedProblem(context, DELIVERY_REQUEST_INVALID);

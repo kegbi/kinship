@@ -73,7 +73,7 @@ export function composeIdentity(
       transaction: shared.transaction,
     }),
     personalLifecycle: new PostgresIdentityPersonalLifecycle(hasher),
-    registration: new PostgresIdentityRegistration(),
+    registration: new PostgresIdentityRegistration(tokens),
     tokens,
     verification: new PostgresEmailVerification(
       shared.database,

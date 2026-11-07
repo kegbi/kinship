@@ -25,7 +25,11 @@ import {
   requireDatabaseUrl,
   resetDatabase,
 } from "../support/database.ts";
-import { apiSupport } from "../support/api.ts";
+import { apiSupport, originHeaders } from "../support/api.ts";
+import {
+  SecureTokenService,
+  WebCryptoRandomSource,
+} from "../../packages/backend/modules/identity/adapters/crypto/secure_tokens.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl, { prepare: false });
@@ -38,6 +42,15 @@ const configured = createConfiguredApiApp(
 const postconditionConnection = connectDatabase(databaseUrl);
 
 const api = apiSupport(configured.app, capturedMail, sql);
+
+/** The registering browser's verifier cookie, as a request `cookie` value. */
+function registrantOf(response: Response): string {
+  const pair = response.headers.getSetCookie()
+    .map((cookie) => cookie.split(";")[0] ?? "")
+    .find((value) => value.startsWith("kinship_registrant="));
+  assert(pair, "registration sets the registrant verifier cookie");
+  return pair;
+}
 
 function register(email: string): Promise<Response> {
   return api.submitRegistration(email, "Ada's circle", {
@@ -58,6 +71,7 @@ Deno.test({
       response.status === 202,
       `expected registration 202, got ${response.status}`,
     );
+    const registrant = registrantOf(response);
     const registrationBody = await response.text();
     assert(
       !registrationBody.includes("token"),
@@ -82,7 +96,7 @@ Deno.test({
         (select count(*)::int from crm.workspace_settings) settings,
         (select count(*)::int from crm.relationship_types) relationship_types,
         (select count(*)::int from crm.audit_events where action = 'workspace.created') audits,
-        (select count(*)::int from crm.email_verification_tokens where used_at is null) tokens
+        (select count(*)::int from crm.email_verification_tokens where used_at is null and token_hash not like 'registrant:%') tokens
     `;
     assert(
       shape?.users === 1 && shape.workspaces === 1 && shape.members === 1,
@@ -216,7 +230,7 @@ Deno.test({
     assert(token, "injected mail fake must receive verification");
     const stored = await sql<
       { token_hash: string }[]
-    >`select token_hash from crm.email_verification_tokens`;
+    >`select token_hash from crm.email_verification_tokens where token_hash not like 'registrant:%'`;
     assert(
       stored[0]?.token_hash !== token,
       "only the token hash may be persisted",
@@ -228,7 +242,7 @@ Deno.test({
       "http://localhost/api/v1/email-verification-deliveries",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ email: "OWNER@example.test" }),
       },
     );
@@ -243,6 +257,7 @@ Deno.test({
         count(*)::int as pending,
         count(*) filter (where token_hash = ${oldTokenHash})::int as old_hashes
       from crm.email_verification_tokens where used_at is null
+        and token_hash not like 'registrant:%'
     `;
     assert(
       retryState?.pending === 2 && retryState.old_hashes === 1,
@@ -254,7 +269,7 @@ Deno.test({
       "http://localhost/api/v1/email-verification-deliveries",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ email: "owner@example.test" }),
       },
     );
@@ -269,7 +284,7 @@ Deno.test({
         "http://localhost/api/v1/email-verifications",
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { ...originHeaders, cookie: registrant },
           body: JSON.stringify({ token: candidate }),
         },
       );
@@ -311,7 +326,7 @@ Deno.test({
       "http://localhost/api/v1/email-verification-deliveries",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ email: "owner@example.test" }),
       },
     );
@@ -344,7 +359,7 @@ Deno.test({
       "http://localhost/api/v1/email-verifications",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ token: retriedToken }),
       },
     );
@@ -358,8 +373,12 @@ Deno.test({
       register("OWNER@example.test"),
     ]);
     assert(
-      duplicateResponses.every((item) => item.status === 409),
-      "duplicate race must conflict safely",
+      duplicateResponses.every((item) => item.status === 202),
+      "a registered address answers like a fresh one (SECA-02)",
+    );
+    assert(
+      capturedMail.accountExistsTokens("owner@example.test").length === 2,
+      "each attempt tells the owner instead of the caller",
     );
     const [userCount] = await sql<
       { count: number }[]
@@ -398,7 +417,7 @@ Deno.test({
       "http://localhost/api/v1/email-verifications",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ token: expiredToken }),
       },
     );
@@ -424,8 +443,8 @@ Deno.test({
     `;
     const legacyResponse = await register("legacy@example.test");
     assert(
-      legacyResponse.status === 409,
-      "an imported identity cannot be claimed by registration",
+      legacyResponse.status === 202,
+      "an imported identity answers like any address but is not claimed",
     );
     const [legacy] = await sql<
       {
@@ -453,7 +472,7 @@ Deno.test({
       "http://localhost/api/v1/email-verification-deliveries",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: originHeaders,
         body: JSON.stringify({ email: "legacy@example.test" }),
       },
     );
@@ -467,7 +486,9 @@ Deno.test({
 
     await resetDatabase(sql);
     const racingEmail = "resend-verify-race@example.test";
-    assert((await register(racingEmail)).status === 202, "race fixture exists");
+    const racingRegistration = await register(racingEmail);
+    assert(racingRegistration.status === 202, "race fixture exists");
+    const racingRegistrant = registrantOf(racingRegistration);
     const racingToken = capturedMail.latestToken(racingEmail);
     assert(racingToken, "race fixture token exists");
     const [raceRetry, raceVerify] = await Promise.all([
@@ -475,7 +496,7 @@ Deno.test({
         "http://localhost/api/v1/email-verification-deliveries",
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: originHeaders,
           body: JSON.stringify({ email: racingEmail }),
         },
       ),
@@ -483,7 +504,7 @@ Deno.test({
         "http://localhost/api/v1/email-verifications",
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { ...originHeaders, cookie: racingRegistrant },
           body: JSON.stringify({ token: racingToken }),
         },
       ),
@@ -514,7 +535,7 @@ Deno.test({
         "http://localhost/api/v1/registrations",
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: originHeaders,
           body: JSON.stringify({
             email: "provider-failure@example.test",
             firstName: "Ada",
@@ -530,7 +551,7 @@ Deno.test({
           "http://localhost/api/v1/email-verification-deliveries",
           {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: originHeaders,
             body: JSON.stringify({ email: "provider-failure@example.test" }),
           },
         );
@@ -540,7 +561,7 @@ Deno.test({
       >`
         select count(*) filter (where used_at is null)::int pending,
           count(*)::int total
-        from crm.email_verification_tokens
+        from crm.email_verification_tokens where token_hash not like 'registrant:%'
       `;
       assert(
         failedDeliveryState?.pending === 2 && failedDeliveryState.total === 2,
@@ -568,6 +589,7 @@ Deno.test({
         wm.id::text member_id, w.id::text workspace_id
       from crm.users u
       join crm.email_verification_tokens t on t.user_id = u.id
+        and t.token_hash not like 'registrant:%'
       join crm.workspace_members wm on wm.user_id = u.id
       join crm.workspaces w on w.id = wm.workspace_id
     `;
@@ -575,7 +597,9 @@ Deno.test({
     const transaction = new PostgresRegistrationTransaction(
       postconditionConnection.db,
     );
-    const identity = new PostgresIdentityRegistration();
+    const identity = new PostgresIdentityRegistration(
+      new SecureTokenService(new WebCryptoRandomSource()),
+    );
     const workspace = new PostgresWorkspaceRegistration();
     const audit = registrationAuditFrom(new PostgresAuditEventRecorder());
     for (

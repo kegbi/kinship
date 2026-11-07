@@ -290,7 +290,7 @@ these:
 
 ### Lane A — Accounts and sign-in
 
-- [ ] **AUD-A1 — Registration cannot plant a password on someone else's
+- [x] **AUD-A1 — Registration cannot plant a password on someone else's
       address.** L. Urgent. Depends: none. Closes: SECA-01, SECA-02, and SECA-13
       item 6 (the Origin half).
   - Problem:
@@ -338,6 +338,18 @@ these:
     `--module=workspaces`; `deno task test:unit --module=workspaces` and
     `--module=web`; contracts;
     `deno task test:e2e tests/e2e/registration.AUTH-001.spec.ts tests/e2e/invitations.AUTH-002.spec.ts --project=chromium`.
+  - Delivered 2026-11-07: both SECA-01 takeover sequences now refuse the
+    registrant's password (401) and the invitee joins with their own; SECA-02
+    parity tests show a fresh, pending, verified, over-limit, imported, or
+    disabled address answers alike with one provider call; Origin is refused on
+    the three public POSTs; identity integration 6 passed (only the known
+    REL-099), workspaces integration 6, workspaces unit 159, identity unit 12,
+    web unit 1719 (only the 4 baseline failures); E2E AUTH-001 (including
+    verification in another browser) and AUTH-002 8 passed on Chromium; changed
+    backend scope 96.1% lines, 86.7% branches, 98.7% functions; contracts, fmt,
+    architecture, and lint (only REL-096). The verifier is stored as a
+    `registrant:`-prefixed `email_verification_tokens` row; AUD-M3 must cap the
+    account-exists mail with the same per-address ceiling.
 
 - [ ] **AUD-A2 — Registrations and authentication rows are bounded and purged.**
       M. High. Depends: AUD-A1, AUD-W2. Closes: SECA-04, and the session and

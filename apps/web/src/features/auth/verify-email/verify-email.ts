@@ -47,7 +47,11 @@ export async function mountEmailVerification(
     return;
   }
   if (result.ok) {
-    message.textContent = "Email verified. Taking you to your workspace…";
+    // A link opened in a browser other than the one that registered verifies
+    // the address but not the password (SECA-01): the owner chooses one.
+    message.textContent = result.value.status === "password-required"
+      ? "Email verified. Choose a password to finish setting up your account…"
+      : "Email verified. Taking you to your workspace…";
     navigate(result.value.next);
     return;
   }

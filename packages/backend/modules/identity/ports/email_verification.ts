@@ -6,6 +6,12 @@
  * `replayed` is one that already worked. Only the last two tell the holder
  * anything, and only the holder of the mailbox can see them.
  *
+ * A verification proves the mailbox, not the browser. Only the browser that
+ * registered holds the registrant verifier (SECA-01); a verification without
+ * it still marks the address verified, but answers `password-required` with a
+ * single-use reset token instead of an entry, because the password on the
+ * account was chosen by whoever registered.
+ *
  * The entry token is a single-use handoff, not a session: verifying issues one
  * and the application entry consumes it, both against the address that was
  * verified, so a token that leaked cannot be spent for somebody else.
@@ -18,6 +24,7 @@ export type VerificationFailure = "expired" | "invalid" | "replayed";
 
 export type VerificationResult =
   | { readonly status: "verified"; readonly entryToken: string }
+  | { readonly status: "password-required"; readonly resetToken: string }
   | { readonly status: VerificationFailure };
 
 export interface ApplicationEntryContext {
@@ -58,7 +65,10 @@ export interface VerifiedIdentityEntryAuthority {
 }
 
 export interface EmailVerificationFacade {
-  verify(rawToken: string): Promise<VerificationResult>;
+  verify(
+    rawToken: string,
+    registrantVerifier?: string,
+  ): Promise<VerificationResult>;
   consumeApplicationEntry(
     rawToken: string,
   ): Promise<ApplicationEntryContext | undefined>;

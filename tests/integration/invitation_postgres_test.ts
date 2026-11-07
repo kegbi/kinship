@@ -36,6 +36,7 @@ import {
 } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
 import {
   PostgresRegistrationTransaction,
+  PostgresWorkspaceRegistration,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/registration_repository.ts";
 import {
   PostgresWorkspaceInvitations,
@@ -127,9 +128,12 @@ Deno.test({
     const invitationPendingCookie = registrationCookies.match(
       /kinship_invitation_pending=[^;,]+/,
     )?.[0];
+    const registrantCookie = registrationCookies.match(
+      /kinship_registrant=[^;,]+/,
+    )?.[0];
     assert(
       invitedRegistration.status === 202 && invitationCookie &&
-        invitationPendingCookie,
+        invitationPendingCookie && registrantCookie,
       "invitation-specific pending identity registration succeeds",
     );
     const [pendingShape] = await sql<
@@ -155,7 +159,7 @@ Deno.test({
         method: "POST",
         headers: {
           ...originHeaders,
-          cookie: invitationPendingCookie,
+          cookie: `${invitationPendingCookie}; ${registrantCookie}`,
         },
         body: JSON.stringify({ token: newVerificationToken }),
       },
@@ -569,7 +573,12 @@ Deno.test({
           identity: {
             assertPendingUserPostconditions: () => Promise.resolve(),
             assertSessionPostcondition: () => Promise.resolve(),
+            claimRegistrationAddress: () =>
+              Promise.reject(new Error("not used by acceptance fixture")),
             consumeVerifiedIdentityEntry: () => Promise.resolve(undefined),
+            createExistingAccountRecovery: () => Promise.resolve(undefined),
+            discardPendingUser: () =>
+              Promise.reject(new Error("not used by acceptance fixture")),
             createPendingUser: () =>
               Promise.reject(new Error("not used by acceptance fixture")),
             createRetryVerificationToken: () => Promise.resolve(undefined),
@@ -588,6 +597,7 @@ Deno.test({
             sendInvitation: () => Promise.resolve(),
             sendVerification: () => Promise.resolve(),
           },
+          pendingWorkspaces: new PostgresWorkspaceRegistration(),
           repository,
           tokens: new SecureTokenService(new WebCryptoRandomSource()),
           transaction: new PostgresRegistrationTransaction(
@@ -777,7 +787,12 @@ Deno.test({
     const identityDependencies = {
       assertPendingUserPostconditions: () => Promise.resolve(),
       assertSessionPostcondition: () => Promise.resolve(),
+      claimRegistrationAddress: () =>
+        Promise.reject(new Error("not used by create/accept race")),
       consumeVerifiedIdentityEntry: () => Promise.resolve(undefined),
+      createExistingAccountRecovery: () => Promise.resolve(undefined),
+      discardPendingUser: () =>
+        Promise.reject(new Error("not used by create/accept race")),
       createPendingUser: () =>
         Promise.reject(new Error("not used by create/accept race")),
       createRetryVerificationToken: () => Promise.resolve(undefined),
@@ -825,6 +840,7 @@ Deno.test({
         sendInvitation: () => Promise.resolve(),
         sendVerification: () => Promise.resolve(),
       },
+      pendingWorkspaces: new PostgresWorkspaceRegistration(),
       repository: baseRepository,
       tokens,
       transaction: new PostgresRegistrationTransaction(acceptConnection.db),
@@ -858,6 +874,7 @@ Deno.test({
         },
         sendVerification: () => Promise.resolve(),
       },
+      pendingWorkspaces: new PostgresWorkspaceRegistration(),
       repository: creationRepository,
       tokens,
       transaction: new PostgresRegistrationTransaction(createConnection.db),
@@ -1064,7 +1081,14 @@ Deno.test({
       "http://localhost/api/v1/email-verifications",
       {
         method: "POST",
-        headers: { ...originHeaders, cookie: pendingCookie },
+        headers: {
+          ...originHeaders,
+          cookie: `${pendingCookie}; ${
+            (registration.headers.get("set-cookie") ?? "").match(
+              /kinship_registrant=[^;,]+/,
+            )?.[0]
+          }`,
+        },
         body: JSON.stringify({ token: verificationToken }),
       },
     );

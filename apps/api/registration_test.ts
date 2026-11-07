@@ -1,7 +1,12 @@
 import { createApiApp } from "./composition.ts";
 import type { RegistrationHttpServices } from "../../packages/backend/modules/workspaces/transport/http/routes.ts";
-import { RegistrationError } from "../../packages/backend/modules/workspaces/public.ts";
 import { assert, assertStatus } from "../../packages/backend/testing/assert.ts";
+
+/** A same-origin JSON write, as the browser sends it. */
+const jsonFromOrigin = {
+  "content-type": "application/json",
+  origin: "http://localhost",
+} as const;
 
 function resolved<T>(value: T): Promise<T> {
   return Promise.resolve(value);
@@ -41,7 +46,7 @@ Deno.test("registration transport validates input and never returns password/tok
   const app = createApiApp(services());
   const invalid = await app.request("http://localhost/api/v1/registrations", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonFromOrigin,
     body: JSON.stringify({ email: "bad", password: "short" }),
   });
   assertStatus(invalid, 400, "invalid input must be 400");
@@ -51,7 +56,7 @@ Deno.test("registration transport validates input and never returns password/tok
   );
   const valid = await app.request("http://localhost/api/v1/registrations", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonFromOrigin,
     body: JSON.stringify({
       email: "OWNER@example.test",
       firstName: "Ada",
@@ -71,35 +76,188 @@ Deno.test("registration transport validates input and never returns password/tok
   );
 });
 
-Deno.test("registration conflict and verification failures use stable safe problems", async () => {
+Deno.test("AUD-A1 registration binds the verifier cookie and never reports an existing address", async () => {
+  const verifiers: string[] = [];
+  const presented: (string | undefined)[] = [];
   const app = createApiApp(services({
-    register: () => Promise.reject(new RegistrationError("duplicate_email")),
+    register: (command) => {
+      verifiers.push(command.registrantVerifier);
+      return resolved({ status: "verification-required" });
+    },
+    verification: {
+      verify: (_token, registrantVerifier) => {
+        presented.push(registrantVerifier);
+        return resolved({ status: "verified", entryToken: "entry-secret" });
+      },
+      consumeApplicationEntry: () => resolved(undefined),
+    },
+  }));
+  const registered = await app.request(
+    "http://localhost/api/v1/registrations",
+    {
+      method: "POST",
+      headers: jsonFromOrigin,
+      body: JSON.stringify({
+        email: "owner@example.test",
+        firstName: "Ada",
+        lastName: "",
+        password: "a sufficiently long password",
+        workspaceName: "Circle",
+      }),
+    },
+  );
+  const cookie = registered.headers.getSetCookie().find((value) =>
+    value.startsWith("kinship_registrant=")
+  );
+  assert(
+    registered.status === 202 && verifiers.length === 1 &&
+      verifiers[0]!.length >= 43 &&
+      cookie?.startsWith(`kinship_registrant=${verifiers[0]};`) &&
+      cookie.includes("HttpOnly") && cookie.includes("SameSite=Strict") &&
+      cookie.includes("Path=/api/v1/email-verifications") &&
+      cookie.includes("Max-Age=86400"),
+    `registration stores a fresh verifier in a narrow cookie: ${cookie}`,
+  );
+  const verified = await app.request(
+    "http://localhost/api/v1/email-verifications",
+    {
+      method: "POST",
+      headers: {
+        ...jsonFromOrigin,
+        cookie: `kinship_registrant=${verifiers[0]}`,
+      },
+      body: JSON.stringify({
+        token: "a-valid-length-token-for-verification-00000",
+      }),
+    },
+  );
+  assert(
+    verified.status === 200 && presented[0] === verifiers[0] &&
+      verified.headers.getSetCookie().some((value) =>
+        value.startsWith("kinship_registrant=;") && value.includes("Max-Age=0")
+      ),
+    "the verifier reaches identity and is cleared once spent",
+  );
+  await verified.body?.cancel();
+  const anonymous = await app.request(
+    "http://localhost/api/v1/email-verifications",
+    {
+      method: "POST",
+      headers: jsonFromOrigin,
+      body: JSON.stringify({
+        token: "a-valid-length-token-for-verification-00000",
+      }),
+    },
+  );
+  assert(
+    anonymous.status === 200 && presented[1] === undefined,
+    "a browser without the cookie presents no verifier",
+  );
+  await anonymous.body?.cancel();
+});
+
+Deno.test("AUD-A1 a verification without the registrant is sent to choose a password", async () => {
+  const app = createApiApp(services({
+    verification: {
+      verify: () =>
+        resolved({ status: "password-required", resetToken: "reset_Token-1" }),
+      consumeApplicationEntry: () => resolved(undefined),
+    },
+  }));
+  const response = await app.request(
+    "http://localhost/api/v1/email-verifications",
+    {
+      method: "POST",
+      headers: jsonFromOrigin,
+      body: JSON.stringify({
+        token: "a-valid-length-token-for-verification-00000",
+      }),
+    },
+  );
+  assert(
+    response.status === 200 &&
+      await response.text() ===
+        '{"status":"password-required","next":"/auth/reset-password?token=reset_Token-1"}' &&
+      response.headers.getSetCookie().length === 0 &&
+      response.headers.get("cache-control") === "no-store",
+    "the answer is the reset step and no entry handoff",
+  );
+});
+
+Deno.test("AUD-A1 the three public registration writes refuse a foreign or missing origin", async () => {
+  let reached = 0;
+  const app = createApiApp(services({
+    register: () => {
+      reached += 1;
+      return resolved({ status: "verification-required" });
+    },
+    retryVerificationDelivery: () => {
+      reached += 1;
+      return resolved(undefined);
+    },
+    verification: {
+      verify: () => {
+        reached += 1;
+        return resolved({ status: "expired" });
+      },
+      consumeApplicationEntry: () => resolved(undefined),
+    },
+  }));
+  for (
+    const path of [
+      "/api/v1/registrations",
+      "/api/v1/email-verifications",
+      "/api/v1/email-verification-deliveries",
+    ]
+  ) {
+    for (
+      const headers of [
+        { "content-type": "application/json" },
+        {
+          "content-type": "application/json",
+          origin: "https://attacker.example",
+        },
+        { "content-type": "application/json", origin: "null" },
+      ]
+    ) {
+      const response = await app.request(`http://localhost${path}`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      });
+      assertStatus(
+        response,
+        403,
+        `${path} refuses ${headers.origin ?? "a missing"} origin`,
+      );
+      await response.body?.cancel();
+    }
+    const crossSiteForm = await app.request(`http://localhost${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain",
+        origin: "https://attacker.example",
+      },
+      body: "{}",
+    });
+    assertStatus(crossSiteForm, 415, `${path} refuses a cross-site text body`);
+    await crossSiteForm.body?.cancel();
+  }
+  assert(reached === 0, "a refused write never reaches a use case");
+});
+
+Deno.test("verification failures use stable safe problems", async () => {
+  const app = createApiApp(services({
     verification: {
       verify: () => resolved({ status: "expired" }),
       consumeApplicationEntry: () => resolved(undefined),
     },
   }));
-  const duplicate = await app.request("http://localhost/api/v1/registrations", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      email: "owner@example.test",
-      firstName: "Ada",
-      lastName: "",
-      password: "a sufficiently long password",
-      workspaceName: "Circle",
-    }),
-  });
-  assert(
-    duplicate.status === 409 &&
-      (await duplicate.text()).includes("duplicate_email"),
-    "duplicate must be a stable conflict",
-  );
   const expired = await app.request(
     "http://localhost/api/v1/email-verifications",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonFromOrigin,
       body: JSON.stringify({
         token: "a-valid-length-token-that-is-expired-000000",
       }),
@@ -118,7 +276,7 @@ Deno.test("verified email returns only a one-time HttpOnly application handoff",
     "http://localhost/api/v1/email-verifications",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonFromOrigin,
       body: JSON.stringify({
         token: "a-valid-length-token-for-verification-00000",
       }),
@@ -182,8 +340,8 @@ Deno.test("invited verification continues without returning invitation bearer ma
     {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        cookie: "kinship_invitation_pending=1",
+        ...jsonFromOrigin,
+        cookie: "kinship_invitation_pending=1; kinship_registrant=verifier",
       },
       body: JSON.stringify({
         token: "a-valid-private-verification-token-0000000000",
@@ -219,7 +377,7 @@ Deno.test("verification and entry dependency failures map to safe 503 problems",
     "http://localhost/api/v1/email-verifications",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonFromOrigin,
       body: JSON.stringify({
         token: "a-valid-length-token-for-verification-00000",
       }),
@@ -253,7 +411,7 @@ Deno.test("a post-commit mail failure reports created state truthfully", async (
   }));
   const response = await app.request("http://localhost/api/v1/registrations", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonFromOrigin,
     body: JSON.stringify({
       email: "owner@example.test",
       firstName: "Ada",
@@ -284,7 +442,7 @@ Deno.test("verification delivery retry is anonymous and non-enumerating", async 
   ].map((email) =>
     app.request("http://localhost/api/v1/email-verification-deliveries", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonFromOrigin,
       body: JSON.stringify({ email }),
     })
   ));

@@ -213,10 +213,10 @@ describe("AUTH-001 registration form", () => {
     );
   });
 
-  it("renders safe field and duplicate-email errors", async () => {
+  it("renders safe field errors", async () => {
     stubApi({
-      [REGISTER]: problemResponse(409, {
-        code: "duplicate_email",
+      [REGISTER]: problemResponse(400, {
+        code: "validation_failed",
         errors: { email: "Use another email address.", absent: "Not drawn." },
       }),
     });
@@ -233,7 +233,7 @@ describe("AUTH-001 registration form", () => {
     )
       .toBe("");
     expect(status().textContent).toBe(
-      "An account already uses that email address.",
+      "Registration is temporarily unavailable. Please try again.",
     );
     expect(document.activeElement).toBe(status());
     expect(

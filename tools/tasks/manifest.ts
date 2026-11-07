@@ -686,14 +686,12 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/governance_postgres_test.ts",
       "tests/integration/interactions_activities_postgres_test.ts",
       "tests/integration/interactions_communications_postgres_test.ts",
-      "tests/integration/invitation_postgres_test.ts",
       "tests/integration/people_directory_postgres_test.ts",
       "tests/integration/people_profile_postgres_test.ts",
       "tests/integration/people_lifecycle_postgres_test.ts",
       "tests/integration/people_dates_postgres_test.ts",
       "tests/integration/people_facts_postgres_test.ts",
       "tests/integration/people_relationships_postgres_test.ts",
-      "tests/integration/registration_postgres_test.ts",
       "tests/integration/settings_preferences_postgres_test.ts",
       "tests/integration/settings_personalization_postgres_test.ts",
       "tests/integration/time_preferences_postgres_test.ts",
@@ -987,6 +985,7 @@ export const MODULES: readonly TaskModule[] = [
         "tools/postgres_gate_test.ts",
         "tools/product/PRODUCT-001/release_contract_test.ts",
         "tests/integration/registration_postgres_test.ts",
+        "tests/integration/registration_takeover_postgres_test.ts",
         "tests/integration/authentication_budget_postgres_test.ts",
         "tests/integration/authentication_sign_in_postgres_test.ts",
         "tests/integration/files_postgres_test.ts",
@@ -1980,6 +1979,13 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/application/password_recovery_test.ts",
       ],
     },
+    // Registration and verification are identity's PostgreSQL boundary: the
+    // pending identity, the registrant verifier, and the takeover sequences
+    // the 2026-11-07 audit replayed (AUD-A1).
+    integration: [
+      "tests/integration/registration_postgres_test.ts",
+      "tests/integration/registration_takeover_postgres_test.ts",
+    ],
     coverage: {
       directory: "identity-domain",
       threshold: 95,
@@ -2032,6 +2038,7 @@ export const MODULES: readonly TaskModule[] = [
         net: ["127.0.0.1"],
       },
     },
+    integration: ["tests/integration/invitation_postgres_test.ts"],
     coverage: {
       directory: "workspaces-domain",
       threshold: 95,

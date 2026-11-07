@@ -23,7 +23,7 @@ export class PostgresPasswordRecoveryRepository
       select u.id::text user_id, u.email::text email
       from crm.users u
       where u.email = ${command.email} and u.status = 'active'
-        and u.email_verified_at is not null and u.password_hash is not null
+        and u.email_verified_at is not null
         and exists (
           select 1 from crm.email_verification_tokens evt
           where evt.user_id = u.id and evt.used_at is not null
@@ -46,7 +46,7 @@ export class PostgresPasswordRecoveryRepository
 
   async resetPassword(
     command: Parameters<PasswordRecoveryRepository["resetPassword"]>[0],
-  ): Promise<"expired" | "invalid" | "reset"> {
+  ): ReturnType<PasswordRecoveryRepository["resetPassword"]> {
     const database = databaseFromSession(command.transaction);
     const candidate = await sql<{
       readonly expires_at: Date;
@@ -59,8 +59,8 @@ export class PostgresPasswordRecoveryRepository
     `.execute(database);
     const request = candidate.rows[0];
     if (!request?.user_id || request.used_at !== null) return "invalid";
-    const user = await sql<{ readonly valid: boolean }>`
-      select (
+    const user = await sql<{ readonly email: string; readonly valid: boolean }>`
+      select u.email::text email, (
         u.status = 'active' and u.email_verified_at is not null
         and exists (
           select 1 from crm.email_verification_tokens evt
@@ -78,7 +78,8 @@ export class PostgresPasswordRecoveryRepository
       for update
     `.execute(database);
     const locked = lockedRequest.rows[0];
-    if (!locked || locked.used_at !== null || user.rows[0]?.valid !== true) {
+    const identity = user.rows[0];
+    if (!locked || locked.used_at !== null || identity?.valid !== true) {
       return "invalid";
     }
     if (new Date(locked.expires_at).getTime() <= command.now.getTime()) {
@@ -111,6 +112,6 @@ export class PostgresPasswordRecoveryRepository
     if (postcondition.rows[0]?.valid !== true) {
       throw new Error("Password reset postcondition failed.");
     }
-    return "reset";
+    return { email: identity.email, status: "reset" };
   }
 }

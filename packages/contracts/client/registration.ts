@@ -31,7 +31,11 @@ export function verifyEmail(
   token: string,
 ): Promise<
   ApiResult<
-    { readonly status: "verified"; readonly next: "/app" | "/invite/continue" }
+    | {
+      readonly status: "verified";
+      readonly next: "/app" | "/invite/continue";
+    }
+    | { readonly status: "password-required"; readonly next: string }
   >
 > {
   return request("/api/v1/email-verifications", {

@@ -1,19 +1,103 @@
 import { sql } from "kysely";
 import { isUniqueViolation } from "../../../../platform/postgres/errors.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import { IdentityConflictError } from "../../domain/identity_rules.ts";
+import {
+  IdentityConflictError,
+  passwordResetExpiry,
+} from "../../domain/identity_rules.ts";
+import type { IdentityTokenService } from "../../ports/password_recovery.ts";
 import type {
   CreatePendingUserCommand,
   IdentityRegistrationFacade,
   PendingUser,
+  RegistrationAddressClaim,
 } from "../../ports/registration.ts";
+import { PostgresPasswordRecoveryRepository } from "./password_recovery.ts";
+import {
+  REGISTRANT_VERIFIER_PATTERN,
+  registrantVerifierDigest,
+} from "./registrant_verifier.ts";
 
 export class PostgresIdentityRegistration
   implements IdentityRegistrationFacade {
+  readonly #recovery = new PostgresPasswordRecoveryRepository();
+
+  constructor(private readonly tokens: Pick<IdentityTokenService, "hash">) {}
+
+  async claimRegistrationAddress(command: {
+    readonly email: string;
+    readonly transaction: CreatePendingUserCommand["transaction"];
+  }): Promise<RegistrationAddressClaim> {
+    const database = databaseFromSession(command.transaction);
+    // The same key password recovery serializes on, so a registration and a
+    // reset request for one address never interleave.
+    await sql`
+      select pg_advisory_xact_lock(hashtextextended(lower(${command.email}), 0))
+    `.execute(database);
+    const result = await sql<{ pending: boolean; user_id: string }>`
+      select u.id::text user_id,
+        (u.status = 'active' and u.email_verified_at is null and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = u.id
+        )) pending
+      from crm.users u
+      where u.email = ${command.email}
+      for update
+    `.execute(database);
+    const user = result.rows[0];
+    if (!user) return { status: "available" };
+    return user.pending
+      ? { status: "pending", userId: user.user_id }
+      : { status: "registered" };
+  }
+
+  async discardPendingUser(command: {
+    readonly transaction: CreatePendingUserCommand["transaction"];
+    readonly userId: string;
+  }): Promise<void> {
+    // The tokens, handoff sessions, and reset requests cascade with the user.
+    const deleted = await sql<{ id: string }>`
+      delete from crm.users
+      where id = ${command.userId}::uuid and status = 'active'
+        and email_verified_at is null
+      returning id::text
+    `.execute(databaseFromSession(command.transaction));
+    if (deleted.rows.length !== 1) {
+      throw new Error("Pending identity could not be discarded.");
+    }
+  }
+
+  async createExistingAccountRecovery(command: {
+    readonly email: string;
+    readonly id: string;
+    readonly now: Date;
+    readonly tokenHash: string;
+    readonly transaction: CreatePendingUserCommand["transaction"];
+  }): Promise<
+    { readonly email: string; readonly expiresAt: Date } | undefined
+  > {
+    const expiresAt = passwordResetExpiry(command.now);
+    const request = await this.#recovery.createRequest({
+      email: command.email,
+      expiresAt,
+      id: command.id,
+      now: command.now,
+      tokenHash: command.tokenHash,
+      transaction: command.transaction,
+    });
+    return request.deliveryEmail
+      ? { email: request.deliveryEmail, expiresAt }
+      : undefined;
+  }
+
   async createPendingUser(
     command: CreatePendingUserCommand,
   ): Promise<PendingUser> {
     const database = databaseFromSession(command.transaction);
+    const verifierDigest = await registrantVerifierDigest(
+      this.tokens,
+      command.registrantVerifier,
+    );
     try {
       await sql`
         insert into crm.users (
@@ -30,6 +114,9 @@ export class PostgresIdentityRegistration
         ) values (
           ${command.verificationTokenId}::uuid, ${command.userId}::uuid,
           ${command.email}, ${command.tokenHash}, ${command.expiresAt}, now()
+        ), (
+          gen_random_uuid(), ${command.userId}::uuid,
+          ${command.email}, ${verifierDigest}, ${command.expiresAt}, now()
         )
       `.execute(database);
       return { userId: command.userId };
@@ -66,6 +153,10 @@ export class PostgresIdentityRegistration
             and email = ${command.email}
             and token_hash = ${command.tokenHash}
             and expires_at = ${command.expiresAt}
+            and used_at is null) and
+        (select count(*) = 1 from crm.email_verification_tokens
+          where user_id = ${command.userId}::uuid
+            and token_hash like ${REGISTRANT_VERIFIER_PATTERN}
             and used_at is null)
         as valid
     `.execute(databaseFromSession(command.transaction));
@@ -99,6 +190,7 @@ export class PostgresIdentityRegistration
       select created_at
       from crm.email_verification_tokens
       where user_id = ${pending.user_id}::uuid and used_at is null
+        and token_hash not like ${REGISTRANT_VERIFIER_PATTERN}
       order by created_at desc, id desc
       for update
     `.execute(database);
