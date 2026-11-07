@@ -313,8 +313,11 @@ Workspace isolation is a security boundary, not a repository filter convention.
 - Add a negative integration test for every cross-aggregate link and every
   cross-workspace mutation path.
 
-PostgreSQL row-level security can be evaluated later as defense in depth, but it
-must not replace application authorization or these tests.
+Database enforcement is accepted as defense in depth
+([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md)):
+least-privilege roles, workspace-bound foreign keys, and forced row-level
+security arrive with schema v14 (AUD-V2). It must not replace application
+authorization or these tests.
 
 ## Time and Partial Dates
 

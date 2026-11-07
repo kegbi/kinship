@@ -24,10 +24,21 @@ Run independent tickets in parallel:
 - IMPLEMENTER_MODEL and REVIEWER_MODEL: `opus`.
 - MAX_REVIEW_ROUNDS: `2` per ticket.
 - STOP_AFTER: `all`, a ticket ID, or a number of integrated tickets.
-- DECISIONS: `D1=ask D2=ask D3=ask D4=ask`. To answer one in advance, replace
-  `ask` with an option from Part 3 of the plan, for example
-  `D1=B D2=Approve D3="Avatars only" D4="Compress, except secrets"`. D5 and D6
-  use the plan's defaults.
+- DECISIONS: approved by the product owner on 2026-11-07 and recorded in Part 3
+  of the plan. Do not ask about them again.
+  - D1 = B: only `/privacy` and `/terms` render on demand; the five former
+    on-demand routes become static
+    ([ADR 0007](../architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md),
+    AUD-G5).
+  - D2 = Approve: least-privilege database roles, workspace-bound foreign keys,
+    and forced row-level security, in schema v14
+    ([ADR 0008](../architecture/decisions/0008-database-enforced-workspace-isolation.md),
+    AUD-V2).
+  - D3 = Avatars only: avatar content gets `private, max-age=86400, immutable`;
+    JSON and documents stay `private, no-store` (AUD-K7).
+  - D4 = Compress, except secrets: gzip JSON and SVG, excluding secret-bearing
+    responses and the credential endpoints (AUD-G2).
+  - D5 and D6 keep the plan's standing defaults.
 
 ## Read once, then keep in context
 
@@ -64,7 +75,6 @@ A ticket is ready when all of these hold:
 
 - it is unchecked;
 - every ticket in its Depends line is integrated;
-- its decision, if it has one, is answered;
 - its gate, if it has one (AUD-Q4), allows it.
 
 Keep up to MAX_PARALLEL implementers running. Start ready tickets in priority
@@ -76,12 +86,10 @@ Only one V ticket may run at a time. While it runs, no other ticket may change
 `personal-crm-schema/`, `packages/backend/platform/postgres/generated/`, or
 `tools/migrations/`.
 
-**Decisions.** Once the first wave of implementers is running, ask the user
-about every DECISIONS entry that is still `ask`. Use one AskUserQuestion round:
-one question per decision, the plan's recommended option first, one line per
-option, taken from Part 3. The implementers keep working while you wait. Keep
-the answers; each is recorded in the candidate of the ticket it unblocks, as the
-Part 3 entry plus any ADR the plan names.
+**Decisions.** D1–D4 are decided (see Parameters), so no ticket waits for the
+user. The implementers of AUD-K7, AUD-G2, AUD-G5, and AUD-V2 apply the recorded
+decision and the ADR it names; they do not reopen it. If a ticket turns out to
+need a decision that Part 3 does not contain, stop that ticket and ask.
 
 Wait for completion notifications. Do not poll, sleep, or watch.
 
@@ -115,8 +123,10 @@ evidence, notes, or packet files.
 
 <paste the full ticket block>
 
-<If the ticket depends on a decision: "D<n> = <option>. Record it in Part 3
-of the plan, and write the ADR the plan names.">
+<For AUD-K7, AUD-G2, AUD-G5, or AUD-V2: "This ticket implements decision
+D<n> = <option>, recorded in Part 3 of the plan and in <ADR path, if any>.
+Read both before starting; apply the decision exactly and do not reopen it.
+When done, update the ADR's status line as the ticket says.">
 
 Protocol:
 - RED first: write the ticket's failing test and observe it fail for the

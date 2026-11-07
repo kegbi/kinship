@@ -25,3 +25,7 @@ in an ADR written before scaffolding.
   — `accepted`
 - [`0006-ui-stack-shadcn-react-islands.md`](0006-ui-stack-shadcn-react-islands.md)
   — `accepted`
+- [`0007-on-demand-rendering-only-for-request-time-content.md`](0007-on-demand-rendering-only-for-request-time-content.md)
+  — `accepted`; amends ADR 0001 and takes effect when AUD-G5 integrates
+- [`0008-database-enforced-workspace-isolation.md`](0008-database-enforced-workspace-isolation.md)
+  — `accepted`; implemented by schema v14 (AUD-V2)

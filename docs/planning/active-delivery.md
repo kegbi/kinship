@@ -16,7 +16,8 @@ to be resolved, with independent work running in parallel. The work order is the
 [audit remediation plan](audit-remediation-plan-2026-11-07.md):
 
 - 41 tickets in ten lanes;
-- decisions D1–D4, which block only the tickets that name them;
+- decisions D1–D4, approved on 2026-11-07, with ADR 0007 and ADR 0008 recording
+  the two architecture changes;
 - a closure checkpoint that records each of the audit's 70 finding IDs as Fixed,
   Decided, or Documented.
 

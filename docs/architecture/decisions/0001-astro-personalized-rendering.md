@@ -2,6 +2,10 @@
 
 - Status: accepted
 - Date: 2026-08-09
+- Amended by:
+  [ADR 0007](0007-on-demand-rendering-only-for-request-time-content.md), which
+  takes effect when AUD-G5 integrates. Until then this record describes the
+  running topology.
 
 ## Context
 

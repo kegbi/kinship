@@ -3,8 +3,9 @@
 Status: proposed and user-directed (2026-11-07). The source is the
 [architecture, security, and performance audit](../validation/audit-2026-11-07/README.md)
 of commit `bc8579ae` and its five area reports. This plan is subordinate to
-`AGENTS.md` and to the accepted schema, architecture, and product contracts.
-Decisions D1–D4 (Part 3) block only the tickets that name them.
+`AGENTS.md` and to the accepted schema, architecture, and product contracts. The
+product owner approved decisions D1–D4 on 2026-11-07 (Part 3, ADR 0007, and ADR
+0008), so no ticket waits for a decision.
 
 The plan closes all 70 finding IDs: FEQ-01–13, BEQ-01–15, SECA-01–15,
 SECT-01–11, and FER-01–16. Four pairs share one root cause, and the same ticket
@@ -187,70 +188,84 @@ loop. Otherwise, append a REL item to Parked Work in `active-delivery.md`.
 
 ## Part 3 — Decisions
 
-Ask D1–D4 before the tickets they block. Each answer is recorded in the
-candidate of the ticket it unblocks: this Part 3 entry, plus an ADR where noted.
-D5 and D6 have defaults that stand unless the user overrides them.
+On 2026-11-07 the product owner approved the recommended option for each of
+D1–D4. No ticket waits for a decision. The two architecture changes are recorded
+as ADRs. D5 and D6 are standing defaults.
 
-**D1 — Renderer topology (FER-03, FER-10). Blocks AUD-G5. Needs an ADR.**
+| ID | Question                            | Decision                                                                                          | Recorded in                                                                                     | Implemented by |
+| -- | ----------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------- |
+| D1 | Renderer topology (FER-03, FER-10)  | **B:** only `/privacy` and `/terms` render on demand; the five former on-demand routes are static | [ADR 0007](../architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md) | AUD-G5         |
+| D2 | Tenancy backstop (SECT-01, SECT-02) | **Approve:** least-privilege roles, workspace-bound keys, and forced RLS, in schema v14           | [ADR 0008](../architecture/decisions/0008-database-enforced-workspace-isolation.md)             | AUD-V2         |
+| D3 | Browser caching (FEQ-08)            | **Avatars only:** cache avatar content; JSON and documents stay `private, no-store`               | This part; `backend-architecture.md`, written by AUD-K7                                         | AUD-K7         |
+| D4 | API compression (FEQ-12, FER-08)    | **Compress, except secrets:** gzip JSON and SVG; exclude responses that carry a secret            | This part; `compose-contract.md`, written by AUD-G2                                             | AUD-G2         |
 
-- **B (recommended):** use the renderer only where request-time data earns
-  server rendering.
-  - `/privacy` and `/terms` become on-demand pages: the legal text is fetched
-    from the API, with a short gateway `proxy_cache`, so it is readable without
-    JavaScript.
-  - The five current on-demand routes become static. `/invite/:token` gets an
-    internal shell like the other dynamic routes.
-  - The catalog flips those entries; a new ADR amends ADR 0001.
-  - Slim the renderer image to its runtime dependencies, and stop
-    `/gateway-health` from depending on the renderer.
-- **A:** retire the renderer: `output: "static"`, and drop `@astrojs/node`, the
-  `web` service, and the Dockerfile target. `/privacy` and `/terms` stay
-  client-fetched, with `modulepreload` and a `<noscript>` link. This changes the
-  topology sentence in `AGENTS.md`.
-- **C:** keep today's topology; only slim the image and decouple the health
-  check. FER-03 and FER-10 are then Decided.
+**D1 — B: render on demand only where the first response needs request-time
+data.**
+[ADR 0007](../architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md)
+records the decision and amends ADR 0001. AUD-G5 implements it:
 
-**D2 — Tenancy backstop in the database (SECT-01, SECT-02). Blocks AUD-V2. Needs
-an ADR.**
+- `/privacy` and `/terms` render on demand from the API's public legal-document
+  read. A gateway `proxy_cache` of about five minutes is in front, and the pages
+  read without JavaScript.
+- `/auth/verify-email`, `/auth/reset-password`, `/auth/mfa`, and
+  `/app/compliance` are prerendered. `/invite/:token` gets an internal shell.
+  nginx serves all five with `Cache-Control: private, no-store`.
+- Astro uses `output: "static"`, so pages are prerendered unless they opt out.
+- The renderer image carries only runtime dependencies, and the gateway's health
+  no longer depends on the renderer.
+- Rejected: A (retire the renderer), because `/privacy` and `/terms` would stay
+  client-fetched; and C (status quo), because it renders identical HTML per
+  request and couples the gateway's health to that.
 
-- **Approve (recommended):** schema v14 adds:
-  - least-privilege roles for the migrator, the app (`NOBYPASSRLS`), and the
-    worker;
-  - composite `(workspace_id, id)` foreign keys;
-  - `FORCE ROW LEVEL SECURITY` keyed by a `SET LOCAL app.workspace_id` in the
-    transaction runners.
+**D2 — Approve: the database enforces workspace isolation.**
+[ADR 0008](../architecture/decisions/0008-database-enforced-workspace-isolation.md)
+records the decision, and AUD-V2 implements it in schema v14:
 
-  This amends `backend-architecture.md:317-319`.
-- **Roles only:** SECT-02 is fixed in v14. SECT-01 is Decided, with "re-evaluate
-  RLS after the next tenant-boundary finding" as its trigger.
-- **Defer:** both are Decided. AUD-K5 and AUD-T1 remain the safeguards.
+- the `kinship_migrator`, `kinship_app`, and `kinship_worker` roles, the last
+  two with `NOBYPASSRLS`;
+- `UNIQUE (workspace_id, id)` keys and composite tenant foreign keys;
+- `FORCE ROW LEVEL SECURITY` with
+  `workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+  set by `SET LOCAL` inside each transaction.
 
-**D3 — Browser caching of authenticated responses (FEQ-08). Scopes AUD-K7.**
+ADR 0008 lists the constraints the implementation must keep: `nullif`, no
+session-level `SET`, every tenant query inside such a transaction, and narrowly
+scoped cross-workspace paths. Rejected: roles only, because the database still
+accepts cross-workspace references; and defer, because isolation stays one layer
+deep.
 
-- **Avatars only (recommended):** content-addressed avatar responses get
-  `private, max-age=86400, immutable`. JSON and documents stay
-  `private, no-store`, and FEQ-08's ETag item is Decided on privacy grounds.
-- **Avatars and JSON:** additionally, selected JSON reads become
-  `private, no-cache` with an `ETag`. Those calls then use `no-cache` mode in
-  the client, keeping single-flight.
-- **Status quo:** everything stays `no-store`; FEQ-08 is Decided.
+**D3 — Avatars only.** AUD-K7 implements it:
 
-**D4 — Compressing API responses (FEQ-12, FER-08). Scopes AUD-G2.**
+- An avatar's content is addressed by its file id, so a new image gets a new
+  URL. `private, max-age=86400, immutable` lets the browser reuse it across
+  pages without revalidating. `private` keeps it out of shared caches.
+- JSON reads and document downloads stay `private, no-store`. They carry
+  personal data that must not persist in a shared computer's disk cache. The
+  client keeps `cache: "no-store"` (AUD-F1).
+- FEQ-08's ETag item for JSON is therefore Decided, on privacy grounds.
+- Rejected: ETags on JSON with `no-cache`, because the browser would then store
+  personal data; and the status quo, because every page re-downloads unchanged
+  avatars.
 
-- **Compress, except secrets (recommended):** gzip `application/json` and
-  `image/svg+xml`. Exclude every response that returns a secret: token creation,
-  calendar-feed creation and rotation, export-download token issuance, and the
-  handoff responses. Part 1.2 item 6 gives the reasoning.
-- **Status quo:** the API stays uncompressed. Only static pre-compression and
-  SVG are added, and FEQ-12/FER-08 are Decided for the API.
+**D4 — Compress, except secrets.** AUD-G2 implements it:
 
-**D5 — Retention of sent reminder occurrences (BEQ-07, BEQ-15).** The default is
-to keep them (Decided). The partial indexes in AUD-V1 exclude the sent history,
-so it costs storage only. AUD-P1 records a size ceiling for
+- The gateway gzips `application/json` and `image/svg+xml`, and serves
+  pre-compressed static assets.
+- Excluded are the responses whose body carries a secret: API-token creation,
+  calendar-feed creation and rotation, and export-download token issuance. As a
+  conservative default, so are the credential endpoints: sign-in, MFA,
+  registration, email verification, password reset, and invitation steps.
+- AUD-G2 enumerates the exclusions from the route registry and tests them. The
+  reasoning is Part 1.2 item 6.
+- Rejected: the status quo, which ships JSON about 70% larger.
+
+**D5 — Keep sent reminder occurrences (standing default).** BEQ-07 and BEQ-15
+are Decided for retention. The partial indexes in AUD-V1 exclude the sent
+history, so it costs storage only. AUD-P1 records a size ceiling for
 `reminder_occurrences`, and crossing it reopens the decision.
 
-**D6 — Accepted as designed.** These stand by default; the user may override any
-of them:
+**D6 — Accepted as designed (standing defaults).** The user may override any of
+these:
 
 - FER-16: in-app navigation is a full document load. ADR 0006 rules out a client
   router; AUD-F1–F3, F6, and the lazy shell islands of AUD-F2 shorten each
@@ -259,7 +274,7 @@ of them:
   - The workspace slug is globally unique. A 409 reveals only that a slug
     exists, and no public route uses slugs.
   - Object keys carry no workspace prefix, because the metadata lookup is the
-    barrier. AUD-V2 may add the prefix under D2.
+    barrier. AUD-V2 may add the prefix (ADR 0008).
 - SECA-13 item 3: HSTS stays without `includeSubDomains` and `preload` for an
   owner-operated host. AUD-G1 documents this.
 - SECA-14 items 1 and 2: TOTP enrolment stays in the backlog
@@ -524,6 +539,10 @@ of them:
     - Join `member_preferences` into the notification count.
     - Set a pool `statement_timeout` of about 10 s, below the gateway's 15 s
       (SECA-15).
+    - Leave room for ADR 0008. AUD-V2 will set `app.workspace_id` with
+      `SET LOCAL` once per transaction, so shape each request's reads so that
+      the workspace can be set once, and keep one round trip in the budget for
+      it.
   - RED: a counting Postgres.js wrapper in the integration harness shows that
     `GET /api/v1/people?limit=20` uses at most 8 round trips, including its own
     query (today 24; see the per-endpoint table in the 02 report). A statement
@@ -587,11 +606,12 @@ of them:
     `--module=preflight`; `deno task dev` still starts.
 
 - [ ] **AUD-K7 — Conditional requests and safe caching.** S–M. Normal. Depends:
-      D3. Closes: FEQ-08, BEQ-14, and SECA-13 item 1.
+      none. Closes: FEQ-08, BEQ-14, and SECA-13 item 1.
   - Scope:
-    - Apply D3. With the recommendation, avatar content gets
+    - Apply D3 (avatars only). Avatar content gets
       `private, max-age=86400, immutable`, and JSON and documents stay
-      `private, no-store`.
+      `private, no-store`. Record that policy in the HTTP contract section of
+      `docs/architecture/backend-architecture.md`.
     - The calendar feed computes a cheap validator before rendering: the maximum
       `updated_at` over the member's dates and occurrences, plus the date. A
       matching `If-None-Match` answers 304 without rendering.
@@ -934,13 +954,16 @@ of them:
     (Chromium).
 
 - [ ] **AUD-G2 — Responses are compressed where it is safe.** S. Normal.
-      Depends: AUD-G1, D4. Closes: FEQ-12, FER-08.
+      Depends: AUD-G1. Closes: FEQ-12, FER-08.
   - Scope:
     - Pre-compress static assets at build time (gzip level 9 or zopfli) and
       serve them with `gzip_static on`.
-    - Add `image/svg+xml` to `gzip_types`, plus `application/json` per D4,
-      excluding the enumerated secret-returning responses.
-    - Document brotli at the edge in the compose contract.
+    - Apply D4 (compress, except secrets): add `image/svg+xml` and
+      `application/json` to `gzip_types`. Exclude the responses Part 3 lists,
+      enumerated from the route registry: secret-bearing bodies and the
+      credential endpoints.
+    - Record the compression policy, its exclusions, and brotli at the edge in
+      `docs/architecture/compose-contract.md`.
   - RED: a JSON list is gzip-encoded, a token-creation response is not, and
     static `.js` is served from `.gz`.
   - Verify: the gateway contract tests; `deno task build`; E2E
@@ -976,22 +999,29 @@ of them:
   - Verify: `test:unit --module=api` and `--module=operations-compose`;
     `deno task build`; a stack smoke test (`up --wait`, then `/gateway-health`).
 
-- [ ] **AUD-G5 — The renderer serves exactly the routes D1 assigns it.** M. Low.
-      Depends: D1, AUD-G1, AUD-G2, AUD-F6. Closes: FER-03, FER-10.
-  - Scope for D1 = B:
+- [ ] **AUD-G5 — The renderer serves only `/privacy` and `/terms` (ADR 0007).**
+      M. Low. Depends: AUD-G1, AUD-G2, AUD-F6. Closes: FER-03, FER-10.
+  - Scope, implementing
+    [ADR 0007](../architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md):
     - Prerender `/auth/verify-email`, `/auth/reset-password`, `/auth/mfa`, and
       `/app/compliance`, and serve them from nginx with
       `Cache-Control: private, no-store`.
     - Serve `/invite/:token` through an internal shell.
-    - Render `/privacy` and `/terms` on demand, with a `proxy_cache` of about 5
-      minutes.
+    - Switch `astro.config.mjs` to `output: "static"` with the Node adapter.
+      `/privacy` and `/terms` opt out with `export const prerender = false` and
+      render the legal document from the API's public read, behind a
+      `proxy_cache` of about 5 minutes.
     - Stop the gateway's health check from depending on the renderer.
     - Slim the renderer image to its runtime dependencies.
-    - Update the catalog; record a new ADR amending ADR 0001; and update
-      `compose-contract.md`, `tools/web_build_output_test.ts`, the gateway
-      contract tests, and `AGENTS.md` if the topology sentence changes.
-
-    For D1 = A or C, apply the scope given in Part 3.
+    - In the same candidate, update every clause that encodes the old topology:
+      - ADR 0001's "five `on-demand` ID/path pairs" sentence and its "Amended
+        by" line;
+      - the catalog entries;
+      - the Gateway Routing section of `compose-contract.md`;
+      - `tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts`;
+      - `tools/web_build_output_test.ts` and the gateway contract tests;
+      - the pending-decisions note in `AGENTS.md`;
+      - ADR 0007's status line.
   - RED: the five routes are served from static files, and `/privacy` contains
     the legal text with JavaScript disabled.
   - Verify: the gateway and `web-build` tests; `deno task build`; E2E
@@ -1048,8 +1078,10 @@ of them:
     builds.
 
 - [ ] **AUD-V2 — Schema v14: the database backstops tenancy.** L. Low. Depends:
-      D2, AUD-V1, AUD-G4, AUD-T1, AUD-W3. Closes: SECT-01, SECT-02.
-  - Scope for D2 = Approve:
+      AUD-V1, AUD-G4, AUD-T1, AUD-W3. Closes: SECT-01, SECT-02.
+  - Scope, implementing
+    [ADR 0008](../architecture/decisions/0008-database-enforced-workspace-isolation.md)
+    within the constraints it lists:
     - Roles:
       - `kinship_migrator` owns the schema and runs only the migrate job;
       - `kinship_app` has DML on `crm` and `NOBYPASSRLS`;
@@ -1061,16 +1093,22 @@ of them:
       tenant-to-tenant references to composite keys, and add a denormalized
       `workspace_id` to the link tables listed under SECT-01 in the 04 report.
     - Enable `FORCE ROW LEVEL SECURITY` on the 49 tenant tables, with
-      `workspace_id = current_setting('app.workspace_id')::uuid`.
-      `workspaceTransactionRunner`, `peopleTransactionRunner`, and the read
-      paths set it with `SET LOCAL`.
+      `workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid`.
+      A bare `::uuid` cast fails on a pooled connection after its first
+      `SET LOCAL` transaction, as ADR 0008 records.
+      `workspaceTransactionRunner`, `peopleTransactionRunner`, and every read
+      path set the value with `SET LOCAL`, inside the transaction that runs the
+      query.
+    - Give the cross-workspace paths that ADR 0008 lists one narrowly scoped
+      means each: session resolution, worker scans, the calendar feed,
+      registration, lifecycle, and migrations. No request path may use
+      `BYPASSRLS`.
     - Generate the list of negative cross-aggregate tests from the foreign-key
       catalog.
-    - Record the ADR, and update `backend-architecture.md:317-319`,
-      `configuration-and-secrets.md`, and `compose-contract.md`.
+    - Update `configuration-and-secrets.md`, `compose-contract.md`, ADR 0008's
+      status line, the isolation note in `backend-architecture.md`, and the
+      pending-decisions note in `AGENTS.md`.
     - Optionally, prefix object keys with the workspace (SECT-10).
-
-    For "Roles only" or "Defer", apply the reduced scope given in Part 3.
   - RED:
     - The API's role is not a superuser and has `NOBYPASSRLS`.
     - A query without `app.workspace_id` returns no tenant rows.
@@ -1135,19 +1173,19 @@ of them:
 Wave 1, ready now (start by priority)
   urgent: A1  M1  W1
   high:   K1  F1  F2  G1  Q1
-  normal: A3  M4  T1  G4  K7 (once D3 is answered)
+  normal: A3  M4  T1  G4  K7
   low:    F9
 
 Then
   A1 ─► M2 ─► M3            A1 + W2 ─► A2
   K1 ─► K2 ─► K3            K1 ─► K5, K6        K1 + F3 ─► K4
   W1 ─► W2, W3              F1 + F2 ─► F3 ─► F4, F5, F7
-  F2 ─► F6, F8              G1 ─► G2 (with D4), G3
+  F2 ─► F6, F8              G1 ─► G2, G3
   Q1 + W1 ─► V1             V1 + A3 ─► A4
   Q1 + F2 + F3 ─► Q2        F5 + K3 ─► Q3
   F1..F8 + G1 + G2 + Q2 ─► P1 ─► Q4 (conditional)
-  D1 + G1 + G2 + F6 ─► G5
-  D2 + V1 + G4 + T1 + W3 ─► V2
+  G1 + G2 + F6 ─► G5 (ADR 0007)
+  V1 + G4 + T1 + W3 ─► V2 (ADR 0008)
   everything ─► P2
 ```
 
@@ -1173,11 +1211,11 @@ because their edits are far apart and the rebase is expected to be clean:
 | FEQ-05  | Medium   | Q2                                                                   | Fixed                                    |
 | FEQ-06  | Medium   | F4                                                                   | Fixed                                    |
 | FEQ-07  | Medium   | G1 (with FER-07)                                                     | Fixed                                    |
-| FEQ-08  | Low      | K7, per D3                                                           | Fixed (avatars); Decided (JSON ETags)    |
+| FEQ-08  | Low      | K7 (D3: avatars only)                                                | Fixed (avatars); Decided (JSON ETags)    |
 | FEQ-09  | Low      | F2, F4                                                               | Fixed                                    |
 | FEQ-10  | Low      | F5                                                                   | Fixed                                    |
 | FEQ-11  | Low      | F4                                                                   | Fixed                                    |
-| FEQ-12  | Low      | G2, per D4 (with FER-08)                                             | Fixed, or Decided                        |
+| FEQ-12  | Low      | G2 (D4; with FER-08)                                                 | Fixed                                    |
 | FEQ-13  | Info     | P1 (with FER-11)                                                     | Fixed                                    |
 | BEQ-01  | High     | W1                                                                   | Fixed                                    |
 | BEQ-02  | High     | W1                                                                   | Fixed                                    |
@@ -1209,8 +1247,8 @@ because their edits are far apart and the rebase is expected to be clean:
 | SECA-13 | Info     | items 1 K7; 2, 5, 8 G1; 3 G1 (D6); 4 G3; 6 A1 and K1; 7 G4           | Fixed; item 3 Documented                 |
 | SECA-14 | Info     | item 3 A3; item 4 A4; items 1–2 D6                                   | Fixed; items 1–2 Documented              |
 | SECA-15 | Info     | K3                                                                   | Fixed                                    |
-| SECT-01 | Medium   | V2, per D2                                                           | Fixed, or Decided                        |
-| SECT-02 | Medium   | V2, per D2                                                           | Fixed, or Decided                        |
+| SECT-01 | Medium   | V2 (D2, ADR 0008)                                                    | Fixed                                    |
+| SECT-02 | Medium   | V2 (D2, ADR 0008)                                                    | Fixed                                    |
 | SECT-03 | Medium   | M1                                                                   | Fixed                                    |
 | SECT-04 | Medium   | M2                                                                   | Fixed                                    |
 | SECT-05 | Low      | M1                                                                   | Fixed                                    |
@@ -1222,14 +1260,14 @@ because their edits are far apart and the rebase is expected to be clean:
 | SECT-11 | Info     | W3                                                                   | Fixed                                    |
 | FER-01  | High     | F2                                                                   | Fixed                                    |
 | FER-02  | Medium   | F6                                                                   | Fixed                                    |
-| FER-03  | Medium   | G5, per D1                                                           | Fixed, or Decided                        |
+| FER-03  | Medium   | G5 (D1, ADR 0007)                                                    | Fixed                                    |
 | FER-04  | Medium   | F1, F3 (with FEQ-01)                                                 | Fixed                                    |
 | FER-05  | Medium   | G1                                                                   | Fixed                                    |
 | FER-06  | Medium   | F7                                                                   | Fixed                                    |
 | FER-07  | Low      | G1 (with FEQ-07)                                                     | Fixed                                    |
-| FER-08  | Low      | G2 (with FEQ-12)                                                     | Fixed, or Decided                        |
+| FER-08  | Low      | G2 (with FEQ-12)                                                     | Fixed                                    |
 | FER-09  | Low      | F8                                                                   | Fixed                                    |
-| FER-10  | Low      | G5, per D1                                                           | Fixed, or Decided                        |
+| FER-10  | Low      | G5 (D1, ADR 0007)                                                    | Fixed                                    |
 | FER-11  | Low      | P1 (with FEQ-13)                                                     | Fixed                                    |
 | FER-12  | Low      | F9 (D6: no preload)                                                  | Fixed                                    |
 | FER-13  | Info     | F9                                                                   | Fixed                                    |
