@@ -33,46 +33,10 @@ interface Challenge {
   readonly userId: string;
 }
 
-class AttemptWindow {
-  readonly #attempts = new Map<string, number[]>();
-
-  constructor(
-    private readonly limit: number,
-    private readonly windowMilliseconds: number,
-    private readonly maximumKeys = 10_000,
-  ) {}
-
-  retryAfter(key: string, now: number): number | undefined {
-    const recent = (this.#attempts.get(key) ?? []).filter((instant) =>
-      instant > now - this.windowMilliseconds
-    );
-    if (recent.length === 0) this.#attempts.delete(key);
-    else this.#attempts.set(key, recent);
-    if (recent.length < this.limit) return undefined;
-    return Math.max(
-      1,
-      Math.ceil((recent[0]! + this.windowMilliseconds - now) / 1_000),
-    );
-  }
-
-  fail(key: string, now: number): void {
-    if (!this.#attempts.has(key) && this.#attempts.size >= this.maximumKeys) {
-      const oldest = this.#attempts.keys().next().value;
-      if (oldest) this.#attempts.delete(oldest);
-    }
-    this.#attempts.set(key, [...(this.#attempts.get(key) ?? []), now]);
-  }
-
-  clear(key: string): void {
-    this.#attempts.delete(key);
-  }
-}
-
 export class PostgresIdentityAuthentication
   implements IdentityAuthenticationFacade {
   readonly #challenges = new Map<string, Challenge>();
   readonly #dummyHash: Promise<string>;
-  readonly #passwordAttempts = new AttemptWindow(5, 5 * 60_000);
 
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
@@ -130,9 +94,6 @@ export class PostgresIdentityAuthentication
     readonly password: string;
   }): Promise<PasswordAuthenticationResult> {
     const now = this.clock.now();
-    const key = `${
-      command.ipAddress ?? "unknown"
-    }\n${command.email.toLowerCase()}`;
     const result = await sql<CredentialRow>`
       select u.id::text user_id, u.password_hash, u.password_changed_at,
         coalesce(extract(epoch from u.password_changed_at)::text, 'none')
@@ -154,25 +115,16 @@ export class PostgresIdentityAuthentication
       credential.password_hash !== null;
     const hash = usable ? credential.password_hash! : await this.#dummyHash;
     const valid = await this.hasher.verify(command.password, hash);
-    const retryAfterSeconds = this.#passwordAttempts.retryAfter(
-      key,
-      now.getTime(),
-    );
-    if (retryAfterSeconds !== undefined) {
-      return {
-        ...(usable ? { auditUserId: credential.user_id } : {}),
-        retryAfterSeconds,
-        status: "rate-limited",
-      };
-    }
+    // The caller's durable attempt budget is the only throttle (AUD-A3).
     if (!usable || !valid) {
-      this.#passwordAttempts.fail(key, now.getTime());
       return {
         ...(usable ? { auditUserId: credential.user_id } : {}),
         status: "invalid",
       };
     }
-    this.#passwordAttempts.clear(key);
+    if (this.hasher.needsUpgrade(hash)) {
+      await this.#upgradeHash(credential.user_id, hash, command.password, now);
+    }
     if (!credential.has_mfa) {
       return {
         credentialVersion: credential.password_changed_at,
@@ -197,6 +149,32 @@ export class PostgresIdentityAuthentication
       status: "mfa-required",
       userId: credential.user_id,
     };
+  }
+
+  /**
+   * Re-hashes a verified password under the current cost. Only the exact hash
+   * that was verified is replaced, so a concurrent reset always wins, and the
+   * credential version is untouched: an upgrade is not a password change.
+   *
+   * The upgrade is best effort. The password is already proved, so a hashing
+   * or storage failure leaves the verified hash in place and the sign-in goes
+   * on; the next successful sign-in tries again.
+   */
+  async #upgradeHash(
+    userId: string,
+    verifiedHash: string,
+    password: string,
+    now: Date,
+  ): Promise<void> {
+    try {
+      const upgraded = await this.hasher.hash(password);
+      await sql`
+        update crm.users set password_hash = ${upgraded}, updated_at = ${now}
+        where id = ${userId}::uuid and password_hash = ${verifiedHash}
+      `.execute(this.database);
+    } catch {
+      // Deliberately swallowed: see above.
+    }
   }
 
   async completeMfa(command: {

@@ -6,17 +6,60 @@ import type {
   AuthenticationRequestStatusCode,
 } from "../../../workspaces/public.ts";
 import type { AuthenticationSubjectDigester } from "../../application/authentication_subject.ts";
+import type { SignInDeviceTokens } from "../../application/sign_in_device.ts";
 
+/** Each (client address, subject) pair: five failures per five minutes. */
 const WINDOW_MILLISECONDS = 5 * 60_000;
 const FAILURE_LIMIT = 5;
+
+/**
+ * Each subject across every address (AUD-A3). Once ten attempts since the last
+ * success within fifteen minutes have failed or are still outstanding, the next
+ * attempt from any address waits 15 s after the latest of them, doubling with
+ * each further one and capped at five minutes. A refused attempt is neutral, so
+ * the delay is never extended by waiting it out, and the correct password is
+ * evaluated, and clears the count, as soon as it elapses.
+ *
+ * A password attempt that carries a live sign-in device token for its subject
+ * (`sign_in_device.ts`) is exempt from this ceiling, though never from the
+ * per-address budget, so an attacker holding the account behind the ceiling
+ * cannot keep its owner out of a browser they signed in from before.
+ */
+const ACCOUNT_WINDOW_MILLISECONDS = 15 * 60_000;
+const ACCOUNT_CEILING = 10;
+const ACCOUNT_BASE_DELAY_MILLISECONDS = 15_000;
+const ACCOUNT_MAXIMUM_DELAY_MILLISECONDS = 5 * 60_000;
 
 function route(scope: "mfa" | "password"): string {
   return scope === "password" ? "/api/v1/sessions" : "/api/v1/mfa-challenges";
 }
 
 interface BudgetState {
+  readonly accountCount: number;
+  readonly accountLatest?: Date;
   readonly count: number;
   readonly oldest?: Date;
+}
+
+/** Milliseconds until the budget admits another attempt; 0 admits now. */
+function budgetWait(
+  state: BudgetState,
+  occurredAt: Date,
+  recognizedDevice: boolean,
+): number {
+  const now = occurredAt.getTime();
+  const addressWait = state.count >= FAILURE_LIMIT
+    ? (state.oldest?.getTime() ?? now) + WINDOW_MILLISECONDS - now
+    : 0;
+  const accountWait = !recognizedDevice && state.accountCount >= ACCOUNT_CEILING
+    ? (state.accountLatest?.getTime() ?? now) +
+      Math.min(
+        ACCOUNT_MAXIMUM_DELAY_MILLISECONDS,
+        ACCOUNT_BASE_DELAY_MILLISECONDS *
+          2 ** (state.accountCount - ACCOUNT_CEILING),
+      ) - now
+    : 0;
+  return Math.max(0, addressWait, accountWait);
 }
 
 export class PostgresAuthenticationAttemptBudget
@@ -24,6 +67,7 @@ export class PostgresAuthenticationAttemptBudget
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly digester: AuthenticationSubjectDigester,
+    private readonly devices?: SignInDeviceTokens,
   ) {}
 
   async reserve(
@@ -38,15 +82,26 @@ export class PostgresAuthenticationAttemptBudget
     if (!activeDigest) {
       throw new Error("Authentication subject digest missing.");
     }
+    const recognizedDevice = command.scope === "password" &&
+      this.devices !== undefined &&
+      await this.devices.recognizes({
+        at: command.occurredAt,
+        digests,
+        token: command.deviceToken,
+      });
 
     return await this.database.transaction().execute(async (transaction) => {
-      // Lock every retained digest in deterministic order. During key rotation,
-      // old and new processes still share at least one lock until the retired
-      // key leaves the configured verification set.
+      // The lock is per subject, not per (address, subject): the account
+      // ceiling counts across addresses, so attempts from different addresses
+      // must read the count one at a time, and the per-address rule is
+      // serialized by the same lock. Lock every retained digest in
+      // deterministic order. During key rotation, old and new processes still
+      // share at least one lock until the retired key leaves the configured
+      // verification set.
       for (const digest of [...digests].sort()) {
         await sql`
           select pg_advisory_xact_lock(
-            hashtextextended(${`${path}\n${command.clientAddress}\n${digest}`}, 0)
+            hashtextextended(${`${path}\n${digest}`}, 0)
           )
         `.execute(transaction);
       }
@@ -57,20 +112,6 @@ export class PostgresAuthenticationAttemptBudget
         digests,
         command.occurredAt,
       );
-      if (current.count >= FAILURE_LIMIT) {
-        const reservationId = await this.#record(
-          transaction,
-          path,
-          command.clientAddress,
-          activeDigest,
-          null,
-          command.occurredAt,
-        );
-        return {
-          ...this.#limited(current, command.occurredAt),
-          reservationId,
-        };
-      }
       const reservationId = await this.#record(
         transaction,
         path,
@@ -79,6 +120,14 @@ export class PostgresAuthenticationAttemptBudget
         null,
         command.occurredAt,
       );
+      const wait = budgetWait(current, command.occurredAt, recognizedDevice);
+      if (wait > 0) {
+        return {
+          reservationId,
+          retryAfterSeconds: Math.max(1, Math.ceil(wait / 1_000)),
+          status: "rate-limited" as const,
+        };
+      }
       return { reservationId, status: "admitted" as const };
     });
   }
@@ -119,60 +168,65 @@ export class PostgresAuthenticationAttemptBudget
     occurredAt: Date,
   ): Promise<BudgetState> {
     const windowStart = new Date(occurredAt.getTime() - WINDOW_MILLISECONDS);
+    const accountWindowStart = new Date(
+      occurredAt.getTime() - ACCOUNT_WINDOW_MILLISECONDS,
+    );
     const candidates = sql.join(digests.map((digest) => sql`${digest}`));
-    // Only a fully established HTTP 200 authentication resets prior failures.
-    // Outstanding reservations always count; 202/403/410/429/503 outcomes are
-    // intentionally neutral once their exact reservation is finalized.
+    // Only a fully established HTTP 200 authentication resets prior failures:
+    // one from this address resets the address budget, and one from any
+    // address resets the account ceiling. Outstanding reservations always
+    // count; 202/403/410/429/503 outcomes are intentionally neutral once their
+    // exact reservation is finalized.
     const result = await sql<{
+      readonly account_count: number;
+      readonly account_latest: Date | null;
       readonly count: number;
       readonly oldest: Date | null;
     }>`
-      with latest_success as (
-        select max(occurred_at) succeeded_at
-        from crm.api_request_logs
-        where method = 'POST' and path = ${path}
-          and client_ip = ${clientAddress}::inet
-          and authentication_subject_digest in (${candidates})
-          and status_code = 200 and occurred_at > ${windowStart}
-      )
-      select count(*)::int count, min(log.occurred_at) oldest
-      from crm.api_request_logs log cross join latest_success success
-      where log.method = 'POST' and log.path = ${path}
-        and log.client_ip = ${clientAddress}::inet
-        and log.authentication_subject_digest in (${candidates})
-        and (
-          (log.status_code is null and log.occurred_at > ${windowStart})
-          or (
-            log.status_code = 401 and log.occurred_at > greatest(
-              ${windowStart},
-              coalesce(success.succeeded_at, ${windowStart})
+      with attempts as (
+        select log.client_ip = ${clientAddress}::inet same_address,
+          log.status_code, log.occurred_at
+        from crm.api_request_logs log
+        where log.method = 'POST' and log.path = ${path}
+          and log.authentication_subject_digest in (${candidates})
+          and log.occurred_at > ${accountWindowStart}
+          and (log.status_code is null or log.status_code in (200, 401))
+      ), latest_success as (
+        select
+          max(occurred_at) filter (where same_address) address_succeeded_at,
+          max(occurred_at) account_succeeded_at
+        from attempts where status_code = 200
+      ), counted as (
+        select attempt.same_address and (
+            (attempt.status_code is null
+              and attempt.occurred_at > ${windowStart})
+            or (
+              attempt.status_code = 401 and attempt.occurred_at > greatest(
+                ${windowStart},
+                coalesce(success.address_succeeded_at, ${windowStart})
+              )
             )
-          )
-        )
+          ) address_counted,
+          attempt.status_code is null or (
+            attempt.status_code = 401 and attempt.occurred_at > coalesce(
+              success.account_succeeded_at, ${accountWindowStart}
+            )
+          ) account_counted,
+          attempt.occurred_at
+        from attempts attempt cross join latest_success success
+      )
+      select count(*) filter (where address_counted)::int count,
+        min(occurred_at) filter (where address_counted) oldest,
+        count(*) filter (where account_counted)::int account_count,
+        max(occurred_at) filter (where account_counted) account_latest
+      from counted
     `.execute(transaction);
     const state = result.rows[0];
     return {
+      accountCount: state?.account_count ?? 0,
+      ...(state?.account_latest ? { accountLatest: state.account_latest } : {}),
       count: state?.count ?? 0,
       ...(state?.oldest ? { oldest: state.oldest } : {}),
-    };
-  }
-
-  #limited(
-    state: BudgetState,
-    occurredAt: Date,
-  ): {
-    readonly retryAfterSeconds: number;
-    readonly status: "rate-limited";
-  } {
-    const oldest = state.oldest?.getTime() ?? occurredAt.getTime();
-    return {
-      retryAfterSeconds: Math.max(
-        1,
-        Math.ceil(
-          (oldest + WINDOW_MILLISECONDS - occurredAt.getTime()) / 1_000,
-        ),
-      ),
-      status: "rate-limited",
     };
   }
 

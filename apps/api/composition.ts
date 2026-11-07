@@ -33,6 +33,7 @@ import {
 } from "../../packages/backend/modules/api-access/composition.ts";
 import {
   type ApiTokenManagement,
+  assertDistinctSignInDeviceKeys,
   type AuthenticationSubjectKeyset,
   type CalendarFeedTokens,
   decodeAuthenticationSubjectKeyset,
@@ -243,6 +244,7 @@ import {
   configuredKeyset,
   localKeyset,
   localSubjectKeyset,
+  localVersionedKeyset,
   REPOSITORY_KEY_FILLS,
 } from "./configured_keysets.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
@@ -929,6 +931,7 @@ export function createConfiguredApiApp(
   davKeysetOverride?: DavEncryptionKeyset,
   davEnabled = true,
   logger?: Logger,
+  deviceKeysetOverride?: AuthenticationSubjectKeyset,
 ): {
   readonly app: Hono<RequestIdEnv>;
   readonly close: () => Promise<void>;
@@ -953,6 +956,12 @@ export function createConfiguredApiApp(
     subjectKeysetOverride,
     localSubjectKeyset,
   );
+  const deviceKeyset = configuredKeyset<AuthenticationSubjectKeyset>(
+    environment,
+    "AUTH_SIGN_IN_DEVICE_KEYSET",
+    deviceKeysetOverride,
+    localVersionedKeyset(REPOSITORY_KEY_FILLS.signInDevice),
+  );
   const mail = mailAdapter ?? composeVerificationMail(Deno.env);
   const objectStore = objectStorageOverride ??
     composeObjectStorage(resolveObjectStorageConfiguration(Deno.env));
@@ -960,6 +969,7 @@ export function createConfiguredApiApp(
   const app = createApiApp(composeApiServices(connection.db, {
     davEnabled,
     davKeyset,
+    deviceKeyset,
     ...(davRemoteOverride ? { davRemote: davRemoteOverride } : {}),
     ...(logger ? { logger } : {}),
     mail,
@@ -982,6 +992,8 @@ export interface ApiCompositionOptions {
   readonly davEnabled: boolean;
   readonly davKeyset: DavEncryptionKeyset;
   readonly davRemote?: DavRemoteClient;
+  /** Signs sign-in device tokens (AUD-A3); never the subject keyset. */
+  readonly deviceKeyset: AuthenticationSubjectKeyset;
   readonly logger?: Logger;
   readonly mail: VerificationMail;
   readonly mfaKeyset: MfaEncryptionKeyset;
@@ -1004,6 +1016,7 @@ export function composeApiServices(
   const {
     davEnabled,
     davKeyset,
+    deviceKeyset,
     logger,
     mail,
     mfaKeyset,
@@ -1029,6 +1042,7 @@ export function composeApiServices(
     mfaKeyset,
   });
   const apiAccess = composeApiAccess(shared, {
+    deviceKeyset,
     // The names the workspace-wide token list shows beside each token.
     issuers: identity.invitations,
     subjectKeyset,
@@ -1175,6 +1189,7 @@ export function composeApiServices(
       createAuthenticationResponseEqualizer(
         DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
       ),
+    signInDevices: apiAccess.signInDevices,
     storage: objectStore,
     tokens: identity.tokens,
   });
@@ -1324,6 +1339,13 @@ export function createApiRuntime(
     localKeyset(REPOSITORY_KEY_FILLS.dav),
     davEnabled,
   );
+  const deviceKeyset = keyset(
+    "AUTH_SIGN_IN_DEVICE_KEYSET",
+    (value) =>
+      decodeAuthenticationSubjectKeyset(value, "AUTH_SIGN_IN_DEVICE_KEYSET"),
+    localVersionedKeyset(REPOSITORY_KEY_FILLS.signInDevice),
+  );
+  assertDistinctSignInDeviceKeys(deviceKeyset, subjectKeyset);
   const policy = browserSecurityPolicy(
     applicationEnvironment,
     environment.get("PUBLIC_WEB_ORIGIN"),
@@ -1344,5 +1366,6 @@ export function createApiRuntime(
     davKeyset,
     davEnabled,
     jsonLogger(),
+    deviceKeyset,
   );
 }

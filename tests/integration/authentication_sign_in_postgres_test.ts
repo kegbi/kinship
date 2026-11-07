@@ -333,6 +333,13 @@ Deno.test({
     assert(challenged.status === 202, "configured MFA delays session creation");
     await assertRequestLog("/api/v1/sessions", "127.0.0.10", 202);
     const challenge = extractCookie(challenged, "kinship_mfa");
+    assert(
+      challenged.headers.getSetCookie().some((cookie) =>
+        cookie.startsWith("kinship_signin_device=") &&
+        cookie.includes("; Path=/api/v1/sessions")
+      ),
+      "a proved password that awaits its factor still issues the device cookie",
+    );
     const sessionCountBeforeMfa = await database<{ count: number }[]>`
       select count(*)::int count from crm.user_sessions
       where user_id = ${userId}::uuid and revoked_at is null
@@ -743,11 +750,25 @@ Deno.test({
       "rate-limited known password attempt records one governance audit effect",
     );
 
+    // Ten failures from 127.0.0.43 and 127.0.0.40 put the owner behind the
+    // per-account ceiling (AUD-A3), so even the correct password from a fresh
+    // address is delayed, and the per-address burst below uses its own subject.
+    const ceilinged = await signIn(email, "new correct horse battery staple", {
+      clientAddress: "127.0.0.45",
+    });
+    assert(
+      ceilinged.status === 429 &&
+        Number(ceilinged.headers.get("retry-after")) > 0,
+      "failures from two addresses delay the account at a third",
+    );
     const concurrent = await Promise.all(
-      Array.from({ length: 8 }, () =>
-        signIn(email, "wrong password", {
-          clientAddress: "127.0.0.41",
-        })),
+      Array.from(
+        { length: 8 },
+        () =>
+          signIn("concurrent-budget@example.test", "wrong password", {
+            clientAddress: "127.0.0.41",
+          }),
+      ),
     );
     assert(
       concurrent.filter((response) => response.status === 401).length === 5 &&
@@ -1054,6 +1075,79 @@ Deno.test({
       (await read(suspendedToken)).status === 401,
       "the first request after a committed suspension is refused",
     );
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-A3] a password hash made with weaker parameters is upgraded by a successful sign-in",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(database);
+    const email = "rehash-owner@example.test";
+    const { userId } = await registerAndVerify(email);
+    const random = new WebCryptoRandomSource();
+    const current = new Argon2idPasswordHasher(random, {
+      memoryKiB: 19_456,
+      iterations: 2,
+      parallelism: 1,
+      saltLength: 16,
+      hashLength: 32,
+    });
+    const weaker = await new Argon2idPasswordHasher(random, {
+      memoryKiB: 8_192,
+      iterations: 1,
+      parallelism: 1,
+      saltLength: 16,
+      hashLength: 32,
+    }).hash("correct horse battery staple");
+    assert(current.needsUpgrade(weaker), "fixture hash is below current cost");
+    const [before] = await database<{ password_changed_at: Date | null }[]>`
+      update crm.users set password_hash = ${weaker}
+      where id = ${userId}::uuid
+      returning password_changed_at
+    `;
+    assert(before, "fixture credential is replaced");
+    const earlier = await signIn(email, undefined, {
+      clientAddress: "127.0.6.1",
+    });
+    assert(earlier.status === 200, "the weaker hash still verifies");
+    const earlierToken = extractCookie(earlier, "kinship_session");
+
+    const [after] = await database<{
+      password_changed_at: Date | null;
+      password_hash: string;
+    }[]>`
+      select password_hash, password_changed_at from crm.users
+      where id = ${userId}::uuid
+    `;
+    assert(
+      after && after.password_hash !== weaker &&
+        !current.needsUpgrade(after.password_hash) &&
+        await current.verify(
+          "correct horse battery staple",
+          after.password_hash,
+        ),
+      "a successful sign-in stores the password under the current cost",
+    );
+    assert(
+      after.password_changed_at?.toISOString() ===
+        before.password_changed_at?.toISOString(),
+      "an upgrade is not a password change and keeps the credential version",
+    );
+    const stillValid = await configured.app.request(
+      "http://localhost/api/v1/session",
+      { headers: { cookie: `kinship_session=${earlierToken}` } },
+    );
+    assert(
+      stillValid.status === 200,
+      "the session issued before the upgrade stays valid",
+    );
+    const again = await signIn(email, undefined, {
+      clientAddress: "127.0.6.1",
+    });
+    assert(again.status === 200, "the upgraded hash verifies on sign-in");
   },
 });
 

@@ -11,7 +11,11 @@ import { Kysely, sql } from "kysely";
 import { PostgresJSDialect } from "kysely-postgres-js";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { createAuthenticationRoutes } from "../../packages/backend/modules/workspaces/transport/http/authentication.ts";
-import { AuthenticationSubjectDigester } from "../../packages/backend/modules/api-access/public.ts";
+import {
+  AuthenticationSubjectDigester,
+  type AuthenticationSubjectKeyset,
+  SignInDeviceTokens,
+} from "../../packages/backend/modules/api-access/public.ts";
 import { authenticationAuditFrom } from "../../packages/backend/modules/workspaces/public.ts";
 import {
   createProtectedSessionCoordinator,
@@ -43,6 +47,88 @@ import {
 } from "./authentication.test-helper.ts";
 import { closeResources } from "./authentication.test-helper.ts";
 import { resetDatabase } from "../support/database.ts";
+import type { PasswordHasher } from "../../packages/backend/modules/identity/public.ts";
+
+const CURRENT_ARGON2ID = {
+  memoryKiB: 19_456,
+  iterations: 2,
+  parallelism: 1,
+  saltLength: 16,
+  hashLength: 32,
+} as const;
+
+/**
+ * The real sign-in route over the real PostgreSQL budget and identity adapter,
+ * with the clock and password hasher in the test's hands.
+ */
+function throttledSignIn(options: {
+  readonly clock: { now(): Date };
+  readonly deviceKeyset?: AuthenticationSubjectKeyset;
+  readonly hasher?: PasswordHasher;
+}): {
+  readonly attempt: (
+    clientAddress: string,
+    password: string,
+    request?: { readonly cookie?: string; readonly subject?: string },
+  ) => Promise<Response>;
+  readonly connection: ReturnType<typeof connectDatabase>;
+} {
+  const connection = connectDatabase(databaseUrl);
+  const random = new WebCryptoRandomSource();
+  const digester = new AuthenticationSubjectDigester({
+    activeVersion: 1,
+    keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+  });
+  const devices = options.deviceKeyset
+    ? new SignInDeviceTokens(options.deviceKeyset, digester)
+    : undefined;
+  const coordinator = createProtectedSessionCoordinator({
+    attemptBudget: new PostgresAuthenticationAttemptBudget(
+      connection.db,
+      digester,
+      devices,
+    ),
+    ...(devices ? { signInDevices: devices } : {}),
+    audit: authenticationAuditFrom(new PostgresAuditEventRecorder()),
+    clock: options.clock,
+    identity: new PostgresIdentityAuthentication(
+      connection.db,
+      options.hasher ?? new Argon2idPasswordHasher(random, CURRENT_ARGON2ID),
+      new SecureTokenService(random),
+      new AesGcmMfaSecretBox(mfaKeyset, random),
+      options.clock,
+      { create: () => crypto.randomUUID() },
+    ),
+    responseEqualizer: immediateResponseEqualizer,
+    transaction: new PostgresRegistrationTransaction(connection.db),
+    workspace: new PostgresActiveWorkspaceResolver(),
+  });
+  const app = createAuthenticationRoutes({
+    browserSecurity: browserSecurityPolicy("test", "http://localhost"),
+    passwordRecovery: {
+      request: () => Promise.resolve({ delivery: "not-applicable" }),
+      reset: () => Promise.resolve("invalid"),
+    },
+    protectedSessions: coordinator,
+  });
+  return {
+    attempt: async (clientAddress, password, request = {}) =>
+      await app.request("http://localhost/api/v1/sessions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost",
+          "X-Kinship-Client-Address": clientAddress,
+          ...(request.cookie ? { cookie: request.cookie } : {}),
+        },
+        body: JSON.stringify({
+          email: request.subject ?? "unset@example.test",
+          password,
+        }),
+      }),
+    connection,
+  };
+}
 
 Deno.test({
   name: "real PostgreSQL budget admits only five expensive concurrent attempts",
@@ -1081,6 +1167,388 @@ Deno.test({
           `both same-instant ${outcome} audits commit without collision`,
         );
       }
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-A3] failures from three addresses reach the per-account ceiling, which delays every address until the correct password signs in",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(database);
+    const email = "account-ceiling@example.test";
+    await registerAndVerify(email);
+    let instant = Date.now();
+    const { attempt: signInAs, connection } = throttledSignIn({
+      clock: { now: () => new Date(instant) },
+    });
+    const attempt = (
+      clientAddress: string,
+      password: string,
+      subject = email,
+    ): Promise<Response> => signInAs(clientAddress, password, { subject });
+    const correct = "correct horse battery staple";
+    const retryAfter = (response: Response): number =>
+      Number(response.headers.get("retry-after"));
+    try {
+      // Four, four, and two failures: no single address reaches its own
+      // five-failure budget, but the account reaches its ceiling of ten.
+      for (
+        const [clientAddress, failures] of [
+          ["127.0.4.1", 4],
+          ["127.0.4.2", 4],
+          ["127.0.4.3", 2],
+        ] as const
+      ) {
+        for (let index = 0; index < failures; index += 1) {
+          instant += 1_000;
+          const failed = await attempt(clientAddress, "wrong password");
+          assert(
+            failed.status === 401,
+            `failure below every ceiling stays generic, got ${failed.status}`,
+          );
+        }
+      }
+
+      const delayed = await attempt("127.0.4.4", correct);
+      assert(
+        delayed.status === 429 && retryAfter(delayed) === 15 &&
+          delayed.headers.get("set-cookie") === null,
+        `the ceiling delays even a fresh address for 15 s, got ${delayed.status} retry ${
+          retryAfter(delayed)
+        }`,
+      );
+      instant += 5_000;
+      const stillDelayed = await attempt("127.0.4.5", "wrong password");
+      assert(
+        stillDelayed.status === 429 && retryAfter(stillDelayed) === 10,
+        "a refused attempt is neutral and never extends the delay",
+      );
+
+      instant += 10_000;
+      const admittedGuess = await attempt("127.0.4.5", "wrong password");
+      assert(
+        admittedGuess.status === 401,
+        "once the delay elapses the next attempt is evaluated",
+      );
+      const doubled = await attempt("127.0.4.4", correct);
+      assert(
+        doubled.status === 429 && retryAfter(doubled) === 30,
+        `each failure past the ceiling doubles the delay, got retry ${
+          retryAfter(doubled)
+        }`,
+      );
+
+      instant += 30_000;
+      const owner = await attempt("127.0.4.4", correct);
+      assert(
+        owner.status === 200 &&
+          extractCookie(owner, "kinship_session").length > 0,
+        `the correct password signs in once the delay elapses, got ${owner.status}`,
+      );
+      instant += 1_000;
+      const afterSuccess = await attempt("127.0.4.6", "wrong password");
+      assert(
+        afterSuccess.status === 401,
+        "a successful sign-in clears the account ceiling",
+      );
+
+      const unknown = "absent-account-ceiling@example.test";
+      for (let index = 0; index < 10; index += 1) {
+        instant += 1_000;
+        const failed = await attempt(
+          `127.0.5.${index % 3 + 1}`,
+          "wrong password",
+          unknown,
+        );
+        assert(failed.status === 401, "unknown account fails generically");
+      }
+      const unknownDelayed = await attempt("127.0.5.9", correct, unknown);
+      assert(
+        unknownDelayed.status === 429 && retryAfter(unknownDelayed) === 15,
+        "an unknown address meets the identical ceiling, so it is no oracle",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-A3] a browser that signed in before keeps signing in while an attacker holds the account behind its ceiling",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(database);
+    const owner = "device-owner@example.test";
+    const other = "device-other@example.test";
+    await registerAndVerify(owner);
+    await registerAndVerify(other);
+    const correct = "correct horse battery staple";
+    // An hour off the wall clock: the cookie's lifetime must come from the
+    // injected clock that dated the token, never from a second clock.
+    let instant = Date.now() + 3_600_000;
+    const { attempt, connection } = throttledSignIn({
+      clock: { now: () => new Date(instant) },
+      deviceKeyset: {
+        activeVersion: 1,
+        keys: new Map([[1, new Uint8Array(32).fill(0x44)]]),
+      },
+    });
+    const deviceCookie = (response: Response): string | undefined =>
+      response.headers.getSetCookie().find((cookie) =>
+        cookie.startsWith("kinship_signin_device=")
+      );
+    const deviceToken = (response: Response): string => {
+      const cookie = deviceCookie(response);
+      assert(cookie, "a device cookie was issued");
+      return cookie.slice("kinship_signin_device=".length).split(";")[0]!;
+    };
+    const retryAfter = (response: Response): number =>
+      Number(response.headers.get("retry-after"));
+    try {
+      instant += 1_000;
+      const first = await attempt("127.0.14.1", correct, { subject: owner });
+      assert(first.status === 200, "the owner signs in");
+      const cookie = deviceCookie(first);
+      assert(
+        cookie !== undefined &&
+          cookie.split("; ").includes("HttpOnly") &&
+          cookie.split("; ").includes("SameSite=Strict") &&
+          cookie.split("; ").includes("Path=/api/v1/sessions") &&
+          cookie.split("; ").includes("Max-Age=2592000"),
+        `a successful sign-in issues a thirty-day device cookie scoped to the sign-in route, got ${cookie}`,
+      );
+      const ownerDevice = deviceToken(first);
+      const otherSignIn = await attempt("127.0.14.2", correct, {
+        subject: other,
+      });
+      const otherDevice = deviceToken(otherSignIn);
+      const [version, expiry, mac] = ownerDevice.split(".") as [
+        string,
+        string,
+        string,
+      ];
+      const forgedDevice = `${version}.${expiry}.${
+        mac.startsWith("A") ? "B" : "A"
+      }${mac.slice(1)}`;
+
+      // Ten failures from three attacker addresses reach the ceiling.
+      for (
+        const [clientAddress, failures] of [
+          ["127.0.15.1", 4],
+          ["127.0.15.2", 4],
+          ["127.0.15.3", 2],
+        ] as const
+      ) {
+        for (let index = 0; index < failures; index += 1) {
+          instant += 1_000;
+          const failed = await attempt(clientAddress, "wrong password", {
+            subject: owner,
+          });
+          assert(failed.status === 401, "below the ceiling fails generically");
+          assert(
+            deviceCookie(failed) === undefined,
+            "a failure issues no device cookie",
+          );
+        }
+      }
+
+      // The attacker takes every slot the moment it opens.
+      for (let round = 0; round < 4; round += 1) {
+        const probe = await attempt(`127.0.16.${round + 1}`, correct, {
+          subject: owner,
+        });
+        assert(probe.status === 429, "the attacker waits for the slot");
+        instant += retryAfter(probe) * 1_000;
+        const taken = await attempt(`127.0.16.${round + 1}`, "wrong password", {
+          subject: owner,
+        });
+        assert(taken.status === 401, "the attacker takes the slot");
+        for (
+          const [label, device] of [
+            ["no", undefined],
+            ["a forged", forgedDevice],
+            ["another account's", otherDevice],
+          ] as const
+        ) {
+          const refused = await attempt("127.0.14.3", correct, {
+            subject: owner,
+            ...(device ? { cookie: `kinship_signin_device=${device}` } : {}),
+          });
+          assert(
+            refused.status === 429 && deviceCookie(refused) === undefined,
+            `with ${label} device cookie the owner is still delayed, got ${refused.status}`,
+          );
+        }
+      }
+
+      // The device cookie never lifts the per-address limit.
+      for (let index = 0; index < 5; index += 1) {
+        const failed = await attempt("127.0.14.5", "wrong password", {
+          subject: owner,
+          cookie: `kinship_signin_device=${ownerDevice}`,
+        });
+        assert(
+          failed.status === 401,
+          `a recognized browser's failures are evaluated, got ${failed.status}`,
+        );
+      }
+      const addressLimited = await attempt("127.0.14.5", correct, {
+        subject: owner,
+        cookie: `kinship_signin_device=${ownerDevice}`,
+      });
+      assert(
+        addressLimited.status === 429 && retryAfter(addressLimited) > 0,
+        "the per-address limit still applies to a recognized browser",
+      );
+
+      const recognized = await attempt("127.0.14.4", correct, {
+        subject: owner,
+        cookie: `kinship_signin_device=${ownerDevice}`,
+      });
+      assert(
+        recognized.status === 200 &&
+          extractCookie(recognized, "kinship_session").length > 0 &&
+          deviceToken(recognized).length > 0,
+        `the owner's recognized browser signs in at once, got ${recognized.status}`,
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-A3] a failed password-hash upgrade is best effort: the sign-in succeeds and the stored hash is unchanged",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await resetDatabase(database);
+    const email = "rehash-failure@example.test";
+    const { userId } = await registerAndVerify(email);
+    const random = new WebCryptoRandomSource();
+    const current = new Argon2idPasswordHasher(random, CURRENT_ARGON2ID);
+    const weaker = await new Argon2idPasswordHasher(random, {
+      ...CURRENT_ARGON2ID,
+      memoryKiB: 8_192,
+      iterations: 1,
+    }).hash("correct horse battery staple");
+    await database`
+      update crm.users set password_hash = ${weaker} where id = ${userId}::uuid
+    `;
+    let upgrading = false;
+    let upgradeAttempts = 0;
+    const failingUpgrade: PasswordHasher = {
+      hash: (password) => {
+        if (!upgrading) return current.hash(password);
+        upgradeAttempts += 1;
+        return Promise.reject(new Error("hashing unavailable"));
+      },
+      needsUpgrade: (encoded) => current.needsUpgrade(encoded),
+      verify: (password, encoded) => current.verify(password, encoded),
+    };
+    const { attempt, connection } = throttledSignIn({
+      clock: { now: () => new Date() },
+      hasher: failingUpgrade,
+    });
+    try {
+      upgrading = true;
+      const response = await attempt(
+        "127.0.13.1",
+        "correct horse battery staple",
+        { subject: email },
+      );
+      assert(
+        response.status === 200 &&
+          extractCookie(response, "kinship_session").length > 0,
+        `a failed upgrade does not fail the sign-in, got ${response.status}`,
+      );
+      assert(upgradeAttempts === 1, "the upgrade was attempted once");
+      const [stored] = await database<{ password_hash: string }[]>`
+        select password_hash from crm.users where id = ${userId}::uuid
+      `;
+      assert(
+        stored?.password_hash === weaker,
+        "a failed upgrade leaves the verified hash in place",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-A3] concurrent attempts from distinct addresses cannot overrun the per-account ceiling",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(databaseUrl);
+    const budget = new PostgresAuthenticationAttemptBudget(
+      connection.db,
+      new AuthenticationSubjectDigester({
+        activeVersion: 1,
+        keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+      }),
+    );
+    const subject = `ceiling-race-${crypto.randomUUID()}@example.test`;
+    let instant = Date.now();
+    const reserve = (clientAddress: string) =>
+      budget.reserve({
+        clientAddress,
+        occurredAt: new Date(instant),
+        scope: "password" as const,
+        subject,
+      });
+    const burst = async (octet: number): Promise<number> => {
+      const admissions = await Promise.all(
+        Array.from(
+          { length: 6 },
+          (_, index) => reserve(`127.0.${octet}.${index + 1}`),
+        ),
+      );
+      for (const admission of admissions) {
+        await budget.finalize({
+          reservationId: admission.reservationId,
+          statusCode: admission.status === "admitted" ? 401 : 429,
+        });
+      }
+      return admissions.filter((admission) => admission.status === "admitted")
+        .length;
+    };
+    try {
+      // Nine failures, three from each of three addresses: one below the
+      // ceiling, and no address near its own five-failure budget.
+      for (let index = 0; index < 9; index += 1) {
+        instant += 1_000;
+        const admission = await reserve(`127.0.10.${index % 3 + 1}`);
+        assert(admission.status === "admitted", "below the ceiling admits");
+        await budget.finalize({
+          reservationId: admission.reservationId,
+          statusCode: 401,
+        });
+      }
+      instant += 1_000;
+      const atNine = await burst(11);
+      assert(
+        atNine === 1,
+        `six addresses at once one failure below the ceiling admit exactly one, admitted ${atNine}`,
+      );
+
+      // That failure was the tenth: the next slot opens 15 s after it.
+      instant += 15_000;
+      const pastDelay = await burst(12);
+      assert(
+        pastDelay === 1,
+        `six addresses at once after the delay admit exactly one, admitted ${pastDelay}`,
+      );
     } finally {
       await connection.destroy();
     }

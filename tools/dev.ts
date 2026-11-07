@@ -34,6 +34,7 @@ const objectStorageSecretKey = configured("OBJECT_STORAGE_SECRET_KEY") ??
 const mfaEncryptionKeyset = configured("AUTH_MFA_ENCRYPTION_KEYSET");
 const authenticationResponseFloor = configured("AUTH_MINIMUM_RESPONSE_MS");
 const throttleSubjectKeyset = configured("AUTH_THROTTLE_SUBJECT_KEYSET");
+const signInDeviceKeyset = configured("AUTH_SIGN_IN_DEVICE_KEYSET");
 const integrationsEncryptionKeyset = configured(
   "INTEGRATIONS_ENCRYPTION_KEYSET",
 );
@@ -124,6 +125,9 @@ try {
       : {}),
     ...(throttleSubjectKeyset
       ? { AUTH_THROTTLE_SUBJECT_KEYSET: throttleSubjectKeyset }
+      : {}),
+    ...(signInDeviceKeyset
+      ? { AUTH_SIGN_IN_DEVICE_KEYSET: signInDeviceKeyset }
       : {}),
     ...(integrationsEncryptionKeyset
       ? { INTEGRATIONS_ENCRYPTION_KEYSET: integrationsEncryptionKeyset }

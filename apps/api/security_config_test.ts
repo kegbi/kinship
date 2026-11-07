@@ -9,6 +9,8 @@ import { assert, assertThrows } from "../../packages/backend/testing/assert.ts";
 
 /** A private key: production refuses the repository's published keys. */
 const PRIVATE_KEY = "q7Lm2Xc9Vb4Nz8Kp1Rt6Wy3Hd5Gf0Js2Ae7Uo9Ii4Pk";
+/** The sign-in device keyset's private key, apart from every subject key. */
+const DEVICE_PRIVATE_KEY = "o-HPdz0QUQd9Vkhb_IC--lHCQh7ZI3tYvJc8mmkbwqA";
 
 Deno.test("browser handoff policy is strict outside explicit loopback HTTP", () => {
   assert(
@@ -232,6 +234,69 @@ Deno.test("authentication subject keyset is validated at the API composition bou
   }
 });
 
+Deno.test("[AUD-A3] sign-in device keyset is required in production, validated, and never the subject keyset", () => {
+  const validMfa = JSON.stringify({
+    activeKeyId: "test",
+    keys: { test: PRIVATE_KEY },
+  });
+  const validSubject = JSON.stringify({
+    activeVersion: 1,
+    keys: { v1: PRIVATE_KEY },
+  });
+  for (
+    const [environment, deviceKeyset, expected] of [
+      ["production", undefined, "AUTH_SIGN_IN_DEVICE_KEYSET is required"],
+      ["test", "not-json-key-material", "AUTH_SIGN_IN_DEVICE_KEYSET must be"],
+      [
+        "test",
+        JSON.stringify({ activeVersion: 1, keys: { v1: "c2hvcnQ" } }),
+        "32 bytes",
+      ],
+      [
+        "production",
+        JSON.stringify({
+          activeVersion: 2,
+          keys: { v1: PRIVATE_KEY, v2: DEVICE_PRIVATE_KEY },
+        }),
+        "must not reuse",
+      ],
+    ] as const
+  ) {
+    let composed = false;
+    let error: unknown;
+    try {
+      createApiRuntime(
+        {
+          get: (requested) =>
+            ({
+              APP_ENV: environment,
+              AUTH_MFA_ENCRYPTION_KEYSET: validMfa,
+              AUTH_SIGN_IN_DEVICE_KEYSET: deviceKeyset,
+              AUTH_THROTTLE_SUBJECT_KEYSET: validSubject,
+              DATABASE_URL: "postgres://unused:unused@127.0.0.1:1/unused",
+              INTEGRATIONS_DAV_ENABLED: "false",
+              PUBLIC_WEB_ORIGIN: environment === "production"
+                ? "https://kinship.example"
+                : "http://127.0.0.1:4321",
+            })[requested],
+        },
+        () => {
+          composed = true;
+          throw new Error("database composition must not be reached");
+        },
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    assert(error instanceof Error, "an unsafe device keyset fails startup");
+    assert(
+      error.message.includes(expected),
+      `startup identifies ${expected}, got ${error.message}`,
+    );
+    assert(!composed, "an unsafe device keyset fails before composition");
+  }
+});
+
 Deno.test("DAV encryption keyset is required and validated only when the optional module is enabled", () => {
   const validMfa = JSON.stringify({
     activeKeyId: "test",
@@ -256,6 +321,10 @@ Deno.test("DAV encryption keyset is required and validated only when the optiona
             ({
               APP_ENV: environment,
               AUTH_MFA_ENCRYPTION_KEYSET: validMfa,
+              AUTH_SIGN_IN_DEVICE_KEYSET: JSON.stringify({
+                activeVersion: 1,
+                keys: { v1: "REREREREREREREREREREREREREREREREREREREREREQ" },
+              }),
               AUTH_THROTTLE_SUBJECT_KEYSET: validSubject,
               DATABASE_URL: "postgres://unused:unused@127.0.0.1:1/unused",
               INTEGRATIONS_ENCRYPTION_KEYSET: integrationsKey,
@@ -316,6 +385,10 @@ function productionStart(): Record<string, string> {
     AUTH_MFA_ENCRYPTION_KEYSET: JSON.stringify({
       activeKeyId: "current",
       keys: { current: PRIVATE_KEY },
+    }),
+    AUTH_SIGN_IN_DEVICE_KEYSET: JSON.stringify({
+      activeVersion: 1,
+      keys: { v1: DEVICE_PRIVATE_KEY },
     }),
     AUTH_THROTTLE_SUBJECT_KEYSET: JSON.stringify({
       activeVersion: 1,
@@ -428,6 +501,31 @@ Deno.test("[AUD-K6] production refuses every keyset the repository publishes", a
     local.composed,
     `test may use the published keysets, got ${local.error}`,
   );
+});
+
+Deno.test("[AUD-A3] production refuses the committed sign-in device fallback", () => {
+  const fallback = "REREREREREREREREREREREREREREREREREREREREREQ";
+  for (
+    const keys of [
+      { v1: fallback },
+      { v1: fallback, v2: DEVICE_PRIVATE_KEY },
+    ]
+  ) {
+    const { composed, error } = startupFailure({
+      ...productionStart(),
+      AUTH_SIGN_IN_DEVICE_KEYSET: JSON.stringify({
+        activeVersion: Object.keys(keys).length,
+        keys,
+      }),
+    });
+    assert(
+      error instanceof Error &&
+        error.message.includes("AUTH_SIGN_IN_DEVICE_KEYSET") &&
+        error.message.includes("repository"),
+      `production must refuse the 0x44 device fallback, got ${error}`,
+    );
+    assert(!composed, "the device fallback fails before composition");
+  }
 });
 
 Deno.test("[AUD-K6] APP_ENV is production unless development or test is named", () => {

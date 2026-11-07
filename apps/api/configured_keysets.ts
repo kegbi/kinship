@@ -19,11 +19,13 @@ const KEY_BYTES = 32;
 
 /**
  * The byte each repository-published key repeats: `compose.test.yaml`'s MFA
- * key (0x00), the local MFA fallback (0x4b), the local and test throttle
- * subject key (0x52), and the local and test DAV key (0x69).
+ * key (0x00), the local and test sign-in device key (0x44), the local MFA
+ * fallback (0x4b), the local and test throttle subject key (0x52), and the
+ * local and test DAV key (0x69).
  */
 export const REPOSITORY_KEY_FILLS = {
   testMfa: 0x00,
+  signInDevice: 0x44,
   mfa: 0x4b,
   subject: 0x52,
   dav: 0x69,
@@ -62,15 +64,18 @@ export function localKeyset(fill: number) {
   });
 }
 
-/** The development throttle-subject keyset, which is versioned. */
-export function localSubjectKeyset() {
-  return {
+/** A versioned development keyset of one fixed key, as version 1. */
+export function localVersionedKeyset(fill: number) {
+  return () => ({
     activeVersion: 1,
-    keys: new Map([
-      [1, new Uint8Array(KEY_BYTES).fill(REPOSITORY_KEY_FILLS.subject)],
-    ]),
-  };
+    keys: new Map([[1, new Uint8Array(KEY_BYTES).fill(fill)]]),
+  });
 }
+
+/** The development throttle-subject keyset, which is versioned. */
+export const localSubjectKeyset = localVersionedKeyset(
+  REPOSITORY_KEY_FILLS.subject,
+);
 
 /**
  * A keyset the deployment must supply in production and may default locally.

@@ -13,6 +13,7 @@ services:
       APP_ENV: test
       AUTH_MFA_ENCRYPTION_KEYSET: '{"activeKeyId":"test","keys":{"test":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}'
       AUTH_MINIMUM_RESPONSE_MS: "100"
+      AUTH_SIGN_IN_DEVICE_KEYSET: '{"activeVersion":1,"keys":{"v1":"REREREREREREREREREREREREREREREREREREREREREQ"}}'
       AUTH_THROTTLE_SUBJECT_KEYSET: '{"activeVersion":1,"keys":{"v1":"UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI"}}'
       INTEGRATIONS_ENCRYPTION_KEYSET: '{"activeKeyId":"test","keys":{"test":"aWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWk"}}'
       OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-kinship}

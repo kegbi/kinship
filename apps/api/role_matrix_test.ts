@@ -137,6 +137,10 @@ function roleServices(database: Kysely<ApplicationDatabase>): ApiServices {
   const services = composeApiServices(database, {
     davEnabled: true,
     davKeyset: keyset(0x69),
+    deviceKeyset: {
+      activeVersion: 1,
+      keys: new Map([[1, new Uint8Array(32).fill(0x44)]]),
+    },
     mail: new CapturedVerificationMail(),
     mfaKeyset: keyset(0x4b),
     objectStore: fakeObjectStore(),

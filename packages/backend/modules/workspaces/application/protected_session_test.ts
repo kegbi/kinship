@@ -429,6 +429,72 @@ Deno.test("invitation-scoped MFA preserves the same identity-only boundary", asy
   );
 });
 
+const SIGN_IN_DEVICE = {
+  expiresAt: new Date("2026-09-13T12:00:00.000Z"),
+  maxAgeSeconds: 2_592_000,
+  token: "device-token",
+};
+
+Deno.test("[AUD-A3] identity-only entry never receives a sign-in device", async () => {
+  const issued: string[] = [];
+  const coordinator = (membership: "active" | "suspended") =>
+    createProtectedSessionCoordinator({
+      ...dependencies("mfa", membership).deps,
+      signInDevices: {
+        issue(command) {
+          issued.push(command.subject);
+          return Promise.resolve(SIGN_IN_DEVICE);
+        },
+      },
+    });
+  const scoped = await coordinator("suspended").signIn({
+    email: "invitee@example.test",
+    expectedEmail: "invitee@example.test",
+    identityOnly: true,
+    ipAddress: "127.0.0.1",
+    password: "correct horse battery staple",
+  });
+  assert(scoped.status === "mfa-required", "the scoped challenge is issued");
+  assert(
+    !("device" in scoped) && issued.length === 0,
+    "identity-only entry is not a sign-in to this route",
+  );
+
+  const signIn = await coordinator("active").signIn({
+    email: "owner@example.test",
+    ipAddress: "127.0.0.1",
+    password: "correct horse battery staple",
+  });
+  assert(
+    signIn.status === "mfa-required" && signIn.device === SIGN_IN_DEVICE,
+    "the same challenge on a password sign-in carries a device",
+  );
+});
+
+Deno.test("[AUD-A3] a failing device issuer never fails the sign-in", async () => {
+  for (const primary of ["verified", "mfa"] as const) {
+    const fixture = dependencies(primary);
+    const result = await createProtectedSessionCoordinator({
+      ...fixture.deps,
+      signInDevices: {
+        issue() {
+          return Promise.reject(new Error("device keyset unavailable"));
+        },
+      },
+    }).signIn({
+      email: "owner@example.test",
+      ipAddress: "127.0.0.1",
+      password: "correct horse battery staple",
+    });
+    assert(
+      result.status ===
+        (primary === "verified" ? "authenticated" : "mfa-required"),
+      `the ${primary} sign-in still succeeds`,
+    );
+    assert(!("device" in result), "no device is issued");
+  }
+});
+
 Deno.test("known and unknown password failures await the same bounded audit work", async () => {
   const known = dependencies("known-invalid");
   const unknown = dependencies("invalid");

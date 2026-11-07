@@ -95,6 +95,27 @@ Validation also checks relationships that a single field cannot express:
 - Imported Monica credentials, MFA seeds, sessions, OAuth secrets, and recovery
   codes are never copied into active secret stores.
 
+### Sign-in device keyset
+
+`AUTH_SIGN_IN_DEVICE_KEYSET` (API only) signs the stateless sign-in device token
+(AUD-A3). A password sign-in that answers `200` or `202` sets it as the
+`kinship_signin_device` cookie: `HttpOnly`, `SameSite=Strict`, `Secure` on
+HTTPS, `Path=/api/v1/sessions`, thirty days. The token is an HMAC-SHA256 over
+its expiry and the account's pseudonymous throttle-subject digest; a valid one
+exempts its browser from the per-account sign-in ceiling for that account, never
+from the per-address limit. It is not a session.
+
+- Shape: the same bounded JSON as `AUTH_THROTTLE_SUBJECT_KEYSET`, an integer
+  `activeVersion` and one to eight `v<n>` labels mapped to 32 random bytes in
+  unpadded base64url.
+- Production fails startup when it is missing, malformed, holds a key the
+  repository publishes (its local and test fallback included), or reuses any
+  `AUTH_THROTTLE_SUBJECT_KEYSET` key: one key, one purpose. Local development
+  without it uses an explicitly non-production fallback.
+- Rotation: add a new active version, keep the prior versions for the thirty-day
+  token lifetime, then remove them. Losing or retiring the keyset only returns
+  browsers to the per-account ceiling.
+
 ## Redaction
 
 Structured telemetry uses an allowlist of fields. At minimum, redact:

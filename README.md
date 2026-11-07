@@ -37,10 +37,14 @@ pseudonymous authentication subjects used by durable pre-admission throttling.
 Its bounded JSON contains an integer `activeVersion` and a `keys` object with
 one to eight canonical version labels (`v1` or newer), each mapped to 32 random
 bytes encoded as unpadded base64url; retain older versions while rotating and
-never commit or log the keyset. `AUTH_MINIMUM_RESPONSE_MS` sets the sign-in and
-MFA response-duration floor. It defaults to `250` and accepts only integer
-milliseconds in the inclusive range `100` through `2000`. There is no supported
-root `PORT` or `API_ORIGIN` setting.
+never commit or log the keyset. Production also requires
+`AUTH_SIGN_IN_DEVICE_KEYSET`, in the same shape with keys of its own, to sign
+the sign-in device cookie that keeps a browser which signed in before exempt
+from the per-account sign-in ceiling; see
+`docs/architecture/configuration-and-secrets.md`. `AUTH_MINIMUM_RESPONSE_MS`
+sets the sign-in and MFA response-duration floor. It defaults to `250` and
+accepts only integer milliseconds in the inclusive range `100` through `2000`.
+There is no supported root `PORT` or `API_ORIGIN` setting.
 
 Optional local Git hooks live in `lefthook.yml`: install them once per clone
 with `pnpm exec lefthook install` to get the staged-file formatter and lint

@@ -9,6 +9,8 @@ import {
 const PROFILE_PATH = "docs/planning/private-production-profile.json";
 // A private value: the repository's published keys are refused (AUD-K6).
 const KEY = "q7Lm2Xc9Vb4Nz8Kp1Rt6Wy3Hd5Gf0Js2Ae7Uo9Ii4Pk";
+/** The device keyset's own key: boot refuses one that repeats a subject key. */
+const DEVICE_KEY = "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -41,6 +43,13 @@ function validEnvironment(): Map<string, string> {
       JSON.stringify({
         activeKeyId: "current",
         keys: { current: KEY },
+      }),
+    ],
+    [
+      "AUTH_SIGN_IN_DEVICE_KEYSET",
+      JSON.stringify({
+        activeVersion: 1,
+        keys: { v1: DEVICE_KEY },
       }),
     ],
     [
@@ -85,6 +94,7 @@ Deno.test("OPS-001D preflight accepts only a complete private-production boundar
       "object-private-secret",
       "smtp-private-value",
       KEY,
+      DEVICE_KEY,
     ]
   ) {
     assert(
@@ -141,6 +151,25 @@ Deno.test("OPS-001D preflight allows an explicitly disabled DAV module without i
     { get: (name) => environment.get(name) },
   );
   assert(result.state === "ready", "disabled optional provider needs no key");
+});
+
+Deno.test("[AUD-A3] preflight refuses a device keyset that reuses a throttle-subject key", async () => {
+  const environment = validEnvironment();
+  environment.set(
+    "AUTH_SIGN_IN_DEVICE_KEYSET",
+    JSON.stringify({ activeVersion: 2, keys: { v2: KEY } }),
+  );
+
+  const result = runPrivateProductionPreflight(
+    await loadProfile(),
+    { get: (name) => environment.get(name) },
+  );
+  assert(result.state === "blocked", "a reused key blocks release");
+  assert(
+    result.issues.map((issue) => issue.code).includes("authentication-keysets"),
+    "the reused key is reported as an authentication keyset issue",
+  );
+  assert(!JSON.stringify(result).includes(KEY), "key material is redacted");
 });
 
 Deno.test("OPS-001D preflight rejects incomplete secret lifecycle metadata", async () => {
@@ -214,6 +243,7 @@ Deno.test("[AUD-K6] preflight blocks key material published in the repository", 
   // `compose.test.yaml`'s keysets and the API's development fallbacks.
   const published = [
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "REREREREREREREREREREREREREREREREREREREREREQ",
     "S0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0s",
     "UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI",
     "aWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWk",
@@ -229,6 +259,11 @@ Deno.test("[AUD-K6] preflight blocks key material published in the repository", 
         [
           "AUTH_THROTTLE_SUBJECT_KEYSET",
           { activeVersion: 2, keys: { v1: key, v2: KEY } },
+          "authentication-keysets",
+        ],
+        [
+          "AUTH_SIGN_IN_DEVICE_KEYSET",
+          { activeVersion: 2, keys: { v1: key, v2: DEVICE_KEY } },
           "authentication-keysets",
         ],
         [

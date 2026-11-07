@@ -21,10 +21,13 @@ import {
   type AuthenticationSubjectKeyset,
   createApiTokenManagement,
   createCalendarFeedTokens,
+  SignInDeviceTokens,
 } from "./public.ts";
 import type { ApiTokenIssuers } from "./ports/issuers.ts";
 
 export interface ApiAccessPorts {
+  /** Signs sign-in device tokens (AUD-A3); never the subject keyset. */
+  readonly deviceKeyset: AuthenticationSubjectKeyset;
   readonly issuers: ApiTokenIssuers;
   readonly subjectKeyset: AuthenticationSubjectKeyset;
 }
@@ -33,6 +36,8 @@ export function composeApiAccess(
   shared: SharedComposition,
   ports: ApiAccessPorts,
 ) {
+  const digester = new AuthenticationSubjectDigester(ports.subjectKeyset);
+  const signInDevices = new SignInDeviceTokens(ports.deviceKeyset, digester);
   const tokens = {
     actorContext: shared.actors,
     actors: shared.actors,
@@ -54,7 +59,10 @@ export function composeApiAccess(
     /** The shared sign-in throttle, which workspaces' session flows consume. */
     attemptBudget: new PostgresAuthenticationAttemptBudget(
       shared.database,
-      new AuthenticationSubjectDigester(ports.subjectKeyset),
+      digester,
+      signInDevices,
     ),
+    /** The device tokens the budget recognizes, issued after a sign-in. */
+    signInDevices,
   };
 }

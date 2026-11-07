@@ -20,15 +20,16 @@ function decodeBase64Url(value: string): Uint8Array {
 
 export function decodeAuthenticationSubjectKeyset(
   encoded: string,
+  name = "AUTH_THROTTLE_SUBJECT_KEYSET",
 ): AuthenticationSubjectKeyset {
   let parsed: unknown;
   try {
     parsed = JSON.parse(encoded);
   } catch {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET must be valid JSON.");
+    throw new Error(`${name} must be valid JSON.`);
   }
   if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET must be an object.");
+    throw new Error(`${name} must be an object.`);
   }
   const value = parsed as { activeVersion?: unknown; keys?: unknown };
   if (
@@ -37,11 +38,11 @@ export function decodeAuthenticationSubjectKeyset(
     typeof value.keys !== "object" || value.keys === null ||
     Array.isArray(value.keys)
   ) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET has an invalid shape.");
+    throw new Error(`${name} has an invalid shape.`);
   }
   const entries = Object.entries(value.keys);
   if (entries.length === 0 || entries.length > 8) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET must contain 1 to 8 keys.");
+    throw new Error(`${name} must contain 1 to 8 keys.`);
   }
   const keys = new Map<number, Uint8Array>();
   for (const [label, encodedKey] of entries) {

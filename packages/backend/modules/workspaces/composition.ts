@@ -74,6 +74,7 @@ import {
   registrationAuditFrom,
   settingsAuditFrom,
   type SettingsPlanningPublisher,
+  type SignInDeviceIssuer,
   type VerificationMail,
   type VerificationTokens,
   type WorkspaceLifecycleCascadeParticipants,
@@ -228,6 +229,7 @@ export interface WorkspacePorts {
   /** People's word on whether a recent person is in the actor's workspace. */
   readonly recentPeople: RecentPersonScope;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
+  readonly signInDevices: SignInDeviceIssuer;
   readonly storage: {
     remove(command: { readonly key: string }): Promise<void>;
   };
@@ -313,6 +315,7 @@ export function composeWorkspaces(
       identity: ports.identity.authentication,
       identityEntry: ports.identity.verification,
       responseEqualizer: ports.responseEqualizer,
+      signInDevices: ports.signInDevices,
       transaction: shared.transaction,
       workspace: shared.workspaceEntry,
     }),

@@ -46,6 +46,7 @@ export { protectedSessionHttpStatus } from "./domain/session_rules.ts";
 export type {
   AuthenticationRequestStatusCode,
   ProtectedSessionResult,
+  SignInDevice,
 } from "./domain/session_rules.ts";
 export type {
   CompleteMfaCommand,
@@ -64,6 +65,7 @@ export type {
   AuthenticationAttemptBudgetResult,
   AuthenticationAudit,
   AuthenticationResponseEqualizer,
+  SignInDeviceIssuer,
 } from "./ports/session.ts";
 export { createSettingsManagement } from "./application/settings_management.ts";
 export type {

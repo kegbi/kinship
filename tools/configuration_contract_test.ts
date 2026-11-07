@@ -86,6 +86,12 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
   );
   assert(
     compose.includes(
+      "AUTH_SIGN_IN_DEVICE_KEYSET: ${AUTH_SIGN_IN_DEVICE_KEYSET:-}",
+    ),
+    "Compose must pass the private sign-in device key only to the API",
+  );
+  assert(
+    compose.includes(
       "INTEGRATIONS_ENCRYPTION_KEYSET: ${INTEGRATIONS_ENCRYPTION_KEYSET:-}",
     ),
     "Compose must pass the private integrations key only to the API",
@@ -104,6 +110,10 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
   assert(
     example.includes("AUTH_THROTTLE_SUBJECT_KEYSET="),
     "the environment example must document the authentication-subject key name",
+  );
+  assert(
+    example.includes("AUTH_SIGN_IN_DEVICE_KEYSET="),
+    "the environment example must document the sign-in device key name",
   );
   assert(
     example.includes("INTEGRATIONS_ENCRYPTION_KEYSET="),
@@ -152,6 +162,13 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
         "AUTH_THROTTLE_SUBJECT_KEYSET: throttleSubjectKeyset",
       ),
     "root development must pass an explicitly configured authentication-subject key to the API",
+  );
+  assert(
+    developmentTool.includes('configured("AUTH_SIGN_IN_DEVICE_KEYSET")') &&
+      developmentTool.includes(
+        "AUTH_SIGN_IN_DEVICE_KEYSET: signInDeviceKeyset",
+      ),
+    "root development must pass an explicitly configured sign-in device key to the API",
   );
   assert(
     !developmentTool.includes("`postgres://kinship:${postgresPassword}"),

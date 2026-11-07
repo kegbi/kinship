@@ -27,6 +27,7 @@ import {
   type createProtectedSessionCoordinator,
   type MemberUiStateManagement,
   protectedSessionHttpStatus,
+  type SignInDevice,
 } from "../../public.ts";
 import {
   completeMfa,
@@ -73,6 +74,13 @@ const MFA_COOKIE = "kinship_mfa";
 const MFA_PATH = "/api/v1/mfa-challenges";
 /** How long a challenge stays usable. */
 const MFA_COOKIE_SECONDS = 300;
+/**
+ * The cookie a browser that signed in before carries back to the sign-in
+ * route, which exempts it from the per-account ceiling (AUD-A3). It is sent
+ * to that route alone and is not a session.
+ */
+const SIGN_IN_DEVICE_COOKIE = "kinship_signin_device";
+const SIGN_IN_PATH = "/api/v1/sessions";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -299,6 +307,19 @@ function mfaCookie(
   });
 }
 
+/** The sign-in device cookie, scoped to the route that reads it. */
+function signInDeviceCookie(
+  policy: BrowserSecurityPolicy,
+  device: SignInDevice,
+): string {
+  return setCookie(policy, {
+    maxAgeSeconds: device.maxAgeSeconds,
+    name: SIGN_IN_DEVICE_COOKIE,
+    path: SIGN_IN_PATH,
+    value: device.token,
+  });
+}
+
 function authenticated(
   context: Context,
   result: Extract<
@@ -339,10 +360,15 @@ export function createAuthenticationRoutes(
       context.req.header("Cookie"),
       SESSION_COOKIE,
     );
+    const deviceToken = cookieValue(
+      context.req.header("Cookie"),
+      SIGN_IN_DEVICE_COOKIE,
+    );
     let result;
     try {
       result = await services.protectedSessions.signIn({
         ...client(context),
+        ...(deviceToken ? { deviceToken } : {}),
         email: parsed.data.email,
         password: parsed.data.password,
         ...(previousSessionToken ? { previousSessionToken } : {}),
@@ -354,7 +380,18 @@ export function createAuthenticationRoutes(
       return definedProblem(context, SIGN_IN_UNAVAILABLE);
     }
     if (result.status === "authenticated") {
-      return authenticated(context, result, services.browserSecurity);
+      const response = authenticated(
+        context,
+        result,
+        services.browserSecurity,
+      );
+      if (result.device) {
+        response.headers.append(
+          "Set-Cookie",
+          signInDeviceCookie(services.browserSecurity, result.device),
+        );
+      }
+      return response;
     }
     if (result.status === "mfa-required") {
       context.header(
@@ -365,6 +402,13 @@ export function createAuthenticationRoutes(
           MFA_COOKIE_SECONDS,
         ),
       );
+      if (result.device) {
+        context.header(
+          "Set-Cookie",
+          signInDeviceCookie(services.browserSecurity, result.device),
+          { append: true },
+        );
+      }
       context.header("Cache-Control", "no-store");
       return context.json(
         { status: "mfa-required", next: "/auth/mfa" },

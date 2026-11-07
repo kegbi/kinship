@@ -30,4 +30,9 @@ export {
   decodeAuthenticationSubjectKeyset,
 } from "./application/authentication_subject.ts";
 export type { AuthenticationSubjectKeyset } from "./application/authentication_subject.ts";
+export {
+  assertDistinctSignInDeviceKeys,
+  SIGN_IN_DEVICE_LIFETIME_SECONDS,
+  SignInDeviceTokens,
+} from "./application/sign_in_device.ts";
 export { apiTokenAuditFrom } from "./application/audit_events.ts";

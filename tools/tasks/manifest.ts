@@ -135,6 +135,7 @@ export const OBJECT_STORAGE_ENV = [
 export const AUTH_ENV = [
   "AUTH_MFA_ENCRYPTION_KEYSET",
   "AUTH_MINIMUM_RESPONSE_MS",
+  "AUTH_SIGN_IN_DEVICE_KEYSET",
   "AUTH_THROTTLE_SUBJECT_KEYSET",
 ] as const;
 
@@ -839,6 +840,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/platform/postgres/transactions_test.ts",
         "packages/backend/platform/telemetry/json_logger_test.ts",
         "packages/backend/modules/api-access/application/authentication_subject_test.ts",
+        "packages/backend/modules/api-access/application/sign_in_device_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "packages/backend/modules/governance/domain/legal_rules_test.ts",
         "packages/backend/modules/identity/domain/identity_rules_test.ts",
@@ -1041,6 +1043,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/api-access/transport/http/calendar_feed_test.ts",
         "packages/backend/modules/api-access/application/api_token_management_test.ts",
         "packages/backend/modules/api-access/application/calendar_feed_tokens_test.ts",
+        // The signed sign-in device token (AUD-A3).
+        "packages/backend/modules/api-access/application/sign_in_device_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
         "packages/contracts/api_tokens_test.ts",
       ],

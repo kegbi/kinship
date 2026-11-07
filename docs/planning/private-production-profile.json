@@ -81,6 +81,12 @@
         "recovery": "Recover the versioned keyset from the deployment secret store before serving authentication traffic."
       },
       {
+        "name": "AUTH_SIGN_IN_DEVICE_KEYSET",
+        "owner": "private-production-owner",
+        "rotation": "Add a new active version while retaining prior versions for the thirty-day device-token lifetime, restart API, then remove expired versions; never reuse a throttle-subject key.",
+        "recovery": "Recover the versioned keyset from the deployment secret store; losing it only returns browsers to the per-account sign-in ceiling."
+      },
+      {
         "name": "INTEGRATIONS_ENCRYPTION_KEYSET",
         "owner": "private-production-owner",
         "rotation": "When DAV is enabled, add a new active key while retaining old decrypt keys, restart API, re-save provider secrets, then retire unused keys.",

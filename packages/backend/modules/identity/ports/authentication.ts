@@ -27,11 +27,6 @@ export type ExactCredentialVersion = string;
 export type PasswordAuthenticationResult =
   | { readonly auditUserId?: string; readonly status: "invalid" }
   | {
-    readonly auditUserId?: string;
-    readonly retryAfterSeconds: number;
-    readonly status: "rate-limited";
-  }
-  | {
     readonly challengeToken: string;
     readonly credentialVersion: Date | null;
     readonly entryCredentialVersion: ExactCredentialVersion;

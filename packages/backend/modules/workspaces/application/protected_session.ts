@@ -36,6 +36,36 @@ import {
   establishSession,
 } from "./protected_session_entry.ts";
 
+/**
+ * A password sign-in that proved the password hands its browser a fresh device
+ * token (AUD-A3): a session, or a challenge for the second factor, both of
+ * which already tell the caller the password was right. Identity-only entry
+ * is not a sign-in to this route, so it gets none.
+ */
+async function withSignInDevice(
+  dependencies: ProtectedSessionDependencies,
+  command: SignInCommand,
+  result: ProtectedSessionResult,
+): Promise<ProtectedSessionResult> {
+  if (
+    !dependencies.signInDevices || command.identityOnly ||
+    (result.status !== "authenticated" && result.status !== "mfa-required")
+  ) {
+    return result;
+  }
+  try {
+    const device = await dependencies.signInDevices.issue({
+      issuedAt: dependencies.clock.now(),
+      subject: command.email,
+    });
+    return { ...result, device };
+  } catch {
+    // The sign-in already succeeded; a browser without a device token only
+    // loses the ceiling exemption next time.
+    return result;
+  }
+}
+
 export function createProtectedSessionCoordinator(
   dependencies: ProtectedSessionDependencies,
 ): {
@@ -58,6 +88,7 @@ export function createProtectedSessionCoordinator(
       return await dependencies.responseEqualizer.run(async () => {
         const admission = await dependencies.attemptBudget.reserve({
           clientAddress: command.ipAddress,
+          ...(command.deviceToken ? { deviceToken: command.deviceToken } : {}),
           occurredAt: dependencies.clock.now(),
           scope: "password",
           subject: command.email,
@@ -71,7 +102,7 @@ export function createProtectedSessionCoordinator(
             admission.retryAfterSeconds,
           );
         }
-        return await admittedAttempt(
+        const result = await admittedAttempt(
           dependencies,
           admission.reservationId,
           async (reservationId) => {
@@ -83,13 +114,6 @@ export function createProtectedSessionCoordinator(
             if (primary.status === "invalid") {
               await recordFailure(dependencies, primary.auditUserId);
               return { status: "invalid-credentials" };
-            }
-            if (primary.status === "rate-limited") {
-              await recordFailure(dependencies, primary.auditUserId);
-              return {
-                retryAfterSeconds: primary.retryAfterSeconds,
-                status: "rate-limited",
-              };
             }
             if (primary.status === "mfa-required") {
               if (command.identityOnly && command.expectedEmail) {
@@ -140,6 +164,7 @@ export function createProtectedSessionCoordinator(
             return established;
           },
         );
+        return await withSignInDevice(dependencies, command, result);
       });
     },
     async completeMfa(command) {

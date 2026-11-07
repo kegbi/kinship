@@ -2,7 +2,10 @@ import { assertNoRepositoryKeys } from "../../apps/api/configured_keysets.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { resolveObjectStorageConfiguration } from "../../apps/api/file_storage_config.ts";
 import { resolveAuthenticationResponseFloor } from "../../apps/api/authentication_response.ts";
-import { decodeAuthenticationSubjectKeyset } from "../../packages/backend/modules/api-access/public.ts";
+import {
+  assertDistinctSignInDeviceKeys,
+  decodeAuthenticationSubjectKeyset,
+} from "../../packages/backend/modules/api-access/public.ts";
 import { decodeMfaEncryptionKeyset } from "../../packages/backend/modules/identity/composition.ts";
 import { decodeDavEncryptionKeyset } from "../../packages/backend/modules/integrations/composition.ts";
 import {
@@ -40,6 +43,7 @@ type Check = {
 
 const SECRET_NAMES = [
   "AUTH_MFA_ENCRYPTION_KEYSET",
+  "AUTH_SIGN_IN_DEVICE_KEYSET",
   "AUTH_THROTTLE_SUBJECT_KEYSET",
   "GATEWAY_TLS_PRIVATE_KEY_PATH",
   "INTEGRATIONS_ENCRYPTION_KEYSET",
@@ -233,12 +237,16 @@ export function runPrivateProductionPreflight(
             required(environment, "AUTH_MFA_ENCRYPTION_KEYSET"),
           ),
         );
-        assertNoRepositoryKeys(
-          "AUTH_THROTTLE_SUBJECT_KEYSET",
-          decodeAuthenticationSubjectKeyset(
-            required(environment, "AUTH_THROTTLE_SUBJECT_KEYSET"),
-          ),
+        const subjectKeyset = decodeAuthenticationSubjectKeyset(
+          required(environment, "AUTH_THROTTLE_SUBJECT_KEYSET"),
         );
+        assertNoRepositoryKeys("AUTH_THROTTLE_SUBJECT_KEYSET", subjectKeyset);
+        const deviceKeyset = decodeAuthenticationSubjectKeyset(
+          required(environment, "AUTH_SIGN_IN_DEVICE_KEYSET"),
+          "AUTH_SIGN_IN_DEVICE_KEYSET",
+        );
+        assertNoRepositoryKeys("AUTH_SIGN_IN_DEVICE_KEYSET", deviceKeyset);
+        assertDistinctSignInDeviceKeys(deviceKeyset, subjectKeyset);
         resolveAuthenticationResponseFloor(
           environment.get("AUTH_MINIMUM_RESPONSE_MS"),
         );
@@ -246,7 +254,7 @@ export function runPrivateProductionPreflight(
       issue: {
         code: "authentication-keysets",
         action:
-          "Provide valid, privately generated versioned MFA and throttle keysets (never a repository key); retain prior decrypt/verification keys during rotation.",
+          "Provide valid, privately generated versioned MFA, throttle-subject, and sign-in device keysets (never a repository key, and no device key repeating a subject key); retain prior decrypt/verification keys during rotation.",
       },
     },
     {

@@ -19,6 +19,10 @@
  * owns that mapping. `finalize` takes an optional transaction so a successful
  * attempt's reset commits with the session it issued.
  *
+ * `SignInDeviceIssuer` hands a browser that just proved an account's password
+ * the token that, presented to `reserve` as `deviceToken`, exempts it from the
+ * budget's per-account ceiling for that account (AUD-A3).
+ *
  * `AuthenticationResponseEqualizer` is why an attempt against an unknown
  * address takes as long as one against a real one.
  */
@@ -27,7 +31,10 @@ import type {
   ActiveWorkspaceContext,
   ProtectedSessionTransaction,
 } from "./context.ts";
-import type { AuthenticationRequestStatusCode } from "../domain/session_rules.ts";
+import type {
+  AuthenticationRequestStatusCode,
+  SignInDevice,
+} from "../domain/session_rules.ts";
 
 export interface ActiveWorkspaceResolver {
   listActiveContexts(command: {
@@ -93,6 +100,8 @@ export interface AuthenticationAttemptBudget {
   reserve(
     command: {
       readonly clientAddress: string;
+      /** A sign-in device token the browser carried; never trusted unverified. */
+      readonly deviceToken?: string;
       readonly occurredAt: Date;
       readonly scope: "mfa" | "password";
       readonly subject: string;
@@ -104,6 +113,13 @@ export interface AuthenticationAttemptBudget {
     readonly transaction?: ProtectedSessionTransaction;
     readonly userId?: string;
   }): Promise<void>;
+}
+
+export interface SignInDeviceIssuer {
+  issue(command: {
+    readonly issuedAt: Date;
+    readonly subject: string;
+  }): Promise<SignInDevice>;
 }
 
 export interface AuthenticationResponseEqualizer {

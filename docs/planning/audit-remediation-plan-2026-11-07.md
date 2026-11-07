@@ -377,7 +377,7 @@ these:
   - Verify: `test:integration --module=identity`, `--module=workspaces`, and
     `--module=api-access`; `test:unit --module=planning` (runs `apps/worker`).
 
-- [ ] **AUD-A3 — Sign-in throttling holds across addresses, and password hashes
+- [x] **AUD-A3 — Sign-in throttling holds across addresses, and password hashes
       upgrade on sign-in.** M. Normal. Depends: none. Closes: SECA-06 (the
       per-account part) and SECA-14 item 3.
   - Problem: the durable budget counts failures per (address, account), with no
@@ -397,6 +397,22 @@ these:
     (`authentication_sign_in_postgres_test.ts`,
     `authentication_budget_postgres_test.ts`);
     `deno task test:e2e tests/e2e/sign-in.AUTH-003.spec.ts --project=chromium`.
+  - Delivered 2026-11-07: rule: besides 5 failures in 5 minutes per address and
+    account, an account's attempts across every address since its last success
+    (failed or outstanding, within 15 minutes) reaching 10 delay the next
+    attempt from any address by 15 s doubling to 300 s; refusals are neutral, a
+    success resets the count, unknown accounts are treated alike, and every
+    reservation serializes on a per-account lock. A signed, HttpOnly,
+    SameSite=Strict device cookie (30 days, new secret
+    `AUTH_SIGN_IN_DEVICE_KEYSET`, refused in production when missing, published,
+    or reusing a throttle key) lets a browser that signed in before skip the
+    account ceiling but never the per-address limit. A successful sign-in
+    upgrades a weak hash, best effort. Budget and sign-in integration 17
+    (including concurrent bursts admitting exactly one), api-access integration
+    13, api unit 486 (only REL-106), api-access, workspaces, identity, and
+    operations unit tests, configuration and preflight 27; E2E AUTH-003 5 passed
+    on Chromium; changed scope 88.9% branches, 98% functions, 94.6% lines;
+    contracts, fmt, architecture, and lint (only REL-096).
 
 - [ ] **AUD-A4 — MFA challenges survive restarts and replicas.** S. Normal.
       Depends: AUD-V1, AUD-A3. Closes: SECA-06 (the MFA part) and SECA-14 item

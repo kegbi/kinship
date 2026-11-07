@@ -30,6 +30,7 @@ import type {
   AuthenticationAttemptBudget,
   AuthenticationAudit,
   AuthenticationResponseEqualizer,
+  SignInDeviceIssuer,
 } from "../ports/session.ts";
 import type {
   IdentityAuthenticationFacade,
@@ -46,11 +47,15 @@ export interface ProtectedSessionDependencies {
     "issueVerifiedIdentityEntry"
   >;
   readonly responseEqualizer: AuthenticationResponseEqualizer;
+  /** Issues sign-in device tokens; without it none are issued (AUD-A3). */
+  readonly signInDevices?: SignInDeviceIssuer;
   readonly transaction: ProtectedSessionTransactionRunner;
   readonly workspace: ActiveWorkspaceResolver;
 }
 
 export interface SignInCommand {
+  /** The sign-in device token the browser carried, if any. */
+  readonly deviceToken?: string;
   readonly email: string;
   readonly expectedEmail?: string;
   readonly identityOnly?: boolean;

@@ -34,17 +34,33 @@ export type AuthenticationRequestStatusCode =
   | 429
   | 503;
 
+/** The sign-in device token a password sign-in hands its browser (AUD-A3). */
+export interface SignInDevice {
+  readonly expiresAt: Date;
+  /**
+   * The cookie lifetime, fixed by the issuer from the clock that dated the
+   * token, so the browser never has to be told it by a second clock.
+   */
+  readonly maxAgeSeconds: number;
+  readonly token: string;
+}
+
 export type ProtectedSessionResult =
   | { readonly status: "invalid-credentials" | "invalid-mfa" }
   | { readonly status: "challenge-expired" | "membership-inactive" }
   | { readonly retryAfterSeconds: number; readonly status: "rate-limited" }
-  | { readonly challengeToken: string; readonly status: "mfa-required" }
+  | {
+    readonly challengeToken: string;
+    readonly device?: SignInDevice;
+    readonly status: "mfa-required";
+  }
   | {
     readonly entryToken: string;
     readonly expiresAt: Date;
     readonly status: "identity-authenticated";
   }
   | {
+    readonly device?: SignInDevice;
     readonly expiresAt: Date;
     readonly member: {
       readonly id: string;
