@@ -11,7 +11,8 @@
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
-import { privileged } from "../domain/dav_rules.ts";
+// Configuring a subscription is an administrative act.
+import { privileged } from "../../workspaces/public.ts";
 import type {
   DavPeopleBoundary,
   DavTaskBoundary,

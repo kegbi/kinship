@@ -83,10 +83,18 @@ export function createWorkspaceRoutes(
   mount(routes, getWorkspaceSettings, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const [result, supportedCurrencyCodes] = await Promise.all([
+    // Both reads run at once, but the refusal answers on its own: a failed
+    // currency read must not turn a refused member into an outage (AUD-K5).
+    const [workspace, currencies] = await Promise.allSettled([
       services.settings.getWorkspace(actor),
       services.settings.listCurrencies(actor),
-    ]).catch(() => [undefined, undefined] as const);
+    ]);
+    const result = workspace.status === "fulfilled"
+      ? workspace.value
+      : undefined;
+    const supportedCurrencyCodes = currencies.status === "fulfilled"
+      ? currencies.value
+      : undefined;
     if (result === "forbidden") {
       return definedProblem(context, WORKSPACE_FORBIDDEN);
     }

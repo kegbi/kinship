@@ -1,4 +1,10 @@
 export type { InvitationRole, WorkspaceRole } from "./domain/roles.ts";
+/**
+ * The one answer to "may this membership do administrative work?" (AUD-K5).
+ * Every module that grants owners and admins alone asks it here rather than
+ * spelling the comparison out again.
+ */
+export { privileged } from "./domain/roles.ts";
 export {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   RegistrationError,

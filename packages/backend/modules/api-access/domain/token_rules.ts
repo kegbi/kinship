@@ -99,11 +99,6 @@ const TOKEN_PATTERN =
 const FEED_TOKEN_PATTERN =
   /^kin_cal_([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{16,128})$/i;
 
-/** Tokens are an administrative facility; a member neither mints nor sees one. */
-export function privileged(actor: { readonly role: ApiTokenRole }): boolean {
-  return actor.role === "owner" || actor.role === "admin";
-}
-
 /** The identifier and the secret inside a presented token, or nothing. */
 export function parseToken(
   rawToken: string,

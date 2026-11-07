@@ -3,7 +3,6 @@ import {
   DAV_REMOTE_URL_MAX_BYTES,
   type DavRemoteChange,
   DavRemoteFailure,
-  privileged,
   publicFailure,
   remoteIdentity,
   validConfiguration,
@@ -14,12 +13,6 @@ const VALID = {
   password: "correct horse",
   remoteUrl: "https://dav.example.com/addressbooks/ada/",
 };
-
-Deno.test("[GAP-018] configuring a remote is an administrative act", () => {
-  assertEquals(privileged({ role: "owner" }), true);
-  assertEquals(privileged({ role: "admin" }), true);
-  assertEquals(privileged({ role: "member" }), false);
-});
 
 Deno.test("[GAP-018] a configuration is stored in the spelling it was checked in", () => {
   assertEquals(validConfiguration(VALID), {

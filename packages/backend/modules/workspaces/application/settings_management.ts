@@ -33,7 +33,7 @@ import {
   type WorkspaceMemberRecord,
   workspaceScheduleChanged,
 } from "../domain/settings_rules.ts";
-import type { WorkspaceRole } from "../domain/roles.ts";
+import { privileged, type WorkspaceRole } from "../domain/roles.ts";
 import type {
   SettingsActor,
   SettingsTransaction,
@@ -243,11 +243,17 @@ export function createSettingsManagement(
         );
         return result;
       }),
+    // The four administrative reads and writes decide the role before their
+    // first read (AUD-K5); the repository's own membership check stays as the
+    // race-safe backstop.
     getWorkspace: (actor: SettingsActor) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.workspace.getWorkspace({ ...actor, transaction })
-      ),
+      privileged(actor)
+        ? dependencies.transaction.run((transaction) =>
+          dependencies.workspace.getWorkspace({ ...actor, transaction })
+        )
+        : Promise.resolve("forbidden" as const),
     updateWorkspace: (actor: SettingsActor, input: WorkspaceConfiguration) => {
+      if (!privileged(actor)) return Promise.resolve("forbidden" as const);
       if (
         input.defaultTimezone !== undefined &&
         !isSchedulableTimezone(input.defaultTimezone)
@@ -286,14 +292,16 @@ export function createSettingsManagement(
       });
     },
     listMembers: (actor: SettingsActor) =>
-      dependencies.transaction.run(async (transaction) => {
-        const memberships = await dependencies.workspace.listMembers({
-          ...actor,
-          transaction,
-        });
-        if (typeof memberships === "string") return memberships;
-        return await composeMembers(transaction, memberships);
-      }),
+      privileged(actor)
+        ? dependencies.transaction.run(async (transaction) => {
+          const memberships = await dependencies.workspace.listMembers({
+            ...actor,
+            transaction,
+          });
+          if (typeof memberships === "string") return memberships;
+          return await composeMembers(transaction, memberships);
+        })
+        : Promise.resolve("forbidden" as const),
     updateMember: (
       actor: SettingsActor,
       targetMemberId: string,
@@ -302,27 +310,29 @@ export function createSettingsManagement(
         readonly status: "active" | "suspended";
       },
     ) =>
-      dependencies.transaction.run(async (transaction) => {
-        const result = await dependencies.workspace.updateMember({
-          ...actor,
-          newRole: input.role,
-          newStatus: input.status,
-          targetMemberId,
-          transaction,
-        });
-        if (typeof result === "string") return result;
-        const [member] = await composeMembers(transaction, [result]);
-        if (!member) throw new Error("Updated member is unavailable.");
-        await audit(
-          transaction,
-          actor,
-          "workspace.member-updated",
-          "workspace_member",
-          targetMemberId,
-          { role: input.role, status: input.status },
-        );
-        return member;
-      }),
+      privileged(actor)
+        ? dependencies.transaction.run(async (transaction) => {
+          const result = await dependencies.workspace.updateMember({
+            ...actor,
+            newRole: input.role,
+            newStatus: input.status,
+            targetMemberId,
+            transaction,
+          });
+          if (typeof result === "string") return result;
+          const [member] = await composeMembers(transaction, [result]);
+          if (!member) throw new Error("Updated member is unavailable.");
+          await audit(
+            transaction,
+            actor,
+            "workspace.member-updated",
+            "workspace_member",
+            targetMemberId,
+            { role: input.role, status: input.status },
+          );
+          return member;
+        })
+        : Promise.resolve("forbidden" as const),
   };
 }
 

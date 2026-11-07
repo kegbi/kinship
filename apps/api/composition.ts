@@ -923,14 +923,68 @@ export function createConfiguredApiApp(
   const objectStore = objectStorageOverride ??
     composeObjectStorage(resolveObjectStorageConfiguration(Deno.env));
   const connection = connectDatabase(databaseUrl);
+  const app = createApiApp(composeApiServices(connection.db, {
+    davEnabled,
+    davKeyset,
+    ...(davRemoteOverride ? { davRemote: davRemoteOverride } : {}),
+    ...(logger ? { logger } : {}),
+    mail,
+    mfaKeyset,
+    objectStore,
+    policy,
+    ...(responseEqualizerOverride
+      ? { responseEqualizer: responseEqualizerOverride }
+      : {}),
+    subjectKeyset,
+  }));
+  return { app, close: connection.destroy };
+}
+
+/**
+ * What `composeApiServices` takes beyond the database: everything the
+ * environment decided, already decoded.
+ */
+export interface ApiCompositionOptions {
+  readonly davEnabled: boolean;
+  readonly davKeyset: DavEncryptionKeyset;
+  readonly davRemote?: DavRemoteClient;
+  readonly logger?: Logger;
+  readonly mail: VerificationMail;
+  readonly mfaKeyset: MfaEncryptionKeyset;
+  readonly objectStore: ObjectStorage;
+  readonly policy: BrowserSecurityPolicy;
+  readonly responseEqualizer?: AuthenticationResponseEqualizer;
+  readonly subjectKeyset: AuthenticationSubjectKeyset;
+}
+
+/**
+ * Every module, composed over one database: the services `createApiApp`
+ * mounts. It is apart from `createConfiguredApiApp` so a suite can compose the
+ * real use cases over a database of its own choosing (AUD-K5's role table
+ * composes them over one that refuses every connection).
+ */
+export function composeApiServices(
+  database: Kysely<ApplicationDatabase>,
+  options: ApiCompositionOptions,
+): ApiServices {
+  const {
+    davEnabled,
+    davKeyset,
+    logger,
+    mail,
+    mfaKeyset,
+    objectStore,
+    policy,
+    subjectKeyset,
+  } = options;
   const shared: SharedComposition = {
     actors: workspaceActors(),
     audit: governanceAuditRecorder(),
     clock: { now: () => new Date() },
-    database: connection.db,
+    database,
     ids: { create: () => crypto.randomUUID() },
-    peopleTransaction: peopleTransactionRunner(connection.db),
-    transaction: workspaceTransactionRunner(connection.db),
+    peopleTransaction: peopleTransactionRunner(database),
+    transaction: workspaceTransactionRunner(database),
     workspaceEntry: activeWorkspaceResolver(),
   };
 
@@ -1075,7 +1129,7 @@ export function createConfiguredApiApp(
     mail,
     // Planning's hook: changing a timezone reschedules the reminders it owns.
     planningPublisher: planning.reminders,
-    responseEqualizer: responseEqualizerOverride ??
+    responseEqualizer: options.responseEqualizer ??
       createAuthenticationResponseEqualizer(
         DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
       ),
@@ -1104,7 +1158,7 @@ export function createConfiguredApiApp(
     ? composeDavSync(shared, {
       keyset: davKeyset,
       people: davPeople(people),
-      remote: davRemoteOverride,
+      remote: options.davRemote,
       tasks: davTasks(planning.tasks),
     })
     : undefined;
@@ -1119,7 +1173,7 @@ export function createConfiguredApiApp(
     source: composeCalendarFeed(shared),
   });
 
-  const app = createApiApp({
+  return {
     activityReport: composeActivityReport(shared),
     apiTokens: apiAccess.apiTokens,
     avatars: people.avatars,
@@ -1157,7 +1211,7 @@ export function createConfiguredApiApp(
     profile: composePersonProfile(shared),
     profileFacts: people.profileFacts,
     protectedSessions: workspaces.protectedSessions,
-    readiness: () => databaseReadiness(connection.db),
+    readiness: () => databaseReadiness(database),
     recentPeople: workspaces.recentPeople,
     register: workspaces.registration,
     relationships: relationships.relationships,
@@ -1177,8 +1231,7 @@ export function createConfiguredApiApp(
     todayTasks: today.tasks,
     verification: identity.verification,
     workspaceLifecycle: workspaces.workspaceLifecycle,
-  });
-  return { app, close: connection.destroy };
+  };
 }
 
 /**

@@ -163,11 +163,6 @@ export interface DavConfigurationValues {
   readonly username?: string;
 }
 
-/** Configuring a subscription is an administrative act. */
-export function privileged(actor: { readonly role: DavRole }): boolean {
-  return actor.role === "owner" || actor.role === "admin";
-}
-
 /** The canonical subscription, or nothing when it may not be stored. */
 export function validConfiguration(
   input: DavConfigurationInput,

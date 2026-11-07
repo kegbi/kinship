@@ -502,6 +502,10 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/app_test.ts",
         "apps/api/routes_test.ts",
+        // Default-deny for every protected route, and the authorization
+        // matrix executed against every route (AUD-K5).
+        "apps/api/default_deny_test.ts",
+        "apps/api/role_matrix_test.ts",
         // The pins on every module's refusal tables, which read all of the
         // route surfaces this app mounts, and the object-storage
         // configuration the files suite used to carry (GAP-024).
@@ -613,6 +617,8 @@ export const MODULES: readonly TaskModule[] = [
           "personal-crm-schema/v12/personal_crm_schema_spec_v12.md",
           "personal-crm-schema/v12/personal_crm_schema_v12.sql",
           "packages/contracts",
+          // The role table reads the matrix it executes (AUD-K5).
+          "docs/architecture/authorization-matrix.yaml",
           ...OWNERSHIP_BOUNDARY_READS,
           ".tls/e2e",
         ],
@@ -718,6 +724,8 @@ export const MODULES: readonly TaskModule[] = [
         read: [
           ...API_CONFIGURATION_READS,
           "packages/contracts",
+          // The role table reads the matrix it executes (AUD-K5).
+          "docs/architecture/authorization-matrix.yaml",
           ...SCHEMA_READS,
           // The vCard and CSV parser fixtures (GAP-050).
           "packages/backend/modules/import-export/domain/formats/fixtures",
@@ -733,6 +741,10 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "apps/api/app_test.ts",
         "apps/api/routes_test.ts",
+        // Default-deny for every protected route, and the authorization
+        // matrix executed against every route (AUD-K5).
+        "apps/api/default_deny_test.ts",
+        "apps/api/role_matrix_test.ts",
         // The pins on every module's refusal tables, which read all of the
         // route surfaces this app mounts, and the object-storage
         // configuration the files suite used to carry (GAP-024).

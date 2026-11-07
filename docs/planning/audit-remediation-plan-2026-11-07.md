@@ -581,7 +581,7 @@ these:
   - Verify: `test:unit --module=api`; `test:integration --module=identity`; E2E
     `sign-in.AUTH-003` and `settings.AUTH-004`.
 
-- [ ] **AUD-K5 — Default-deny is proven for every route, and the authorization
+- [x] **AUD-K5 — Default-deny is proven for every route, and the authorization
       matrix is executable.** M. High. Depends: AUD-K1. Closes: SECA-10,
       SECT-08.
   - Scope:
@@ -604,6 +604,17 @@ these:
   - RED: the sweep must fail against a deliberately unguarded fixture route, and
     the role test must fail on a seeded mismatch.
   - Verify: `test:unit --module=api`; `check:architecture`.
+  - Delivered 2026-11-07: the default-deny sweep over all 142 protected routes
+    (401 to nobody; only the five handoff routes and sign-out allowlisted) and
+    the role test generated from `authorization-matrix.yaml` for owner, admin,
+    and member, each proven to fail on an unguarded fixture and a seeded
+    mismatch; api unit 469 passed (only the unrelated `baseline_test.ts`
+    permission gap and one flaky REL-034 run, green on rerun); workspaces,
+    api-access, and integrations unit tests; contracts, fmt, architecture, and
+    lint (only REL-096). No drift: seven routes now refuse the role before their
+    first read. Open authorization decision: the matrix grants
+    `people.vcard.export` to every role while `data.export` is owner and admin
+    only.
 
 - [ ] **AUD-K6 — Configuration fails closed.** S. Normal. Depends: AUD-K1.
       Closes: SECA-11, and the development-keyset part of SECT-10.

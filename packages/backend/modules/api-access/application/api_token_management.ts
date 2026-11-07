@@ -22,7 +22,6 @@ import {
   type ApiTokenRecord,
   type ApiTokenScope,
   parseToken,
-  privileged,
   renderToken,
   validateApiToken,
 } from "../domain/token_rules.ts";
@@ -35,9 +34,11 @@ import type {
 } from "../ports/context.ts";
 import type { ApiTokenSecrets } from "../ports/secrets.ts";
 import { authenticatePresented } from "./token_authentication.ts";
-import type {
-  ActorContext,
-  ActorRevalidation,
+import {
+  type ActorContext,
+  type ActorRevalidation,
+  // Tokens are an administrative facility; a member neither mints nor sees one.
+  privileged,
 } from "../../workspaces/public.ts";
 
 export interface ApiTokenDependencies {

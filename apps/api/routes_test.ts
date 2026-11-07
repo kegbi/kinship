@@ -15,6 +15,7 @@
  */
 
 import { type ApiServices, createApiApp } from "./composition.ts";
+import { everything, servicesWith } from "./route_probe.test-helper.ts";
 import { mountedRoutes } from "../../packages/http-kit/route.ts";
 import {
   API_ROUTES,
@@ -31,25 +32,6 @@ import {
   sessionActor,
   uuid,
 } from "../../packages/backend/testing/fixtures.ts";
-
-/**
- * Something every optional service can be.
- *
- * `createApiApp` mounts a surface when the services it needs are present, so a
- * value that answers to any property mounts all of them. Nothing here is
- * called: a factory captures what it is given and only reaches into it on a
- * request, which this module never makes.
- */
-function everything(): unknown {
-  // deno-lint-ignore no-explicit-any
-  const stub: any = new Proxy(function () {}, {
-    get: (_target, property) => (property === "then" ? undefined : stub),
-    apply: () => stub,
-    construct: () => stub,
-    has: () => true,
-  });
-  return stub;
-}
 
 Deno.test("interaction composition uses its configured token authority and fails closed without one", async () => {
   const actor = sessionActor();
@@ -148,22 +130,6 @@ Deno.test("[GAP-022] only the container probes stay out of the document", () => 
     "only the three probes may leave the published document",
   );
 });
-
-/**
- * The stand-in services, with the named ones replaced.
- *
- * Everything not named answers to any property, so every surface mounts; the
- * named services are the ones a request in the test actually reaches.
- */
-function servicesWith(overrides: Record<string, unknown>): ApiServices {
-  const base = everything() as ApiServices;
-  return new Proxy(base, {
-    get: (target, property) =>
-      property in overrides
-        ? Reflect.get(overrides, property)
-        : Reflect.get(target, property),
-  });
-}
 
 /** A coordinator that counts, and that fails the way the uuid cast does. */
 function countingSessions(calls: unknown[]) {

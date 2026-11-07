@@ -8,6 +8,11 @@
  * lifecycles. A role comparison written out is a role comparison that can be
  * written out slightly differently.
  *
+ * `privileged` is the only copy in the backend (AUD-K5): api-access and
+ * integrations, which each used to keep their own, ask it through this
+ * module's `public.ts`, and `apps/api/role_matrix_test.ts` holds every route
+ * to the roles `docs/architecture/authorization-matrix.yaml` grants.
+ *
  * There is no `member` predicate on purpose. A member is not a permission; it
  * is the absence of the other two, and code that asks "is this only a member?"
  * is usually about to get an edge case wrong.

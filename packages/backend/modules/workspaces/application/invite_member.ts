@@ -304,6 +304,9 @@ export function createWorkspaceInvitationCoordinator(
       return "created";
     },
     async list(actor) {
+      // Decided before the first read (AUD-K5); the repository's membership
+      // check stays as the race-safe backstop.
+      if (!privileged(actor)) return { status: "forbidden" };
       return await dependencies.transaction.run(async (transaction) => {
         const listed = await dependencies.repository.list({
           actor,

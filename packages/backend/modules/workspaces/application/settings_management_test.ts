@@ -304,3 +304,37 @@ Deno.test("WORKSPACE-001 composes and orders member display summaries in one tra
     "membership and identity reads share the application transaction",
   );
 });
+
+Deno.test("[AUD-K5] a member is refused the administrative settings before any read", async () => {
+  const { effects, service } = fixture();
+  const member = { ...actor, role: "member" as const };
+  const answers = [
+    await service.getWorkspace(member),
+    await service.updateWorkspace(member, {
+      defaultLocale: "en",
+      defaultReminderTime: "09:00",
+      // Not a zone the calendar resolves: the role is decided first.
+      defaultTimezone: "Mars/Olympus",
+      name: "Trusted circle",
+    }),
+    await service.listMembers(member),
+    await service.updateMember(member, "member-b", {
+      role: "admin",
+      status: "active",
+    }),
+  ];
+  assert(
+    answers.every((answer) => answer === "forbidden"),
+    `every administrative call is refused: ${JSON.stringify(answers)}`,
+  );
+  assert(
+    effects.length === 0,
+    `a refusal opens no transaction: ${effects.join(",")}`,
+  );
+
+  const admin = { ...actor, role: "admin" as const };
+  assert(
+    typeof await service.getWorkspace(admin) === "object",
+    "an admin still reads the workspace settings",
+  );
+});

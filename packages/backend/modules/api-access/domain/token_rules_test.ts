@@ -5,7 +5,6 @@ import {
   CALENDAR_FEED_SCOPE,
   parseCalendarFeedToken,
   parseToken,
-  privileged,
   renderCalendarFeedToken,
   renderToken,
   usable,
@@ -22,12 +21,6 @@ const RECORD: ApiTokenRecord = {
   name: "CLI",
   scopes: ["people:read"],
 };
-
-Deno.test("[GAP-018] a token is an administrative facility", () => {
-  assertEquals(privileged({ role: "owner" }), true);
-  assertEquals(privileged({ role: "admin" }), true);
-  assertEquals(privileged({ role: "member" }), false);
-});
 
 Deno.test("[GAP-018] the scope vocabulary is closed", () => {
   assertEquals(API_TOKEN_SCOPES, [

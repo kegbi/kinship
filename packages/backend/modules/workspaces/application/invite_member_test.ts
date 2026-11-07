@@ -488,3 +488,13 @@ Deno.test("AUTH-002 inspection hashes bearer material and list remains actor sco
     "reads use hashed token and actor-scoped repository",
   );
 });
+
+Deno.test("[AUD-K5] a member is refused the member list before any read", async () => {
+  const { deps, effects } = dependencies();
+  const listed = await createWorkspaceInvitationCoordinator(deps).list({
+    ...owner,
+    role: "member",
+  });
+  assert(listed.status === "forbidden", "member role is denied");
+  assert(effects.length === 0, `the refusal reads nothing: ${effects}`);
+});
