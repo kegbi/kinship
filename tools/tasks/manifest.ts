@@ -1924,6 +1924,7 @@ export const MODULES: readonly TaskModule[] = [
     },
     integration: [
       "tests/integration/workspace_lifecycle_impact_postgres_test.ts",
+      "tests/integration/workspace_lifecycle_erasure_postgres_test.ts",
     ],
     coverage: {
       directory: "workspace-lifecycle",

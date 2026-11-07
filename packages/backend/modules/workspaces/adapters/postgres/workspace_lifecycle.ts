@@ -1,4 +1,4 @@
-import { type Kysely, sql } from "kysely";
+import { type Kysely, type RawBuilder, sql, type Transaction } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
@@ -35,6 +35,36 @@ async function impactToken(
   ).join("");
 }
 
+/**
+ * The users whose only active membership is this workspace (SECT-05).
+ * Membership is re-resolved on every request, so a member who still belongs
+ * to another active workspace loses this one without losing the sessions they
+ * use there; only someone left with no workspace at all is signed out.
+ */
+function soleMembers(workspaceId: string): RawBuilder<unknown> {
+  return sql`select member.user_id from crm.workspace_members member
+    where member.workspace_id = ${workspaceId}::uuid
+      and member.status = 'active' and member.left_at is null
+      and not exists (
+        select 1 from crm.workspace_members other
+        join crm.workspaces elsewhere on elsewhere.id = other.workspace_id
+        where other.user_id = member.user_id
+          and other.workspace_id <> member.workspace_id
+          and other.status = 'active' and other.left_at is null
+          and elsewhere.status = 'active' and elsewhere.deleted_at is null
+      )`;
+}
+
+async function revokeSoleMemberSessions(
+  database: Kysely<ApplicationDatabase> | Transaction<ApplicationDatabase>,
+  workspaceId: string,
+  occurredAt: Date,
+): Promise<void> {
+  await sql`update crm.user_sessions set revoked_at = ${occurredAt}
+    where revoked_at is null and user_id in (${soleMembers(workspaceId)})`
+    .execute(database);
+}
+
 export class PostgresWorkspaceLifecycleRepository
   implements WorkspaceLifecycleRepository {
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
@@ -54,9 +84,7 @@ export class PostgresWorkspaceLifecycleRepository
           where m.workspace_id = w.id and m.status <> 'left'
             and m.left_at is null) as members,
         (select count(*)::int from crm.user_sessions s
-          where s.user_id in (select member.user_id from crm.workspace_members member
-            where member.workspace_id = w.id and member.status <> 'left'
-              and member.left_at is null)
+          where s.user_id in (${soleMembers(command.workspaceId)})
             and s.revoked_at is null
             and s.expires_at > now()) as "activeSessionCount",
         md5(jsonb_build_object(
@@ -146,10 +174,11 @@ export class PostgresWorkspaceLifecycleRepository
     await sql`create temporary table workspace_reset_modules on commit drop as
       select * from crm.workspace_profile_modules where workspace_id = ${command.workspaceId}::uuid`
       .execute(database);
-    await sql`update crm.user_sessions set revoked_at = coalesce(revoked_at, ${command.occurredAt})
-      where user_id in (select user_id from crm.workspace_members
-        where workspace_id = ${command.workspaceId}::uuid)`
-      .execute(database);
+    await revokeSoleMemberSessions(
+      database,
+      command.workspaceId,
+      command.occurredAt,
+    );
     await sql`insert into crm.workspace_lifecycle_records (
         id, workspace_id, actor_user_id, action, outcome, impact_counts, object_keys,
         cleanup_status, occurred_at, created_at
@@ -183,10 +212,11 @@ export class PostgresWorkspaceLifecycleRepository
     command: Parameters<WorkspaceLifecycleRepository["deleteWorkspace"]>[0],
   ): Promise<void> {
     const database = databaseFromSession(command.transaction);
-    await sql`update crm.user_sessions set revoked_at = coalesce(revoked_at, ${command.occurredAt})
-      where user_id in (select user_id from crm.workspace_members
-        where workspace_id = ${command.workspaceId}::uuid)`
-      .execute(database);
+    await revokeSoleMemberSessions(
+      database,
+      command.workspaceId,
+      command.occurredAt,
+    );
     await sql`insert into crm.workspace_lifecycle_records (
         id, workspace_id, actor_user_id, action, outcome, impact_counts, object_keys,
         cleanup_status, occurred_at, created_at

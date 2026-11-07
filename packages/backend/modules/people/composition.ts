@@ -37,6 +37,7 @@ import { PostgresProfileFactOrganizations } from "./adapters/postgres/profile_fa
 import { PostgresProfileFactRepository } from "./adapters/postgres/profile_fact_repository.ts";
 import { PostgresRelationshipPersonBoundary } from "./adapters/postgres/relationship_person_boundary.ts";
 import { PostgresTagPersonalization } from "./adapters/postgres/tag_personalization.ts";
+import { PostgresPeopleWorkspaceLifecycleErasure } from "./adapters/postgres/workspace_lifecycle_erasure.ts";
 import { PostgresPeopleWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import {
   createBulkPeopleActions,
@@ -177,6 +178,7 @@ export function composePeople(shared: SharedComposition, ports: PeoplePorts) {
       transaction: shared.peopleTransaction,
     }),
     lifecycle,
+    lifecycleErasure: PostgresPeopleWorkspaceLifecycleErasure,
     lifecycleImpact: PostgresPeopleWorkspaceLifecycleImpact,
     merge: createPersonMerge({
       actors: shared.actors,

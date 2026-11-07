@@ -399,7 +399,7 @@ these:
 
 ### Lane M — Membership and workspace lifecycle
 
-- [ ] **AUD-M1 — Workspace delete and reset work with real data and touch only
+- [x] **AUD-M1 — Workspace delete and reset work with real data and touch only
       that workspace.** M. Urgent. Depends: none. Closes: SECT-03, SECT-05.
   - Problem:
     - SECT-03: reset and delete rely on the cascade from `workspaces`. The
@@ -425,6 +425,11 @@ these:
   - Verify: `test:integration --module=workspace-lifecycle` and
     `--module=lifecycle`; E2E `workspace-lifecycle.WORKSPACE-002` and
     `personal-lifecycle.AUTH-005` (Chromium).
+  - Delivered 2026-11-07: workspace-lifecycle integration 6 passed (seeded
+    delete and reset answer 200; a two-workspace member keeps the other
+    session), lifecycle 8 passed, E2E WORKSPACE-002 and AUTH-005 3 passed on
+    Chromium; changed scope line 99.7%, branch 95.0%, function 93.8%; fmt,
+    architecture, and lint (only the known REL-096) gates.
 
 - [ ] **AUD-M2 — Invitations stay bound to an inviter who still holds authority,
       and can be revoked.** M. High. Depends: AUD-A1. Closes: SECT-04.

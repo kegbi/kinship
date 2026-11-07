@@ -33,6 +33,7 @@ import type {
 } from "../ports/session.ts";
 import type {
   WorkspaceLifecycleCascadeParticipants,
+  WorkspaceLifecycleDependentErasures,
   WorkspaceLifecycleIdentity,
   WorkspaceLifecycleObjectStorage,
   WorkspaceLifecycleRepository,
@@ -46,6 +47,7 @@ export interface WorkspaceLifecycleDependencies {
   readonly audit: WorkspaceLifecycleSecurityAudit;
   readonly authenticationAudit: AuthenticationAudit;
   readonly clock: Clock;
+  readonly erasure: WorkspaceLifecycleDependentErasures;
   readonly identity: WorkspaceLifecycleIdentity;
   readonly ids: IdGenerator;
   readonly impact: WorkspaceLifecycleCascadeParticipants;
@@ -82,6 +84,21 @@ export async function inspectImpact(
     await dependencies.impact.operations.inspectBeforeCascade(command),
   ];
   return await mergeImpact(snapshot, contributions);
+}
+
+/**
+ * Removes, in dependency order, the rows the workspace cascade would reach
+ * through an `ON DELETE RESTRICT` key: relationships first, then people with
+ * everything a person owns. Only the vocabularies are left for the cascade.
+ */
+export async function eraseDependents(
+  dependencies: Pick<WorkspaceLifecycleDependencies, "erasure">,
+  transaction: WorkspaceLifecycleTransaction,
+  workspaceId: string,
+): Promise<void> {
+  const command = { transaction, workspaceId };
+  await dependencies.erasure.relationships.eraseBeforeCascade(command);
+  await dependencies.erasure.people.eraseBeforeCascade(command);
 }
 
 export function createWorkspaceCleanupReconciler(

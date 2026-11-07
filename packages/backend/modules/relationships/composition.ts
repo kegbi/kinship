@@ -7,6 +7,7 @@ import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresRelationshipPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresRelationshipPersonalizationReferences } from "./adapters/postgres/personalization_references.ts";
 import { PostgresRelationshipRepository } from "./adapters/postgres/relationship_repository.ts";
+import { PostgresRelationshipWorkspaceLifecycleErasure } from "./adapters/postgres/workspace_lifecycle_erasure.ts";
 import { PostgresRelationshipWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import {
   createRelationshipManagement,
@@ -40,6 +41,7 @@ export function composeRelationships(
       ports.importPeople,
       ports.importVocabulary,
     ),
+    lifecycleErasure: PostgresRelationshipWorkspaceLifecycleErasure,
     lifecycleImpact: PostgresRelationshipWorkspaceLifecycleImpact,
     personalizationReferences: PostgresRelationshipPersonalizationReferences,
     relationships: createRelationshipManagement({

@@ -12,6 +12,10 @@
  * member typed and the token is what the page held, so a mistyped phrase is
  * reported as a mistyped phrase even when the workspace has also moved on.
  *
+ * Once every check passes, the modules whose rows a `RESTRICT` key would keep
+ * from cascading erase them first, in dependency order, and only then is the
+ * workspace row reset or deleted (SECT-03).
+ *
  * Everything up to the commit is one transaction; the stored objects are not,
  * because they are not in the database. The rows commit first and the objects
  * are removed afterwards, so a failure in between leaves a cleanup to retry
@@ -35,6 +39,7 @@ import type {
 } from "../ports/context.ts";
 import {
   createWorkspaceCleanupReconciler,
+  eraseDependents,
   inspectImpact,
   type WorkspaceLifecycleDependencies,
 } from "./workspace_lifecycle_context.ts";
@@ -192,6 +197,7 @@ export function createWorkspaceLifecycle(
           recordId,
           transaction,
         };
+        await eraseDependents(dependencies, transaction, actor.workspaceId);
         if (action === "reset") {
           await dependencies.repository.resetWorkspace(command);
           await dependencies.activityAudit.recordReset(command);

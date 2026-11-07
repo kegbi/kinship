@@ -1027,6 +1027,12 @@ export function createConfiguredApiApp(
   const governance = composeGovernance(shared);
   const workspaces = composeWorkspaces(shared, {
     attemptBudget: apiAccess.attemptBudget,
+    // Rows a RESTRICT key keeps from the workspace cascade, erased first by
+    // the modules that own them.
+    erasure: {
+      people: people.lifecycleErasure,
+      relationships: relationships.lifecycleErasure,
+    },
     identity: {
       accountSettings: identity.accountSettings,
       authentication: identity.authentication,

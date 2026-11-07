@@ -5,7 +5,9 @@
  * implements so this one can say what would be lost without reading anybody
  * else's tables. It is read-only and takes only the workspace, because the
  * cascade itself happens in the database: a module says what it holds, and the
- * foreign keys do the rest.
+ * foreign keys do the rest. The one exception is
+ * `WorkspaceLifecycleDependentErasure`: rows behind an `ON DELETE RESTRICT`
+ * key are erased by their owning module first, so the cascade never meets one.
  *
  * The cleanup pair exists because stored objects are outside the transaction.
  * A reset or a delete commits the rows and records the keys it still has to
@@ -50,6 +52,31 @@ export interface WorkspaceLifecycleCascadeParticipants {
   readonly people: WorkspaceLifecycleCascadeParticipant;
   readonly planning: WorkspaceLifecycleCascadeParticipant;
   readonly relationships: WorkspaceLifecycleCascadeParticipant;
+}
+
+/**
+ * A module whose rows the workspace cascade cannot remove by itself. A row
+ * that reaches both a person and a workspace vocabulary through an
+ * `ON DELETE RESTRICT` key aborts the cascade when PostgreSQL reaches the
+ * vocabulary first (SECT-03), so its owning module erases those rows in the
+ * lifecycle transaction before the workspace row is deleted.
+ */
+export interface WorkspaceLifecycleDependentErasure {
+  eraseBeforeCascade(command: {
+    readonly transaction: WorkspaceLifecycleTransaction;
+    readonly workspaceId: string;
+  }): Promise<void>;
+}
+
+/**
+ * The erasures in the order they run: relationships reference
+ * `relationship_types`, and people own the contact methods that reference
+ * `contact_method_types`, so both go before the vocabularies the workspace
+ * cascade removes.
+ */
+export interface WorkspaceLifecycleDependentErasures {
+  readonly people: WorkspaceLifecycleDependentErasure;
+  readonly relationships: WorkspaceLifecycleDependentErasure;
 }
 
 export interface WorkspaceLifecycleSecurityAudit {

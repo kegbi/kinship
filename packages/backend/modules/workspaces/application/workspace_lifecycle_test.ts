@@ -121,6 +121,20 @@ function setup(options: {
       recordFailure: () => Promise.resolve("audit-event"),
     },
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
+    erasure: {
+      people: {
+        eraseBeforeCascade: ({ workspaceId }) => {
+          effects.push(`erase:people:${workspaceId}`);
+          return Promise.resolve();
+        },
+      },
+      relationships: {
+        eraseBeforeCascade: ({ workspaceId }) => {
+          effects.push(`erase:relationships:${workspaceId}`);
+          return Promise.resolve();
+        },
+      },
+    },
     identity: {
       verifyPassword: ({ password }) => Promise.resolve(password === "valid"),
     },
@@ -460,4 +474,52 @@ Deno.test("[WORKSPACE-002] delete is owner-only, versioned, durable, and object 
     effects.some((effect) => effect.startsWith("complete:")),
     "successful retry must durably complete cleanup",
   );
+});
+
+Deno.test("[WORKSPACE-002] dependents are erased in order before the workspace row", async () => {
+  for (const action of ["delete", "reset"] as const) {
+    const { effects, lifecycle } = setup({ failObject: false });
+    const preview = await lifecycle.preview(actor);
+    assert(preview.status === "ready", "preview missing");
+    const refused = action === "delete"
+      ? await lifecycle.deleteWorkspace(actor, {
+        confirmation: "DELETE Family",
+        impactToken: "stale-impact",
+        password: "valid",
+      })
+      : await lifecycle.resetWorkspace(actor, {
+        confirmation: "RESET Family",
+        impactToken: "stale-impact",
+        password: "valid",
+      });
+    assert(refused.status === "stale-impact", `stale ${action} allowed`);
+    assert(
+      !effects.some((effect) => effect.startsWith("erase:")),
+      `a refused ${action} erased rows`,
+    );
+
+    const done = action === "delete"
+      ? await lifecycle.deleteWorkspace(actor, {
+        confirmation: "DELETE Family",
+        impactToken: preview.impactToken,
+        password: "valid",
+      })
+      : await lifecycle.resetWorkspace(actor, {
+        confirmation: "RESET Family",
+        impactToken: preview.impactToken,
+        password: "valid",
+      });
+    assert(done.status !== "stale-impact", `${action} was refused`);
+    const relationships = effects.indexOf(
+      `erase:relationships:${actor.workspaceId}`,
+    );
+    const people = effects.indexOf(`erase:people:${actor.workspaceId}`);
+    const workspace = effects.findIndex((effect) =>
+      effect === "reset" || effect.startsWith("delete:")
+    );
+    assert(
+      relationships >= 0 && relationships < people && people < workspace,
+      `${action} erased out of order: ${effects.join(", ")}`,
+    );
+  }
 });

@@ -75,6 +75,7 @@ import {
   type VerificationMail,
   type VerificationTokens,
   type WorkspaceLifecycleCascadeParticipants,
+  type WorkspaceLifecycleDependentErasures,
   workspaceResetActivityAuditFrom,
 } from "./public.ts";
 import type {
@@ -208,6 +209,8 @@ export interface WorkspaceIdentityPorts {
 
 export interface WorkspacePorts {
   readonly attemptBudget: AuthenticationAttemptBudget;
+  /** The modules that erase their rows before the workspace cascade. */
+  readonly erasure: WorkspaceLifecycleDependentErasures;
   readonly identity: WorkspaceIdentityPorts;
   /** Every module's share of a workspace cascade, assembled by the root. */
   readonly impact: WorkspaceLifecycleCascadeParticipants;
@@ -319,6 +322,7 @@ export function composeWorkspaces(
       audit: new PostgresWorkspaceLifecycleSecurityAudit(),
       authenticationAudit,
       clock: shared.clock,
+      erasure: ports.erasure,
       identity: ports.identity.personalLifecycle,
       ids: shared.ids,
       impact: ports.impact,

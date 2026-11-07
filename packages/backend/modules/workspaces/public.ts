@@ -122,6 +122,8 @@ export type {
 export type {
   WorkspaceLifecycleCascadeParticipant,
   WorkspaceLifecycleCascadeParticipants,
+  WorkspaceLifecycleDependentErasure,
+  WorkspaceLifecycleDependentErasures,
   WorkspaceLifecycleRepository,
   WorkspaceLifecycleSecurityAudit,
   WorkspaceResetActivityAudit,
