@@ -389,3 +389,18 @@ Deno.test("AUD-A1 a password change is announced to the address", async () => {
   );
   assert(!body.includes("token="), "the notice carries no credential");
 });
+
+Deno.test("[AUD-K6] SMTP without APP_ENV is production and refuses plain capture delivery", () => {
+  for (const unset of [undefined, ""]) {
+    const options = resolveSmtpVerificationMailOptions({
+      get: (name) => name === "APP_ENV" ? unset : undefined,
+    });
+    assert(
+      options.environment === "production",
+      `APP_ENV=${JSON.stringify(unset)} resolves as production`,
+    );
+    assertThrows(() => {
+      new SmtpVerificationMail(options);
+    }, "an unset APP_ENV never permits plain SMTP");
+  }
+});

@@ -1,3 +1,4 @@
+import { resolveApplicationEnvironment } from "../../../../platform/application_environment.ts";
 import type { VerificationMail } from "../../public.ts";
 
 const encoder = new TextEncoder();
@@ -24,7 +25,7 @@ interface EnvironmentReader {
 export function resolveSmtpVerificationMailOptions(
   environment: EnvironmentReader,
 ): SmtpVerificationMailOptions {
-  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
+  const applicationEnvironment = resolveApplicationEnvironment(environment);
   const security = environment.get("SMTP_SECURITY") ?? "plain";
   if (security !== "plain" && security !== "tls") {
     throw new Error("SMTP_SECURITY must be plain or tls.");

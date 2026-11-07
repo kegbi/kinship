@@ -166,10 +166,26 @@ Deno.test("[GAP-037] the default worker runtime composes the configured worker",
     if (signal === "SIGTERM") handler();
   };
   await runWorker({
-    environment: environment({ DATABASE_URL }),
+    environment: environment({ APP_ENV: "test", DATABASE_URL }),
     signals,
   });
   assert(signals.count === 0, "the default runtime left a signal listener");
+});
+
+Deno.test("[AUD-K6] the default worker runtime without APP_ENV composes as production", async () => {
+  const signals = new RecordedSignals();
+  let failure: unknown;
+  try {
+    await runWorker({ environment: environment({ DATABASE_URL }), signals });
+  } catch (caught) {
+    failure = caught;
+  }
+  assert(
+    failure instanceof Error &&
+      failure.message.includes("required in production"),
+    "an unset APP_ENV never composes the worker with local defaults",
+  );
+  assert(signals.count === 0, "a refused worker left a signal listener");
 });
 
 Deno.test("[GAP-037] the deployed runtime reads Deno's environment and signals", () => {

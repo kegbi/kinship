@@ -236,6 +236,14 @@ import {
 } from "./authentication_response.ts";
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
+import { resolveApplicationEnvironment } from "../../packages/backend/platform/application_environment.ts";
+import {
+  type ConfiguredKeyset,
+  configuredKeyset,
+  localKeyset,
+  localSubjectKeyset,
+  REPOSITORY_KEY_FILLS,
+} from "./configured_keysets.ts";
 import { resolveObjectStorageConfiguration } from "./file_storage_config.ts";
 import { PersonalizationRouter } from "./personalization_router.ts";
 import {
@@ -890,31 +898,6 @@ function davTasks(
   };
 }
 
-/**
- * A keyset the deployment must supply in production and may default locally.
- * The local value is a fixed pattern so a developer's data survives a restart.
- */
-function configuredKeyset<Keyset>(
-  environment: string,
-  name: string,
-  override: Keyset | undefined,
-  local: () => Keyset,
-  required = true,
-): Keyset {
-  if (override) return override;
-  if (required && environment === "production") {
-    throw new Error(`${name} is required in production.`);
-  }
-  return local();
-}
-
-function localKeyset(fill: number) {
-  return () => ({
-    activeKeyId: "local-development",
-    keys: new Map([["local-development", new Uint8Array(32).fill(fill)]]),
-  });
-}
-
 export function createConfiguredApiApp(
   databaseUrl: string,
   mailAdapter?: VerificationMail,
@@ -931,28 +914,25 @@ export function createConfiguredApiApp(
   readonly app: Hono<RequestIdEnv>;
   readonly close: () => Promise<void>;
 } {
-  const environment = Deno.env.get("APP_ENV") ?? "development";
+  const environment = resolveApplicationEnvironment(Deno.env);
   const davKeyset = configuredKeyset<DavEncryptionKeyset>(
     environment,
     "INTEGRATIONS_ENCRYPTION_KEYSET",
     davKeysetOverride,
-    localKeyset(0x69),
+    localKeyset(REPOSITORY_KEY_FILLS.dav),
     davEnabled,
   );
   const mfaKeyset = configuredKeyset<MfaEncryptionKeyset>(
     environment,
     "AUTH_MFA_ENCRYPTION_KEYSET",
     mfaKeysetOverride,
-    localKeyset(0x4b),
+    localKeyset(REPOSITORY_KEY_FILLS.mfa),
   );
   const subjectKeyset = configuredKeyset<AuthenticationSubjectKeyset>(
     environment,
     "AUTH_THROTTLE_SUBJECT_KEYSET",
     subjectKeysetOverride,
-    () => ({
-      activeVersion: 1,
-      keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
-    }),
+    localSubjectKeyset,
   );
   const mail = mailAdapter ?? composeVerificationMail(Deno.env);
   const objectStore = objectStorageOverride ??
@@ -1290,24 +1270,40 @@ export function createApiRuntime(
   const databaseUrl = resolveDatabaseUrl(environment);
   if (!databaseUrl) return { app: createApiApp() };
 
-  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
-  const mfaKeysetValue = environment.get("AUTH_MFA_ENCRYPTION_KEYSET");
-  const subjectKeysetValue = environment.get("AUTH_THROTTLE_SUBJECT_KEYSET");
-  const davKeysetValue = environment.get("INTEGRATIONS_ENCRYPTION_KEYSET");
+  const applicationEnvironment = resolveApplicationEnvironment(environment);
   const davEnabled = environment.get("INTEGRATIONS_DAV_ENABLED") !== "false";
-  if (applicationEnvironment === "production" && !mfaKeysetValue) {
-    throw new Error("AUTH_MFA_ENCRYPTION_KEYSET is required in production.");
-  }
-  if (applicationEnvironment === "production" && !subjectKeysetValue) {
-    throw new Error("AUTH_THROTTLE_SUBJECT_KEYSET is required in production.");
-  }
-  if (
-    applicationEnvironment === "production" && davEnabled && !davKeysetValue
-  ) {
-    throw new Error(
-      "INTEGRATIONS_ENCRYPTION_KEYSET is required in production.",
+  // Decoded and judged here, so an unsafe keyset fails before composition.
+  const keyset = <Keyset extends ConfiguredKeyset>(
+    name: string,
+    decode: (value: string) => Keyset,
+    local: () => Keyset,
+    required = true,
+  ): Keyset => {
+    const value = environment.get(name);
+    return configuredKeyset(
+      applicationEnvironment,
+      name,
+      value ? decode(value) : undefined,
+      local,
+      required,
     );
-  }
+  };
+  const mfaKeyset = keyset(
+    "AUTH_MFA_ENCRYPTION_KEYSET",
+    decodeMfaEncryptionKeyset,
+    localKeyset(REPOSITORY_KEY_FILLS.mfa),
+  );
+  const subjectKeyset = keyset(
+    "AUTH_THROTTLE_SUBJECT_KEYSET",
+    decodeAuthenticationSubjectKeyset,
+    localSubjectKeyset,
+  );
+  const davKeyset = keyset(
+    "INTEGRATIONS_ENCRYPTION_KEYSET",
+    decodeDavEncryptionKeyset,
+    localKeyset(REPOSITORY_KEY_FILLS.dav),
+    davEnabled,
+  );
   const policy = browserSecurityPolicy(
     applicationEnvironment,
     environment.get("PUBLIC_WEB_ORIGIN"),
@@ -1316,10 +1312,8 @@ export function createApiRuntime(
     databaseUrl,
     composeVerificationMail(environment),
     policy,
-    mfaKeysetValue ? decodeMfaEncryptionKeyset(mfaKeysetValue) : undefined,
-    subjectKeysetValue
-      ? decodeAuthenticationSubjectKeyset(subjectKeysetValue)
-      : undefined,
+    mfaKeyset,
+    subjectKeyset,
     createAuthenticationResponseEqualizer(
       resolveAuthenticationResponseFloor(
         environment.get("AUTH_MINIMUM_RESPONSE_MS"),
@@ -1327,7 +1321,7 @@ export function createApiRuntime(
     ),
     undefined,
     undefined,
-    davKeysetValue ? decodeDavEncryptionKeyset(davKeysetValue) : undefined,
+    davKeyset,
     davEnabled,
     jsonLogger(),
   );

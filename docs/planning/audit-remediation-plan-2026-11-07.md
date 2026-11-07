@@ -651,7 +651,7 @@ these:
     `people.vcard.export` to every role while `data.export` is owner and admin
     only.
 
-- [ ] **AUD-K6 — Configuration fails closed.** S. Normal. Depends: AUD-K1.
+- [x] **AUD-K6 — Configuration fails closed.** S. Normal. Depends: AUD-K1.
       Closes: SECA-11, and the development-keyset part of SECT-10.
   - Scope:
     - An unset `APP_ENV` means production, or the process refuses to start.
@@ -663,6 +663,16 @@ these:
     fails; today it falls back to development defaults.
   - Verify: `test:unit --module=api` (`security_config_test.ts`) and
     `--module=preflight`; `deno task dev` still starts.
+  - Delivered 2026-11-07: one `APP_ENV` resolver for the API, worker, object
+    storage, and mail (unset or empty is production, an unknown value refuses to
+    start); production and the private-production preflight refuse every keyset
+    the repository publishes, matched as whole keys through one shared denylist;
+    the integration harness sets `APP_ENV=test`; api unit 484 (only the
+    `baseline_test.ts` permission gap), operations 25 (the preflight module),
+    planning, workspaces, and workspaces and gifts integration; `deno task dev`
+    started; changed configuration files 100% covered; fmt, architecture, and
+    lint (only REL-096). AUD-A3's device-cookie fallback key joins the denylist
+    when AUD-A3 lands.
 
 - [x] **AUD-K7 — Conditional requests and safe caching.** S–M. Normal. Depends:
       none. Closes: FEQ-08, BEQ-14, and SECA-13 item 1.

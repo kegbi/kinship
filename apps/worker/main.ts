@@ -41,9 +41,13 @@ export async function runWorker(runtime: WorkerRuntime): Promise<void> {
     | ReturnType<NonNullable<WorkerRuntime["configure"]>>
     | undefined;
   try {
-    configured = (runtime.configure ?? createConfiguredReminderWorker)(
-      databaseUrl,
-    );
+    configured = runtime.configure
+      ? runtime.configure(databaseUrl)
+      : createConfiguredReminderWorker(
+        databaseUrl,
+        undefined,
+        runtime.environment,
+      );
     await runReminderWorkerLoop(configured.worker, {
       intervalMilliseconds: runtime.intervalMilliseconds ?? 5_000,
       owner: runtime.environment.get("WORKER_INSTANCE_ID") ??

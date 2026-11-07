@@ -1,3 +1,4 @@
+import { resolveApplicationEnvironment } from "../../packages/backend/platform/application_environment.ts";
 import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
 
 export interface ObjectStorageConfiguration {
@@ -13,8 +14,8 @@ export interface ObjectStorageConfiguration {
 export function resolveObjectStorageConfiguration(
   environment: EnvironmentReader,
 ): ObjectStorageConfiguration {
-  const applicationEnvironment = environment.get("APP_ENV") ?? "development";
-  const production = applicationEnvironment === "production";
+  const production =
+    resolveApplicationEnvironment(environment) === "production";
   const accessKey = environment.get("OBJECT_STORAGE_ACCESS_KEY");
   const secretKey = environment.get("OBJECT_STORAGE_SECRET_KEY");
   const host = environment.get("OBJECT_STORAGE_HOST");

@@ -9,6 +9,8 @@
   startup with a redacted actionable error.
 - Defaults are limited to harmless local-development behavior. Security,
   persistence, origins, and credentials never gain production defaults.
+- Configuration fails closed. Development and test behavior is opted into by
+  name; it is never what a process gets for a missing value.
 - Secret values are never committed, logged, included in problem details,
   returned by diagnostics, or placed in client bundles.
 
@@ -41,6 +43,28 @@ The exact variable catalog is finalized with the first consuming code. Variable
 names should be stable, uppercase, and capability-specific. Public browser
 variables use an explicit public prefix; no secret is ever renamed into that
 namespace.
+
+## Application Environment
+
+`APP_ENV` is `development`, `test`, or `production`. Every process reads it
+through `packages/backend/platform/application_environment.ts`, and an unset or
+empty `APP_ENV` is `production`; any other value refuses to start. A deployment
+that loses the variable therefore gets production's refusals (missing keysets,
+plain SMTP, a non-HTTPS origin, local object-storage credentials) instead of
+development's public defaults.
+
+Every launcher states the environment it wants: `compose.dev.yaml` and
+`deno task dev` set `development`, `compose.test.yaml` and the PostgreSQL
+integration harness (`tools/postgres_gate.ts`) set `test`, and `compose.yaml`
+and `compose.dokploy.yaml` default to `production`. A test that composes a
+process states `APP_ENV` in the environment it passes.
+
+Development falls back to fixed local keysets, and `compose.test.yaml` publishes
+fixed test keysets. Both are repository constants, so production refuses any
+keyset holding one of them, as the active key or a retained one. The denylist in
+`apps/api/configured_keysets.ts` is shared by API startup (`configuredKeyset`)
+and `deno task ops preflight`; a new secret joins it by listing its published
+fill there.
 
 ## Runtime Schema
 

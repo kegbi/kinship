@@ -466,3 +466,41 @@ Deno.test("[REL-008] worker receives exact production runtime authority", async 
     );
   }
 });
+
+Deno.test("[AUD-K6] every launcher states APP_ENV, and only production is a default", async () => {
+  const read = (path: string) =>
+    Deno.readTextFile(new URL(`../${path}`, import.meta.url));
+  for (
+    const [overlay, environment] of [
+      ["compose.dev.yaml", "development"],
+      ["compose.test.yaml", "test"],
+    ] as const
+  ) {
+    const text = await read(overlay);
+    for (const service of ["api", "worker"]) {
+      assert(
+        text.includes(
+          `\n  ${service}:\n    environment:\n      APP_ENV: ${environment}\n`,
+        ),
+        `${overlay} must state APP_ENV=${environment} for ${service}`,
+      );
+    }
+  }
+  const base = await read("compose.yaml");
+  assert(
+    base.split("APP_ENV: ${APP_ENV:-production}").length - 1 === 2,
+    "compose.yaml defaults api and worker to production",
+  );
+  assert(
+    (await read("tools/dev.ts")).includes('APP_ENV: "development"'),
+    "deno task dev states development",
+  );
+  for (
+    const path of ["compose.yaml", "compose.dev.yaml", "compose.test.yaml"]
+  ) {
+    assert(
+      !/APP_ENV:-(?!production\})/.test(await read(path)),
+      `${path} defaults APP_ENV to nothing but production`,
+    );
+  }
+});

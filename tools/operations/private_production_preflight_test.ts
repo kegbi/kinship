@@ -7,7 +7,8 @@ import {
 } from "./private_production_preflight.ts";
 
 const PROFILE_PATH = "docs/planning/private-production-profile.json";
-const KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+// A private value: the repository's published keys are refused (AUD-K6).
+const KEY = "q7Lm2Xc9Vb4Nz8Kp1Rt6Wy3Hd5Gf0Js2Ae7Uo9Ii4Pk";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -205,5 +206,53 @@ Deno.test("OPS-001D preflight canonicalizes local provider host forms", async ()
       object.issues.some((issue) => issue.code === "object-storage-tls"),
       `${host} cannot escape the external object-storage boundary`,
     );
+  }
+});
+
+Deno.test("[AUD-K6] preflight blocks key material published in the repository", async () => {
+  const profile = await loadProfile();
+  // `compose.test.yaml`'s keysets and the API's development fallbacks.
+  const published = [
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "S0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0s",
+    "UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI",
+    "aWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWk",
+  ];
+  for (const key of published) {
+    for (
+      const [name, keyset, code] of [
+        [
+          "AUTH_MFA_ENCRYPTION_KEYSET",
+          { activeKeyId: "current", keys: { current: key } },
+          "authentication-keysets",
+        ],
+        [
+          "AUTH_THROTTLE_SUBJECT_KEYSET",
+          { activeVersion: 2, keys: { v1: key, v2: KEY } },
+          "authentication-keysets",
+        ],
+        [
+          "INTEGRATIONS_ENCRYPTION_KEYSET",
+          { activeKeyId: "current", keys: { current: KEY, retired: key } },
+          "dav-configuration",
+        ],
+      ] as const
+    ) {
+      const environment = validEnvironment();
+      environment.set(name, JSON.stringify(keyset));
+      const result = runPrivateProductionPreflight(
+        profile,
+        { get: (requested) => environment.get(requested) },
+      );
+      assert(result.state === "blocked", `${name} with ${key} is blocked`);
+      assert(
+        result.issues.length === 1 && result.issues[0]?.code === code,
+        `${name} with a published key reports ${code}`,
+      );
+      assert(
+        !JSON.stringify(result).includes(key),
+        "the refused key is not echoed",
+      );
+    }
   }
 });

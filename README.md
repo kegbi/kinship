@@ -30,15 +30,17 @@ API. Configure local listeners with `POSTGRES_PORT`, `API_PORT`, `WEB_PORT`,
 JSON containing `activeKeyId` and a `keys` object of key IDs to 32 random bytes
 encoded as unpadded base64url. New MFA material uses the active key while
 retained keys decrypt older material. Local development uses an explicitly
-non-production fallback when the variable is blank. Production also requires
-`AUTH_THROTTLE_SUBJECT_KEYSET` for keyed, pseudonymous authentication subjects
-used by durable pre-admission throttling. Its bounded JSON contains an integer
-`activeVersion` and a `keys` object with one to eight canonical version labels
-(`v1` or newer), each mapped to 32 random bytes encoded as unpadded base64url;
-retain older versions while rotating and never commit or log the keyset.
-`AUTH_MINIMUM_RESPONSE_MS` sets the sign-in and MFA response-duration floor. It
-defaults to `250` and accepts only integer milliseconds in the inclusive range
-`100` through `2000`. There is no supported root `PORT` or `API_ORIGIN` setting.
+non-production fallback when the variable is blank. An unset `APP_ENV` is
+production, and production refuses any keyset holding a key published in this
+repository. Production also requires `AUTH_THROTTLE_SUBJECT_KEYSET` for keyed,
+pseudonymous authentication subjects used by durable pre-admission throttling.
+Its bounded JSON contains an integer `activeVersion` and a `keys` object with
+one to eight canonical version labels (`v1` or newer), each mapped to 32 random
+bytes encoded as unpadded base64url; retain older versions while rotating and
+never commit or log the keyset. `AUTH_MINIMUM_RESPONSE_MS` sets the sign-in and
+MFA response-duration floor. It defaults to `250` and accepts only integer
+milliseconds in the inclusive range `100` through `2000`. There is no supported
+root `PORT` or `API_ORIGIN` setting.
 
 Optional local Git hooks live in `lefthook.yml`: install them once per clone
 with `pnpm exec lefthook install` to get the staged-file formatter and lint

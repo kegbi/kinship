@@ -1,4 +1,7 @@
-import { runPostgresGate } from "./postgres_gate.ts";
+import {
+  disposablePostgresEnvironment,
+  runPostgresGate,
+} from "./postgres_gate.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -66,4 +69,17 @@ Deno.test("PostgreSQL gate cleans up startup failures", async () => {
   }
   assert(failed, "startup failure propagates");
   assert(calls.join(",") === "down,absence", "failed startup still cleans");
+});
+
+Deno.test("[AUD-K6] the integration harness runs its suites as APP_ENV=test", () => {
+  const environment = disposablePostgresEnvironment("kinship-pg-1-2", "p");
+  assert(
+    environment.APP_ENV === "test",
+    "suites that compose the API or worker state APP_ENV explicitly",
+  );
+  assert(
+    environment.COMPOSE_PROJECT_NAME === "kinship-pg-1-2" &&
+      environment.POSTGRES_PASSWORD === "p",
+    "the project and its password stay run-scoped",
+  );
 });

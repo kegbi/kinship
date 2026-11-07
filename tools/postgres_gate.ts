@@ -111,6 +111,26 @@ async function assertProjectAbsent(
 }
 
 /**
+ * The environment one disposable project and its suites run under. The suites
+ * compose the API and worker, so they state `APP_ENV=test`: an unset `APP_ENV`
+ * is production (AUD-K6).
+ */
+export function disposablePostgresEnvironment(
+  project: string,
+  password: string,
+): Record<string, string> {
+  return {
+    API_TEST_PORT: "0",
+    APP_ENV: "test",
+    COMPOSE_PROJECT_NAME: project,
+    MAILPIT_TEST_PORT: "0",
+    POSTGRES_PASSWORD: password,
+    POSTGRES_TEST_PORT: "0",
+    PUBLIC_WEB_ORIGIN: "http://127.0.0.1:4321",
+  };
+}
+
+/**
  * Runs `suite` against a disposable, migrated PostgreSQL project and proves the
  * project leaves no container, volume, or network behind. The suite receives the
  * child environment — including the run-scoped `DATABASE_URL` — to forward to
@@ -121,14 +141,7 @@ export async function withDisposablePostgres(
 ): Promise<void> {
   const project = `kinship-pg-${Deno.pid}-${Date.now()}`;
   const password = `test-${crypto.randomUUID()}`;
-  const environment: Record<string, string> = {
-    API_TEST_PORT: "0",
-    COMPOSE_PROJECT_NAME: project,
-    MAILPIT_TEST_PORT: "0",
-    POSTGRES_PASSWORD: password,
-    POSTGRES_TEST_PORT: "0",
-    PUBLIC_WEB_ORIGIN: "http://127.0.0.1:4321",
-  };
+  const environment = disposablePostgresEnvironment(project, password);
   await runPostgresGate({
     up: () =>
       execute("docker", [

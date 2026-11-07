@@ -99,6 +99,8 @@ Deno.test({
   async fn() {
     const configured = createConfiguredReminderWorker(
       "postgresql://unused:unused@127.0.0.1:1/unused",
+      undefined,
+      { get: (name) => name === "APP_ENV" ? "test" : undefined },
     );
     assert(
       typeof configured.worker.tick === "function",
@@ -114,6 +116,23 @@ Deno.test({
     }
     assert(unavailable, "worker unexpectedly reached an unavailable database");
   },
+});
+
+Deno.test("[AUD-K6] worker started without APP_ENV takes production's refusals", () => {
+  let error: unknown;
+  try {
+    createConfiguredReminderWorker(
+      "postgresql://unused:unused@127.0.0.1:1/unused",
+      undefined,
+      { get: () => undefined },
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  assert(
+    error instanceof Error && error.message.includes("required in production"),
+    "an unset APP_ENV never composes the local object-store defaults",
+  );
 });
 
 Deno.test("APP-006B worker removes abort listeners after every timer win", async () => {

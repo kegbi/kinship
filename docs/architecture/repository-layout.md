@@ -198,11 +198,11 @@ repository, and its coverage set carries a 95% threshold.
 ### Platform
 
 `packages/backend/platform/` holds infrastructure shared by adapters and
-composition roots: the shared composition context, the PostgreSQL session,
-transaction, row, error, timestamp, workspace-scope, display-name,
-reference-counter, and lifecycle-impact helpers under `postgres/`, and the JSON
-stdout logger with its redaction under `telemetry/`. Domain, application, and
-ports never import it.
+composition roots: the shared composition context, the fail-closed `APP_ENV`
+resolver, the PostgreSQL session, transaction, row, error, timestamp,
+workspace-scope, display-name, reference-counter, and lifecycle-impact helpers
+under `postgres/`, and the JSON stdout logger with its redaction under
+`telemetry/`. Domain, application, and ports never import it.
 
 ### Domain
 

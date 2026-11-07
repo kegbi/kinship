@@ -11,6 +11,7 @@
  */
 
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import type { EnvironmentReader } from "../../packages/backend/platform/postgres/config.ts";
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
@@ -55,17 +56,22 @@ export function createApplicationWorker(
   };
 }
 
+/**
+ * The worker over its configuration. `environment` is the process's own unless
+ * a caller states one; an unset `APP_ENV` in it is production (AUD-K6).
+ */
 export function createConfiguredReminderWorker(
   databaseUrl: string,
   logger: Logger = jsonLogger(),
+  environment: EnvironmentReader = Deno.env,
 ): {
   readonly close: () => Promise<void>;
   readonly worker: TickWorker;
 } {
   const storage = composeObjectStorage(
-    resolveObjectStorageConfiguration(Deno.env),
+    resolveObjectStorageConfiguration(environment),
   );
-  const email = composeReminderMail(Deno.env);
+  const email = composeReminderMail(environment);
   const connection = connectDatabase(databaseUrl);
   const shared: SharedComposition = {
     actors: workspaceActors(),

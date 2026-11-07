@@ -68,3 +68,21 @@ Deno.test("[FILES-001] production object storage fails closed without credential
     values.delete(key);
   }
 });
+
+Deno.test("[AUD-K6] object storage without APP_ENV takes no local defaults", () => {
+  for (const unset of [undefined, ""]) {
+    let failure: unknown;
+    try {
+      resolveObjectStorageConfiguration({
+        get: (name) => name === "APP_ENV" ? unset : undefined,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    assert(
+      failure instanceof Error &&
+        failure.message.includes("required in production"),
+      `APP_ENV=${JSON.stringify(unset)} resolves as production`,
+    );
+  }
+});

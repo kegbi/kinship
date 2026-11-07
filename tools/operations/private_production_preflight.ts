@@ -1,3 +1,4 @@
+import { assertNoRepositoryKeys } from "../../apps/api/configured_keysets.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { resolveObjectStorageConfiguration } from "../../apps/api/file_storage_config.ts";
 import { resolveAuthenticationResponseFloor } from "../../apps/api/authentication_response.ts";
@@ -226,11 +227,17 @@ export function runPrivateProductionPreflight(
     {
       name: "authentication-keys",
       validate: () => {
-        decodeMfaEncryptionKeyset(
-          required(environment, "AUTH_MFA_ENCRYPTION_KEYSET"),
+        assertNoRepositoryKeys(
+          "AUTH_MFA_ENCRYPTION_KEYSET",
+          decodeMfaEncryptionKeyset(
+            required(environment, "AUTH_MFA_ENCRYPTION_KEYSET"),
+          ),
         );
-        decodeAuthenticationSubjectKeyset(
-          required(environment, "AUTH_THROTTLE_SUBJECT_KEYSET"),
+        assertNoRepositoryKeys(
+          "AUTH_THROTTLE_SUBJECT_KEYSET",
+          decodeAuthenticationSubjectKeyset(
+            required(environment, "AUTH_THROTTLE_SUBJECT_KEYSET"),
+          ),
         );
         resolveAuthenticationResponseFloor(
           environment.get("AUTH_MINIMUM_RESPONSE_MS"),
@@ -239,7 +246,7 @@ export function runPrivateProductionPreflight(
       issue: {
         code: "authentication-keysets",
         action:
-          "Provide valid versioned MFA and throttle keysets; retain prior decrypt/verification keys during rotation.",
+          "Provide valid, privately generated versioned MFA and throttle keysets (never a repository key); retain prior decrypt/verification keys during rotation.",
       },
     },
     {
@@ -250,10 +257,13 @@ export function runPrivateProductionPreflight(
         }
         const keyset = environment.get("INTEGRATIONS_ENCRYPTION_KEYSET");
         if (davEnabled === "true") {
-          decodeDavEncryptionKeyset(required(
-            environment,
+          assertNoRepositoryKeys(
             "INTEGRATIONS_ENCRYPTION_KEYSET",
-          ));
+            decodeDavEncryptionKeyset(required(
+              environment,
+              "INTEGRATIONS_ENCRYPTION_KEYSET",
+            )),
+          );
         } else if (keyset !== undefined && keyset !== "") {
           throw new Error("disabled provider retains active key");
         }
@@ -261,7 +271,7 @@ export function runPrivateProductionPreflight(
       issue: {
         code: "dav-configuration",
         action:
-          "Set INTEGRATIONS_DAV_ENABLED explicitly; provide a valid encryption keyset only when DAV is enabled.",
+          "Set INTEGRATIONS_DAV_ENABLED explicitly; provide a valid, privately generated encryption keyset only when DAV is enabled.",
       },
     },
     {
