@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { databaseSql, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";
-import { waitForIsland } from "./support/islands.ts";
+import { activateGlobalSearch } from "./support/islands.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { signIn } from "./support/sign-in.ts";
 
@@ -85,7 +85,7 @@ test(
     `);
 
     await page.goto("/app");
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
     const field = page.getByRole("combobox", { name: "Find a person" });
     await expect(field).toHaveAttribute("maxlength", "200");
     await field.fill("lighthouse");
@@ -141,7 +141,7 @@ test(
       "Met at the lighthouse café",
     );
 
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
     await page.getByRole("combobox", { name: "Find a person" }).fill(
       "Archie",
     );

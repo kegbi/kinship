@@ -299,6 +299,46 @@ describe("INTERACTION-001 Quick capture", () => {
     await expectNoAxeViolations(dialog());
   });
 
+  it("FER-01 opens from the opener whose click loaded it, once it is ready", async () => {
+    shell();
+    stub({});
+    await mountSettled(() =>
+      Promise.resolve(mountQuickCapture(activityOpener()))
+    );
+    await waitFor(() => expect(isOpen()).toBe(true));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(kind().value).toBe("activity");
+    fireEvent.click(cancel());
+    expect(isOpen()).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(isOpen(), "the loading click opens it only once").toBe(false);
+  });
+
+  it("FER-01 still opens for the kind asked when its surface redrew the opener meanwhile", async () => {
+    shell();
+    stub({});
+    const opener = noteOpener();
+    const redrawn = opener.cloneNode(true) as HTMLButtonElement;
+    opener.replaceWith(redrawn);
+    await mountSettled(() => Promise.resolve(mountQuickCapture(opener)));
+    await waitFor(() => expect(isOpen()).toBe(true));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(kind().value).toBe("note");
+  });
+
+  it("FER-01 stays closed when the opener that loaded it is hidden by then", async () => {
+    shell();
+    stub({});
+    const opener = noteOpener();
+    opener.hidden = true;
+    await mountSettled(() => Promise.resolve(mountQuickCapture(opener)));
+    await waitFor(() =>
+      expect(headerOpener().dataset.interactionCaptureReady).toBe("true")
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(isOpen()).toBe(false);
+  });
+
   it("disables an opener another surface hides, and leaves unchanged openers untouched", async () => {
     shell();
     stub({});

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { waitForIsland } from "./support/islands.ts";
+import { activateGlobalSearch } from "./support/islands.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
@@ -125,7 +125,7 @@ test(
       values ('${adaId}'::uuid, '${foreignTagId}'::uuid);
     `);
 
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
     const globalSearch = page.getByRole("combobox", {
       name: "Find a person",
     });
@@ -138,7 +138,7 @@ test(
 
     await settlePersonWorkspace(page);
     await page.goto("/app/people");
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
     const peopleNavigation = page.getByRole("link", {
       exact: true,
       name: "People",
@@ -164,7 +164,7 @@ test(
     await expect(importCommand).toBeVisible();
     await commandInput.press("Enter");
     await expect(page).toHaveURL(/\/app\/settings\/import$/);
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
 
     const logCommandInput = page.getByRole("combobox", {
       name: "Find a person",
@@ -182,7 +182,7 @@ test(
     await expect(quickCaptureDialog).toBeVisible();
     await quickCaptureDialog.getByRole("button", { name: "Cancel" }).click();
     await page.goto("/app/people");
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
 
     await page.getByRole("combobox", { name: "Find a person" }).fill(
       "Marie Dupont",

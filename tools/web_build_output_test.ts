@@ -6,8 +6,11 @@
  * measured. This suite reads the client output the build just wrote, follows
  * every script a page can load — static imports, dynamic imports, and the
  * preload lists Vite writes for them — and fails when a public page can reach
- * a chunk that carries React. Protected pages load React for one island in
- * their layout, the people palette; the person page adds its own islands —
+ * a chunk that carries React. A protected page's layout loads none until it
+ * is asked (FER-01): the header's three islands — the people palette, Quick
+ * capture, and the notification bell — are separate dynamic imports of the
+ * layout script, made only for a signed-in member. The person page adds its
+ * own islands —
  * the hero, the rail summary, the timeline, life events, gifts, files, the
  * audit summary, and the seven profile fact sections — each loaded on
  * demand — and the protected pages in `PAGE_ISLANDS` (Today, the journal,
@@ -48,7 +51,7 @@ const PUBLIC_PAGES = [
 const PERSON_SHELL = "internal/person-profile-shell/index.html";
 
 /** A protected page with no island of its own: the settings overview. */
-const PALETTE_ONLY_PAGE = "app/settings/index.html";
+const SHELL_ONLY_PAGE = "app/settings/index.html";
 
 /**
  * The protected pages whose own script mounts islands (GAP-031, GAP-033),
@@ -129,6 +132,32 @@ export function chunkReferences(source: string, from = ""): string[] {
   return [...found].sort();
 }
 
+/**
+ * The chunks a piece of HTML or JavaScript loads before it runs: the page's
+ * script tags and preload links, and a chunk's static `import … from` and
+ * bare `import` statements. Dynamic `import()` calls and the preload lists
+ * Vite writes for them load only when the code asks, so they are not here.
+ */
+export function eagerChunkReferences(source: string, from = ""): string[] {
+  const found = new Set<string>();
+  const base = from.slice(0, from.lastIndexOf("/") + 1);
+  for (
+    const [, name] of source.matchAll(
+      /<(?:script\b[^>]*\bsrc|link\b[^>]*\bhref)="\/?_astro\/([\w.-]+\.js)"/g,
+    )
+  ) {
+    found.add(`_astro/${name}`);
+  }
+  for (
+    const [, name] of source.matchAll(
+      /\b(?:import|from)\s*["']\.\/([\w.-]+\.js)["']/g,
+    )
+  ) {
+    found.add(`${base}${name}`);
+  }
+  return [...found].sort();
+}
+
 export function carriesReact(source: string): boolean {
   return REACT_MARKERS.some((marker) => source.includes(marker));
 }
@@ -142,6 +171,21 @@ async function reachable(entries: readonly string[]): Promise<Set<string>> {
     if (seen.has(chunk)) continue;
     seen.add(chunk);
     pending.push(...chunkReferences(await read(chunk), chunk));
+  }
+  return seen;
+}
+
+/** The chunks a page or chunk loads before it runs, transitively. */
+async function eagerlyReachable(
+  entries: readonly string[],
+): Promise<Set<string>> {
+  const seen = new Set<string>();
+  const pending = [...entries];
+  while (pending.length > 0) {
+    const chunk = pending.pop()!;
+    if (seen.has(chunk)) continue;
+    seen.add(chunk);
+    pending.push(...eagerChunkReferences(await read(chunk), chunk));
   }
   return seen;
 }
@@ -192,6 +236,37 @@ Deno.test("[GAP-026] the chunk reader finds every way a script names a chunk", (
   assert(!carriesReact("export const reaction = 1;"), "not React");
 });
 
+Deno.test("[FER-01] the eager chunk reader skips dynamic imports and their preload lists", () => {
+  const html =
+    '<script type="module" src="/_astro/page.A1.js"></script><link rel="modulepreload" href="/_astro/shared.B2.js">';
+  assert(
+    JSON.stringify(eagerChunkReferences(html, "index.html")) ===
+      JSON.stringify(["_astro/page.A1.js", "_astro/shared.B2.js"]),
+    "page scripts and preloads load eagerly",
+  );
+  const chunk =
+    'import{a}from"./react.C3.js";import"./side.D4.js";const m=()=>import(`./lazy.E5.js`);m.f||(m.f=["_astro/island.F6.js"]);';
+  assert(
+    JSON.stringify(eagerChunkReferences(chunk, "_astro/page.A1.js")) ===
+      JSON.stringify(["_astro/react.C3.js", "_astro/side.D4.js"]),
+    "only static and bare imports load eagerly",
+  );
+});
+
+Deno.test("[FER-01] a protected page with no island of its own references no React chunk eagerly", async () => {
+  const eager = await eagerlyReachable(
+    eagerChunkReferences(await read(SHELL_ONLY_PAGE), SHELL_ONLY_PAGE),
+  );
+  const react: string[] = [];
+  for (const chunk of eager) {
+    if (carriesReact(await read(chunk))) react.push(chunk);
+  }
+  assert(
+    react.length === 0,
+    `${SHELL_ONLY_PAGE} loads React before anyone asks: ${react.sort()}`,
+  );
+});
+
 Deno.test("[GAP-026] public pages ship no React", async () => {
   for (const page of PUBLIC_PAGES) {
     const react = await reactChunksOf(page);
@@ -225,24 +300,35 @@ async function onDemandScript(page: string): Promise<string> {
   return scripts[0]!;
 }
 
-/** The layout script that mounts the people palette on every protected page. */
-async function paletteScript(): Promise<string> {
-  const entries = await islandEntries("global-people-search");
-  assert(entries.length === 1, `one palette island entry, not ${entries}`);
-  const entry = entries[0]!;
-  assert(
-    /ApplicationLayout\.astro_astro_type_script_/.test(entry),
-    `the palette mounts from the application layout, not ${entry}`,
-  );
-  return entry;
-}
-
 function eagerScripts(html: string): Set<string> {
   return new Set(
     [...html.matchAll(/<script\b[^>]*\bsrc="\/(_astro\/[\w.-]+\.js)"/g)].map((
       [, chunk],
     ) => chunk!),
   );
+}
+
+/** The header's islands (FER-01), each a dynamic import of the layout. */
+const SHELL_ISLANDS = [
+  "global-people-search",
+  "quick-capture",
+  "notification-bell",
+] as const;
+
+/** The one layout script every protected page loads. */
+async function layoutScript(): Promise<string> {
+  const scripts = [...eagerScripts(await read(SHELL_ONLY_PAGE))].filter((
+    chunk,
+  ) => /ApplicationLayout\.astro_astro_type_script_/.test(chunk));
+  assert(scripts.length === 1, `one layout script, not ${scripts}`);
+  return scripts[0]!;
+}
+
+/** The entry chunk of the header's island `name`. */
+async function shellIslandEntry(name: string): Promise<string> {
+  const entries = await islandEntries(name);
+  assert(entries.length === 1, `one ${name} island entry, not ${entries}`);
+  return entries[0]!;
 }
 
 async function logHydratedBytes(
@@ -276,11 +362,11 @@ async function pageScript(page: string): Promise<string> {
   return scripts[0]!;
 }
 
-Deno.test("[GAP-027] no page script but the palette's, the person shell's, and the island pages' can reach React", async () => {
+Deno.test("[GAP-027] no page script but the layout's, the person shell's, and the island pages' can reach React", async () => {
   // Pages rendered on demand (auth resets, invitations) have no HTML in the
-  // client output, but their scripts do: every page script is checked.
-  const palette = await paletteScript();
-  const allowed = new Set([palette]);
+  // client output, but their scripts do: every page script is checked. The
+  // layout's reaches React only through its islands' dynamic imports (FER-01).
+  const allowed = new Set([await layoutScript()]);
   for (const page of Object.keys(PAGE_ISLANDS)) {
     allowed.add(await pageScript(page));
   }
@@ -305,22 +391,49 @@ Deno.test("[GAP-027] no page script but the palette's, the person shell's, and t
   assert(scripts > 10, `the build wrote page scripts, found ${scripts}`);
 });
 
-Deno.test("[GAP-027] a protected page loads React only for the people palette", async () => {
-  const palette = await paletteScript();
-  const react = await reactChunksOf(PALETTE_ONLY_PAGE);
-  assert(react.length > 0, "the page can load the palette island");
-  assert(
-    eagerScripts(await read(PALETTE_ONLY_PAGE)).has(palette),
-    "the page mounts the palette from its layout",
-  );
-  const fromPalette = await reachable([palette]);
-  for (const chunk of react) {
+Deno.test("[FER-01] the signed-out shell reaches no React: the header's islands are three on-demand imports", async () => {
+  const layout = await layoutScript();
+  const eager = await eagerlyReachable([layout]);
+  for (const chunk of eager) {
     assert(
-      fromPalette.has(chunk),
-      `${chunk} carries React outside the palette`,
+      !carriesReact(await read(chunk)),
+      `the layout script loads React before a session is ready: ${chunk}`,
     );
   }
-  await logHydratedBytes("global-people-search", palette, react);
+  const fromLayout = await reachable([layout]);
+  const entries: string[] = [];
+  for (const name of SHELL_ISLANDS) {
+    const entry = await shellIslandEntry(name);
+    assert(fromLayout.has(entry), `the layout can load ${name}`);
+    assert(!eager.has(entry), `${name} loads only when it is asked for`);
+    entries.push(entry);
+  }
+  for (const entry of entries) {
+    const closure = await eagerlyReachable([entry]);
+    for (const other of entries) {
+      assert(
+        other === entry || !closure.has(other),
+        `${entry} loads ${other} with it`,
+      );
+    }
+  }
+});
+
+Deno.test("[GAP-027] [FER-01] a protected page with no island of its own can load React only for the header's islands", async () => {
+  const react = await reactChunksOf(SHELL_ONLY_PAGE);
+  assert(react.length > 0, "the page can load the header's islands");
+  const entries: string[] = [];
+  for (const name of SHELL_ISLANDS) entries.push(await shellIslandEntry(name));
+  const fromIslands = await reachable(entries);
+  for (const chunk of react) {
+    assert(
+      fromIslands.has(chunk),
+      `${chunk} carries React outside the header's islands`,
+    );
+  }
+  for (const [index, name] of SHELL_ISLANDS.entries()) {
+    await logHydratedBytes(name, entries[index]!, react);
+  }
 });
 
 /**
@@ -360,7 +473,7 @@ const PERSON_ISLANDS = [
 
 Deno.test("[GAP-028] the person shell loads each of its islands on demand", async () => {
   const react = await reactChunksOf(PERSON_SHELL);
-  const fromPalette = await reachable([await paletteScript()]);
+  const fromLayout = await reachable([await layoutScript()]);
   const html = await read(PERSON_SHELL);
   const fromShell = await reachable(chunkReferences(html, PERSON_SHELL));
   for (const name of PERSON_ISLANDS) {
@@ -369,20 +482,20 @@ Deno.test("[GAP-028] the person shell loads each of its islands on demand", asyn
     const entry = island[0]!;
     assert(fromShell.has(entry), `the person shell can load ${name}`);
     assert(!eagerScripts(html).has(entry), `${name} is not a page script`);
-    assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+    assert(!fromLayout.has(entry), `${name} does not load with the layout`);
     await logHydratedBytes(name, entry, react);
   }
 });
 
 Deno.test("[GAP-031] [GAP-033] each island page loads its islands from its own script", async () => {
-  const fromPalette = await reachable([await paletteScript()]);
+  const fromLayout = await reachable([await layoutScript()]);
   for (const [page, islands] of Object.entries(PAGE_ISLANDS)) {
     const react = await reactChunksOf(page);
     const script = await pageScript(page);
     const fromScript = await reachable([script]);
     for (const chunk of react) {
       assert(
-        fromPalette.has(chunk) || fromScript.has(chunk),
+        fromLayout.has(chunk) || fromScript.has(chunk),
         `${page} carries React through ${chunk} outside its islands`,
       );
     }
@@ -390,7 +503,7 @@ Deno.test("[GAP-031] [GAP-033] each island page loads its islands from its own s
       const [entry, ...others] = await islandEntries(name);
       assert(entry && others.length === 0, `one ${name} island entry`);
       assert(fromScript.has(entry), `${page}'s script loads ${name}`);
-      assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+      assert(!fromLayout.has(entry), `${name} does not load with the layout`);
       await logHydratedBytes(`${page} ${name}`, entry, react);
     }
   }
@@ -435,8 +548,7 @@ Deno.test("[GAP-033] no public page, prerendered or on demand, reaches React or 
 });
 
 Deno.test("[GAP-033] each on-demand island page loads its islands from its own script", async () => {
-  const palette = await paletteScript();
-  const fromPalette = await reachable([palette]);
+  const fromLayout = await reachable([await layoutScript()]);
   for (const [page, islands] of Object.entries(ON_DEMAND_ISLANDS)) {
     const script = await onDemandScript(page);
     const fromScript = await reachable([script]);
@@ -449,7 +561,7 @@ Deno.test("[GAP-033] each on-demand island page loads its islands from its own s
       const [entry, ...others] = await islandEntries(name);
       assert(entry && others.length === 0, `one ${name} island entry`);
       assert(fromScript.has(entry), `${page}'s script loads ${name}`);
-      assert(!fromPalette.has(entry), `${name} does not load with the palette`);
+      assert(!fromLayout.has(entry), `${name} does not load with the layout`);
       await logHydratedBytes(`${page} ${name}`, entry, react);
     }
   }

@@ -79,6 +79,7 @@ import {
   type SearchPerson,
   UNAVAILABLE_ANSWER,
 } from "./search.ts";
+import { searchShortcut } from "./shortcuts.ts";
 
 export const SEARCH_DEBOUNCE_MS = 200;
 /** The results each group of a search answers. */
@@ -113,6 +114,11 @@ type Opener = HTMLElement | "field" | undefined;
 export interface GlobalPeopleSearchProps {
   /** Whether the header field had the focus before the island mounted. */
   readonly initialFocus: boolean;
+  /**
+   * Who pressed Ctrl+K before the island mounted (FER-01): the palette opens
+   * at once and hands the focus back to them, or to no one for `null`.
+   */
+  readonly initialOpener?: HTMLElement | null | undefined;
   /** What was typed into the header field before the island mounted. */
   readonly initialQuery: string;
   readonly navigate: (path: string) => void;
@@ -169,15 +175,6 @@ async function workspaceAnswer(
   );
   if (result.status !== "ready") return UNAVAILABLE_ANSWER;
   return searchAnswer(result.data!, commands, nameOrder, query);
-}
-
-function isEditable(element: Element | null): boolean {
-  if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement
-  ) return true;
-  const editable = element?.closest<HTMLElement>("[contenteditable]");
-  return Boolean(editable && editable.contentEditable !== "false");
 }
 
 /**
@@ -318,7 +315,8 @@ function PaletteOption(
 
 export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
   const { navigate } = props;
-  const opensAtOnce = props.initialFocus && props.initialQuery !== "";
+  const opensAtOnce = props.initialOpener !== undefined ||
+    (props.initialFocus && props.initialQuery !== "");
   const [open, setOpen] = useState(opensAtOnce);
   const [query, setQuery] = useState(props.initialQuery);
   const [contextState, setContextState] = useState<ContextState>({
@@ -327,7 +325,13 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
   const fieldRef = useRef<HTMLInputElement>(null);
   const paletteFieldRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const opener = useRef<Opener>(opensAtOnce ? "field" : undefined);
+  const opener = useRef<Opener>(
+    props.initialOpener !== undefined
+      ? props.initialOpener ?? undefined
+      : opensAtOnce
+      ? "field"
+      : undefined,
+  );
   const handingOff = useRef(false);
   const stopHandoff = useRef<() => void>(() => undefined);
   const unavailable = contextState.status === "unavailable";
@@ -398,24 +402,19 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
   }, [open]);
 
   useDocumentEvent<KeyboardEvent>("keydown", (event) => {
-    if (
-      (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k"
-    ) {
-      event.preventDefault();
-      const active = document.activeElement;
-      openPalette(
-        active instanceof HTMLElement && active !== document.body
-          ? active
-          : undefined,
-      );
+    const shortcut = searchShortcut(event);
+    if (!shortcut) return;
+    event.preventDefault();
+    if (shortcut === "focus-field") {
+      fieldRef.current?.focus();
       return;
     }
-    if (
-      event.key !== "/" || event.altKey || event.ctrlKey || event.metaKey ||
-      isEditable(document.activeElement)
-    ) return;
-    event.preventDefault();
-    fieldRef.current?.focus();
+    const active = document.activeElement;
+    openPalette(
+      active instanceof HTMLElement && active !== document.body
+        ? active
+        : undefined,
+    );
   });
 
   const context = contextState.status === "ready"

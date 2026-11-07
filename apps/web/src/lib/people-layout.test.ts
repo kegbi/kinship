@@ -25,6 +25,10 @@ const applicationLayout = readFileSync(
   resolve("apps/web/src/layouts/ApplicationLayout.astro"),
   "utf8",
 );
+const shellIslands = readFileSync(
+  resolve("apps/web/src/features/shell/shell-islands/shell-islands.ts"),
+  "utf8",
+);
 const profilePage = readFileSync(
   resolve("apps/web/src/pages/internal/person-profile-shell.astro"),
   "utf8",
@@ -110,10 +114,14 @@ describe("people form layout regressions", () => {
     expect(applicationLayout.match(/aria-label="Find a person"/g))
       .toHaveLength(2);
     // The header draws the finder statically; the palette island takes it
-    // over and names its dialog the same way (GAP-027).
+    // over on first intent (FER-01) and names its dialog the same way
+    // (GAP-027).
     expect(applicationLayout).toContain("data-global-people-search");
     expect(applicationLayout).toContain(
-      'import { mountGlobalPeopleSearch } from "../islands/global-people-search/mount.tsx";',
+      'import { startApplicationShell } from "../features/shell/shell-islands/shell-islands.ts";',
+    );
+    expect(shellIslands).toContain(
+      'import("../../../islands/global-people-search/mount.tsx")',
     );
     expect(applicationLayout).not.toContain(
       '<dialog id="global-people-search-dialog"',

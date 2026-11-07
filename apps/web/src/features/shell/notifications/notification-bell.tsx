@@ -1,11 +1,15 @@
 /**
  * The notification bell in the application header (GAP-053, `TODAY-002`).
  *
- * One small island in the header, the only owner of the bell. It reads the
- * member's notifications through one latest-request slot: when the page
- * opens (every navigation), when the panel opens, and once a minute while
- * the page is visible, so only the latest answer lands and no websocket is
- * needed. The badge and the button's accessible name carry the unread count.
+ * One small island in the header. Until the member first opens the panel,
+ * `notification-count.ts` keeps the static bell's count without React
+ * (FER-01); that first click loads this island, which takes the bell over
+ * with the page the count last read and opens the panel once the session is
+ * known. From then on it is the only owner of the bell: it reads the
+ * member's notifications through one latest-request slot when it mounts,
+ * when the panel opens, and once a minute while the page is visible, so only
+ * the latest answer lands and no websocket is needed. The badge and the
+ * button's accessible name carry the unread count.
  *
  * The panel is a Base UI popover: it opens from the bell, closes on Escape
  * or a click outside, and hands focus back to the bell. "Mark all read"
@@ -19,6 +23,7 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import {
   listNotifications,
+  type NotificationsPage,
   saveMemberUiState,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -38,14 +43,15 @@ import {
   badgeText,
   bellLabel,
   initialNotifications,
+  NOTIFICATION_REFRESH_MS,
   notificationsReducer,
+  type NotificationsState,
   notificationText,
 } from "./notifications.ts";
 
-export const NOTIFICATION_BELL_ISLAND = "notification-bell";
+export { NOTIFICATION_REFRESH_MS };
 
-/** How often the badge is refreshed while the page is visible. */
-export const NOTIFICATION_REFRESH_MS = 60_000;
+export const NOTIFICATION_BELL_ISLAND = "notification-bell";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -58,16 +64,29 @@ function formatted(instant: string): string {
 }
 
 export interface NotificationBellProps {
+  /** The page the static bell's count last read, shown until a new read. */
+  readonly initialPage?: NotificationsPage | undefined;
+  /** Opens the panel once the session is known: the click that loaded it. */
+  readonly openOnReady?: boolean;
   /** The refresh interval; tests shorten it. */
   readonly refreshMs?: number;
+}
+
+function startingState(page: NotificationsPage | undefined) {
+  return page
+    ? notificationsReducer(initialNotifications, { page, type: "read-loaded" })
+    : initialNotifications;
 }
 
 export function NotificationBell(props: NotificationBellProps) {
   const [state, dispatch] = useReducer(
     notificationsReducer,
-    initialNotifications,
+    props.initialPage,
+    startingState,
   );
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const opensOnReady = useRef(props.openOnReady === true);
   // The workspace the session resolved to; every read and save names it.
   const workspaceId = useRef<string | undefined>(undefined);
   const read = useLatestRequest();
@@ -124,6 +143,18 @@ export function NotificationBell(props: NotificationBellProps) {
     if (next) void refresh();
   };
 
+  // The click that loaded the island opens the panel from the bell, which
+  // takes the focus first so closing the panel hands it back there.
+  const openFromLoad = useEffectEvent(
+    (session: NotificationsState["session"]) => {
+      if (session !== "ready" || !opensOnReady.current) return;
+      opensOnReady.current = false;
+      trigger.current?.focus();
+      setOpen(true);
+    },
+  );
+  useEffect(() => openFromLoad(state.session), [state.session]);
+
   const markAllRead = async () => {
     // The button is enabled only over a page with unread items, once the
     // session is known and while nothing is saving.
@@ -158,6 +189,7 @@ export function NotificationBell(props: NotificationBellProps) {
         className="notification-bell-button"
         disabled={state.session !== "ready"}
         id="notification-bell-button"
+        ref={trigger}
       >
         <Bell aria-hidden="true" className="notification-bell-icon" />
         <span className="desktop-action-label">Notifications</span>

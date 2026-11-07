@@ -11,3 +11,15 @@ export async function waitForIsland(page: Page, name: string): Promise<void> {
     state: "attached",
   });
 }
+
+/**
+ * Mounts the header's people palette the way a member's first intent does,
+ * by focusing its static search field, and waits for it: the palette loads
+ * only on intent (FER-01). The field is drawn once the shell is visible.
+ */
+export async function activateGlobalSearch(page: Page): Promise<void> {
+  const field = page.locator("#global-people-search-input");
+  await field.waitFor({ state: "visible" });
+  await field.focus();
+  await waitForIsland(page, "global-people-search");
+}

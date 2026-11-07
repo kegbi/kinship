@@ -142,10 +142,12 @@ const accessAction = buttonVariants({
                 <button id="member-sign-out" class="direct-sign-out" type="button">Sign out</button>
               </div>
             </div>
-            {/* The notification bell (features/shell/notifications/, GAP-053) mounts here, last in the
-              header's tab order so the shell's order before it is unchanged; its
-              button stays disabled until the island has read the member's notifications. */}
-            <div class="notification-bell" data-notification-bell><button class="notification-bell-button" type="button" aria-label="Notifications" disabled><span class="desktop-action-label">Notifications</span></button></div>
+            {/* The notification bell (features/shell/notifications/, GAP-053), last in the
+              header's tab order so the shell's order before it is unchanged. Its
+              button stays disabled until the session is ready; then
+              notification-count.ts keeps its badge and name, and its first click
+              loads the panel's island over it (FER-01). */}
+            <div class="notification-bell" data-notification-bell><button class="notification-bell-button" type="button" aria-label="Notifications" disabled><svg class="notification-bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></svg><span class="desktop-action-label">Notifications</span><span class="notification-bell-badge" aria-hidden="true" hidden></span></button></div>
           </div>
         </div>
       </header>
@@ -160,23 +162,15 @@ const accessAction = buttonVariants({
 </html>
 
 <script>
-  import { mountApplicationShell } from "../features/shell/application-shell/application-shell.ts";
+  // The people palette (GAP-027), Quick capture (GAP-031), and the
+  // notification bell (GAP-053) are React islands that load only for a
+  // signed-in member, each on first intent (FER-01): this script carries no
+  // React, and every Quick capture opener stays disabled until the shell has
+  // a ready session.
+  import { startApplicationShell } from "../features/shell/shell-islands/shell-islands.ts";
   import { mountThemeToggle } from "../features/shell/theme-toggle/theme-toggle.ts";
   import { mountThemeSync } from "../lib/theme.ts";
-  void mountApplicationShell();
+  void startApplicationShell();
   void mountThemeSync();
   void mountThemeToggle();
-</script>
-
-<script>
-  // The people palette (GAP-027), Quick capture (GAP-031), and the
-  // notification bell (GAP-053) are React islands. Their own script lets the shell's static modules start without
-  // waiting for React to load; every Quick capture opener stays disabled
-  // until the island has wired it.
-  import { mountGlobalPeopleSearch } from "../islands/global-people-search/mount.tsx";
-  import { mountQuickCapture } from "../features/interactions/mount.tsx";
-  import { mountNotificationBell } from "../features/shell/notifications/notification-bell.tsx";
-  mountGlobalPeopleSearch();
-  mountQuickCapture();
-  mountNotificationBell();
 </script>

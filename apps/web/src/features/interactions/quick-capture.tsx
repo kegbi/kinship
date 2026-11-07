@@ -6,11 +6,13 @@
  * person hero's and its notes and activities cards', the activity report's,
  * and the reconnect buttons Today adds as its list renders. Those openers
  * belong to the surfaces that draw them, which decide whether one shows
- * (`hidden`); this island decides whether one works. It keeps every opener on
- * the page disabled, with `data-interaction-capture-ready="false"`, until the
- * session and the member's name order have loaded and its handlers are wired
- * (REL-039), and while a save is in flight; it watches the page for openers
- * added or hidden later, and handles their clicks and keys by delegation.
+ * (`hidden`); this island decides whether one works. The shell loads it on
+ * the first click on an opener (FER-01) and it opens from that opener once it
+ * is ready. It keeps every opener on the page disabled, with
+ * `data-interaction-capture-ready="false"`, until the session and the
+ * member's name order have loaded and its handlers are wired (REL-039), and
+ * while a save is in flight; it watches the page for openers added or hidden
+ * later, and handles their clicks and keys by delegation.
  *
  * Opening loads the options once — the first page of people, activity types,
  * and emotions, and which kinds the workspace turned on — and later opens
@@ -83,6 +85,8 @@ import {
 } from "./shared.ts";
 
 export interface QuickCaptureProps {
+  /** The opener whose click loaded the island; it opens once it is ready. */
+  readonly initialOpener?: HTMLButtonElement | undefined;
   /** The person the page is about, chosen in every fresh draft. */
   readonly preferredId?: string | undefined;
 }
@@ -336,6 +340,18 @@ export function QuickCapture(props: QuickCaptureProps) {
       document.removeEventListener("keydown", key);
     };
   }, []);
+
+  // The click that loaded the island opens it, once, when it is wired,
+  // unless its surface has hidden the opener since. A surface that redrew the
+  // opener meanwhile does not cancel the click: the dialog still opens for
+  // the kind and person that opener asked for.
+  const loadedBy = useRef(props.initialOpener);
+  useEffect(() => {
+    const opener = loadedBy.current;
+    if (!wired || !opener) return;
+    loadedBy.current = undefined;
+    if (!opener.hidden) onOpener(opener);
+  }, [wired]);
 
   // A workspace switch waits while a draft or a save would be lost.
   useEffect(() => {

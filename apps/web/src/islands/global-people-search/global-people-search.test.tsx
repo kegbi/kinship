@@ -258,6 +258,34 @@ describe("GAP-027 people palette island", () => {
   it("does nothing without the header", () => {
     expect(mountGlobalPeopleSearch()()).toBeUndefined();
   });
+
+  it("FER-01 keeps the focus on the Search button whose focus mounted it", async () => {
+    markup();
+    stubPeople([]);
+    const staticButton = screen.getByRole("button", { name: "Find a person" });
+    staticButton.focus();
+    await mount();
+    const button = screen.getByRole("button", { name: "Find a person" });
+    expect(button).not.toBe(staticButton);
+    expect(document.activeElement).toBe(button);
+    expect(palette()).toBeNull();
+  });
+
+  it("FER-01 navigates the document itself when the shell mounts it", async () => {
+    markup();
+    stubPeople([]);
+    const assign = vi.spyOn(globalThis.location, "assign")
+      .mockImplementation(() => undefined);
+    await mountSettled(() => Promise.resolve(mountGlobalPeopleSearch()));
+    await search("Marie Dupont");
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: 'Add "Marie Dupont" as a new person',
+      }),
+    );
+    expect(String(assign.mock.calls[0]?.[0])).toMatch(/^\/app\/people\/new\?/);
+    assign.mockRestore();
+  });
 });
 
 describe("UXD-004 global people search", () => {
@@ -519,6 +547,36 @@ describe("UXD-004 global people search", () => {
     expect(palette()).not.toBeNull();
     expect(document.activeElement).toBe(field());
   });
+
+  it.each([
+    ["the element that pressed Ctrl+K", true],
+    ["no one, when the page itself had the focus", false],
+  ])(
+    "FER-01 opens at once for a Ctrl+K pressed before it mounted, and returns the focus to %s",
+    async (_label, fromElement) => {
+      markup();
+      stubPeople([], [{ archived: false, id: adaId, name: "Ada Lovelace" }]);
+      const opener = element("#shortcut-opener");
+      opener.focus();
+      await mountSettled(() =>
+        Promise.resolve(
+          mountGlobalPeopleSearch(vi.fn(), fromElement ? opener : null),
+        )
+      );
+      expect(palette()).not.toBeNull();
+      await waitFor(() =>
+        expect(screen.getAllByRole("option")).toHaveLength(1)
+      );
+      expect(document.activeElement).toBe(field());
+      key(document.activeElement!, { key: "Escape" });
+      await waitFor(() => expect(palette()).toBeNull());
+      if (fromElement) {
+        await waitFor(() => expect(document.activeElement).toBe(opener));
+      } else {
+        expect(document.activeElement).not.toBe(opener);
+      }
+    },
+  );
 
   it("returns the focus and an empty field to the header after typing there", async () => {
     markup();

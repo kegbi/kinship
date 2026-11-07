@@ -823,7 +823,7 @@ these:
   - Verify: `test:unit --module=api` (`packages/contracts/client_test.ts`) and
     `--module=web`; `contracts:check`.
 
-- [ ] **AUD-F2 — Shell islands load only for a signed-in member, on intent or at
+- [x] **AUD-F2 — Shell islands load only for a signed-in member, on intent or at
       idle.** M. High. Depends: none. Closes: FER-01, FEQ-09 (the shell part).
   - Scope (items 1–4 of the 05 report's FER-01):
     - Gate the three islands in `ApplicationLayout.astro` on the ready session
@@ -841,6 +841,16 @@ these:
   - Verify: `test:unit --module=web` and `--module=web-build`;
     `deno task build`; E2E `shell.TODAY-001`, `search.SEARCH-001`,
     `notifications.TODAY-002`, and `activities.INTERACTION-001` (Chromium).
+  - Delivered 2026-11-07: build-output tests (`/app/settings` and the signed-out
+    shell reach no React; the header's three islands are separate on-demand
+    imports) and unit tests (a signed-out, unavailable, or forbidden shell
+    imports no island), web unit 1717 passed (only the 4 baseline failures),
+    web-build only the known REL-098 failures; E2E TODAY-001 shell, SEARCH-001,
+    TODAY-002, and INTERACTION-001 passed on Chromium; changed files at least
+    90.9% lines, branches, and functions; fmt, eslint, architecture, and lint
+    (only REL-096). Open follow-ups for a later web ticket: an early Ctrl+K
+    focus return, an intent before the session is ready, and a toast on a failed
+    island import.
 
 - [ ] **AUD-F3 — Preferences come with the session, and each document reads the
       session once.** M. High. Depends: AUD-F1, AUD-F2. Closes: FEQ-02, FEQ-03,

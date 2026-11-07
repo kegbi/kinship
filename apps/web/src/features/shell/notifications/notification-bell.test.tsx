@@ -12,6 +12,7 @@ import {
 } from "../../../testing/api.ts";
 import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
+import type { NotificationsPage } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { mountNotificationBell } from "./notification-bell.tsx";
 
 const SESSION = "GET /api/v1/session";
@@ -351,6 +352,63 @@ describe("TODAY-002 notification bell edges", () => {
     const unmount = mountNotificationBell();
     expect(document.querySelector("[data-island]")).toBeNull();
     unmount();
+  });
+});
+
+describe("FER-01 the bell loaded by its first click", () => {
+  it("shows the count it was handed, opens once the session is known, and hands focus back to the bell", async () => {
+    markup();
+    const session = deferred<Response>();
+    stubApi({
+      [FEED]: feed([item(2, true)], 1),
+      [SESSION]: session.promise,
+    });
+    await mountSettled(() =>
+      Promise.resolve(
+        mountNotificationBell(document, {
+          initialPage: {
+            items: [item(2, true)],
+            status: "ready",
+            unreadCount: 1,
+          } as NotificationsPage,
+          openOnReady: true,
+        }),
+      )
+    );
+    expect(bell().getAttribute("aria-label")).toBe("Notifications, 1 unread");
+    expect(element(".notification-bell-badge").textContent).toBe("1");
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    await act(async () => {
+      session.resolve(jsonResponse(workspaceSession()));
+      await Promise.resolve();
+    });
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(panel).getByRole("heading", { name: "Notifications" }),
+      )
+    );
+    expect(within(panel).getAllByRole("link")).toHaveLength(1);
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Notifications" }))
+        .toBeNull()
+    );
+    expect(document.activeElement).toBe(bell());
+  });
+
+  it("stays closed when the session never becomes ready", async () => {
+    markup();
+    stubApi({
+      [SESSION]: problemResponse(503),
+      "POST /api/v1/application-entry": problemResponse(503),
+    });
+    await mountSettled(() =>
+      Promise.resolve(mountNotificationBell(document, { openOnReady: true }))
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
   });
 });
 

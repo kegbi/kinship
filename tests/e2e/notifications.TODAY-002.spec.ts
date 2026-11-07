@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";
-import { waitForIsland } from "./support/islands.ts";
 import { bareToken } from "./support/mail.ts";
 import {
   settleNavigation,
@@ -35,11 +34,13 @@ test(
     }, bareToken);
     await signIn(page, email);
 
-    // A new member has nothing to read.
-    await waitForIsland(page, "notification-bell");
+    // A new member has nothing to read. The bell works before its panel's
+    // island loads, which only its first click does (FER-01).
     const bell = page.getByRole("button", { name: /^Notifications/ });
     await expect(bell).toBeEnabled();
     await expect(bell).toHaveAccessibleName("Notifications");
+    await expect(page.locator('[data-island="notification-bell"]'))
+      .toHaveCount(0);
     await bell.click();
     const panel = page.getByRole("dialog", { name: "Notifications" });
     await expect(panel.getByText("No notifications yet.", { exact: false }))
@@ -107,7 +108,6 @@ test(
     // The badge counts both on the next page.
     await page.goto("/app");
     await settleNavigation(page);
-    await waitForIsland(page, "notification-bell");
     await expect(bell).toHaveAccessibleName("Notifications, 2 unread");
     await expect(page.locator(".notification-bell-badge")).toHaveText("2");
     await bell.click();
@@ -125,7 +125,6 @@ test(
       new RegExp(`/app/people/${ada}\\?section=reminders$`),
     );
     await settlePersonWorkspace(page);
-    await waitForIsland(page, "notification-bell");
     await expect(bell).toHaveAccessibleName("Notifications, 2 unread");
 
     // Mark all read clears the badge, and it stays clear on the next page.
@@ -139,7 +138,6 @@ test(
     await page.keyboard.press("Escape");
     await page.goto("/app");
     await settleNavigation(page);
-    await waitForIsland(page, "notification-bell");
     await expect(bell).toBeEnabled();
     await expect(bell).toHaveAccessibleName("Notifications");
     expect(violations).toEqual([]);

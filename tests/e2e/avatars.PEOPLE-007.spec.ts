@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { createPerson, registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
 import { origin } from "./support/env.ts";
-import { waitForIsland } from "./support/islands.ts";
+import { activateGlobalSearch } from "./support/islands.ts";
 import { bareToken } from "./support/mail.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { expectAccessible } from "./support/page-checks.ts";
@@ -123,7 +123,7 @@ test(
       "src",
       current!,
     );
-    await waitForIsland(page, "global-people-search");
+    await activateGlobalSearch(page);
     await page.getByRole("combobox", { name: "Find a person" }).fill("Ada");
     await expect(
       page.locator("#global-people-search-results")

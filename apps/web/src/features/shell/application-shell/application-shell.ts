@@ -282,23 +282,29 @@ async function resolveSession(): Promise<ShellResolution> {
   return undefined;
 }
 
+/**
+ * Resolves the session and draws the shell, and answers the session once the
+ * member may use the page: `undefined` while they are signed out, the
+ * session is unavailable, the route is forbidden, or a legal review comes
+ * first. The header's islands wait for this answer (FER-01).
+ */
 export async function mountApplicationShell(
   navigate: Navigate = browserNavigate,
-): Promise<void> {
+): Promise<SessionContext | undefined> {
   const elements = shellElements();
-  if (!elements) return;
+  if (!elements) return undefined;
   elements.root.dataset.fluidLayout = "false";
   const resolved = await resolveSession();
   if (resolved === "unavailable") {
     renderSessionUnavailable(elements);
-    return;
+    return undefined;
   }
   if (!resolved) {
     renderAccessFailure(elements);
-    return;
+    return undefined;
   }
   if (applySessionGating(elements, resolved.session, navigate) === "blocked") {
-    return;
+    return undefined;
   }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
@@ -455,4 +461,5 @@ export async function mountApplicationShell(
     });
     if (hadFocus) elements.signOutButton.focus();
   });
+  return resolved.session;
 }

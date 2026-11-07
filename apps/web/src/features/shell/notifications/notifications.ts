@@ -13,6 +13,9 @@ import type {
   NotificationsPage,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 
+/** How often the badge is refreshed while the page is visible. */
+export const NOTIFICATION_REFRESH_MS = 60_000;
+
 /** The unread count's bound: the server counts no further than 100. */
 const UNREAD_CAP = 100;
 
