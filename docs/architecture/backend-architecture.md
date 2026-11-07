@@ -344,6 +344,25 @@ authorization or these tests.
 - Use idempotency keys for retryable external mutations where duplicates would
   be harmful.
 
+Every `/api/v1` request passes one admission pipeline (AUD-K1). `createApiApp`
+installs the request's session resolution once, in front of the legal guard; the
+guard and every route read that one memoized resolution, so the
+protected-session coordinator is asked at most once per request. The guard reads
+it without concealing errors, so a session-store outage refuses the request with
+503 instead of passing it as anonymous. The two export links that name their
+workspace in the `workspaceId` query parameter install that resolution for the
+named workspace, so the guard checks the workspace the route acts in. A route
+that reads a session, and every bearer admission, answers a malformed
+`X-Workspace-Id` with 400 `workspace_header_invalid`; a malformed value never
+reaches the database. A request that carries `Authorization` owes the same
+outstanding legal documents as a cookie: once the route authenticates the token
+for its scope, the guard's check runs for the token's user and workspace and
+answers 403 `legal_acceptance_required`. A route whose body is JSON answers any
+other declared media type with 415 `unsupported_media_type`, and shared
+validation refuses a NUL character in any parsed value with the route's own 400.
+The generated document adds the 400 and 415 answers from one registry rule
+(`admissionStatuses`).
+
 Prefer same-origin, `HttpOnly`, `Secure`, appropriately `SameSite` cookies for
 browser sessions. Keep API tokens separate and never store browser session
 credentials in `localStorage`. Apply CSRF protection to cookie-authenticated

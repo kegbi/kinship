@@ -44,11 +44,53 @@ export function fieldErrors(error: z.ZodError): ProblemErrors {
   return errors;
 }
 
-/** Parses one already-read value: a path parameter, a header, a query map. */
+/** What a field holding a NUL character is told. */
+export const NUL_MESSAGE = "Text may not contain a NUL character.";
+
+const NUL = String.fromCharCode(0);
+
+/**
+ * The path of the first string that holds a NUL character, if any does.
+ *
+ * PostgreSQL cannot store U+0000 in text, so such a value used to pass the
+ * schema and fail at the database as an outage (SECA-08). Keys are read as
+ * well as values, because a record schema stores its keys too.
+ */
+function nulPath(value: unknown, path: string): string | undefined {
+  if (typeof value === "string") {
+    return value.includes(NUL) ? path || "body" : undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = path ? `${path}.${key}` : key;
+    if (key.includes(NUL)) return path || "body";
+    const found = nulPath(child, childPath);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a value holds a NUL character anywhere.
+ *
+ * `parseValue` refuses such a value with a field error for everything it
+ * parses; a route that reads its body without a schema — the import dry-run —
+ * asks this directly and answers with its own refusal.
+ */
+export function rejectNul(value: unknown): boolean {
+  return nulPath(value, "") !== undefined;
+}
+
+/**
+ * Parses one already-read value: a path parameter, a header, a query map, a
+ * body. A NUL character anywhere in it is refused here, once, for all of them.
+ */
 export function parseValue<Schema extends z.ZodType>(
   schema: Schema,
   value: unknown,
 ): ParseResult<z.output<Schema>> {
+  const nul = nulPath(value, "");
+  if (nul !== undefined) return { errors: { [nul]: NUL_MESSAGE } };
   const parsed = schema.safeParse(value);
   return parsed.success
     ? { data: parsed.data }

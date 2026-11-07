@@ -117,6 +117,9 @@ import {
   type FailureTable,
 } from "../../packages/http-kit/failures.ts";
 import type { ProblemDefinition } from "../../packages/http-kit/problem.ts";
+import { UNSUPPORTED_MEDIA_TYPE } from "../../packages/http-kit/route.ts";
+import { WORKSPACE_HEADER_INVALID } from "../../packages/http-kit/session.ts";
+import { NUL_MESSAGE } from "../../packages/http-kit/validate.ts";
 
 /** `status code title detail`, one line per entry, in table order. */
 function pinned(table: FailureTable): string {
@@ -1025,5 +1028,21 @@ Deno.test("[REL-064] the refusals a duplicate dismissal answers are pinned", () 
       "(fallback) | 503 | people_unavailable | Pair could not be dismissed | Nothing was saved. The person service is temporarily unavailable.",
     ].join("\n"),
     "DUPLICATE_DISMISSAL_FAILURES",
+  );
+});
+
+Deno.test("[AUD-K1] the admission pipeline's own refusals are pinned", () => {
+  assertEquals(
+    listed([WORKSPACE_HEADER_INVALID, UNSUPPORTED_MEDIA_TYPE]),
+    [
+      "400 | workspace_header_invalid | Invalid workspace | Send X-Workspace-Id as a workspace identifier, or leave it out.",
+      "415 | unsupported_media_type | Unsupported media type | Send the request body as application/json.",
+    ].join("\n"),
+    "admission refusals",
+  );
+  assertEquals(
+    NUL_MESSAGE,
+    "Text may not contain a NUL character.",
+    "the field message a NUL character earns",
   );
 });

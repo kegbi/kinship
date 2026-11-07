@@ -5,4 +5,8 @@
  */
 
 export { createImportRoutes, type ImportHttpServices } from "./imports.ts";
-export { createExportRoutes, type ExportHttpServices } from "./exports.ts";
+export {
+  createExportRoutes,
+  type ExportHttpServices,
+  installExportLinkSessions,
+} from "./exports.ts";

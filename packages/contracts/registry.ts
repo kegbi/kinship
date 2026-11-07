@@ -144,6 +144,41 @@ export function defineRoute<const Descriptor extends RouteDescriptor>(
   return descriptor;
 }
 
+/** Whether a media type is JSON: `application/json` or a `+json` suffix. */
+export function isJsonMediaType(mediaType: string | undefined): boolean {
+  const essence = mediaType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return essence === "application/json" ||
+    /^application\/[^\s/]+\+json$/.test(essence);
+}
+
+/**
+ * Whether a route takes its body as JSON and nothing else.
+ *
+ * Such a route answers 415 to a body of any other media type (SECA-13), so
+ * `packages/http-kit/route.ts` enforces it and the generator documents it from
+ * this one reading.
+ */
+export function takesJsonBody(route: RouteDescriptor): boolean {
+  const media = Object.keys(route.request?.body?.content ?? {});
+  return media.length > 0 && media.every(isJsonMediaType);
+}
+
+/**
+ * The refusals the admission pipeline answers on a route's behalf (AUD-K1).
+ *
+ * A route that accepts `X-Workspace-Id` answers 400 to a value that is not a
+ * workspace id, and a route that takes JSON answers 415 to any other body.
+ * Neither is written in the route's own descriptor, because neither is about
+ * the route; the generator documents them from here, and `apps/api/routes_test.ts`
+ * proves every route that answers one of them is covered by this rule.
+ */
+export function admissionStatuses(route: RouteDescriptor): readonly number[] {
+  return [
+    ...("X-Workspace-Id" in (route.request?.headers?.shape ?? {}) ? [400] : []),
+    ...(takesJsonBody(route) ? [415] : []),
+  ];
+}
+
 /** `method path`, which is what identifies a route to both sides of the check. */
 export function routeKey(route: RouteDescriptor): string {
   return `${route.method.toUpperCase()} ${honoPath(route.path)}`;

@@ -8,6 +8,7 @@ import {
 import {
   fieldErrors,
   invalidRequest,
+  NUL_MESSAGE,
   parseJsonBody,
   parseQuery,
   parseValue,
@@ -134,5 +135,39 @@ Deno.test("[GAP-019] a query string parses as one flat record", async () => {
   assert(
     refusedBody.errors === undefined,
     "a route that tells no field-level story carries no errors member",
+  );
+});
+
+Deno.test("[AUD-K1] a NUL character is refused wherever it hides", () => {
+  const nul = String.fromCharCode(0);
+  const notes = z.object({
+    items: z.array(z.object({ body: z.string() })),
+    labels: z.record(z.string(), z.string()).optional(),
+  });
+
+  assertEquals(
+    parseValue(task, { title: `a${nul}b` }),
+    { errors: { title: NUL_MESSAGE } },
+    "a top-level field",
+  );
+  assertEquals(
+    parseValue(notes, { items: [{ body: "fine" }, { body: nul }] }),
+    { errors: { "items.1.body": NUL_MESSAGE } },
+    "a nested element",
+  );
+  assertEquals(
+    parseValue(notes, { items: [], labels: { [`k${nul}`]: "v" } }),
+    { errors: { labels: NUL_MESSAGE } },
+    "a record key",
+  );
+  assertEquals(
+    parseValue(uuid, nul),
+    { errors: { body: NUL_MESSAGE } },
+    "a bare value",
+  );
+  assertEquals(
+    parseValue(notes, { items: [{ body: "fine" }] }),
+    { data: { items: [{ body: "fine" }] } },
+    "text without one parses as before",
   );
 });

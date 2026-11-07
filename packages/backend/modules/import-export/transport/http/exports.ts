@@ -3,19 +3,24 @@
  *
  * Six routes: the history, the two steps that turn it into a link, the link
  * itself, a single person's card, and the directory selection's cards
- * (GAP-051), which is posted from the page rather than opened as a link. The problem responder, the session
- * cookie, the origin check, the kernel status map, and the download response
- * came from `packages/http-kit` (GAP-019, GAP-020).
+ * (GAP-051), which is posted from the page rather than opened as a link. The
+ * problem responder, the session cookie, the origin check, the kernel status
+ * map, and the download response came from `packages/http-kit` (GAP-019,
+ * GAP-020).
  *
  * The two routes that serve bytes are opened from a link, not from the
  * application, so they take the workspace from the query string rather than
- * from the header the rest of the API uses, and they resolve the session
- * themselves for that reason. Every outage names what did not happen — history
- * not loaded, artifact not completed, reference not issued, artifact not read
- * — because each is a different thing to retry.
+ * from the header the rest of the API uses. `installExportLinkSessions`
+ * installs their one session resolution for that workspace, and the
+ * composition root calls it in front of the legal guard (AUD-K1), so the
+ * workspace the guard checks is the one the route acts in.
+ *
+ * Every outage names what did not happen — history not loaded, artifact not
+ * completed, reference not issued, artifact not read — because each is a
+ * different thing to retry.
  */
 
-import { Hono } from "hono";
+import { type Env, Hono } from "hono";
 import type { ExportManagement } from "../../public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import {
@@ -33,6 +38,7 @@ import {
   peopleVCardInput,
 } from "../../../../../contracts/schemas/exports.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
+import { honoPath } from "../../../../../contracts/registry.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import { fileDownload } from "../../../../../http-kit/downloads.ts";
 import {
@@ -48,9 +54,9 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  SESSION_INVALID,
   sessionActor,
-  workspaceScopedActor,
+  type SessionOptions,
+  sessionResolution,
 } from "../../../../../http-kit/session.ts";
 import {
   parseJsonBody,
@@ -63,6 +69,36 @@ export interface ExportHttpServices {
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly exports: ExportManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
+}
+
+/**
+ * The routes opened from a link, and the query parameter naming their
+ * workspace.
+ */
+const EXPORT_WORKSPACE_LINKS = {
+  options: { workspaceQuery: "workspaceId" } satisfies SessionOptions,
+  routes: [downloadExport, exportPersonVCard],
+} as const;
+
+/**
+ * Installs the link routes' session resolution, for the workspace their query
+ * names, on the app that serves them.
+ *
+ * The caller mounts this in front of its app-wide resolution: the first
+ * installer is the one every later reader shares, so the legal guard checks
+ * the workspace the link acts in rather than the header's.
+ */
+export function installExportLinkSessions<E extends Env>(
+  app: Hono<E>,
+  sessions: ExportHttpServices["protectedSessions"],
+): void {
+  const resolution = sessionResolution(
+    sessions,
+    EXPORT_WORKSPACE_LINKS.options,
+  );
+  for (const route of EXPORT_WORKSPACE_LINKS.routes) {
+    app.on([route.method.toUpperCase()], [honoPath(route.path)], resolution);
+  }
 }
 
 const EXPORT_NOT_FOUND: ProblemDefinition = {
@@ -190,6 +226,10 @@ export function createExportRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services.protectedSessions);
+  const linkSession = sessionActor(
+    services.protectedSessions,
+    EXPORT_WORKSPACE_LINKS.options,
+  );
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listExports, session, async (context) => {
@@ -263,18 +303,14 @@ export function createExportRoutes(
     },
   );
 
-  mount(routes, downloadExport, async (context) => {
+  mount(routes, downloadExport, linkSession, async (context) => {
     const exportId = parseValue(uuid, context.req.param("exportId"));
     const query = parseQuery(context, downloadExportQuery);
     if (
       "errors" in exportId || "errors" in query
     ) return definedProblem(context, EXPORT_NOT_FOUND);
-    const actor = await workspaceScopedActor(
-      context,
-      services.protectedSessions,
-      query.data.workspaceId,
-    );
-    if (!actor) return definedProblem(context, SESSION_INVALID);
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
     const result = await services.exports.download(
       actor,
       exportId.data,
@@ -290,18 +326,14 @@ export function createExportRoutes(
     return fileDownload(result);
   });
 
-  mount(routes, exportPersonVCard, async (context) => {
+  mount(routes, exportPersonVCard, linkSession, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     const query = parseQuery(context, exportPersonVCardQuery);
     if ("errors" in personId || "errors" in query) {
       return definedProblem(context, EXPORT_NOT_FOUND);
     }
-    const actor = await workspaceScopedActor(
-      context,
-      services.protectedSessions,
-      query.data.workspaceId,
-    );
-    if (!actor) return definedProblem(context, SESSION_INVALID);
+    const actor = await requireActor(context);
+    if (actor instanceof Response) return actor;
     const result = await services.exports.exportVCard(actor, personId.data)
       .catch(unavailable);
     if (result.status === "not-found") return failure(context, result);

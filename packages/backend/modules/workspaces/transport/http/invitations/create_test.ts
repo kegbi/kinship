@@ -46,6 +46,8 @@ Deno.test("invitation HTTP creation is origin/session protected and never return
   assertStatus(forged, 403, "wrong origin is denied before mutation");
 });
 
+const FOREIGN_WORKSPACE = "00000000-0000-4000-8000-00000000f0f0";
+
 Deno.test("invitation HTTP checks workspace selection through the authenticated resolver", async () => {
   let requested: string | undefined;
   const app = createInvitationRoutes(services({
@@ -59,12 +61,12 @@ Deno.test("invitation HTTP checks workspace selection through the authenticated 
     {
       headers: {
         cookie: secureHeaders.cookie,
-        "X-Workspace-Id": "foreign-workspace",
+        "X-Workspace-Id": FOREIGN_WORKSPACE,
       },
     },
   );
   assert(
-    response.status === 401 && requested === "foreign-workspace",
+    response.status === 401 && requested === FOREIGN_WORKSPACE,
     "cross-workspace header is not authorization evidence",
   );
 });

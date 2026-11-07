@@ -19,6 +19,18 @@
  * four kept the whole of it, because their use cases are the ones that name
  * the active workspace. Both readings are here: `actorOf` narrows, `sessionOf`
  * does not, and neither costs a second resolution.
+ *
+ * AUD-K1 made that one resolution per request rather than one per route file.
+ * `createApiApp` installs it once, in front of the legal guard, and a route's
+ * own `sessionActor` finds it already installed and leaves it alone, so the
+ * guard and the route ask the coordinator once between them. The guard reads
+ * it through `readActorOf`, which keeps an outage an outage; every other
+ * reader conceals it as nobody.
+ *
+ * Two export links name their workspace in the query string rather than the
+ * header. Their resolution is installed with that parameter, in front of the
+ * app-wide one, so the workspace the guard checks is the workspace the route
+ * acts in, and still only one is asked about.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
@@ -85,6 +97,13 @@ export interface ActorEnv {
   Variables: {
     actor: () => Promise<SessionActor | undefined>;
     session: () => Promise<ResolvedSession | undefined>;
+    /** The same resolution, with an outage left as a rejection. */
+    sessionRead: () => Promise<ResolvedSession | undefined>;
+    /**
+     * What a token-admitted member still owes, set by the legal guard: the
+     * refusal to answer instead, or nothing when the member may proceed.
+     */
+    tokenAdmission?: (actor: SessionActor) => Promise<Response | undefined>;
   };
 }
 
@@ -96,7 +115,60 @@ export const SESSION_INVALID: ProblemDefinition = {
   title: "Authentication required",
 };
 
-/** The coordinator's answer, outage and all. */
+/** The answer to a workspace header that cannot name a workspace (SECA-08). */
+export const WORKSPACE_HEADER_INVALID: ProblemDefinition = {
+  code: "workspace_header_invalid",
+  detail: "Send X-Workspace-Id as a workspace identifier, or leave it out.",
+  status: 400,
+  title: "Invalid workspace",
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The workspace this request asks for in its header; empty means none. */
+function requestedWorkspace(context: Context): string | undefined {
+  return context.req.header(WORKSPACE_HEADER) || undefined;
+}
+
+/**
+ * The workspace a resolution is asked for: the named query parameter when the
+ * route takes one and the request sends it, otherwise the header.
+ */
+function namedWorkspace(
+  context: Context,
+  workspaceQuery: string | undefined,
+): string | undefined {
+  return (workspaceQuery && context.req.query(workspaceQuery)) ||
+    requestedWorkspace(context);
+}
+
+/**
+ * Whether a requested workspace is something that is not a workspace id.
+ *
+ * Such a value used to reach the database's uuid cast, and the failed cast was
+ * reported as an outage (SECA-08).
+ */
+function malformedWorkspace(requested: string | undefined): boolean {
+  return requested !== undefined && !UUID.test(requested);
+}
+
+/** How a route's session resolution chooses its workspace. */
+export interface SessionOptions {
+  /**
+   * The query parameter that names the workspace, for a route opened from a
+   * link. The header still answers when the request leaves it out.
+   */
+  readonly workspaceQuery?: string;
+}
+
+/**
+ * The coordinator's answer, outage and all.
+ *
+ * A malformed workspace header is nobody here rather than a question the
+ * coordinator would fail on: the route that reads the session refuses it
+ * with a 400 of its own, and a reader in front of the route — the legal
+ * guard — must not report it as an outage.
+ */
 function read(
   context: Context,
   sessions: SessionCoordinator,
@@ -106,20 +178,13 @@ function read(
     context.req.header("Cookie"),
     SESSION_COOKIE,
   );
-  if (!sessionToken) return Promise.resolve(undefined);
+  if (!sessionToken || malformedWorkspace(requestedWorkspaceId)) {
+    return Promise.resolve(undefined);
+  }
   return sessions.resolve({
     sessionToken,
     ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
   });
-}
-
-/** The same, with an outage concealed as nobody. */
-function resolve(
-  context: Context,
-  sessions: SessionCoordinator,
-  requestedWorkspaceId: string | undefined,
-): Promise<ResolvedSession | undefined> {
-  return read(context, sessions, requestedWorkspaceId).catch(() => undefined);
 }
 
 /** This request's correlation, as a member that is absent when there is none. */
@@ -141,32 +206,86 @@ function membership(
   };
 }
 
-/** Puts the session resolution for this request in `c.var`. */
-export function sessionActor(
+/**
+ * Installs this request's session resolution in `c.var`, once.
+ *
+ * A request that already carries one keeps it: the first installer's thunks
+ * are the ones every later reader shares, so a route's own `sessionActor`
+ * behind the app's costs nothing. Nothing is resolved until somebody reads.
+ */
+export function installSession(
+  context: Context<ActorEnv>,
   sessions: SessionCoordinator,
+  options: SessionOptions = {},
+): void {
+  if (context.get("sessionRead")) return;
+  let raw: Promise<ResolvedSession | undefined> | undefined;
+  let concealed: Promise<ResolvedSession | undefined> | undefined;
+  let narrowed: Promise<SessionActor | undefined> | undefined;
+  const sessionRead = () => {
+    raw ??= read(
+      context,
+      sessions,
+      namedWorkspace(context, options.workspaceQuery),
+    );
+    return raw;
+  };
+  const session = () => {
+    concealed ??= sessionRead().catch(() => undefined);
+    return concealed;
+  };
+  context.set("sessionRead", sessionRead);
+  context.set("session", session);
+  context.set(
+    "actor",
+    () => {
+      narrowed ??= session().then((value) =>
+        value && membership(value, context)
+      );
+      return narrowed;
+    },
+  );
+}
+
+/**
+ * The request's one resolution, installed for everything behind it.
+ *
+ * `createApiApp` mounts this in front of the legal guard. It judges nothing:
+ * whether the workspace header is acceptable is the business of the routes
+ * that read a session, so a route that never does — the calendar feed — keeps
+ * the answer it always gave. A link route's resolution is mounted in front of
+ * it with that route's `workspaceQuery`.
+ */
+export function sessionResolution(
+  sessions: SessionCoordinator,
+  options: SessionOptions = {},
 ): MiddlewareHandler<ActorEnv> {
   return async (context, next) => {
-    let resolved: Promise<ResolvedSession | undefined> | undefined;
-    let narrowed: Promise<SessionActor | undefined> | undefined;
-    const session = () => {
-      resolved ??= resolve(
-        context,
-        sessions,
-        context.req.header(WORKSPACE_HEADER),
-      );
-      return resolved;
-    };
-    context.set("session", session);
-    context.set(
-      "actor",
-      () => {
-        narrowed ??= session().then((value) =>
-          value && membership(value, context)
-        );
-        return narrowed;
-      },
-    );
+    installSession(context, sessions, options);
     await next();
+  };
+}
+
+/** The refusal a malformed workspace header earns, if this request has one. */
+function workspaceRefusal(context: Context): Response | undefined {
+  return malformedWorkspace(requestedWorkspace(context))
+    ? definedProblem(context, WORKSPACE_HEADER_INVALID)
+    : undefined;
+}
+
+/**
+ * Puts the session resolution for this request in `c.var`, for a route that
+ * reads it, and refuses a malformed workspace header with a 400.
+ */
+export function sessionActor(
+  sessions: SessionCoordinator,
+  options: SessionOptions = {},
+): MiddlewareHandler<ActorEnv> {
+  return async (context, next) => {
+    const refused = workspaceRefusal(context);
+    if (refused) return refused;
+    installSession(context, sessions, options);
+    return await next();
   };
 }
 
@@ -200,46 +319,19 @@ export async function requireSession(
 }
 
 /**
- * The member behind a request that names its workspace somewhere else.
- *
- * Two export routes are opened from a link rather than from the application,
- * so the workspace they mean arrives in the query string instead of the header
- * everything else uses. They resolve on their own rather than through the
- * middleware, because the answer depends on a value the middleware cannot see;
- * a request that names no workspace falls back to the header, which is what
- * makes the same two routes work from inside the application as well.
- */
-export async function workspaceScopedActor(
-  context: Context,
-  sessions: SessionCoordinator,
-  requestedWorkspaceId: string | undefined,
-): Promise<SessionActor | undefined> {
-  const resolved = await resolve(
-    context,
-    sessions,
-    requestedWorkspaceId ?? context.req.header(WORKSPACE_HEADER),
-  );
-  return resolved && membership(resolved, context);
-}
-
-/**
  * The member behind this request, without concealing an outage.
  *
  * The legal guard is the one caller that has to tell "nobody is signed in"
  * from "the session store is down". The first lets a public route through; the
  * second must refuse every route, because a guard that cannot check whether a
  * document is outstanding may not decide that none is. Every other caller
- * wants the concealing readings above.
+ * wants the concealing readings above. It reads the request's one memoized
+ * resolution, so the route behind the guard asks nobody again.
  */
-export async function readActor(
-  context: Context,
-  sessions: SessionCoordinator,
+export async function readActorOf(
+  context: Context<ActorEnv>,
 ): Promise<SessionActor | undefined> {
-  const resolved = await read(
-    context,
-    sessions,
-    context.req.header(WORKSPACE_HEADER),
-  );
+  const resolved = await context.var.sessionRead();
   return resolved && membership(resolved, context);
 }
 
@@ -267,30 +359,39 @@ export function bearerToken(context: Context): string | undefined {
 }
 
 /**
- * The member behind a request that may authenticate either way.
+ * The member behind a request that may authenticate either way, or the
+ * refusal a route answers instead.
  *
  * An `Authorization` header commits the request to the token path: a header
  * that names a token this deployment cannot check, or a token without the
- * required scope, is nobody rather than a silent fallback onto the cookie.
+ * required scope, is a 401 rather than a silent fallback onto the cookie. A
+ * token that does authenticate still answers to the `tokenAdmission` the legal
+ * guard set (SECA-05). The guard cannot authenticate the token itself, because
+ * only the route knows the scope the token must carry.
  */
-export async function tokenOrSessionActor<Scope extends string>(
+export async function requireTokenOrSessionActor<Scope extends string>(
   context: Context<ActorEnv>,
   options: {
     readonly scope: Scope;
     readonly tokens?: ScopedTokenAuthority<NoInfer<Scope>>;
   },
-): Promise<SessionActor | undefined> {
+): Promise<SessionActor | Response> {
   if (context.req.header("Authorization") === undefined) {
-    return await actorOf(context);
+    return await requireActor(context);
   }
+  const refused = workspaceRefusal(context);
+  if (refused) return refused;
   const token = bearerToken(context);
-  if (!token || !options.tokens) return undefined;
-  const authenticated = await options.tokens.authenticate(
-    token,
-    options.scope,
-    context.req.header(WORKSPACE_HEADER),
-  ).catch(() => undefined);
-  return authenticated?.status === "authenticated"
-    ? { ...authenticated.actor, ...correlation(context) }
+  const authenticated = token && options.tokens
+    ? await options.tokens.authenticate(
+      token,
+      options.scope,
+      requestedWorkspace(context),
+    ).catch(() => undefined)
     : undefined;
+  if (authenticated?.status !== "authenticated") {
+    return definedProblem(context, SESSION_INVALID);
+  }
+  const actor = { ...authenticated.actor, ...correlation(context) };
+  return await context.var.tokenAdmission?.(actor) ?? actor;
 }

@@ -80,7 +80,7 @@ export const acceptWorkspaceInvitation = defineRoute({
         "application/json": invitationAccepted,
       },
     },
-    ...problemResponses(401, 403, 404, 409, 410, 503),
+    ...problemResponses(400, 401, 403, 404, 409, 410, 503),
   },
 });
 

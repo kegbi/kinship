@@ -4,22 +4,25 @@ import {
   assertEquals,
   assertStatus,
 } from "../backend/testing/assert.ts";
-import { sessionActor as fixtureActor } from "../backend/testing/fixtures.ts";
+import {
+  sessionActor as fixtureActor,
+  uuid,
+} from "../backend/testing/fixtures.ts";
 import {
   type ActorEnv,
   actorOf,
   bearerToken,
-  readActor,
+  readActorOf,
   requireActor,
   requireSession,
+  requireTokenOrSessionActor,
   type ResolvedSession,
   type ScopedTokenAuthority,
   type SessionActor,
   sessionActor,
   type SessionCoordinator,
-  tokenOrSessionActor,
+  sessionResolution,
   WORKSPACE_HEADER,
-  workspaceScopedActor,
 } from "./session.ts";
 import {
   REQUEST_ID_HEADER,
@@ -41,6 +44,11 @@ function coordinator(
   };
 }
 
+/** The member a token-or-session reading admitted, or null for a refusal. */
+function memberOf(actor: SessionActor | Response): string | null {
+  return actor instanceof Response ? null : actor.memberId;
+}
+
 function guarded(sessions: SessionCoordinator): Hono<ActorEnv> {
   const app = new Hono<ActorEnv>();
   app.get("/who", sessionActor(sessions), async (context) => {
@@ -58,7 +66,7 @@ Deno.test("[GAP-019] the cookie and the workspace header become the actor", asyn
     {
       headers: {
         Cookie: "theme=dark; kinship_session=token",
-        [WORKSPACE_HEADER]: "workspace-2",
+        [WORKSPACE_HEADER]: uuid(902),
       },
     },
   );
@@ -70,7 +78,7 @@ Deno.test("[GAP-019] the cookie and the workspace header become the actor", asyn
     JSON.stringify(calls),
     JSON.stringify([{
       sessionToken: "token",
-      requestedWorkspaceId: "workspace-2",
+      requestedWorkspaceId: uuid(902),
     }]),
     "the coordinator is asked once, for the requested workspace",
   );
@@ -157,16 +165,18 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
     "/directory",
     sessionActor(coordinator([])),
     async (context) => {
-      const actor = await tokenOrSessionActor(context, {
+      const actor = await requireTokenOrSessionActor(context, {
         scope: "people:read",
         tokens,
       });
-      return context.json({ member: actor?.memberId ?? null });
+      return context.json({ member: memberOf(actor) });
     },
   );
   app.get("/no-tokens", sessionActor(coordinator([])), async (context) => {
-    const actor = await tokenOrSessionActor(context, { scope: "people:read" });
-    return context.json({ member: actor?.memberId ?? null });
+    const actor = await requireTokenOrSessionActor(context, {
+      scope: "people:read",
+    });
+    return context.json({ member: memberOf(actor) });
   });
 
   const read = async (path: string, authorization?: string) =>
@@ -207,11 +217,11 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
 Deno.test("[GAP-019] a token authority that throws is nobody", async () => {
   const app = new Hono<ActorEnv>();
   app.get("/directory", sessionActor(coordinator([])), async (context) => {
-    const actor = await tokenOrSessionActor(context, {
+    const actor = await requireTokenOrSessionActor(context, {
       scope: "people:read",
       tokens: { authenticate: () => Promise.reject(new Error("offline")) },
     });
-    return context.json({ member: actor?.memberId ?? null });
+    return context.json({ member: memberOf(actor) });
   });
 
   const response = await app.request("http://localhost/directory", {
@@ -259,24 +269,27 @@ Deno.test("[GAP-020] the wider reading keeps what the narrow one drops", async (
 Deno.test("[GAP-020] a route may name its own workspace instead of the header", async () => {
   const calls: { readonly requestedWorkspaceId?: string }[] = [];
   const sessions = coordinator(calls as { sessionToken: string }[]);
-  const app = new Hono();
-  app.get("/scoped", async (context) => {
-    const actor = await workspaceScopedActor(
-      context,
-      sessions,
-      context.req.query("workspaceId"),
-    );
-    return context.json({ member: actor?.memberId ?? null });
-  });
+  const app = new Hono<ActorEnv>();
+  app.get(
+    "/scoped",
+    sessionActor(sessions, { workspaceQuery: "workspaceId" }),
+    async (context) => {
+      const actor = await actorOf(context);
+      return context.json({ member: actor?.memberId ?? null });
+    },
+  );
 
   const named = await app.request(
-    "http://localhost/scoped?workspaceId=workspace-9",
+    `http://localhost/scoped?workspaceId=${uuid(909)}`,
     {
-      headers: { Cookie: "kinship_session=token", [WORKSPACE_HEADER]: "held" },
+      headers: {
+        Cookie: "kinship_session=token",
+        [WORKSPACE_HEADER]: uuid(908),
+      },
     },
   );
   const unnamed = await app.request("http://localhost/scoped", {
-    headers: { Cookie: "kinship_session=token", [WORKSPACE_HEADER]: "held" },
+    headers: { Cookie: "kinship_session=token", [WORKSPACE_HEADER]: uuid(908) },
   });
 
   assertStatus(named, 200);
@@ -287,7 +300,7 @@ Deno.test("[GAP-020] a route may name its own workspace instead of the header", 
   );
   assertEquals(
     calls.map((call) => call.requestedWorkspaceId).join(","),
-    "workspace-9,held",
+    `${uuid(909)},${uuid(908)}`,
     "the query string wins, and only where there is one",
   );
 });
@@ -296,15 +309,16 @@ Deno.test("[GAP-020] one reading lets an outage through as a throw", async () =>
   const offline: SessionCoordinator = {
     resolve: () => Promise.reject(new Error("offline")),
   };
-  const app = new Hono();
+  const app = new Hono<ActorEnv>();
+  app.use(sessionActor(offline));
   app.get("/guard", async (context) => {
-    const resolved = await readActor(context, offline).catch(() =>
+    const resolved = await readActorOf(context).catch(() =>
       "unavailable" as const
     );
     return context.json({ resolved });
   });
   app.get("/anonymous", async (context) => {
-    const resolved = await readActor(context, offline).catch(() =>
+    const resolved = await readActorOf(context).catch(() =>
       "unavailable" as const
     );
     return context.json({ resolved: resolved ?? null });
@@ -335,17 +349,8 @@ Deno.test("[GAP-039] the actor carries this request's identifier into the use ca
   routes.get("/who", async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const scoped = await workspaceScopedActor(
-      context,
-      coordinator([]),
-      undefined,
-    );
-    const read = await readActor(context, coordinator([]));
-    return context.json({
-      actor,
-      read: read?.requestId,
-      scoped: scoped?.requestId,
-    });
+    const read = await readActorOf(context);
+    return context.json({ actor, read: read?.requestId });
   });
 
   app.route("/", routes);
@@ -359,7 +364,6 @@ Deno.test("[GAP-039] the actor carries this request's identifier into the use ca
   const body = await response.json() as {
     readonly actor: SessionActor;
     readonly read?: string;
-    readonly scoped?: string;
   };
 
   assertEquals(
@@ -373,8 +377,8 @@ Deno.test("[GAP-039] the actor carries this request's identifier into the use ca
     "the membership and its correlation, nothing else",
   );
   assertEquals(
-    [body.read, body.scoped],
-    ["gateway-3f2a9c0d", "gateway-3f2a9c0d"],
+    body.read,
+    "gateway-3f2a9c0d",
     "every actor reading carries the same identifier",
   );
 });
@@ -385,14 +389,16 @@ Deno.test("[GAP-039] a token-authenticated actor carries the request identifier 
   const routes = new Hono<ActorEnv>();
   routes.use(sessionActor(coordinator([])));
   routes.get("/token", async (context) => {
-    const actor = await tokenOrSessionActor(context, {
+    const actor = await requireTokenOrSessionActor(context, {
       scope: "people:read",
       tokens: {
         authenticate: () =>
           Promise.resolve({ actor: member, status: "authenticated" }),
       },
     });
-    return context.json({ requestId: actor?.requestId ?? null });
+    return context.json({
+      requestId: actor instanceof Response ? null : actor.requestId,
+    });
   });
 
   app.route("/", routes);
@@ -413,9 +419,15 @@ Deno.test("[INTEGRATION-002] a scoped token authority is only asked for the scop
     authenticate: () => Promise.resolve({ status: "invalid" as const }),
   };
   const asked = (context: Context<ActorEnv>) => [
-    tokenOrSessionActor(context, { scope: "people:read", tokens: personal }),
-    // @ts-expect-error a personal-token authority never serves the calendar feed
-    tokenOrSessionActor(context, { scope: "calendar.read", tokens: personal }),
+    requireTokenOrSessionActor(context, {
+      scope: "people:read",
+      tokens: personal,
+    }),
+    requireTokenOrSessionActor(context, {
+      scope: "calendar.read",
+      // @ts-expect-error a personal-token authority never serves the calendar feed
+      tokens: personal,
+    }),
     // @ts-expect-error nor any scope it does not name
     personal.authenticate("token", "calendar.read"),
   ];
@@ -424,4 +436,157 @@ Deno.test("[INTEGRATION-002] a scoped token authority is only asked for the scop
     "function",
     "the constraint is checked at compile time",
   );
+});
+
+Deno.test("[AUD-K1] a second sessionActor reuses the first one's resolution", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = new Hono<ActorEnv>();
+  app.use(sessionActor(coordinator(calls)));
+  const routes = new Hono<ActorEnv>();
+  routes.use(sessionActor(coordinator(calls)));
+  routes.get("/who", async (context) => {
+    const actor = await requireActor(context);
+    const read = await readActorOf(context);
+    return context.json({
+      same: !(actor instanceof Response) && Boolean(read),
+    });
+  });
+  app.route("/", routes);
+
+  const response = await app.request("http://localhost/who", {
+    headers: { Cookie: "kinship_session=token" },
+  });
+
+  assertEquals(await response.json(), { same: true });
+  assertEquals(calls.length, 1, "the router's middleware asked nobody again");
+});
+
+Deno.test("[AUD-K1] a route that reads a session refuses a malformed workspace header", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = guarded(coordinator(calls));
+  const ask = (headers: Record<string, string>) =>
+    app.request("http://localhost/who", { headers });
+
+  const cookie = await ask({
+    Cookie: "kinship_session=token",
+    [WORKSPACE_HEADER]: "not-a-uuid",
+  });
+  const anonymous = await ask({ [WORKSPACE_HEADER]: "not-a-uuid" });
+  const empty = await ask({
+    Cookie: "kinship_session=token",
+    [WORKSPACE_HEADER]: "",
+  });
+
+  assertStatus(cookie, 400, "a cookie with a malformed header");
+  assertEquals(
+    (await cookie.json() as { readonly code: string }).code,
+    "workspace_header_invalid",
+  );
+  assertStatus(anonymous, 400, "the header is judged before the credential");
+  assertStatus(empty, 200, "an empty header names no workspace");
+  assertEquals(
+    JSON.stringify(calls),
+    JSON.stringify([{ sessionToken: "token" }]),
+    "only the empty header reached the coordinator, as no workspace",
+  );
+});
+
+Deno.test("[AUD-K1] the app-wide resolution judges no header and never asks with a bad one", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = new Hono<ActorEnv>();
+  app.use(sessionResolution(coordinator(calls)));
+  app.get("/feed", async (context) => {
+    const read = await readActorOf(context);
+    return context.json({ read: read?.memberId ?? null });
+  });
+  app.get("/token", async (context) => {
+    const actor = await requireTokenOrSessionActor(context, {
+      scope: "people:read",
+    });
+    return actor instanceof Response ? actor : context.json(actor);
+  });
+
+  const feed = await app.request("http://localhost/feed", {
+    headers: {
+      Cookie: "kinship_session=token",
+      [WORKSPACE_HEADER]: "not-a-uuid",
+    },
+  });
+  const bearer = await app.request("http://localhost/token", {
+    headers: { Authorization: "Bearer x", [WORKSPACE_HEADER]: "not-a-uuid" },
+  });
+
+  assertStatus(feed, 200, "a route that reads no session keeps its answer");
+  assertEquals(await feed.json(), { read: null }, "a bad header is nobody");
+  assertEquals(calls.length, 0, "the coordinator is never asked with it");
+  assertStatus(bearer, 400, "the token path refuses the header itself");
+});
+
+Deno.test("[AUD-K1] a token-admitted member answers to the admission the guard set", async () => {
+  const app = new Hono<ActorEnv>();
+  app.use(sessionActor(coordinator([])));
+  app.use(async (context, next) => {
+    context.set(
+      "tokenAdmission",
+      (actor) =>
+        Promise.resolve(
+          actor.memberId === member.memberId
+            ? context.json({ refused: true }, 403)
+            : undefined,
+        ),
+    );
+    await next();
+  });
+  app.get("/token", async (context) => {
+    const actor = await requireTokenOrSessionActor(context, {
+      scope: "people:read",
+      tokens: {
+        authenticate: () =>
+          Promise.resolve({ actor: member, status: "authenticated" }),
+      },
+    });
+    return actor instanceof Response ? actor : context.json(actor);
+  });
+
+  const response = await app.request("http://localhost/token", {
+    headers: { Authorization: "Bearer good" },
+  });
+
+  assertStatus(response, 403, "the admission's refusal is the answer");
+});
+
+Deno.test("[AUD-K1] a link route's one resolution is made for the workspace it names", async () => {
+  const calls: { readonly requestedWorkspaceId?: string }[] = [];
+  const sessions = coordinator(calls as { sessionToken: string }[]);
+  const app = new Hono<ActorEnv>();
+  app.get(
+    "/scoped",
+    sessionResolution(sessions, { workspaceQuery: "workspaceId" }),
+  );
+  app.use(sessionResolution(sessions));
+  const guarded: (string | undefined)[] = [];
+  app.use(async (context, next) => {
+    guarded.push((await readActorOf(context))?.memberId);
+    await next();
+  });
+  app.get("/scoped", sessionActor(sessions), async (context) => {
+    await actorOf(context);
+    return context.json({});
+  });
+  const headers = {
+    Cookie: "kinship_session=token",
+    [WORKSPACE_HEADER]: uuid(908),
+  };
+
+  await app.request(`http://localhost/scoped?workspaceId=${uuid(909)}`, {
+    headers,
+  });
+  await app.request("http://localhost/scoped", { headers });
+
+  assertEquals(
+    calls.map((call) => call.requestedWorkspaceId).join(","),
+    `${uuid(909)},${uuid(908)}`,
+    "the query wins where there is one, and each request asks once",
+  );
+  assertEquals(guarded.length, 2, "the guard read that same resolution");
 });

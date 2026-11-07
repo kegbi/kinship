@@ -1,14 +1,12 @@
 /** Admission for the routes that explicitly support personal API grants. */
 import type { Context } from "hono";
 import { rejectForeignOrigin, UNSAFE_METHODS } from "./origin.ts";
-import { definedProblem } from "./problem.ts";
 import type { BrowserSecurityPolicy } from "./security_policy.ts";
 import {
   type ActorEnv,
+  requireTokenOrSessionActor,
   type ScopedTokenAuthority,
-  SESSION_INVALID,
   type SessionActor,
-  tokenOrSessionActor,
 } from "./session.ts";
 
 /**
@@ -31,6 +29,5 @@ export async function requireScopedActor<Scope extends string>(
     const refused = rejectForeignOrigin(context, options.browserSecurity);
     if (refused) return refused;
   }
-  return await tokenOrSessionActor(context, options) ??
-    definedProblem(context, SESSION_INVALID);
+  return await requireTokenOrSessionActor(context, options);
 }

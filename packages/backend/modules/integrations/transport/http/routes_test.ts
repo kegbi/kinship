@@ -55,6 +55,7 @@ function app(overrides: Partial<DavSyncManagement> = {}) {
 }
 
 const headers = {
+  "content-type": "application/json",
   Cookie: "kinship_session=session",
   Origin: "https://app.example.test",
   "X-Workspace-Id": actor.workspaceId,
@@ -262,7 +263,7 @@ Deno.test("[GAP-020] every DAV route needs a session, an origin, and a real id",
     });
     const anonymous = await app().request(url, {
       ...sent,
-      headers: { Origin: headers.Origin },
+      headers: { "content-type": "application/json", Origin: headers.Origin },
       method: route.method,
     });
     assertStatus(outage, 503, `${route.method} ${url} reports its outage`);

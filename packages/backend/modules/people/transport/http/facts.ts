@@ -41,9 +41,8 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  SESSION_INVALID,
+  requireTokenOrSessionActor,
   sessionActor,
-  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
   parseJsonBody,
@@ -206,11 +205,11 @@ export function createFactsRoutes(
       if (
         "errors" in personId || "errors" in section || "errors" in query
       ) return definedProblem(context, PROFILE_SECTION_INVALID);
-      const actor = await tokenOrSessionActor(context, {
+      const actor = await requireTokenOrSessionActor(context, {
         scope: "people:profile:read",
         ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
       });
-      if (!actor) return definedProblem(context, SESSION_INVALID);
+      if (actor instanceof Response) return actor;
       const result = await services.profileFacts?.list(
         actor,
         personId.data,

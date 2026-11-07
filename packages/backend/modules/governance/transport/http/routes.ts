@@ -6,13 +6,16 @@
  * The problem responder, the session cookie, the origin check, the client
  * address, and the kernel status map came from `packages/http-kit` (GAP-019, GAP-020).
  *
- * `createLegalRequirementGuard` is the reason this file resolves a session
- * without the middleware. It runs in front of everything, before any route's
- * own session handling, and it is the one place in the API that must tell
- * "nobody is signed in" from "the session store is down": the first passes an
- * anonymous request through to the route that will refuse it, and the second
- * refuses everything, because a guard that cannot see whether a document is
- * outstanding must not decide that none is.
+ * `createLegalRequirementGuard` runs in front of every route, and it is the
+ * one place in the API that must tell "nobody is signed in" from "the session
+ * store is down": the first passes an anonymous request through to the route
+ * that will refuse it, and the second refuses everything, because a guard that
+ * cannot see whether a document is outstanding must not decide that none is.
+ * It reads the request's one session resolution (AUD-K1), installing it when
+ * nothing in front of it has, so the route behind it asks the coordinator for
+ * nothing more. A request that carries `Authorization` is admitted by a token
+ * the guard cannot read, because only the route knows the scope it needs; the
+ * guard hands that route the same check to run on the token's member.
  */
 
 import { type Context, Hono, type MiddlewareHandler } from "hono";
@@ -47,8 +50,10 @@ import {
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
-  readActor,
+  installSession,
+  readActorOf,
   requireActor,
+  type SessionActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -209,9 +214,28 @@ const legalGuardExemptions = new Set([
   "POST /api/v1/sign-out",
 ]);
 
+/** The refusal outstanding legal state earns, or nothing when there is none. */
+async function legalRefusal(
+  context: Context,
+  legal: LegalAcceptance,
+  actor: SessionActor,
+): Promise<Response | undefined> {
+  const requirements = await legal.requirements(actor);
+  if (requirements.status === "unavailable") {
+    return definedProblem(context, LEGAL_UNAVAILABLE);
+  }
+  if (requirements.status === "forbidden") {
+    return definedProblem(context, LEGAL_SESSION_INVALID);
+  }
+  if (requirements.documents.length > 0) {
+    return definedProblem(context, LEGAL_ACCEPTANCE_REQUIRED);
+  }
+  return undefined;
+}
+
 export function createLegalRequirementGuard(
   services: LegalRequirementGuardServices,
-): MiddlewareHandler {
+): MiddlewareHandler<ActorEnv> {
   return async (context, next) => {
     const key = `${context.req.method} ${context.req.path}`;
     if (
@@ -227,7 +251,15 @@ export function createLegalRequirementGuard(
     ) {
       return next();
     }
-    const resolved = await readActor(context, services.protectedSessions).catch(
+    installSession(context, services.protectedSessions);
+    if (context.req.header("Authorization") !== undefined) {
+      // SECA-05: the token's member owes the same documents a cookie's does.
+      context.set(
+        "tokenAdmission",
+        (actor) => legalRefusal(context, services.legal, actor),
+      );
+    }
+    const resolved = await readActorOf(context).catch(
       () => "unavailable" as const,
     );
     if (resolved === "unavailable") {
@@ -236,17 +268,7 @@ export function createLegalRequirementGuard(
     if (!resolved) {
       return next();
     }
-    const requirements = await services.legal.requirements(resolved);
-    if (requirements.status === "unavailable") {
-      return definedProblem(context, LEGAL_UNAVAILABLE);
-    }
-    if (requirements.status === "forbidden") {
-      return definedProblem(context, LEGAL_SESSION_INVALID);
-    }
-    if (requirements.documents.length > 0) {
-      return definedProblem(context, LEGAL_ACCEPTANCE_REQUIRED);
-    }
-    return next();
+    return await legalRefusal(context, services.legal, resolved) ?? next();
   };
 }
 

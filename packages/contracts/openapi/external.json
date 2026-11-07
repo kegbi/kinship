@@ -37,6 +37,16 @@
               }
             }
           },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "401": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -295,6 +305,16 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -1317,6 +1337,16 @@
               }
             }
           },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "503": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -1523,6 +1553,16 @@
               }
             }
           },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "503": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -1628,6 +1668,16 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {

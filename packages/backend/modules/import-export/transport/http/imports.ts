@@ -51,7 +51,11 @@ import {
   requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
-import { parseValue } from "../../../../../http-kit/validate.ts";
+import {
+  NUL_MESSAGE,
+  parseValue,
+  rejectNul,
+} from "../../../../../http-kit/validate.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ImportHttpServices {
@@ -233,6 +237,11 @@ export function createImportRoutes(
     })();
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
+    // The source is staged without a schema, so the shared NUL refusal is
+    // asked here rather than by `parseValue` (SECA-08).
+    if (rejectNul(body)) {
+      return definedProblem(context, importSourceInvalid(NUL_MESSAGE));
+    }
     const source = stagedSource(body);
     if (
       source !== undefined &&

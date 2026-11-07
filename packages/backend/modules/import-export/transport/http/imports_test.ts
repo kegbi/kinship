@@ -174,7 +174,11 @@ Deno.test("[IMPORT-001] import HTTP bounds malformed and oversized staging", asy
     "http://localhost/api/v1/imports/dry-runs",
     {
       body: "{",
-      headers: { cookie: "kinship_session=valid", origin: "http://localhost" },
+      headers: {
+        "content-type": "application/json",
+        cookie: "kinship_session=valid",
+        origin: "http://localhost",
+      },
       method: "POST",
     },
   );
@@ -183,6 +187,7 @@ Deno.test("[IMPORT-001] import HTTP bounds malformed and oversized staging", asy
     {
       body: "{}",
       headers: {
+        "content-type": "application/json",
         cookie: "kinship_session=valid",
         origin: "http://localhost",
         "content-length": "1501025",
@@ -505,4 +510,52 @@ Deno.test("[IMPORT-001] HTTP carries Monica choices and exposes missing, duplica
   if (result.status !== 400 || seen.length !== 3) {
     throw new Error("invalid shape reached use case");
   }
+});
+
+Deno.test("[AUD-K1] a dry-run source holding a NUL character is refused before staging", async () => {
+  const staged: unknown[] = [];
+  const target = createImportRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    imports: {
+      ...imports,
+      dryRun: (_actor, source) => {
+        staged.push(source);
+        return imports.dryRun(_actor, source);
+      },
+    },
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({
+          ...actor,
+          workspaceName: "Import",
+          accessibleWorkspaces: [],
+        }),
+    },
+  });
+
+  for (
+    const body of [
+      { source: "a\u0000b" },
+      {
+        source: {
+          ...source,
+          tables: { contacts: [{ id: 1, first_name: "A\u0000da" }] },
+        },
+      },
+    ]
+  ) {
+    const response = await request(
+      target,
+      "/api/v1/imports/dry-runs",
+      "POST",
+      body,
+    );
+    if (response.status !== 400) {
+      throw new Error(`expected 400, got ${response.status}`);
+    }
+    if ((await response.json() as { code: string }).code !== "import_invalid") {
+      throw new Error("the refusal is not the route's own");
+    }
+  }
+  if (staged.length !== 0) throw new Error("the import service was called");
 });

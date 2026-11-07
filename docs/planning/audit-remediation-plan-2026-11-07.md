@@ -478,7 +478,7 @@ these:
 
 ### Lane K — HTTP kit and session pipeline
 
-- [ ] **AUD-K1 — One admission pipeline: the session is resolved once, the legal
+- [x] **AUD-K1 — One admission pipeline: the session is resolved once, the legal
       guard covers cookies and bearer tokens, and malformed input answers 400.**
       M. High. Depends: none. Closes: BEQ-03, SECA-05, SECA-08, and SECA-13 item
       6 (the Content-Type half).
@@ -513,6 +513,14 @@ these:
     `test:integration --module=governance` and `--module=api-access`;
     `apps/api/routes_test.ts` and `failures_test.ts`; contracts (document the
     new problem variants).
+  - Delivered 2026-11-07: nine `[AUD-K1]` route, validation, and import tests
+    (one resolution per request including query-named export links, bearer and
+    link legal 403, malformed workspace 400, NUL 400, non-JSON 415), api unit
+    458 passed (one unrelated manifest read-permission failure in
+    `tools/migrations/baseline_test.ts`), governance unit 23, api-access
+    integration 10; changed http-kit and route files at least 94% lines, 83%
+    branches, 100% functions; contracts, fmt, architecture, and lint (only the
+    known REL-096) gates.
 
 - [ ] **AUD-K2 — Reads stop writing.** M. Normal. Depends: AUD-K1. Closes:
       BEQ-05.

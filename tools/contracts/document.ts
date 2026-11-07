@@ -23,7 +23,12 @@
 import { createDocument } from "zod-openapi";
 import type { z } from "zod";
 import { DOCUMENTED_ROUTES } from "../../packages/contracts/routes/mod.ts";
-import type { RouteDescriptor } from "../../packages/contracts/registry.ts";
+import {
+  admissionStatuses,
+  type RouteDescriptor,
+  type RouteResponse,
+} from "../../packages/contracts/registry.ts";
+import { problemResponse } from "../../packages/contracts/routes/common.ts";
 import { EXACTLY_ONE } from "../../packages/contracts/schemas/shared.ts";
 import { invitationToken } from "../../packages/contracts/schemas/invitations.ts";
 
@@ -132,6 +137,23 @@ function content(
   );
 }
 
+/**
+ * A route's own answers, plus the refusals the admission pipeline gives on
+ * its behalf where the route does not already name that status.
+ */
+function answers(
+  route: RouteDescriptor,
+): Readonly<Record<string, RouteResponse>> {
+  return {
+    ...Object.fromEntries(
+      admissionStatuses(route).map((
+        status,
+      ) => [String(status), problemResponse]),
+    ),
+    ...route.responses,
+  };
+}
+
 function operation(route: RouteDescriptor): Record<string, unknown> {
   const request = route.request;
   const parameters: Record<string, z.ZodObject> = {};
@@ -154,7 +176,7 @@ function operation(route: RouteDescriptor): Record<string, unknown> {
       }
       : {}),
     responses: Object.fromEntries(
-      Object.entries(route.responses).map(([status, response]) => [
+      Object.entries(answers(route)).map(([status, response]) => [
         status,
         {
           description: response.description,

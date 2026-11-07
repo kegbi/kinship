@@ -10,6 +10,8 @@ import { createPeopleRoutes, type PeopleHttpServices } from "./routes.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
 import { actor, headers, services, todayRoutes } from "./people.test-helper.ts";
 
+const FOREIGN_WORKSPACE = "00000000-0000-4000-8000-00000000f0f0";
+
 Deno.test("scoped person reads accept only their explicit bearer grant and never fall back to cookies", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
   const person = { givenName: "Ada", id: personId, isPartial: false };
@@ -123,7 +125,10 @@ Deno.test("scoped person reads accept only their explicit bearer grant and never
   );
   assertStatus(
     await app.request(`http://localhost${paths[0]}`, {
-      headers: { authorization: "Bearer profile", "X-Workspace-Id": "foreign" },
+      headers: {
+        authorization: "Bearer profile",
+        "X-Workspace-Id": FOREIGN_WORKSPACE,
+      },
     }),
     401,
     "requested workspace preserved",

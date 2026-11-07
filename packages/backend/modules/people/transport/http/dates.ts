@@ -42,9 +42,8 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  SESSION_INVALID,
+  requireTokenOrSessionActor,
   sessionActor,
-  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 import { type PeopleHttpServices, PERSON_ID_INVALID } from "./shared.ts";
@@ -191,11 +190,11 @@ export function createDatesRoutes(
     if ("errors" in personId) {
       return definedProblem(context, PERSON_ID_INVALID);
     }
-    const actor = await tokenOrSessionActor(context, {
+    const actor = await requireTokenOrSessionActor(context, {
       scope: "people:profile:read",
       ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
     });
-    if (!actor) return definedProblem(context, SESSION_INVALID);
+    if (actor instanceof Response) return actor;
     const result = await services.importantDates?.list(actor, personId.data)
       .catch(() => undefined);
     if (!result) return definedProblem(context, IMPORTANT_DATES_UNAVAILABLE);

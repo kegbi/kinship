@@ -71,6 +71,7 @@ function fixture(overrides: {
 }
 
 const headers = {
+  "content-type": "application/json",
   Cookie: "kinship_session=session-token",
   Origin: "https://app.kinship.test",
   "X-Workspace-Id": "00000000-0000-4000-8000-000000000101",

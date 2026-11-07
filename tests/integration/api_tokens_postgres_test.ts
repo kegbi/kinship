@@ -1636,6 +1636,75 @@ Deno.test({
   },
 });
 
+Deno.test("[AUD-K1] PostgreSQL holds a token to the legal documents a cookie owes, and answers hostile input without an outage", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(
+    `legal-token-${suffix}@example.test`,
+    "Legal token",
+  );
+  const minted = await management(owner, undefined, "POST", {
+    name: "Directory",
+    scopes: ["people:read"],
+  });
+  assert(minted.status === 201, `token minted: ${minted.status}`);
+  const { secret } = await minted.json() as { readonly secret: string };
+  const bearer = () =>
+    configured.app.request("http://localhost/api/v1/people", {
+      headers: { authorization: `Bearer ${secret}` },
+    });
+  const code = async (response: Response) =>
+    (await response.json() as { readonly code?: string }).code;
+
+  assert((await bearer()).status === 200, "a token reads with nothing owed");
+
+  const malformed = await configured.app.request(
+    "http://localhost/api/v1/people",
+    { headers: { cookie: owner.cookie, "X-Workspace-Id": "not-a-uuid" } },
+  );
+  assert(
+    malformed.status === 400 &&
+      await code(malformed) === "workspace_header_invalid",
+    `a malformed workspace header is a 400, not an outage: ${malformed.status}`,
+  );
+  const nul = await api.request(owner, "/api/v1/people", "POST", {
+    givenName: "a\u0000b",
+    isPartial: false,
+  });
+  assert(nul.status === 400, `a NUL character is a 400: ${nul.status}`);
+  const plain = await configured.app.request(
+    "http://localhost/api/v1/people",
+    {
+      body: JSON.stringify({ givenName: "Ada", isPartial: false }),
+      headers: {
+        "content-type": "text/plain",
+        cookie: owner.cookie,
+        origin: "http://localhost",
+      },
+      method: "POST",
+    },
+  );
+  assert(plain.status === 415, `a text/plain body is a 415: ${plain.status}`);
+
+  const documentId = crypto.randomUUID();
+  await sql`insert into crm.legal_documents
+    (id, document_type, version, content, published_at, is_active)
+    values (${documentId}::uuid, 'terms', ${`aud-k1-${suffix}`},
+      'Terms published after the token', now() - interval '1 minute', true)`;
+  try {
+    const refused = await bearer();
+    assert(
+      refused.status === 403 &&
+        await code(refused) === "legal_acceptance_required",
+      `a token passed an outstanding document: ${refused.status}`,
+    );
+    const cookie = await api.request(owner, "/api/v1/people");
+    assert(cookie.status === 403, "the cookie owes the same document");
+  } finally {
+    await sql`delete from crm.legal_documents where id = ${documentId}::uuid`;
+  }
+  assert((await bearer()).status === 200, "withdrawn terms admit the token");
+});
+
 Deno.test({
   name: "close API token PostgreSQL fixture",
   sanitizeOps: false,

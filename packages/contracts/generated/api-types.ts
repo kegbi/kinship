@@ -5119,6 +5119,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5194,6 +5203,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5257,6 +5275,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5288,6 +5315,15 @@ export interface operations {
                     readonly "application/json": {
                         readonly exports: readonly components["schemas"]["ExportSummary"][];
                     };
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -5383,6 +5419,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5420,6 +5465,15 @@ export interface operations {
                     readonly "application/json": string;
                     readonly "application/zip": string;
                     readonly "text/vcard": string;
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -5495,6 +5549,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5553,6 +5616,15 @@ export interface operations {
                     readonly "application/json": {
                         readonly imports: readonly components["schemas"]["ImportSummary"][];
                     };
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -5651,6 +5723,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5682,6 +5763,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ImportSummary"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -5820,6 +5910,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -5888,6 +5987,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -6053,6 +6161,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6192,6 +6309,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6266,6 +6392,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6297,6 +6432,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["JournalItemReady"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -6464,6 +6608,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6532,6 +6685,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -6626,6 +6788,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6698,6 +6869,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6745,6 +6925,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["MemberUiStateReady"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -6840,6 +7029,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6896,6 +7094,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 410: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -7022,6 +7229,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -7069,6 +7285,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 410: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -7232,6 +7457,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -7289,6 +7523,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -7373,6 +7616,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -7402,6 +7654,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PeopleDuplicates"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -7489,6 +7750,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -7797,6 +8067,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -7874,6 +8153,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -8043,6 +8331,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -8558,6 +8855,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -8636,6 +8942,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -8730,6 +9045,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -8815,6 +9139,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -8849,6 +9182,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["DebtDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -9040,6 +9382,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -9290,6 +9641,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -9377,6 +9737,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -9456,6 +9825,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -9681,6 +10059,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -9754,6 +10141,15 @@ export interface operations {
                     readonly "image/jpeg": string;
                     readonly "image/png": string;
                     readonly "image/webp": string;
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -9961,6 +10357,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -10039,6 +10444,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10272,6 +10686,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -10350,6 +10773,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10444,6 +10876,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -10529,6 +10970,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -10563,6 +11013,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["RecurringDebtDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -10680,6 +11139,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10864,6 +11332,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -10941,6 +11418,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -11035,6 +11521,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -11113,6 +11608,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -11262,6 +11766,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -11552,6 +12065,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -11727,6 +12249,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -11851,6 +12382,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -12104,6 +12644,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12183,6 +12732,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -12286,6 +12844,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12360,6 +12927,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 429: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12398,6 +12974,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ApiTokenList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -12484,6 +13069,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12517,6 +13111,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ApiTokenRevoked"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -12579,6 +13182,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12628,6 +13240,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CalendarFeedIssued"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -12692,6 +13313,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12753,6 +13383,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12809,6 +13448,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["DavSubscriptionList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -12895,6 +13543,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -12928,6 +13585,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["DavSubscriptionDisabled"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -12991,6 +13657,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["DavSyncResult"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13059,6 +13734,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ManagedMembers"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13165,6 +13849,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13194,6 +13887,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PersonalLifecyclePreview"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13289,6 +13991,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 429: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13372,6 +14083,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 429: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13412,6 +14132,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PersonalizationList"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13510,6 +14239,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -13689,6 +14427,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13718,6 +14465,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PreferenceSettings"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13813,6 +14569,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13842,6 +14607,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ProfileSettings"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -13937,6 +14711,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -13966,6 +14749,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SessionSettings"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -14020,6 +14812,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SessionRevoked"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -14143,6 +14944,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -14235,6 +15045,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -14264,6 +15083,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["WorkspaceLifecyclePreview"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -14359,6 +15187,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 429: {
                 headers: {
                     /** @description Seconds before another current-password attempt. */
@@ -14436,6 +15273,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -14572,6 +15418,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -14737,6 +15592,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -14892,6 +15756,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -14977,6 +15850,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15006,6 +15888,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TodayAttention"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -15059,6 +15950,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15106,6 +16006,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TodayRecentActivity"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -15159,6 +16068,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15209,6 +16127,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 401: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15256,6 +16183,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TodayTasks"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -15354,6 +16290,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15387,6 +16332,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["InvitationAccepted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */
@@ -15427,6 +16381,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 410: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -15510,6 +16473,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 429: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15582,6 +16554,15 @@ export interface operations {
                 };
             };
             /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
             readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -15645,6 +16626,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 410: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -15726,6 +16716,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 410: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -15834,6 +16833,15 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["WorkspaceMembers"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description RFC 9457 problem details */

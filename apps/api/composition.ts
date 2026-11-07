@@ -187,6 +187,7 @@ import {
 import {
   createExportRoutes,
   createImportRoutes,
+  installExportLinkSessions,
 } from "../../packages/backend/modules/import-export/transport/http/routes.ts";
 import {
   createCalendarFeedRoutes,
@@ -226,6 +227,7 @@ import {
   type RequestIdEnv,
 } from "../../packages/http-kit/request_id.ts";
 import { apiSecureHeaders } from "../../packages/http-kit/secure_headers.ts";
+import { sessionResolution } from "../../packages/http-kit/session.ts";
 import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
@@ -402,6 +404,15 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
     healthRoutes(services?.readiness ? { readiness: services.readiness } : {}),
   );
 
+  // One session resolution per request (AUD-K1): installed here, in front of
+  // the guard that reads it, so every route's own `sessionActor` finds it and
+  // the coordinator is asked once however many readers the request has. A
+  // link that names its workspace in the query installs its resolution for
+  // that workspace first, so the guard checks the workspace the route acts in.
+  if (services?.protectedSessions) {
+    installExportLinkSessions(api, services.protectedSessions);
+    api.use("/api/v1/*", sessionResolution(services.protectedSessions));
+  }
   if (services?.legal && services.protectedSessions) {
     api.use(
       "/api/v1/*",

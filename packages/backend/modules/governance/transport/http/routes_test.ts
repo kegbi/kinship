@@ -6,6 +6,10 @@ import {
   createLegalRequirementGuard,
 } from "./routes.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  type ActorEnv,
+  requireTokenOrSessionActor,
+} from "../../../../../http-kit/session.ts";
 
 const ids = {
   actor: "00000000-0000-4000-8000-000000000002",
@@ -621,4 +625,95 @@ Deno.test("[INTEGRATION-002] the calendar feed never waits on a session's legal 
     { headers: { cookie: "kinship_session=test" }, method: "POST" },
   );
   assertStatus(other, 403, "only the feed read is exempt");
+});
+
+Deno.test("[AUD-K1] a token-admitted member owes the same legal documents", async () => {
+  let mode: "pending" | "ready" | "unavailable" = "pending";
+  const asked: string[] = [];
+  const legal = {
+    requirements: (actor: { readonly userId: string }) => {
+      asked.push(actor.userId);
+      return Promise.resolve(
+        mode === "pending"
+          ? {
+            documents: [{
+              content: "Required",
+              documentType: "terms",
+              id: ids.person,
+              version: "2026-11",
+            }],
+            status: "ready" as const,
+          }
+          : mode === "ready"
+          ? { documents: [], status: "ready" as const }
+          : { status: "unavailable" as const },
+      );
+    },
+    publicDocument: () => Promise.resolve({ status: "not-found" as const }),
+    accept: () => Promise.resolve({ status: "superseded-version" as const }),
+  } as unknown as LegalAcceptance;
+  let resolutions = 0;
+  const app = new Hono<ActorEnv>();
+  app.use(
+    "/api/v1/*",
+    createLegalRequirementGuard({
+      legal,
+      protectedSessions: {
+        resolve: () => {
+          resolutions += 1;
+          return Promise.resolve(undefined);
+        },
+      },
+    }),
+  );
+  app.get("/api/v1/people", async (context) => {
+    const actor = await requireTokenOrSessionActor(context, {
+      scope: "people:read",
+      tokens: {
+        authenticate: () =>
+          Promise.resolve({
+            actor: {
+              memberId: ids.actor,
+              role: "member" as const,
+              userId: ids.user,
+              workspaceId: ids.workspace,
+            },
+            status: "authenticated" as const,
+          }),
+      },
+    });
+    return actor instanceof Response ? actor : context.json({ reached: true });
+  });
+  const request = (headers: Record<string, string> = {}) =>
+    app.request("http://localhost/api/v1/people", {
+      headers: { authorization: "Bearer kinship_pat_x", ...headers },
+    });
+
+  const pending = await request();
+  mode = "unavailable";
+  const unavailable = await request();
+  mode = "ready";
+  const ready = await request();
+  const malformed = await request({
+    cookie: "kinship_session=test",
+    "X-Workspace-Id": "not-a-uuid",
+  });
+
+  assertStatus(pending, 403, "a token reached data past a pending document");
+  assert(
+    (await pending.json() as { readonly code: string }).code ===
+      "legal_acceptance_required",
+    "the token refusal names the document",
+  );
+  assertStatus(unavailable, 503, "a token passed a legal outage");
+  assertStatus(ready, 200, "a token with nothing outstanding was refused");
+  assertStatus(malformed, 400, "a malformed header was reported as an outage");
+  assert(
+    asked.join(",") === [ids.user, ids.user, ids.user].join(","),
+    "the token's own user is the one asked about",
+  );
+  assert(
+    resolutions === 0,
+    "a bearer request without a cookie reads no session",
+  );
 });

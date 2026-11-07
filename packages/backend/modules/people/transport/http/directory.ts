@@ -7,10 +7,10 @@
  * strip that reads those views back.
  *
  * The directory accepts an API token as well as a session cookie, which is
- * what `tokenOrSessionActor` is
- * for: an `Authorization` header commits the request to the token path with
- * the `people:read` scope, so a token that lacks it is nobody rather than a
- * silent fall back onto whatever cookie the same request happened to carry.
+ * what `requireTokenOrSessionActor` is for: an `Authorization` header
+ * commits the request to the token path with the `people:read` scope, so a
+ * token that lacks it is refused rather than a silent fall back onto
+ * whatever cookie the same request happened to carry.
  *
  * `GET /api/v1/people/tag-options` is registered before any route that reads
  * one person, and this file is mounted before `profile.ts`, so the literal
@@ -42,9 +42,8 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  SESSION_INVALID,
+  requireTokenOrSessionActor,
   sessionActor,
-  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
 import {
@@ -186,11 +185,11 @@ export function createDirectoryRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, PEOPLE_QUERY_INVALID);
     }
-    const actor = await tokenOrSessionActor(context, {
+    const actor = await requireTokenOrSessionActor(context, {
       scope: DIRECTORY_SCOPE,
       ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
     });
-    if (!actor) return definedProblem(context, SESSION_INVALID);
+    if (actor instanceof Response) return actor;
     const result = await services.directory.list(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
       ...(parsed.data.excludePersonId

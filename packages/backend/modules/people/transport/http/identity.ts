@@ -31,9 +31,8 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  SESSION_INVALID,
+  requireTokenOrSessionActor,
   sessionActor,
-  tokenOrSessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
 import {
@@ -115,11 +114,11 @@ export function createIdentityRoutes(
   mount(routes, getPersonIdentity, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return definedProblem(context, PERSON_ID_INVALID);
-    const actor = await tokenOrSessionActor(context, {
+    const actor = await requireTokenOrSessionActor(context, {
       scope: "people:profile:read",
       ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
     });
-    if (!actor) return definedProblem(context, SESSION_INVALID);
+    if (actor instanceof Response) return actor;
     const result = await services.people.get(actor, personId.data).catch(() =>
       undefined
     );
