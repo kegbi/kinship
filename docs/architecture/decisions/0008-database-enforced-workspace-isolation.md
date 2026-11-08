@@ -156,8 +156,9 @@ cannot bridge two workspaces, but a statement that reads or writes it directly
 is not bound by the scope. Their isolation rests on the application's predicate
 on the parent chain. The isolation suite and `tools/schema/assert_isolation.sql`
 allow exactly the nine references from an unforced table into a tenant table,
-and into these eleven tables only a tenant table's own `workspace_id` key or the
-two listed further levels (`billing_subscription_items →
+and into these eleven tables only a forced table's own workspace key, exactly
+`(workspace_id) → workspaces(id)`, or the two listed further levels
+(`billing_subscription_items →
 billing_subscriptions`,
 `data_import_reports → data_import_entities`), so a new link table without its
 own `workspace_id`, or a table below a child, fails them. Backstopping these

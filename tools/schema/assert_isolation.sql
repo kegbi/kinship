@@ -96,7 +96,8 @@ $$;
 --   today's single-parent children, each with its one parent;
 -- - into a workspace-owned table that row-level security does not bind (the
 --   root workspaces table, and every child either list names), only a forced
---   table's own workspace_id key or a listed further level below a child;
+--   table's own workspace key, exactly (workspace_id) -> workspaces(id), or a
+--   listed further level below a child;
 -- - every listed reference still exists.
 --
 -- Any other such reference — a link table without its own workspace_id, or a
@@ -131,10 +132,19 @@ LANGUAGE sql AS $function$
     SELECT con.conname::text AS name, src.relname::text AS child,
       tgt.relname::text AS parent, src.relforcerowsecurity AS forced,
       tgt.relforcerowsecurity AS parent_forced,
-      EXISTS (
-        SELECT 1 FROM unnest(con.conkey) key(attnum)
-        JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = key.attnum
-        WHERE a.attname = 'workspace_id'
+      (
+        con.confrelid = 'crm.workspaces'::regclass
+        AND cardinality(con.conkey) = 1 AND cardinality(con.confkey) = 1
+        AND EXISTS (
+          SELECT 1 FROM pg_attribute a
+          WHERE a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+            AND a.attname = 'workspace_id'
+        )
+        AND EXISTS (
+          SELECT 1 FROM pg_attribute a
+          WHERE a.attrelid = con.confrelid AND a.attnum = con.confkey[1]
+            AND a.attname = 'id'
+        )
       ) AS workspace_key
     FROM pg_constraint con
     JOIN pg_class src ON src.oid = con.conrelid
@@ -200,8 +210,66 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'reference guard self-test rolled back' THEN RAISE; END IF;
   END;
+  -- Keys on a forced table that are not its own workspace key: a
+  -- workspace_id compared with something other than a workspace's id (a
+  -- person id through pets, a user id through workspaces), and a column other
+  -- than workspace_id into workspaces(id). None passes as the table's own
+  -- workspace key.
+  BEGIN
+    CREATE UNIQUE INDEX pets_person_id_id_unique ON crm.pets (person_id, id);
+    CREATE TABLE crm.pet_x_links (
+      workspace_id uuid NOT NULL,
+      pet_id uuid NOT NULL,
+      CONSTRAINT pet_x_links_pet_fkey FOREIGN KEY (workspace_id, pet_id)
+        REFERENCES crm.pets (person_id, id)
+    );
+    ALTER TABLE crm.pet_x_links ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE crm.pet_x_links FORCE ROW LEVEL SECURITY;
+    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'pet_x_links_pet_fkey' THEN
+      RAISE EXCEPTION 'a workspace_id key into pets passed the reference guard';
+    END IF;
+    RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'reference guard self-test rolled back' THEN RAISE; END IF;
+  END;
+  BEGIN
+    UPDATE crm.workspaces SET created_by_user_id = NULL;
+    CREATE UNIQUE INDEX workspaces_created_by_user_id_unique
+      ON crm.workspaces (created_by_user_id);
+    CREATE TABLE crm.creator_x_links (
+      workspace_id uuid NOT NULL,
+      CONSTRAINT creator_x_links_workspace_fkey FOREIGN KEY (workspace_id)
+        REFERENCES crm.workspaces (created_by_user_id)
+    );
+    ALTER TABLE crm.creator_x_links ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE crm.creator_x_links FORCE ROW LEVEL SECURITY;
+    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'creator_x_links_workspace_fkey' THEN
+      RAISE EXCEPTION 'a workspace_id key into workspaces(created_by_user_id) passed the reference guard';
+    END IF;
+    RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'reference guard self-test rolled back' THEN RAISE; END IF;
+  END;
+  BEGIN
+    CREATE TABLE crm.owner_x_links (
+      owner_id uuid REFERENCES crm.workspaces (id)
+    );
+    ALTER TABLE crm.owner_x_links ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE crm.owner_x_links FORCE ROW LEVEL SECURITY;
+    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'owner_x_links_owner_id_fkey' THEN
+      RAISE EXCEPTION 'a key from a column other than workspace_id into workspaces(id) passed the reference guard';
+    END IF;
+    RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'reference guard self-test rolled back' THEN RAISE; END IF;
+  END;
   IF to_regclass('crm.person_x_links') IS NOT NULL
-    OR to_regclass('crm.pet_photos') IS NOT NULL THEN
+    OR to_regclass('crm.pet_photos') IS NOT NULL
+    OR to_regclass('crm.pet_x_links') IS NOT NULL
+    OR to_regclass('crm.creator_x_links') IS NOT NULL
+    OR to_regclass('crm.owner_x_links') IS NOT NULL
+    OR to_regclass('crm.pets_person_id_id_unique') IS NOT NULL
+    OR to_regclass('crm.workspaces_created_by_user_id_unique') IS NOT NULL THEN
     RAISE EXCEPTION 'a reference guard self-test left its table behind';
   END IF;
 END

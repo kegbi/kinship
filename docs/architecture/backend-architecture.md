@@ -350,7 +350,8 @@ v14):
   A new link table must carry its own `workspace_id`; the isolation suite and
   `tools/schema/assert_isolation.sql` refuse any other reference from an
   unforced table into a tenant table, and any reference into these eleven tables
-  that is neither a tenant table's own `workspace_id` key nor listed (today
+  that is neither a forced table's own workspace key, exactly
+  `(workspace_id) → workspaces(id)`, nor listed (today
   `billing_subscription_items → billing_subscriptions` and
   `data_import_reports → data_import_entities`). A follow-up item adds the
   missing backstops. A use case passes its actor's workspace as the transaction

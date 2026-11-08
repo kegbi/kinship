@@ -2072,7 +2072,7 @@ Playwright test carrying its stable flow ID.
       release whose Firefox build closes contexts cleanly. Keep the failure
       visible: do not add retries or swallow teardown errors.
 
-- [ ] **REL-125 — The v14 reference guard's `workspace_id` exemption is looser
+- [x] **REL-125 — The v14 reference guard's `workspace_id` exemption is looser
       than documented.** Found in the AUD-V2 final re-check during the
       2026-11-07 audit-remediation run on the REL-105 Windows host. ADR 0008
       (`docs/architecture/decisions/0008-database-enforced-workspace-isolation.md:158–159`)
@@ -2100,7 +2100,15 @@ Playwright test carrying its stable flow ID.
       through. Add a self-test beside the AUD-V2 guard tests
       (`workspace_isolation_postgres_test.ts:425–489`) that both this key and
       the `pets` key fail. REL-120's backstop for the same eleven tables changes
-      what the guards exempt; keep the two consistent.
+      what the guards exempt; keep the two consistent. Resolved 2026-11-08: both
+      guards (`workspaceKey` in `referenceGuardViolations` and
+      `fk.workspace_key` in `tools/schema/assert_isolation.sql`) exempt only a
+      single-column key from `workspace_id` into `crm.workspaces(id)`, checking
+      `conkey`, the target, and `confkey`; new rolled-back self-tests in both
+      prove that the `pets(person_id, id)` and `workspaces(created_by_user_id)`
+      keys fail while the live catalog still passes, and ADR 0008, the backend
+      architecture, and `workspace_references.ts` name the exact key. No schema
+      changed.
 
 - [ ] **REL-126 — The composed person rail trades requests for statements and
       couples two sections.** Found in the AUD-Q3 review's Low notes during the

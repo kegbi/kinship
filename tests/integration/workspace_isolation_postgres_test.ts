@@ -357,7 +357,8 @@ Deno.test({
  *   table that is not one of today's single-parent children with its parent;
  * - a reference into a workspace-owned table without row-level security — the
  *   root `workspaces` table, or any child the two allowlists name — that is
- *   neither a forced table's own `workspace_id` key nor listed below them;
+ *   neither a forced table's own workspace key, exactly
+ *   `(workspace_id) -> workspaces(id)`, nor listed below them;
  * - a listed single-parent or unforced-child reference that no longer exists.
  */
 async function referenceGuardViolations(
@@ -374,11 +375,19 @@ async function referenceGuardViolations(
     select con.conname::text as constraint, src.relname::text as child,
       tgt.relname::text as parent, src.relforcerowsecurity as forced,
       tgt.relforcerowsecurity as "parentForced",
-      exists (
-        select 1 from unnest(con.conkey) key(attnum)
-        join pg_attribute a on a.attrelid = con.conrelid
-          and a.attnum = key.attnum
-        where a.attname = 'workspace_id'
+      (
+        con.confrelid = 'crm.workspaces'::regclass
+        and cardinality(con.conkey) = 1 and cardinality(con.confkey) = 1
+        and exists (
+          select 1 from pg_attribute a
+          where a.attrelid = con.conrelid and a.attnum = con.conkey[1]
+            and a.attname = 'workspace_id'
+        )
+        and exists (
+          select 1 from pg_attribute a
+          where a.attrelid = con.confrelid and a.attnum = con.confkey[1]
+            and a.attname = 'id'
+        )
       ) as "workspaceKey"
     from pg_constraint con
     join pg_class src on src.oid = con.conrelid
@@ -485,6 +494,79 @@ Deno.test({
         JSON.stringify(caught)
       }`,
     );
+  },
+});
+
+Deno.test({
+  name:
+    "[REL-125] a workspace_id key that is not (workspace_id) -> workspaces(id) fails the reference guard",
+  sanitizeResources: false,
+  async fn() {
+    // Each key on a forced table is not its own workspace key: two name a
+    // column workspace_id yet compare it with something other than a
+    // workspace's id (a person id through `pets`, a user id through
+    // `workspaces`), and one reaches `workspaces(id)` from a column that is
+    // not workspace_id. None may pass as the forced table's own workspace key.
+    const shapes = [
+      {
+        constraint: "pet_x_links_pet_fkey",
+        ddl: `
+          create unique index pets_person_id_id_unique on crm.pets (person_id, id);
+          create table crm.pet_x_links (
+            workspace_id uuid not null,
+            pet_id uuid not null,
+            constraint pet_x_links_pet_fkey foreign key (workspace_id, pet_id)
+              references crm.pets (person_id, id)
+          );
+          alter table crm.pet_x_links enable row level security;
+          alter table crm.pet_x_links force row level security;
+        `,
+      },
+      {
+        constraint: "creator_x_links_workspace_fkey",
+        // Clearing the creators lets the index build whatever rows other
+        // suites left; the block rolls back.
+        ddl: `
+          update crm.workspaces set created_by_user_id = null;
+          create unique index workspaces_created_by_user_id_unique
+            on crm.workspaces (created_by_user_id);
+          create table crm.creator_x_links (
+            workspace_id uuid not null,
+            constraint creator_x_links_workspace_fkey foreign key (workspace_id)
+              references crm.workspaces (created_by_user_id)
+          );
+          alter table crm.creator_x_links enable row level security;
+          alter table crm.creator_x_links force row level security;
+        `,
+      },
+      {
+        constraint: "owner_x_links_owner_id_fkey",
+        ddl: `
+          create table crm.owner_x_links (
+            owner_id uuid references crm.workspaces (id)
+          );
+          alter table crm.owner_x_links enable row level security;
+          alter table crm.owner_x_links force row level security;
+        `,
+      },
+    ];
+    for (const shape of shapes) {
+      let caught: readonly string[] = [];
+      const rolledBack = new Error("rolled back");
+      await sql.begin(async (transaction) => {
+        await transaction.unsafe(shape.ddl);
+        caught = await referenceGuardViolations(transaction as unknown as Sql);
+        throw rolledBack;
+      }).catch((error) => {
+        if (error !== rolledBack) throw error;
+      });
+      assert(
+        caught.length === 1 && caught[0] === shape.constraint,
+        `${shape.constraint} passed the reference guard: ${
+          JSON.stringify(caught)
+        }`,
+      );
+    }
   },
 });
 

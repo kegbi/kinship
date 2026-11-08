@@ -866,7 +866,8 @@ export const SINGLE_PARENT_REFERENCES: readonly {
 /**
  * The only references into a workspace-owned table without row-level security
  * — the root `workspaces` table and the children listed above — that are not
- * a tenant table's own `workspace_id` key (ADR 0008). Each is a further level
+ * a forced table's own workspace key, exactly `(workspace_id) -> workspaces(id)`
+ * (ADR 0008). Each is a further level
  * below a single-parent child, without a `workspace_id` either, so it too is
  * read only through the chain's workspace predicate. Any other such reference
  * — a table below `pets`, say, or an unforced table naming a workspace — fails
