@@ -78,6 +78,128 @@ Deno.test({
       "registration response must not expose token material",
     );
 
+    // Registration provisions nothing a verification has not proved
+    // (SECA-04, AUD-A2): the pending identity, its link, the registering
+    // browser's verifier, and the workspace it asked for, on the user row.
+    const [pending] = await sql<{
+      intents: number;
+      rows: number;
+      tokens: number;
+      users: number;
+    }[]>`
+      select
+        (select count(*)::int from crm.users) users,
+        (select count(*)::int from crm.email_verification_tokens
+          where used_at is null and token_hash not like 'registrant:%') tokens,
+        (select count(*)::int from crm.users
+          where pending_workspace_name is not null) intents,
+        (select count(*)::int from crm.workspaces) +
+          (select count(*)::int from crm.workspace_members) +
+          (select count(*)::int from crm.member_preferences) +
+          (select count(*)::int from crm.workspace_settings) +
+          (select count(*)::int from crm.relationship_types) +
+          (select count(*)::int from crm.audit_events) rows
+    `;
+    assert(
+      pending?.users === 1 && pending.tokens === 1 && pending.intents === 1 &&
+        pending.rows === 0,
+      "an unverified registration is only its pending identity",
+    );
+
+    const token = capturedMail.latestToken("owner@example.test");
+    assert(token, "injected mail fake must receive verification");
+    const stored = await sql<
+      { token_hash: string }[]
+    >`select token_hash from crm.email_verification_tokens where token_hash not like 'registrant:%'`;
+    assert(
+      stored[0]?.token_hash !== token,
+      "only the token hash may be persisted",
+    );
+    const oldTokenHash = stored[0]?.token_hash;
+    assert(oldTokenHash, "stored token hash exists");
+
+    const retry = await configured.app.request(
+      "http://localhost/api/v1/email-verification-deliveries",
+      {
+        method: "POST",
+        headers: originHeaders,
+        body: JSON.stringify({ email: "OWNER@example.test" }),
+      },
+    );
+    assert(retry.status === 202, "anonymous delivery retry is accepted");
+    const retriedToken = capturedMail.latestToken("owner@example.test");
+    assert(
+      retriedToken && retriedToken !== token,
+      "retry must rotate the raw token after its transaction commits",
+    );
+    const [retryState] = await sql<{ pending: number; old_hashes: number }[]>`
+      select
+        count(*)::int as pending,
+        count(*) filter (where token_hash = ${oldTokenHash})::int as old_hashes
+      from crm.email_verification_tokens where used_at is null
+        and token_hash not like 'registrant:%'
+    `;
+    assert(
+      retryState?.pending === 2 && retryState.old_hashes === 1,
+      "retry preserves the initial usable token",
+    );
+    const mailCountBeforeCooldown = capturedMail.tokens("owner@example.test")
+      .length;
+    await configured.app.request(
+      "http://localhost/api/v1/email-verification-deliveries",
+      {
+        method: "POST",
+        headers: originHeaders,
+        body: JSON.stringify({ email: "owner@example.test" }),
+      },
+    );
+    assert(
+      capturedMail.tokens("owner@example.test").length ===
+        mailCountBeforeCooldown,
+      "persisted cooldown bounds repeated provider work",
+    );
+
+    const verifyCandidate = (candidate: string) =>
+      configured.app.request(
+        "http://localhost/api/v1/email-verifications",
+        {
+          method: "POST",
+          headers: { ...originHeaders, cookie: registrant },
+          body: JSON.stringify({ token: candidate }),
+        },
+      );
+    const [verification, competingVerification] = await Promise.all([
+      verifyCandidate(token),
+      verifyCandidate(retriedToken),
+    ]);
+    assert(
+      [verification.status, competingVerification.status].sort().join(",") ===
+        "200,409",
+      "concurrent verification links issue exactly one handoff",
+    );
+    const successfulVerification = verification.status === 200
+      ? verification
+      : competingVerification;
+    const cookie = successfulVerification.headers.get("set-cookie");
+    assert(
+      cookie?.includes("HttpOnly") &&
+        !JSON.stringify(await successfulVerification.json()).includes(token),
+      "verification returns only an HttpOnly handoff",
+    );
+
+    const [verified] = await sql<
+      { members: number; sessions: number; users: number }[]
+    >`
+      select
+        (select count(*)::int from crm.users where email_verified_at is not null) users,
+        (select count(*)::int from crm.workspace_members where role = 'owner' and status = 'active') members,
+        (select count(*)::int from crm.user_sessions where revoked_at is null) sessions
+    `;
+    assert(
+      verified?.users === 1 && verified.members === 1 &&
+        verified.sessions === 1,
+      "verification must yield one verified owner and one narrow handoff",
+    );
     const [shape] = await sql<{
       audits: number;
       members: number;
@@ -96,17 +218,17 @@ Deno.test({
         (select count(*)::int from crm.workspace_settings) settings,
         (select count(*)::int from crm.relationship_types) relationship_types,
         (select count(*)::int from crm.audit_events where action = 'workspace.created') audits,
-        (select count(*)::int from crm.email_verification_tokens where used_at is null and token_hash not like 'registrant:%') tokens
+        (select count(*)::int from crm.email_verification_tokens where used_at is null) tokens
     `;
     assert(
       shape?.users === 1 && shape.workspaces === 1 && shape.members === 1,
-      "one pending owner workspace must exist",
+      "verification provisions one owner workspace",
     );
     assert(
       shape.preferences === 1 && shape.settings === 1 && shape.audits === 1 &&
-        shape.tokens === 1 && shape.relationship_types ===
+        shape.tokens === 0 && shape.relationship_types ===
           DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types.length,
-      "required defaults, audit, and token must be atomic",
+      "required defaults and audit are written with the spent token",
     );
     const provisioned = await sql<{
       can_delete: boolean;
@@ -226,100 +348,6 @@ Deno.test({
       );
     }
 
-    const token = capturedMail.latestToken("owner@example.test");
-    assert(token, "injected mail fake must receive verification");
-    const stored = await sql<
-      { token_hash: string }[]
-    >`select token_hash from crm.email_verification_tokens where token_hash not like 'registrant:%'`;
-    assert(
-      stored[0]?.token_hash !== token,
-      "only the token hash may be persisted",
-    );
-    const oldTokenHash = stored[0]?.token_hash;
-    assert(oldTokenHash, "stored token hash exists");
-
-    const retry = await configured.app.request(
-      "http://localhost/api/v1/email-verification-deliveries",
-      {
-        method: "POST",
-        headers: originHeaders,
-        body: JSON.stringify({ email: "OWNER@example.test" }),
-      },
-    );
-    assert(retry.status === 202, "anonymous delivery retry is accepted");
-    const retriedToken = capturedMail.latestToken("owner@example.test");
-    assert(
-      retriedToken && retriedToken !== token,
-      "retry must rotate the raw token after its transaction commits",
-    );
-    const [retryState] = await sql<{ pending: number; old_hashes: number }[]>`
-      select
-        count(*)::int as pending,
-        count(*) filter (where token_hash = ${oldTokenHash})::int as old_hashes
-      from crm.email_verification_tokens where used_at is null
-        and token_hash not like 'registrant:%'
-    `;
-    assert(
-      retryState?.pending === 2 && retryState.old_hashes === 1,
-      "retry preserves the initial usable token",
-    );
-    const mailCountBeforeCooldown = capturedMail.tokens("owner@example.test")
-      .length;
-    await configured.app.request(
-      "http://localhost/api/v1/email-verification-deliveries",
-      {
-        method: "POST",
-        headers: originHeaders,
-        body: JSON.stringify({ email: "owner@example.test" }),
-      },
-    );
-    assert(
-      capturedMail.tokens("owner@example.test").length ===
-        mailCountBeforeCooldown,
-      "persisted cooldown bounds repeated provider work",
-    );
-
-    const verifyCandidate = (candidate: string) =>
-      configured.app.request(
-        "http://localhost/api/v1/email-verifications",
-        {
-          method: "POST",
-          headers: { ...originHeaders, cookie: registrant },
-          body: JSON.stringify({ token: candidate }),
-        },
-      );
-    const [verification, competingVerification] = await Promise.all([
-      verifyCandidate(token),
-      verifyCandidate(retriedToken),
-    ]);
-    assert(
-      [verification.status, competingVerification.status].sort().join(",") ===
-        "200,409",
-      "concurrent verification links issue exactly one handoff",
-    );
-    const successfulVerification = verification.status === 200
-      ? verification
-      : competingVerification;
-    const cookie = successfulVerification.headers.get("set-cookie");
-    assert(
-      cookie?.includes("HttpOnly") &&
-        !JSON.stringify(await successfulVerification.json()).includes(token),
-      "verification returns only an HttpOnly handoff",
-    );
-
-    const [verified] = await sql<
-      { members: number; sessions: number; users: number }[]
-    >`
-      select
-        (select count(*)::int from crm.users where email_verified_at is not null) users,
-        (select count(*)::int from crm.workspace_members where role = 'owner' and status = 'active') members,
-        (select count(*)::int from crm.user_sessions where revoked_at is null) sessions
-    `;
-    assert(
-      verified?.users === 1 && verified.members === 1 &&
-        verified.sessions === 1,
-      "verification must yield one verified owner and one narrow handoff",
-    );
     const deliveriesAfterVerify = capturedMail.tokens("owner@example.test")
       .length;
     await configured.app.request(
@@ -388,6 +416,10 @@ Deno.test({
     assert(
       (await register("second-tenant@example.test")).status === 202,
       "second tenant registration succeeds",
+    );
+    assert(
+      (await api.verify("second-tenant@example.test")).status === 200,
+      "second tenant verification provisions its workspace",
     );
     const tenantDefaults = await sql<{
       count: number;
@@ -575,6 +607,10 @@ Deno.test({
     assert(
       (await register("postconditions@example.test")).status === 202,
       "postcondition fixture registration succeeds",
+    );
+    assert(
+      (await api.verify("postconditions@example.test")).status === 200,
+      "postcondition fixture verification provisions its workspace",
     );
     const [links] = await sql<{
       email: string;

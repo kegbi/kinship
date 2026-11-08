@@ -35,6 +35,12 @@ const PATHS = {
   registration: "mail-budget/registration",
 } as const;
 
+/**
+ * A `LIKE` pattern matching every budget's rows, which the retention job keeps
+ * for longer than the budget window (AUD-A2).
+ */
+export const MAIL_BUDGET_PATH_PATTERN = "mail-budget/%";
+
 export class PostgresOutboundMailBudget implements OutboundMailBudget {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,

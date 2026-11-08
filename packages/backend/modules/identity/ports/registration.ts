@@ -25,6 +25,16 @@
  * `createRetryVerificationToken` is what a request for another link does. It
  * never says whether the address was already registered — that answer belongs
  * to the person holding the mailbox, not to the caller.
+ *
+ * A pending user can carry a `registrationIntent` (SECA-04, AUD-A2): the name
+ * of the first workspace the registering module will provision once the
+ * address is proved. It is kept verbatim in the user's `pending_workspace_name`
+ * (schema v13: trimmed, 1 to 120 characters), handed back by the verification
+ * that proves the address, and cleared by it, so it is provisioned at most
+ * once. Identity never interprets it. An invitee, and a pending user from
+ * before AUD-A2, carries none.
+ * `listStalePendingUsers` names the pending registrations old enough to be
+ * discarded, so the module that registered them can decide which may go.
  */
 
 import type { IdentityTransaction } from "./context.ts";
@@ -37,6 +47,8 @@ export interface CreatePendingUserCommand {
   readonly passwordHash: string;
   /** The raw secret in the registering browser's cookie; stored hashed. */
   readonly registrantVerifier: string;
+  /** The first workspace's name, kept on the user until it is proved. */
+  readonly registrationIntent?: string;
   readonly tokenHash: string;
   readonly transaction: IdentityTransaction;
   readonly userId: string;
@@ -44,6 +56,12 @@ export interface CreatePendingUserCommand {
 }
 
 export interface PendingUser {
+  readonly userId: string;
+}
+
+/** A pending registration old enough to be discarded. */
+export interface StalePendingUser {
+  readonly email: string;
   readonly userId: string;
 }
 
@@ -78,6 +96,7 @@ export interface IdentityRegistrationFacade {
     readonly firstName: string;
     readonly lastName: string;
     readonly passwordHash: string;
+    readonly registrationIntent?: string;
     readonly tokenHash: string;
     readonly transaction: IdentityTransaction;
     readonly userId: string;
@@ -93,4 +112,33 @@ export interface IdentityRegistrationFacade {
   }): Promise<
     { readonly email: string; readonly created: boolean } | undefined
   >;
+}
+
+/**
+ * How the pending registrations nobody verified are let go (SECA-04, AUD-A2).
+ * Identity names them; the registering module decides which of them may go,
+ * and identity discards those with their tokens.
+ */
+export interface PendingRegistrationRetentionFacade {
+  /**
+   * Deletes each named user that is still a pending registration, with every
+   * token, handoff, and reset request it holds, and says how many went.
+   */
+  discardPendingUsers(command: {
+    readonly transaction: IdentityTransaction;
+    readonly userIds: readonly string[];
+  }): Promise<number>;
+  /**
+   * Up to `limit` pending registrations made, and last sent a link, before
+   * `createdBefore`, after `afterUserId` in id order, each locked for the
+   * caller's transaction and skipped when somebody else holds it. Only a
+   * registration — an unverified, active user holding a verification token —
+   * is ever named, so an imported account that never registered here is not.
+   */
+  listStalePendingUsers(command: {
+    readonly afterUserId?: string;
+    readonly createdBefore: Date;
+    readonly limit: number;
+    readonly transaction: IdentityTransaction;
+  }): Promise<readonly StalePendingUser[]>;
 }

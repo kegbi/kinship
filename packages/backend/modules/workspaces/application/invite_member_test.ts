@@ -235,7 +235,7 @@ function dependencies(overrides: {
       },
       pendingWorkspaces: {
         deletePendingWorkspaces(command) {
-          effects.push(`workspaces.discard:${command.userId}`);
+          effects.push(`workspaces.discard:${command.userIds.join("+")}`);
           return Promise.resolve();
         },
       },

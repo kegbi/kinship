@@ -75,6 +75,7 @@ export class PostgresIdentityPersonalLifecycle
       update crm.users set
         email = 'deleted+' || id::text || '@invalid.kinship.local',
         password_hash = null, first_name = '', last_name = '',
+        pending_workspace_name = null,
         status = 'deleted', email_verified_at = null,
         last_login_at = null, password_changed_at = null,
         deleted_at = ${command.deletedAt}, updated_at = ${command.deletedAt}

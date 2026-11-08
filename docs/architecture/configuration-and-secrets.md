@@ -190,8 +190,8 @@ distinct `path` that no HTTP route has (`mail-budget/invitation`,
 the sign-in throttle separates its scopes by path (AUD-A3). The address is kept
 only as its versioned HMAC under `AUTH_THROTTLE_SUBJECT_KEYSET`, labelled
 `kinship.authentication.mail.v1`; every retained key's digest is counted, so a
-rotation does not reset a budget. A future retention job must keep these rows
-for at least 24 hours.
+rotation does not reset a budget. The retention job keeps these rows for 48
+hours, past the 24-hour window ("Authentication Data Retention").
 
 A per-address ceiling can be spent by somebody else: anyone may exhaust an
 address's registration mail for the day, or invite it three times. That delays
@@ -211,6 +211,63 @@ cap and registration-mail ceiling, and one mailbox can be sent that much per
 alias. Each workspace's quota still bounds what that workspace sends, but
 workspaces held by plus-aliased accounts of one person are counted apart.
 Folding aliases would mean guessing each provider's rules, so it is not done.
+
+## Authentication Data Retention
+
+Registrations and the authentication rows they leave are bounded (SECA-04,
+BEQ-15, AUD-A2). A registration writes only the pending identity: the user, its
+verification link, the registering browser's verifier (a `token_hash` prefixed
+`registrant:`), and the name of the workspace it asked for, on the user row
+(`crm.users.pending_workspace_name`, schema v13). The workspace, the owner's
+membership, preferences, settings, default vocabulary, and creation audit are
+written when the address is proved, in the verification's own transaction,
+whichever browser proves it. That transaction reads the name under the user's
+row lock and clears it, so a workspace is provisioned at most once and the name
+the person typed is not kept afterwards; account erasure clears it too. An
+invitee, and a pending user from before AUD-A2, has no name and is only
+verified.
+
+The worker's retention job deletes what nobody can use any more. It runs on the
+worker's first tick and then at most once an hour, each module deleting its own
+rows through its own use case in bounded batches, and a backlog larger than one
+run's cap is left to the next. Like the mail limits, the windows are fixed
+policy, not configuration.
+
+| Row                                                                                           | Deleted when older than                           | Owner        |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------ |
+| Pending registration (unverified user holding a verification token), with everything it holds | 7 days after it was made and was last sent a link | `workspaces` |
+| Session (`crm.user_sessions`)                                                                 | 30 days after it expired or was revoked           | `identity`   |
+| Password reset request, used or not                                                           | 7 days after it was written                       | `identity`   |
+| A verified user's verification tokens and verifier                                            | 7 days, except the newest spent token             | `identity`   |
+| Sign-in and MFA throttle rows (`POST /api/v1/sessions`, `POST /api/v1/mfa-challenges`)        | 1 hour (the longest window is 15 minutes)         | `api-access` |
+| Mail-budget reservations (`mail-budget/*`)                                                    | 48 hours (the window is 24 hours)                 | `api-access` |
+
+A registration is as old as the newest link it was sent, so a retry on its last
+day starts its week again rather than mailing a link the next run voids. It also
+stays past its week while somebody still waits on it: a pending, unexpired
+invitation is addressed to it, or it holds a membership in anybody else's
+workspace. Each run walks the stale registrations in id order from the start, so
+one that stays is passed over within a run and considered again by the next. An
+imported account is never a pending registration, because it holds no
+verification token. A verified user keeps their newest spent verification token
+for as long as the account exists, because that row is what lets an address
+proved here sign in, and what keeps an imported credential from ever activating.
+A registration made before provisioning waited for verification loses the
+workspace it was provisioned with, provided nobody else belongs to it.
+
+Only the throttle and mail-budget rows of `crm.api_request_logs` are purged,
+because those are the rows the job's windows are tied to: the windows are the
+throttle and budget windows their readers count, plus a margin, and a test pins
+each one to its reader's. Any other row the table holds, such as API usage
+logged or imported from Monica's `api_usage`, is not this job's to delete.
+
+The per-address daily registration budget is the registration-mail ceiling above
+(`mail-budget/registration`): every registration, retry, and invitee
+registration spends one before anything is written. AUD-A2 adds no second
+counter. With nothing but the pending identity written before verification, and
+a later registration replacing an address's pending one, an address holds at
+most one pending registration, and past ten requests a day nothing is written at
+all.
 
 ## Redaction
 

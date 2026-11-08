@@ -784,7 +784,7 @@ Deno.test("[GAP-020] the refusals registration.ts answers are unchanged", () => 
       "409 | entry_handoff_invalid | Application entry unavailable | Workspace access is no longer active.",
       "503 | registration_failed | Registration unavailable | Nothing was created. Please try again.",
       "400 | validation_failed | Invalid registration | Check the highlighted fields.",
-      "503 | verification_delivery_failed | Verification email delayed | Your account was created with its workspace, but the verification email could not be delivered. Retry delivery.",
+      "503 | verification_delivery_failed | Verification email delayed | Your account was created, but the verification email could not be delivered. Retry delivery.",
       "400 | invalid_verification | Verification link invalid | Request a new verification link.",
       "503 | verification_unavailable | Verification unavailable | Email verification is temporarily unavailable. Please try again.",
     ].join("\n"),

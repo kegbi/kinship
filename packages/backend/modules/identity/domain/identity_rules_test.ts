@@ -1,5 +1,7 @@
 import { assert, assertEquals, assertThrows } from "../../../testing/assert.ts";
 import {
+  AUTHENTICATION_RETENTION,
+  authenticationRetentionCutoffs,
   deliveryWindow,
   IdentityConflictError,
   PASSWORD_RESET_DELIVERY_WINDOW,
@@ -46,4 +48,27 @@ Deno.test("[GAP-018] a window that would leak whether an address is registered r
       "Password recovery delivery window must be 100-5000ms.",
     );
   }
+});
+
+Deno.test("[AUD-A2] retention keeps pending registrations and tokens a week, ended sessions a month", () => {
+  assertEquals(AUTHENTICATION_RETENTION, {
+    endedSessionMilliseconds: 30 * 86_400_000,
+    pendingRegistrationMilliseconds: 7 * 86_400_000,
+    tokenMilliseconds: 7 * 86_400_000,
+  });
+  const cutoffs = authenticationRetentionCutoffs(
+    new Date("2026-11-08T12:00:00.000Z"),
+  );
+  assertEquals(
+    [
+      cutoffs.endedSessionsBefore.toISOString(),
+      cutoffs.pendingRegistrationsBefore.toISOString(),
+      cutoffs.tokensBefore.toISOString(),
+    ],
+    [
+      "2026-10-09T12:00:00.000Z",
+      "2026-11-01T12:00:00.000Z",
+      "2026-11-01T12:00:00.000Z",
+    ],
+  );
 });

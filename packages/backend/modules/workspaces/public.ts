@@ -18,9 +18,18 @@ export type {
 } from "./domain/registration_rules.ts";
 export {
   createFirstWorkspaceRegistration,
+  createRegistrationVerification,
   createVerificationDeliveryRetry,
 } from "./application/register_first_workspace.ts";
-export type { RegistrationDependencies } from "./application/register_first_workspace.ts";
+export type {
+  RegistrationDependencies,
+  RegistrationVerificationDependencies,
+} from "./application/register_first_workspace.ts";
+export {
+  createStaleRegistrationPurge,
+  REGISTRATION_RETENTION_BATCH,
+} from "./application/registration_retention.ts";
+export type { PendingRegistrationRetentionRepository } from "./ports/registration_retention.ts";
 export type {
   RegistrationAudit,
   VerificationMail,
@@ -104,6 +113,8 @@ export type {
   InvitationSummary,
   WorkspaceMemberSummary,
 } from "./domain/invitation_rules.ts";
+/** The rolling window every mail budget counts over (SECA-03, AUD-M3). */
+export { MAIL_BUDGET_WINDOW_MS } from "./domain/invitation_rules.ts";
 export type { InvitationActor } from "./ports/context.ts";
 export type {
   InvitationAudit,

@@ -216,7 +216,7 @@ test(
     }
     await page.keyboard.press("Enter");
     await expect(page.getByRole("status")).toContainText(
-      "workspace was created",
+      "account was created",
     );
     await expect(page.getByRole("button", { name: "Create workspace" }))
       .toBeHidden();

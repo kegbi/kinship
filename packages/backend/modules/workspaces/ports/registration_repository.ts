@@ -1,17 +1,18 @@
 /**
  * How the first workspace is written, and how it is proved to be there.
  *
- * Registration writes five things in one transaction — the workspace, the
- * owner's membership, their preferences, the workspace settings, and the
- * default relationship vocabulary — and then asserts all of it back.
- * `assertFirstWorkspacePostconditions` is not belt and braces: registration is
- * the one flow with no earlier state to fall back on, so a partially written
- * workspace has to unwind rather than leave somebody with an account they
- * cannot use.
+ * Proving a registered address writes five things in the verification's
+ * transaction (SECA-04, AUD-A2) — the workspace, the owner's membership, their
+ * preferences, the workspace settings, and the default relationship
+ * vocabulary — and then asserts all of it back.
+ * `assertFirstWorkspacePostconditions` is not belt and braces: the new owner
+ * has no earlier state to fall back on, so a partially written workspace has
+ * to unwind rather than leave somebody with an account they cannot use.
  *
  * `deletePendingWorkspaces` is the other half of replacing a pending
- * registration (SECA-01): the workspaces a never-verified identity was
- * provisioned with go with it, before identity discards the identity itself.
+ * registration (SECA-01): a registration made before provisioning waited for
+ * verification still holds the workspaces it was provisioned with, and they
+ * go with it, before identity discards the identity itself.
  *
  * `VerificationMail` declares its other methods optional because the same
  * SMTP adapter serves registration, password recovery, and invitations, and a
@@ -29,7 +30,7 @@ export interface VerificationTokens {
 export interface WorkspaceRegistrationWriter {
   deletePendingWorkspaces(command: {
     readonly transaction: RegistrationTransaction;
-    readonly userId: string;
+    readonly userIds: readonly string[];
   }): Promise<void>;
   createWorkspace(command: {
     readonly createdByUserId: string;

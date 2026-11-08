@@ -126,18 +126,24 @@ Only these events exist. The two gateway events are Nginx log formats; the
 adapter accepts only `api.request`, `worker.job`, and `file.cleanup` and refuses
 any other name.
 
-| Event               | Emitted by                                    | Fields                                                                                       |
-| ------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `gateway.request`   | Nginx access log                              | `method`, `route` (template), `status`, `duration_seconds`, `bytes_sent`, `request_id`       |
-| `gateway.readiness` | Nginx readiness probe                         | `boundary`, `state`, `status`, `dependency_status`                                           |
-| `api.request`       | HTTP kit, one per API request                 | `method`, `route` (registered pattern or `unmatched`), `status`, `duration_ms`, `request_id` |
-| `worker.job`        | worker, per claimed occurrence or failed tick | `job`, `request_id`, `attempt`, `outcome`, `duration_ms`                                     |
-| `file.cleanup`      | files and people, one per unfinished cleanup  | `reason`, `outcome`, `request_id`                                                            |
+| Event               | Emitted by                                                    | Fields                                                                                       |
+| ------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `gateway.request`   | Nginx access log                                              | `method`, `route` (template), `status`, `duration_seconds`, `bytes_sent`, `request_id`       |
+| `gateway.readiness` | Nginx readiness probe                                         | `boundary`, `state`, `status`, `dependency_status`                                           |
+| `api.request`       | HTTP kit, one per API request                                 | `method`, `route` (registered pattern or `unmatched`), `status`, `duration_ms`, `request_id` |
+| `worker.job`        | worker, per claimed occurrence, failed tick, or retention run | `job`, `request_id`, `attempt`, `outcome`, `duration_ms`                                     |
+| `file.cleanup`      | files and people, one per unfinished cleanup                  | `reason`, `outcome`, `request_id`                                                            |
 
 `worker.job` outcomes are the stable delivery codes `sent`, `retry`, `failed`,
 `manual_attention`, `stale-claim`, and `processing-error`, plus the worker's
-`unattended-driver-fault`. A failure is described by that code or by an HTTP
-status, never by `error.message`.
+`unattended-driver-fault` and the retention job's `completed`. A failure is
+described by that code or by an HTTP status, never by `error.message`.
+
+The retention job (AUD-A2) logs one line per run as job
+`authentication-retention`: `completed`, or `processing-error` when any module's
+purge failed, with `attempt` 1 and the run's `duration_ms`. A failed purge does
+not stop the others or fail the tick, and the run is retried an hour later.
+`configuration-and-secrets.md` lists what it deletes.
 
 A tick that throws (BEQ-09) does not end the worker. The loop logs it as job
 `worker-tick` with outcome `processing-error`, a fresh `request_id`, and the

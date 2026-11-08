@@ -3,8 +3,10 @@
  *
  * The worker is the second deployable and composes the same modules the API
  * does, through the same per-module `compose*` functions: planning's delivery
- * loop, the workspace cleanup reconciler, and the recurring debts that have
- * fallen due (GIFTS-001), over one shared context. Each
+ * loop, the workspace cleanup reconciler, the recurring debts that have
+ * fallen due (GIFTS-001), and the hourly retention job that deletes the
+ * authentication rows nobody can use any more (SECA-04, BEQ-15, AUD-A2), over
+ * one shared context. Each
  * delivery run, and each tick that fails (AUD-W2), is logged as one redacted
  * `worker.job` JSON line on stdout.
  * Reminder email (PLANNING-003) goes through the workspaces SMTP transport,
@@ -24,13 +26,16 @@ import {
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
+import { composeRequestLogRetention } from "../../packages/backend/modules/api-access/composition.ts";
 import { composeObjectStorage } from "../../packages/backend/modules/files/composition.ts";
 import { composeRecurringDebtCharging } from "../../packages/backend/modules/gifts/composition.ts";
 import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
+import { composeAuthenticationRetention } from "../../packages/backend/modules/identity/composition.ts";
 import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
 import { composeReminderDelivery } from "../../packages/backend/modules/planning/composition.ts";
 import {
   activeWorkspaceResolver,
+  composeRegistrationRetention,
   composeReminderMail,
   composeWorkspaceCleanup,
   reminderDeliveryPreferences,
@@ -55,10 +60,66 @@ interface TickWorker {
   tick(command: { readonly owner: string }): Promise<unknown>;
 }
 
+/** The job name the retention run is logged under. */
+export const RETENTION_JOB = "authentication-retention";
+
+/** How often the retention job runs: its windows are hours and days long. */
+export const RETENTION_INTERVAL_MILLISECONDS = 60 * 60_000;
+
+/**
+ * The retention job (SECA-04, BEQ-15, AUD-A2): each module's purge, one after
+ * another, at most once an interval, the first on the worker's first tick.
+ * `purges` is read at each run, so a reconnect's rebuilt modules are used.
+ *
+ * It never throws. A purge that fails does not stop the others, and the run
+ * is logged as one `worker.job` line — `completed`, or `processing-error` when
+ * any purge failed — and retried an interval later, so a retention fault never
+ * holds up reminder delivery or backs the tick loop off.
+ */
+export function createRetentionSchedule(
+  purges: () => readonly (() => Promise<unknown>)[],
+  options: {
+    readonly intervalMilliseconds?: number;
+    readonly logger?: Logger;
+    readonly now?: () => number;
+  } = {},
+): { runIfDue(): Promise<void> } {
+  const interval = options.intervalMilliseconds ??
+    RETENTION_INTERVAL_MILLISECONDS;
+  const now = options.now ?? (() => performance.now());
+  let lastStarted: number | undefined;
+  return {
+    async runIfDue() {
+      const started = now();
+      if (lastStarted !== undefined && started - lastStarted < interval) {
+        return;
+      }
+      lastStarted = started;
+      let failed = false;
+      for (const purge of purges()) {
+        try {
+          await purge();
+        } catch {
+          failed = true;
+        }
+      }
+      options.logger?.log({
+        event: "worker.job",
+        job: RETENTION_JOB,
+        request_id: crypto.randomUUID(),
+        attempt: 1,
+        outcome: failed ? "processing-error" : "completed",
+        duration_ms: Math.max(0, Math.round(now() - started)),
+      });
+    },
+  };
+}
+
 /**
  * One worker tick: object cleanup, then the recurring debts that have fallen
- * due, then reminder delivery. Charging debts never throws; a rule that fails
- * is counted and retried on a later tick, so reminders are always delivered.
+ * due, then reminder delivery, then the retention job when it is due.
+ * Charging debts never throws; a rule that fails is counted and retried on a
+ * later tick, so reminders are always delivered. Neither does retention.
  */
 export function createApplicationWorker(
   reminders: TickWorker,
@@ -66,12 +127,17 @@ export function createApplicationWorker(
   recurringDebts: { chargeDue(): Promise<unknown> } = {
     chargeDue: () => Promise.resolve(),
   },
+  retention: { runIfDue(): Promise<void> } = {
+    runIfDue: () => Promise.resolve(),
+  },
 ): TickWorker {
   return {
     async tick(command) {
       await cleanup.reconcilePendingCleanup();
       await recurringDebts.chargeDue();
-      return await reminders.tick(command);
+      const delivered = await reminders.tick(command);
+      await retention.runIfDue();
+      return delivered;
     },
   };
 }
@@ -104,6 +170,12 @@ export function createConfiguredReminderWorker(
     resolveObjectStorageConfiguration(environment),
   );
   const email = composeReminderMail(environment);
+  // One schedule for the worker's life: a reconnect rebuilds the modules over
+  // the new pool, but does not run the retention job again early.
+  let retentionPurges: readonly (() => Promise<unknown>)[] = [];
+  const retention = createRetentionSchedule(() => retentionPurges, {
+    logger,
+  });
   const compose = (connection: DatabaseConnection): TickWorker => {
     const shared: SharedComposition = {
       actors: workspaceActors(),
@@ -115,6 +187,16 @@ export function createConfiguredReminderWorker(
       transaction: workspaceTransactionRunner(connection.db),
       workspaceEntry: activeWorkspaceResolver(),
     };
+    const authentication = composeAuthenticationRetention(shared);
+    const registrations = composeRegistrationRetention(shared, {
+      identity: authentication.pendingRegistrations,
+    });
+    const requestLogs = composeRequestLogRetention(shared);
+    retentionPurges = [
+      () => registrations.purge(),
+      authentication.purge,
+      () => requestLogs.purge(),
+    ];
     return createApplicationWorker(
       composeReminderDelivery(shared, {
         deliveryPreferences: reminderDeliveryPreferences(),
@@ -123,6 +205,7 @@ export function createConfiguredReminderWorker(
       }),
       composeWorkspaceCleanup(shared, { storage }),
       composeRecurringDebtCharging(shared, { calendar: workspaceCalendar() }),
+      retention,
     );
   };
   // Every pool the worker opens, its first and each reconnect, takes the

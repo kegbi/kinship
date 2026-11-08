@@ -17,6 +17,7 @@ import {
   WebCryptoRandomSource,
 } from "./adapters/crypto/secure_tokens.ts";
 import { AesGcmMfaSecretBox } from "./adapters/crypto/totp.ts";
+import { PostgresAuthenticationRetention } from "./adapters/postgres/authentication_retention.ts";
 import { PostgresEmailVerification } from "./adapters/postgres/email_verification.ts";
 import { PostgresIdentityAccountSettings } from "./adapters/postgres/account_settings.ts";
 import { PostgresIdentityAuthentication } from "./adapters/postgres/authentication.ts";
@@ -24,7 +25,11 @@ import { PostgresIdentityPersonalLifecycle } from "./adapters/postgres/personal_
 import { PostgresIdentityRegistration } from "./adapters/postgres/identity_repository.ts";
 import { PostgresInvitationIdentity } from "./adapters/postgres/invitation_identity.ts";
 import { PostgresPasswordRecoveryRepository } from "./adapters/postgres/password_recovery.ts";
-import { createPasswordRecovery } from "./public.ts";
+import {
+  createAuthenticationRetention,
+  createPasswordRecovery,
+  type PendingRegistrationRetentionFacade,
+} from "./public.ts";
 import type { MfaEncryptionKeyset } from "./adapters/crypto/totp.ts";
 import type { PasswordRecoveryMail } from "./ports/password_recovery.ts";
 
@@ -82,5 +87,26 @@ export function composeIdentity(
       shared.ids,
       shared.workspaceEntry,
     ),
+  };
+}
+
+/**
+ * The worker's share of the retention job (SECA-04, BEQ-15, AUD-A2): identity
+ * deletes its ended sessions, old reset requests, and spent tokens, and names
+ * the pending registrations that workspaces then decides may go.
+ */
+export function composeAuthenticationRetention(shared: SharedComposition): {
+  readonly pendingRegistrations: PendingRegistrationRetentionFacade;
+  readonly purge: () => Promise<unknown>;
+} {
+  const retention = createAuthenticationRetention({
+    clock: shared.clock,
+    repository: new PostgresAuthenticationRetention(shared.database),
+  });
+  return {
+    pendingRegistrations: new PostgresIdentityRegistration(
+      new SecureTokenService(new WebCryptoRandomSource()),
+    ),
+    purge: () => retention.purge(),
   };
 }

@@ -15,6 +15,12 @@
  * The entry token is a single-use handoff, not a session: verifying issues one
  * and the application entry consumes it, both against the address that was
  * verified, so a token that leaked cannot be spent for somebody else.
+ *
+ * Identity proves the address inside a transaction the registering module
+ * owns (`RegistrationVerificationFacade`), and hands back the registration
+ * intent the pending user carried, so that module provisions what was asked
+ * for in the same unit of work (SECA-04, AUD-A2): an address that is proved
+ * always has its workspace, and a registration never proved never had one.
  */
 
 import type { ExactCredentialVersion } from "./authentication.ts";
@@ -26,6 +32,30 @@ export type VerificationResult =
   | { readonly status: "verified"; readonly entryToken: string }
   | { readonly status: "password-required"; readonly resetToken: string }
   | { readonly status: VerificationFailure };
+
+/**
+ * A verification as the module that registered sees it: on success, also the
+ * user who was verified and what their registration asked for, if anything.
+ * The verification clears what was asked for in the same transaction, so a
+ * later verification never hands it back again.
+ */
+export type RegistrationVerificationResult =
+  | { readonly status: VerificationFailure }
+  | (
+    & Exclude<VerificationResult, { readonly status: VerificationFailure }>
+    & {
+      readonly registrationIntent?: string;
+      readonly userId: string;
+    }
+  );
+
+export interface RegistrationVerificationFacade {
+  verifyInTransaction(command: {
+    readonly rawToken: string;
+    readonly registrantVerifier?: string;
+    readonly transaction: IdentityTransaction;
+  }): Promise<RegistrationVerificationResult>;
+}
 
 export interface ApplicationEntryContext {
   readonly firstName: string;

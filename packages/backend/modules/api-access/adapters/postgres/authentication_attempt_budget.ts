@@ -7,9 +7,14 @@ import type {
 } from "../../../workspaces/public.ts";
 import type { AuthenticationSubjectDigester } from "../../application/authentication_subject.ts";
 import type { SignInDeviceTokens } from "../../application/sign_in_device.ts";
+import {
+  ACCOUNT_THROTTLE_WINDOW_MILLISECONDS,
+  ADDRESS_THROTTLE_WINDOW_MILLISECONDS,
+  AUTHENTICATION_THROTTLE_PATHS,
+} from "../../domain/authentication_throttle.ts";
 
 /** Each (client address, subject) pair: five failures per five minutes. */
-const WINDOW_MILLISECONDS = 5 * 60_000;
+const WINDOW_MILLISECONDS = ADDRESS_THROTTLE_WINDOW_MILLISECONDS;
 const FAILURE_LIMIT = 5;
 
 /**
@@ -25,13 +30,13 @@ const FAILURE_LIMIT = 5;
  * per-address budget, so an attacker holding the account behind the ceiling
  * cannot keep its owner out of a browser they signed in from before.
  */
-const ACCOUNT_WINDOW_MILLISECONDS = 15 * 60_000;
+const ACCOUNT_WINDOW_MILLISECONDS = ACCOUNT_THROTTLE_WINDOW_MILLISECONDS;
 const ACCOUNT_CEILING = 10;
 const ACCOUNT_BASE_DELAY_MILLISECONDS = 15_000;
 const ACCOUNT_MAXIMUM_DELAY_MILLISECONDS = 5 * 60_000;
 
 function route(scope: "mfa" | "password"): string {
-  return scope === "password" ? "/api/v1/sessions" : "/api/v1/mfa-challenges";
+  return AUTHENTICATION_THROTTLE_PATHS[scope];
 }
 
 interface BudgetState {

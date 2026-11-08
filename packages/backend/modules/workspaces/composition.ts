@@ -40,6 +40,7 @@ import { PostgresWorkspacePersonalization } from "./adapters/postgres/personaliz
 import { PostgresProfileFactConfiguration } from "./adapters/postgres/profile_fact_configuration.ts";
 import { PostgresRecentPeopleRepository } from "./adapters/postgres/recent_people.ts";
 import {
+  PostgresPendingRegistrationRetention,
   PostgresRegistrationTransaction,
   PostgresWorkspaceRegistration,
 } from "./adapters/postgres/registration_repository.ts";
@@ -61,7 +62,9 @@ import {
   createPersonalLifecycle,
   createProtectedSessionCoordinator,
   createRecentPeopleManagement,
+  createRegistrationVerification,
   createSettingsManagement,
+  createStaleRegistrationPurge,
   createVerificationDeliveryRetry,
   createWorkspaceCleanupReconciler,
   createWorkspaceInvitationCoordinator,
@@ -84,11 +87,14 @@ import {
   workspaceResetActivityAuditFrom,
 } from "./public.ts";
 import type {
+  EmailVerificationFacade,
   IdentityAccountSettingsFacade,
   IdentityAuthenticationFacade,
   IdentityPersonalLifecycleFacade,
   IdentityRegistrationFacade,
   InvitationIdentityFacade,
+  PendingRegistrationRetentionFacade,
+  RegistrationVerificationFacade,
   VerifiedIdentityEntryFacade,
 } from "../identity/public.ts";
 
@@ -213,7 +219,10 @@ export interface WorkspaceIdentityPorts {
   readonly invitations: InvitationIdentityFacade;
   readonly personalLifecycle: IdentityPersonalLifecycleFacade;
   readonly registration: IdentityRegistrationFacade;
-  readonly verification: VerifiedIdentityEntryFacade;
+  readonly verification:
+    & Pick<EmailVerificationFacade, "consumeApplicationEntry">
+    & RegistrationVerificationFacade
+    & VerifiedIdentityEntryFacade;
 }
 
 export interface WorkspacePorts {
@@ -246,7 +255,6 @@ export function composeWorkspaces(
 ) {
   const authenticationAudit = authenticationAuditFrom(shared.audit);
   const registrationDependencies = {
-    audit: registrationAuditFrom(shared.audit),
     clock: shared.clock,
     identity: ports.identity.registration,
     ids: shared.ids,
@@ -336,6 +344,23 @@ export function composeWorkspaces(
       transaction: shared.transaction,
     }),
     registration: createFirstWorkspaceRegistration(registrationDependencies),
+    /**
+     * Verification as the registration routes see it: identity proves the
+     * address and this module provisions the workspace it was registered
+     * for, in one transaction (SECA-04, AUD-A2).
+     */
+    verification: {
+      consumeApplicationEntry: (rawToken: string) =>
+        ports.identity.verification.consumeApplicationEntry(rawToken),
+      verify: createRegistrationVerification({
+        audit: registrationAuditFrom(shared.audit),
+        clock: shared.clock,
+        ids: shared.ids,
+        transaction: shared.transaction,
+        verification: ports.identity.verification,
+        workspace: registrationDependencies.workspace,
+      }),
+    } satisfies EmailVerificationFacade,
     retryVerificationDelivery: createVerificationDeliveryRetry(
       registrationDependencies,
     ),
@@ -365,6 +390,23 @@ export function composeWorkspaces(
       transaction: shared.transaction,
     }),
   };
+}
+
+/**
+ * The worker's share of the retention job (SECA-04, AUD-A2): the pending
+ * registrations nobody verified, discarded through identity once this module
+ * has kept the ones somebody is still waiting on.
+ */
+export function composeRegistrationRetention(
+  shared: SharedComposition,
+  ports: { readonly identity: PendingRegistrationRetentionFacade },
+) {
+  return createStaleRegistrationPurge({
+    clock: shared.clock,
+    identity: ports.identity,
+    repository: new PostgresPendingRegistrationRetention(),
+    transaction: shared.transaction,
+  });
 }
 
 /**

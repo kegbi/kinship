@@ -16,6 +16,7 @@ import { runWorker } from "../../apps/worker/main.ts";
 import {
   createConfiguredReminderWorker,
   type DriverFaultWatch,
+  RETENTION_JOB,
   TICK_FAILURE_JOB,
   UNATTENDED_DRIVER_FAULT,
   watchDriverFaults,
@@ -195,11 +196,33 @@ Deno.test("[AUD-W2] a worker whose backends are cut mid-pipeline logs one failed
         event.event === "worker.job" ? [event] : []
       );
       assertEquals(lines.length, logger.events.length, "a line is not a job");
-      const unattended = lines.filter((event) =>
+      // A tick's lines are the failed tick and the unattended faults; the
+      // only other job is the retention run (AUD-A2), which the first tick
+      // that gets past delivery — the one after the reconnect — starts once.
+      const tickLines = lines.filter((event) => event.job === TICK_FAILURE_JOB);
+      const retention = lines.filter((event) => event.job === RETENTION_JOB);
+      assertEquals(
+        tickLines.length + retention.length,
+        lines.length,
+        `a line belongs to no known job: ${JSON.stringify(logger.events)}`,
+      );
+      const unattended = tickLines.filter((event) =>
         event.outcome === UNATTENDED_DRIVER_FAULT
       );
-      const failed = lines.filter((event) => !unattended.includes(event));
+      const failed = tickLines.filter((event) => !unattended.includes(event));
       assertEquals(failed.length, 1, JSON.stringify(logger.events));
+      assertEquals(retention.length, 1, JSON.stringify(logger.events));
+      const [retained] = retention;
+      assert(retained !== undefined, "the retention run was not logged");
+      assertEquals(
+        { attempt: retained.attempt, outcome: retained.outcome },
+        { attempt: 1, outcome: "completed" },
+        JSON.stringify(logger.events),
+      );
+      assert(
+        logger.events.indexOf(retained) > logger.events.indexOf(failed[0]!),
+        "the retention run was logged before the reconnect",
+      );
       const [line] = failed;
       assert(line !== undefined, "the failed tick was not logged");
       assertEquals(
@@ -213,7 +236,7 @@ Deno.test("[AUD-W2] a worker whose backends are cut mid-pipeline logs one failed
           `an unattended-fault line is malformed: ${JSON.stringify(reported)}`,
         );
       }
-      for (const reported of [line, ...unattended]) {
+      for (const reported of [line, ...unattended, retained]) {
         assertEquals(
           Object.keys(reported).sort(),
           ["attempt", "duration_ms", "event", "job", "outcome", "request_id"],

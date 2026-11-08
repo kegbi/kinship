@@ -64,7 +64,7 @@ function delayedDelivery(
   if (!content || !message || !detail || !retry) return undefined;
   message.textContent = inviteToken
     ? "Your account was created for this invitation; email is delayed."
-    : "Your workspace was created; email is delayed.";
+    : "Your account was created; email is delayed.";
   retry.addEventListener("click", async () => {
     retry.disabled = true;
     status.dataset.state = "loading";

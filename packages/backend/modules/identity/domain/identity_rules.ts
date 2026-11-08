@@ -74,3 +74,38 @@ export function deliveryWindow(requested: number | undefined): number {
   }
   return milliseconds;
 }
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * How long identity keeps what nobody can use any more (SECA-04, BEQ-15,
+ * AUD-A2). A registration never verified is discarded with its tokens a week
+ * after it was made; a session is deleted thirty days after it expired or was
+ * revoked; and a reset request, or a verification token already spent, a week
+ * after it was written — except the one spent verification token that proves
+ * a verified user's address, which lives as long as the user.
+ */
+export const AUTHENTICATION_RETENTION = {
+  endedSessionMilliseconds: 30 * DAY_MS,
+  pendingRegistrationMilliseconds: 7 * DAY_MS,
+  tokenMilliseconds: 7 * DAY_MS,
+} as const;
+
+/** The instants before which each kind of row is purged, at `now`. */
+export function authenticationRetentionCutoffs(now: Date): {
+  readonly endedSessionsBefore: Date;
+  readonly pendingRegistrationsBefore: Date;
+  readonly tokensBefore: Date;
+} {
+  const before = (milliseconds: number) =>
+    new Date(now.getTime() - milliseconds);
+  return {
+    endedSessionsBefore: before(
+      AUTHENTICATION_RETENTION.endedSessionMilliseconds,
+    ),
+    pendingRegistrationsBefore: before(
+      AUTHENTICATION_RETENTION.pendingRegistrationMilliseconds,
+    ),
+    tokensBefore: before(AUTHENTICATION_RETENTION.tokenMilliseconds),
+  };
+}

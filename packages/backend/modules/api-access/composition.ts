@@ -16,12 +16,14 @@ import {
 } from "./adapters/postgres/api_token_repository.ts";
 import { PostgresAuthenticationAttemptBudget } from "./adapters/postgres/authentication_attempt_budget.ts";
 import { PostgresOutboundMailBudget } from "./adapters/postgres/outbound_mail_budget.ts";
+import { PostgresRequestLogRetention } from "./adapters/postgres/request_log_retention.ts";
 import {
   apiTokenAuditFrom,
   AuthenticationSubjectDigester,
   type AuthenticationSubjectKeyset,
   createApiTokenManagement,
   createCalendarFeedTokens,
+  createRequestLogRetention,
   SignInDeviceTokens,
 } from "./public.ts";
 import type { ApiTokenIssuers } from "./ports/issuers.ts";
@@ -71,4 +73,15 @@ export function composeApiAccess(
     /** The device tokens the budget recognizes, issued after a sign-in. */
     signInDevices,
   };
+}
+
+/**
+ * The worker's share of the retention job (SECA-04, BEQ-15, AUD-A2): the
+ * request-log rows the throttle and the mail budgets no longer read.
+ */
+export function composeRequestLogRetention(shared: SharedComposition) {
+  return createRequestLogRetention({
+    clock: shared.clock,
+    repository: new PostgresRequestLogRetention(shared.database),
+  });
 }

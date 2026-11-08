@@ -1,12 +1,18 @@
 /**
- * Registering the first workspace, and re-sending the link that proves it.
+ * Registering the first workspace, proving the address that asked for it, and
+ * re-sending the link that proves it.
  *
- * The whole of registration is one transaction: the pending identity, the
- * workspace, the owner's membership, their preferences, the workspace
- * settings, the default relationship vocabulary, and the audit event, followed
- * by three assertions that read all of it back. There is nothing to fall back
- * on here — the person has no account yet — so a partial write unwinds rather
- * than leaving somebody with something they cannot use.
+ * Registration writes only the pending identity, with the workspace it asks
+ * for kept as that identity's registration intent (SECA-04, AUD-A2): an
+ * anonymous request that is never verified costs a handful of identity rows,
+ * which the retention job discards after a week, and no workspace at all.
+ * Proving the address provisions it, in the verification's own transaction:
+ * the workspace, the owner's membership, their preferences, the workspace
+ * settings, the default relationship vocabulary, and the audit event,
+ * followed by assertions that read all of it back. There is nothing to fall
+ * back on here — the person has no workspace yet — so a partial write unwinds
+ * the verification with it rather than leaving somebody with an address
+ * proved and nothing they can use; the link still works on the next try.
  *
  * Nobody owns an address by registering it first (SECA-01). An address whose
  * only account is a pending registration is taken over: that registration's
@@ -61,10 +67,13 @@ import type {
 } from "../ports/registration_repository.ts";
 import type { OutboundMailBudget } from "../ports/mail_budget.ts";
 import type { AuthenticationResponseEqualizer } from "../ports/session.ts";
-import type { IdentityRegistrationFacade } from "../../identity/public.ts";
+import type {
+  IdentityRegistrationFacade,
+  RegistrationVerificationFacade,
+  VerificationResult,
+} from "../../identity/public.ts";
 
 export interface RegistrationDependencies {
-  readonly audit: RegistrationAudit;
   readonly clock: Clock;
   readonly identity: IdentityRegistrationFacade;
   readonly ids: IdGenerator;
@@ -118,7 +127,7 @@ export async function claimAddressForRegistration(
   if (claim.status === "pending") {
     await dependencies.workspace.deletePendingWorkspaces({
       transaction,
-      userId: claim.userId,
+      userIds: [claim.userId],
     });
     await dependencies.identity.discardPendingUser({
       transaction,
@@ -202,27 +211,120 @@ async function registerInTransaction(
   const verificationToken = await dependencies.tokens.create();
   const userId = dependencies.ids.create();
   const verificationTokenId = dependencies.ids.create();
+  const { workspaceName, ...identity } = command;
   const user = await dependencies.identity.createPendingUser({
-    ...command,
+    ...identity,
     expiresAt,
+    registrationIntent: workspaceName,
     tokenHash: verificationToken.hash,
     transaction,
     userId,
     verificationTokenId,
   });
-  const workspaceId = dependencies.ids.create();
-  const workspace = await dependencies.workspace.createWorkspace({
-    createdByUserId: user.userId,
-    name: command.workspaceName,
-    transaction,
-    workspaceId,
-  });
-  const memberId = dependencies.ids.create();
-  const membership = await dependencies.workspace.createOwnerMembership({
-    joinedAt: now,
-    memberId,
+  await dependencies.identity.assertPendingUserPostconditions({
+    email: command.email,
+    expiresAt,
+    firstName: command.firstName,
+    lastName: command.lastName,
+    passwordHash: command.passwordHash,
+    registrationIntent: workspaceName,
+    tokenHash: verificationToken.hash,
     transaction,
     userId: user.userId,
+    verificationTokenId,
+  });
+  return {
+    kind: "verification",
+    email: command.email,
+    expiresAt,
+    token: verificationToken.raw,
+  };
+}
+
+/** What proving a registered address needs. */
+export interface RegistrationVerificationDependencies {
+  readonly audit: RegistrationAudit;
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
+  readonly transaction: RegistrationTransactionRunner;
+  readonly verification: RegistrationVerificationFacade;
+  readonly workspace: WorkspaceRegistrationWriter;
+}
+
+/**
+ * Proves an address, and provisions the first workspace its registration
+ * asked for in the same transaction (SECA-04, AUD-A2).
+ *
+ * Both ways an address is proved provision it: the registering browser enters
+ * the application, and any other browser is sent to choose a password first,
+ * but either way the mailbox owner now holds the account and its workspace.
+ * A pending user with no intent — somebody who registered through an
+ * invitation, or a registration made before workspaces waited for
+ * verification — is only verified.
+ */
+export function createRegistrationVerification(
+  dependencies: RegistrationVerificationDependencies,
+): (
+  rawToken: string,
+  registrantVerifier?: string,
+) => Promise<VerificationResult> {
+  return (rawToken, registrantVerifier) =>
+    dependencies.transaction.run(async (transaction) => {
+      const verified = await dependencies.verification.verifyInTransaction({
+        rawToken,
+        ...(registrantVerifier === undefined ? {} : { registrantVerifier }),
+        transaction,
+      });
+      if (verified.status === "verified") {
+        await provision(dependencies, verified, transaction);
+        return { entryToken: verified.entryToken, status: verified.status };
+      }
+      if (verified.status === "password-required") {
+        await provision(dependencies, verified, transaction);
+        return { resetToken: verified.resetToken, status: verified.status };
+      }
+      return verified;
+    });
+}
+
+async function provision(
+  dependencies: RegistrationVerificationDependencies,
+  verified: { readonly registrationIntent?: string; readonly userId: string },
+  transaction: RegistrationTransaction,
+): Promise<void> {
+  if (verified.registrationIntent === undefined) return;
+  await provisionFirstWorkspace(dependencies, {
+    name: verified.registrationIntent,
+    transaction,
+    userId: verified.userId,
+  });
+}
+
+/**
+ * Writes a verified owner's first workspace and everything it starts with,
+ * then reads all of it back.
+ */
+async function provisionFirstWorkspace(
+  dependencies: RegistrationVerificationDependencies,
+  command: {
+    readonly name: string;
+    readonly transaction: RegistrationTransaction;
+    readonly userId: string;
+  },
+): Promise<void> {
+  const { name, transaction, userId } = command;
+  const now = dependencies.clock.now();
+  const workspace = await dependencies.workspace.createWorkspace({
+    createdByUserId: userId,
+    name,
+    transaction,
+    workspaceId: dependencies.ids.create(),
+  });
+  const membership = await dependencies.workspace.createOwnerMembership({
+    joinedAt: now,
+    memberId: dependencies.ids.create(),
+    transaction,
+    userId,
     workspaceId: workspace.workspaceId,
   });
   await dependencies.workspace.createMemberPreferences({
@@ -245,24 +347,13 @@ async function registerInTransaction(
     transaction,
     workspaceId: workspace.workspaceId,
   });
-  await dependencies.identity.assertPendingUserPostconditions({
-    email: command.email,
-    expiresAt,
-    firstName: command.firstName,
-    lastName: command.lastName,
-    passwordHash: command.passwordHash,
-    tokenHash: verificationToken.hash,
-    transaction,
-    userId: user.userId,
-    verificationTokenId,
-  });
   await dependencies.workspace.assertFirstWorkspacePostconditions({
     joinedAt: now,
     memberId: membership.memberId,
-    name: command.workspaceName,
+    name,
     relationshipTypes: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
     transaction,
-    userId: user.userId,
+    userId,
     workspaceId: workspace.workspaceId,
   });
   await dependencies.audit.assertWorkspaceCreatedPostcondition({
@@ -271,12 +362,6 @@ async function registerInTransaction(
     transaction,
     workspaceId: workspace.workspaceId,
   });
-  return {
-    kind: "verification",
-    email: command.email,
-    expiresAt,
-    token: verificationToken.raw,
-  };
 }
 
 export function createVerificationDeliveryRetry(

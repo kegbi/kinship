@@ -6,6 +6,31 @@ import type {
   RegistrationTransactionRunner,
 } from "../../ports/context.ts";
 import type { WorkspaceRegistrationWriter } from "../../ports/registration_repository.ts";
+import type { PendingRegistrationRetentionRepository } from "../../ports/registration_retention.ts";
+
+/**
+ * Removes what never-verified registrations were provisioned with: the
+ * workspaces each named user created that nobody else belongs to. Such a
+ * workspace holds only the rows registration wrote — settings, the owner's
+ * membership and preferences, the default vocabulary, and its creation audit
+ * event — and they all cascade with it. Replacing a pending registration
+ * (SECA-01) and the retention job (AUD-A2) both delete through this one
+ * statement.
+ */
+async function deletePendingWorkspaces(command: {
+  readonly transaction: RegistrationTransaction;
+  readonly userIds: readonly string[];
+}): Promise<void> {
+  if (command.userIds.length === 0) return;
+  await sql`
+    delete from crm.workspaces w
+    where w.created_by_user_id = any(${[...command.userIds]}::uuid[])
+      and not exists (
+        select 1 from crm.workspace_members m
+        where m.workspace_id = w.id and m.user_id <> w.created_by_user_id
+      )
+  `.execute(databaseFromSession(command.transaction));
+}
 
 export class PostgresRegistrationTransaction
   extends PostgresTransactionRunner<RegistrationTransaction>
@@ -13,26 +38,7 @@ export class PostgresRegistrationTransaction
 
 export class PostgresWorkspaceRegistration
   implements WorkspaceRegistrationWriter {
-  /**
-   * Removes what a never-verified registration was provisioned with: the
-   * workspaces it created that nobody else belongs to. Such a workspace holds
-   * only the rows registration wrote — settings, the owner's membership and
-   * preferences, the default vocabulary, and its creation audit event — and
-   * they all cascade with it.
-   */
-  async deletePendingWorkspaces(command: {
-    readonly transaction: RegistrationTransaction;
-    readonly userId: string;
-  }): Promise<void> {
-    await sql`
-      delete from crm.workspaces w
-      where w.created_by_user_id = ${command.userId}::uuid
-        and not exists (
-          select 1 from crm.workspace_members m
-          where m.workspace_id = w.id and m.user_id <> ${command.userId}::uuid
-        )
-    `.execute(databaseFromSession(command.transaction));
-  }
+  readonly deletePendingWorkspaces = deletePendingWorkspaces;
 
   async createWorkspace(command: {
     readonly createdByUserId: string;
@@ -192,4 +198,48 @@ export class PostgresWorkspaceRegistration
       throw new Error("Default relationship-type postconditions failed.");
     }
   }
+}
+
+/** What a stale pending registration still holds here (SECA-04, AUD-A2). */
+export class PostgresPendingRegistrationRetention
+  implements PendingRegistrationRetentionRepository {
+  async heldPendingRegistrations(command: {
+    readonly now: Date;
+    readonly transaction: RegistrationTransaction;
+    readonly users: readonly {
+      readonly email: string;
+      readonly userId: string;
+    }[];
+  }): Promise<ReadonlySet<string>> {
+    if (command.users.length === 0) return new Set();
+    const held = await sql<{ user_id: string }>`
+      select candidate.user_id::text
+      from unnest(
+        ${command.users.map((user) => user.userId)}::uuid[],
+        ${command.users.map((user) => user.email)}::citext[]
+      ) candidate(user_id, email)
+      where exists (
+          select 1 from crm.workspace_invitations i
+          where i.email = candidate.email and i.status = 'pending'
+            and i.accepted_at is null
+            and (i.expires_at is null or i.expires_at > ${command.now})
+        )
+        or exists (
+          select 1 from crm.workspace_members m
+          join crm.workspaces w on w.id = m.workspace_id
+          where m.user_id = candidate.user_id
+            and (
+              w.created_by_user_id is distinct from candidate.user_id
+              or exists (
+                select 1 from crm.workspace_members other
+                where other.workspace_id = w.id
+                  and other.user_id <> candidate.user_id
+              )
+            )
+        )
+    `.execute(databaseFromSession(command.transaction));
+    return new Set(held.rows.map((row) => row.user_id));
+  }
+
+  readonly deletePendingWorkspaces = deletePendingWorkspaces;
 }

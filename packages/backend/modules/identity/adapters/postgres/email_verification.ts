@@ -9,7 +9,8 @@ import type {
   ApplicationEntryContext,
   ApplicationEntryWorkspaces,
   EmailVerificationFacade,
-  VerificationResult,
+  RegistrationVerificationFacade,
+  RegistrationVerificationResult,
   VerifiedIdentityEntry,
   VerifiedIdentityEntryAuthority,
   VerifiedIdentityEntryFacade,
@@ -29,7 +30,10 @@ interface VerificationCandidate {
 }
 
 export class PostgresEmailVerification
-  implements EmailVerificationFacade, VerifiedIdentityEntryFacade {
+  implements
+    Pick<EmailVerificationFacade, "consumeApplicationEntry">,
+    RegistrationVerificationFacade,
+    VerifiedIdentityEntryFacade {
   constructor(
     private readonly database: Kysely<ApplicationDatabase>,
     private readonly tokens: SecureTokenService,
@@ -38,89 +42,102 @@ export class PostgresEmailVerification
     private readonly workspaces: ApplicationEntryWorkspaces,
   ) {}
 
-  async verify(
-    rawToken: string,
-    registrantVerifier?: string,
-  ): Promise<VerificationResult> {
-    const tokenHash = await this.tokens.hash(rawToken);
-    const verifierDigest = registrantVerifier === undefined
+  async verifyInTransaction(command: {
+    readonly rawToken: string;
+    readonly registrantVerifier?: string;
+    readonly transaction: IdentityTransaction;
+  }): Promise<RegistrationVerificationResult> {
+    const tokenHash = await this.tokens.hash(command.rawToken);
+    const verifierDigest = command.registrantVerifier === undefined
       ? undefined
-      : await registrantVerifierDigest(this.tokens, registrantVerifier);
-    return await this.database.transaction().execute(async (transaction) => {
-      const candidateResult = await sql<VerificationCandidate>`
-        select user_id::text
-        from crm.email_verification_tokens
-        where token_hash = ${tokenHash}
-      `.execute(transaction);
-      const candidate = candidateResult.rows[0];
-      if (!candidate) return { status: "invalid" };
-      const userResult = await sql<{
-        email_verified_at: Date | null;
-        status: string;
-      }>`
-        select status, email_verified_at
-        from crm.users
-        where id = ${candidate.user_id}::uuid
-        for update
-      `.execute(transaction);
-      const user = userResult.rows[0];
-      if (
-        !user || user.status !== "active" || user.email_verified_at !== null
-      ) {
-        return { status: "replayed" };
-      }
-      const tokenResult = await sql<VerificationRow>`
-        select user_id::text, expires_at, used_at
-        from crm.email_verification_tokens
-        where token_hash = ${tokenHash}
-          and user_id = ${candidate.user_id}::uuid
-        for update
-      `.execute(transaction);
-      const token = tokenResult.rows[0];
-      if (!token) return { status: "invalid" };
-      if (token.used_at !== null) return { status: "replayed" };
-      const now = this.clock.now();
-      if (new Date(token.expires_at).getTime() <= now.getTime()) {
-        return { status: "expired" };
-      }
-      const bound = verifierDigest !== undefined && (await sql<{
-            bound: boolean;
-          }>`
-        select exists (
-          select 1 from crm.email_verification_tokens
-          where user_id = ${token.user_id}::uuid
-            and token_hash = ${verifierDigest} and used_at is null
-        ) bound
-      `.execute(transaction)).rows[0]?.bound === true;
-      if (!bound) {
-        return await this.#verifyWithoutRegistrant(
+      : await registrantVerifierDigest(this.tokens, command.registrantVerifier);
+    const transaction = databaseFromSession(command.transaction);
+    const candidateResult = await sql<VerificationCandidate>`
+      select user_id::text
+      from crm.email_verification_tokens
+      where token_hash = ${tokenHash}
+    `.execute(transaction);
+    const candidate = candidateResult.rows[0];
+    if (!candidate) return { status: "invalid" };
+    // The workspace the registration asked for is read under the same lock
+    // that verifies the user, and cleared by the same update, so it can be
+    // provisioned only once and the name the user typed is not kept after.
+    const userResult = await sql<{
+      email_verified_at: Date | null;
+      pending_workspace_name: string | null;
+      status: string;
+    }>`
+      select status, email_verified_at, pending_workspace_name
+      from crm.users
+      where id = ${candidate.user_id}::uuid
+      for update
+    `.execute(transaction);
+    const user = userResult.rows[0];
+    if (
+      !user || user.status !== "active" || user.email_verified_at !== null
+    ) {
+      return { status: "replayed" };
+    }
+    const tokenResult = await sql<VerificationRow>`
+      select user_id::text, expires_at, used_at
+      from crm.email_verification_tokens
+      where token_hash = ${tokenHash}
+        and user_id = ${candidate.user_id}::uuid
+      for update
+    `.execute(transaction);
+    const token = tokenResult.rows[0];
+    if (!token) return { status: "invalid" };
+    if (token.used_at !== null) return { status: "replayed" };
+    const now = this.clock.now();
+    if (new Date(token.expires_at).getTime() <= now.getTime()) {
+      return { status: "expired" };
+    }
+    const bound = verifierDigest !== undefined && (await sql<{
+          bound: boolean;
+        }>`
+      select exists (
+        select 1 from crm.email_verification_tokens
+        where user_id = ${token.user_id}::uuid
+          and token_hash = ${verifierDigest} and used_at is null
+      ) bound
+    `.execute(transaction)).rows[0]?.bound === true;
+    const registrationIntent = user.pending_workspace_name ?? undefined;
+    const verified = {
+      ...(registrationIntent === undefined ? {} : { registrationIntent }),
+      userId: token.user_id,
+    };
+    if (!bound) {
+      return {
+        ...await this.#verifyWithoutRegistrant(
           transaction,
           token.user_id,
           now,
-        );
-      }
-      const handoff = await this.tokens.create();
-      await sql`
-        update crm.users
-        set email_verified_at = ${now}, updated_at = ${now}
-        where id = ${token.user_id}::uuid and status = 'active'
-          and email_verified_at is null
-      `.execute(transaction);
-      await sql`
-        update crm.email_verification_tokens
-        set used_at = ${now}
-        where user_id = ${token.user_id}::uuid and used_at is null
-      `.execute(transaction);
-      await sql`
-        insert into crm.user_sessions (
-          id, user_id, session_hash, purpose, created_at, last_seen_at, expires_at, revoked_at
-        ) values (
-          ${this.ids.create()}::uuid, ${token.user_id}::uuid, ${handoff.hash}, 'verified-entry',
-          ${now}, ${now}, ${new Date(now.getTime() + 10 * 60 * 1_000)}, null
-        )
-      `.execute(transaction);
-      return { status: "verified", entryToken: handoff.raw };
-    });
+        ),
+        ...verified,
+      };
+    }
+    const handoff = await this.tokens.create();
+    await sql`
+      update crm.users
+      set email_verified_at = ${now}, pending_workspace_name = null,
+        updated_at = ${now}
+      where id = ${token.user_id}::uuid and status = 'active'
+        and email_verified_at is null
+    `.execute(transaction);
+    await sql`
+      update crm.email_verification_tokens
+      set used_at = ${now}
+      where user_id = ${token.user_id}::uuid and used_at is null
+    `.execute(transaction);
+    await sql`
+      insert into crm.user_sessions (
+        id, user_id, session_hash, purpose, created_at, last_seen_at, expires_at, revoked_at
+      ) values (
+        ${this.ids.create()}::uuid, ${token.user_id}::uuid, ${handoff.hash}, 'verified-entry',
+        ${now}, ${now}, ${new Date(now.getTime() + 10 * 60 * 1_000)}, null
+      )
+    `.execute(transaction);
+    return { status: "verified", entryToken: handoff.raw, ...verified };
   }
 
   /**
@@ -135,12 +152,15 @@ export class PostgresEmailVerification
     transaction: Kysely<ApplicationDatabase>,
     userId: string,
     now: Date,
-  ): Promise<VerificationResult> {
+  ): Promise<
+    { readonly resetToken: string; readonly status: "password-required" }
+  > {
     const reset = await this.tokens.create();
     await sql`
       update crm.users
       set email_verified_at = ${now}, password_hash = null,
-        password_changed_at = ${now}, updated_at = ${now}
+        password_changed_at = ${now}, pending_workspace_name = null,
+        updated_at = ${now}
       where id = ${userId}::uuid and status = 'active'
         and email_verified_at is null
     `.execute(transaction);

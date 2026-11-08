@@ -351,7 +351,7 @@ these:
     `registrant:`-prefixed `email_verification_tokens` row; AUD-M3 must cap the
     account-exists mail with the same per-address ceiling.
 
-- [ ] **AUD-A2 — Registrations and authentication rows are bounded and purged.**
+- [x] **AUD-A2 — Registrations and authentication rows are bounded and purged.**
       M. High. Depends: AUD-A1, AUD-W2. Closes: SECA-04, and the session and
       request-log retention part of BEQ-15.
   - Problem: each anonymous registration provisions a whole workspace before
@@ -377,6 +377,26 @@ these:
     before verification.
   - Verify: `test:integration --module=identity`, `--module=workspaces`, and
     `--module=api-access`; `test:unit --module=planning` (runs `apps/worker`).
+  - Delivered 2026-11-08: a registration writes only the pending user (with
+    v13's `users.pending_workspace_name`), its verification link, and the
+    browser verifier; verification provisions the workspace, owner membership,
+    preferences, settings, vocabulary, and audit event in its own transaction
+    from either browser and clears the name (a real-PostgreSQL test shows a
+    failed provisioning rolls the verification back). An hourly worker job
+    purges, through each owning module and in bounded batches, unverified users
+    whose newest link is over 7 days old (keeping pending invitees and members
+    of shared workspaces), sessions of every purpose expired or revoked over 30
+    days ago, reset requests and spent tokens over 7 days old (keeping each
+    verified user's newest proof, with a decorrelated statement: 16,000 users
+    11.1 s to 21 ms), sign-in and MFA throttle rows over an hour old, and
+    `mail-budget/*` rows over 48 hours old; tests tie each window to its reader.
+    AUD-M3's per-address registration-mail ceiling is the durable registration
+    budget, so no second counter. Integration identity 16 (only REL-099),
+    workspaces 18, api-access 14, worker resilience 3; unit planning 144,
+    identity 16, workspaces 192, api-access 39, api only REL-106; E2E AUTH-001
+    and AUTH-002 passed; fmt, contracts, architecture, and lint (only REL-096).
+    A NUL character in a registration name field is an older account-existence
+    signal (parked).
 
 - [x] **AUD-A3 — Sign-in throttling holds across addresses, and password hashes
       upgrade on sign-in.** M. Normal. Depends: none. Closes: SECA-06 (the

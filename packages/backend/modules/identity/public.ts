@@ -1,12 +1,24 @@
 export type { Argon2idParameters } from "./adapters/crypto/argon2id.ts";
 export type { MfaEncryptionKeyset } from "./adapters/crypto/totp.ts";
-export { IdentityConflictError } from "./domain/identity_rules.ts";
+export {
+  AUTHENTICATION_RETENTION,
+  authenticationRetentionCutoffs,
+  IdentityConflictError,
+} from "./domain/identity_rules.ts";
+export { createAuthenticationRetention } from "./application/authentication_retention.ts";
+export type { AuthenticationRetentionResult } from "./application/authentication_retention.ts";
+export type {
+  AuthenticationRetentionRepository,
+  RetentionBatch,
+} from "./ports/retention.ts";
 export type { IdentityTransaction } from "./ports/context.ts";
 export type {
   CreatePendingUserCommand,
   IdentityRegistrationFacade,
+  PendingRegistrationRetentionFacade,
   PendingUser,
   RegistrationAddressClaim,
+  StalePendingUser,
 } from "./ports/registration.ts";
 export type { PasswordHasher, RandomSource } from "./ports/security.ts";
 export type {
@@ -29,6 +41,8 @@ export type {
   ApplicationEntryContext,
   ApplicationEntryWorkspaces,
   EmailVerificationFacade,
+  RegistrationVerificationFacade,
+  RegistrationVerificationResult,
   VerificationFailure,
   VerificationResult,
   VerifiedIdentityEntry,

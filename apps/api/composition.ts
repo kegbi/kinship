@@ -1291,7 +1291,7 @@ export function composeApiServices(
     todayRecentPeople: today.recentPeople,
     todayReminders: today.reminders,
     todayTasks: today.tasks,
-    verification: identity.verification,
+    verification: workspaces.verification,
     workspaceLifecycle: workspaces.workspaceLifecycle,
   };
 }

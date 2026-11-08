@@ -156,10 +156,17 @@ Deno.test({
       "invitation-specific pending identity registration succeeds",
     );
     const [pendingShape] = await sql<
-      { memberships: number; users: number; workspaces: number }[]
+      {
+        memberships: number;
+        named: number;
+        users: number;
+        workspaces: number;
+      }[]
     >`
       select
         (select count(*)::int from crm.users where email = ${newInviteeEmail}) users,
+        (select count(*)::int from crm.users where email = ${newInviteeEmail}
+          and pending_workspace_name is not null) named,
         (select count(*)::int from crm.workspaces w join crm.users u
           on u.id = w.created_by_user_id where u.email = ${newInviteeEmail}) workspaces,
         (select count(*)::int from crm.workspace_members wm join crm.users u
@@ -167,7 +174,7 @@ Deno.test({
     `;
     assert(
       pendingShape?.users === 1 && pendingShape.workspaces === 0 &&
-        pendingShape.memberships === 0,
+        pendingShape.memberships === 0 && pendingShape.named === 0,
       "pending invited identity creates no unrelated workspace or membership",
     );
     const newVerificationToken = mail.latestToken(newInviteeEmail);

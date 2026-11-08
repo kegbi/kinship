@@ -36,3 +36,21 @@ export {
   SignInDeviceTokens,
 } from "./application/sign_in_device.ts";
 export { apiTokenAuditFrom } from "./application/audit_events.ts";
+export {
+  createRequestLogRetention,
+  REQUEST_LOG_RETENTION_BATCH,
+} from "./application/request_log_retention.ts";
+export {
+  REQUEST_LOG_RETENTION,
+  requestLogRetentionCutoffs,
+} from "./domain/request_log_retention.ts";
+export {
+  ACCOUNT_THROTTLE_WINDOW_MILLISECONDS,
+  ADDRESS_THROTTLE_WINDOW_MILLISECONDS,
+  AUTHENTICATION_THROTTLE_PATHS,
+  LONGEST_THROTTLE_WINDOW_MILLISECONDS,
+} from "./domain/authentication_throttle.ts";
+export type {
+  RequestLogRetentionBatch,
+  RequestLogRetentionRepository,
+} from "./ports/request_log_retention.ts";

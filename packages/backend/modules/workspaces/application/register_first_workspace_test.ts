@@ -1,12 +1,19 @@
 import {
   createFirstWorkspaceRegistration,
+  createRegistrationVerification,
   createVerificationDeliveryRetry,
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
   type RegistrationDependencies,
   RegistrationError,
   type RegistrationTransaction,
+  type RegistrationVerificationDependencies,
 } from "../public.ts";
-import { assert } from "../../../testing/assert.ts";
+import type { RegistrationVerificationResult } from "../../identity/public.ts";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+} from "../../../testing/assert.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
 
 Deno.test("verification delivery retries preserve links and bound provider work", async () => {
@@ -125,12 +132,21 @@ function fakeDependencies(failAt?: string, options: {
             command.registrantVerifier === "registrant-verifier",
             "the registering browser's verifier reaches identity",
           );
+          assert(
+            command.registrationIntent === "Ada's circle" &&
+              !("workspaceName" in command),
+            "the workspace waits as the pending user's registration intent",
+          );
           effect("identity");
           return Promise.resolve({
             userId: "00000000-0000-4000-8000-000000000001",
           });
         },
-        assertPendingUserPostconditions() {
+        assertPendingUserPostconditions(command) {
+          assert(
+            command.registrationIntent === "Ada's circle",
+            "the intent is asserted back with the pending user",
+          );
           effect("identity.postconditions");
           return Promise.resolve();
         },
@@ -143,59 +159,7 @@ function fakeDependencies(failAt?: string, options: {
           });
         },
       },
-      workspace: {
-        deletePendingWorkspaces(command) {
-          effect(`workspace.discard:${command.userId}`);
-          return Promise.resolve();
-        },
-        createWorkspace() {
-          effect("workspace");
-          return Promise.resolve({
-            workspaceId: "00000000-0000-4000-8000-000000000002",
-          });
-        },
-        createOwnerMembership() {
-          effect("membership");
-          return Promise.resolve({
-            memberId: "00000000-0000-4000-8000-000000000003",
-          });
-        },
-        createMemberPreferences() {
-          effect("preferences");
-          return Promise.resolve();
-        },
-        createWorkspaceSettings() {
-          effect("settings");
-          return Promise.resolve();
-        },
-        provisionDefaultRelationshipTypes(command) {
-          assert(command.version === 1, "default vocabulary is versioned");
-          assert(
-            command.types === DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
-            "registration uses the one deterministic public vocabulary",
-          );
-          assert(
-            command.types.length === 26,
-            "exact default vocabulary is provisioned",
-          );
-          effect("relationship-types");
-          return Promise.resolve();
-        },
-        assertFirstWorkspacePostconditions() {
-          effect("workspace.postconditions");
-          return Promise.resolve();
-        },
-      },
-      audit: {
-        recordWorkspaceCreated() {
-          effect("audit");
-          return Promise.resolve();
-        },
-        assertWorkspaceCreatedPostcondition() {
-          effect("audit.postconditions");
-          return Promise.resolve();
-        },
-      },
+      workspace: fakeWorkspaceWriter(effect),
       mail: {
         sendVerification(message) {
           assert(
@@ -214,6 +178,207 @@ function fakeDependencies(failAt?: string, options: {
       },
     },
   };
+}
+
+/** The workspace writer, recording each effect by name. */
+function fakeWorkspaceWriter(
+  effect: (name: string) => void,
+): RegistrationDependencies["workspace"] {
+  return {
+    deletePendingWorkspaces(command) {
+      effect(`workspace.discard:${command.userIds.join("+")}`);
+      return Promise.resolve();
+    },
+    createWorkspace(command) {
+      assert(command.name === "Ada's circle", "the intent names the workspace");
+      assert(
+        command.createdByUserId === "verified-user",
+        "the verified user creates it",
+      );
+      effect("workspace");
+      return Promise.resolve({
+        workspaceId: "00000000-0000-4000-8000-000000000002",
+      });
+    },
+    createOwnerMembership() {
+      effect("membership");
+      return Promise.resolve({
+        memberId: "00000000-0000-4000-8000-000000000003",
+      });
+    },
+    createMemberPreferences() {
+      effect("preferences");
+      return Promise.resolve();
+    },
+    createWorkspaceSettings() {
+      effect("settings");
+      return Promise.resolve();
+    },
+    provisionDefaultRelationshipTypes(command) {
+      assert(command.version === 1, "default vocabulary is versioned");
+      assert(
+        command.types === DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.types,
+        "verification uses the one deterministic public vocabulary",
+      );
+      assert(
+        command.types.length === 26,
+        "exact default vocabulary is provisioned",
+      );
+      effect("relationship-types");
+      return Promise.resolve();
+    },
+    assertFirstWorkspacePostconditions() {
+      effect("workspace.postconditions");
+      return Promise.resolve();
+    },
+  };
+}
+
+function fakeVerificationDependencies(
+  verified: RegistrationVerificationResult,
+  failAt?: string,
+): {
+  readonly deps: RegistrationVerificationDependencies;
+  readonly effects: string[];
+} {
+  const effects: string[] = [];
+  const transaction: RegistrationTransaction = { opaque: "test-transaction" };
+  const effect = (name: string): void => {
+    effects.push(name);
+    if (failAt === name) throw new Error(`injected ${name} failure`);
+  };
+  return {
+    effects,
+    deps: {
+      audit: {
+        recordWorkspaceCreated() {
+          effect("audit");
+          return Promise.resolve();
+        },
+        assertWorkspaceCreatedPostcondition() {
+          effect("audit.postconditions");
+          return Promise.resolve();
+        },
+      },
+      clock: fixedClock("2026-08-14T12:00:00.000Z"),
+      ids: { create: () => crypto.randomUUID() },
+      transaction: {
+        async run(work) {
+          effects.push("transaction.begin");
+          try {
+            const result = await work(transaction);
+            effect("transaction.commit");
+            return result;
+          } catch (error) {
+            effects.push("transaction.rollback");
+            throw error;
+          }
+        },
+      },
+      verification: {
+        verifyInTransaction(command) {
+          assert(
+            command.transaction === transaction,
+            "identity proves the address in the provisioning transaction",
+          );
+          effect(
+            `verify:${command.rawToken}:${command.registrantVerifier ?? "-"}`,
+          );
+          return Promise.resolve(verified);
+        },
+      },
+      workspace: fakeWorkspaceWriter(effect),
+    },
+  };
+}
+
+const PROVISIONING = [
+  "workspace",
+  "membership",
+  "preferences",
+  "settings",
+  "relationship-types",
+  "audit",
+  "workspace.postconditions",
+  "audit.postconditions",
+];
+
+Deno.test("[AUD-A2] proving the address provisions the registered workspace in the verification's transaction", async () => {
+  const { deps, effects } = fakeVerificationDependencies({
+    entryToken: "entry",
+    registrationIntent: "Ada's circle",
+    status: "verified",
+    userId: "verified-user",
+  });
+  const result = await createRegistrationVerification(deps)("raw", "verifier");
+  assertEquals(result, { entryToken: "entry", status: "verified" });
+  assertEquals(effects, [
+    "transaction.begin",
+    "verify:raw:verifier",
+    ...PROVISIONING,
+    "transaction.commit",
+  ]);
+});
+
+Deno.test("[AUD-A2] a verification from another browser provisions the workspace too", async () => {
+  const { deps, effects } = fakeVerificationDependencies({
+    registrationIntent: "Ada's circle",
+    resetToken: "reset",
+    status: "password-required",
+    userId: "verified-user",
+  });
+  const result = await createRegistrationVerification(deps)("raw");
+  assertEquals(result, { resetToken: "reset", status: "password-required" });
+  assertEquals(effects, [
+    "transaction.begin",
+    "verify:raw:-",
+    ...PROVISIONING,
+    "transaction.commit",
+  ]);
+});
+
+Deno.test("[AUD-A2] a verification without an intent, or one that fails, provisions nothing", async () => {
+  const outcomes: readonly RegistrationVerificationResult[] = [
+    { entryToken: "entry", status: "verified", userId: "invitee" },
+    { resetToken: "reset", status: "password-required", userId: "invitee" },
+    { status: "expired" },
+    { status: "invalid" },
+    { status: "replayed" },
+  ];
+  for (const verified of outcomes) {
+    const { deps, effects } = fakeVerificationDependencies(verified);
+    const result = await createRegistrationVerification(deps)("raw");
+    assertEquals(result.status, verified.status);
+    assert(!("userId" in result), "the verified user stays inside");
+    assertEquals(effects, [
+      "transaction.begin",
+      "verify:raw:-",
+      "transaction.commit",
+    ]);
+  }
+});
+
+for (const failure of PROVISIONING) {
+  Deno.test(`[AUD-A2] a verification rolls back when ${failure} fails`, async () => {
+    const { deps, effects } = fakeVerificationDependencies(
+      {
+        entryToken: "entry",
+        registrationIntent: "Ada's circle",
+        status: "verified",
+        userId: "verified-user",
+      },
+      failure,
+    );
+    await assertRejects(
+      () => createRegistrationVerification(deps)("raw"),
+      "a failed provisioning fails the verification",
+    );
+    assertEquals(effects.at(-1), "transaction.rollback");
+    assert(
+      !effects.includes("transaction.commit"),
+      "an address is never proved without its workspace",
+    );
+  });
 }
 
 Deno.test("first workspace registration coordinates every required effect in one transaction", async () => {
@@ -239,7 +404,7 @@ Deno.test("first workspace registration coordinates every required effect in one
   );
   assert(
     effects.join(",") ===
-      "equalizer.begin,budget:registration:owner@example.test:10:86400000,transaction.begin,identity.claim,identity,workspace,membership,preferences,settings,relationship-types,audit,identity.postconditions,workspace.postconditions,audit.postconditions,transaction.commit,mail,equalizer.end",
+      "equalizer.begin,budget:registration:owner@example.test:10:86400000,transaction.begin,identity.claim,identity,identity.postconditions,transaction.commit,mail,equalizer.end",
     `unexpected effect order: ${effects.join(",")}`,
   );
 });
@@ -248,15 +413,7 @@ for (
   const failure of [
     "identity.claim",
     "identity",
-    "workspace",
-    "membership",
-    "preferences",
-    "settings",
-    "relationship-types",
-    "audit",
     "identity.postconditions",
-    "workspace.postconditions",
-    "audit.postconditions",
     "transaction.commit",
   ]
 ) {

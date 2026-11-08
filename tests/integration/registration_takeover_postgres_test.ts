@@ -254,15 +254,21 @@ Deno.test({
     );
     const ownerJar = cookiesFrom(owned);
     const [state] = await sql<
-      { readonly users: number; readonly workspaces: number }[]
+      {
+        readonly intents: number;
+        readonly users: number;
+        readonly workspaces: number;
+      }[]
     >`
       select
         (select count(*)::int from crm.users where email = ${address}) users,
+        (select count(*)::int from crm.users
+          where pending_workspace_name is not null) intents,
         (select count(*)::int from crm.workspaces) workspaces
     `;
     assert(
-      state?.users === 1 && state.workspaces === 1,
-      "the pending identity and its workspace are replaced, not duplicated",
+      state?.users === 1 && state.intents === 1 && state.workspaces === 0,
+      "the pending identity is replaced, not duplicated, and nothing is provisioned before verification",
     );
 
     const stale = await post(
@@ -290,6 +296,15 @@ Deno.test({
           cookie.startsWith("kinship_registrant=;")
         ),
       "the registering browser keeps its password and drops its verifier",
+    );
+    const [provisioned] = await sql<{ readonly workspaces: number }[]>`
+      select count(*)::int workspaces from crm.workspaces w
+      join crm.users u on u.id = w.created_by_user_id
+      where u.email = ${address}
+    `;
+    assert(
+      provisioned?.workspaces === 1,
+      "verification provisions the replacing registration's one workspace",
     );
     const signed = await signIn(address, PASSWORD);
     assert(signed.status === 200, "the registrant signs in with its password");

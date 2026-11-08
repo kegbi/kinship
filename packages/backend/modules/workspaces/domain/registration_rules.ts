@@ -109,9 +109,9 @@ export class RegistrationError extends Error {
 /**
  * Registration happened and the email did not.
  *
- * This is deliberately not a `RegistrationError`: the account and workspace
- * are committed, so the person has to be told to ask for another link rather
- * than to register again.
+ * This is deliberately not a `RegistrationError`: the pending account is
+ * committed, so the person has to be told to ask for another link rather than
+ * to register again. Its workspace is provisioned when the address is proved.
  */
 export class VerificationDeliveryError extends Error {
   readonly code = "verification_delivery_failed";

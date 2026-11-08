@@ -1053,11 +1053,17 @@ export const MODULES: readonly TaskModule[] = [
         // The signed sign-in device token (AUD-A3).
         "packages/backend/modules/api-access/application/sign_in_device_test.ts",
         "packages/backend/modules/api-access/domain/token_rules_test.ts",
+        // Request-log retention (AUD-A2).
+        "packages/backend/modules/api-access/application/request_log_retention_test.ts",
         "packages/contracts/api_tokens_test.ts",
       ],
       permissions: { env: ["READABLE_STREAM"] },
     },
-    integration: ["tests/integration/api_tokens_postgres_test.ts"],
+    integration: [
+      "tests/integration/api_tokens_postgres_test.ts",
+      // SECA-04 (AUD-A2): request-log rows outlive no throttle or budget.
+      "tests/integration/request_log_retention_postgres_test.ts",
+    ],
     coverage: {
       directory: "api-access",
       postgres: true,
@@ -1990,6 +1996,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/adapters/crypto/argon2id_test.ts",
         "packages/backend/modules/identity/adapters/crypto/totp_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
+        // Retention (AUD-A2).
+        "packages/backend/modules/identity/application/authentication_retention_test.ts",
       ],
     },
     // Registration and verification are identity's PostgreSQL boundary: the
@@ -2000,6 +2008,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/registration_takeover_postgres_test.ts",
       // SECA-03 (AUD-M3): the per-address registration and reset ceilings.
       "tests/integration/registration_mail_ceiling_postgres_test.ts",
+      // SECA-04 (AUD-A2): provisioning at verification, and the purge.
+      "tests/integration/authentication_retention_postgres_test.ts",
     ],
     coverage: {
       directory: "identity-domain",
@@ -2044,6 +2054,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/workspaces/application/protected_session_test.ts",
         "packages/backend/modules/workspaces/application/recent_people_test.ts",
         "packages/backend/modules/workspaces/application/register_first_workspace_test.ts",
+        "packages/backend/modules/workspaces/application/registration_retention_test.ts",
         "packages/backend/modules/workspaces/application/settings_management_test.ts",
       ],
       permissions: {

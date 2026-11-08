@@ -208,7 +208,9 @@ describe("AUTH-001 registration form", () => {
     await submit(form);
 
     expect(form.hidden).toBe(true);
-    expect(status().textContent).toMatch(/workspace was created/i);
+    expect(status().textContent).toMatch(
+      /account was created; email is delayed/i,
+    );
     const retry = within(status()).getByRole<HTMLButtonElement>("button", {
       name: "Retry verification email",
     });

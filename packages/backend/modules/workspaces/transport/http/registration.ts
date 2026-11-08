@@ -140,7 +140,7 @@ const REGISTRATION_INVALID: ProblemDefinition = {
 const VERIFICATION_DELIVERY_FAILED: ProblemDefinition = {
   code: "verification_delivery_failed",
   detail:
-    "Your account was created with its workspace, but the verification email could not be delivered. Retry delivery.",
+    "Your account was created, but the verification email could not be delivered. Retry delivery.",
   status: 503,
   title: "Verification email delayed",
 };

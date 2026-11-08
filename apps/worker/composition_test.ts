@@ -1,7 +1,10 @@
 import {
   createApplicationWorker,
   createConfiguredReminderWorker,
+  createRetentionSchedule,
   DriverFaultError,
+  RETENTION_INTERVAL_MILLISECONDS,
+  RETENTION_JOB,
   runReminderWorkerLoop,
   TICK_FAILURE_JOB,
   tickDelayMilliseconds,
@@ -9,7 +12,9 @@ import {
   watchDriverFaults,
   WORKER_STATEMENT_TIMEOUT_MS,
 } from "./composition.ts";
+import * as apiAccess from "../../packages/backend/modules/api-access/public.ts";
 import * as planning from "../../packages/backend/modules/planning/public.ts";
+import * as workspaces from "../../packages/backend/modules/workspaces/public.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { recordingLogger } from "../../packages/backend/testing/fakes.ts";
 import type {
@@ -717,5 +722,94 @@ Deno.test("[AUD-W2] driver faults no tick was in flight for are counted on one l
   assertEquals(
     Object.keys(logger.events[0] ?? {}).sort(),
     ["attempt", "duration_ms", "event", "job", "outcome", "request_id"],
+  );
+});
+
+Deno.test("[AUD-A2] the retention job runs after reminder delivery, on the first tick and then hourly", async () => {
+  const effects: string[] = [];
+  let clock = 1_000;
+  const logger = recordingLogger();
+  const retention = createRetentionSchedule(
+    () => [
+      () => Promise.resolve(effects.push("registrations")),
+      () => Promise.resolve(effects.push("authentication")),
+    ],
+    { logger, now: () => clock },
+  );
+  const worker = createApplicationWorker(
+    {
+      tick: () => Promise.resolve(effects.push("reminders")),
+    },
+    { reconcilePendingCleanup: () => Promise.resolve() },
+    undefined,
+    retention,
+  );
+  await worker.tick({ owner: "test" });
+  clock += RETENTION_INTERVAL_MILLISECONDS - 1;
+  await worker.tick({ owner: "test" });
+  clock += 1;
+  await worker.tick({ owner: "test" });
+  assertEquals(effects, [
+    "reminders",
+    "registrations",
+    "authentication",
+    "reminders",
+    "reminders",
+    "registrations",
+    "authentication",
+  ]);
+  assertEquals(
+    logger.events.map((event) =>
+      event.event === "worker.job" ? `${event.job}:${event.outcome}` : ""
+    ),
+    [`${RETENTION_JOB}:completed`, `${RETENTION_JOB}:completed`],
+  );
+});
+
+Deno.test("[AUD-A2] a failed purge neither stops the others nor fails the tick, and waits an interval", async () => {
+  const effects: string[] = [];
+  let clock = 0;
+  const logger = recordingLogger();
+  const retention = createRetentionSchedule(
+    () => [
+      () => Promise.reject(new Error("database is gone")),
+      () => Promise.resolve(effects.push("request-logs")),
+    ],
+    { intervalMilliseconds: 10, logger, now: () => clock },
+  );
+  await retention.runIfDue();
+  await retention.runIfDue();
+  clock = 10;
+  await retention.runIfDue();
+  assertEquals(effects, ["request-logs", "request-logs"]);
+  const lines = logger.events.filter((event) => event.event === "worker.job");
+  assertEquals(lines.length, 2);
+  assert(
+    lines.every((line) =>
+      line.event === "worker.job" && line.job === RETENTION_JOB &&
+      line.outcome === "processing-error" && line.attempt === 1 &&
+      line.duration_ms === 0 && !JSON.stringify(line).includes("gone")
+    ),
+    "a failed run is one redacted line with a stable outcome",
+  );
+});
+
+Deno.test("[AUD-A2] each request-log retention outlasts the window its reader counts", () => {
+  const { mailBudgetMilliseconds, requestMilliseconds } =
+    apiAccess.REQUEST_LOG_RETENTION;
+  assert(
+    mailBudgetMilliseconds >= workspaces.MAIL_BUDGET_WINDOW_MS,
+    "a mail-budget reservation is deleted while its budget still counts it",
+  );
+  assert(
+    requestMilliseconds >= apiAccess.LONGEST_THROTTLE_WINDOW_MILLISECONDS,
+    "a throttle row is deleted while the throttle still reads it",
+  );
+  assertEquals(
+    apiAccess.LONGEST_THROTTLE_WINDOW_MILLISECONDS,
+    Math.max(
+      apiAccess.ADDRESS_THROTTLE_WINDOW_MILLISECONDS,
+      apiAccess.ACCOUNT_THROTTLE_WINDOW_MILLISECONDS,
+    ),
   );
 });

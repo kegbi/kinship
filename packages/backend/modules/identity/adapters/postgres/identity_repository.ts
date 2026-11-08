@@ -9,8 +9,10 @@ import type { IdentityTokenService } from "../../ports/password_recovery.ts";
 import type {
   CreatePendingUserCommand,
   IdentityRegistrationFacade,
+  PendingRegistrationRetentionFacade,
   PendingUser,
   RegistrationAddressClaim,
+  StalePendingUser,
 } from "../../ports/registration.ts";
 import { PostgresPasswordRecoveryRepository } from "./password_recovery.ts";
 import {
@@ -19,7 +21,7 @@ import {
 } from "./registrant_verifier.ts";
 
 export class PostgresIdentityRegistration
-  implements IdentityRegistrationFacade {
+  implements IdentityRegistrationFacade, PendingRegistrationRetentionFacade {
   readonly #recovery = new PostgresPasswordRecoveryRepository();
 
   constructor(private readonly tokens: Pick<IdentityTokenService, "hash">) {}
@@ -102,10 +104,12 @@ export class PostgresIdentityRegistration
       await sql`
         insert into crm.users (
           id, email, password_hash, first_name, last_name, status,
-          email_verified_at, password_changed_at, created_at, updated_at
+          email_verified_at, password_changed_at, pending_workspace_name,
+          created_at, updated_at
         ) values (
           ${command.userId}::uuid, ${command.email}, ${command.passwordHash},
-          ${command.firstName}, ${command.lastName}, 'active', null, now(), now(), now()
+          ${command.firstName}, ${command.lastName}, 'active', null, now(),
+          ${command.registrationIntent ?? null}, now(), now()
         )
       `.execute(database);
       await sql`
@@ -132,6 +136,7 @@ export class PostgresIdentityRegistration
     readonly firstName: string;
     readonly lastName: string;
     readonly passwordHash: string;
+    readonly registrationIntent?: string;
     readonly tokenHash: string;
     readonly transaction: CreatePendingUserCommand["transaction"];
     readonly userId: string;
@@ -146,7 +151,9 @@ export class PostgresIdentityRegistration
             and last_name = ${command.lastName}
             and password_hash = ${command.passwordHash}
             and status = 'active'
-            and email_verified_at is null) and
+            and email_verified_at is null
+            and pending_workspace_name is not distinct from
+              ${command.registrationIntent ?? null}::text) and
         (select count(*) = 1 from crm.email_verification_tokens
           where id = ${command.verificationTokenId}::uuid
             and user_id = ${command.userId}::uuid
@@ -213,5 +220,56 @@ export class PostgresIdentityRegistration
       )
     `.execute(database);
     return { email: pending.email, created: true };
+  }
+
+  async listStalePendingUsers(command: {
+    readonly afterUserId?: string;
+    readonly createdBefore: Date;
+    readonly limit: number;
+    readonly transaction: CreatePendingUserCommand["transaction"];
+  }): Promise<readonly StalePendingUser[]> {
+    // The same definition of "pending" as `claimRegistrationAddress`: an
+    // imported account has no verification token, so it is never named. A
+    // registration is as old as the newest link it was sent, so a retry near
+    // the end of the week buys the link it mailed its full lifetime.
+    const result = await sql<{ email: string; user_id: string }>`
+      select u.id::text user_id, u.email::text email
+      from crm.users u
+      where u.status = 'active' and u.email_verified_at is null
+        and u.created_at < ${command.createdBefore}
+        and (${command.afterUserId ?? null}::uuid is null
+          or u.id > ${command.afterUserId ?? null}::uuid)
+        and exists (
+          select 1 from crm.email_verification_tokens evt
+          where evt.user_id = u.id
+        )
+        and not exists (
+          select 1 from crm.email_verification_tokens recent
+          where recent.user_id = u.id
+            and recent.created_at >= ${command.createdBefore}
+        )
+      order by u.id
+      limit ${command.limit}
+      for update of u skip locked
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.map((row) => ({
+      email: row.email,
+      userId: row.user_id,
+    }));
+  }
+
+  async discardPendingUsers(command: {
+    readonly transaction: CreatePendingUserCommand["transaction"];
+    readonly userIds: readonly string[];
+  }): Promise<number> {
+    if (command.userIds.length === 0) return 0;
+    // As `discardPendingUser`: everything else the user holds cascades.
+    const deleted = await sql<{ id: string }>`
+      delete from crm.users
+      where id = any(${[...command.userIds]}::uuid[]) and status = 'active'
+        and email_verified_at is null
+      returning id::text
+    `.execute(databaseFromSession(command.transaction));
+    return deleted.rows.length;
   }
 }

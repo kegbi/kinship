@@ -885,6 +885,12 @@ Deno.test({
     );
     await sql`drop trigger reject_identity_lifecycle_audit on crm.audit_events`;
     await sql`drop function crm.reject_identity_lifecycle_audit()`;
+    // A name the account asked for and never had cleared is user text too
+    // (AUD-A2), and erasure drops it with the rest.
+    await sql`
+      update crm.users set pending_workspace_name = 'Never cleared'
+      where id = ${deleting.userId}
+    `;
 
     const deleted = await lifecycleRequest(
       deleting,
@@ -908,9 +914,11 @@ Deno.test({
       readonly neighborActive: boolean;
       readonly nonLeftMemberships: number;
       readonly passwordHash: string | null;
+      readonly pendingWorkspaceName: string | null;
       readonly status: string;
     }[]>`
       select u.status, u.email::text, u.password_hash as "passwordHash",
+        u.pending_workspace_name as "pendingWorkspaceName",
         (select count(*)::int from crm.workspace_members wm
           where wm.user_id = u.id and wm.status = 'active' and wm.left_at is null)
           as "activeMemberships",
@@ -931,6 +939,7 @@ Deno.test({
     `;
     assert(
       state?.status === "deleted" && state.passwordHash === null &&
+        state.pendingWorkspaceName === null &&
         state.email.startsWith(`deleted+${deleting.userId}`) &&
         state.activeMemberships === 0 && state.nonLeftMemberships === 0 &&
         state.activeSessions === 0 &&
