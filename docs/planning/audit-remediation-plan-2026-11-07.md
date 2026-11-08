@@ -190,7 +190,8 @@ loop. Otherwise, append a REL item to Parked Work in `active-delivery.md`.
 
 On 2026-11-07 the product owner approved the recommended option for each of
 D1–D4. No ticket waits for a decision. The two architecture changes are recorded
-as ADRs. D5 and D6 are standing defaults.
+as ADRs. D5 and D6 are standing defaults. On 2026-11-08 the user approved D7,
+which AUD-F1 raised during implementation.
 
 | ID | Question                            | Decision                                                                                          | Recorded in                                                                                     | Implemented by |
 | -- | ----------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------- |
@@ -285,6 +286,23 @@ these:
 - BEQ-10 (`last-contacted` ordering) and BEQ-11 (trigram index): no projection
   and no trigram index until AUD-P1 measures the query above its ceiling. AUD-Q4
   is conditional on that measurement.
+
+**D7 — AUD-F1 keeps single-flight; the supersede tests are rewritten
+(2026-11-08, approved by the user).** AUD-F1 implements it:
+
+- A GET joins an identical GET already in flight (same path, query, and
+  `X-Workspace-Id`), including a deliberate re-read: a retry, a repeated search,
+  a poll, or a remount. While a read stalls, asking again waits for that read
+  instead of sending another.
+- A write forgets every shared read when it is sent and when it settles, so a
+  refresh that follows a write is always its own request.
+- About 22 web tests asserted that an identical re-read made while the first
+  read was held got its own answer. They are rewritten to the new contract. What
+  they protect is kept: a stale answer never replaces a newer one where the
+  later request has different inputs, and that is tested separately.
+- Rejected: sharing only reads that start in the same task, because it is
+  unproven that it removes FEQ-01's duplicates; and `cache: "no-store"` alone,
+  because it leaves every duplicate request.
 
 ## Part 4 — Tickets
 
@@ -1050,7 +1068,7 @@ these:
 
 ### Lane F — Frontend data layer and shell
 
-- [ ] **AUD-F1 — Identical GETs are never duplicated or serialized.** S. High.
+- [x] **AUD-F1 — Identical GETs are never duplicated or serialized.** S. High.
       Depends: none. Closes: FEQ-01, FER-04 (the client part).
   - Scope: in `packages/contracts/client/request.ts`, pass `cache: "no-store"`,
     and share one in-flight promise between identical concurrent GETs, keyed by
@@ -1061,6 +1079,20 @@ these:
     `cache: "no-store"`.
   - Verify: `test:unit --module=api` (`packages/contracts/client_test.ts`) and
     `--module=web`; `contracts:check`.
+  - Delivered 2026-11-08: every client GET carries `cache: "no-store"`, and
+    identical concurrent GETs (path with its query and `X-Workspace-Id`) share
+    one fetch with a `structuredClone` per caller, errors included; any write
+    through the client drops the shared reads when it is sent and when it
+    settles, so a read sent after a write never joins one sent before it. Per D7
+    the 22 web tests that assumed each identical refresh was its own request now
+    send the preceding write, use a different-input read, or assert one shared
+    request, and a new test proves an older different-input answer never lands.
+    Client tests 10 (request.ts 100% lines, 97% branches), api unit only
+    REL-106, web unit only REL-107, contracts-build 4, contracts current, build
+    only REL-098, a Chromium smoke of TODAY-001, TODAY-002, PEOPLE-003, and
+    AUTH-004 passed, and fmt, architecture, and lint (only REL-096). Two Today
+    remount tests no longer distinguish a stale old island, and a future GET
+    carrying an `AbortSignal` would share its abort (both parked).
 
 - [x] **AUD-F2 — Shell islands load only for a signed-in member, on intent or at
       idle.** M. High. Depends: none. Closes: FER-01, FEQ-09 (the shell part).

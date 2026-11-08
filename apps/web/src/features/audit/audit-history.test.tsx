@@ -357,16 +357,48 @@ describe("GOVERNANCE-002 audit history UI", () => {
     await user.type(screenField("Action"), "first");
     await user.click(button("Apply filters"));
     await waitFor(() => expect(auditReads(api)).toHaveLength(2));
+    // The newer search asks for something else, so it is its own request
+    // (AUD-F1 shares only identical reads), and the earlier one landing late
+    // must not replace it.
+    await user.type(screenField("Action"), "-second");
     await user.click(button("Apply filters"));
     await waitFor(() =>
       expect(stateLine()).toBe("No audit events match this scope.")
     );
+    expect(
+      auditReads(api).map((request) => request.url.searchParams.get("action")),
+    ).toEqual([null, "first", "first-second"]);
     await act(async () => {
       late.resolve(page([event(), event()]));
       await late.promise;
     });
     expect(stateLine()).toBe("No audit events match this scope.");
     expect(rows()).toHaveLength(0);
+  });
+
+  it("joins a repeated identical search still on the wire", async () => {
+    drawShell(historyMarkup());
+    const late = deferred<Response>();
+    const api = stubApi({
+      [SESSION]: session(),
+      [AUDIT]: [page([event()]), late.promise],
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.type(screenField("Action"), "first");
+    await user.click(button("Apply filters"));
+    await waitFor(() => expect(auditReads(api)).toHaveLength(2));
+    // The same search again while the first is held waits for that read
+    // instead of sending another (AUD-F1, D7).
+    await user.click(button("Apply filters"));
+    expect(auditReads(api)).toHaveLength(2);
+    await act(async () => {
+      late.resolve(page([event(), event()]));
+      await late.promise;
+    });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(auditReads(api)).toHaveLength(2);
   });
 
   it.each([

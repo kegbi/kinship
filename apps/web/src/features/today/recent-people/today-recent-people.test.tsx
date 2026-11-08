@@ -108,17 +108,16 @@ describe("TODAY-001 actual recently viewed people", () => {
     await expectNoAxeViolations(document.body);
   });
 
-  it("isolates failure, focuses a successful retry, and ignores a superseded read", async () => {
+  it("isolates failure, focuses a successful retry, and lets a second retry join the first", async () => {
     todayShell();
-    const stale = deferred<Response>();
-    stubApi({
+    const held = deferred<Response>();
+    const api = stubApi({
       [SESSION]: jsonResponse(workspaceSession()),
       [RECENT]: [
         unreachable,
         problemResponse(503),
         people({ archived: false, id: personId, name: "Only person" }),
-        stale.promise,
-        people({ archived: false, id: personId, name: "Current person" }),
+        held.promise,
       ],
     });
     await mount();
@@ -137,19 +136,21 @@ describe("TODAY-001 actual recently viewed people", () => {
     click(retry());
     await waitFor(() => expect(region().dataset.regionState).toBe("ready"));
     expect(status().textContent).toBe("1 recently viewed person.");
-    // A second retry supersedes the first; the stale answer never lands.
+    // A second retry while the first is held asks for the same read, so it
+    // joins it (AUD-F1, D7): one request, whose answer settles the region.
     click(retry());
     click(retry());
+    await act(async () => {
+      held.resolve(
+        people({ archived: false, id: personId, name: "Current person" }),
+      );
+      await held.promise;
+    });
     await waitFor(() =>
       expect(document.body.textContent).toContain("Current person")
     );
-    await act(async () => {
-      stale.resolve(
-        people({ archived: false, id: personId, name: "Stale person" }),
-      );
-      await stale.promise;
-    });
-    expect(document.body.textContent).not.toContain("Stale person");
+    expect(region().dataset.regionState).toBe("ready");
+    expect(api.calls().filter((call) => call === RECENT)).toHaveLength(4);
   });
 
   it("recovers an initially unavailable session on retry", async () => {
@@ -212,17 +213,20 @@ describe("TODAY-001 actual recently viewed people", () => {
   it("settles its first read even when a reader retries before it lands", async () => {
     todayShell();
     const first = deferred<Response>();
-    stubApi({
+    const api = stubApi({
       [SESSION]: jsonResponse(workspaceSession()),
-      [RECENT]: [first.promise, people()],
+      [RECENT]: [first.promise],
     });
     const mounted = mountPending(() => mountTodayRecentPeople());
+    // The retry asks for the read the mount is still waiting for, so it
+    // joins it (AUD-F1, D7), and that one answer settles the mount.
     click(retry());
     await act(async () => {
+      first.resolve(people({ archived: false, id: personId, name: "Late" }));
       await mounted;
     });
-    expect(region().dataset.regionState).toBe("empty");
-    first.resolve(people({ archived: false, id: personId, name: "Late" }));
-    expect(document.body.textContent).not.toContain("Late");
+    await waitFor(() => expect(region().dataset.regionState).toBe("ready"));
+    expect(document.body.textContent).toContain("Late");
+    expect(api.calls().filter((call) => call === RECENT)).toHaveLength(1);
   });
 });

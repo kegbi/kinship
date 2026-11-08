@@ -13,11 +13,17 @@
  * Every call is recorded. A request no route answers — or a list answer
  * asked once too often — rejects, which an island folds into "unavailable",
  * so the stub also fails the test when it finishes. Either way `fetch` is
- * restored when the test ends; no suite restores it by hand.
+ * restored when the test ends, and an answer still held then is failed with
+ * an `AbortError`; no suite restores it by hand.
  */
 
-import { onTestFinished, vi } from "vitest";
-import type { ProblemDetails } from "../../../../packages/contracts/generated/auth-client.ts";
+import { act, waitFor } from "@testing-library/react";
+import { expect, onTestFinished, vi } from "vitest";
+import {
+  type InteractionInput,
+  type ProblemDetails,
+  recordInteraction,
+} from "../../../../packages/contracts/generated/auth-client.ts";
 
 /** A JSON answer, as the API writes it. */
 export function jsonResponse(
@@ -205,6 +211,10 @@ export function stubApi(routes: ApiRoutes = {}): StubbedApi {
   );
   const received: ApiRequest[] = [];
   const unmatched: string[] = [];
+  // An answer still held when the test ends fails then, so nothing the test
+  // asked for stays on the wire for the client to share with the next test.
+  const ended = deferred<never>();
+  ended.promise.catch(() => undefined);
   const mock = vi.fn(
     (resource: string | URL | Request, init?: RequestInit) => {
       const sent = resource instanceof Request ? resource : undefined;
@@ -227,7 +237,7 @@ export function stubApi(routes: ApiRoutes = {}): StubbedApi {
         route.used += 1;
         const matched = { ...request, params };
         received.push(matched);
-        return answer(given, matched);
+        return Promise.race([answer(given, matched), ended.promise]);
       }
       received.push({ ...request, params: {} });
       unmatched.push(line(method, url));
@@ -240,6 +250,7 @@ export function stubApi(routes: ApiRoutes = {}): StubbedApi {
   realFetch ??= globalThis.fetch;
   globalThis.fetch = mock as unknown as typeof fetch;
   onTestFinished(() => {
+    ended.reject(new DOMException("The test ended", "AbortError"));
     if (realFetch) globalThis.fetch = realFetch;
     realFetch = undefined;
     if (unmatched.length > 0) {
@@ -256,4 +267,37 @@ export function stubApi(routes: ApiRoutes = {}): StubbedApi {
       table.unshift(compile(key, value));
     },
   };
+}
+
+/**
+ * Waits until `api` has received `count` requests recorded as `line`, then
+ * lets the work they started run. A read that joins one already on the wire
+ * (AUD-F1) sends nothing a test could wait for, so a test waits for the
+ * request that comes just before it, such as the read's own session.
+ */
+export async function afterRequests(
+  api: StubbedApi,
+  line: string,
+  count: number,
+): Promise<void> {
+  await waitFor(() =>
+    expect(api.calls().filter((call) => call === line)).toHaveLength(count)
+  );
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+}
+
+/** The route `sendWrite` answers. */
+export const SENT_WRITE = "POST /api/v1/interactions";
+
+/**
+ * Sends a write through the client, as the action behind an announcement (an
+ * interaction recorded, a reminder acknowledged, a task changed) sends one
+ * before it announces. The client forgets every read on the wire when a write
+ * is sent and when it settles (AUD-F1, D7), so a refresh the announcement asks
+ * for is its own request, as it is in the application. The write is answered
+ * by a route added to `api`, recorded as `SENT_WRITE`.
+ */
+export async function sendWrite(api: StubbedApi): Promise<void> {
+  api.route(SENT_WRITE, jsonResponse({ status: "created" }, 201));
+  await recordInteraction({} as InteractionInput);
 }

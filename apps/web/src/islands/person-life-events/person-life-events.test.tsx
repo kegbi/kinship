@@ -131,7 +131,10 @@ describe("complete person life-event history island", () => {
     expect(add().hidden).toBe(false);
     expect(api.fetch).toHaveBeenCalledWith(
       `/api/v1/people/${personId}/life-events`,
-      { headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }) },
+      {
+        cache: "no-store",
+        headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }),
+      },
     );
     await expectNoAxeViolations(root);
   });

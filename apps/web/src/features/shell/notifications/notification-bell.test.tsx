@@ -232,18 +232,26 @@ describe("TODAY-002 notification bell", () => {
       );
     await mount(40);
     await waitFor(() => expect(reads()).toHaveLength(1));
+    // A poll while the first read is still on the wire joins it (AUD-F1, D7):
+    // no second request, and the one answer settles both.
+    await elapse(40);
+    expect(reads()).toHaveLength(1);
+    await act(async () => {
+      late.resolve(feed([item(1, true), item(2, true)], 2));
+      await late.promise;
+    });
+    await waitFor(() =>
+      expect(bell().getAttribute("aria-label")).toBe(
+        "Notifications, 2 unread",
+      )
+    );
+    // Once it settled, each poll is a new request, and the latest lands.
     await elapse(40);
     await waitFor(() =>
       expect(bell().getAttribute("aria-label")).toBe(
         "Notifications, 1 unread",
       )
     );
-    // The first read answers last and is dropped: the latest read won.
-    await act(async () => {
-      late.resolve(feed([item(1, true), item(2, true)], 2));
-      await late.promise;
-    });
-    expect(bell().getAttribute("aria-label")).toBe("Notifications, 1 unread");
     expect(element(".notification-bell-badge").textContent).toBe("1");
     await elapse(40);
     await waitFor(() =>

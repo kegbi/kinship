@@ -693,3 +693,151 @@ Deno.test("[PEOPLE-009] the selection vCard is read as a file with its skipped c
     globalThis.fetch = original;
   }
 });
+
+Deno.test("[FEQ-01] identical concurrent reads share one uncached fetch", async () => {
+  const original = globalThis.fetch;
+  const sent: RequestInit[] = [];
+  const body = {
+    status: "ready",
+    preferences: { nameOrder: "first-last" },
+    supportedCurrencyCodes: ["EUR"],
+  };
+  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
+    sent.push(init ?? {});
+    return Promise.resolve(Response.json(body));
+  }) as typeof fetch;
+  try {
+    const [first, second] = await Promise.all([
+      client.getMemberPreferences(UUID),
+      client.getMemberPreferences(UUID),
+    ]);
+    assert(sent.length === 1, `${sent.length} fetches were sent, not one`);
+    assert(
+      sent[0]?.cache === "no-store",
+      "the read bypasses the HTTP cache and its lock",
+    );
+    assert(
+      first?.ok && second?.ok &&
+        JSON.stringify(first.value) === JSON.stringify(body) &&
+        JSON.stringify(second.value) === JSON.stringify(body),
+      "both callers read the same answer",
+    );
+    assert(
+      first.value !== second.value &&
+        first.value.preferences !== second.value.preferences,
+      "each caller owns its copy",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("[FEQ-01] only identical reads in flight together are shared", async () => {
+  const original = globalThis.fetch;
+  const sent: string[] = [];
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const workspace = new Headers(init?.headers).get("X-Workspace-Id");
+    sent.push(`${init?.method ?? "GET"} ${String(input)} ${workspace ?? "-"}`);
+    return Promise.resolve(Response.json({ status: "ready" }));
+  }) as typeof fetch;
+  const OTHER = "00000000-0000-4000-8000-000000000002";
+  const PREFERENCES = "/api/v1/settings/preferences";
+  try {
+    await Promise.all([
+      client.getMemberPreferences(UUID),
+      client.getMemberPreferences(OTHER),
+      client.getMemberPreferences(),
+      client.listJournal(UUID),
+      client.listJournal(UUID, { cursor: "j" }),
+      client.setPersonStar(UUID, true, UUID),
+      client.setPersonStar(UUID, true, UUID),
+    ]);
+    await client.getMemberPreferences(UUID);
+  } finally {
+    globalThis.fetch = original;
+  }
+  const expected = [
+    `GET ${PREFERENCES} ${UUID}`,
+    `GET ${PREFERENCES} ${OTHER}`,
+    `GET ${PREFERENCES} -`,
+    `GET /api/v1/journal ${UUID}`,
+    `GET /api/v1/journal?cursor=j ${UUID}`,
+    `PUT /api/v1/people/${UUID}/star ${UUID}`,
+    `PUT /api/v1/people/${UUID}/star ${UUID}`,
+    `GET ${PREFERENCES} ${UUID}`,
+  ];
+  assert(
+    JSON.stringify(sent) === JSON.stringify(expected),
+    `the requests were ${JSON.stringify(sent)}`,
+  );
+});
+
+Deno.test("[FEQ-01] a failed shared read reaches every caller and is not kept", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (() => {
+    calls += 1;
+    return calls === 1
+      ? Promise.reject(new TypeError("offline"))
+      : Promise.resolve(Response.json({ status: "ready" }));
+  }) as typeof fetch;
+  try {
+    const outcomes = await Promise.allSettled([
+      client.getMemberPreferences(UUID),
+      client.getMemberPreferences(UUID),
+    ]);
+    assert(
+      outcomes.every((outcome) => outcome.status === "rejected"),
+      "both callers see the network failure",
+    );
+    const retried = await client.getMemberPreferences(UUID);
+    assert(retried.ok && calls === 2, "the next read is a new request");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("[FEQ-01] a read sent after a write never joins one sent before it", async () => {
+  const original = globalThis.fetch;
+  const sent: string[] = [];
+  const held = new Map<string, (response: Response) => void>();
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const line = `${init?.method ?? "GET"} ${String(input)} #${sent.length}`;
+    sent.push(line);
+    return new Promise<Response>((resolve) => held.set(line, resolve));
+  }) as typeof fetch;
+  const answer = (line: string) =>
+    held.get(line)?.(Response.json({ status: "ready" }));
+  const PREFERENCES = "/api/v1/settings/preferences";
+  const STAR = `/api/v1/people/${UUID}/star`;
+  try {
+    // A write on the wire: the read after it is its own request.
+    const before = client.getMemberPreferences(UUID);
+    const write = client.setPersonStar(UUID, true, UUID);
+    const during = client.getMemberPreferences(UUID);
+    // A write that settled while a read is still on the wire: the read after
+    // it is its own request too.
+    const after = write.then(() => client.getMemberPreferences(UUID));
+    answer(`PUT ${STAR} #1`);
+    await write;
+    await Promise.resolve();
+    // The forgotten read settling does not forget the newer one.
+    answer(`GET ${PREFERENCES} #0`);
+    await before;
+    const joined = client.getMemberPreferences(UUID);
+    for (const line of [...held.keys()]) answer(line);
+    await Promise.all([during, after, joined]);
+  } finally {
+    globalThis.fetch = original;
+  }
+  const expected = [
+    `GET ${PREFERENCES} #0`,
+    `PUT ${STAR} #1`,
+    `GET ${PREFERENCES} #2`,
+    `GET ${PREFERENCES} #3`,
+  ];
+  assert(
+    JSON.stringify(sent) === JSON.stringify(expected),
+    `the requests were ${JSON.stringify(sent)}`,
+  );
+});

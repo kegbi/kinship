@@ -6,7 +6,9 @@ import {
   deferred,
   jsonResponse,
   problemResponse,
+  sendWrite,
   stubApi,
+  type StubbedApi,
   unreachable,
 } from "../../../testing/api.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
@@ -116,6 +118,12 @@ const shortcut = (where: "header" | "main", kind: "activity" | "note") =>
   );
 const created = () =>
   act(() => {
+    globalThis.dispatchEvent(new CustomEvent("kinship:interaction-created"));
+  });
+/** Quick capture's write, then its announcement, as the application does. */
+const recorded = (api: StubbedApi) =>
+  act(async () => {
+    await sendWrite(api);
     globalThis.dispatchEvent(new CustomEvent("kinship:interaction-created"));
   });
 const lifecycle = (targetPersonId: string, archived: boolean) =>
@@ -296,9 +304,9 @@ describe("INTERACTION-001 person notes and activities", () => {
     expect(section("activities").dataset.sectionState).toBe("ready");
   });
 
-  it("keeps a newer profile retry when an older retry resolves last", async () => {
+  it("lets a second profile retry join the one still on the wire", async () => {
     shell();
-    const older = deferred<Response>();
+    const first = deferred<Response>();
     let activityCalls = 0;
     stubApi({
       [REPORT]: ({ url }) => {
@@ -307,26 +315,28 @@ describe("INTERACTION-001 person notes and activities", () => {
         return activityCalls === 1
           ? problemResponse(503)
           : activityCalls === 2
-          ? older.promise
-          : page("activity", 2, "Newest retry");
+          ? first.promise
+          : problemResponse(500);
       },
     });
     await mount();
     fireEvent.click(retry("activities"));
     expect(section("activities").dataset.sectionState).toBe("loading");
+    // The same read again while the first retry is held joins it (AUD-F1,
+    // D7): no third request, and its one answer settles the section.
     fireEvent.click(retry("activities"));
+    expect(activityCalls).toBe(2);
+    await act(async () => {
+      first.resolve(page("activity", 2, "Retried"));
+      await first.promise;
+    });
     await waitFor(() =>
       expect(stateOf("activities")).toBe(
         "2 recent activities. Listed in the timeline above.",
       )
     );
-    await act(async () => {
-      older.resolve(page("activity", 1, "Older retry"));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(stateOf("activities")).toBe(
-      "2 recent activities. Listed in the timeline above.",
-    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(activityCalls).toBe(2);
     expect(section("activities").dataset.sectionState).toBe("ready");
     expect(section("notes").dataset.sectionState).toBe("ready");
   });
@@ -360,7 +370,7 @@ describe("INTERACTION-001 person notes and activities", () => {
     const olderActivity = deferred<Response>();
     const olderNote = deferred<Response>();
     let calls = 0;
-    stubApi({
+    const api = stubApi({
       [REPORT]: ({ url }) => {
         const kind = url.searchParams.get("kind") as "activity" | "note";
         calls += 1;
@@ -370,9 +380,11 @@ describe("INTERACTION-001 person notes and activities", () => {
       },
     });
     await mount();
-    created();
+    // Each announcement follows the write that recorded the interaction, so
+    // the second refresh is its own pair of reads (AUD-F1, D7).
+    await recorded(api);
     await waitFor(() => expect(calls).toBe(4));
-    created();
+    await recorded(api);
     await waitFor(() =>
       expect(stateOf("activities")).toBe(
         "2 recent activities. Listed in the timeline above.",

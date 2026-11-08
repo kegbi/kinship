@@ -5,10 +5,12 @@ import { buttonVariants } from "@/components/ui/variants.ts";
 import { readApplicationStylesheet } from "../../../lib/application-stylesheet.test-helper.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
+  afterRequests,
   type ApiAnswer,
   deferred,
   jsonResponse,
   problemResponse,
+  sendWrite,
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
@@ -107,6 +109,16 @@ function reconnect(): void {
   });
 }
 
+/** Quick capture's write, then its announcement, as the application does. */
+async function recordedReconnect(
+  api: ReturnType<typeof stubApi>,
+): Promise<void> {
+  await act(async () => {
+    await sendWrite(api);
+    globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
+  });
+}
+
 afterEach(() => sessionStorage.clear());
 
 describe("PLANNING-002 Today reminder regions island", () => {
@@ -134,13 +146,12 @@ describe("PLANNING-002 Today reminder regions island", () => {
     },
   );
 
-  it.each([[false, true], [true, false]] as const)(
-    "keeps the newer retry atomic when older-success=%s newer-success=%s",
-    async (olderSucceeds, newerSucceeds) => {
+  it.each([true, false])(
+    "settles a second retry that joined the first atomically when success=%s",
+    async (succeeds) => {
       todayShell();
-      const older = deferred<Response>();
-      const newer = deferred<Response>();
-      const api = routes([problemResponse(503), older.promise, newer.promise]);
+      const held = deferred<Response>();
+      const api = routes([problemResponse(503), held.promise]);
       await mount();
       expect(states().every((value) => value?.includes("unavailable"))).toBe(
         true,
@@ -154,28 +165,24 @@ describe("PLANNING-002 Today reminder regions island", () => {
       ]);
       expect(reminderRetry().hidden).toBe(true);
       await waitFor(() => expect(reads(api)).toBe(2));
+      // The same read again while the first retry is held joins it (AUD-F1,
+      // D7): no third request, and the one answer settles the region once.
       click(reminderRetry());
-      await waitFor(() => expect(reads(api)).toBe(3));
+      await afterRequests(api, SESSION, 3);
+      expect(reads(api)).toBe(2);
       await act(async () => {
-        newer.resolve(newerSucceeds ? feed("Newer") : problemResponse(503));
-        await newer.promise;
+        held.resolve(succeeds ? feed("Retried") : problemResponse(503));
+        await held.promise;
       });
       await waitFor(() =>
         expect(states()[0]).toMatch(
-          newerSucceeds ? /1 reminder state/ : /unavailable/,
+          succeeds ? /1 reminder state/ : /unavailable/,
         )
       );
       expect(document.activeElement).toBe(reminderState());
-      await act(async () => {
-        older.resolve(olderSucceeds ? feed("Older") : problemResponse(503));
-        await older.promise;
-      });
-      expect(states()[0]).toMatch(
-        newerSucceeds ? /1 reminder state/ : /unavailable/,
-      );
       expect(states()[1]).toMatch(/unavailable/);
-      expect(document.body.textContent).not.toContain("Older");
-      expect(reminderRetry().hidden).toBe(newerSucceeds);
+      expect(reminderRetry().hidden).toBe(succeeds);
+      expect(reads(api)).toBe(2);
     },
   );
 
@@ -259,17 +266,25 @@ describe("PLANNING-002 Today reminder regions island", () => {
 
   it("makes a pending old mount inert after the page draws again", async () => {
     todayShell();
-    const obsolete = deferred<Response>();
-    const api = routes([obsolete.promise, feed("Current mount")]);
+    const shared = deferred<Response>();
+    const api = routes([shared.promise]);
     const stale = mountPending(() => mountTodayReminders());
     await waitFor(() => expect(reads(api)).toBe(1));
     todayShell();
-    await mount();
+    // The new mount asks for the read the old one is still waiting for, so it
+    // joins it (AUD-F1, D7); only the new mount draws the answer.
+    const current = mountPending(() => mountTodayReminders());
+    await afterRequests(api, SESSION, 2);
+    expect(reads(api)).toBe(1);
     await act(async () => {
-      obsolete.resolve(problemResponse(503));
-      await stale;
+      shared.resolve(feed("Current mount"));
+      await Promise.all([stale, current]);
     });
-    expect(document.body.textContent).toContain("Current mount");
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Current mount")
+    );
+    expect(reads(api)).toBe(1);
+    expect(reminderList().children).toHaveLength(1);
     expect(document.body.textContent).not.toMatch(/unavailable/i);
     expect(reminderRetry().hidden).toBe(true);
   });
@@ -503,7 +518,9 @@ describe("PLANNING-002 Today reminder regions island", () => {
     const api = routes([initial.promise, event.promise]);
     const mounted = mountPending(() => mountTodayReminders());
     await waitFor(() => expect(reads(api)).toBe(1));
-    reconnect();
+    // The announcement follows the write that recorded the reconnect, so its
+    // read is its own request (AUD-F1, D7) and supersedes the first.
+    await recordedReconnect(api);
     await waitFor(() => expect(reads(api)).toBe(2));
     await act(async () => {
       event.resolve(feed("From the reconnect", { cadences: [] }));

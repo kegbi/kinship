@@ -1,8 +1,16 @@
 // @vitest-environment happy-dom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { ApiResult } from "../../../../../packages/contracts/generated/auth-client.ts";
-import { deferred, problemBody } from "../../testing/api.ts";
+import {
+  type ApiResult,
+  listJournal,
+} from "../../../../../packages/contracts/generated/auth-client.ts";
+import {
+  deferred,
+  jsonResponse,
+  problemBody,
+  stubApi,
+} from "../../testing/api.ts";
 import { type ApiCall, settle, useApi, useLatestRequest } from "./api.ts";
 
 const problem = problemBody(409);
@@ -50,6 +58,33 @@ describe("GAP-026 useLatestRequest", () => {
     second.resolve({ ok: true, value: "fresh" });
     expect(await firstRun).toBeUndefined();
     expect(await secondRun).toEqual({ data: "fresh", status: "ready" });
+  });
+
+  it("[AUD-F1] lands only the newer of two different client reads when the older answers last", async () => {
+    // Only identical reads are shared (D7). A newer read that asks for
+    // something else is its own request, and the slot still drops the older
+    // answer when it arrives after the newer one.
+    const older = deferred<Response>();
+    const newer = deferred<Response>();
+    const api = stubApi({
+      "GET /api/v1/journal?cursor=next": newer.promise,
+      "GET /api/v1/journal": older.promise,
+    });
+    const { result } = renderHook(() => useLatestRequest());
+    const olderRun = result.current(() => listJournal("w"));
+    const newerRun = result.current(() => listJournal("w", { cursor: "next" }));
+    await waitFor(() => expect(api.calls()).toHaveLength(2));
+    newer.resolve(jsonResponse({ items: ["newer"], status: "ready" }));
+    expect(await newerRun).toEqual({
+      data: { items: ["newer"], status: "ready" },
+      status: "ready",
+    });
+    older.resolve(jsonResponse({ items: ["older"], status: "ready" }));
+    expect(await olderRun).toBeUndefined();
+    expect(api.calls()).toEqual([
+      "GET /api/v1/journal",
+      "GET /api/v1/journal?cursor=next",
+    ]);
   });
 
   it("drops an answer that arrives after unmount", async () => {

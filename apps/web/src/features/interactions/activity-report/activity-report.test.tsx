@@ -8,6 +8,7 @@ import {
   jsonResponse,
   problemBody,
   problemResponse,
+  sendWrite,
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
@@ -230,7 +231,7 @@ describe("INTERACTION-001 activity report island", () => {
     reportShell();
     const refresh = deferred<Response>();
     const stale = deferred<Response>();
-    routes([
+    const api = routes([
       report([note(1, "Report 1")], "report-2"),
       refresh.promise,
       stale.promise,
@@ -238,20 +239,21 @@ describe("INTERACTION-001 activity report island", () => {
     ]);
     await mount();
     expect(more()?.hidden).toBe(false);
-    act(() => {
-      globalThis.dispatchEvent(new CustomEvent(INTERACTION_CREATED_EVENT));
-    });
+    // Each announcement follows the write that recorded the interaction, so
+    // each refresh is its own request (AUD-F1, D7) and only the last lands.
+    const recorded = () =>
+      act(async () => {
+        await sendWrite(api);
+        globalThis.dispatchEvent(new CustomEvent(INTERACTION_CREATED_EVENT));
+      });
+    await recorded();
     expect(
       document.querySelector<HTMLButtonElement>(
         '[data-load-more="activity-report"]',
       )?.hidden,
     ).toBe(true);
-    act(() => {
-      globalThis.dispatchEvent(new CustomEvent(INTERACTION_CREATED_EVENT));
-    });
-    act(() => {
-      globalThis.dispatchEvent(new CustomEvent(INTERACTION_CREATED_EVENT));
-    });
+    await recorded();
+    await recorded();
     await waitFor(() => expect(list().textContent).toContain("Report 3"));
     await act(async () => {
       refresh.resolve(report([note(2, "Older response")], "report-9"));

@@ -228,7 +228,10 @@ describe("merged person timeline island", () => {
     expect(stateLine()).toBe("2 timeline events");
     expect(api.fetch).toHaveBeenCalledWith(
       `/api/v1/people/${personId}/timeline?limit=20`,
-      { headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }) },
+      {
+        cache: "no-store",
+        headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }),
+      },
     );
   });
 

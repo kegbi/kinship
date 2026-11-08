@@ -5,9 +5,11 @@ import { buttonVariants } from "@/components/ui/variants.ts";
 import { readApplicationStylesheet } from "../../../lib/application-stylesheet.test-helper.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
+  afterRequests,
   deferred,
   jsonResponse,
   problemResponse,
+  sendWrite,
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
@@ -147,6 +149,16 @@ const reads = (api: ReturnType<typeof stubApi>) =>
 function click(target: HTMLElement): void {
   act(() => {
     fireEvent.click(target);
+  });
+}
+
+/** Quick capture's write, then its announcement, as the application does. */
+async function recordedReconnect(
+  api: ReturnType<typeof stubApi>,
+): Promise<void> {
+  await act(async () => {
+    await sendWrite(api);
+    globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
   });
 }
 
@@ -710,9 +722,9 @@ describe("PLANNING-001 Today attention island", () => {
     const mounted = mountPending(() => mountTodayAttention());
     await waitFor(() => expect(reads(api)).toHaveLength(1));
     expect(state().textContent).toBe("Loading relationship priorities…");
-    act(() => {
-      globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
-    });
+    // The announcement follows the write that recorded the reconnect, so its
+    // read is its own request (AUD-F1, D7) and replaces the first.
+    await recordedReconnect(api);
     await waitFor(() => expect(reads(api)).toHaveLength(2));
     await act(async () => {
       first.resolve(attention([task(1, "Superseded")]));
@@ -880,22 +892,29 @@ describe("PLANNING-001 Today attention island", () => {
     todayShell();
     const obsolete = deferred<Response>();
     const pendingRead = deferred<Response>();
-    routes([
+    const api = routes([
       attention([task(1, "Obsolete task")]),
       pendingRead.promise,
-      attention([task(2, "Current task")]),
     ], { [COMPLETION]: obsolete.promise });
     const unmount = await mount();
     click(retry());
     click(complete("Obsolete task"));
+    await waitFor(() => expect(reads(api)).toHaveLength(2));
     unmount();
     todayShell();
-    await mount();
+    // The remount asks for the read the unmounted island left on the wire, so
+    // it joins it (AUD-F1, D7); the old island's completion and read change
+    // nothing on the new page.
+    const sessions = api.calls().filter((call) => call === SESSION).length;
+    const remounted = mountPending(() => mountTodayAttention());
+    await afterRequests(api, SESSION, sessions + 1);
+    expect(reads(api)).toHaveLength(2);
     await act(async () => {
       obsolete.resolve(problemResponse(503));
-      pendingRead.resolve(attention([task(3, "Late read")]));
-      await obsolete.promise;
+      pendingRead.resolve(attention([task(2, "Current task")]));
+      await remounted;
     });
+    expect(reads(api)).toHaveLength(2);
     expect(document.body.textContent).toContain("Current task");
     expect(document.body.textContent).not.toMatch(
       /Obsolete task|Late read|could not be/,
@@ -987,31 +1006,29 @@ describe("PLANNING-001 Today attention island", () => {
   it("serves retries of both regions with one read that settles both and focuses the last one asked", async () => {
     todayShell();
     const first = deferred<Response>();
-    const second = deferred<Response>();
     const api = routes([
       attention([task(1, "Attention base")], [task(2, "Upcoming base")]),
       first.promise,
-      second.promise,
     ]);
     await mount();
+    const sessions = api.calls().filter((call) => call === SESSION).length;
     click(retry());
     click(upcomingRetry());
-    await waitFor(() => expect(reads(api)).toHaveLength(3));
+    // Both retries ask for the same read, so the second joins the first
+    // (AUD-F1, D7): one request settles both regions. They also share one
+    // session read.
+    await afterRequests(api, SESSION, sessions + 1);
+    expect(reads(api)).toHaveLength(2);
     expect(state().textContent).toBe("Loading relationship priorities…");
     expect(upcomingState().textContent).toBe("Loading upcoming work…");
     await act(async () => {
-      second.resolve(attention([task(3, "Attention newest")], [
+      first.resolve(attention([task(3, "Attention newest")], [
         task(4, "Upcoming newest"),
       ], { date: "2026-08-20" }));
-      await second.promise;
-    });
-    await waitFor(() => expect(document.activeElement).toBe(upcomingState()));
-    await act(async () => {
-      first.resolve(attention([task(5, "Attention obsolete")], [], {
-        date: "2026-08-19",
-      }));
       await first.promise;
     });
+    await waitFor(() => expect(document.activeElement).toBe(upcomingState()));
+    expect(reads(api)).toHaveLength(2);
     expect(overdue().textContent).toContain("Attention newest");
     expect(upcomingList().textContent).toContain("Upcoming newest");
     expect(document.body.textContent).not.toContain("obsolete");
@@ -1032,9 +1049,9 @@ describe("PLANNING-001 Today attention island", () => {
     retry().focus();
     click(retry());
     await waitFor(() => expect(reads(api)).toHaveLength(2));
-    act(() => {
-      globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
-    });
+    // The announcement follows the write that recorded the reconnect, so its
+    // read is its own request (AUD-F1, D7) and supersedes the retry.
+    await recordedReconnect(api);
     await waitFor(() => expect(reads(api)).toHaveLength(3));
     await act(async () => {
       reconnect.resolve(attention([], [task(1, "Owned reconnect")], {

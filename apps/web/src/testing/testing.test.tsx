@@ -93,6 +93,22 @@ describe("GAP-030 island test support", () => {
     expect(document.body.innerHTML).toBe("");
   });
 
+  // A request a test left unanswered must not stay on the wire, or the
+  // client's shared in-flight read would answer the next test from it.
+  let leftOver: Promise<unknown> | undefined;
+
+  it("leaves an answer held when the test ends", () => {
+    stubApi({ "GET /api/v1/today": deferred<Response>().promise });
+    leftOver = fetch("/api/v1/today").then(
+      () => "answered",
+      (error: unknown) => error,
+    );
+  });
+
+  it("failed that held answer when its test ended", async () => {
+    expect(await leftOver).toMatchObject({ name: "AbortError" });
+  });
+
   it("mounts a section and unmounts it when the test ends", async () => {
     const body = drawShell('<section id="card"></section>');
     const held = deferred<void>();

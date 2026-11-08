@@ -1069,52 +1069,53 @@ describe("INTERACTION-001 Quick capture", () => {
     expect(element("[data-participants-more]").hidden).toBe(true);
   });
 
-  it("ignores the options an earlier open asked for", async () => {
+  it("lets a reopen join the options an earlier open still waits for", async () => {
     shell();
-    const stalePeople = deferred<Response>();
-    const staleOptions = deferred<Response>();
-    stub({
-      [OPTIONS]: [
-        staleOptions.promise,
-        vocabulary({
-          activityTypes: [{
-            id: "00000000-0000-4000-8000-000000000211",
-            name: "Newest type",
-          }],
-          emotions: [{
-            id: "00000000-0000-4000-8000-000000000311",
-            name: "Newest emotion",
-          }],
-        }),
-      ],
-      [PEOPLE]: [
-        stalePeople.promise,
-        peoplePage([
-          person("00000000-0000-4000-8000-000000000111", "Newest person"),
-        ]),
-      ],
+    const heldPeople = deferred<Response>();
+    const heldOptions = deferred<Response>();
+    // One answer each: a request that did not join would find no route.
+    const api = stub({
+      [OPTIONS]: [heldOptions.promise],
+      [PEOPLE]: [heldPeople.promise],
     });
+    const reads = (path: string) =>
+      api.calls().filter((call) => call.startsWith(`GET ${path}`));
     await mountCapture();
     fireEvent.click(activityOpener());
     await waitFor(() => expect(isOpen()).toBe(true));
     fireEvent.click(cancel());
-    await openReady(activityOpener());
-    stalePeople.resolve(
+    // The reopen asks for exactly what the first open is still waiting for,
+    // so it joins those reads rather than sending its own (AUD-F1, D7); the
+    // newer-search guard for differing reads is the next test.
+    fireEvent.click(activityOpener());
+    await waitFor(() => expect(isOpen()).toBe(true));
+    expect(reads("/api/v1/people")).toHaveLength(1);
+    expect(reads("/api/v1/interaction-options")).toHaveLength(1);
+    heldPeople.resolve(
       peoplePage([
-        person("00000000-0000-4000-8000-000000000112", "Stale person"),
+        person("00000000-0000-4000-8000-000000000111", "Shared person"),
       ]),
     );
-    staleOptions.resolve(vocabulary({
+    heldOptions.resolve(vocabulary({
       activityTypes: [{
-        id: "00000000-0000-4000-8000-000000000212",
-        name: "Stale type",
+        id: "00000000-0000-4000-8000-000000000211",
+        name: "Shared type",
+      }],
+      emotions: [{
+        id: "00000000-0000-4000-8000-000000000311",
+        name: "Shared emotion",
       }],
     }));
+    await waitFor(() => {
+      expect(form().hasAttribute("aria-busy")).toBe(false);
+      expect(submitButton().disabled).toBe(false);
+    });
+    expect(participants().textContent).toContain("Shared person");
+    expect(field("activityTypeId").textContent).toContain("Shared type");
+    expect(field("emotionIds").textContent).toContain("Shared emotion");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(participants().textContent).toContain("Newest person");
-    expect(field("activityTypeId").textContent).toContain("Newest type");
-    expect(field("emotionIds").textContent).toContain("Newest emotion");
-    expect(document.body.textContent).not.toContain("Stale");
+    expect(reads("/api/v1/people")).toHaveLength(1);
+    expect(reads("/api/v1/interaction-options")).toHaveLength(1);
   });
 
   it("keeps every selector on its newest search when older searches and continuations settle later", async () => {

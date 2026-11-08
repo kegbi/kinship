@@ -1668,11 +1668,11 @@ describe("PEOPLE-009 bulk directory actions", () => {
       expect(document.activeElement).toBe(more);
     });
 
-    it("REL-077 drops the reads a closed picker left in flight and shows the reopened one's", async () => {
+    it("REL-077 drops the More tags read a closed picker left in flight, and a reopen joins its first page", async () => {
       markup();
       const firstPage = deferred<Response>();
       const laterPage = deferred<Response>();
-      stubApi({
+      const api = stubApi({
         [PEOPLE]: page([ada]),
         [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
@@ -1680,15 +1680,12 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [TAGS]: [
           noTags,
           firstPage.promise,
-          jsonResponse({
-            nextCursor: "picker-next",
-            options: [friends],
-            status: "ready",
-          }),
           laterPage.promise,
           jsonResponse({ options: [friends, family], status: "ready" }),
         ],
       });
+      const tagReads = () =>
+        api.calls().filter((call) => call.startsWith(TAGS));
       await mount();
       const user = userEvent.setup();
       await user.click(
@@ -1701,16 +1698,30 @@ describe("PEOPLE-009 bulk directory actions", () => {
       const picker = () =>
         within(bar()).getByLabelText<HTMLSelectElement>("Tag to add");
 
-      // Closed while its first page is in flight, then reopened.
+      // Closed while its first page is in flight, then reopened: the reopen
+      // asks for the same page, so it joins that read (AUD-F1, D7) and shows
+      // its answer.
       await open();
       expect(element("#people-bulk-tag-status").textContent).toBe(
         "Loading tag options…",
       );
       await cancel();
       await open();
+      expect(tagReads()).toHaveLength(2);
+      await act(async () => {
+        firstPage.resolve(
+          jsonResponse({
+            nextCursor: "picker-next",
+            options: [friends],
+            status: "ready",
+          }),
+        );
+        await firstPage.promise;
+      });
       await waitFor(() => expect(picker().options.length).toBe(1));
 
-      // Closed while More tags is in flight, then reopened.
+      // Closed while More tags is in flight, then reopened: the reopen's first
+      // page is a different read, so it is its own request.
       await user.click(
         within(bar()).getByRole("button", { name: "More tags" }),
       );
@@ -1719,23 +1730,22 @@ describe("PEOPLE-009 bulk directory actions", () => {
       await waitFor(() => expect(picker().options.length).toBe(2));
       const search = within(bar()).getByLabelText("Search tags to add");
       expect(document.activeElement).toBe(search);
+      expect(tagReads().slice(2)).toEqual([
+        `${TAGS}?cursor=picker-next`,
+        TAGS,
+      ]);
 
-      // The closed picker's answers arrive last and change nothing: not the
-      // options, the status, or the focus a finished More tags would move.
+      // The closed picker's More tags answer arrives last and changes nothing:
+      // not the options, the status, or the focus a finished More tags would
+      // move.
       await act(async () => {
-        firstPage.resolve(
-          jsonResponse({
-            options: [{ id: family.id, name: "Stale" }],
-            status: "ready",
-          }),
-        );
         laterPage.resolve(
           jsonResponse({
             options: [{ id: family.id, name: "Stale" }],
             status: "ready",
           }),
         );
-        await Promise.all([firstPage.promise, laterPage.promise]);
+        await laterPage.promise;
       });
       expect([...picker().options].map((option) => option.text)).toEqual([
         "Friends",
@@ -1938,21 +1948,13 @@ describe("PEOPLE-010 tag facet under a newer tag read", () => {
       [PEOPLE]: page([person()]),
       [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
-      [FACET]: [
-        slow.promise,
-        jsonResponse({
-          lifecycle: "active",
-          status: "ready",
-          tags: [{
-            count: 2,
-            id: "00000000-0000-4000-8000-000000000090",
-            name: "Friends",
-          }],
-          truncated: false,
-        }),
-      ],
+      [FACET]: [slow.promise],
       [TAGS]: noTags,
     });
+    const facetReads = () =>
+      api.requests().filter((request) =>
+        request.url.pathname === "/api/v1/people/tag-facet"
+      );
     const settled = mountPending(() => mountPeopleDirectory());
     await waitFor(() =>
       expect(element("#people-directory-list").hidden).toBe(false)
@@ -1964,31 +1966,41 @@ describe("PEOPLE-010 tag facet under a newer tag read", () => {
     await user.click(region().getByRole("button", { name: "Search tags" }));
     await waitFor(() =>
       expect(
-        within(element("#people-tag-facet")).getByRole("button", {
-          name: "Friends, 2 people",
-        }),
-      ).toBeTruthy()
+        api.requests().filter((request) =>
+          request.url.pathname === "/api/v1/people/tag-options"
+        ),
+      ).toHaveLength(2)
+    );
+    // The newer tag read owes the same facet the replaced one is still
+    // counting, so it joins that read (AUD-F1, D7) instead of asking again,
+    // and the one answer lands for it.
+    expect(facetReads()).toHaveLength(1);
+    expect(element("#people-tag-facet").textContent).toContain(
+      "Counting tags…",
     );
     await act(async () => {
       slow.resolve(
         jsonResponse({
           lifecycle: "active",
           status: "ready",
-          tags: [],
+          tags: [{
+            count: 2,
+            id: "00000000-0000-4000-8000-000000000090",
+            name: "Friends",
+          }],
           truncated: false,
         }),
       );
-      await Promise.resolve();
+      await slow.promise;
     });
-    expect(
-      element("#people-tag-facet").textContent,
-      "the superseded facet answer is dropped",
-    ).toContain("Friends");
-    expect(
-      api.requests().filter((request) =>
-        request.url.pathname === "/api/v1/people/tag-facet"
-      ),
-    ).toHaveLength(2);
+    await waitFor(() =>
+      expect(
+        within(element("#people-tag-facet")).getByRole("button", {
+          name: "Friends, 2 people",
+        }),
+      ).toBeTruthy()
+    );
+    expect(facetReads()).toHaveLength(1);
     await settled;
   });
 });

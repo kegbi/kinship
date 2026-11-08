@@ -7,6 +7,7 @@ import {
   deferred,
   jsonResponse,
   problemResponse,
+  sendWrite,
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
@@ -113,6 +114,19 @@ function created(detail?: { readonly kind: string }): void {
   });
 }
 
+/** Quick capture's write, then its announcement, as the application does. */
+async function recorded(
+  api: ReturnType<typeof stubApi>,
+  detail?: { readonly kind: string },
+): Promise<void> {
+  await act(async () => {
+    await sendWrite(api);
+    globalThis.dispatchEvent(
+      new CustomEvent(INTERACTION_CREATED_EVENT, { detail }),
+    );
+  });
+}
+
 function click(target: HTMLElement): void {
   act(() => {
     fireEvent.click(target);
@@ -194,10 +208,12 @@ describe("INTERACTION-001 Today projections", () => {
     await waitFor(() =>
       expect([count(api, FAVORITES), count(api, RECENT)]).toEqual([1, 1])
     );
-    created({ kind: "activity" });
+    // Each announcement follows the write that recorded the interaction, so
+    // each refresh is its own request (AUD-F1, D7), even during the first load.
+    await recorded(api, { kind: "activity" });
     await waitFor(() => expect(count(api, RECENT)).toBe(2));
     expect(count(api, FAVORITES)).toBe(1);
-    created({ kind: "note" });
+    await recorded(api, { kind: "note" });
     await waitFor(() =>
       expect([count(api, FAVORITES), count(api, RECENT)]).toEqual([2, 3])
     );
@@ -264,17 +280,21 @@ describe("INTERACTION-001 Today projections", () => {
   it("hides empty favorite notes and reveals a later nonempty refresh without stale overwrite", async () => {
     todayShell();
     const older = deferred<Response>();
-    routes([items(), older.promise, items(note("Newest favorite"))], items());
+    const api = routes(
+      [items(), older.promise, items(note("Newest favorite"))],
+      items(),
+    );
     await mount();
     expect(favoriteRegion().hidden).toBe(true);
     expect(favoriteRegion().getAttribute("aria-labelledby")).toBe(
       "favorite-notes-heading",
     );
     expect(element("#today-recent-activity-region").hidden).toBe(false);
-    created();
+    // Each refresh follows its own recorded note, so neither joins the other.
+    await recorded(api);
     // A read in flight shows the section with its loading status.
     expect(favoriteRegion().hidden).toBe(false);
-    created();
+    await recorded(api);
     await waitFor(() =>
       expect(favorites().textContent).toContain("Newest favorite")
     );
