@@ -130,6 +130,66 @@ test("[API-002] visitors read and download the reference without JavaScript", {
 });
 
 test(
+  "[API-002] a focused code block or link inside an operation shows its whole focus ring",
+  {
+    annotation: { type: "flow", description: "API-002" },
+  },
+  async ({ page }) => {
+    // An operation's `content-visibility: auto` clips paint at its padding box
+    // (FER-14), and WebKit has no `overflow-clip-margin`, so the operation's
+    // own padding must hold the ring of a block that sits flush with its edge.
+    for (const width of [1280, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/docs/api");
+      const operation = page.locator(".reference-operation").first();
+      for (
+        const target of [
+          operation.locator(".response-list pre[tabindex]").first(),
+          operation.getByRole("link", { name: "Back to operation index ↑" }),
+        ]
+      ) {
+        await target.focus();
+        const overflow = await target.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const ring = parseFloat(style.outlineWidth) +
+            parseFloat(style.outlineOffset);
+          const clip = element.closest(".reference-operation")!;
+          const box = clip.getBoundingClientRect();
+          const edges = getComputedStyle(clip);
+          const rect = element.getBoundingClientRect();
+          return {
+            focusVisible: element.matches(":focus-visible"),
+            outline: style.outlineStyle,
+            ring,
+            left: box.left + parseFloat(edges.borderLeftWidth) -
+              (rect.left - ring),
+            right: rect.right + ring -
+              (box.right - parseFloat(edges.borderRightWidth)),
+            top: box.top + parseFloat(edges.borderTopWidth) - (rect.top - ring),
+            bottom: rect.bottom + ring -
+              (box.bottom - parseFloat(edges.borderBottomWidth)),
+          };
+        });
+        expect(overflow).toMatchObject({
+          focusVisible: true,
+          outline: "solid",
+        });
+        expect(overflow.ring).toBeGreaterThan(0);
+        for (const side of ["left", "right", "top", "bottom"] as const) {
+          expect(overflow[side], `${width}px: ring past the ${side} edge`)
+            .toBeLessThanOrEqual(0);
+        }
+      }
+      expect(
+        await page.evaluate(() =>
+          document.documentElement.scrollWidth <= innerWidth
+        ),
+      ).toBe(true);
+    }
+  },
+);
+
+test(
   "[API-002] documented bearer automation retrieves a person, manages tasks, and captures an interaction",
   {
     annotation: { type: "flow", description: "API-002" },

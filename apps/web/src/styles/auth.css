@@ -2,7 +2,8 @@
 @import "./tokens.css";
 
 :root {
-  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Variable", "Inter Fallback", Inter, ui-sans-serif,
+    system-ui, sans-serif;
   color: var(--ink-1);
   background: var(--surface-page);
 }
@@ -75,7 +76,7 @@ input:focus-visible {
   border-radius: 50%;
   color: var(--on-accent);
   background: var(--accent-solid);
-  font-family: "Inter Variable", Inter, sans-serif;
+  font-family: "Inter Variable", "Inter Fallback", Inter, sans-serif;
   font-size: .85rem;
 }
 .auth-main {

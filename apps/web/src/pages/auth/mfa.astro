@@ -10,7 +10,7 @@ import AuthLayout from "../../layouts/AuthLayout.astro";
       <p>Enter the six-digit code from your authenticator, or one unused recovery code.</p>
       <form method="post" id="mfa-form" novalidate>
         <label>Authenticator or recovery code<input name="factor" autocomplete="one-time-code" maxlength="128" required /></label>
-        <button type="submit">Continue securely</button>
+        <button type="submit" disabled>Continue securely</button>
       </form>
       <div id="auth-status" class="form-status" role="status" aria-live="polite" tabindex="-1"></div>
       <p class="auth-links"><a href="/auth/sign-in">Return to sign-in</a></p>

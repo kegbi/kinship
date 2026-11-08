@@ -34,7 +34,13 @@ function begin(ui: FormUi, message: string): void {
   ui.submit.disabled = true;
 }
 
-function finish(ui: FormUi): void {
+/**
+ * Lets the reader submit. Each page draws its submit disabled, because a
+ * submission made before this module's listener exists would fall through to
+ * a native POST that the gateway answers 405 (FER-13); a mount enables it once
+ * the listener is attached, and each attempt again when it settles.
+ */
+function enableSubmit(ui: FormUi): void {
   ui.submit.disabled = false;
 }
 
@@ -102,9 +108,10 @@ export function mountSignIn(
         "Sign-in is temporarily unavailable. Please try again.";
       ui.output.focus();
     } finally {
-      finish(ui);
+      enableSubmit(ui);
     }
   });
+  enableSubmit(ui);
 }
 
 export function mountMfa(
@@ -141,9 +148,10 @@ export function mountMfa(
       ui.output.textContent = "The challenge is temporarily unavailable.";
       ui.output.focus();
     } finally {
-      finish(ui);
+      enableSubmit(ui);
     }
   });
+  enableSubmit(ui);
 }
 
 export function mountRecovery(form: HTMLFormElement): void {
@@ -172,9 +180,10 @@ export function mountRecovery(form: HTMLFormElement): void {
         "We could not submit the recovery request. Check your connection and try again.";
       ui.output.focus();
     } finally {
-      finish(ui);
+      enableSubmit(ui);
     }
   });
+  enableSubmit(ui);
 }
 
 export function mountReset(
@@ -213,7 +222,8 @@ export function mountReset(
         "Password reset is temporarily unavailable. Please try again.";
       ui.output.focus();
     } finally {
-      finish(ui);
+      enableSubmit(ui);
     }
   });
+  enableSubmit(ui);
 }

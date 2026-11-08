@@ -468,6 +468,39 @@ describe("GAP-033 auth forms on their own pages", () => {
     expect(screen.getByRole("status").textContent).toMatch(/request received/i);
   });
 
+  // FER-13: until its handler is wired, a submission would fall through to a
+  // native POST, which the gateway answers 405. Each page therefore draws its
+  // submit disabled, and mounting the form is what enables it.
+  it.each(
+    [
+      ["auth/sign-in", "Sign in", (form: HTMLFormElement) => mountSignIn(form)],
+      [
+        "auth/mfa",
+        "Continue securely",
+        (form: HTMLFormElement) => mountMfa(form),
+      ],
+      ["auth/forgot-password", "Send recovery link", mountRecovery],
+      [
+        "auth/reset-password",
+        "Reset password",
+        (form: HTMLFormElement) => mountReset(form),
+      ],
+    ] as const,
+  )(
+    "draws %s's submit disabled until its handler is wired",
+    (page, name, mount) => {
+      // The reset form is wired only from a link that carries its token.
+      history.replaceState({}, "", "/auth/reset-password?token=reset-token");
+      drawPage(page);
+      const submit = submitButton(name);
+      expect(submit.disabled).toBe(true);
+
+      mount(submit.form!);
+
+      expect(submit.disabled).toBe(false);
+    },
+  );
+
   it("hides the reset page's form without a token", () => {
     history.replaceState({}, "", "/auth/reset-password");
     drawPage("auth/reset-password");

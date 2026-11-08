@@ -86,6 +86,18 @@ describe("AUTH-001 registration form", () => {
     expect(document.activeElement).toBe(status());
   });
 
+  it("FER-13 draws the submit disabled until its handler is wired", () => {
+    drawPage("auth/sign-up");
+    const submit = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Create workspace",
+    });
+    expect(submit.disabled).toBe(true);
+
+    mountRegistrationForm(submit.form!);
+
+    expect(submit.disabled).toBe(false);
+  });
+
   it("keeps the owner's next steps and hides the invitation's", () => {
     stubApi();
     mountPage();

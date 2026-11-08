@@ -513,9 +513,10 @@ describe("application control presentation", () => {
     ).toEqual([]);
   });
 
-  it("loads Inter Variable before the application root stack uses it", () => {
+  it("loads Inter Variable and its metric-matched fallback before the application root stack uses them", () => {
+    // FER-12: text paints in the fallback face until Inter swaps in.
     expect(applicationCss).toMatch(
-      /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,
+      /@font-face\s*\{[^}]*font-family:\s*"Inter Variable";[^}]*\}[\s\S]*@font-face\s*\{[^}]*font-family:\s*"Inter Fallback";[^}]*size-adjust:[^}]*\}[\s\S]*:root\s*\{[^}]*font-family:\s*"Inter Variable",\s*"Inter Fallback",\s*Inter,\s*ui-sans-serif,\s*system-ui,\s*sans-serif;/,
     );
   });
 

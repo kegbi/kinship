@@ -565,3 +565,43 @@ test("[AUTH-003] recovers safely and rejects expired reset links", {
   await expectAccessible(page, { networkIdle: true });
   expect(policyViolations).toEqual([]);
 });
+
+test(
+  "[AUTH-003] FER-13 a sign-in made before the page's script runs never reaches a native POST",
+  {
+    annotation: { type: "flow", description: "AUTH-003" },
+  },
+  async ({ page }) => {
+    // Hold every module the page loads, so the form is drawn but not yet wired:
+    // the window a reader on a slow connection meets. A native submission there
+    // would be a POST to the static page, which the gateway answers 405.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => release = resolve);
+    await page.route("**/_astro/**/*.js", async (route) => {
+      await held;
+      await route.continue();
+    });
+    const nativePosts: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && !request.url().includes("/api/")) {
+        nativePosts.push(request.url());
+      }
+    });
+
+    await page.goto("/auth/sign-in", { waitUntil: "commit" });
+    const submit = page.getByRole("button", { name: "Sign in" });
+    await expect(submit).toBeVisible();
+    await expect(submit).toBeDisabled();
+    await page.getByLabel("Email address").fill("early@example.test");
+    await page.getByLabel("Password").fill("correct horse battery staple");
+    await page.getByLabel("Password").press("Enter");
+    await expect(page).toHaveURL(/\/auth\/sign-in$/);
+
+    release();
+    await expect(submit).toBeEnabled();
+    expect(nativePosts).toEqual([]);
+    await expect(page.getByLabel("Email address")).toHaveValue(
+      "early@example.test",
+    );
+  },
+);

@@ -166,4 +166,8 @@ export function mountRegistrationForm(form: HTMLFormElement): void {
       submit.disabled = registrationCommitted;
     }
   });
+  // The page draws the submit disabled: a submission before this listener
+  // exists would fall through to a native POST the gateway answers 405
+  // (FER-13).
+  submit.disabled = false;
 }

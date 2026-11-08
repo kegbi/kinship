@@ -7,3 +7,23 @@
     format("woff2-variations");
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
+
+/*
+ * What text paints in until Inter swaps in (FER-12). Inter is not preloaded
+ * (D6), so this local face is adjusted to Inter's own metrics and the swap
+ * moves nothing: `size-adjust` matches its average English advance width to
+ * Arial's (0.4755 vs 0.4428 em), and the overrides are Inter's ascender
+ * (1984/2048) and descender (494/2048) over that adjustment. Liberation Sans
+ * and Arimo share Arial's metrics where Arial is not installed. It covers
+ * exactly Inter's range, so text Inter never paints keeps the system face.
+ */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"),
+    local("Arimo");
+  size-adjust: 107.38%;
+  ascent-override: 90.22%;
+  descent-override: 22.46%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}

@@ -251,11 +251,31 @@
   font-size: 0.72rem;
   font-weight: 750;
 }
+/*
+ * The page is one long document (FER-14): an operation off screen is laid out
+ * and painted only when it nears the viewport, at its last measured height or
+ * 600px until then. Its contents stay in find-in-page, anchors, and the
+ * accessibility tree. Paint containment clips at the padding box, and WebKit
+ * has no `overflow-clip-margin`, so the operation reaches 0.5rem past each
+ * side of the column and pads its content back in: a flush block's or link's
+ * focus ring (up to 3px at a 4px offset) paints inside the clip. The rule
+ * above it stays at the column's width. The clip margin is only an extra
+ * where it is supported.
+ */
 .reference-operation {
-  border-top: 1px solid var(--line-1);
-  padding-block: 0.5rem 2rem;
-  margin-top: 2rem;
+  position: relative;
+  padding: calc(0.5rem + 1px) 0.5rem 2rem;
+  margin: 2rem -0.5rem 0;
   scroll-margin-top: 1.5rem;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+  overflow-clip-margin: 0.5rem;
+}
+.reference-operation::before {
+  content: "";
+  position: absolute;
+  inset: 0 0.5rem auto;
+  border-top: 1px solid var(--line-1);
 }
 .reference-operation h3 {
   display: flex;

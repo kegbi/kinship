@@ -1175,7 +1175,7 @@ these:
     under AUD-G3's CSP collector passed 14, and fmt, contracts, architecture,
     and lint (only REL-096) are clean.
 
-- [ ] **AUD-F9 — Public and auth pages are polished.** S. Low. Depends: none.
+- [x] **AUD-F9 — Public and auth pages are polished.** S. Low. Depends: none.
       Closes: FER-12, FER-13, FER-14.
   - Scope:
     - Add a metric-matched fallback `@font-face` for Inter (`size-adjust`,
@@ -1190,6 +1190,18 @@ these:
     output contains the fallback font face.
   - Verify: `test:unit --module=web`; E2E `sign-in.AUTH-003`,
     `api-reference.API-002`, and `public-home`.
+  - Delivered 2026-11-08: Inter has a metric-matched local fallback face (Arial
+    family; `size-adjust` 107.38%, ascent 90.22%, descent 22.46%) limited to
+    Inter's latin `unicode-range` and named second in every Inter stack, with
+    `font-display: swap` and no preload; the five auth forms render their submit
+    disabled and enable it once wired, so an early submit cannot reach nginx's
+    405, and `bindSubmitEarly` is deleted; `/docs/api` operations use
+    `content-visibility: auto` and `contain-intrinsic-size: auto 600px` and pad
+    inline room so a focus ring is never clipped, in WebKit too. Web unit only
+    REL-107, build only REL-098, E2E AUTH-003, API-002, and public-home passed
+    15 on Chromium (the focus-ring test also on Firefox and WebKit; WebKit's
+    download case is REL-104), and fmt, contracts, architecture, and lint (only
+    REL-096) are clean.
 
 ### Lane G — Gateway, delivery, and operations
 

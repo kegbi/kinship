@@ -1151,3 +1151,110 @@ Deno.test("[FER-09] no protected page group loads more than 30 KB of gzipped CSS
     }`,
   );
 });
+
+// --- [FER-12] A metric-matched fallback for Inter (AUD-F9) -----------------
+
+/** The fallback face's family, which every Inter stack names next (FER-12). */
+const INTER_FALLBACK = "Inter Fallback";
+
+/** A family list without quotes or spacing, as the minifier may write it. */
+function families(value: string): string[] {
+  return value.split(",").map((family) =>
+    family.trim().replace(/^["']|["']$/g, "")
+  );
+}
+
+/** Every `font-family` list a stylesheet sets outside `@font-face`. */
+function fontFamilyStacks(css: string): string[][] {
+  const outsideFaces = css.replace(/@font-face\s*\{[^}]*\}/g, "");
+  return [...outsideFaces.matchAll(/font-family:([^;}]+)/g)].map(([, stack]) =>
+    families(stack!)
+  );
+}
+
+/** Each `@font-face` rule a stylesheet declares, by its family. */
+function fontFaces(css: string): { family: string; body: string }[] {
+  return [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(([, body]) => ({
+    body: body!,
+    family: families(/font-family:([^;}]+)/.exec(body!)?.[1] ?? "")[0]!,
+  }));
+}
+
+Deno.test("[FER-12] every page that sets Inter also loads its metric-matched fallback face", async () => {
+  // D6: Inter keeps `font-display: swap` and no preload, so text first paints
+  // in a local face. A face adjusted to Inter's measured width, ascent, and
+  // descent keeps the swap from moving the page.
+  const pages = await builtPages();
+  let interPages = 0;
+  for (const page of pages) {
+    const html = await read(page);
+    const css = (await Promise.all(linkedStylesheets(html).map(read))).join(
+      "\n",
+    );
+    const stacks = fontFamilyStacks(css).filter((stack) =>
+      stack[0] === "Inter Variable"
+    );
+    if (stacks.length === 0) continue;
+    interPages += 1;
+    for (const stack of stacks) {
+      assert(
+        stack[1] === INTER_FALLBACK,
+        `${page} sets Inter without its fallback next: ${stack}`,
+      );
+    }
+    const faces = fontFaces(css);
+    const inter = faces.find(({ family }) => family === "Inter Variable");
+    assert(inter?.body.includes("font-display:swap"), `${page} swaps Inter in`);
+    const fallback = faces.find(({ family }) => family === INTER_FALLBACK)
+      ?.body;
+    assert(fallback !== undefined, `${page} declares no Inter fallback face`);
+    // The fallback stands in for Inter only where Inter would paint, so
+    // Cyrillic, Greek, and other text Inter's subset lacks keeps the system
+    // face instead of a scaled Arial.
+    const range = (body = "") => /unicode-range:([^;}]+)/.exec(body)?.[1];
+    const interRange = range(inter?.body);
+    assert(interRange, `${page}'s Inter face has no unicode-range`);
+    assert(
+      range(fallback) === interRange,
+      `${page}'s Inter fallback covers ${
+        range(fallback)
+      }, not Inter's ${interRange}`,
+    );
+    for (
+      const descriptor of [
+        /src:local\(["']?Arial["']?\)/,
+        /size-adjust:\d+(\.\d+)?%/,
+        /ascent-override:\d+(\.\d+)?%/,
+        /descent-override:\d+(\.\d+)?%/,
+        /line-gap-override:0%?/,
+      ]
+    ) {
+      assert(
+        descriptor.test(fallback),
+        `${page}'s Inter fallback lacks ${descriptor}: ${fallback}`,
+      );
+    }
+    assert(
+      !/<link\b[^>]*\brel="preload"[^>]*\bas="font"/.test(html),
+      `${page} preloads a font, which D6 rules out`,
+    );
+  }
+  assert(interPages > 20, `the build wrote Inter pages, found ${interPages}`);
+});
+
+// --- [FER-14] The API reference skips rendering off-screen operations ------
+
+Deno.test("[FER-14] the API reference renders each operation only near the viewport", async () => {
+  const sheets = linkedStylesheets(await read("docs/api/index.html"));
+  const css = (await Promise.all(sheets.map(read))).join("\n");
+  const operation = [...css.matchAll(/\.reference-operation\{([^}]*)\}/g)]
+    .map(([, body]) => body!).join(";");
+  assert(
+    operation.includes("content-visibility:auto"),
+    `an operation's rendering is not deferred: ${operation}`,
+  );
+  assert(
+    operation.includes("contain-intrinsic-size:auto 600px"),
+    `an operation reserves no intrinsic size: ${operation}`,
+  );
+});
