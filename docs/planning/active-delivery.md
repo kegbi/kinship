@@ -1782,10 +1782,19 @@ Playwright test carrying its stable flow ID.
       references `workspace_members`, so each occurrence insert takes
       `FOR KEY SHARE` on that member row. A replenishment holding
       `workspace_settings FOR SHARE` that inserts for the same admin can
-      deadlock with that save, and PostgreSQL aborts one with 40P01. Lock
-      `for no key update of wm, w`, matching `actor_revalidation.ts`, and prove
-      it with a top-up held open after its locks while the same admin saves
-      workspace settings: both commit and no 40P01 occurs.
+      deadlock with that save, and PostgreSQL aborts one with 40P01. The AUD-M2
+      re-check found that the same `for update of wm, w` (`:178`) also deadlocks
+      with invitation acceptance: `lockInvitationAuthority`
+      (`invitation_authority.ts:65–75`) takes `FOR KEY SHARE` on the workspace
+      and then `FOR SHARE` on the inviter's member row, so an acceptance holding
+      the workspace waits on the save's member lock while the save waits on the
+      workspace. Lock `for no key update of w, wm` (workspace first), matching
+      the `for no key update` of `actor_revalidation.ts`; `FOR NO KEY UPDATE`
+      does not conflict with `FOR KEY SHARE`, which removes both cycles. Prove
+      it with two interleavings in which the same admin saves workspace
+      settings: a top-up held open after its locks, and an invitation acceptance
+      for that admin's invitation held open after its workspace lock. Each pair
+      commits and no 40P01 occurs.
 
 - [ ] **REL-110 — The architecture checker ignores `compositionMayImport`.**
       Found in the AUD-K1 review during the 2026-11-07 audit-remediation run on
@@ -1810,6 +1819,83 @@ Playwright test carrying its stable flow ID.
       `api` set, whose run is blocked by REL-095. Declare those module
       integration suites through the task runner's consistent executable from
       REL-105, without dropping any file from an existing gate.
+
+- [ ] **REL-112 — A frozen database server has no client-side deadline.** Found
+      in the AUD-K3 review during the 2026-11-07 audit-remediation run on the
+      REL-105 Windows host; a residual of SECA-15 that AUD-K3 did not set out to
+      close. AUD-K3 gives the API pool a 10 s `statement_timeout`
+      (`REQUEST_STATEMENT_TIMEOUT_MS`,
+      `packages/backend/platform/postgres/database.ts:38`, applied at
+      `:109–110`), but the server enforces that setting, so it fires only for
+      statements the server is executing. `connect_timeout: 5` (`:107`) bounds
+      only a new connection. With the server paused (`docker pause`) a request
+      on an open connection waits on the socket indefinitely, so SECA-15 is
+      closed for lock waits only. Add a client-side request or statement
+      deadline that answers 503 within about 15 s, and prove it with an
+      integration test that pauses the server mid-request.
+
+- [ ] **REL-113 — Planning tests assert database-wide state and fail on a reused
+      database.** Found in the AUD-W2 re-check during the 2026-11-07
+      audit-remediation run on the REL-105 Windows host; the defect predates the
+      remediation tickets. "PLANNING-002 PostgreSQL cancels an expired
+      unattempted claim after disable"
+      (`tests/integration/planning_delivery_postgres_test.ts:575`) claims with
+      `claimDue({ limit: 1 })` over every due occurrence and asserts it got its
+      own (`:597`), then asserts a deployment-wide maintenance tick claimed
+      nothing (`:677`). "PLANNING-002 PostgreSQL keeps reminder delivery,
+      tenancy, cadence, and audit replay-safe"
+      (`tests/integration/planning_reminders_postgres_test.ts:49`) asserts
+      deployment-wide `worker.tick` counts of exactly one (`:314`, `:326`,
+      `:344`). Any due occurrence left by an earlier run breaks them. "TODAY-001
+      PostgreSQL projects every v6 reminder target through its authoritative
+      owner" (`tests/integration/planning_today_postgres_test.ts:502`) inserts
+      fixed reminder and occurrence ids (`:587–595`), so a second run on the
+      same database fails on `reminders_pkey`. Scope those assertions and
+      fixtures to the test's own workspace and member, for example generated ids
+      that keep the intended UUID ordering, and prove each test passes twice in
+      a row on one database.
+
+- [ ] **REL-114 — The console-based CSP violation helper is redundant.** Found
+      in the AUD-G3 review during the 2026-11-07 audit-remediation run on the
+      REL-105 Windows host; the redundancy was created by AUD-G3's fixture and
+      does not predate the remediation tickets.
+      `tests/e2e/support/page-checks.ts:84` still exports
+      `recordPolicyViolations`, which matches console text, and six specs call
+      it: `favorites.PEOPLE-010`, `notifications.TODAY-002`,
+      `people-bulk.PEOPLE-009`, `public-home`, `settings.AUTH-004`, and
+      `sign-in.AUTH-003`. AUD-G3's `securitypolicyviolation` fixture in
+      `tests/e2e/support/test.ts` now fails every test on any refusal in any of
+      its contexts, including those a spec opens through `browser.newContext`.
+      Remove the helper and its call sites without weakening any other assertion
+      those specs make. Optionally add a second positive control beside
+      `tests/e2e/content-security-policy.spec.ts` in a page opened through
+      `browser.newContext`.
+
+- [ ] **REL-115 — PostgreSQL error logs can carry CRM values.** Found in the
+      AUD-G4 review during the 2026-11-07 audit-remediation run on the REL-105
+      Windows host; the exposure predates the remediation tickets. The
+      PostgreSQL `command` that AUD-G4 introduced in `compose.yaml:17-31` sets
+      `log_parameter_max_length=0` (`compose.yaml:30`), which hides bind values
+      in slow-statement lines. The default `log_error_verbosity` still writes
+      `DETAIL: Key (…)=(value) already exists` on a unique violation, so a CRM
+      value such as an email address can reach the PostgreSQL log. Set
+      `log_error_verbosity=terse` (or an equivalent) in the Compose PostgreSQL
+      command, add the matching sentence to
+      `docs/architecture/observability.md`, and prove a forced unique violation
+      logs no DETAIL line.
+
+- [ ] **REL-116 — A first large Monica import leaves the planning tables
+      unanalyzed.** Found in the AUD-W1-fix review during the 2026-11-07
+      audit-remediation run on the REL-105 Windows host; the defect predates
+      AUD-W1, is not a regression from it, and is transient. The import
+      bulk-inserts `crm.reminders` and `crm.reminder_occurrences` in one job
+      (`packages/backend/modules/planning/adapters/postgres/business_import_boundary.ts:113`
+      and `:178`). On a fresh deployment the worker's `claimDue` and first
+      `replenish` (`reminder_repository.ts:1444` and `:1316`) then plan on
+      default estimates until autovacuum analyzes those tables, about one cycle
+      later. After its commit, the import job runs `analyze` on the tables it
+      bulk-loaded; prove that the worker's claim plan uses
+      `reminder_occurrences_due_idx` right after an import.
 
 ## Just-In-Time Technical Capabilities
 
