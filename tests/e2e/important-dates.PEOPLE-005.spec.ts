@@ -1,8 +1,12 @@
 import { expect, test } from "./support/test.ts";
-import { settleNavigation } from "./support/navigation.ts";
+import { settlePersonWorkspace } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { expectAccessible } from "./support/page-checks.ts";
-import { openPersonMenu } from "./support/profile.ts";
+import {
+  openPersonMenu,
+  personRailRead,
+  routePersonRail,
+} from "./support/profile.ts";
 import { signIn } from "./support/sign-in.ts";
 
 test(
@@ -22,23 +26,27 @@ test(
     await page.goto("/app/people/new");
     await page.getByLabel("Given name").fill("Ada");
     await page.getByLabel("Family name").fill("Lovelace");
+    await page.getByRole("button", { name: "Save person", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
+    const profilePath = new URL(page.url()).pathname;
+    const personId = profilePath.split("/").at(-1)!;
+    // The profile the app opened after the save has read everything, so the
+    // hold below catches the read of the profile this spec opens: the person
+    // read whose rail carries the dates' first page (AUD-Q3, REL-123).
+    await settlePersonWorkspace(page);
     let releaseDates = () => {};
     const datesReleased = new Promise<void>((resolve) => {
       releaseDates = resolve;
     });
     let delayInitialDates = true;
-    await page.route("**/api/v1/people/*/dates", async (route) => {
+    await page.route(personRailRead(personId), async (route) => {
       if (delayInitialDates && route.request().method() === "GET") {
         delayInitialDates = false;
         await datesReleased;
       }
       await route.continue();
     });
-    await page.getByRole("button", { name: "Save person", exact: true })
-      .click();
-    await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
-    const profilePath = new URL(page.url()).pathname;
-    await settleNavigation(page);
     await page.goto(profilePath);
     const section = page.locator("#profile-section-important-dates");
     const savedDates = page.locator("#important-dates-list");
@@ -167,6 +175,14 @@ test(
       }
       await route.continue();
     });
+    // The page opens with the dates' first page in the person read's rail
+    // (AUD-Q3), which reports an outage as unavailable and a refusal as
+    // hidden; the dates' own read, routed beside it, answers the same.
+    let railDates: "unavailable" | "hidden" = "unavailable";
+    const datesRail = await routePersonRail(page, (answer) => ({
+      ...answer,
+      rail: { ...answer.rail, "important-dates": { status: railDates } },
+    }), personId);
     await page.reload();
     await expect(section).toHaveAttribute("data-section-state", "error");
     await expect(section.getByText(
@@ -189,12 +205,14 @@ test(
       }
       await route.continue();
     });
+    railDates = "hidden";
     await page.reload();
     await expect(section).toHaveAttribute("data-section-state", "forbidden");
     await expect(section.getByText(
       "Your active workspace no longer permits this action.",
     )).toBeVisible();
     await page.unroute("**/api/v1/people/*/dates");
+    await page.unroute(datesRail);
     await page.goto(profilePath);
     await expect(section).toHaveAttribute("data-section-state", "ready");
 

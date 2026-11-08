@@ -8,7 +8,7 @@ import {
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
 import { expectAccessible } from "./support/page-checks.ts";
-import { openPersonMenu } from "./support/profile.ts";
+import { openPersonMenu, routePersonRail } from "./support/profile.ts";
 import { signIn } from "./support/sign-in.ts";
 import { createPersonThroughUi, saveNewPerson } from "./support/directory.ts";
 
@@ -765,6 +765,19 @@ test(
         });
       }
     });
+    // A reload takes the section's first page from the person read's rail
+    // (AUD-Q3), so a failed open fails Pets there; Retry, a save's refresh,
+    // and the other modes read `/facts/pets`, routed above.
+    await routePersonRail(
+      page,
+      (answer) =>
+        mode === "failed"
+          ? {
+            ...answer,
+            rail: { ...answer.rail, pets: { status: "unavailable" } },
+          }
+          : undefined,
+    );
     const reads: string[] = [];
     page.on("request", (outgoing) => {
       if (outgoing.url().includes("/facts/")) {
@@ -1324,57 +1337,80 @@ test(
       'Conversation ' || sequence || ': discussed mathematics and plans for the next visit.'
     from generate_series(1, 8) sequence;`,
     );
+    const values: Record<string, unknown> = {
+      "contact-methods": {
+        typeId,
+        labelIds: [],
+        isPrimary: true,
+        value: longEmail,
+      },
+      addresses: {
+        displayName: "Home",
+        street: "1 Analytical Engine Way, Apartment 123",
+        city: "London",
+        region: "Greater London",
+        postalCode: "SW1A 1AA",
+        country: "United Kingdom",
+        isPrimary: true,
+        labelIds: [],
+      },
+      work: {
+        title: "Mathematician and scientific correspondent",
+        organizationName: "Analytical Engines Research Society",
+        isCurrent: true,
+      },
+      "food-preferences": {
+        foodPreferences:
+          "Vegetarian meals; no shellfish. Loves a pot of tea after a long walk.",
+      },
+    };
+    const factPage = (section: string) => ({
+      options: section === "contact-methods"
+        ? [{ id: typeId, kind: "contact-type", name: "Personal email" }]
+        : [],
+      personUpdatedAt: revision,
+      status: "ready",
+      records: values[section]
+        ? [{
+          id: randomUUID(),
+          section,
+          updatedAt: revision,
+          value: values[section],
+        }]
+        : [],
+    });
+    // A section's own read, as a refresh or a later page issues it.
     await page.route(`**/people/${personId}/facts/*`, async (route) => {
       const section = new URL(route.request().url()).pathname.split("/").at(
         -1,
       )!;
-      const values: Record<string, unknown> = {
-        "contact-methods": {
-          typeId,
-          labelIds: [],
-          isPrimary: true,
-          value: longEmail,
-        },
-        addresses: {
-          displayName: "Home",
-          street: "1 Analytical Engine Way, Apartment 123",
-          city: "London",
-          region: "Greater London",
-          postalCode: "SW1A 1AA",
-          country: "United Kingdom",
-          isPrimary: true,
-          labelIds: [],
-        },
-        work: {
-          title: "Mathematician and scientific correspondent",
-          organizationName: "Analytical Engines Research Society",
-          isCurrent: true,
-        },
-        "food-preferences": {
-          foodPreferences:
-            "Vegetarian meals; no shellfish. Loves a pot of tea after a long walk.",
-        },
-      };
-      await route.fulfill({
-        json: {
-          options: section === "contact-methods"
-            ? [{ id: typeId, kind: "contact-type", name: "Personal email" }]
-            : [],
-          personUpdatedAt: revision,
-          status: "ready",
-          records: values[section]
-            ? [{
-              id: randomUUID(),
-              section,
-              updatedAt: revision,
-              value: values[section],
-            }]
-            : [],
-        },
-      });
+      await route.fulfill({ json: factPage(section) });
     });
-    // The facts come from the reads stubbed above, so the summary must not
-    // count those sections empty, or they would not be read (FEQ-04).
+    // The page opens with every section's first page in the person read's
+    // rail (AUD-Q3), so the fixture facts arrive there. The summary must not
+    // count those sections empty either, or it would contradict them (FEQ-04).
+    const faked = ["contact-methods", "addresses", "work", "food-preferences"];
+    await routePersonRail(page, (answer) => {
+      const rail = { ...answer.rail };
+      for (const section of faked) {
+        rail[section] = { status: "ready", value: factPage(section) };
+      }
+      return {
+        ...answer,
+        rail,
+        ...(answer.summary
+          ? {
+            summary: {
+              ...answer.summary,
+              sectionCounts: answer.summary.sectionCounts.filter((entry) =>
+                !faked.includes(entry.id)
+              ),
+            },
+          }
+          : {}),
+      };
+    }, personId);
+    // The summary a section reads after a write counts them the same way.
     await page.route(
       `**/api/v1/people/${personId}?include=summary`,
       async (route) => {
@@ -1384,9 +1420,7 @@ test(
         };
         if (profile.summary) {
           profile.summary.sectionCounts = profile.summary.sectionCounts.filter(
-            (entry) =>
-              !["contact-methods", "addresses", "work", "food-preferences"]
-                .includes(entry.id),
+            (entry) => !faked.includes(entry.id),
           );
         }
         await route.fulfill({ json: profile, response: upstream });
@@ -1984,6 +2018,12 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     }
     await route.continue();
   });
+  // The page opens with the section's first page in the person read's rail
+  // (AUD-Q3), which reports a read the server could not compose unavailable.
+  const contactRail = await routePersonRail(page, (answer) => ({
+    ...answer,
+    rail: { ...answer.rail, "contact-methods": { status: "unavailable" } },
+  }));
   await page.reload();
   await expect(contacts).toHaveAttribute("data-section-state", "error");
   await expect(
@@ -2008,12 +2048,17 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     }
     await route.continue();
   });
+  // The rail shows a section the server refused as hidden, so the refusal
+  // reaches the section through its own read, which its Retry issues.
   await page.reload();
+  await expect(contacts).toHaveAttribute("data-section-state", "error");
+  await contacts.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(contacts).toHaveAttribute("data-section-state", "forbidden");
   await expect(
     contacts.getByText("Your active workspace no longer permits this action."),
   ).toBeVisible();
   await page.unroute("**/facts/contact-methods");
+  await page.unroute(contactRail);
   await page.goto(profilePath);
   await openPersonMenu(page);
   await page.getByRole("button", { name: "Archive person" }).click();

@@ -516,6 +516,13 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/people/application/duplicate_dismissal_test.ts",
         "packages/backend/modules/people/application/merge_people_test.ts",
         "packages/backend/modules/people/application/bulk_people_test.ts",
+        // The composed person rail (AUD-Q3) reads the people module's
+        // sections through the person-profile read model. Its suite needs no
+        // permission and lives here rather than in the `api` set, whose
+        // command is already at the Windows shim's argv limit (REL-105); the
+        // `api` module's `deno` coverage set measures it with the rest of the
+        // backend.
+        "packages/backend/read-models/person-profile/application/compose_person_rail_test.ts",
       ],
     },
     coverage: {
@@ -977,6 +984,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/read-models/people-directory/application/list_tag_options_test.ts",
         "packages/backend/read-models/people-directory/application/list_tag_facet_test.ts",
         "packages/backend/read-models/person-profile/application/get_person_profile_test.ts",
+        "packages/backend/read-models/person-profile/application/compose_person_rail_test.ts",
         "packages/backend/read-models/person-profile/application/list_person_timeline_test.ts",
         "packages/backend/read-models/today/application/get_today_interactions_test.ts",
         "packages/backend/read-models/today/application/get_today_recent_people_test.ts",

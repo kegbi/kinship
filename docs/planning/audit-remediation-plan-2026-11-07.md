@@ -1069,6 +1069,42 @@ these:
     backend 96.9% lines; contracts current; fmt, eslint, architecture, and lint
     (only REL-096). E2E PEOPLE-003 (both specs) and PERF-002 10 passed on
     Chromium.
+  - [x] **AUD-Q3-fix — The composed rail's tests run in a gate, and the E2E
+        specs hold the read the page now makes.** S. Normal. Depends: AUD-Q3.
+        Closes: the AUD-P2 checkpoint regressions from AUD-Q3.
+    - Scope: AUD-P2's closure checkpoint found two regressions from AUD-Q3. (1)
+      GAP-003: `tools/tasks/manifest_test.ts` reports that
+      `packages/backend/read-models/person-profile/application/compose_person_rail_test.ts`
+      runs in no gate; name it in the unit and coverage sets that own the
+      person-profile read model, keeping the `api` unit command under this
+      host's argv limit (REL-105). (2) `important-dates.PEOPLE-005` (:46) and
+      `profile-facts.PEOPLE-006` APR-003 (:669), PRF-001 (:1298), and the case
+      at :1576 hold, fail, or fulfil the per-section reads
+      (`/people/{id}/facts/*`, the dates read), which no longer fire at open
+      because AUD-Q3 serves each section's first page inside
+      `GET /people/{id}?include=rail`; make each spec hold, fail, or fulfil the
+      read the page now makes (the composed person read, or the per-section read
+      where the island still issues one, such as a refresh or load-more),
+      keeping every assertion's intent. Change no product code.
+    - RED: `manifest_test.ts` fails GAP-003 on the file, and the four E2E cases
+      fail on Chromium (PEOPLE-005 also on WebKit and Firefox; APR-003 on all
+      three browsers) at 90b25fd2.
+    - Verify: `test:unit --module=tasks` (only REL-097); the owning unit and
+      coverage sets; E2E `important-dates.PEOPLE-005` and
+      `profile-facts.PEOPLE-006` on all three browsers (only REL-119's known
+      WebKit cases may remain).
+    - Delivered 2026-11-08: `compose_person_rail_test.ts` runs in the `people`
+      unit set and the `api` coverage set (the `api` unit command unchanged
+      under REL-105's limit), so GAP-003 passes. PEOPLE-005 holds the composed
+      `?include=rail` read of the profile it opens and fails or hides its dates
+      section there; PEOPLE-006's pets, PRF-001, and contact-method cases fail
+      or fulfil the rail's sections, and the forbidden contact-method state is
+      reached through Retry because the rail shows a refused fact section as
+      hidden (REL-127). No product code changed. Tasks unit only REL-097, people
+      unit 141; fmt, architecture, and lint (only REL-096). E2E PEOPLE-005 and
+      PEOPLE-006 on Chromium, Firefox, and WebKit: 31 passed, and only WebKit
+      APR-004 and PRF-001 fail, on REL-119; PEOPLE-005 now passes on Firefox too
+      (REL-123's cause).
 
 - [x] **AUD-Q4 — `last-contacted` ordering (conditional).** M. Low. Depends:
       AUD-P1. Closes: BEQ-10 (the `last-contacted` part).
