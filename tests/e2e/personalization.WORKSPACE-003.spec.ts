@@ -40,13 +40,13 @@ test(
       ), member as (
         insert into crm.workspace_members (workspace_id, user_id, role, status, joined_at)
         select id, ${sqlLiteral(ownerUserId)}::uuid, 'owner', 'active', now()
-        from workspace returning id
+        from workspace returning id, workspace_id
       ), settings as (
         insert into crm.workspace_settings (workspace_id)
         select id from workspace
       ), preferences as (
-        insert into crm.member_preferences (member_id)
-        select id from member
+        insert into crm.member_preferences (member_id, workspace_id)
+        select id, workspace_id from member
       )
       select id::text from workspace
     `);

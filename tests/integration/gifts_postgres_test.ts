@@ -1098,8 +1098,9 @@ Deno.test({
         "the workspace default currency was not offered",
       );
       await sql`
-        insert into crm.member_preferences (member_id, currency_code)
-        values (${primary.memberId}::uuid, 'RSD')
+        insert into crm.member_preferences (member_id, currency_code,
+          workspace_id)
+        values (${primary.memberId}::uuid, 'RSD', ${primary.workspaceId}::uuid)
         on conflict (member_id) do update set currency_code = 'RSD'
       `;
       assert(

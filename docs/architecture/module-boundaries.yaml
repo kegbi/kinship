@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v14/personal_crm_schema_v14.sql
+schemaSource: personal-crm-schema/v15/personal_crm_schema_v15.sql
 
 # Beside the categories below, reviewed tickets placed four contracts in the
 # kernel: text and value validation (`validation.ts`, GAP-006), the transaction

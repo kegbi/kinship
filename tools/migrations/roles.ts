@@ -1,5 +1,5 @@
 /**
- * The database roles schema v14 relies on (ADR 0008), and the one bootstrap
+ * The database roles schema v14 onward relies on (ADR 0008), and the one bootstrap
  * step that creates them.
  *
  * Roles are cluster objects with passwords, so the canonical DDL never creates

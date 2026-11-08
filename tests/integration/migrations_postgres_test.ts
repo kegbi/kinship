@@ -87,10 +87,11 @@ const priorBaselines = [
   ["v11", artifacts.v11Sql],
   ["v12", artifacts.v12Sql],
   ["v13", artifacts.v13Sql],
+  ["v14", artifacts.v14Sql],
 ] as const;
 
 for (const [version, baselineSql] of priorBaselines) {
-  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v14 catalog`, async () => {
+  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v15 catalog`, async () => {
     await withScratchDatabase(async ({ sql, url }) => {
       await sql.unsafe(baselineSql);
       const userId = crypto.randomUUID();
@@ -100,16 +101,16 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v14`,
+        await runMigration(environment(url)) === `upgrade-${version}-to-v15`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
       const upgraded = await crmTables(sql);
-      const expected = canonicalTableNames(artifacts.v14Sql);
+      const expected = canonicalTableNames(artifacts.v15Sql);
       assert(
         JSON.stringify(upgraded) === JSON.stringify(expected) &&
           upgraded.length === 92,
-        `the upgraded catalog is not v14: ${
+        `the upgraded catalog is not v15: ${
           expected.filter((name) => !upgraded.includes(name)).join(", ")
         }`,
       );
@@ -120,11 +121,11 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v14 catalog
+      // The runner verified the structure against a freshly built v15 catalog
       // before it committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v14",
-        `an upgraded ${version} database is not recognised as exact v14`,
+        await runMigration(environment(url)) === "verify-v15",
+        `an upgraded ${version} database is not recognised as exact v15`,
       );
     });
   });
@@ -211,7 +212,7 @@ Deno.test("[REL-118] a v1 upgrade that fails after 0004 leaves the database unch
 
 // 0011 and 0014 set search_path for the session; the runner keeps that inside
 // its transaction, so the connection it used is unchanged afterwards.
-Deno.test("[REL-118] the v1 upgrade and a v14 verification leave the connection's search_path unchanged", async () => {
+Deno.test("[REL-118] the v1 upgrade and a v15 verification leave the connection's search_path unchanged", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v1Sql);
     const client = openSql(url, { max: 1, prepare: false });
@@ -219,7 +220,7 @@ Deno.test("[REL-118] the v1 upgrade and a v14 verification leave the connection'
       const original = await searchPath(client);
       assert(
         await applyCanonicalSchemaWith(client, artifacts) ===
-          "upgrade-v1-to-v14",
+          "upgrade-v1-to-v15",
         "an exact v1 database was not upgraded on the caller's connection",
       );
       const afterUpgrade = await searchPath(client);
@@ -228,8 +229,8 @@ Deno.test("[REL-118] the v1 upgrade and a v14 verification leave the connection'
         `the upgrade changed search_path from ${original} to ${afterUpgrade}`,
       );
       assert(
-        await applyCanonicalSchemaWith(client, artifacts) === "verify-v14",
-        "the upgraded database is not recognised as exact v14",
+        await applyCanonicalSchemaWith(client, artifacts) === "verify-v15",
+        "the upgraded database is not recognised as exact v15",
       );
       const afterVerify = await searchPath(client);
       assert(
@@ -242,31 +243,128 @@ Deno.test("[REL-118] the v1 upgrade and a v14 verification leave the connection'
   });
 });
 
-// Production databases are already v14: a fresh v14 database still verifies.
-Deno.test("[REL-118] a fresh v14 database applies once and then verifies as exact v14", async () => {
+// Production databases are v14 (REL-120): the runner upgrades one with tenant
+// rows in the eleven tables v15 binds, each row keeps everything it held, and
+// each child takes its parent's workspace.
+Deno.test("[REL-120] the v14-to-v15 upgrade keeps every child row and gives it its parent's workspace", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v14Sql);
+    const [userId, workspaceId, otherId, memberId, personId, otherPersonId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await sql`insert into crm.users (id, email) values (${userId}, 'v14-runner@example.test')`;
+    await sql`
+      insert into crm.workspaces (id, name, created_by_user_id) values
+        (${workspaceId}, 'V14 upgrade', ${userId}), (${otherId}, 'V14 other', ${userId})
+    `;
+    await sql`
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status)
+      values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active')
+    `;
+    await sql`
+      insert into crm.member_preferences (member_id, timezone, ui_state)
+      values (${memberId}, 'Europe/Belgrade', '{"tab":"notes"}'::jsonb)
+    `;
+    await sql`
+      insert into crm.people (id, workspace_id, given_name) values
+        (${personId}, ${workspaceId}, 'Ada'), (${otherPersonId}, ${otherId}, 'Bo')
+    `;
+    await sql`
+      insert into crm.pets (person_id, name, notes) values
+        (${personId}, 'Rex', 'Good dog'), (${otherPersonId}, 'Tom', null)
+    `;
+    const [dataImport] = await sql<{ readonly id: string }[]>`
+      insert into crm.data_imports (workspace_id, source_system)
+      values (${workspaceId}, 'monica') returning id::text
+    `;
+    const [entity] = await sql<{ readonly id: string }[]>`
+      insert into crm.data_import_entities (import_id, source_table,
+        source_primary_key, raw_snapshot)
+      values (${dataImport!.id}, 'contacts', '7', '{"first_name":"Ada"}'::jsonb)
+      returning id::text
+    `;
+    await sql`
+      insert into crm.data_import_reports (import_id, entity_id, severity,
+        message) values (${dataImport!.id}, ${entity!.id}, 'warning', 'kept')
+    `;
+    const snapshot = () =>
+      sql<{ readonly rows: string }[]>`
+        select concat_ws(' | ',
+          (select string_agg((to_jsonb(p) - 'workspace_id')::text, ',' order by p.name) from crm.pets p),
+          (select (to_jsonb(m) - 'workspace_id')::text from crm.member_preferences m),
+          (select (to_jsonb(e) - 'workspace_id')::text from crm.data_import_entities e),
+          (select (to_jsonb(r) - 'workspace_id')::text from crm.data_import_reports r)
+        ) as rows
+      `;
+    const [before] = await snapshot();
+
+    assert(
+      await runMigration(environment(url)) === "upgrade-v14-to-v15",
+      "an exact v14 database was not classified for the v14-to-v15 upgrade",
+    );
+    const [after] = await snapshot();
+    assert(
+      before?.rows !== undefined && after?.rows === before.rows,
+      `the upgrade changed a child row: ${before?.rows} -> ${after?.rows}`,
+    );
+    const owners = await sql<
+      { readonly name: string; readonly owner: string }[]
+    >`
+      select 'pet ' || p.name as name, p.workspace_id::text as owner from crm.pets p
+      union all select 'preferences', m.workspace_id::text from crm.member_preferences m
+      union all select 'entity', e.workspace_id::text from crm.data_import_entities e
+      union all select 'report', r.workspace_id::text from crm.data_import_reports r
+      order by name
+    `;
+    assert(
+      JSON.stringify(owners) === JSON.stringify([
+        { name: "entity", owner: workspaceId },
+        { name: "pet Rex", owner: workspaceId },
+        { name: "pet Tom", owner: otherId },
+        { name: "preferences", owner: workspaceId },
+        { name: "report", owner: workspaceId },
+      ]),
+      `the children did not take their parents' workspaces: ${
+        JSON.stringify(owners)
+      }`,
+    );
+    assert(
+      await runMigration(environment(url)) === "verify-v15",
+      "an upgraded v14 database is not recognised as exact v15",
+    );
+  });
+});
+
+// A fresh database still applies v15 once and then verifies.
+Deno.test("[REL-118] a fresh v15 database applies once and then verifies as exact v15", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     const client = openSql(url, { max: 1, prepare: false });
     try {
       const original = await searchPath(client);
       assert(
-        await applyCanonicalSchemaWith(client, artifacts) === "apply-v14",
-        "an empty database was not given the v14 schema",
+        await applyCanonicalSchemaWith(client, artifacts) === "apply-v15",
+        "an empty database was not given the v15 schema",
       );
       const afterApply = await searchPath(client);
       assert(
         afterApply === original,
-        `applying v14 changed search_path from ${original} to ${afterApply}`,
+        `applying v15 changed search_path from ${original} to ${afterApply}`,
       );
     } finally {
       await client.end();
     }
     assert(
-      await runMigration(environment(url)) === "verify-v14",
-      "a fresh v14 database is not recognised as exact v14",
+      await runMigration(environment(url)) === "verify-v15",
+      "a fresh v15 database is not recognised as exact v15",
     );
     assert(
       (await crmTables(sql)).length === 92,
-      "verification changed the v14 catalog",
+      "verification changed the v15 catalog",
     );
   });
 });
@@ -288,8 +386,8 @@ Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery col
     );
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v11-to-v14",
-      "an exact v11 database was not classified for the v11-to-v14 upgrade",
+      await runMigration(environment(url)) === "upgrade-v11-to-v15",
+      "an exact v11 database was not classified for the v11-to-v15 upgrade",
     );
     const [after] = await columnComment(sql);
     assert(
@@ -299,13 +397,13 @@ Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery col
     );
     assert(
       JSON.stringify(await crmTables(sql)) ===
-        JSON.stringify(canonicalTableNames(artifacts.v14Sql)),
+        JSON.stringify(canonicalTableNames(artifacts.v15Sql)),
       "the comment-only upgrade changed the table catalog",
     );
   });
 });
 
-Deno.test("[REL-061] the v12-to-v14 upgrade keeps imported catalog rows, seeds the rest, and admits an MFA challenge", async () => {
+Deno.test("[REL-061] the v12-to-v15 upgrade keeps imported catalog rows, seeds the rest, and admits an MFA challenge", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v12Sql);
     const [userId, emotionId, petId] = [
@@ -325,8 +423,8 @@ Deno.test("[REL-061] the v12-to-v14 upgrade keeps imported catalog rows, seeds t
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v12-to-v14",
-      "an exact v12 database was not classified for the v12-to-v14 upgrade",
+      await runMigration(environment(url)) === "upgrade-v12-to-v15",
+      "an exact v12 database was not classified for the v12-to-v15 upgrade",
     );
     const [catalogs] = await sql<{
       readonly emotions: number;
@@ -354,8 +452,8 @@ Deno.test("[REL-061] the v12-to-v14 upgrade keeps imported catalog rows, seeds t
         now() + interval '5 minutes')
     `;
     assert(
-      await runMigration(environment(url)) === "verify-v14",
-      "an upgraded v12 database is not recognised as exact v14",
+      await runMigration(environment(url)) === "verify-v15",
+      "an upgraded v12 database is not recognised as exact v15",
     );
   });
 });
@@ -383,7 +481,7 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v14",
+      await runMigration(environment(url)) === "upgrade-v7-to-v15",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -443,7 +541,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v14",
+      await runMigration(environment(url)) === "upgrade-v8-to-v15",
       "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
@@ -473,7 +571,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
   });
 });
 
-Deno.test("[GIFTS-001] the v9-to-v14 upgrade keeps hand-recorded debts and charges a period once", async () => {
+Deno.test("[GIFTS-001] the v9-to-v15 upgrade keeps hand-recorded debts and charges a period once", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v9Sql);
     const [userId, workspaceId, otherWorkspaceId] = [
@@ -502,8 +600,8 @@ Deno.test("[GIFTS-001] the v9-to-v14 upgrade keeps hand-recorded debts and charg
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v9-to-v14",
-      "an exact v9 database was not classified for the v9-to-v14 upgrade",
+      await runMigration(environment(url)) === "upgrade-v9-to-v15",
+      "an exact v9 database was not classified for the v9-to-v15 upgrade",
     );
     const [kept] = await sql<
       { readonly amount: string; readonly rule: string | null }[]

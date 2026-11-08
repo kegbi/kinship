@@ -60,7 +60,7 @@ test(
         sqlLiteral(otherWorkspaceId)
       }::uuid, id, 'member', 'active', now(), now(), now() from crm.users where email = ${
         sqlLiteral(email)
-      } returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+      } returning id, workspace_id) insert into crm.member_preferences (member_id, workspace_id) select id, workspace_id from inserted`,
     );
     await signIn(page, email);
     const created = await page.request.post(`${origin}/api/v1/people`, {
@@ -350,7 +350,7 @@ test(
         sqlLiteral(otherWorkspaceId)
       }::uuid, ${
         sqlLiteral(userId)
-      }::uuid, 'member', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+      }::uuid, 'member', 'active', now(), now(), now()) returning id, workspace_id) insert into crm.member_preferences (member_id, workspace_id) select id, workspace_id from inserted`,
     );
     await signIn(page, email);
     const createPerson = async (
@@ -523,14 +523,14 @@ test(
         sqlLiteral(ownerWorkspaceId)
       }::uuid, ${
         sqlLiteral(memberUserId)
-      }::uuid, 'member', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+      }::uuid, 'member', 'active', now(), now(), now()) returning id, workspace_id) insert into crm.member_preferences (member_id, workspace_id) select id, workspace_id from inserted`,
     );
     databaseSql(
       `with inserted as (insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at, created_at, updated_at) values (gen_random_uuid(), ${
         sqlLiteral(foreignWorkspaceId)
       }::uuid, ${
         sqlLiteral(ownerUserId)
-      }::uuid, 'admin', 'active', now(), now(), now()) returning id) insert into crm.member_preferences (member_id) select id from inserted`,
+      }::uuid, 'admin', 'active', now(), now(), now()) returning id, workspace_id) insert into crm.member_preferences (member_id, workspace_id) select id, workspace_id from inserted`,
     );
 
     await signIn(page, ownerEmail);

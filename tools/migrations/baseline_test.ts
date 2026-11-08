@@ -10,11 +10,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v14 migration classifies only exact empty and v1-v14 states", () => {
+Deno.test("schema v15 migration classifies only exact empty and v1-v15 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v14",
-    "empty target applies the full v14 schema",
+      "apply-v15",
+    "empty target applies the full v15 schema",
   );
   for (
     const version of [
@@ -31,18 +31,19 @@ Deno.test("schema v14 migration classifies only exact empty and v1-v14 states", 
       "v11",
       "v12",
       "v13",
+      "v14",
     ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v14`,
+        `upgrade-${version}-to-v15`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v14" }) ===
-      "verify-v14",
-    "exact v14 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v15" }) ===
+      "verify-v15",
+    "exact v15 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -90,18 +91,18 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v14 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v15 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v14/personal_crm_schema_spec_v14.md",
+    "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
   );
   assert(
     specification.includes("SQL tables parsed: **92**") &&
-      specification.includes("SQL columns parsed: **897**") &&
+      specification.includes("SQL columns parsed: **907**") &&
       specification.includes("Explicit indexes: **158**"),
-    "v14 specification metrics drifted from canonical SQL and validation JSON",
+    "v15 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v14/personal_crm_schema_v14.sql",
+    "personal-crm-schema/v15/personal_crm_schema_v15.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
@@ -121,7 +122,7 @@ Deno.test("schema v14 specification reports its exact canonical metrics", async 
   const deliveryComment =
     "Channels for every reminder occurrence not yet sent, including those already scheduled: in_app, email, or both; email requires a verified address.";
   const catalog = await Deno.readTextFile(
-    "personal-crm-schema/v14/personal_crm_field_catalog_v14.csv",
+    "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
   );
   assert(
     sql.includes(
@@ -178,10 +179,10 @@ Deno.test("schema v14 specification reports its exact canonical metrics", async 
 
 Deno.test("schema v13 declares the query indexes, the MFA challenge purpose, and the catalog seeds", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v14/personal_crm_schema_spec_v14.md",
+    "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v14/personal_crm_schema_v14.sql",
+    "personal-crm-schema/v15/personal_crm_schema_v15.sql",
   );
   for (
     const index of [

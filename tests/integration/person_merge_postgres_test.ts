@@ -327,7 +327,8 @@ async function seedEveryReference(
       values (${personId}, ${colleague}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.pets (person_id, name) values (${personId}, 'Puff')
+      insert into crm.pets (person_id, name, workspace_id)
+      values (${personId}, 'Puff', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
       insert into crm.person_file_links (person_id, file_id, kind, workspace_id)
@@ -412,8 +413,10 @@ async function seedEveryReference(
     `;
     await transaction`
       insert into crm.data_import_entities (
-        import_id, source_table, source_primary_key, target_table, target_key
-      ) values (${importId}, 'contacts', 'c-1', 'people', ${personId})
+        import_id, source_table, source_primary_key, target_table, target_key,
+        workspace_id
+      ) values (${importId}, 'contacts', 'c-1', 'people', ${personId},
+        ${workspaceId})
     `;
     // Two dismissals, one on each side of the pair: ids below and above any
     // random person's, so the duplicate is the higher of one pair and the

@@ -66,6 +66,7 @@ const V10_UPGRADE_DATABASE = "crm_v10_upgrade_test";
 const V11_UPGRADE_DATABASE = "crm_v11_upgrade_test";
 const V12_UPGRADE_DATABASE = "crm_v12_upgrade_test";
 const V13_UPGRADE_DATABASE = "crm_v13_upgrade_test";
+const V14_UPGRADE_DATABASE = "crm_v14_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -73,10 +74,10 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v14");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v15");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v14_validation.json",
+  "personal_crm_schema_v15_validation.json",
 );
 
 /**
@@ -97,6 +98,7 @@ const IMMUTABLE_BASELINES = [
   ["v11", "personal_crm_schema_v11_validation.json"],
   ["v12", "personal_crm_schema_v12_validation.json"],
   ["v13", "personal_crm_schema_v13_validation.json"],
+  ["v14", "personal_crm_schema_v14_validation.json"],
 ] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
@@ -169,20 +171,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v14 validation status is ${validation.status}`);
+    throw new Error(`Schema v15 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v14 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v15 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v14.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v15.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -302,8 +304,10 @@ async function verifyArtifacts(
       "surviving deletion record migration is missing or cascades",
     );
   }
+  // v15 appends the child's denormalized workspace (REL-120).
   if (
-    preferenceColumns.slice(-2).join(",") !== "reminder_delivery,digest_time"
+    preferenceColumns.slice(-3).join(",") !==
+      "reminder_delivery,digest_time,workspace_id"
   ) {
     contractErrors.push("member reminder-delivery preferences are missing");
   }
@@ -496,7 +500,7 @@ async function verifyArtifacts(
   }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v14 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v15 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -619,7 +623,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v14 validation JSON");
+    throw new Error("Invalid schema v15 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -672,21 +676,21 @@ async function assertArtifactCounts(
   assertEqual(
     "table mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_table_mapping_v14.csv"),
+      resolve(schemaDirectory, "monica_table_mapping_v15.csv"),
     ),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v14.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v15.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v14.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v15.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -696,7 +700,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v14.sql",
+    "/tmp/personal_crm_schema_v15.sql",
   ], { quiet: true });
 }
 
@@ -711,7 +715,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v14.sql",
+      "/tmp/personal_crm_schema_v15.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -751,6 +755,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V11_UPGRADE_DATABASE,
       V12_UPGRADE_DATABASE,
       V13_UPGRADE_DATABASE,
+      V14_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -794,6 +799,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -855,6 +862,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -897,6 +906,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -935,6 +946,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -994,6 +1007,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -1053,6 +1068,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -1099,6 +1116,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
       "-A",
@@ -1106,10 +1125,11 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "-c",
       `SELECT (SELECT reminder_delivery = 'in_app' AND digest_time IS NULL
             AND timezone = 'Europe/Belgrade'
+            AND workspace_id = '00000000-0000-4000-8000-000000000702'
           FROM crm.member_preferences
           WHERE member_id = '00000000-0000-4000-8000-000000000703')
        AND (SELECT array_agg(attname ORDER BY attnum)::text =
-          '{member_id,timezone,locale,temperature_scale,measurement_system,currency_code,contact_sort_order,contact_name_order,fluid_layout,ui_state,updated_at,reminder_delivery,digest_time}'
+          '{member_id,timezone,locale,temperature_scale,measurement_system,currency_code,contact_sort_order,contact_name_order,fluid_layout,ui_state,updated_at,reminder_delivery,digest_time,workspace_id}'
           FROM pg_attribute WHERE attrelid = 'crm.member_preferences'::regclass
             AND attnum > 0 AND NOT attisdropped)
        AND EXISTS(SELECT 1 FROM pg_constraint
@@ -1146,6 +1166,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v8Upgraded = await runPsql(V8_UPGRADE_DATABASE, [
       "-A",
@@ -1191,6 +1213,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v9Upgraded = await runPsql(V9_UPGRADE_DATABASE, [
       "-A",
@@ -1329,6 +1353,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
     ], { quiet: true });
     const v12Upgraded = await runPsql(V12_UPGRADE_DATABASE, [
       "-A",
@@ -1361,6 +1387,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
       "-c",
       "SELECT 1 / 0;",
     ], { allowFailure: true, quiet: true });
@@ -1448,6 +1476,134 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
     if (v14RolledBack !== "t") {
       throw new Error(
         "a bridging link row did not roll the v14 migration back.",
+      );
+    }
+
+    // An exact v14 database with real tenant data keeps every row of the
+    // root table and its single-parent children, each of which takes its
+    // parent's workspace, and comes out with all of them forced (REL-120).
+    const v14Fixture = `
+      INSERT INTO crm.users (id,email) VALUES ('00000000-0000-4000-8000-000000001401','v15-upgrade@example.test');
+      INSERT INTO crm.workspaces (id,name,created_by_user_id) VALUES ('00000000-0000-4000-8000-000000001402','V15 upgrade','00000000-0000-4000-8000-000000001401'), ('00000000-0000-4000-8000-000000001412','V15 other',NULL);
+      INSERT INTO crm.workspace_members (id,workspace_id,user_id,role,status) VALUES ('00000000-0000-4000-8000-000000001403','00000000-0000-4000-8000-000000001402','00000000-0000-4000-8000-000000001401','owner','active');
+      INSERT INTO crm.member_preferences (member_id,timezone,locale) VALUES ('00000000-0000-4000-8000-000000001403','Europe/Paris','fr');
+      INSERT INTO crm.people (id,workspace_id,given_name) VALUES ('00000000-0000-4000-8000-000000001404','00000000-0000-4000-8000-000000001402','Ann'), ('00000000-0000-4000-8000-000000001405','00000000-0000-4000-8000-000000001402','Ben'), ('00000000-0000-4000-8000-000000001414','00000000-0000-4000-8000-000000001412','Bob');
+      INSERT INTO crm.pets (id,person_id,name) VALUES ('00000000-0000-4000-8000-000000001406','00000000-0000-4000-8000-000000001404','Rex'), ('00000000-0000-4000-8000-000000001416','00000000-0000-4000-8000-000000001414','Tom');
+      INSERT INTO crm.relationship_types (id,workspace_id,forward_label,reverse_label) VALUES ('00000000-0000-4000-8000-000000001407','00000000-0000-4000-8000-000000001402','partner of','partner of');
+      INSERT INTO crm.relationships (id,workspace_id,from_person_id,to_person_id,relationship_type_id) VALUES ('00000000-0000-4000-8000-000000001408','00000000-0000-4000-8000-000000001402','00000000-0000-4000-8000-000000001404','00000000-0000-4000-8000-000000001405','00000000-0000-4000-8000-000000001407');
+      INSERT INTO crm.romantic_relationship_details (relationship_id,notes) VALUES ('00000000-0000-4000-8000-000000001408','Met at work');
+      INSERT INTO crm.activities (id,workspace_id,summary,happened_at) VALUES ('00000000-0000-4000-8000-000000001409','00000000-0000-4000-8000-000000001402','Walk','2026-11-01T10:00:00Z');
+      INSERT INTO crm.activity_emotions (activity_id,emotion_id) SELECT '00000000-0000-4000-8000-000000001409', id FROM crm.emotion_options ORDER BY sort_order, id LIMIT 2;
+      INSERT INTO crm.calls (id,workspace_id,person_id,called_at) VALUES ('00000000-0000-4000-8000-00000000140a','00000000-0000-4000-8000-000000001402','00000000-0000-4000-8000-000000001404','2026-11-02T10:00:00Z');
+      INSERT INTO crm.call_emotions (call_id,emotion_id) SELECT '00000000-0000-4000-8000-00000000140a', id FROM crm.emotion_options ORDER BY sort_order, id LIMIT 1;
+      INSERT INTO crm.data_imports (id,workspace_id,source_system) VALUES ('00000000-0000-4000-8000-00000000140b','00000000-0000-4000-8000-000000001402','monica'), ('00000000-0000-4000-8000-00000000141b','00000000-0000-4000-8000-000000001412','monica');
+      INSERT INTO crm.data_import_entities (id,import_id,source_table,source_primary_key,target_table,target_key,raw_snapshot) VALUES ('00000000-0000-4000-8000-00000000140c','00000000-0000-4000-8000-00000000140b','contacts','1','people','00000000-0000-4000-8000-000000001404','{"first_name":"Ann"}'), ('00000000-0000-4000-8000-00000000141c','00000000-0000-4000-8000-00000000141b','contacts','1','people','00000000-0000-4000-8000-000000001414','{}');
+      INSERT INTO crm.data_import_reports (id,import_id,entity_id,severity,message) VALUES ('00000000-0000-4000-8000-00000000140d','00000000-0000-4000-8000-00000000140b','00000000-0000-4000-8000-00000000140c','warning','Ann had no last name'), ('00000000-0000-4000-8000-00000000140e','00000000-0000-4000-8000-00000000140b',NULL,'info','Import summary');
+      INSERT INTO crm.billing_customers (id,workspace_id,provider_customer_id) VALUES ('00000000-0000-4000-8000-00000000140f','00000000-0000-4000-8000-000000001402','cus_1');
+      INSERT INTO crm.billing_subscriptions (id,billing_customer_id,provider_subscription_id,status) VALUES ('00000000-0000-4000-8000-000000001410','00000000-0000-4000-8000-00000000140f','sub_1','active');
+      INSERT INTO crm.billing_subscription_items (id,subscription_id,provider_item_id,provider_price_id) VALUES ('00000000-0000-4000-8000-000000001411','00000000-0000-4000-8000-000000001410','si_1','price_1');
+      INSERT INTO crm.locations (id,workspace_id,city) VALUES ('00000000-0000-4000-8000-000000001420','00000000-0000-4000-8000-000000001402','Paris');
+      INSERT INTO crm.location_weather_cache (id,location_id,provider,payload) VALUES ('00000000-0000-4000-8000-000000001421','00000000-0000-4000-8000-000000001420','test','{"t":12}');
+    `;
+    // Every row of the eleven tables as JSON, without the new column, so
+    // nothing else may change.
+    const v14Rows = `
+      SELECT string_agg(row_text, ' | ' ORDER BY row_text) FROM (
+        SELECT 'workspaces ' || (to_jsonb(t))::text AS row_text FROM crm.workspaces t
+        UNION ALL SELECT 'member_preferences ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.member_preferences t
+        UNION ALL SELECT 'pets ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.pets t
+        UNION ALL SELECT 'romantic_relationship_details ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.romantic_relationship_details t
+        UNION ALL SELECT 'activity_emotions ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.activity_emotions t
+        UNION ALL SELECT 'call_emotions ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.call_emotions t
+        UNION ALL SELECT 'data_import_entities ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.data_import_entities t
+        UNION ALL SELECT 'data_import_reports ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.data_import_reports t
+        UNION ALL SELECT 'billing_subscriptions ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.billing_subscriptions t
+        UNION ALL SELECT 'billing_subscription_items ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.billing_subscription_items t
+        UNION ALL SELECT 'location_weather_cache ' || (to_jsonb(t) - 'workspace_id')::text FROM crm.location_weather_cache t
+      ) rows;`;
+    await runPsql(V14_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v14.sql",
+      "-c",
+      v14Fixture,
+    ], { quiet: true });
+    const v14Before = await runPsql(V14_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      v14Rows,
+    ], { quiet: true });
+    await runPsql(V14_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
+    ], { quiet: true });
+    const v14After = await runPsql(V14_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      v14Rows,
+    ], { quiet: true });
+    const v14Upgraded = await runPsql(V14_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT (SELECT array_agg(DISTINCT workspace_id) FROM (
+            SELECT workspace_id FROM crm.member_preferences
+            UNION ALL SELECT workspace_id FROM crm.romantic_relationship_details
+            UNION ALL SELECT workspace_id FROM crm.activity_emotions
+            UNION ALL SELECT workspace_id FROM crm.call_emotions
+            UNION ALL SELECT workspace_id FROM crm.data_import_reports
+            UNION ALL SELECT workspace_id FROM crm.billing_subscriptions
+            UNION ALL SELECT workspace_id FROM crm.billing_subscription_items
+            UNION ALL SELECT workspace_id FROM crm.location_weather_cache
+          ) children) = ARRAY['00000000-0000-4000-8000-000000001402'::uuid]
+        AND (SELECT workspace_id FROM crm.pets WHERE name = 'Tom') = '00000000-0000-4000-8000-000000001412'
+        AND (SELECT workspace_id FROM crm.data_import_entities WHERE import_id = '00000000-0000-4000-8000-00000000141b') = '00000000-0000-4000-8000-000000001412'
+        AND (SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'crm'::regnamespace AND c.relforcerowsecurity) = 75
+        AND pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'pets_person_id_fkey')) LIKE 'FOREIGN KEY (workspace_id, person_id)%'
+        AND pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'data_import_reports_entity_id_fkey')) LIKE 'FOREIGN KEY (workspace_id, entity_id)%';`,
+    ], { quiet: true });
+    if (v14Upgraded !== "t" || v14Before !== v14After || v14Before === "") {
+      throw new Error(
+        "v14-to-v15 did not keep every row and take each parent's workspace.",
+      );
+    }
+    await runPsql(V14_UPGRADE_DATABASE, [
+      "-c",
+      "DROP SCHEMA crm CASCADE;",
+      "-f",
+      "/tmp/personal_crm_schema_v14.sql",
+      "-c",
+      v14Fixture,
+    ], { quiet: true });
+    // A report whose entity belongs to another workspace's import already
+    // bridges two workspaces: its composite key fails, and the whole
+    // migration rolls back.
+    await runPsql(V14_UPGRADE_DATABASE, [
+      "-c",
+      "INSERT INTO crm.data_import_reports (import_id,entity_id,message) VALUES ('00000000-0000-4000-8000-00000000140b','00000000-0000-4000-8000-00000000141c','bridge');",
+    ], { quiet: true });
+    await runPsql(V14_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
+    ], { allowFailure: true, quiet: true });
+    const v15RolledBack = await runPsql(V14_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'crm' AND table_name = 'pets'
+            AND column_name = 'workspace_id')
+        AND NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'crm.workspaces'::regclass)
+        AND (SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'crm'::regnamespace AND c.relforcerowsecurity) = 64
+        AND (SELECT count(*) FROM crm.data_import_reports) = 3;`,
+    ], { quiet: true });
+    if (v15RolledBack !== "t") {
+      throw new Error(
+        "a bridging import report did not roll the v15 migration back.",
       );
     }
 
@@ -1573,6 +1729,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-f",
       "/tmp/0014_enforce_workspace_isolation.sql",
+      "-f",
+      "/tmp/0015_backstop_single_parent_children.sql",
       "-c",
       "SELECT 1 / 0",
     ], { allowFailure: true, quiet: true });
@@ -1606,6 +1764,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V11_UPGRADE_DATABASE,
         V12_UPGRADE_DATABASE,
         V13_UPGRADE_DATABASE,
+        V14_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -1635,6 +1794,10 @@ async function main(): Promise<void> {
     await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
     started = true;
 
+    await copyFixture(
+      "personal-crm-schema/v15/personal_crm_schema_v15.sql",
+      "/tmp/personal_crm_schema_v15.sql",
+    );
     await copyFixture(
       "personal-crm-schema/v14/personal_crm_schema_v14.sql",
       "/tmp/personal_crm_schema_v14.sql",
@@ -1684,8 +1847,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/personal_crm_field_catalog_v14.csv",
-      "/tmp/personal_crm_field_catalog_v14.csv",
+      "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
+      "/tmp/personal_crm_field_catalog_v15.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -1724,24 +1887,28 @@ async function main(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/migrations/0010_add_recurring_debts.sql",
+      "personal-crm-schema/v15/migrations/0010_add_recurring_debts.sql",
       "/tmp/0010_add_recurring_debts.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/migrations/0011_add_debt_settlements.sql",
+      "personal-crm-schema/v15/migrations/0011_add_debt_settlements.sql",
       "/tmp/0011_add_debt_settlements.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/migrations/0012_reword_member_reminder_delivery_comment.sql",
+      "personal-crm-schema/v15/migrations/0012_reword_member_reminder_delivery_comment.sql",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/migrations/0013_index_queries_and_seed_catalogs.sql",
+      "personal-crm-schema/v15/migrations/0013_index_queries_and_seed_catalogs.sql",
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v14/migrations/0014_enforce_workspace_isolation.sql",
+      "personal-crm-schema/v15/migrations/0014_enforce_workspace_isolation.sql",
       "/tmp/0014_enforce_workspace_isolation.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v15/migrations/0015_backstop_single_parent_children.sql",
+      "/tmp/0015_backstop_single_parent_children.sql",
     );
     await copyFixture(
       "personal-crm-schema/v10/personal_crm_schema_v10.sql",
@@ -1777,7 +1944,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

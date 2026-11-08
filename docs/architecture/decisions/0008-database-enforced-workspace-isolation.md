@@ -2,7 +2,8 @@
 
 - Status: accepted 2026-11-07; amended 2026-11-08 with the product owner's
   answers to the AUD-V2 questions (see [Amendment](#amendment-2026-11-08));
-  implemented by schema v14 (AUD-V2)
+  implemented by schema v14 (AUD-V2), and completed for the root `workspaces`
+  table and its single-parent children by schema v15 (REL-120)
 - Date: 2026-11-07, amended 2026-11-08
 
 ## Context
@@ -129,40 +130,51 @@ to each question:
 
 Schema v14 implements these as follows.
 
-| Path (category)                                        | Means                                                                                                                                                  | Owner role                     |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
-| Session resolution and the switcher                    | `session_workspace_contexts(user)`, `session_audit_context(user)`; issuing a session then enters the chosen workspace and locks its rows there         | `kinship_session_resolver`     |
-| Bearer-token login and the calendar feed (session)     | `enter_api_token_workspace(token id)` scopes the transaction to the token row's workspace; the secret is checked afterwards                            | `kinship_token_resolver`       |
-| Invitation acceptance by token hash (registration)     | `enter_invitation_workspace(token hash)` scopes the transaction to the invitation's workspace                                                          | `kinship_invitation_resolver`  |
-| Discarding an unverified registration (registration)   | `unshared_registration_workspaces(user)`; a new workspace's transaction enters it as soon as it is created                                             | `kinship_registration`         |
-| Personal account leave and delete (lifecycle)          | `account_lifecycle_memberships(user)`; leaving every workspace visits each in turn                                                                     | `kinship_account_lifecycle`    |
-| Workspace delete and reset signing out sole members    | `workspace_sole_member_user_ids(workspace)`                                                                                                            | `kinship_workspace_lifecycle`  |
-| Durable throttles and mail budgets (session, registr.) | `request_budget_attempts`, `request_budget_workspace_count`, `record_request_budget`, `finalize_request_budget`; the role sees only rows with a digest | `kinship_request_budget`       |
-| Worker scans and AUD-A2's purge (worker)               | `kinship_worker` policies: read the scanned tables, settle claimed occurrences and cleanup records, withdraw occurrences, purge request logs           | —                              |
-| Planner statistics after a bulk load (REL-116)         | `analyze_planning_tables()`; neither service role holds `MAINTAIN`                                                                                     | `kinship_planning_maintenance` |
-| Migrations                                             | `kinship_migrator`, owner, `BYPASSRLS`, migrate job only                                                                                               | —                              |
-| Directory order and duplicate check (Q4)               | stored `people.sort_*` and `people.duplicate_*` keys under `people_active_given_name_idx` and `people_active_duplicate_name_idx`                       | —                              |
-| Not backstopped: `workspaces` and ten children         | no row-level security (no `workspace_id`); the application's predicate on the parent, and a guard that refuses any new such reference                  | —                              |
+| Path (category)                                        | Means                                                                                                                                                                                                                                                                                     | Owner role                     |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Session resolution and the switcher                    | `session_workspace_contexts(user)`, `session_audit_context(user)`; issuing a session then enters the chosen workspace and locks its rows there                                                                                                                                            | `kinship_session_resolver`     |
+| Bearer-token login and the calendar feed (session)     | `enter_api_token_workspace(token id)` scopes the transaction to the token row's workspace; the secret is checked afterwards                                                                                                                                                               | `kinship_token_resolver`       |
+| Invitation acceptance by token hash (registration)     | `enter_invitation_workspace(token hash)` scopes the transaction to the invitation's workspace                                                                                                                                                                                             | `kinship_invitation_resolver`  |
+| Discarding an unverified registration (registration)   | `unshared_registration_workspaces(user)`; a new workspace's transaction enters it as soon as it is created                                                                                                                                                                                | `kinship_registration`         |
+| Personal account leave and delete (lifecycle)          | `account_lifecycle_memberships(user)`; leaving every workspace visits each in turn                                                                                                                                                                                                        | `kinship_account_lifecycle`    |
+| Workspace delete and reset signing out sole members    | `workspace_sole_member_user_ids(workspace)`                                                                                                                                                                                                                                               | `kinship_workspace_lifecycle`  |
+| Durable throttles and mail budgets (session, registr.) | `request_budget_attempts`, `request_budget_workspace_count`, `record_request_budget`, `finalize_request_budget`; the role sees only rows with a digest                                                                                                                                    | `kinship_request_budget`       |
+| Worker scans and AUD-A2's purge (worker)               | `kinship_worker` policies: read the scanned tables, settle claimed occurrences and cleanup records, withdraw occurrences, purge request logs                                                                                                                                              | —                              |
+| Planner statistics after a bulk load (REL-116)         | `analyze_planning_tables()`; neither service role holds `MAINTAIN`                                                                                                                                                                                                                        | `kinship_planning_maintenance` |
+| Migrations                                             | `kinship_migrator`, owner, `BYPASSRLS`, migrate job only                                                                                                                                                                                                                                  | —                              |
+| Directory order and duplicate check (Q4)               | stored `people.sort_*` and `people.duplicate_*` keys under `people_active_given_name_idx` and `people_active_duplicate_name_idx`                                                                                                                                                          | —                              |
+| `workspaces` and its single-parent children (v15)      | forced like every tenant table: `workspaces` on its own `id`, each child on a denormalized `workspace_id`; each narrow role above reads `workspaces` through its own policy, and the worker reads it and member preferences through its own and deletes a workspace only inside its scope | —                              |
 
-Eleven workspace-owned tables are outside the backstop, because they carry no
-`workspace_id`: the root `workspaces` table (an unscoped `kinship_app` reads
-every workspace's name, and its `DELETE` cascades below row-level security) and
-nine single-parent children — `pets`, `romantic_relationship_details`,
-`activity_emotions`, `call_emotions`, `data_import_entities`,
-`data_import_reports`, `member_preferences`, `billing_subscriptions`, and
-`location_weather_cache` — and `billing_subscription_items`, one level further
-below `billing_subscriptions`. Each references one parent by a plain key, so it
-cannot bridge two workspaces, but a statement that reads or writes it directly
-is not bound by the scope. Their isolation rests on the application's predicate
-on the parent chain. The isolation suite and `tools/schema/assert_isolation.sql`
-allow exactly the nine references from an unforced table into a tenant table,
-and into these eleven tables only a forced table's own workspace key, exactly
-`(workspace_id) → workspaces(id)`, or the two listed further levels
-(`billing_subscription_items →
-billing_subscriptions`,
-`data_import_reports → data_import_entities`), so a new link table without its
-own `workspace_id`, or a table below a child, fails them. Backstopping these
-eleven is a follow-up item.
+Schema v14 left eleven workspace-owned tables outside the backstop, because they
+carried no `workspace_id`: the root `workspaces` table, the nine single-parent
+children `pets`, `romantic_relationship_details`, `activity_emotions`,
+`call_emotions`, `data_import_entities`, `data_import_reports`,
+`member_preferences`, `billing_subscriptions`, and `location_weather_cache`, and
+`billing_subscription_items` one level below `billing_subscriptions`. Schema v15
+(REL-120) backstops all eleven within this decision's constraints, adding no new
+kind of means:
+
+- each child gains a denormalized `workspace_id`, last in its column order and
+  defaulting from the transaction's scope, and its parent reference becomes a
+  composite key, so it is a tenant table like the link tables, forced under the
+  exact policy;
+- `workspaces` is forced under the same policy on its own key,
+  `id = nullif(current_setting('app.workspace_id', true), '')::uuid`, so a
+  workspace row is read, created, renamed, or deleted only inside its own scope;
+- the narrow roles that read `workspaces` before any scope is set —
+  `kinship_session_resolver`, `kinship_registration`,
+  `kinship_account_lifecycle`, and `kinship_workspace_lifecycle` — each read it
+  through a `FOR SELECT` policy of their own, as they read `workspace_members`;
+  and the worker, which v14 already granted `SELECT` and `DELETE` on
+  `workspaces` and `SELECT` on `member_preferences`, reads both through its own
+  scan policies, and deletes a stale registration's workspace only from inside
+  that workspace's scope; unscoped, it deletes none.
+
+The isolation suite and `tools/schema/assert_isolation.sql` now refuse every
+reference from an unforced table into a tenant table, and any key into
+`workspaces` that is not a forced table's own workspace key, exactly
+`(workspace_id) → workspaces(id)`, so a new link table without its own
+`workspace_id`, or a table below a child, fails them.
 
 A function named `enter_*` refuses to move a transaction that is already scoped
 to another workspace. Every function pins `search_path`, qualifies every name,

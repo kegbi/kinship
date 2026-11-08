@@ -601,8 +601,8 @@ Deno.test({
       values (${foreignWorkId}, ${foreignPersonId}, 'Private', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))
     `;
     await sql`
-      insert into crm.pets (id, person_id, name)
-      values (${foreignPetId}, ${foreignPersonId}, 'Private')
+      insert into crm.pets (id, person_id, name, workspace_id)
+      values (${foreignPetId}, ${foreignPersonId}, 'Private', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))
     `;
     const missingFactId = crypto.randomUUID();
     const concealedUpdates = await Promise.all([
@@ -868,10 +868,12 @@ Deno.test({
       ? clearedFood.personUpdatedAt
       : personRevision;
     await sql`
-      insert into crm.pets (person_id, name, created_at, updated_at)
+      insert into crm.pets (person_id, name, created_at, updated_at,
+        workspace_id)
       select ${personId}::uuid, 'Bounded pet ' || series,
         '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
-        '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second'
+        '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)
       from generate_series(1, 120) series
     `;
     await sql`
@@ -1420,11 +1422,12 @@ Deno.test({
     // Equal timestamps straddle the page boundary; neighbours differ by only
     // one microsecond. Keep these values in PostgreSQL, never in a JS Date.
     await sql`
-      insert into crm.pets (id, person_id, name, updated_at)
+      insert into crm.pets (id, person_id, name, updated_at, workspace_id)
       select id, ${personId}::uuid, 'Microsecond pet ' || position,
         '2026-01-01T00:00:00.123456Z'::timestamptz +
           case when position <= 49 then 0 when position <= 51 then 1 else 2 end *
-            interval '1 microsecond'
+            interval '1 microsecond',
+        (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)
       from unnest(${ids}::uuid[]) with ordinality fixture(id, position)
     `;
     const typeId = crypto.randomUUID();

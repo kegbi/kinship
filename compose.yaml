@@ -93,7 +93,7 @@ services:
       "run",
       "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS",
       "--allow-net=postgres:5432",
-      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5,/app/personal-crm-schema/v6,/app/personal-crm-schema/v7,/app/personal-crm-schema/v8,/app/personal-crm-schema/v9,/app/personal-crm-schema/v10,/app/personal-crm-schema/v11,/app/personal-crm-schema/v12,/app/personal-crm-schema/v13,/app/personal-crm-schema/v14",
+      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5,/app/personal-crm-schema/v6,/app/personal-crm-schema/v7,/app/personal-crm-schema/v8,/app/personal-crm-schema/v9,/app/personal-crm-schema/v10,/app/personal-crm-schema/v11,/app/personal-crm-schema/v12,/app/personal-crm-schema/v13,/app/personal-crm-schema/v14,/app/personal-crm-schema/v15",
       "tools/migrations/main.ts",
     ]
     # The schema owner, which runs only this job (ADR 0008).

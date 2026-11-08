@@ -89,9 +89,9 @@ Deno.test({
       }::uuid, (select scope.workspace_id from crm.people scope where scope.id = ${
         person!.id
       }::uuid)) on conflict(person_id) do update set source='file',file_id=excluded.file_id`;
-      await sql`insert into crm.data_import_entities(import_id,source_table,source_primary_key,target_table,target_key,status,warnings,raw_snapshot) values(${baseline.importId}::uuid,'photos','contact:1:avatar','files',${
+      await sql`insert into crm.data_import_entities(import_id,source_table,source_primary_key,target_table,target_key,status,warnings,raw_snapshot,workspace_id) values(${baseline.importId}::uuid,'photos','contact:1:avatar','files',${
         legacyFile!.id
-      },'warning','[]'::jsonb,'{"personSourcePrimaryKey":"1","originalFilename":"portrait.png","byteSize":10}'::jsonb)`;
+      },'warning','[]'::jsonb,'{"personSourcePrimaryKey":"1","originalFilename":"portrait.png","byteSize":10}'::jsonb,(select scope.workspace_id from crm.data_imports scope where scope.id = ${baseline.importId}::uuid))`;
       const [legacyReminder] =
         await sql`insert into crm.reminders(workspace_id,person_id,person_date_id,target_kind,title,anchor_on,recurrence_unit,can_delete) values(${actor.workspaceId}::uuid,${
           person!.id
@@ -645,7 +645,7 @@ Deno.test({
     );
     const secondMemberId = crypto.randomUUID();
     await sql`insert into crm.workspace_members(id,workspace_id,user_id,role,status) values(${secondMemberId}::uuid,${actor.workspaceId}::uuid,${second.userId}::uuid,'member','active')`;
-    await sql`insert into crm.member_preferences(member_id,timezone) values(${secondMemberId}::uuid,'Asia/Tokyo')`;
+    await sql`insert into crm.member_preferences(member_id,timezone,workspace_id) values(${secondMemberId}::uuid,'Asia/Tokyo',${actor.workspaceId}::uuid)`;
     const recipients = [{
       memberId: actor.memberId,
       workspaceId: actor.workspaceId,

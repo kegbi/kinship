@@ -324,38 +324,30 @@ Workspace isolation is a security boundary, not a repository filter convention.
   cross-workspace mutation path.
 
 The database enforces the same boundary as defense in depth
-([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md), schema
-v14):
+([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md), schemas
+v14 and v15):
 
 - The API connects as `kinship_app` and the worker as `kinship_worker`; neither
   is a superuser or `BYPASSRLS`. Only the migrate job uses the schema owner.
 - Every tenant-to-tenant reference is a composite `(workspace_id, …)` key, and
   link tables carry a denormalized `workspace_id` that defaults from the
   transaction's scope.
-- Every table with a `workspace_id` (64) forces row-level security on
-  `workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid`.
-- Eleven workspace-owned tables have no row-level security backstop, because
-  they carry no `workspace_id`; for them only the application's predicate on the
-  parent chain holds the boundary. The root `workspaces` table is itself the
-  workspace: an unscoped `kinship_app` reads every workspace's name, and the
-  API's `DELETE` on it cascades below row-level security, so every use case that
-  touches it names the actor's workspace id. The nine single-parent children —
-  `pets`, `romantic_relationship_details`, `activity_emotions`, `call_emotions`,
-  `data_import_entities`, `data_import_reports`, `member_preferences`,
-  `billing_subscriptions`, and `location_weather_cache` — each reference one
-  tenant parent by a plain key, so a row cannot bridge two workspaces, but a
-  statement that reads or writes one directly is not bound by the scope: always
-  reach them through their parent's workspace predicate. So does
-  `billing_subscription_items`, one level further below `billing_subscriptions`.
-  A new link table must carry its own `workspace_id`; the isolation suite and
-  `tools/schema/assert_isolation.sql` refuse any other reference from an
-  unforced table into a tenant table, and any reference into these eleven tables
-  that is neither a forced table's own workspace key, exactly
-  `(workspace_id) → workspaces(id)`, nor listed (today
-  `billing_subscription_items → billing_subscriptions` and
-  `data_import_reports → data_import_entities`). A follow-up item adds the
-  missing backstops. A use case passes its actor's workspace as the transaction
-  runner's scope (`run(work, { workspaceId })`); the runner sends `begin` and
+- Every table with a `workspace_id` (74) forces row-level security on
+  `workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+  and since v15 (REL-120) the root `workspaces` table does on
+  `id = nullif(current_setting('app.workspace_id', true), '')::uuid`: 75 forced
+  tables, every workspace-owned table. Single-parent children (`pets`, the
+  emotion tags, import entities and reports, member preferences, billing
+  subscriptions and items, the weather cache, romantic details) carry their
+  parent's `workspace_id` like the link tables. A workspace row is read,
+  created, renamed, or deleted only inside its own scope; the narrow roles that
+  read `workspaces` before a scope is set each read it through their own policy.
+  A new child or link table must carry its own `workspace_id`: the isolation
+  suite and `tools/schema/assert_isolation.sql` refuse any reference from an
+  unforced table into a tenant table, and any key into `workspaces` that is not
+  a forced table's own workspace key, exactly `(workspace_id) → workspaces(id)`.
+  A use case passes its actor's workspace as the transaction runner's scope
+  (`run(work, { workspaceId })`); the runner sends `begin` and
   `set local app.workspace_id` as one message, so scoping costs no round trip. A
   read model that holds the pool reads through `readWithinWorkspace` or
   `readOnlyWithin`. An unscoped transaction sees no tenant row.

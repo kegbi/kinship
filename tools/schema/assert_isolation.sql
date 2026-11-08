@@ -1,4 +1,6 @@
--- Schema v14 (ADR 0008): the database backstops workspace isolation.
+-- Schema v14 (ADR 0008): the database backstops workspace isolation, and v15
+-- (REL-120) brings the root workspaces table and its single-parent children
+-- under it.
 -- Runs as the scratch cluster's superuser against a database holding the
 -- canonical DDL, and acts as the service roles with SET ROLE, which binds
 -- row-level security exactly as a login as that role would.
@@ -39,10 +41,35 @@ BEGIN
   IF offending IS NOT NULL THEN
     RAISE EXCEPTION 'tenant tables without the forced isolation policy: %', offending;
   END IF;
+  -- The root table is bound on its own id, in the same exact form (v15,
+  -- REL-120), and every other policy on it is one narrow role's own.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_policy p ON p.polrelid = c.oid
+    WHERE c.oid = 'crm.workspaces'::regclass
+      AND c.relrowsecurity AND c.relforcerowsecurity
+      AND p.polname = 'workspace_isolation'
+      AND p.polcmd = '*' AND p.polpermissive AND p.polroles = '{0}'
+      AND pg_get_expr(p.polqual, p.polrelid) =
+        '(id = (NULLIF(current_setting(''app.workspace_id''::text, true), ''''::text))::uuid)'
+      AND pg_get_expr(p.polwithcheck, p.polrelid) =
+        pg_get_expr(p.polqual, p.polrelid)
+  ) THEN
+    RAISE EXCEPTION 'workspaces lacks the forced isolation policy on its id';
+  END IF;
+  SELECT string_agg(p.polname, ', ' ORDER BY p.polname) INTO offending
+  FROM pg_policy p
+  WHERE p.polrelid = 'crm.workspaces'::regclass
+    AND p.polname <> 'workspace_isolation'
+    AND (p.polroles = '{0}' OR cardinality(p.polroles) <> 1
+      OR 'kinship_app'::regrole = ANY (p.polroles) OR p.polcmd <> 'r');
+  IF offending IS NOT NULL THEN
+    RAISE EXCEPTION 'workspaces policies that are not one narrow role''s read: %', offending;
+  END IF;
   IF (SELECT count(*) FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'crm'
-      WHERE c.relkind = 'r' AND c.relforcerowsecurity) <> 64 THEN
-    RAISE EXCEPTION 'expected 64 tenant tables under forced row-level security';
+      WHERE c.relkind = 'r' AND c.relforcerowsecurity) <> 75 THEN
+    RAISE EXCEPTION 'expected 75 tenant tables under forced row-level security';
   END IF;
 
   -- Every reference between two tenant tables carries the workspace, apart
@@ -88,50 +115,22 @@ BEGIN
 END
 $$;
 
--- The reference guard (ADR 0008), the same rules and lists as
--- tests/integration/workspace_isolation_postgres_test.ts and
--- tests/support/workspace_references.ts:
---
--- - from a table without forced row-level security into a tenant table, only
---   today's single-parent children, each with its one parent;
--- - into a workspace-owned table that row-level security does not bind (the
---   root workspaces table, and every child either list names), only a forced
---   table's own workspace key, exactly (workspace_id) -> workspaces(id), or a
---   listed further level below a child;
--- - every listed reference still exists.
---
--- Any other such reference — a link table without its own workspace_id, or a
--- table below an unforced child — has neither a forced policy nor a composite
--- key, so it fails here.
-CREATE FUNCTION pg_temp.single_parent_references()
-RETURNS TABLE (name text, child text, parent text)
-LANGUAGE sql AS $function$
-  VALUES
-    ('activity_emotions_activity_id_fkey', 'activity_emotions', 'activities'),
-    ('billing_subscriptions_billing_customer_id_fkey', 'billing_subscriptions', 'billing_customers'),
-    ('call_emotions_call_id_fkey', 'call_emotions', 'calls'),
-    ('data_import_entities_import_id_fkey', 'data_import_entities', 'data_imports'),
-    ('data_import_reports_import_id_fkey', 'data_import_reports', 'data_imports'),
-    ('location_weather_cache_location_id_fkey', 'location_weather_cache', 'locations'),
-    ('member_preferences_member_id_fkey', 'member_preferences', 'workspace_members'),
-    ('pets_person_id_fkey', 'pets', 'people'),
-    ('romantic_relationship_details_relationship_id_fkey', 'romantic_relationship_details', 'relationships')
-$function$;
-
-CREATE FUNCTION pg_temp.unforced_child_references()
-RETURNS TABLE (name text, child text, parent text)
-LANGUAGE sql AS $function$
-  VALUES
-    ('billing_subscription_items_subscription_id_fkey', 'billing_subscription_items', 'billing_subscriptions'),
-    ('data_import_reports_entity_id_fkey', 'data_import_reports', 'data_import_entities')
-$function$;
-
-CREATE FUNCTION pg_temp.unlisted_unforced_references() RETURNS text
+-- The reference guard (ADR 0008), the same rules as
+-- tests/integration/workspace_isolation_postgres_test.ts. Since v15
+-- (REL-120) every workspace-owned table forces row-level security, the root
+-- workspaces table included, so into a tenant table it admits only a forced
+-- table's reference: a composite key that compares workspace_id with the
+-- parent's workspace_id, or exactly its own workspace key, (workspace_id) ->
+-- workspaces(id). Any reference from a table without forced row-level
+-- security into a tenant table — a link table without its own workspace_id,
+-- or a table below a child — has neither a forced policy nor a composite key,
+-- so it fails here.
+CREATE FUNCTION pg_temp.refused_references() RETURNS text
 LANGUAGE sql AS $function$
   WITH fk AS (
-    SELECT con.conname::text AS name, src.relname::text AS child,
-      tgt.relname::text AS parent, src.relforcerowsecurity AS forced,
+    SELECT con.conname::text AS name, src.relforcerowsecurity AS forced,
       tgt.relforcerowsecurity AS parent_forced,
+      con.confrelid = 'crm.workspaces'::regclass AS into_workspaces,
       (
         con.confrelid = 'crm.workspaces'::regclass
         AND cardinality(con.conkey) = 1 AND cardinality(con.confkey) = 1
@@ -145,53 +144,48 @@ LANGUAGE sql AS $function$
           WHERE a.attrelid = con.confrelid AND a.attnum = con.confkey[1]
             AND a.attname = 'id'
         )
-      ) AS workspace_key
+      ) AS workspace_key,
+      (
+        cardinality(con.conkey) = 2
+        AND EXISTS (
+          SELECT 1 FROM pg_attribute a
+          WHERE a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+            AND a.attname = 'workspace_id'
+        )
+        AND EXISTS (
+          SELECT 1 FROM pg_attribute a
+          WHERE a.attrelid = con.confrelid AND a.attnum = con.confkey[1]
+            AND a.attname = 'workspace_id'
+        )
+      ) AS composite
     FROM pg_constraint con
     JOIN pg_class src ON src.oid = con.conrelid
     JOIN pg_class tgt ON tgt.oid = con.confrelid
     WHERE con.contype = 'f' AND con.connamespace = 'crm'::regnamespace
-  ), unforced_tenant AS (
-    SELECT 'workspaces' AS name
-    UNION SELECT child FROM pg_temp.single_parent_references()
-    UNION SELECT child FROM pg_temp.unforced_child_references()
-  ), listed AS (
-    SELECT * FROM pg_temp.single_parent_references()
-    UNION ALL SELECT * FROM pg_temp.unforced_child_references()
   )
-  SELECT string_agg(offending, ', ' ORDER BY offending) FROM (
-    SELECT fk.name AS offending FROM fk
-    WHERE NOT fk.forced AND fk.parent_forced
-      AND (fk.name, fk.child, fk.parent) NOT IN (
-        SELECT * FROM pg_temp.single_parent_references())
-    UNION
-    SELECT fk.name FROM fk
-    WHERE fk.parent IN (SELECT name FROM unforced_tenant)
-      AND NOT (fk.forced AND fk.workspace_key)
-      AND (fk.name, fk.child, fk.parent) NOT IN (
-        SELECT * FROM pg_temp.unforced_child_references())
-    UNION
-    SELECT 'stale: ' || listed.name FROM listed
-    WHERE NOT EXISTS (
-      SELECT 1 FROM fk
-      WHERE (fk.name, fk.child, fk.parent) = (listed.name, listed.child, listed.parent))
-  ) refused
+  SELECT string_agg(fk.name, ', ' ORDER BY fk.name) FROM fk
+  WHERE fk.parent_forced
+    AND (NOT fk.forced
+      OR (fk.into_workspaces AND NOT fk.workspace_key)
+      OR (NOT fk.into_workspaces AND NOT fk.composite
+        AND fk.name <> 'api_request_logs_member_id_fkey'))
 $function$;
 
 DO $$
 DECLARE
-  offending text := pg_temp.unlisted_unforced_references();
+  offending text := pg_temp.refused_references();
 BEGIN
   IF offending IS NOT NULL THEN
     RAISE EXCEPTION 'references the reference guard refuses: %', offending;
   END IF;
   -- The guard catches the shapes it exists for, and each block rolls back:
-  -- a link table without workspace_id, and a table below an unforced child.
+  -- a link table without workspace_id, and a table below a child without one.
   BEGIN
     CREATE TABLE crm.person_x_links (
       person_id uuid NOT NULL REFERENCES crm.people (id),
       x_id uuid NOT NULL
     );
-    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'person_x_links_person_id_fkey' THEN
+    IF pg_temp.refused_references() IS DISTINCT FROM 'person_x_links_person_id_fkey' THEN
       RAISE EXCEPTION 'a link table without workspace_id passed the reference guard';
     END IF;
     RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
@@ -203,8 +197,8 @@ BEGIN
       pet_id uuid NOT NULL REFERENCES crm.pets (id),
       caption text
     );
-    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'pet_photos_pet_id_fkey' THEN
-      RAISE EXCEPTION 'a table below an unforced child passed the reference guard';
+    IF pg_temp.refused_references() IS DISTINCT FROM 'pet_photos_pet_id_fkey' THEN
+      RAISE EXCEPTION 'a table below a child without workspace_id passed the reference guard';
     END IF;
     RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
   EXCEPTION WHEN raise_exception THEN
@@ -225,7 +219,7 @@ BEGIN
     );
     ALTER TABLE crm.pet_x_links ENABLE ROW LEVEL SECURITY;
     ALTER TABLE crm.pet_x_links FORCE ROW LEVEL SECURITY;
-    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'pet_x_links_pet_fkey' THEN
+    IF pg_temp.refused_references() IS DISTINCT FROM 'pet_x_links_pet_fkey' THEN
       RAISE EXCEPTION 'a workspace_id key into pets passed the reference guard';
     END IF;
     RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
@@ -243,7 +237,7 @@ BEGIN
     );
     ALTER TABLE crm.creator_x_links ENABLE ROW LEVEL SECURITY;
     ALTER TABLE crm.creator_x_links FORCE ROW LEVEL SECURITY;
-    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'creator_x_links_workspace_fkey' THEN
+    IF pg_temp.refused_references() IS DISTINCT FROM 'creator_x_links_workspace_fkey' THEN
       RAISE EXCEPTION 'a workspace_id key into workspaces(created_by_user_id) passed the reference guard';
     END IF;
     RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
@@ -256,7 +250,7 @@ BEGIN
     );
     ALTER TABLE crm.owner_x_links ENABLE ROW LEVEL SECURITY;
     ALTER TABLE crm.owner_x_links FORCE ROW LEVEL SECURITY;
-    IF pg_temp.unlisted_unforced_references() IS DISTINCT FROM 'owner_x_links_owner_id_fkey' THEN
+    IF pg_temp.refused_references() IS DISTINCT FROM 'owner_x_links_owner_id_fkey' THEN
       RAISE EXCEPTION 'a key from a column other than workspace_id into workspaces(id) passed the reference guard';
     END IF;
     RAISE EXCEPTION USING MESSAGE = 'reference guard self-test rolled back';
@@ -291,13 +285,21 @@ INSERT INTO crm.tags (id, workspace_id, name, slug) VALUES
 SET LOCAL ROLE kinship_app;
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM crm.people) <> 0 THEN
+  IF (SELECT count(*) FROM crm.people) <> 0
+    OR (SELECT count(*) FROM crm.workspaces) <> 0 THEN
     RAISE EXCEPTION 'a transaction without app.workspace_id sees tenant rows';
   END IF;
   PERFORM set_config('app.workspace_id', '00000000-0000-4000-8000-00000000a0a0', true);
   IF (SELECT count(*) FROM crm.people) <> 1
-    OR (SELECT given_name FROM crm.people) <> 'Ann' THEN
+    OR (SELECT given_name FROM crm.people) <> 'Ann'
+    OR (SELECT array_agg(name) FROM crm.workspaces) IS DISTINCT FROM ARRAY['Isolation A'] THEN
     RAISE EXCEPTION 'a scoped transaction does not see exactly its workspace';
+  END IF;
+  -- A single-parent child takes its workspace from the scope too (v15).
+  INSERT INTO crm.pets (person_id, name)
+  VALUES ('00000000-0000-4000-8000-0000000a0001', 'Rex');
+  IF (SELECT workspace_id FROM crm.pets) <> '00000000-0000-4000-8000-00000000a0a0' THEN
+    RAISE EXCEPTION 'a single-parent child does not take its workspace from the scope';
   END IF;
   -- The link row's workspace defaults from the scope.
   INSERT INTO crm.person_tags (person_id, tag_id)
@@ -334,6 +336,29 @@ BEGIN
     RAISE EXCEPTION 'a link row bridging two workspaces was accepted';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
+  -- A single-parent child cannot name another workspace's parent either.
+  BEGIN
+    INSERT INTO crm.pets (person_id, name)
+    VALUES ('00000000-0000-4000-8000-0000000a0001', 'Stray');
+    RAISE EXCEPTION 'a pet bridging two workspaces was accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+END
+$$;
+-- The worker deletes a workspace only from inside its scope: unscoped, its
+-- DELETE grant removes nothing (v15, REL-120).
+RESET ROLE;
+SET LOCAL ROLE kinship_worker;
+DO $$
+DECLARE
+  removed integer;
+BEGIN
+  PERFORM set_config('app.workspace_id', '', true);
+  DELETE FROM crm.workspaces WHERE id = '00000000-0000-4000-8000-00000000a0a0';
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  IF removed <> 0 THEN
+    RAISE EXCEPTION 'an unscoped worker deleted % workspace(s)', removed;
+  END IF;
 END
 $$;
 ROLLBACK;

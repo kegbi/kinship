@@ -19,7 +19,7 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v14.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v15.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
@@ -33,8 +33,8 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 897 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 897, got %', actual_count;
+  IF actual_count <> 907 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 907, got %', actual_count;
   END IF;
 
   IF (

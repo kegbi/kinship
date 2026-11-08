@@ -17,7 +17,7 @@ import { type Kysely, type KyselyPlugin, RawNode } from "kysely";
 import { openSql, requireAdminDatabaseUrl, type Sql } from "./database.ts";
 
 /** The canonical DDL the scratch databases are created from. */
-const CANONICAL_SCHEMA = "personal-crm-schema/v14/personal_crm_schema_v14.sql";
+const CANONICAL_SCHEMA = "personal-crm-schema/v15/personal_crm_schema_v15.sql";
 
 /**
  * Runs `work` on a scratch database holding the canonical DDL, created

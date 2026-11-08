@@ -449,8 +449,9 @@ async function seedWorkspace(page: Page): Promise<Seeded> {
     insert into crm.person_occupations (person_id, organization_id, title,
       is_current, workspace_id)
     select ${richId}::uuid, id, 'Editor', true, ${workspace}::uuid from employer;
-    insert into crm.pets (person_id, name) values (${richId}::uuid, 'Biscuit'),
-      (${richId}::uuid, 'Juniper');
+    insert into crm.pets (person_id, name, workspace_id)
+    values (${richId}::uuid, 'Biscuit', ${workspace}::uuid),
+      (${richId}::uuid, 'Juniper', ${workspace}::uuid);
     with labels as (
       insert into crm.tags (workspace_id, name, slug)
       values (${workspace}::uuid, 'Family', 'perf-family'),

@@ -1,5 +1,5 @@
 /**
- * Every reference between two tenant tables, generated from the schema v14
+ * Every reference between two tenant tables, generated from the schema v15
  * foreign-key catalog (ADR 0008). Do not edit by hand: regenerate it from a
  * migrated database with the catalog query in
  * `tests/integration/workspace_isolation_postgres_test.ts`, which fails while
@@ -49,6 +49,14 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     kind: "member",
   },
   {
+    constraint: "activity_emotions_activity_id_fkey",
+    child: "activity_emotions",
+    column: "activity_id",
+    parent: "activities",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
     constraint: "activity_participants_activity_id_fkey",
     child: "activity_participants",
     column: "activity_id",
@@ -95,6 +103,30 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     parent: "people",
     onDelete: "set null",
     kind: "person",
+  },
+  {
+    constraint: "billing_subscription_items_subscription_id_fkey",
+    child: "billing_subscription_items",
+    column: "subscription_id",
+    parent: "billing_subscriptions",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
+    constraint: "billing_subscriptions_billing_customer_id_fkey",
+    child: "billing_subscriptions",
+    column: "billing_customer_id",
+    parent: "billing_customers",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
+    constraint: "call_emotions_call_id_fkey",
+    child: "call_emotions",
+    column: "call_id",
+    parent: "calls",
+    onDelete: "cascade",
+    kind: "aggregate",
   },
   {
     constraint: "calls_created_by_member_id_fkey",
@@ -151,6 +183,30 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     parent: "workspace_members",
     onDelete: "set null",
     kind: "member",
+  },
+  {
+    constraint: "data_import_entities_import_id_fkey",
+    child: "data_import_entities",
+    column: "import_id",
+    parent: "data_imports",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
+    constraint: "data_import_reports_entity_id_fkey",
+    child: "data_import_reports",
+    column: "entity_id",
+    parent: "data_import_entities",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
+    constraint: "data_import_reports_import_id_fkey",
+    child: "data_import_reports",
+    column: "import_id",
+    parent: "data_imports",
+    onDelete: "cascade",
+    kind: "aggregate",
   },
   {
     constraint: "data_imports_artifact_file_id_fkey",
@@ -385,6 +441,22 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     kind: "person",
   },
   {
+    constraint: "location_weather_cache_location_id_fkey",
+    child: "location_weather_cache",
+    column: "location_id",
+    parent: "locations",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
+    constraint: "member_preferences_member_id_fkey",
+    child: "member_preferences",
+    column: "member_id",
+    parent: "workspace_members",
+    onDelete: "cascade",
+    kind: "member",
+  },
+  {
     constraint: "messages_author_member_id_fkey",
     child: "messages",
     column: "author_member_id",
@@ -617,6 +689,14 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     kind: "vocabulary",
   },
   {
+    constraint: "pets_person_id_fkey",
+    child: "pets",
+    column: "person_id",
+    parent: "people",
+    onDelete: "cascade",
+    kind: "person",
+  },
+  {
     constraint: "recurring_debts_created_by_member_id_fkey",
     child: "recurring_debts",
     column: "created_by_member_id",
@@ -721,6 +801,14 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     kind: "aggregate",
   },
   {
+    constraint: "romantic_relationship_details_relationship_id_fkey",
+    child: "romantic_relationship_details",
+    column: "relationship_id",
+    parent: "relationships",
+    onDelete: "cascade",
+    kind: "aggregate",
+  },
+  {
     constraint: "stay_in_touch_cadence_requests_cadence_id_fkey",
     child: "stay_in_touch_cadence_requests",
     column: "cadence_id",
@@ -799,94 +887,5 @@ export const WORKSPACE_REFERENCES: readonly WorkspaceReference[] = [
     parent: "gender_options",
     onDelete: "set null",
     kind: "vocabulary",
-  },
-];
-
-/**
- * The only references from a table without row-level security into a tenant
- * table (ADR 0008): each single-parent child has exactly one parent, cannot
- * bridge two workspaces, and is read only through its parent's workspace
- * predicate. Any other such reference — a new link table without its own
- * `workspace_id` — fails `tests/integration/workspace_isolation_postgres_test.ts`
- * and `tools/schema/assert_isolation.sql`, because it would have neither a
- * forced policy nor a composite key. Edited by hand, deliberately.
- */
-export const SINGLE_PARENT_REFERENCES: readonly {
-  readonly child: string;
-  readonly constraint: string;
-  readonly parent: string;
-}[] = [
-  {
-    constraint: "activity_emotions_activity_id_fkey",
-    child: "activity_emotions",
-    parent: "activities",
-  },
-  {
-    constraint: "billing_subscriptions_billing_customer_id_fkey",
-    child: "billing_subscriptions",
-    parent: "billing_customers",
-  },
-  {
-    constraint: "call_emotions_call_id_fkey",
-    child: "call_emotions",
-    parent: "calls",
-  },
-  {
-    constraint: "data_import_entities_import_id_fkey",
-    child: "data_import_entities",
-    parent: "data_imports",
-  },
-  {
-    constraint: "data_import_reports_import_id_fkey",
-    child: "data_import_reports",
-    parent: "data_imports",
-  },
-  {
-    constraint: "location_weather_cache_location_id_fkey",
-    child: "location_weather_cache",
-    parent: "locations",
-  },
-  {
-    constraint: "member_preferences_member_id_fkey",
-    child: "member_preferences",
-    parent: "workspace_members",
-  },
-  {
-    constraint: "pets_person_id_fkey",
-    child: "pets",
-    parent: "people",
-  },
-  {
-    constraint: "romantic_relationship_details_relationship_id_fkey",
-    child: "romantic_relationship_details",
-    parent: "relationships",
-  },
-];
-
-/**
- * The only references into a workspace-owned table without row-level security
- * — the root `workspaces` table and the children listed above — that are not
- * a forced table's own workspace key, exactly `(workspace_id) -> workspaces(id)`
- * (ADR 0008). Each is a further level
- * below a single-parent child, without a `workspace_id` either, so it too is
- * read only through the chain's workspace predicate. Any other such reference
- * — a table below `pets`, say, or an unforced table naming a workspace — fails
- * the same guards. No unforced table references `workspaces` today. Edited by
- * hand, deliberately, and kept identical to `tools/schema/assert_isolation.sql`.
- */
-export const UNFORCED_CHILD_REFERENCES: readonly {
-  readonly child: string;
-  readonly constraint: string;
-  readonly parent: string;
-}[] = [
-  {
-    constraint: "billing_subscription_items_subscription_id_fkey",
-    child: "billing_subscription_items",
-    parent: "billing_subscriptions",
-  },
-  {
-    constraint: "data_import_reports_entity_id_fkey",
-    child: "data_import_reports",
-    parent: "data_import_entities",
   },
 ];

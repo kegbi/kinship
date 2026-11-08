@@ -1142,7 +1142,7 @@ Deno.test("[IMPORT-001] Monica choices enforce complete live selections, save on
   );
   const otherMember = crypto.randomUUID();
   await sql`insert into crm.workspace_members(id,workspace_id,user_id,role,status) values(${otherMember}::uuid,${owner.workspaceId}::uuid,${foreign.userId}::uuid,'member','active')`;
-  await sql`insert into crm.member_preferences(member_id,timezone,locale) values(${otherMember}::uuid,'Asia/Tokyo','fr')`;
+  await sql`insert into crm.member_preferences(member_id,timezone,locale,workspace_id) values(${otherMember}::uuid,'Asia/Tokyo','fr',${owner.workspaceId}::uuid)`;
   const [outside] =
     await sql`insert into crm.gender_options(workspace_id,name) values(${foreign.workspaceId}::uuid,'Outside') returning id`;
   const [retired] =

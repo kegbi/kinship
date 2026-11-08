@@ -1,7 +1,10 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import { enterWorkspace } from "../../../../platform/postgres/transactions.ts";
-import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
+import {
+  enterWorkspace,
+  inWorkspace,
+  PostgresTransactionRunner,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   RegistrationTransaction,
   RegistrationTransactionRunner,
@@ -23,20 +26,27 @@ async function deletePendingWorkspaces(command: {
   readonly userIds: readonly string[];
 }): Promise<void> {
   if (command.userIds.length === 0) return;
+  const database = databaseFromSession(command.transaction);
   // Whether anybody else belongs to a workspace is a question across
   // workspaces, so the registration function answers it for each user (ADR
-  // 0008); the cascade from each workspace row is not bound by row-level
-  // security.
-  await sql`
-    delete from crm.workspaces w
-    where w.id in (
-      select unshared.id
-      from unnest(${[...command.userIds]}::uuid[]) as candidate(user_id)
-      cross join lateral crm.unshared_registration_workspaces(
-        candidate.user_id
-      ) as unshared(id)
-    )
-  `.execute(databaseFromSession(command.transaction));
+  // 0008).
+  const unshared = await sql<{ readonly id: string }>`
+    select distinct unshared.id::text as id
+    from unnest(${[...command.userIds]}::uuid[]) as candidate(user_id)
+    cross join lateral crm.unshared_registration_workspaces(
+      candidate.user_id
+    ) as unshared(id)
+    order by id
+  `.execute(database);
+  // A workspace row is visible, and so deletable, only inside its own scope
+  // (v15, REL-120), so each is removed from within it; the cascade from it is
+  // not bound by row-level security.
+  for (const { id } of unshared.rows) {
+    await inWorkspace(database, id, async () => {
+      await sql`delete from crm.workspaces where id = ${id}::uuid`
+        .execute(database);
+    });
+  }
 }
 
 export class PostgresRegistrationTransaction
@@ -54,6 +64,10 @@ export class PostgresWorkspaceRegistration
     readonly workspaceId: string;
   }): Promise<{ readonly workspaceId: string }> {
     const database = databaseFromSession(command.transaction);
+    // The new workspace row and everything registration writes next belong
+    // to it, so the transaction works there from now on (ADR 0008); the row
+    // itself is bound by its own id (v15, REL-120).
+    await enterWorkspace(database, command.workspaceId);
     await sql`
       insert into crm.workspaces (
         id, name, status, created_by_user_id, created_at, updated_at
@@ -62,9 +76,6 @@ export class PostgresWorkspaceRegistration
         ${command.createdByUserId}::uuid, now(), now()
       )
     `.execute(database);
-    // Everything registration writes next belongs to the new workspace, so
-    // the transaction works there from now on (ADR 0008).
-    await enterWorkspace(database, command.workspaceId);
     return { workspaceId: command.workspaceId };
   }
 

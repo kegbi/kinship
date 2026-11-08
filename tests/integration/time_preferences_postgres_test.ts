@@ -41,7 +41,7 @@ Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without 
     await sql`insert into crm.users (id, email) values (${actor.userId}, ${`${actor.userId}@example.test`})`;
     await sql`insert into crm.workspaces (id, name) values (${actor.workspaceId}, 'Time preferences'), (${foreign}, 'Other workspace')`;
     await sql`insert into crm.workspace_members (id, workspace_id, user_id) values (${actor.memberId}, ${actor.workspaceId}, ${actor.userId})`;
-    await sql`insert into crm.member_preferences (member_id, locale) values (${actor.memberId}, 'de-DE')`;
+    await sql`insert into crm.member_preferences (member_id, locale, workspace_id) values (${actor.memberId}, 'de-DE', ${actor.workspaceId})`;
     await sql`insert into crm.workspace_settings (workspace_id, default_timezone, default_locale) values (${actor.workspaceId}, 'Europe/Belgrade', 'fr-FR'), (${foreign}, 'Asia/Tokyo', 'ja-JP')`;
     const inherited = await read() as (Awaited<ReturnType<typeof read>> & {
       effectiveTimezone: string;

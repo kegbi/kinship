@@ -2001,7 +2001,7 @@ Playwright test carrying its stable flow ID.
       (`:1555–1558`). Diagnose each per browser and name the exact WebKit cases;
       do not weaken the CSP or the assertions.
 
-- [ ] **REL-120 — Tenant tables without a `workspace_id` have no
+- [x] **REL-120 — Tenant tables without a `workspace_id` have no
       row-level-security backstop under v14.** Found in the AUD-V2 review during
       the 2026-11-07 audit-remediation run on the REL-105 Windows host; schema
       v14 (AUD-V2) is not yet integrated. v14 forces row-level security keyed on
@@ -2030,6 +2030,31 @@ Playwright test carrying its stable flow ID.
       `kinship_app` read of each returns no other workspace's row, and that
       sign-in, the workspace switcher, registration cleanup, account and
       workspace lifecycle, and the worker purge still work.
+  - [x] Resolved 2026-11-09: schema v15 (`personal-crm-schema/v15`, migration
+        `0015_backstop_single_parent_children.sql`) forces `workspaces` under
+        `workspace_isolation` on `id` and gives the ten single-parent children a
+        denormalized `workspace_id` defaulting from the scope, backfilled from
+        the parent chain, a composite key onto six new
+        `UNIQUE (workspace_id,
+        id)` parents, and the exact v14 policy:
+        75 tables are forced. `kinship_session_resolver`,
+        `kinship_registration`, `kinship_account_lifecycle`, and
+        `kinship_workspace_lifecycle` read `workspaces` through their own
+        `FOR SELECT` policies; `kinship_worker` reads it, and
+        `member_preferences` for the due-occurrence claim, through its own scan
+        policies, and deletes a stale registration's workspace only from inside
+        its scope (an unscoped worker delete removes nothing). Registration
+        enters the new workspace before inserting it, a discarded registration's
+        workspaces are deleted each from its own scope, and the workspace
+        settings write lets `workspaces_slug_unique` refuse another workspace's
+        slug instead of reading it. Both reference guards drop their
+        single-parent and unforced-child allowlists and keep REL-125's exact
+        rule and self-tests. A new `[REL-120]` isolation case proves an unscoped
+        `kinship_app` reads no row of the eleven tables, a scope reads exactly
+        its own, and a cross-workspace child is refused; `test:schema` proves an
+        exact v14 database with tenant rows upgrades without changing a row and
+        that a bridging import report rolls 0015 back. 0015 took 4.1–4.7 s at
+        the large profile on 18.4. No new setting or role.
 
 - [ ] **REL-121 — Some web remount and failure tests no longer discriminate.**
       Found in the AUD-F1 review and the AUD-F5 final re-check during the

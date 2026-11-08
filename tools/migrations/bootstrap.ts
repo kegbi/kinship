@@ -3,7 +3,7 @@ import { bootstrapRoles, rolePasswordsFrom } from "./roles.ts";
 
 /**
  * The one-shot bootstrap job: connects as the database superuser, the only
- * code that ever does, and creates or corrects the roles schema v14 relies on
+ * code that ever does, and creates or corrects the roles schemas v14 and v15 rely on
  * (ADR 0008). The migrate job then runs as `kinship_migrator`.
  */
 export async function runBootstrap(

@@ -1101,15 +1101,16 @@ Deno.test({
     const [emotion] = await sql<{ readonly id: string }[]>`
       insert into crm.emotion_options (name) values ('WORKSPACE-003 joy') returning id::text`;
     assert(petCategory && emotion, "test global catalogs are explicit");
-    await sql`insert into crm.pets (person_id, category_id, name)
-      values (${personId}, ${petCategory.id}, 'Pet')`;
-    await sql`insert into crm.activity_emotions (activity_id, emotion_id)
-      values (${activity.id}, ${emotion.id})`;
+    await sql`insert into crm.pets (person_id, category_id, name, workspace_id)
+      values (${personId}, ${petCategory.id}, 'Pet', ${owner.workspaceId})`;
+    await sql`insert into crm.activity_emotions (activity_id, emotion_id,
+      workspace_id) values (${activity.id}, ${emotion.id}, ${owner.workspaceId})`;
     const tenantPersonId = crypto.randomUUID();
     await sql`insert into crm.people (id, workspace_id, given_name)
       values (${tenantPersonId}, ${memberIdentity.workspaceId}, 'Other tenant')`;
-    await sql`insert into crm.pets (person_id, category_id, name)
-      values (${tenantPersonId}, ${petCategory.id}, 'Other pet')`;
+    await sql`insert into crm.pets (person_id, category_id, name, workspace_id)
+      values (${tenantPersonId}, ${petCategory.id}, 'Other pet',
+        ${memberIdentity.workspaceId})`;
 
     for (
       const [section, id] of [

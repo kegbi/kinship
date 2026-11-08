@@ -65,6 +65,9 @@ const RETAINED_AFTER_DELETE = new Set([
 const RETAINED_AFTER_RESET = new Set([
   ...RETAINED_AFTER_DELETE,
   "audit_events",
+  // v15 (REL-120): the kept members keep their preferences, which now carry
+  // the workspace.
+  "member_preferences",
   "workspace_members",
   "workspace_profile_modules",
   "workspace_settings",
@@ -244,8 +247,9 @@ async function seedEverything(
       (workspace_id, name) values (${w}, 'Erasure Ltd') returning id::text`);
     const location = await id(tx`insert into crm.locations (workspace_id, city)
       values (${w}, 'Erasureville') returning id::text`);
-    await tx`insert into crm.location_weather_cache (location_id, provider, payload)
-      values (${location}, 'test', '{}'::jsonb)`;
+    await tx`insert into crm.location_weather_cache
+      (location_id, provider, payload, workspace_id)
+      values (${location}, 'test', '{}'::jsonb, ${w})`;
     await tx`insert into crm.reminder_rules (workspace_id, days_before)
       values (${w}, 3)`;
     await tx`insert into crm.workspace_profile_modules (workspace_id, key)
@@ -284,15 +288,15 @@ async function seedEverything(
       values (${ada}, ${organization}, 'Analyst', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
     await tx`insert into crm.person_tags (person_id, tag_id, workspace_id)
       values (${ada}, ${tag}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
-    await tx`insert into crm.pets (person_id, category_id, name)
-      values (${ada}, ${catalogs.petCategoryId}, 'Tabby')`;
+    await tx`insert into crm.pets (person_id, category_id, name, workspace_id)
+      values (${ada}, ${catalogs.petCategoryId}, 'Tabby', ${w})`;
 
     // Relationships, including the RESTRICT key on the type.
     const relationship = await id(tx`insert into crm.relationships
       (workspace_id, from_person_id, to_person_id, relationship_type_id)
       values (${w}, ${ada}, ${grace}, ${relationshipType}) returning id::text`);
-    await tx`insert into crm.romantic_relationship_details (relationship_id)
-      values (${relationship})`;
+    await tx`insert into crm.romantic_relationship_details
+      (relationship_id, workspace_id) values (${relationship}, ${w})`;
 
     // Files and what links to them.
     const file = await id(tx`insert into crm.files
@@ -310,13 +314,13 @@ async function seedEverything(
       values (${w}, ${activityType}, 'Walk', now(), ${m}) returning id::text`);
     await tx`insert into crm.activity_participants (activity_id, person_id, workspace_id)
       values (${activity}, ${ada}, (select scope.workspace_id from crm.activities scope where scope.id = ${activity}::uuid))`;
-    await tx`insert into crm.activity_emotions (activity_id, emotion_id)
-      values (${activity}, ${catalogs.emotionId})`;
+    await tx`insert into crm.activity_emotions (activity_id, emotion_id, workspace_id)
+      values (${activity}, ${catalogs.emotionId}, ${w})`;
     const call = await id(tx`insert into crm.calls
       (workspace_id, person_id, called_at, created_by_member_id)
       values (${w}, ${ada}, now(), ${m}) returning id::text`);
-    await tx`insert into crm.call_emotions (call_id, emotion_id)
-      values (${call}, ${catalogs.emotionId})`;
+    await tx`insert into crm.call_emotions (call_id, emotion_id, workspace_id)
+      values (${call}, ${catalogs.emotionId}, ${w})`;
     const thread = await id(tx`insert into crm.conversation_threads
       (workspace_id, person_id, channel_type_id, contact_method_id, happened_at)
       values (${w}, ${ada}, ${methodType}, ${method}, now()) returning id::text`);
@@ -413,11 +417,11 @@ async function seedEverything(
       (workspace_id, requested_by_member_id, source_system, artifact_file_id)
       values (${w}, ${m}, 'monica', ${file}) returning id::text`);
     const entity = await id(tx`insert into crm.data_import_entities
-      (import_id, source_table, status)
-      values (${dataImport}, 'contacts', 'mapped') returning id::text`);
+      (import_id, source_table, status, workspace_id)
+      values (${dataImport}, 'contacts', 'mapped', ${w}) returning id::text`);
     await tx`insert into crm.data_import_reports
-      (import_id, entity_id, severity, message)
-      values (${dataImport}, ${entity}, 'info', 'Imported')`;
+      (import_id, entity_id, severity, message, workspace_id)
+      values (${dataImport}, ${entity}, 'info', 'Imported', ${w})`;
     await tx`insert into crm.data_exports
       (workspace_id, requested_by_member_id, format, file_id)
       values (${w}, ${m}, 'json', ${file})`;
@@ -441,11 +445,11 @@ async function seedEverything(
       (workspace_id, provider_customer_id)
       values (${w}, ${`cus-${w}`}) returning id::text`);
     const billing = await id(tx`insert into crm.billing_subscriptions
-      (billing_customer_id, provider_subscription_id, status)
-      values (${customer}, 'sub-1', 'active') returning id::text`);
+      (billing_customer_id, provider_subscription_id, status, workspace_id)
+      values (${customer}, 'sub-1', 'active', ${w}) returning id::text`);
     await tx`insert into crm.billing_subscription_items
-      (subscription_id, provider_item_id, provider_price_id)
-      values (${billing}, 'item-1', 'price-1')`;
+      (subscription_id, provider_item_id, provider_price_id, workspace_id)
+      values (${billing}, 'item-1', 'price-1', ${w})`;
   });
 }
 

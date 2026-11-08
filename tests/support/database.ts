@@ -182,7 +182,10 @@ export async function addMembership(
       now(), now(), now()
     )
   `;
-  await sql`insert into crm.member_preferences (member_id) values (${memberId})`;
+  await sql`
+    insert into crm.member_preferences (member_id, workspace_id)
+    values (${memberId}, ${workspaceId})
+  `;
   return memberId;
 }
 

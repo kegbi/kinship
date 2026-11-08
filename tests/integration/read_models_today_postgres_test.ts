@@ -256,8 +256,8 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today recent people resolve only the r
   );
 
   await sql`
-    insert into crm.member_preferences (member_id, ui_state)
-    values (${reader.memberId}, ${
+    insert into crm.member_preferences (member_id, workspace_id, ui_state)
+    values (${reader.memberId}, ${reader.workspaceId}, ${
     sql.json({
       recentPersonIds: [
         foreign.personId,
@@ -287,8 +287,8 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today recent people resolve only the r
 Deno.test("[TODAY-001] GAP-037 PostgreSQL Today reminders and cadences stay in the reader's workspace", async () => {
   const { foreign, reader } = await twoWorkspaces("today-reminders");
   await sql`
-    insert into crm.member_preferences (member_id, timezone)
-    values (${reader.memberId}, 'Europe/Paris')
+    insert into crm.member_preferences (member_id, timezone, workspace_id)
+    values (${reader.memberId}, 'Europe/Paris', ${reader.workspaceId})
   `;
   const occurrence = await addPersonReminder(
     reader,
@@ -759,8 +759,9 @@ Deno.test("[TODAY-001] AUD-Q1 Today's recent activity and recent people read the
       select id::text from plan_people order by n desc limit 8
     `).map((row) => row.id);
     await scratch`
-      insert into crm.member_preferences (member_id, ui_state)
-      values (${memberId}, ${scratch.json({ recentPersonIds: recentIds })})
+      insert into crm.member_preferences (member_id, workspace_id, ui_state)
+      values (${memberId}, ${workspaceId},
+        ${scratch.json({ recentPersonIds: recentIds })})
     `;
     await scratch`drop table plan_people`;
     await scratch`analyze`;

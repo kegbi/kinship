@@ -1045,8 +1045,8 @@ Deno.test("[FEQ-05] a blank query answers the member's recent people in their wo
   const gone = await addPerson(reader, "Gone");
   await sql`update crm.people set deleted_at = now() where id = ${gone}`;
   await sql`
-    insert into crm.member_preferences (member_id, ui_state)
-    values (${reader.memberId}, ${
+    insert into crm.member_preferences (member_id, workspace_id, ui_state)
+    values (${reader.memberId}, ${reader.workspaceId}, ${
     sql.json({
       recentPersonIds: [
         foreign.personId,

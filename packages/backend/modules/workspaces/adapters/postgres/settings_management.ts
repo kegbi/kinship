@@ -1,6 +1,10 @@
 import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import {
+  UNIQUE_CONFLICT,
+  writeWithUniqueConflict,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   ResolvedMemberPreferences,
   WorkspaceConfiguration,
@@ -207,19 +211,21 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
           hashtextextended(lower(${command.slug}), 3)
         )
       `.execute(database);
-      const conflict = await sql<{ readonly conflict: boolean }>`
-        select exists(select 1 from crm.workspaces
-          where lower(slug) = lower(${command.slug})
-            and id <> ${command.workspaceId}::uuid and deleted_at is null)
-          as conflict
-      `.execute(database);
-      if (conflict.rows[0]?.conflict === true) return "conflict";
     }
-    await sql`
-      update crm.workspaces set name = ${command.name},
-        slug = ${command.slug ?? null}, updated_at = now()
-      where id = ${command.workspaceId}::uuid
-    `.execute(database);
+    // A slug is unique across workspaces, which this scoped transaction
+    // cannot read (v15, REL-120); workspaces_slug_unique, which row-level
+    // security does not bind, refuses another workspace's slug instead.
+    const renamed = await writeWithUniqueConflict(
+      database,
+      "workspace_slug_claim",
+      async () =>
+        await sql`
+          update crm.workspaces set name = ${command.name},
+            slug = ${command.slug ?? null}, updated_at = now()
+          where id = ${command.workspaceId}::uuid
+        `.execute(database),
+    );
+    if (renamed === UNIQUE_CONFLICT) return "conflict";
     const updated = await sql<WorkspaceRow>`
       update crm.workspace_settings set
         default_locale = ${command.defaultLocale},

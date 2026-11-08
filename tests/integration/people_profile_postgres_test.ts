@@ -611,8 +611,8 @@ Deno.test({
         values (${activityId}, ${personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid)), (${activityId}, ${participantId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid))
       `;
       await transaction`
-        insert into crm.activity_emotions (activity_id, emotion_id)
-        values (${activityId}, ${activityEmotionId})
+        insert into crm.activity_emotions (activity_id, emotion_id, workspace_id)
+        values (${activityId}, ${activityEmotionId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid))
       `;
       await transaction`
         insert into crm.notes (
@@ -634,8 +634,8 @@ Deno.test({
         )
       `;
       await transaction`
-        insert into crm.call_emotions (call_id, emotion_id)
-        values (${callId}, ${callEmotionId})
+        insert into crm.call_emotions (call_id, emotion_id, workspace_id)
+        values (${callId}, ${callEmotionId}, (select scope.workspace_id from crm.calls scope where scope.id = ${callId}::uuid))
       `;
       await transaction`
         insert into crm.conversation_threads (
@@ -1013,7 +1013,8 @@ Deno.test({
             'ada@example.test', true, 1)
         `;
         await transaction`
-          insert into crm.pets (person_id, name) values (${personId}, 'Puff')
+          insert into crm.pets (person_id, name, workspace_id)
+          values (${personId}, 'Puff', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
         `;
         await transaction`
           insert into crm.tags (id, workspace_id, name, slug)

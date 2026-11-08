@@ -379,8 +379,8 @@ test(
         values ('${workspaceId}'::uuid, '${personId}'::uuid, 'Mathematician');
       update crm.people set food_preferences = 'Tea'
         where id = '${personId}'::uuid;
-      insert into crm.pets (person_id, name)
-        values ('${personId}'::uuid, 'Puff');
+      insert into crm.pets (workspace_id, person_id, name)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid, 'Puff');
       insert into crm.tags (id, workspace_id, name, slug)
         values (gen_random_uuid(), '${workspaceId}'::uuid, 'Analyst',
           'analyst');

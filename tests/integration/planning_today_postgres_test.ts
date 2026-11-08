@@ -39,7 +39,7 @@ Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, chann
   const foreignPerson = await createPerson(foreign, "Foreign event secret");
   const deletedPerson = await createPerson(fixture, "Deleted event secret");
   await sql`update crm.people set deleted_at = now() where id = ${deletedPerson}::uuid`;
-  await sql`insert into crm.member_preferences (member_id, timezone) values (${fixture.memberId}::uuid, 'Europe/Belgrade')
+  await sql`insert into crm.member_preferences (member_id, timezone, workspace_id) values (${fixture.memberId}::uuid, 'Europe/Belgrade', ${fixture.workspaceId}::uuid)
     on conflict (member_id) do update set timezone = excluded.timezone`;
   const date = async (
     label: string,
@@ -749,8 +749,9 @@ Deno.test("TODAY-001 PostgreSQL keeps timezone and rows in one repeatable snapsh
       where workspace_id = ${fixture.workspaceId}::uuid
     `;
     await sql`
-      insert into crm.member_preferences (member_id, timezone)
-      values (${fixture.memberId}::uuid, ${inherited ? null : "UTC"})
+      insert into crm.member_preferences (member_id, timezone, workspace_id)
+      values (${fixture.memberId}::uuid, ${inherited ? null : "UTC"},
+        ${fixture.workspaceId}::uuid)
       on conflict (member_id) do update set timezone = excluded.timezone
     `;
     await sql`

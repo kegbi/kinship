@@ -952,8 +952,8 @@ Deno.test({
         )
       `;
       await transaction`
-        insert into crm.member_preferences (member_id)
-        values (${peerMemberId})
+        insert into crm.member_preferences (member_id, workspace_id)
+        values (${peerMemberId}, ${fixture.workspaceId})
       `;
     });
     const peer: Fixture = {
@@ -1000,6 +1000,11 @@ Deno.test({
         select pg_backend_pid()::int as pid
       `;
       assert(backend, "recent-view locker PID exists");
+      // The locker is the API's role, so it sees the preferences row only
+      // inside the workspace's scope (v15, REL-120).
+      await transaction`
+        select set_config('app.workspace_id', ${fixture.workspaceId}, true)
+      `;
       await transaction`
         select member_id from crm.member_preferences
         where member_id = ${fixture.memberId}::uuid for update

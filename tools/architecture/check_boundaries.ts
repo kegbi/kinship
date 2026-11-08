@@ -1275,7 +1275,7 @@ const ROOT = new URL("../../", import.meta.url);
 const MANIFEST_PATH = "docs/architecture/module-boundaries.yaml";
 const SCHEMA_PATH = "docs/architecture/module-boundaries.schema.json";
 const CANONICAL_SCHEMA_PATH =
-  "personal-crm-schema/v14/personal_crm_schema_v14.sql";
+  "personal-crm-schema/v15/personal_crm_schema_v15.sql";
 const BASELINE_PATH = "tools/architecture/boundary-baseline.json";
 const SOURCE_ROOTS = ["apps", "packages", "tools"];
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".astro"];

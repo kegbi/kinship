@@ -1,6 +1,7 @@
 /**
  * Schema v14 makes the database backstop workspace isolation (AUD-V2, ADR
- * 0008; SECT-01, SECT-02). These suites connect the way the deployed services
+ * 0008; SECT-01, SECT-02), and schema v15 brings the root `workspaces` table
+ * and its single-parent children under it too (REL-120). These suites connect the way the deployed services
  * do — the API as `kinship_app`, the worker as `kinship_worker` — and seed as
  * the disposable project's superuser, which row-level security does not bind.
  *
@@ -27,8 +28,6 @@ import {
 } from "../support/database.ts";
 import {
   PLAIN_WORKSPACE_REFERENCE,
-  SINGLE_PARENT_REFERENCES,
-  UNFORCED_CHILD_REFERENCES,
   WORKSPACE_REFERENCES,
   type WorkspaceReferenceKind,
 } from "../support/workspace_references.ts";
@@ -109,7 +108,7 @@ Deno.test({
           and c.relforcerowsecurity
         order by c.relname
       `;
-      assert(tables.length === 64, `${tables.length} tenant tables are forced`);
+      assert(tables.length === 75, `${tables.length} tenant tables are forced`);
       const visible = async () => {
         const seen: string[] = [];
         for (const { name } of tables) {
@@ -143,6 +142,194 @@ Deno.test({
           .length ===
           1,
         "the fixture wrote workspace B's person",
+      );
+    } finally {
+      await app.end();
+    }
+  },
+});
+
+/** The single-parent children v15 brings under the backstop (REL-120). */
+const SINGLE_PARENT_CHILDREN = [
+  "activity_emotions",
+  "billing_subscription_items",
+  "billing_subscriptions",
+  "call_emotions",
+  "data_import_entities",
+  "data_import_reports",
+  "location_weather_cache",
+  "member_preferences",
+  "pets",
+  "romantic_relationship_details",
+] as const;
+
+/**
+ * Seeds, as the superuser, one row of every single-parent child in `actor`'s
+ * workspace. The children name no workspace: each takes it from the
+ * transaction's scope, as the application's writes do.
+ */
+async function seedSingleParentChildren(
+  actor: Awaited<ReturnType<typeof revocableActor>>,
+): Promise<void> {
+  await sql.begin(async (transaction) => {
+    await transaction`select set_config('app.workspace_id', ${actor.workspaceId}, true)`;
+    const workspace = actor.workspaceId;
+    const [other] = await transaction<{ readonly id: string }[]>`
+      insert into crm.people (workspace_id, given_name)
+      values (${workspace}, 'Partner') returning id::text
+    `;
+    const [type] = await transaction<{ readonly id: string }[]>`
+      insert into crm.relationship_types (workspace_id, forward_label,
+        reverse_label) values (${workspace}, 'partner of', 'partner of')
+      returning id::text
+    `;
+    const [relationship] = await transaction<{ readonly id: string }[]>`
+      insert into crm.relationships (workspace_id, from_person_id,
+        to_person_id, relationship_type_id)
+      values (${workspace}, ${actor.personId}, ${other!.id}, ${type!.id})
+      returning id::text
+    `;
+    await transaction`insert into crm.romantic_relationship_details
+      (relationship_id) values (${relationship!.id})`;
+    await transaction`insert into crm.pets (person_id, name)
+      values (${actor.personId}, 'Rex')`;
+    const [emotion] = await transaction<{ readonly id: string }[]>`
+      select id::text from crm.emotion_options order by sort_order limit 1
+    `;
+    const [activity] = await transaction<{ readonly id: string }[]>`
+      insert into crm.activities (workspace_id, summary, happened_at)
+      values (${workspace}, 'Walk', now()) returning id::text
+    `;
+    await transaction`insert into crm.activity_emotions (activity_id,
+      emotion_id) values (${activity!.id}, ${emotion!.id})`;
+    const [call] = await transaction<{ readonly id: string }[]>`
+      insert into crm.calls (workspace_id, person_id, called_at)
+      values (${workspace}, ${actor.personId}, now()) returning id::text
+    `;
+    await transaction`insert into crm.call_emotions (call_id, emotion_id)
+      values (${call!.id}, ${emotion!.id})`;
+    const [dataImport] = await transaction<{ readonly id: string }[]>`
+      insert into crm.data_imports (workspace_id, source_system)
+      values (${workspace}, 'monica') returning id::text
+    `;
+    const [entity] = await transaction<{ readonly id: string }[]>`
+      insert into crm.data_import_entities (import_id, source_table,
+        source_primary_key) values (${dataImport!.id}, 'contacts', '1')
+      returning id::text
+    `;
+    await transaction`insert into crm.data_import_reports (import_id,
+      entity_id, message) values (${dataImport!.id}, ${entity!.id}, 'seen')`;
+    await transaction`insert into crm.member_preferences (member_id)
+      values (${actor.memberId})`;
+    const [customer] = await transaction<{ readonly id: string }[]>`
+      insert into crm.billing_customers (workspace_id, provider_customer_id)
+      values (${workspace}, ${`cus-${workspace}`}) returning id::text
+    `;
+    const [subscription] = await transaction<{ readonly id: string }[]>`
+      insert into crm.billing_subscriptions (billing_customer_id,
+        provider_subscription_id, status)
+      values (${customer!.id}, 'sub-1', 'active') returning id::text
+    `;
+    await transaction`insert into crm.billing_subscription_items
+      (subscription_id, provider_item_id, provider_price_id)
+      values (${subscription!.id}, 'item-1', 'price-1')`;
+    const [location] = await transaction<{ readonly id: string }[]>`
+      insert into crm.locations (workspace_id) values (${workspace})
+      returning id::text
+    `;
+    await transaction`insert into crm.location_weather_cache (location_id,
+      provider, payload) values (${location!.id}, 'test', '{}'::jsonb)`;
+  });
+}
+
+Deno.test({
+  name:
+    "[REL-120] workspaces and its single-parent children are bound by the scope too",
+  sanitizeResources: false,
+  async fn() {
+    const a = await revocableActor(sql, `rel-120-a-${crypto.randomUUID()}`);
+    const b = await revocableActor(sql, `rel-120-b-${crypto.randomUUID()}`);
+    await seedSingleParentChildren(a);
+    await seedSingleParentChildren(b);
+    const app = serviceSql(databaseUrl);
+    try {
+      const unscoped: string[] = [];
+      for (const table of ["workspaces", ...SINGLE_PARENT_CHILDREN]) {
+        const [row] = await app.unsafe<{ readonly count: number }[]>(
+          `select count(*)::int as count from crm.${table}`,
+        );
+        if ((row?.count ?? 0) > 0) unscoped.push(table);
+      }
+      assert(
+        unscoped.length === 0,
+        `an unscoped kinship_app read rows of: ${unscoped.join(", ")}`,
+      );
+      const scoped = await app.begin(async (transaction) => {
+        await transaction`select set_config('app.workspace_id', ${a.workspaceId}, true)`;
+        const seen: Record<string, number> = {};
+        for (const table of ["workspaces", ...SINGLE_PARENT_CHILDREN]) {
+          const [row] = await transaction.unsafe<
+            { readonly count: number }[]
+          >(`select count(*)::int as count from crm.${table}`);
+          seen[table] = row?.count ?? 0;
+        }
+        return seen;
+      });
+      const wrong = Object.entries(scoped).filter(([, count]) => count !== 1);
+      assert(
+        wrong.length === 0,
+        `workspace A's scope did not see exactly its own row: ${
+          JSON.stringify(wrong)
+        }`,
+      );
+      // Even the superuser cannot store a child of workspace B under
+      // workspace A's parent: the reference carries the workspace. A third
+      // member, without preferences yet, keeps the primary key out of it.
+      const c = await revocableActor(sql, `rel-120-c-${crypto.randomUUID()}`);
+      assert(
+        await failureCode(() =>
+          sql`insert into crm.pets (workspace_id, person_id, name)
+            values (${b.workspaceId}, ${a.personId}, 'cross')`
+        ) === "23503",
+        "a pet of workspace B was stored under workspace A's person",
+      );
+      assert(
+        await failureCode(() =>
+          sql`insert into crm.member_preferences (workspace_id, member_id)
+            values (${b.workspaceId}, ${c.memberId})`
+        ) === "23503",
+        "preferences of workspace B were stored under workspace C's member",
+      );
+      // And the API's write of one is refused by its scope.
+      assert(
+        await failureCode(() =>
+          app.begin(async (transaction) => {
+            await transaction`select set_config('app.workspace_id', ${a.workspaceId}, true)`;
+            await transaction`insert into crm.pets (workspace_id, person_id)
+              values (${b.workspaceId}, ${b.personId})`;
+          })
+        ) === "42501",
+        "the API wrote a pet outside its scope",
+      );
+      // The worker reads workspaces across them for its purge, but deletes
+      // one only from inside its scope: unscoped, it deletes nothing.
+      const worker = serviceSql(requireWorkerDatabaseUrl());
+      try {
+        const deleted = await worker`
+          delete from crm.workspaces where id = ${a.workspaceId}::uuid
+          returning id
+        `;
+        assert(
+          deleted.length === 0,
+          "an unscoped worker deleted a workspace",
+        );
+      } finally {
+        await worker.end();
+      }
+      assert(
+        (await sql`select 1 from crm.workspaces where id = ${a.workspaceId}`)
+          .length === 1,
+        "workspace A is gone after the unscoped worker delete",
       );
     } finally {
       await app.end();
@@ -350,30 +537,29 @@ Deno.test({
 });
 
 /**
- * What the reference guard refuses in `database`'s `crm` schema (ADR 0008):
+ * What the reference guard refuses in `database`'s `crm` schema (ADR 0008).
+ * Since v15 (REL-120) every workspace-owned table forces row-level security,
+ * the root `workspaces` table included, so it refuses:
  *
- * - a reference between two tenant tables that is not listed;
- * - a reference from a table without forced row-level security into a tenant
- *   table that is not one of today's single-parent children with its parent;
- * - a reference into a workspace-owned table without row-level security — the
- *   root `workspaces` table, or any child the two allowlists name — that is
- *   neither a forced table's own workspace key, exactly
- *   `(workspace_id) -> workspaces(id)`, nor listed below them;
- * - a listed single-parent or unforced-child reference that no longer exists.
+ * - a reference between two tenant tables that is neither listed nor a
+ *   forced table's own workspace key, exactly `(workspace_id) ->
+ *   workspaces(id)`;
+ * - any reference from a table without forced row-level security into a
+ *   tenant table: such a table — a link table without its own
+ *   `workspace_id`, or a table below a child — has neither a forced policy
+ *   nor a composite key.
  */
 async function referenceGuardViolations(
   database: Sql,
 ): Promise<readonly string[]> {
   const rows = await database<{
-    readonly child: string;
     readonly constraint: string;
     readonly forced: boolean;
-    readonly parent: string;
     readonly parentForced: boolean;
     readonly workspaceKey: boolean;
   }[]>`
-    select con.conname::text as constraint, src.relname::text as child,
-      tgt.relname::text as parent, src.relforcerowsecurity as forced,
+    select con.conname::text as constraint,
+      src.relforcerowsecurity as forced,
       tgt.relforcerowsecurity as "parentForced",
       (
         con.confrelid = 'crm.workspaces'::regclass
@@ -395,40 +581,13 @@ async function referenceGuardViolations(
     where con.contype = 'f' and con.connamespace = 'crm'::regnamespace
     order by con.conname
   `;
-  const entry = (
-    row: {
-      readonly child: string;
-      readonly constraint: string;
-      readonly parent: string;
-    },
-  ) => `${row.constraint} ${row.child} -> ${row.parent}`;
   const listed = new Set(
     WORKSPACE_REFERENCES.map((reference) => reference.constraint),
   );
-  const singleParent = new Set(SINGLE_PARENT_REFERENCES.map(entry));
-  const unforcedChild = new Set(UNFORCED_CHILD_REFERENCES.map(entry));
-  // The workspace-owned tables row-level security does not bind.
-  const unforcedTenant = new Set([
-    "workspaces",
-    ...SINGLE_PARENT_REFERENCES.map((reference) => reference.child),
-    ...UNFORCED_CHILD_REFERENCES.map((reference) => reference.child),
-  ]);
-  const present = new Set(rows.map(entry));
-  return [
-    ...rows.filter((row) =>
-      row.forced && row.parentForced && !listed.has(row.constraint)
-    ).map((row) => row.constraint),
-    ...rows.filter((row) =>
-      !row.forced && row.parentForced && !singleParent.has(entry(row))
-    ).map((row) => row.constraint),
-    ...rows.filter((row) =>
-      unforcedTenant.has(row.parent) && !(row.forced && row.workspaceKey) &&
-      !unforcedChild.has(entry(row))
-    ).map((row) => row.constraint),
-    ...[...singleParent, ...unforcedChild].filter((listedEntry) =>
-      !present.has(listedEntry)
-    ).map((listedEntry) => `stale: ${listedEntry}`),
-  ];
+  return rows.filter((row) =>
+    row.parentForced &&
+    (!row.forced || (!row.workspaceKey && !listed.has(row.constraint)))
+  ).map((row) => row.constraint);
 }
 
 Deno.test({
@@ -469,11 +628,11 @@ Deno.test({
 
 Deno.test({
   name:
-    "[AUD-V2] a new table below an unforced child fails the reference guard",
+    "[AUD-V2] a new table below a child, without its own workspace_id, fails the reference guard",
   sanitizeResources: false,
   async fn() {
-    // A grandchild of `people` through `pets`, which has no workspace_id of
-    // its own: nothing binds it to a workspace. It must not pass silently.
+    // A grandchild of `people` through `pets` with no workspace_id of its
+    // own: nothing binds it to a workspace. It must not pass silently.
     let caught: readonly string[] = [];
     const rolledBack = new Error("rolled back");
     await sql.begin(async (transaction) => {
@@ -490,7 +649,7 @@ Deno.test({
     });
     assert(
       caught.includes("pet_photos_pet_id_fkey"),
-      `a table below an unforced child passed the reference guard: ${
+      `a table below a child passed the reference guard: ${
         JSON.stringify(caught)
       }`,
     );
