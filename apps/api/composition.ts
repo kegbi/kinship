@@ -458,17 +458,18 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
   // link that names its workspace in the query installs its resolution for
   // that workspace first, so the guard checks the workspace the route acts in.
   if (services?.protectedSessions) {
-    installExportLinkSessions(api, services.protectedSessions);
-    api.use("/api/v1/*", sessionResolution(services.protectedSessions));
-  }
-  if (services?.legal && services.protectedSessions) {
-    api.use(
-      "/api/v1/*",
-      createLegalRequirementGuard({
-        legal: services.legal,
-        protectedSessions: services.protectedSessions,
-      }),
-    );
+    const sessions = {
+      browserSecurity: services.browserSecurity,
+      protectedSessions: services.protectedSessions,
+    };
+    installExportLinkSessions(api, sessions);
+    api.use("/api/v1/*", sessionResolution(sessions));
+    if (services.legal) {
+      api.use(
+        "/api/v1/*",
+        createLegalRequirementGuard({ ...sessions, legal: services.legal }),
+      );
+    }
   }
 
   if (services) {

@@ -103,8 +103,13 @@ export interface IdentityAuthenticationFacade {
     token: string,
     connection?: IdentityTransaction,
   ): Promise<SessionPrincipal | undefined>;
+  /**
+   * Ends the active session a token names: true when one was ended, false
+   * when the token names no active session — already revoked, expired, or
+   * never issued (SECA-07). Only an outage throws.
+   */
   revokeSession(command: {
     readonly token: string;
     readonly transaction: IdentityTransaction;
-  }): Promise<void>;
+  }): Promise<boolean>;
 }

@@ -810,8 +810,11 @@ Deno.test({
       },
     );
     assert(
-      staleSignOut.status === 503,
-      "stale session cannot be reported as newly revoked",
+      staleSignOut.status === 200 &&
+        staleSignOut.headers.get("set-cookie")?.startsWith(
+          "kinship_session=;",
+        ),
+      "a stale session still signs out and clears its cookie (SECA-07)",
     );
     const [audit] = await database<{
       failed: number;

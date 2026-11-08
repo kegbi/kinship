@@ -21,7 +21,7 @@ Deno.test("[GIFTS-001] HTTP history is private, scoped, paged, and conceals fail
     } as never,
   });
   const path = `/api/v1/people/${id}/debts/${debtId}/settlements`;
-  const headers = { Cookie: "kinship_session=token" };
+  const headers = { Cookie: "__Host-kinship_session=token" };
   const response = await app.request(`${path}?limit=2&cursor=next`, {
     headers,
   });
@@ -67,7 +67,10 @@ Deno.test("[GIFTS-001] HTTP permanently deletes a debt privately", async () => {
   });
   const response = await app.request(`/api/v1/people/${id}/debts/${debtId}`, {
     method: "DELETE",
-    headers: { Cookie: "kinship_session=token", Origin: "https://app.test" },
+    headers: {
+      Cookie: "__Host-kinship_session=token",
+      Origin: "https://app.test",
+    },
   });
   assertStatus(response, 200);
   assert(
@@ -79,7 +82,7 @@ Deno.test("[GIFTS-001] HTTP permanently deletes a debt privately", async () => {
 
 Deno.test("[GIFTS-001] HTTP guards debt deletion and maps concealed failures", async () => {
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
   };
   for (
@@ -166,7 +169,7 @@ Deno.test("GIFTS-001 HTTP creates an unknown-amount idea and rejects an invalid 
   const created = await app.request(`/api/v1/people/${id}/gifts`, {
     body: JSON.stringify({ name: "Train tickets", status: "idea" }),
     headers: {
-      Cookie: "kinship_session=token",
+      Cookie: "__Host-kinship_session=token",
       Origin: "https://app.test",
       "Content-Type": "application/json",
     },
@@ -177,7 +180,7 @@ Deno.test("GIFTS-001 HTTP creates an unknown-amount idea and rejects an invalid 
   const changed = await app.request(`/api/v1/people/${id}/gifts/${id}/status`, {
     body: JSON.stringify({ status: "idea" }),
     headers: {
-      Cookie: "kinship_session=token",
+      Cookie: "__Host-kinship_session=token",
       Origin: "https://app.test",
       "Content-Type": "application/json",
     },
@@ -201,7 +204,7 @@ Deno.test("GIFTS-001 HTTP lists gifts and debts without an Origin header", async
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const response = await app.request(`/api/v1/people/${id}/gifts`, {
-    headers: { Cookie: "kinship_session=token" },
+    headers: { Cookie: "__Host-kinship_session=token" },
   });
   assertStatus(response, 200);
   assert(
@@ -248,7 +251,7 @@ Deno.test("GIFTS-001 HTTP exposes debt create/change and guarded failures", asyn
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
     "Content-Type": "application/json",
   };
@@ -307,7 +310,7 @@ Deno.test("GIFTS-001 HTTP requires a session and maps concealed/unavailable stat
   });
   assert(
     (await anonymous.request(`/api/v1/people/${id}/gifts`, {
-      headers: { Cookie: "kinship_session=bad" },
+      headers: { Cookie: "__Host-kinship_session=bad" },
     })).status === 401,
     "session required",
   );
@@ -326,7 +329,7 @@ Deno.test("GIFTS-001 HTTP requires a session and maps concealed/unavailable stat
     });
     assert(
       (await app.request(`/api/v1/people/${id}/gifts`, {
-        headers: { Cookie: "kinship_session=token" },
+        headers: { Cookie: "__Host-kinship_session=token" },
       })).status === expected,
       `maps ${result.status}`,
     );
@@ -344,7 +347,7 @@ Deno.test("GIFTS-001 HTTP refuses every write that carries a foreign Origin", as
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://wrong.test",
     "Content-Type": "application/json",
   };
@@ -386,7 +389,7 @@ Deno.test("GIFTS-001 HTTP rejects unparsable ids and bodies on every write route
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
     "Content-Type": "application/json",
   };
@@ -527,7 +530,7 @@ Deno.test("GIFTS-001 HTTP maps a refused creation onto its problem", async () =>
       protectedSessions: { resolve: () => Promise.resolve(actor) as never },
     });
     const headers = {
-      Cookie: "kinship_session=token",
+      Cookie: "__Host-kinship_session=token",
       Origin: "https://app.test",
       "Content-Type": "application/json",
     };
@@ -580,7 +583,7 @@ Deno.test("GIFTS-001 HTTP returns a saved gift status privately and maps a refus
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
     "Content-Type": "application/json",
   };
@@ -629,7 +632,7 @@ Deno.test("GIFTS-001 HTTP forwards every optional gift and debt field it accepts
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
     "Content-Type": "application/json",
   };
@@ -697,7 +700,7 @@ Deno.test("[GAP-023] HTTP pages gifts and debts independently and refuses a malf
     } as never,
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
-  const headers = { Cookie: "kinship_session=token" };
+  const headers = { Cookie: "__Host-kinship_session=token" };
   const first = await app.request(`/api/v1/people/${id}/gifts`, { headers });
   assertStatus(first, 200);
   const firstBody = await first.json() as Record<string, unknown>;
@@ -796,7 +799,7 @@ Deno.test("[GIFTS-001] HTTP creates, changes, and deletes a recurring debt", asy
     protectedSessions: { resolve: () => Promise.resolve(actor) as never },
   });
   const headers = {
-    Cookie: "kinship_session=token",
+    Cookie: "__Host-kinship_session=token",
     Origin: "https://app.test",
     "Content-Type": "application/json",
   };

@@ -2,7 +2,7 @@ import type { APIRequestContext, BrowserContext } from "@playwright/test";
 import { expect, test } from "./support/test.ts";
 import { register } from "./support/api.ts";
 import { database, databaseSql, sqlLiteral } from "./support/database.ts";
-import { origin, password } from "./support/env.ts";
+import { origin, password, sessionCookieName } from "./support/env.ts";
 import { mailText, mailToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { signIn } from "./support/sign-in.ts";
@@ -59,11 +59,11 @@ async function replacementInvitationLink(
 
 async function cookieHeader(context: BrowserContext): Promise<string> {
   const cookie = (await context.cookies()).find((candidate) =>
-    candidate.name === "kinship_session"
+    candidate.name === sessionCookieName
   );
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.secure).toBe(true);
-  return `kinship_session=${cookie!.value}`;
+  return `${sessionCookieName}=${cookie!.value}`;
 }
 
 test(

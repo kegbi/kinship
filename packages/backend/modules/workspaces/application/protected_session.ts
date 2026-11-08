@@ -99,7 +99,8 @@ export function createProtectedSessionCoordinator(
     readonly requestedWorkspaceId?: string;
     readonly sessionToken: string;
   }): Promise<ResolvedSessionContext | undefined>;
-  signOut(sessionToken: string): Promise<void>;
+  /** Whether an active session was ended; a stale token is not an error. */
+  signOut(sessionToken: string): Promise<boolean>;
   signIn(command: SignInCommand): Promise<ProtectedSessionResult>;
 } {
   return {
@@ -286,8 +287,8 @@ export function createProtectedSessionCoordinator(
           admitResolved({ ...active, accessibleWorkspaces });
       });
     },
-    async signOut(sessionToken) {
-      await dependencies.transaction.run((transaction) =>
+    signOut(sessionToken) {
+      return dependencies.transaction.run((transaction) =>
         dependencies.identity.revokeSession({
           token: sessionToken,
           transaction,

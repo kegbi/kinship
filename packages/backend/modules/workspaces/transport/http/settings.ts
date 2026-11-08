@@ -42,7 +42,6 @@ import {
 } from "./settings/preferences.ts";
 import {
   createSessionsRoutes,
-  SESSION_FORBIDDEN,
   SESSION_NOT_REVOKED,
   SESSION_STALE,
   SESSIONS_NOT_LOADED,
@@ -99,7 +98,6 @@ export const SETTINGS_PROBLEMS: readonly ProblemDefinition[] = [
   PROFILE_NOT_LOADED,
   PROFILE_NOT_SAVED,
   SECTION_NOT_FOUND,
-  SESSION_FORBIDDEN,
   SESSION_NOT_REVOKED,
   SESSION_STALE,
   SESSIONS_NOT_LOADED,

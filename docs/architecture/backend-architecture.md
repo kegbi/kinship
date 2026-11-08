@@ -378,6 +378,19 @@ browser sessions. Keep API tokens separate and never store browser session
 credentials in `localStorage`. Apply CSRF protection to cookie-authenticated
 mutations and explicit origin/CORS rules at the gateway and API.
 
+The browser session cookie is `__Host-kinship_session` whenever the configured
+public origin is HTTPS, so it is `Secure`, `Path=/`, and host-only, and a
+sibling subdomain cannot plant one beside it. A loopback deployment over plain
+HTTP cannot set a `Secure` cookie and names it `kinship_session`. Only the
+configured name is read, and a request that carries it more than once is
+unauthenticated; the answer expires the cookie (AUD-K4, SECA-09). The unprefixed
+name is not read over HTTPS even for one release: the upgrade signs every
+browser out once, which the 12-hour session lifetime bounds anyway, rather than
+keep accepting the cookie a sibling could plant. Sign-out always answers 200 and
+expires the cookie, even when its session is already over (SECA-07); only an
+outage that leaves a live session live refuses with 503. Revoking a session id
+that is not the actor's own answers 404, the same as an unknown id (SECT-06).
+
 Personal tokens are issued, listed, and revoked only by active workspace owners
 and administrators. Creation requires one or more distinct grants from the
 closed vocabulary returned by token management. Grants are independent:

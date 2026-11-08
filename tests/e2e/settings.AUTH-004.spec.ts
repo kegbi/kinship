@@ -3,7 +3,7 @@ import { expect, test } from "./support/test.ts";
 import { mkdirSync } from "node:fs";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
-import { origin } from "./support/env.ts";
+import { origin, sessionCookieName } from "./support/env.ts";
 import { activateGlobalSearch } from "./support/islands.ts";
 import {
   expectAccessible,
@@ -27,10 +27,10 @@ async function registerAccount(
 
 async function sessionCookie(context: BrowserContext): Promise<string> {
   const cookie = (await context.cookies()).find((item) =>
-    item.name === "kinship_session"
+    item.name === sessionCookieName
   );
   expect(cookie).toBeTruthy();
-  return `kinship_session=${cookie!.value}`;
+  return `${sessionCookieName}=${cookie!.value}`;
 }
 
 test(

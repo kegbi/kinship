@@ -48,7 +48,9 @@ import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_pol
 import { clientAddress } from "../../../../../http-kit/client_address.ts";
 import {
   cookieValue,
-  SESSION_COOKIE,
+  expiredSessionCookie,
+  sessionCookie as sessionSetCookie,
+  sessionToken,
   setCookie,
 } from "../../../../../http-kit/cookies.ts";
 import {
@@ -286,12 +288,11 @@ function sessionCookie(
   token: string,
   expiresAt: Date,
 ): string {
-  return setCookie(policy, {
-    maxAgeSeconds: Math.max(0, (expiresAt.getTime() - Date.now()) / 1_000),
-    name: SESSION_COOKIE,
-    path: "/",
-    value: token,
-  });
+  return sessionSetCookie(
+    policy,
+    token,
+    (expiresAt.getTime() - Date.now()) / 1_000,
+  );
 }
 
 /** The challenge cookie, scoped to the one route that completes it. */
@@ -349,7 +350,7 @@ export function createAuthenticationRoutes(
   services: AuthenticationHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, signIn, origin, async (context) => {
@@ -357,9 +358,9 @@ export function createAuthenticationRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, SIGN_IN_INVALID);
     }
-    const previousSessionToken = cookieValue(
+    const previousSessionToken = sessionToken(
       context.req.header("Cookie"),
-      SESSION_COOKIE,
+      services.browserSecurity,
     );
     const deviceToken = cookieValue(
       context.req.header("Cookie"),
@@ -431,9 +432,9 @@ export function createAuthenticationRoutes(
     if ("errors" in parsed || !challengeToken) {
       return definedProblem(context, MFA_CHALLENGE_EXPIRED);
     }
-    const previousSessionToken = cookieValue(
+    const previousSessionToken = sessionToken(
       context.req.header("Cookie"),
-      SESSION_COOKIE,
+      services.browserSecurity,
     );
     let result;
     try {
@@ -495,12 +496,7 @@ export function createAuthenticationRoutes(
     if (result === "reset") {
       context.header(
         "Set-Cookie",
-        setCookie(services.browserSecurity, {
-          maxAgeSeconds: 0,
-          name: SESSION_COOKIE,
-          path: "/",
-          value: "",
-        }),
+        expiredSessionCookie(services.browserSecurity),
       );
       context.header("Cache-Control", "no-store");
       return context.json({ status: "reset", next: "/auth/sign-in" });
@@ -512,7 +508,10 @@ export function createAuthenticationRoutes(
   });
 
   mount(routes, getSession, session, async (context) => {
-    const token = cookieValue(context.req.header("Cookie"), SESSION_COOKIE);
+    const token = sessionToken(
+      context.req.header("Cookie"),
+      services.browserSecurity,
+    );
     if (!token) return definedProblem(context, SIGN_IN_REQUIRED);
     const resolved = await sessionOf(context);
     // The request's own membership, from the same resolution: the use cases
@@ -555,8 +554,15 @@ export function createAuthenticationRoutes(
     });
   });
 
+  // Signing out of a session that is already over — revoked from another
+  // device, reset, expired, or never known — is still a sign-out (SECA-07):
+  // the cookie is cleared and the answer is 200. Only an outage, which leaves
+  // a live session live, refuses, and keeps the cookie for the retry.
   mount(routes, signOut, origin, async (context) => {
-    const token = cookieValue(context.req.header("Cookie"), SESSION_COOKIE);
+    const token = sessionToken(
+      context.req.header("Cookie"),
+      services.browserSecurity,
+    );
     if (token) {
       try {
         await services.protectedSessions.signOut(token);
@@ -566,12 +572,7 @@ export function createAuthenticationRoutes(
     }
     context.header(
       "Set-Cookie",
-      setCookie(services.browserSecurity, {
-        maxAgeSeconds: 0,
-        name: SESSION_COOKIE,
-        path: "/",
-        value: "",
-      }),
+      expiredSessionCookie(services.browserSecurity),
     );
     context.header("Cache-Control", "no-store");
     return context.json({ status: "signed-out", next: "/auth/sign-in" });

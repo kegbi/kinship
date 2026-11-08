@@ -52,6 +52,6 @@ export interface IdentityAccountSettingsFacade {
     readonly userId: string;
   }): Promise<
     | { readonly current: boolean; readonly status: "revoked" }
-    | Failure<"forbidden", "stale">
+    | Failure<never, "stale">
   >;
 }

@@ -83,7 +83,7 @@ export function createLifecycleRoutes(
   services: PersonLifecycleHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   for (

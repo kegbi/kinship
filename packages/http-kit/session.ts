@@ -2,7 +2,7 @@
  * Who is making this request.
  *
  * Fifteen route files had each written the same `actor()`: read the
- * `kinship_session` cookie, read the optional `X-Workspace-Id`, ask the
+ * session cookie, read the optional `X-Workspace-Id`, ask the
  * protected-session coordinator, and swallow a throw as "nobody". It was
  * called about a hundred times, and a route that forgot the `.catch(…)` would
  * have turned a database outage into a 500 instead of the 401 its neighbour
@@ -43,9 +43,15 @@ import {
   type Correlation,
   correlationOf,
 } from "../backend/shared-kernel/telemetry.ts";
-import { cookieValue, SESSION_COOKIE } from "./cookies.ts";
+import {
+  expiredSessionCookie,
+  sessionCookieDuplicated,
+  sessionCookieName,
+  sessionToken,
+} from "./cookies.ts";
 import { definedProblem, type ProblemDefinition } from "./problem.ts";
 import { requestIdOf } from "./request_id.ts";
+import type { BrowserSecurityPolicy } from "./security_policy.ts";
 
 /** The header a member switches their active workspace with. */
 export const WORKSPACE_HEADER = "X-Workspace-Id";
@@ -84,6 +90,15 @@ export interface SessionCoordinator {
     readonly requestedWorkspaceId?: string;
     readonly sessionToken: string;
   }): Promise<ResolvedSession | undefined>;
+}
+
+/**
+ * What a session resolution is installed from: the coordinator, and the
+ * policy that names the cookie the session travels in (SECA-09).
+ */
+export interface SessionServices {
+  readonly browserSecurity: BrowserSecurityPolicy;
+  readonly protectedSessions: SessionCoordinator;
 }
 
 /**
@@ -172,20 +187,40 @@ export interface SessionOptions {
  */
 function read(
   context: Context,
-  sessions: SessionCoordinator,
+  services: SessionServices,
   requestedWorkspaceId: string | undefined,
 ): Promise<ResolvedSession | undefined> {
-  const sessionToken = cookieValue(
+  const token = sessionToken(
     context.req.header("Cookie"),
-    SESSION_COOKIE,
+    services.browserSecurity,
   );
-  if (!sessionToken || malformedWorkspace(requestedWorkspaceId)) {
+  if (!token || malformedWorkspace(requestedWorkspaceId)) {
     return Promise.resolve(undefined);
   }
-  return sessions.resolve({
-    sessionToken,
+  return services.protectedSessions.resolve({
+    sessionToken: token,
     ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
   });
+}
+
+/**
+ * Expires the session cookie on the way out when the request carried more
+ * than one (SECA-09), so the browser stops sending the pair. A response that
+ * already sets the session cookie — a sign-in, or an inner installer's own
+ * expiry — keeps its answer.
+ */
+function clearDuplicatedSession(
+  context: Context,
+  policy: BrowserSecurityPolicy,
+): void {
+  if (!sessionCookieDuplicated(context.req.header("Cookie"), policy)) return;
+  const name = `${sessionCookieName(policy)}=`;
+  if (
+    context.res.headers.getSetCookie().some((line) => line.startsWith(name))
+  ) {
+    return;
+  }
+  context.res.headers.append("Set-Cookie", expiredSessionCookie(policy));
 }
 
 /** This request's correlation, as a member that is absent when there is none. */
@@ -221,7 +256,7 @@ function membership(
  */
 export function installSession(
   context: Context<ActorEnv>,
-  sessions: SessionCoordinator,
+  services: SessionServices,
   options: SessionOptions = {},
 ): void {
   if (context.get("sessionRead")) return;
@@ -231,7 +266,7 @@ export function installSession(
   const sessionRead = () => {
     raw ??= read(
       context,
-      sessions,
+      services,
       namedWorkspace(context, options.workspaceQuery),
     );
     return raw;
@@ -263,12 +298,13 @@ export function installSession(
  * it with that route's `workspaceQuery`.
  */
 export function sessionResolution(
-  sessions: SessionCoordinator,
+  services: SessionServices,
   options: SessionOptions = {},
 ): MiddlewareHandler<ActorEnv> {
   return async (context, next) => {
-    installSession(context, sessions, options);
+    installSession(context, services, options);
     await next();
+    clearDuplicatedSession(context, services.browserSecurity);
   };
 }
 
@@ -284,14 +320,16 @@ function workspaceRefusal(context: Context): Response | undefined {
  * reads it, and refuses a malformed workspace header with a 400.
  */
 export function sessionActor(
-  sessions: SessionCoordinator,
+  services: SessionServices,
   options: SessionOptions = {},
 ): MiddlewareHandler<ActorEnv> {
   return async (context, next) => {
     const refused = workspaceRefusal(context);
     if (refused) return refused;
-    installSession(context, sessions, options);
-    return await next();
+    installSession(context, services, options);
+    await next();
+    clearDuplicatedSession(context, services.browserSecurity);
+    return undefined;
   };
 }
 

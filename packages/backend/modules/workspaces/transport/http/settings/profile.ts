@@ -55,7 +55,7 @@ export function createProfileRoutes(
   services: MemberProfileHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, getSettingsProfile, session, async (context) => {

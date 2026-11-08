@@ -19,11 +19,11 @@ import {
 } from "../../../../../../contracts/routes/settings.ts";
 import { uuid } from "../../../../../../contracts/schemas/shared.ts";
 import {
-  cookieValue,
-  SESSION_COOKIE,
-  setCookie,
+  expiredSessionCookie,
+  sessionToken,
 } from "../../../../../../http-kit/cookies.ts";
 import { requireMatchingOrigin } from "../../../../../../http-kit/origin.ts";
+import type { BrowserSecurityPolicy } from "../../../../../../http-kit/security_policy.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -55,12 +55,6 @@ export const SESSION_STALE: ProblemDefinition = {
   status: 404,
   title: "Session unavailable",
 };
-export const SESSION_FORBIDDEN: ProblemDefinition = {
-  code: "session_forbidden",
-  detail: "You can revoke only your own sessions.",
-  status: 403,
-  title: "Session forbidden",
-};
 export const SESSION_NOT_REVOKED: ProblemDefinition = {
   code: "settings_unavailable",
   detail: "That session could not be revoked.",
@@ -74,15 +68,18 @@ export const SESSION_NOT_REVOKED: ProblemDefinition = {
  * Only the two session routes need it, and both have already required an
  * actor, which is only resolved from a cookie that is present.
  */
-function currentSessionToken(context: Context): string {
-  return cookieValue(context.req.header("Cookie"), SESSION_COOKIE) ?? "";
+function currentSessionToken(
+  context: Context,
+  policy: BrowserSecurityPolicy,
+): string {
+  return sessionToken(context.req.header("Cookie"), policy) ?? "";
 }
 
 export function createSessionsRoutes(
   services: MemberSessionsHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listMemberSessions, session, async (context) => {
@@ -90,7 +87,7 @@ export function createSessionsRoutes(
     if (actor instanceof Response) return actor;
     const sessions = await services.settings.listSessions(
       actor,
-      currentSessionToken(context),
+      currentSessionToken(context, services.browserSecurity),
     ).catch(() => undefined);
     return sessions
       ? privateJson(context, { sessions, status: "ready" })
@@ -111,25 +108,19 @@ export function createSessionsRoutes(
       if (actor instanceof Response) return actor;
       const result = await services.settings.revokeSession(
         actor,
-        currentSessionToken(context),
+        currentSessionToken(context, services.browserSecurity),
         parsedId.data,
       ).catch(() => undefined);
       if (!result) return definedProblem(context, SESSION_NOT_REVOKED);
+      // Somebody else's session id answers what an unknown one does
+      // (SECT-06), so an id cannot be probed for being live.
       if (result.status !== "revoked") {
-        return definedProblem(
-          context,
-          result.status === "forbidden" ? SESSION_FORBIDDEN : SESSION_STALE,
-        );
+        return definedProblem(context, SESSION_STALE);
       }
       if (result.current) {
         context.header(
           "Set-Cookie",
-          setCookie(services.browserSecurity, {
-            maxAgeSeconds: 0,
-            name: SESSION_COOKIE,
-            path: "/",
-            value: "",
-          }),
+          expiredSessionCookie(services.browserSecurity),
         );
       }
       return privateJson(context, {

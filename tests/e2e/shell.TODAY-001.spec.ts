@@ -5,7 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, sqlLiteral } from "./support/database.ts";
-import { origin, password } from "./support/env.ts";
+import { origin, password, sessionCookieName } from "./support/env.ts";
 import { linkToken } from "./support/mail.ts";
 import { settleNavigation } from "./support/navigation.ts";
 import { expectAccessible } from "./support/page-checks.ts";
@@ -487,7 +487,7 @@ test(
     await page.unroute("**/api/v1/session");
 
     const sessionCookie = (await context.cookies()).find((cookie) =>
-      cookie.name === "kinship_session"
+      cookie.name === sessionCookieName
     );
     expect(sessionCookie?.httpOnly).toBe(true);
     expect(sessionCookie?.secure).toBe(true);
@@ -495,14 +495,14 @@ test(
     expect(signInSetCookie).toContain("SameSite=Strict");
     const crossed = await request.get(`${origin}/api/v1/session`, {
       headers: {
-        cookie: `kinship_session=${sessionCookie!.value}`,
+        cookie: `${sessionCookieName}=${sessionCookie!.value}`,
         "X-Workspace-Id": foreignWorkspaceId,
       },
     });
     expect(crossed.status()).toBe(401);
     const forgedSignOut = await request.post(`${origin}/api/v1/sign-out`, {
       headers: {
-        cookie: `kinship_session=${sessionCookie!.value}`,
+        cookie: `${sessionCookieName}=${sessionCookie!.value}`,
         origin: "https://attacker.invalid",
       },
     });

@@ -71,7 +71,7 @@ export function createStarRoutes(
   services: PersonStarHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   const setStar = (starred: boolean) => async (context: Context<ActorEnv>) => {

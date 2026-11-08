@@ -83,7 +83,7 @@ export function createUiStateRoutes(
   services: MemberUiStateHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
 
   mount(routes, getMemberUiState, session, async (context) => {
     const actor = await actorOf(context);

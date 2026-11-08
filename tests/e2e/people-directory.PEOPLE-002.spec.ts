@@ -4,7 +4,7 @@ import { activateGlobalSearch } from "./support/islands.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
-import { origin } from "./support/env.ts";
+import { origin, sessionCookieName } from "./support/env.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { signIn } from "./support/sign-in.ts";
 
@@ -308,11 +308,11 @@ test(
     await expect(page.getByText("Archived person · read-only")).toBeVisible();
 
     const sessionCookie = (await context.cookies()).find((cookie) =>
-      cookie.name === "kinship_session"
+      cookie.name === sessionCookieName
     );
     expect(sessionCookie).toBeTruthy();
     const apiHeaders = {
-      cookie: `kinship_session=${sessionCookie!.value}`,
+      cookie: `${sessionCookieName}=${sessionCookie!.value}`,
       "X-Workspace-Id": workspaceId,
     };
     const archivedRead = await request.get(

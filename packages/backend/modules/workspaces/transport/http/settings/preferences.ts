@@ -62,7 +62,7 @@ export function createPreferencesRoutes(
   services: MemberPreferencesHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, getMemberPreferences, session, async (context) => {

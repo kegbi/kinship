@@ -337,7 +337,7 @@ export function createPlanningRoutes(
   services: PlanningHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const taskActor = (
     context: Parameters<typeof requireScopedActor>[0],
     scope: "tasks:read" | "tasks:create" | "tasks:write",

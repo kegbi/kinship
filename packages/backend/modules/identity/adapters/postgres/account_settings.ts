@@ -75,32 +75,22 @@ export class PostgresIdentityAccountSettings
       IdentityAccountSettingsFacade["revokeOwnedSession"]
     >[0],
   ): ReturnType<IdentityAccountSettingsFacade["revokeOwnedSession"]> {
-    const database = databaseFromSession(command.transaction);
-    const target = await sql<{
-      readonly active: boolean;
-      readonly sessionHash: string;
-      readonly userId: string | null;
-    }>`
-      select user_id::text as "userId", session_hash as "sessionHash",
-        revoked_at is null and expires_at > ${command.now}
-          and purpose = 'authenticated' as active
-      from crm.user_sessions where id = ${command.sessionId}::uuid
-      for update
-    `.execute(database);
-    const session = target.rows[0];
-    if (!session || !session.active) return { status: "stale" };
-    if (session.userId !== command.userId) return { status: "forbidden" };
+    // One statement, filtered by the owner (SECT-06): a session id that is
+    // somebody else's matches nothing, so it is neither locked nor told apart
+    // from an id that does not exist.
     const currentHash = await this.#sessionHash(command.currentToken);
-    const revoked = await sql<{ readonly id: string }>`
+    const revoked = await sql<{ readonly current: boolean }>`
       update crm.user_sessions set revoked_at = ${command.now},
         last_seen_at = ${command.now}
       where id = ${command.sessionId}::uuid and user_id = ${command.userId}::uuid
         and revoked_at is null and expires_at > ${command.now}
         and purpose = 'authenticated'
-      returning id::text
-    `.execute(database);
-    if (!revoked.rows[0]) return { status: "stale" };
-    return { current: session.sessionHash === currentHash, status: "revoked" };
+      returning session_hash = ${currentHash} as current
+    `.execute(databaseFromSession(command.transaction));
+    const session = revoked.rows[0];
+    return session
+      ? { current: session.current, status: "revoked" }
+      : { status: "stale" };
   }
 
   #sessionHash(token: string): Promise<string> {

@@ -17,7 +17,7 @@
  * verified link cannot be replayed anywhere else; `kinship_invitation_pending`
  * is scoped to the verification route alone and is cleared the moment it is
  * read, which is what makes a verified invitee land on the invitation rather
- * than the application; and `kinship_session` is only ever set once the entry
+ * than the application; and the session cookie is only ever set once the entry
  * handoff has been spent.
  *
  * Registration never says whether an address already has an account
@@ -48,7 +48,8 @@ import {
 } from "../../../../../contracts/schemas/registration.ts";
 import {
   cookieValue,
-  SESSION_COOKIE,
+  sessionCookie,
+  sessionToken,
   setCookie,
 } from "../../../../../http-kit/cookies.ts";
 import {
@@ -415,9 +416,9 @@ async function establishSession(
 ): Promise<Response | undefined> {
   let session;
   try {
-    const previousSessionToken = cookieValue(
+    const previousSessionToken = sessionToken(
       context.req.header("Cookie"),
-      SESSION_COOKIE,
+      policy,
     );
     const userAgent = context.req.header("User-Agent")?.slice(0, 1_000);
     session = await establish({
@@ -433,12 +434,11 @@ async function establishSession(
   }
   context.header(
     "Set-Cookie",
-    setCookie(policy, {
-      maxAgeSeconds: (session.expiresAt.getTime() - Date.now()) / 1_000,
-      name: SESSION_COOKIE,
-      path: "/",
-      value: session.sessionToken,
-    }),
+    sessionCookie(
+      policy,
+      session.sessionToken,
+      (session.expiresAt.getTime() - Date.now()) / 1_000,
+    ),
     { append: true },
   );
   return undefined;

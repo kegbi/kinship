@@ -6,7 +6,7 @@ import { assert, assertStatus } from "../../../../testing/assert.ts";
 import { sessionContext } from "../../../../../contracts/schemas/authentication.ts";
 
 function services(
-  signOut: (token: string) => Promise<void>,
+  signOut: (token: string) => Promise<boolean>,
 ): AuthenticationHttpServices {
   return {
     browserSecurity: { origin: "http://localhost", secureCookie: false },
@@ -26,7 +26,7 @@ function services(
 }
 
 Deno.test("recovery dependency failure is retryable and never reported accepted", async () => {
-  const base = services(() => Promise.resolve());
+  const base = services(() => Promise.resolve(true));
   const app = createAuthenticationRoutes({
     ...base,
     passwordRecovery: {
@@ -54,7 +54,7 @@ Deno.test("recovery dependency failure is retryable and never reported accepted"
 });
 
 Deno.test("provider delivery failure keeps the public recovery response non-enumerating", async () => {
-  const base = services(() => Promise.resolve());
+  const base = services(() => Promise.resolve(true));
   const app = createAuthenticationRoutes({
     ...base,
     passwordRecovery: {
@@ -105,8 +105,66 @@ Deno.test("sign-out reports revocation failure without discarding the session co
   );
 });
 
+Deno.test("[AUD-K4] sign-out of a session that is already over answers 200 and clears the cookie", async () => {
+  const revoked: string[] = [];
+  const app = createAuthenticationRoutes(services((token) => {
+    revoked.push(token);
+    return Promise.resolve(false);
+  }));
+  const signOut = (cookie: string) =>
+    app.request("http://localhost/api/v1/sign-out", {
+      method: "POST",
+      headers: { cookie, origin: "http://localhost" },
+    });
+
+  for (
+    const cookie of [
+      "kinship_session=stale-token",
+      "kinship_session=a; kinship_session=b",
+    ]
+  ) {
+    const response = await signOut(cookie);
+    assertStatus(response, 200, "a stale or ambiguous cookie still signs out");
+    assert(
+      response.headers.get("set-cookie") ===
+        "kinship_session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/",
+      "and the cookie is cleared",
+    );
+  }
+  assert(
+    revoked.join(",") === "stale-token",
+    "only an unambiguous token is revoked",
+  );
+});
+
+Deno.test("[AUD-K4] over HTTPS sign-out revokes and clears __Host-kinship_session", async () => {
+  const revoked: string[] = [];
+  const app = createAuthenticationRoutes({
+    ...services((token) => {
+      revoked.push(token);
+      return Promise.resolve(true);
+    }),
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+  });
+  const response = await app.request("http://localhost/api/v1/sign-out", {
+    method: "POST",
+    headers: {
+      cookie: "kinship_session=tossed; __Host-kinship_session=live",
+      origin: "https://app.test",
+    },
+  });
+
+  assertStatus(response, 200);
+  assert(revoked.join(",") === "live", "the prefixed session is revoked");
+  assert(
+    response.headers.get("set-cookie") ===
+      "__Host-kinship_session=; HttpOnly; SameSite=Strict; Secure; Max-Age=0; Path=/",
+    "and the prefixed cookie is cleared",
+  );
+});
+
 Deno.test("rate-limit completion and required-work failure map to their exact public statuses", async () => {
-  const base = services(() => Promise.resolve());
+  const base = services(() => Promise.resolve(true));
   for (
     const scenario of [
       {
@@ -165,7 +223,7 @@ Deno.test("rate-limit completion and required-work failure map to their exact pu
 });
 
 Deno.test("session context exposes the active workspace and accessible switcher choices", async () => {
-  const base = services(() => Promise.resolve());
+  const base = services(() => Promise.resolve(true));
   const workspace = {
     id: "00000000-0000-4000-8000-000000000003",
     name: "Ada's circle",
@@ -309,7 +367,7 @@ Deno.test("session context exposes the active workspace and accessible switcher 
 });
 
 Deno.test("AUD-F3 the session carries the member's own preferences from one read", async () => {
-  const base = services(() => Promise.resolve());
+  const base = services(() => Promise.resolve(true));
   const workspace = {
     id: "00000000-0000-4000-8000-000000000003",
     name: "Ada's circle",

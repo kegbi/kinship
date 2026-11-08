@@ -40,7 +40,7 @@ import {
 /** What one person's read-only page is served from. */
 export type PersonProfileHttpServices = Pick<
   PeopleHttpServices,
-  "profile" | "protectedSessions"
+  "browserSecurity" | "profile" | "protectedSessions"
 >;
 
 export const LIFE_EVENTS_UNAVAILABLE: ProblemDefinition = {
@@ -116,7 +116,7 @@ export function createProfileRoutes(
   services: PersonProfileHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
 
   mount(
     routes,

@@ -133,7 +133,7 @@ export function createInvitationCreationRoutes(
   services: InvitationCreationHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, createWorkspaceInvitation, origin, session, async (context) => {

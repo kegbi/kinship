@@ -102,7 +102,7 @@ export function createJournalRoutes(
   services: JournalHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listJournal, session, async (context) => {

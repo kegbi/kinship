@@ -90,7 +90,7 @@ export function createCalendarFeedSettingsRoutes(
   services: CalendarFeedHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
   const url = (secret: string) =>
     new URL(

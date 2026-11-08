@@ -709,7 +709,7 @@ these:
     needs a client-side deadline (parked). AUD-V2 must set the workspace once
     per request or budget 8–9 round trips.
 
-- [ ] **AUD-K4 — The session cookie and sign-out are hardened.** S–M. Normal.
+- [x] **AUD-K4 — The session cookie and sign-out are hardened.** S–M. Normal.
       Depends: AUD-K1, AUD-F3. Closes: SECA-07, SECA-09, SECT-06.
   - Scope:
     - `revokeSession` returns a boolean, and sign-out always answers 200 and
@@ -726,6 +726,24 @@ these:
     3. Revoking a foreign session id answers 404.
   - Verify: `test:unit --module=api`; `test:integration --module=identity`; E2E
     `sign-in.AUTH-003` and `settings.AUTH-004`.
+  - Delivered 2026-11-08: over HTTPS the session cookie is
+    `__Host-kinship_session` (`Secure; Path=/`, no `Domain`) on every path that
+    sets or clears it, and plain HTTP keeps `kinship_session`; the old name is
+    not read, so the first deploy forces one sign-in per browser (documented in
+    `backend-architecture.md` and `private-production.md`). A request with more
+    than one session cookie is nobody and its answer clears the cookie.
+    `revokeSession` returns a boolean, so sign-out of an already ended session
+    answers 200 and clears the cookie; a real database outage still answers 503
+    and keeps the cookie, so a retry can end a live session (a deliberate
+    departure from "always 200": answering 200 while the session lives would
+    break Part 1.1). Revoking another user's session id is one `UPDATE` filtered
+    by `user_id` and answers 404 with the unknown-id body. Api unit 511 with
+    default-deny and the role matrix (only REL-106), workspaces 194, identity
+    unit 16, identity integration 24 (only REL-099), search integration 16;
+    `cookies.ts` and `session.ts` 100%, changed identity and workspaces
+    transport at least 88.6% branches; contracts current; fmt, architecture, and
+    lint (only REL-096). E2E AUTH-003, AUTH-004, API-002, AUTH-002, PEOPLE-001,
+    PEOPLE-002, TODAY-001, and SEARCH-001 19 passed on Chromium.
 
 - [x] **AUD-K5 — Default-deny is proven for every route, and the authorization
       matrix is executable.** M. High. Depends: AUD-K1. Closes: SECA-10,

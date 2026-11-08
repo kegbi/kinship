@@ -10,7 +10,7 @@ import {
 import { settleNavigation } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
-import { origin } from "./support/env.ts";
+import { origin, sessionCookieName } from "./support/env.ts";
 import { mailToken, pathLinkToken } from "./support/mail.ts";
 import {
   expectAccessible,
@@ -266,7 +266,7 @@ test(
     await expect(page).toHaveURL(/\/auth\/sign-in$/);
     expect(
       (await context.cookies()).find((cookie) =>
-        cookie.name === "kinship_session"
+        cookie.name === sessionCookieName
       ),
     ).toBeUndefined();
     await settleNavigation(page);
@@ -300,7 +300,7 @@ test(
     await expect(page).toHaveURL(/\/auth\/sign-in$/);
     await expect(page.getByRole("status")).toContainText("incorrect");
     expect(
-      (await context.cookies()).find((item) => item.name === "kinship_session"),
+      (await context.cookies()).find((item) => item.name === sessionCookieName),
     ).toBeUndefined();
 
     const sessionResponsePromise = page.waitForResponse((response) =>
@@ -326,7 +326,7 @@ test(
     await expect(page.locator("#app-toasts > li")).toHaveCount(0);
     await expectAccessible(page, { networkIdle: true });
     const firstCookie = (await context.cookies()).find((item) =>
-      item.name === "kinship_session"
+      item.name === sessionCookieName
     );
     expect(firstCookie?.httpOnly).toBe(true);
     expect(firstCookie?.secure).toBe(true);
@@ -345,12 +345,12 @@ test(
     );
     await expect(page).toHaveURL(/\/app$/);
     const secondToken = (await context.cookies()).find((item) =>
-      item.name === "kinship_session"
+      item.name === sessionCookieName
     )?.value;
     expect(secondToken).toBeTruthy();
     expect(secondToken).not.toBe(firstToken);
     const stale = await request.get(`${origin}/api/v1/session`, {
-      headers: { cookie: `kinship_session=${firstToken}` },
+      headers: { cookie: `${sessionCookieName}=${firstToken}` },
     });
     expect(stale.status()).toBe(401);
 
@@ -388,13 +388,13 @@ test(
     });
     expect(crossed.status()).toBe(403);
     expect(crossed.headers()["set-cookie"] ?? "").not.toContain(
-      "kinship_session=",
+      `${sessionCookieName}=`,
     );
 
     await page.goto("/app");
     await keyboardSignOutWithMultipleWorkspaces(page);
     expect(
-      (await context.cookies()).find((item) => item.name === "kinship_session"),
+      (await context.cookies()).find((item) => item.name === sessionCookieName),
     ).toBeUndefined();
     await page.goto("/app");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(

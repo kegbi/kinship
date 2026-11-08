@@ -22,6 +22,7 @@ import {
   sessionActor,
   type SessionCoordinator,
   sessionResolution,
+  type SessionServices,
   WORKSPACE_HEADER,
 } from "./session.ts";
 import {
@@ -31,6 +32,12 @@ import {
 } from "./request_id.ts";
 
 const member = fixtureActor();
+const LOOPBACK = { origin: "http://localhost", secureCookie: false };
+
+/** A coordinator, served over loopback HTTP: the cookie is `kinship_session`. */
+function over(sessions: SessionCoordinator): SessionServices {
+  return { browserSecurity: LOOPBACK, protectedSessions: sessions };
+}
 
 function coordinator(
   calls: { readonly sessionToken: string }[],
@@ -51,7 +58,7 @@ function memberOf(actor: SessionActor | Response): string | null {
 
 function guarded(sessions: SessionCoordinator): Hono<ActorEnv> {
   const app = new Hono<ActorEnv>();
-  app.get("/who", sessionActor(sessions), async (context) => {
+  app.get("/who", sessionActor(over(sessions)), async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     return context.json(actor);
@@ -114,7 +121,7 @@ Deno.test("[GAP-019] a coordinator that throws is nobody, not a crash", async ()
 Deno.test("[GAP-019] the resolution is memoized for the whole request", async () => {
   const calls: { readonly sessionToken: string }[] = [];
   const app = new Hono<ActorEnv>();
-  app.get("/twice", sessionActor(coordinator(calls)), async (context) => {
+  app.get("/twice", sessionActor(over(coordinator(calls))), async (context) => {
     const first = await actorOf(context);
     const second = await actorOf(context);
     return context.json({ same: first === second });
@@ -163,7 +170,7 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
   const app = new Hono<ActorEnv>();
   app.get(
     "/directory",
-    sessionActor(coordinator([])),
+    sessionActor(over(coordinator([]))),
     async (context) => {
       const actor = await requireTokenOrSessionActor(context, {
         scope: "people:read",
@@ -172,12 +179,16 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
       return context.json({ member: memberOf(actor) });
     },
   );
-  app.get("/no-tokens", sessionActor(coordinator([])), async (context) => {
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: "people:read",
-    });
-    return context.json({ member: memberOf(actor) });
-  });
+  app.get(
+    "/no-tokens",
+    sessionActor(over(coordinator([]))),
+    async (context) => {
+      const actor = await requireTokenOrSessionActor(context, {
+        scope: "people:read",
+      });
+      return context.json({ member: memberOf(actor) });
+    },
+  );
 
   const read = async (path: string, authorization?: string) =>
     ((await (await app.request(`http://localhost${path}`, {
@@ -216,13 +227,17 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
 
 Deno.test("[GAP-019] a token authority that throws is nobody", async () => {
   const app = new Hono<ActorEnv>();
-  app.get("/directory", sessionActor(coordinator([])), async (context) => {
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: "people:read",
-      tokens: { authenticate: () => Promise.reject(new Error("offline")) },
-    });
-    return context.json({ member: memberOf(actor) });
-  });
+  app.get(
+    "/directory",
+    sessionActor(over(coordinator([]))),
+    async (context) => {
+      const actor = await requireTokenOrSessionActor(context, {
+        scope: "people:read",
+        tokens: { authenticate: () => Promise.reject(new Error("offline")) },
+      });
+      return context.json({ member: memberOf(actor) });
+    },
+  );
 
   const response = await app.request("http://localhost/directory", {
     headers: { Authorization: "Bearer good" },
@@ -238,7 +253,7 @@ Deno.test("[GAP-019] a token authority that throws is nobody", async () => {
 Deno.test("[GAP-020] the wider reading keeps what the narrow one drops", async () => {
   const calls: { readonly sessionToken: string }[] = [];
   const app = new Hono<ActorEnv>();
-  app.get("/both", sessionActor(coordinator(calls)), async (context) => {
+  app.get("/both", sessionActor(over(coordinator(calls))), async (context) => {
     const actor = await requireActor(context);
     const session = await requireSession(context);
     if (actor instanceof Response || session instanceof Response) {
@@ -272,7 +287,7 @@ Deno.test("[GAP-020] a route may name its own workspace instead of the header", 
   const app = new Hono<ActorEnv>();
   app.get(
     "/scoped",
-    sessionActor(sessions, { workspaceQuery: "workspaceId" }),
+    sessionActor(over(sessions), { workspaceQuery: "workspaceId" }),
     async (context) => {
       const actor = await actorOf(context);
       return context.json({ member: actor?.memberId ?? null });
@@ -310,7 +325,7 @@ Deno.test("[GAP-020] one reading lets an outage through as a throw", async () =>
     resolve: () => Promise.reject(new Error("offline")),
   };
   const app = new Hono<ActorEnv>();
-  app.use(sessionActor(offline));
+  app.use(sessionActor(over(offline)));
   app.get("/guard", async (context) => {
     const resolved = await readActorOf(context).catch(() =>
       "unavailable" as const
@@ -345,7 +360,7 @@ Deno.test("[GAP-039] the actor carries this request's identifier into the use ca
   const app = new Hono<RequestIdEnv>();
   app.use(requestId());
   const routes = new Hono<ActorEnv>();
-  routes.use(sessionActor(coordinator([])));
+  routes.use(sessionActor(over(coordinator([]))));
   routes.get("/who", async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
@@ -387,7 +402,7 @@ Deno.test("[GAP-039] a token-authenticated actor carries the request identifier 
   const app = new Hono<RequestIdEnv>();
   app.use(requestId({ generate: () => "minted-7" }));
   const routes = new Hono<ActorEnv>();
-  routes.use(sessionActor(coordinator([])));
+  routes.use(sessionActor(over(coordinator([]))));
   routes.get("/token", async (context) => {
     const actor = await requireTokenOrSessionActor(context, {
       scope: "people:read",
@@ -441,9 +456,9 @@ Deno.test("[INTEGRATION-002] a scoped token authority is only asked for the scop
 Deno.test("[AUD-K1] a second sessionActor reuses the first one's resolution", async () => {
   const calls: { readonly sessionToken: string }[] = [];
   const app = new Hono<ActorEnv>();
-  app.use(sessionActor(coordinator(calls)));
+  app.use(sessionActor(over(coordinator(calls))));
   const routes = new Hono<ActorEnv>();
-  routes.use(sessionActor(coordinator(calls)));
+  routes.use(sessionActor(over(coordinator(calls))));
   routes.get("/who", async (context) => {
     const actor = await requireActor(context);
     const read = await readActorOf(context);
@@ -494,7 +509,7 @@ Deno.test("[AUD-K1] a route that reads a session refuses a malformed workspace h
 Deno.test("[AUD-K1] the app-wide resolution judges no header and never asks with a bad one", async () => {
   const calls: { readonly sessionToken: string }[] = [];
   const app = new Hono<ActorEnv>();
-  app.use(sessionResolution(coordinator(calls)));
+  app.use(sessionResolution(over(coordinator(calls))));
   app.get("/feed", async (context) => {
     const read = await readActorOf(context);
     return context.json({ read: read?.memberId ?? null });
@@ -524,7 +539,7 @@ Deno.test("[AUD-K1] the app-wide resolution judges no header and never asks with
 
 Deno.test("[AUD-K1] a token-admitted member answers to the admission the guard set", async () => {
   const app = new Hono<ActorEnv>();
-  app.use(sessionActor(coordinator([])));
+  app.use(sessionActor(over(coordinator([]))));
   app.use(async (context, next) => {
     context.set(
       "tokenAdmission",
@@ -561,15 +576,15 @@ Deno.test("[AUD-K1] a link route's one resolution is made for the workspace it n
   const app = new Hono<ActorEnv>();
   app.get(
     "/scoped",
-    sessionResolution(sessions, { workspaceQuery: "workspaceId" }),
+    sessionResolution(over(sessions), { workspaceQuery: "workspaceId" }),
   );
-  app.use(sessionResolution(sessions));
+  app.use(sessionResolution(over(sessions)));
   const guarded: (string | undefined)[] = [];
   app.use(async (context, next) => {
     guarded.push((await readActorOf(context))?.memberId);
     await next();
   });
-  app.get("/scoped", sessionActor(sessions), async (context) => {
+  app.get("/scoped", sessionActor(over(sessions)), async (context) => {
     await actorOf(context);
     return context.json({});
   });
@@ -589,4 +604,87 @@ Deno.test("[AUD-K1] a link route's one resolution is made for the workspace it n
     "the query wins where there is one, and each request asks once",
   );
   assertEquals(guarded.length, 2, "the guard read that same resolution");
+});
+
+Deno.test("[AUD-K4] two session cookies are nobody, and the answer clears the cookie", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = new Hono<ActorEnv>();
+  app.use(sessionResolution(over(coordinator(calls))));
+  app.get("/who", sessionActor(over(coordinator(calls))), async (context) => {
+    const actor = await requireActor(context);
+    return actor instanceof Response ? actor : context.json(actor);
+  });
+
+  const responses = await Promise.all(
+    ["token; kinship_session=forged", "forged; kinship_session=token"].map(
+      (pair) =>
+        app.request("http://localhost/who", {
+          headers: { Cookie: `kinship_session=${pair}` },
+        }),
+    ),
+  );
+
+  for (const response of responses) {
+    assertStatus(response, 401, "neither order admits anybody");
+    assertEquals(
+      response.headers.getSetCookie(),
+      ["kinship_session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/"],
+      "the answer clears the cookie, once",
+    );
+  }
+  assertEquals(calls.length, 0, "the coordinator is never asked");
+});
+
+Deno.test("[AUD-K4] over HTTPS only __Host-kinship_session is read", async () => {
+  const calls: { readonly sessionToken: string }[] = [];
+  const app = new Hono<ActorEnv>();
+  app.get(
+    "/who",
+    sessionActor({
+      browserSecurity: { origin: "https://app.test", secureCookie: true },
+      protectedSessions: coordinator(calls),
+    }),
+    async (context) => {
+      const actor = await requireActor(context);
+      return actor instanceof Response ? actor : context.json(actor);
+    },
+  );
+  const who = (cookie: string) =>
+    app.request("http://localhost/who", { headers: { Cookie: cookie } });
+
+  assertStatus(
+    await who("kinship_session=tossed; __Host-kinship_session=token"),
+    200,
+    "an unprefixed cookie beside it changes nothing",
+  );
+  assertStatus(
+    await who("kinship_session=token"),
+    401,
+    "the unprefixed name alone is nobody",
+  );
+  assertEquals(
+    JSON.stringify(calls),
+    JSON.stringify([{ sessionToken: "token" }]),
+    "only the prefixed token reached the coordinator",
+  );
+});
+
+Deno.test("[AUD-K4] a response that sets the session cookie itself keeps it", async () => {
+  const app = new Hono<ActorEnv>();
+  app.use(sessionResolution(over(coordinator([]))));
+  app.post("/sessions", (context) => {
+    context.header("Set-Cookie", "kinship_session=fresh; Path=/");
+    return context.json({});
+  });
+
+  const response = await app.request("http://localhost/sessions", {
+    method: "POST",
+    headers: { Cookie: "kinship_session=a; kinship_session=b" },
+  });
+
+  assertEquals(
+    response.headers.getSetCookie(),
+    ["kinship_session=fresh; Path=/"],
+    "a new session is not expired behind its own back",
+  );
 });

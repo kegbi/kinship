@@ -36,24 +36,17 @@ Deno.test("AUTH-004 HTTP lists ISO sessions and clears only a revoked current co
   );
 });
 
-Deno.test("AUTH-004 HTTP preserves stale and forbidden session distinctions", async () => {
-  for (
-    const scenario of [
-      { result: { status: "stale" as const }, expected: 404 },
-      { result: { status: "forbidden" as const }, expected: 403 },
-    ]
-  ) {
-    const app = createSettingsRoutes(services(settings({
-      revokeSession: () => Promise.resolve(scenario.result),
-    })));
-    const response = await app.request(
-      "http://localhost/api/v1/settings/sessions/00000000-0000-4000-8000-000000000010",
-      { method: "DELETE", headers },
-    );
-    assert(response.status === scenario.expected, "exact session result maps");
-    assert(
-      response.headers.get("set-cookie") === null,
-      "failed revocation retains credential",
-    );
-  }
+Deno.test("AUTH-004 HTTP answers a session that is not the member's own as stale", async () => {
+  const app = createSettingsRoutes(services(settings({
+    revokeSession: () => Promise.resolve({ status: "stale" as const }),
+  })));
+  const response = await app.request(
+    "http://localhost/api/v1/settings/sessions/00000000-0000-4000-8000-000000000010",
+    { method: "DELETE", headers },
+  );
+  assert(response.status === 404, "stale, foreign, and unknown all answer 404");
+  assert(
+    response.headers.get("set-cookie") === null,
+    "failed revocation retains credential",
+  );
 });

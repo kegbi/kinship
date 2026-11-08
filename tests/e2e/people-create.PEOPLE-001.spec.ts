@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
-import { origin } from "./support/env.ts";
+import { origin, sessionCookieName } from "./support/env.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu } from "./support/profile.ts";
 import { signIn } from "./support/sign-in.ts";
@@ -118,13 +118,13 @@ test(
       `insert into crm.workspaces (id, name, status) values ('${foreignWorkspaceId}'::uuid, 'Foreign circle', 'active'); insert into crm.people (id, workspace_id, given_name) values ('${foreignPersonId}'::uuid, '${foreignWorkspaceId}'::uuid, 'Foreign person')`,
     );
     const sessionCookie = (await context.cookies()).find((cookie) =>
-      cookie.name === "kinship_session"
+      cookie.name === sessionCookieName
     );
     expect(sessionCookie).toBeTruthy();
     const crossed = await request.post(`${origin}/api/v1/people`, {
       data: { givenName: "Crossed", isPartial: false },
       headers: {
-        cookie: `kinship_session=${sessionCookie!.value}`,
+        cookie: `${sessionCookieName}=${sessionCookie!.value}`,
         origin,
         "X-Workspace-Id": foreignWorkspaceId,
       },
@@ -134,7 +134,7 @@ test(
       `${origin}/api/v1/people/${foreignPersonId}`,
       {
         headers: {
-          cookie: `kinship_session=${sessionCookie!.value}`,
+          cookie: `${sessionCookieName}=${sessionCookie!.value}`,
           "X-Workspace-Id": workspaceId,
         },
       },

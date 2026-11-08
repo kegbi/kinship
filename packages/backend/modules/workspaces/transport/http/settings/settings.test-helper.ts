@@ -115,7 +115,7 @@ export function services(
         Promise.resolve({ status: "membership-inactive" }),
       resolve: () => Promise.resolve(actor),
       signIn: () => Promise.resolve({ status: "invalid-credentials" }),
-      signOut: () => Promise.resolve(),
+      signOut: () => Promise.resolve(true),
     },
     settings: settingsService,
   };

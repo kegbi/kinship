@@ -175,7 +175,7 @@ function decodedHeader(value: string | undefined): string | undefined {
 
 export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, getStorageSettings, session, async (context) => {

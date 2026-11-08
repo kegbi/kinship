@@ -28,7 +28,7 @@ import {
 } from "../../../../../contracts/schemas/personal_lifecycle.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import { clientAddress } from "../../../../../http-kit/client_address.ts";
-import { SESSION_COOKIE, setCookie } from "../../../../../http-kit/cookies.ts";
+import { expiredSessionCookie } from "../../../../../http-kit/cookies.ts";
 import {
   failureResponder,
   type FailureTable,
@@ -170,22 +170,14 @@ function clearSessionCookie(
   context: Context,
   policy: BrowserSecurityPolicy,
 ): void {
-  context.header(
-    "Set-Cookie",
-    setCookie(policy, {
-      maxAgeSeconds: 0,
-      name: SESSION_COOKIE,
-      path: "/",
-      value: "",
-    }),
-  );
+  context.header("Set-Cookie", expiredSessionCookie(policy));
 }
 
 export function createPersonalLifecycleRoutes(
   services: PersonalLifecycleHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(

@@ -455,3 +455,49 @@ Deno.test("verification delivery retry is anonymous and non-enumerating", async 
     "pending and absent identities must have the same observable response",
   );
 });
+
+Deno.test("[AUD-K4] the entry handoff sets __Host-kinship_session over HTTPS and rotates the previous one", async () => {
+  const commands: { readonly previousSessionToken?: string }[] = [];
+  const app = createApiApp(services({
+    browserSecurity: { origin: "https://kinship.test", secureCookie: true },
+    establishVerifiedEntry: (command) => {
+      commands.push(command);
+      return resolved({
+        expiresAt: new Date(Date.now() + 3_600_000),
+        member: { id: "member", role: "owner" },
+        sessionToken: "fresh",
+        status: "authenticated",
+        workspace: { id: "workspace", name: "Circle" },
+      } as Awaited<
+        ReturnType<
+          NonNullable<RegistrationHttpServices["establishVerifiedEntry"]>
+        >
+      >);
+    },
+  }));
+
+  const response = await app.request(
+    "http://localhost/api/v1/application-entry",
+    {
+      method: "POST",
+      headers: {
+        cookie:
+          "kinship_entry=entry-secret; __Host-kinship_session=old; kinship_session=tossed",
+        origin: "https://kinship.test",
+      },
+    },
+  );
+
+  assertStatus(response, 200);
+  assert(
+    commands[0]?.previousSessionToken === "old",
+    "only the prefixed session is rotated",
+  );
+  assert(
+    response.headers.getSetCookie().some((line) =>
+      line.startsWith("__Host-kinship_session=fresh;") &&
+      line.includes("; Secure") && line.includes("; Path=/")
+    ),
+    "the new session travels in the prefixed cookie",
+  );
+});

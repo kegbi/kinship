@@ -201,7 +201,7 @@ Deno.test("verified entry accepts invitation and rotates into an authenticated s
     "session rotation receives the gateway-provided client address",
   );
   assert(
-    cookies.includes("kinship_session=new-session") &&
+    cookies.includes("__Host-kinship_session=new-session") &&
       cookies.includes("kinship_entry=;") &&
       cookies.includes("Path=/api/v1/workspace-invitations"),
     "one-use authority is cleared and authenticated session is HttpOnly",

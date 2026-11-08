@@ -605,8 +605,8 @@ Deno.test({
         owner.cookie,
         `/api/v1/settings/sessions/${adminSession.id}`,
         { method: "DELETE" },
-      )).status === 403,
-      "another identity session is forbidden",
+      )).status === 404,
+      "another identity's session answers as an unknown one (SECT-06)",
     );
     const otherOwned = sessionsBody.sessions.find((item) => !item.current);
     assert(otherOwned, "non-current owned session exists");

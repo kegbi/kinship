@@ -59,7 +59,7 @@ export const PEOPLE_BULK_UNAVAILABLE: ProblemDefinition = {
 
 export function createBulkRoutes(services: BulkHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, bulkPeople, origin, session, async (context) => {

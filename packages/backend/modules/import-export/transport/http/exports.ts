@@ -90,10 +90,10 @@ const EXPORT_WORKSPACE_LINKS = {
  */
 export function installExportLinkSessions<E extends Env>(
   app: Hono<E>,
-  sessions: ExportHttpServices["protectedSessions"],
+  services: Pick<ExportHttpServices, "browserSecurity" | "protectedSessions">,
 ): void {
   const resolution = sessionResolution(
-    sessions,
+    services,
     EXPORT_WORKSPACE_LINKS.options,
   );
   for (const route of EXPORT_WORKSPACE_LINKS.routes) {
@@ -225,11 +225,8 @@ export function createExportRoutes(
   services: ExportHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
-  const linkSession = sessionActor(
-    services.protectedSessions,
-    EXPORT_WORKSPACE_LINKS.options,
-  );
+  const session = sessionActor(services);
+  const linkSession = sessionActor(services, EXPORT_WORKSPACE_LINKS.options);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listExports, session, async (context) => {

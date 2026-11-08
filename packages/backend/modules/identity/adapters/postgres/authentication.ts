@@ -464,7 +464,7 @@ export class PostgresIdentityAuthentication
   async revokeSession(command: {
     readonly token: string;
     readonly transaction: IdentityTransaction;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const hash = await this.#sessionHash(command.token);
     const now = this.clock.now();
     const revoked = await sql<{ readonly id: string }>`
@@ -473,9 +473,7 @@ export class PostgresIdentityAuthentication
         and purpose = 'authenticated' and expires_at > ${now}
       returning id::text
     `.execute(databaseFromSession(command.transaction));
-    if (revoked.rows.length !== 1) {
-      throw new Error("Active session was not revoked.");
-    }
+    return revoked.rows.length === 1;
   }
 
   #sessionHash(token: string): Promise<string> {

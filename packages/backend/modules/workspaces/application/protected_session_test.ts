@@ -145,7 +145,7 @@ function dependencies(
           return Promise.resolve(undefined);
         },
         revokeSession() {
-          return Promise.resolve();
+          return Promise.resolve(true);
         },
       },
       identityEntry: {

@@ -58,9 +58,9 @@ export const SECURITY_SCHEMES = {
   kinship_session: {
     type: "apiKey",
     in: "cookie",
-    name: "kinship_session",
+    name: "__Host-kinship_session",
     description:
-      "Revocable random browser session; HttpOnly, SameSite=Strict, and Secure outside loopback.",
+      "Revocable random browser session; HttpOnly, SameSite=Strict, Secure, Path=/, and host-only. A loopback deployment over plain HTTP names it kinship_session. A request carrying more than one is unauthenticated.",
   },
   kinship_api_token: {
     type: "http",

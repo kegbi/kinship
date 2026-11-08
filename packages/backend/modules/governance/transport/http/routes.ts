@@ -66,12 +66,14 @@ type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface GovernanceHttpServices {
   readonly auditHistory?: AuditHistory;
-  readonly browserSecurity?: BrowserSecurityPolicy;
+  readonly browserSecurity: BrowserSecurityPolicy;
   readonly legal?: LegalAcceptance;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
 
 export interface LegalRequirementGuardServices {
+  /** Names the cookie the session it reads travels in (SECA-09). */
+  readonly browserSecurity: BrowserSecurityPolicy;
   readonly legal: LegalAcceptance;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
@@ -251,7 +253,7 @@ export function createLegalRequirementGuard(
     ) {
       return next();
     }
-    installSession(context, services.protectedSessions);
+    installSession(context, services);
     if (context.req.header("Authorization") !== undefined) {
       // SECA-05: the token's member owes the same documents a cookie's does.
       context.set(
@@ -329,7 +331,7 @@ export function createGovernanceRoutes(
   services: GovernanceHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const policy = services.browserSecurity;
   if (services.legal) {
     const legal = services.legal;
@@ -365,7 +367,7 @@ export function createGovernanceRoutes(
       return context.json(result);
     });
     mount(routes, acceptLegalDocument, session, async (context) => {
-      const foreign = policy && rejectForeignOrigin(context, policy);
+      const foreign = rejectForeignOrigin(context, policy);
       if (foreign) return foreign;
       const parsed = await parseJsonBody(context, legalAcceptanceInput);
       if ("errors" in parsed) {

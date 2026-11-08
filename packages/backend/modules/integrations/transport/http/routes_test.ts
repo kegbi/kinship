@@ -56,7 +56,7 @@ function app(overrides: Partial<DavSyncManagement> = {}) {
 
 const headers = {
   "content-type": "application/json",
-  Cookie: "kinship_session=session",
+  Cookie: "__Host-kinship_session=session",
   Origin: "https://app.example.test",
   "X-Workspace-Id": actor.workspaceId,
 };

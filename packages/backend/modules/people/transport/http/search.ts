@@ -55,10 +55,13 @@ export const SEARCH_UNAVAILABLE: ProblemDefinition = {
 };
 
 export function createSearchRoutes(
-  services: Pick<PeopleHttpServices, "protectedSessions" | "search">,
+  services: Pick<
+    PeopleHttpServices,
+    "browserSecurity" | "protectedSessions" | "search"
+  >,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
 
   mount(routes, searchWorkspace, session, async (context) => {
     const parsed = parseQuery(context, searchWorkspaceQuery);

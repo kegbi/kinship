@@ -155,7 +155,7 @@ export function createIntegrationRoutes(
   services: IntegrationHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
 
   mount(routes, getDavSubscriptions, session, async (context) => {
     const actor = await requireActor(context);

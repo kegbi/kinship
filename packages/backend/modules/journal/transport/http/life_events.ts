@@ -146,7 +146,7 @@ export function createLifeEventRoutes(
   services: LifeEventHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, createPersonLifeEvent, origin, session, async (context) => {

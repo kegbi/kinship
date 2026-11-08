@@ -1,7 +1,7 @@
 import { expect, test } from "./support/test.ts";
 import { readFile } from "node:fs/promises";
 import { createPerson, registerVerified } from "./support/api.ts";
-import { origin } from "./support/env.ts";
+import { origin, sessionCookieName } from "./support/env.ts";
 import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { signInAcceptingCompliance } from "./support/sign-in.ts";
@@ -118,7 +118,7 @@ test("[API-002] visitors read and download the reference without JavaScript", {
       ).toBe(true);
     }
     expect(
-      (await context.cookies()).some(({ name }) => name === "kinship_session"),
+      (await context.cookies()).some(({ name }) => name === sessionCookieName),
     ).toBe(false);
   } finally {
     await context.close();

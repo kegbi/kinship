@@ -27,7 +27,7 @@ Deno.test("workspace settings adapter does not read identity-owned storage", asy
 function fixture(
   revokeResult:
     | { readonly current: boolean; readonly status: "revoked" }
-    | Failure<"forbidden", "stale"> = {
+    | Failure<never, "stale"> = {
       current: false,
       status: "revoked",
     },

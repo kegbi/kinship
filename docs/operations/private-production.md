@@ -127,6 +127,11 @@ upload/read/delete, authenticated SMTP delivery, a worker reminder cycle, and
 DAV only if enabled. Verify unauthenticated file access is denied. These are
 operational acceptance checks, not claims that deployment has passed.
 
+The first release that names the session cookie `__Host-kinship_session`
+(AUD-K4) signs every browser out once, because the unprefixed cookie is no
+longer read over HTTPS; expect one sign-in per browser after it. Rolling back
+past that release signs browsers out once more.
+
 For an application-only rollback with unchanged schema compatibility, stop API
 and worker, select the last healthy reviewed Git revision, retain the same
 project/volumes/secrets, and deploy with the command above. Rerun preflight and

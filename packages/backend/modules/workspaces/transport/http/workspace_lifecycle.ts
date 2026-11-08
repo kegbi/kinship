@@ -24,7 +24,7 @@ import {
 import { workspaceLifecycleConfirmation } from "../../../../../contracts/schemas/workspace_lifecycle.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import { clientAddress } from "../../../../../http-kit/client_address.ts";
-import { SESSION_COOKIE, setCookie } from "../../../../../http-kit/cookies.ts";
+import { expiredSessionCookie } from "../../../../../http-kit/cookies.ts";
 import {
   failureResponder,
   type FailureTable,
@@ -128,7 +128,7 @@ export function createWorkspaceLifecycleRoutes(
   services: WorkspaceLifecycleHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(
@@ -193,12 +193,7 @@ export function createWorkspaceLifecycleRoutes(
       }
       context.header(
         "Set-Cookie",
-        setCookie(services.browserSecurity, {
-          maxAgeSeconds: 0,
-          name: SESSION_COOKIE,
-          path: "/",
-          value: "",
-        }),
+        expiredSessionCookie(services.browserSecurity),
       );
       return context.json(
         {

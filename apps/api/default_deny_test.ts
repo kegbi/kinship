@@ -173,7 +173,11 @@ Deno.test("[AUD-K5] the sweep fails a protected route that answers without an ac
     unguarded,
     (context) => Promise.resolve(context.json({ personId: personId() })),
   );
-  mount(fixtures, guarded, sessionActor(NOBODY), async (context) => {
+  const session = sessionActor({
+    browserSecurity: { origin: SAMPLE_ORIGIN, secureCookie: false },
+    protectedSessions: NOBODY,
+  });
+  mount(fixtures, guarded, session, async (context) => {
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
     return context.json({ personId: personId() });

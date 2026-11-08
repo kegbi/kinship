@@ -95,13 +95,13 @@ export function services(overrides: {
           workspaceName: "Circle",
         })),
       signIn: overrides.signIn ?? (() => unresolved),
-      signOut: () => Promise.resolve(),
+      signOut: () => Promise.resolve(true),
     } as unknown as InvitationHttpServices["protectedSessions"],
   };
 }
 
 export const secureHeaders = {
   "content-type": "application/json",
-  cookie: "kinship_session=session-secret",
+  cookie: "__Host-kinship_session=session-secret",
   origin: "https://kinship.test",
 };

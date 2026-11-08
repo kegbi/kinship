@@ -504,7 +504,7 @@ Deno.test({
           Promise.reject(new Error("session establishment unavailable")),
         assertSessionPostcondition: () => Promise.resolve(),
         resolveSession: () => Promise.resolve(undefined),
-        revokeSession: () => Promise.resolve(),
+        revokeSession: () => Promise.resolve(true),
       },
       responseEqualizer: immediateResponseEqualizer,
       transaction: {
@@ -680,7 +680,7 @@ Deno.test({
             issueSession: () => Promise.reject(new Error("unused")),
             assertSessionPostcondition: () => Promise.resolve(),
             resolveSession: () => Promise.resolve(undefined),
-            revokeSession: () => Promise.resolve(),
+            revokeSession: () => Promise.resolve(true),
           },
           responseEqualizer: immediateResponseEqualizer,
           transaction,

@@ -84,7 +84,7 @@ export function createMembersRoutes(
   services: WorkspaceMembersHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listManagedMembers, session, async (context) => {

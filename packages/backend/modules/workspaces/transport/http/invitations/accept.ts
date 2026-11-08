@@ -32,7 +32,7 @@ import {
 import { clientAddress } from "../../../../../../http-kit/client_address.ts";
 import {
   cookieValue,
-  SESSION_COOKIE,
+  sessionCookie,
   setCookie,
 } from "../../../../../../http-kit/cookies.ts";
 import { requireMatchingOrigin } from "../../../../../../http-kit/origin.ts";
@@ -165,7 +165,7 @@ export function createInvitationAcceptanceRoutes(
   services: InvitationAcceptanceHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
   const policy = services.browserSecurity;
 
@@ -341,12 +341,11 @@ export function createInvitationAcceptanceRoutes(
       ) {
         context.header(
           "Set-Cookie",
-          setCookie(policy, {
-            maxAgeSeconds: (result.expiresAt.getTime() - Date.now()) / 1_000,
-            name: SESSION_COOKIE,
-            path: "/",
-            value: result.sessionToken,
-          }),
+          sessionCookie(
+            policy,
+            result.sessionToken,
+            (result.expiresAt.getTime() - Date.now()) / 1_000,
+          ),
           { append: true },
         );
         for (const name of [ENTRY_COOKIE, INVITATION_COOKIE] as const) {

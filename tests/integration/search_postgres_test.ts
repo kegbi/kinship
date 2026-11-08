@@ -379,6 +379,7 @@ Deno.test("[SEARCH-001] names match across scripts and keyboard layouts over HTT
   await sql`update crm.people set deleted_at = now() where id = ${deleted}`;
   await addPerson(foreign, "Elena Foreign");
   const routes = createSearchRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
     protectedSessions: {
       resolve: () =>
         Promise.resolve(
@@ -704,6 +705,7 @@ Deno.test("[SEARCH-001] a people statement past its timeout answers search_unava
   assertEquals(refused.status, "unavailable");
 
   const routes = createSearchRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
     protectedSessions: {
       resolve: () =>
         Promise.resolve(

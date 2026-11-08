@@ -205,7 +205,7 @@ export function createInteractionRoutes(
   services: InteractionHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
-  const session = sessionActor(services.protectedSessions);
+  const session = sessionActor(services);
   const captureActor = (context: Parameters<typeof requireScopedActor>[0]) =>
     requireScopedActor(context, {
       browserSecurity: services.browserSecurity,

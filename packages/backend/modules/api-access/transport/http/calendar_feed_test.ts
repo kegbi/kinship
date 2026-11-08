@@ -49,13 +49,13 @@ function fixture(overrides: Partial<CalendarFeedTokens> = {}) {
   return { calls, routes: createCalendarFeedSettingsRoutes(services) };
 }
 
-const write = { Cookie: "kinship_session=s", Origin: ORIGIN };
+const write = { Cookie: "__Host-kinship_session=s", Origin: ORIGIN };
 
 Deno.test("[INTEGRATION-002] any member reads their feed without its URL", async () => {
   const { calls, routes } = fixture();
   const response = await routes.request(
     "http://localhost/api/v1/settings/calendar-feed",
-    { headers: { Cookie: "kinship_session=s" } },
+    { headers: { Cookie: "__Host-kinship_session=s" } },
   );
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("cache-control"), "private, no-store");
@@ -111,7 +111,10 @@ Deno.test("[INTEGRATION-002] feed writes need the origin and name their refusals
   const crossSite = await routes.request(
     "http://localhost/api/v1/settings/calendar-feed",
     {
-      headers: { Cookie: "kinship_session=s", Origin: "https://evil.example" },
+      headers: {
+        Cookie: "__Host-kinship_session=s",
+        Origin: "https://evil.example",
+      },
       method: "POST",
     },
   );
@@ -145,7 +148,7 @@ Deno.test("[INTEGRATION-002] a revoked member or an outage is told apart", async
   });
   const refused = await forbidden.routes.request(
     "http://localhost/api/v1/settings/calendar-feed",
-    { headers: { Cookie: "kinship_session=s" } },
+    { headers: { Cookie: "__Host-kinship_session=s" } },
   );
   assertEquals(refused.status, 403);
   const down = fixture({

@@ -2012,6 +2012,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/authentication_retention_postgres_test.ts",
       // SECA-06 (AUD-A4): the MFA challenge is a durable session row.
       "tests/integration/mfa_challenge_postgres_test.ts",
+      // SECA-07, SECA-09, SECT-06 (AUD-K4): the session cookie and sign-out.
+      "tests/integration/session_cookie_postgres_test.ts",
     ],
     coverage: {
       directory: "identity-domain",

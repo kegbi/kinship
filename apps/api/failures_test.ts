@@ -885,7 +885,6 @@ Deno.test("[GAP-020] the refusals settings.ts answers are unchanged", () => {
       "503 | settings_unavailable | Profile unavailable | Your profile could not be loaded.",
       "503 | settings_unavailable | Profile unavailable | Your profile could not be saved.",
       "404 | personalization_section_not_found | Section unavailable | Use an accepted personalization section link.",
-      "403 | session_forbidden | Session forbidden | You can revoke only your own sessions.",
       "503 | settings_unavailable | Session unavailable | That session could not be revoked.",
       "404 | session_stale | Session unavailable | That session is no longer active.",
       "503 | settings_unavailable | Sessions unavailable | Your sessions could not be loaded.",

@@ -19,6 +19,8 @@ const ids = {
   workspace: "00000000-0000-4000-8000-000000000003",
 };
 
+const LOOPBACK = { origin: "http://127.0.0.1:4321", secureCookie: false };
+
 function services(
   list: AuditHistory["list"],
   role: "admin" | "member" | "owner" = "owner",
@@ -26,7 +28,7 @@ function services(
 ) {
   return {
     auditHistory: { list } as AuditHistory,
-    browserSecurity: { origin: "http://127.0.0.1:4321", secureCookie: false },
+    browserSecurity: LOOPBACK,
     ...(legal ? { legal } : {}),
     protectedSessions: {
       resolve: () =>
@@ -310,6 +312,7 @@ Deno.test("GOVERNANCE-001 guard blocks pending and unavailable legal state befor
   app.use(
     "/api/v1/*",
     createLegalRequirementGuard({
+      browserSecurity: LOOPBACK,
       legal,
       protectedSessions: services(
         () => Promise.resolve({ items: [], status: "ready" }),
@@ -354,6 +357,7 @@ Deno.test("GOVERNANCE-001 guard fails closed when session resolution fails once"
   app.use(
     "/api/v1/*",
     createLegalRequirementGuard({
+      browserSecurity: LOOPBACK,
       legal: {
         requirements: () =>
           Promise.resolve({ documents: [], status: "ready" as const }),
@@ -401,6 +405,7 @@ Deno.test("GOVERNANCE-001 guard leaves only resolution and bootstrap surfaces re
   app.use(
     "/api/v1/*",
     createLegalRequirementGuard({
+      browserSecurity: LOOPBACK,
       legal,
       protectedSessions: services(
         () => Promise.resolve({ items: [], status: "ready" }),
@@ -563,6 +568,7 @@ Deno.test("[GAP-020] the legal guard refuses everything while it cannot see", as
     app.use(
       "/api/v1/*",
       createLegalRequirementGuard({
+        browserSecurity: LOOPBACK,
         legal,
         protectedSessions: {
           resolve,
@@ -606,6 +612,7 @@ Deno.test("[INTEGRATION-002] the calendar feed never waits on a session's legal 
   app.use(
     "/api/v1/*",
     createLegalRequirementGuard({
+      browserSecurity: LOOPBACK,
       legal,
       protectedSessions: services(
         () => Promise.resolve({ items: [], status: "ready" }),
@@ -657,6 +664,7 @@ Deno.test("[AUD-K1] a token-admitted member owes the same legal documents", asyn
   app.use(
     "/api/v1/*",
     createLegalRequirementGuard({
+      browserSecurity: LOOPBACK,
       legal,
       protectedSessions: {
         resolve: () => {
