@@ -332,16 +332,34 @@ function createZoneRegistry(
         [...sectionOwners(shownSections(railSections(), hidden)), TAGS_MOUNT]
           .map((owner) => mount(owner)),
       ).then(() => undefined),
-    // Every owner mounted so far, by its zone, its card, or the rail.
-    settled: () =>
-      Promise.all([...activations.values(), ...owners.values()]).then(() =>
-        undefined
-      ),
+    // Every owner mounted so far, by its zone, its card, or the rail, and
+    // every one that starts while those settle: a Timeline card measured once
+    // the timeline has answered starts a frame later (FEQ-04).
+    settled: async () => {
+      let started: number;
+      do {
+        started = owners.size;
+        await Promise.all([...activations.values(), ...owners.values()]);
+        await afterFirstPaint();
+      } while (owners.size !== started);
+    },
   };
 }
 
 /** How near the viewport a zone or a card comes before it activates. */
-const ACTIVATION_MARGIN = "400px";
+const ACTIVATION_MARGIN_PX = 400;
+const ACTIVATION_MARGIN = `${ACTIVATION_MARGIN_PX}px`;
+
+/** Whether `card` is drawn within the activation margin of the window now. */
+function withinActivationMargin(card: HTMLElement): boolean {
+  const { bottom, height, left, right, top, width } = card
+    .getBoundingClientRect();
+  return (width > 0 || height > 0) &&
+    bottom >= -ACTIVATION_MARGIN_PX &&
+    top <= globalThis.innerHeight + ACTIVATION_MARGIN_PX &&
+    right >= -ACTIVATION_MARGIN_PX &&
+    left <= globalThis.innerWidth + ACTIVATION_MARGIN_PX;
+}
 
 /**
  * Each Timeline owner with the cards it draws into: the unified timeline's
@@ -369,8 +387,15 @@ function timelineCards(
 
 /**
  * Activates each Timeline card on its own, one observer per card (FEQ-04):
- * a card below the fold reads nothing until the reader scrolls near it. Once
- * every owner of the zone has mounted, the zone counts as activated.
+ * a card below the fold reads nothing until the reader scrolls near it. The
+ * cards below the unified timeline are measured only once it has answered
+ * and drawn, since before it draws they all sit within the margin of a short
+ * page, or at once when it is out of range: the reader is then below it,
+ * where it draws nothing that moves what they see, or above it and them.
+ * They are measured directly, so one already within the margin starts while
+ * the workspace is still settling, whenever a browser would first report it:
+ * the paint this waits for is asked for before `settled()` asks for its own.
+ * Once every owner of the zone has mounted, the zone counts as activated.
  */
 function mountTimelineCardActivation(
   registry: ZoneRegistry,
@@ -379,15 +404,37 @@ function mountTimelineCardActivation(
     readonly card: HTMLElement;
   }[],
 ): void {
-  for (const { card, owner } of cards) {
+  const start = (owner: SectionOwner): Promise<void> => {
+    const mounted = registry.mount(owner);
+    registry.complete("timeline");
+    return mounted;
+  };
+  const observe = ({ card, owner }: (typeof cards)[number]): void => {
     const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        if (owner === TIMELINE_MOUNT) observeLower();
+        return;
+      }
       observer.disconnect();
-      void registry.mount(owner);
-      registry.complete("timeline");
+      const mounted = start(owner);
+      if (owner === TIMELINE_MOUNT) {
+        const afterDrawn = () => afterFirstPaint().then(observeLower);
+        void mounted.then(afterDrawn, afterDrawn);
+      }
     }, { rootMargin: ACTIVATION_MARGIN });
     observer.observe(card);
-  }
+  };
+  let lowerObserved = false;
+  const observeLower = () => {
+    if (lowerObserved) return;
+    lowerObserved = true;
+    for (const entry of lower) {
+      if (withinActivationMargin(entry.card)) void start(entry.owner);
+      else observe(entry);
+    }
+  };
+  const lower = cards.filter(({ owner }) => owner !== TIMELINE_MOUNT);
+  cards.filter(({ owner }) => owner === TIMELINE_MOUNT).forEach(observe);
 }
 
 function mountZoneVisibilityActivation(

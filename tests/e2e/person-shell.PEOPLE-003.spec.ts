@@ -2,6 +2,7 @@ import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
+import { origin } from "./support/env.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { signIn } from "./support/sign-in.ts";
 
@@ -278,5 +279,175 @@ test(
       }),
     ).toBeVisible();
     await page.unroute(`**/api/v1/people/${unavailableId}*`);
+  },
+);
+
+test(
+  "[PEOPLE-003] reads the Timeline cards below the unified timeline only as the reader nears them",
+  {
+    annotation: [{ type: "flow", description: "PEOPLE-003" }, {
+      type: "finding",
+      description: "FEQ-04",
+    }],
+  },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(20_000);
+    await page.setViewportSize({ height: 900, width: 1280 });
+    const email = `rich-timeline-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Timeline",
+      lastName: "Reader",
+      workspaceName: "Rich timeline circle",
+    });
+    await signIn(page, email);
+    const created = await page.request.post(`${origin}/api/v1/people`, {
+      data: { familyName: "Lovelace", givenName: "Ada", isPartial: false },
+      headers: { origin },
+    });
+    expect(created.status()).toBe(201);
+    const personId = (await created.json() as { person: { id: string } }).person
+      .id;
+    for (let index = 1; index <= 12; index += 1) {
+      expect((await page.request.post(`${origin}/api/v1/interactions`, {
+        data: {
+          body: `Correspondence note ${String(index).padStart(2, "0")}`,
+          kind: "note",
+          personId,
+          requestId: randomUUID(),
+        },
+        headers: { origin },
+      })).status()).toBe(201);
+    }
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u
+        on u.id = w.created_by_user_id where u.email = ${sqlLiteral(email)}`,
+    );
+    databaseSql(`
+      insert into crm.life_events
+        (workspace_id, person_id, name, year, month, precision)
+      values ('${workspaceId}'::uuid, '${personId}'::uuid, 'Published Notes',
+        1843, 12, 'year_month');
+      insert into crm.calls (workspace_id, person_id, called_at)
+      values ('${workspaceId}'::uuid, '${personId}'::uuid,
+        now() - interval '2 days');
+    `);
+
+    const api: string[] = [];
+    page.on("request", (sent) => {
+      const url = new URL(sent.url());
+      if (url.pathname.startsWith("/api/v1/")) {
+        api.push(`${sent.method()} ${url.pathname}${url.search}`);
+      }
+    });
+    const lowerReads = () =>
+      api.filter((line) =>
+        /\/(activity-report|communications|life-events)\b/.test(line)
+      );
+    await page.goto(`/app/people/${personId}`);
+    const ready = page.locator("#person-profile-ready");
+    await expect(ready).toHaveAttribute("data-workspace-settled", "");
+    await expect(page.locator("#person-timeline [data-timeline-id]"))
+      .not.toHaveCount(0);
+    // The unified timeline has drawn, and the cards below it sit beyond the
+    // 400 px margin of a 900 px window: none of them has read.
+    const notes = page.locator("#profile-section-notes");
+    expect((await notes.boundingBox())!.y).toBeGreaterThan(900 + 400);
+    expect(lowerReads(), api.join("\n")).toEqual([]);
+
+    await notes.scrollIntoViewIfNeeded();
+    await expect(notes).toContainText("12 recent notes");
+    expect(lowerReads().some((line) => line.includes("activity-report")))
+      .toBe(true);
+
+    // A deep link to a card below the timeline still reads it at open.
+    api.length = 0;
+    await page.goto(`/app/people/${personId}?section=notes`);
+    await expect(ready).toHaveAttribute("data-workspace-settled", "");
+    await expect(notes).toContainText("12 recent notes");
+    await expect(notes).toBeFocused();
+    expect(api.some((line) => line.includes("/activity-report"))).toBe(true);
+  },
+);
+
+test(
+  "[PEOPLE-003] settles a short person only once the Timeline cards in reach have answered",
+  {
+    annotation: [{ type: "flow", description: "PEOPLE-003" }, {
+      type: "finding",
+      description: "FEQ-04 REL-046",
+    }],
+  },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(20_000);
+    await page.setViewportSize({ height: 900, width: 1280 });
+    const email = `short-timeline-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Short",
+      lastName: "Reader",
+      workspaceName: "Short timeline circle",
+    });
+    await signIn(page, email);
+    const created = await page.request.post(`${origin}/api/v1/people`, {
+      data: { familyName: "Hopper", givenName: "Grace", isPartial: false },
+      headers: { origin },
+    });
+    expect(created.status()).toBe(201);
+    const personId = (await created.json() as { person: { id: string } }).person
+      .id;
+    expect((await page.request.post(`${origin}/api/v1/interactions`, {
+      data: {
+        body: "Wrote the first compiler manual.",
+        kind: "note",
+        personId,
+        requestId: randomUUID(),
+      },
+      headers: { origin },
+    })).status()).toBe(201);
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u
+        on u.id = w.created_by_user_id where u.email = ${sqlLiteral(email)}`,
+    );
+    databaseSql(`
+      insert into crm.life_events
+        (workspace_id, person_id, name, year, month, precision)
+      values ('${workspaceId}'::uuid, '${personId}'::uuid, 'Commissioned',
+        1943, 12, 'year_month');
+      insert into crm.calls (workspace_id, person_id, called_at)
+      values ('${workspaceId}'::uuid, '${personId}'::uuid,
+        now() - interval '2 days');
+    `);
+
+    // The cards below the unified timeline answer slowly, so a workspace
+    // that settled without them would say so while they are still reading.
+    const lower =
+      /\/api\/v1\/people\/[^/]+\/(activity-report|communications|life-events)\b/;
+    await page.route(lower, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await route.continue();
+    });
+    let started = 0;
+    let answered = 0;
+    page.on("request", (sent) => {
+      if (lower.test(new URL(sent.url()).pathname)) started += 1;
+    });
+    page.on("requestfinished", (sent) => {
+      if (lower.test(new URL(sent.url()).pathname)) answered += 1;
+    });
+    await page.goto(`/app/people/${personId}`);
+    const ready = page.locator("#person-profile-ready");
+    await expect(ready).toHaveAttribute("data-workspace-settled", "");
+    const atSettle = { answered, started };
+    // The page is short: the cards below the timeline were within reach of
+    // the settled layout, read, and answered before the workspace settled.
+    expect(atSettle.started).toBeGreaterThanOrEqual(3);
+    expect(atSettle.answered).toBe(atSettle.started);
+    await expect(page.locator("#profile-section-notes")).toContainText(
+      "1 recent note",
+    );
+    await page.unroute(lower);
   },
 );

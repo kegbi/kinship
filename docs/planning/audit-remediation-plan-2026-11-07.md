@@ -1297,6 +1297,36 @@ these:
     architecture, and lint (only REL-096). E2E PEOPLE-003 (both specs),
     INTERACTION-001, INTERACTION-002, PEOPLE-006, and RELATIONSHIP-001 16 passed
     on Chromium.
+  - [x] **AUD-F5-fix — Lower Timeline cards wait for the layout they are
+        measured against.** S. Normal. Depends: AUD-F5. Closes: the rich-person
+        request count that AUD-Q3's RED needs (FEQ-04).
+    - Scope: AUD-F5's per-card observers start the notes, life-events, and
+      communications cards while the unified timeline above them has not drawn
+      yet, so at settle those cards sit far outside the 400 px window (y=2218 to
+      2556 at 1280×900) but have already read. Activate a lower Timeline card
+      only once it is within the margin of the settled layout (for example,
+      observe the lower cards only after the timeline above them has answered),
+      keeping per-card activation, deep links such as `?section=notes`, the
+      creation-event handling, and the workspace's settle behaviour.
+    - RED: at 1280×900 a rich person's notes, life-events, and communications
+      cards make no read until they come within the margin (today all three read
+      at open), and a deep link to one of them still reads it at open.
+    - Verify: `test:unit --module=web`; E2E `person-workspace.PEOPLE-003`,
+      `person-shell.PEOPLE-003`, `activities.INTERACTION-001`, and
+      `communications.INTERACTION-002` (Chromium).
+    - Delivered 2026-11-08: only the unified timeline card is observed at open;
+      once it answers (or first reports out of range, as after a deep link below
+      it) each lower card is measured against the window plus 400 px, mounting
+      at once when in range and observing otherwise, and the workspace's settle
+      waits while new owners keep starting, so it settles only after the lower
+      reads in reach have answered, whatever order the browser delivers observer
+      callbacks in. A rich person at 1280×900 opens with 8 requests (11 before)
+      without the notes, life-events, and communications reads, on Chromium and
+      Firefox; deep links still read their card at open. Web unit 1831 (only
+      REL-107); `workspace.ts` 99.8% lines, 93.5% branches; fmt, eslint,
+      architecture, and lint (only REL-096). E2E PEOPLE-003 (both specs),
+      INTERACTION-001, INTERACTION-002, and PERF-002 11 passed on Chromium; the
+      person specs passed on Firefox.
 
 - [x] **AUD-F6 — Pages preload their module graph.** S–M. Normal. Depends:
       AUD-F2. Closes: FER-02.
