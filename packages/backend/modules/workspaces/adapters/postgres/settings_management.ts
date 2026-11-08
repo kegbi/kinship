@@ -9,7 +9,7 @@ import type {
 import type { WorkspaceSettingsRepository } from "../../ports/settings_repository.ts";
 import { revokeInvitationsOfInviters } from "./invitation_authority.ts";
 
-interface PreferenceRow {
+export interface PreferenceRow {
   readonly effectiveTimezone: string;
   readonly contactNameOrder: string;
   readonly contactSortOrder: string;
@@ -38,7 +38,24 @@ const reminderColumns = sql`
   to_char(mp.digest_time, 'HH24:MI') as "digestTime"
 `;
 
-function preferences(row: PreferenceRow): ResolvedMemberPreferences {
+/**
+ * A member's resolved preferences, selected from `mp` (`member_preferences`)
+ * and `ws` (the workspace's `workspace_settings`, left-joined) as
+ * `PreferenceRow`. The session read selects the same columns (AUD-F3).
+ */
+export const memberPreferenceColumns = sql`
+  mp.timezone, mp.locale,
+  coalesce(mp.timezone, ws.default_timezone, 'UTC') as "effectiveTimezone",
+  mp.temperature_scale as "temperatureScale",
+  mp.measurement_system as "measurementSystem",
+  mp.currency_code::text as "currencyCode",
+  mp.contact_sort_order as "contactSortOrder",
+  mp.contact_name_order as "contactNameOrder",
+  mp.fluid_layout as "fluidLayout",
+  ${reminderColumns}
+`;
+
+export function preferences(row: PreferenceRow): ResolvedMemberPreferences {
   return {
     effectiveTimezone: row.effectiveTimezone,
     contactNameOrder: row.contactNameOrder,
@@ -72,15 +89,7 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
     command: Parameters<WorkspaceSettingsRepository["getPreferences"]>[0],
   ): Promise<ResolvedMemberPreferences | undefined> {
     const result = await sql<PreferenceRow>`
-      select mp.timezone, mp.locale,
-        coalesce(mp.timezone, ws.default_timezone, 'UTC') as "effectiveTimezone",
-        mp.temperature_scale as "temperatureScale",
-        mp.measurement_system as "measurementSystem",
-        mp.currency_code::text as "currencyCode",
-        mp.contact_sort_order as "contactSortOrder",
-        mp.contact_name_order as "contactNameOrder",
-        mp.fluid_layout as "fluidLayout",
-        ${reminderColumns}
+      select ${memberPreferenceColumns}
       from crm.workspace_members wm
       join crm.member_preferences mp on mp.member_id = wm.id
       join crm.workspaces w on w.id = wm.workspace_id

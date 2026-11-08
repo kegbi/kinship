@@ -21,19 +21,17 @@ import {
   mountPending,
   mountSettled,
 } from "../../../testing/render.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 import { mountPeopleDirectory } from "./people-directory.tsx";
 
 const { person: personId, workspace: workspaceId } = ids;
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const PEOPLE = "GET /api/v1/people";
 const TAGS = "GET /api/v1/people/tag-options";
 const FACET = "GET /api/v1/people/tag-facet";
 const ENTRY = "POST /api/v1/application-entry";
 
 const session = jsonResponse(workspaceSession());
-const savedPreferences = (overrides = {}) =>
-  jsonResponse({ preferences: preferences(overrides), status: "ready" });
 const noTags = jsonResponse({ options: [], status: "ready" });
 const noFacet = jsonResponse({
   lifecycle: "active",
@@ -122,7 +120,6 @@ describe("PEOPLE-002 people directory island", () => {
         page([person()], { nextCursor: "next" }),
         page([person({ id: "other", givenName: "Grace" })]),
       ],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -154,7 +151,6 @@ describe("PEOPLE-002 people directory island", () => {
           page([person(), person({ id: "grace", givenName: "Grace" })]),
           page([person({ id: "grace", givenName: "Grace" })]),
         ],
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [TAGS]: noTags,
         [FACET]: noFacet,
@@ -256,7 +252,6 @@ describe("PEOPLE-002 people directory island", () => {
     const held = deferred<Response>();
     const api = stubApi({
       [PEOPLE]: [page([person()], { nextCursor: "next" }), held.promise],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -303,11 +298,12 @@ describe("PEOPLE-002 people directory island", () => {
           middleName: "Byron",
           nickname: "Enchantress",
         })]),
-        [PREFERENCES]: savedPreferences({
-          contactNameOrder: "family_given_nickname",
-          contactSortOrder: "family_name_asc",
-        }),
-        [SESSION]: session,
+        [SESSION]: jsonResponse(workspaceSession({
+          preferences: preferences({
+            contactNameOrder: "family_given_nickname",
+            contactSortOrder: "family_name_asc",
+          }),
+        })),
         [TAGS]: noTags,
         [FACET]: noFacet,
       });
@@ -319,11 +315,9 @@ describe("PEOPLE-002 people directory island", () => {
         explicitSort ? "given-name" : "family-name",
       );
       expect(location.search).toBe(explicitSort ? "?sort=given-name" : "");
-      expect(
-        api.requests().find((request) =>
-          request.url.pathname === "/api/v1/settings/preferences"
-        )?.headers.get("X-Workspace-Id"),
-      ).toBe(workspaceId);
+      // The order comes with the session; nothing reads it apart (AUD-F3).
+      expect(api.calls().filter((call) => call.includes("/settings/")))
+        .toEqual([]);
       expect(region().getByLabelText("Sort by")).toHaveProperty(
         "value",
         explicitSort ? "given-name" : "family-name",
@@ -337,7 +331,6 @@ describe("PEOPLE-002 people directory island", () => {
     const held = deferred<Response>();
     const api = stubApi({
       [PEOPLE]: held.promise,
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: noFacet,
       [TAGS]: jsonResponse({
@@ -410,7 +403,6 @@ describe("PEOPLE-002 people directory island", () => {
           familyName: "Lovelace",
         }),
       ]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -437,7 +429,6 @@ describe("PEOPLE-002 people directory island", () => {
         }),
         person({ givenName: "Grace", id: crypto.randomUUID() }),
       ]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -462,7 +453,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup("active", "?search=Nobody");
     stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -488,7 +478,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup("archived");
     stubApi({
       [PEOPLE]: problemResponse(503),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -507,7 +496,6 @@ describe("PEOPLE-002 people directory island", () => {
     const held = deferred<Response>();
     const api = stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: held.promise,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -534,7 +522,6 @@ describe("PEOPLE-002 people directory island", () => {
     typed.focus();
     const api = stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -553,7 +540,6 @@ describe("PEOPLE-002 people directory island", () => {
     typed.focus();
     const api = stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -570,7 +556,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup("archived");
     stubApi({
       [PEOPLE]: page([], { lifecycle: "archived" }),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -583,6 +568,8 @@ describe("PEOPLE-002 people directory island", () => {
     expect(region().queryByRole("link", { name: "Add a person" })).toBeNull();
     unmount();
 
+    // The next page is a new document, with no session of its own yet.
+    clearSessionCache();
     markup();
     stubApi({
       [ENTRY]: problemResponse(409, { code: "entry_handoff_invalid" }),
@@ -599,7 +586,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup();
     stubApi({
       [PEOPLE]: [problemResponse(403), page([person()])],
-      [PREFERENCES]: problemResponse(503),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -619,7 +605,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup();
     const api = stubApi({
       [PEOPLE]: page([person()]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: [problemResponse(503), session],
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -643,7 +628,6 @@ describe("PEOPLE-002 people directory island", () => {
         problemResponse(409, { code: "stale_cursor", detail: "Changed" }),
         page([person()]),
       ],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -673,7 +657,6 @@ describe("PEOPLE-002 people directory island", () => {
         page([person()], { nextCursor: "next" }),
         second.promise,
       ],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: noTags,
       [FACET]: noFacet,
@@ -701,7 +684,6 @@ describe("PEOPLE-002 people directory island", () => {
     const tagId = "00000000-0000-4000-8000-000000000090";
     const api = stubApi({
       [PEOPLE]: [page([person()]), page([person()]), page([])],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: noFacet,
       [TAGS]: jsonResponse({
@@ -743,7 +725,6 @@ describe("PEOPLE-002 people directory island", () => {
     const selected = { id: selectedId, name: "Selected beyond first page" };
     const api = stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: noFacet,
       [TAGS]: [
@@ -818,7 +799,6 @@ describe("PEOPLE-002 people directory island", () => {
     markup("active", `?tag=${selectedId}`);
     stubApi({
       [PEOPLE]: page([]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: noFacet,
       [TAGS]: [
@@ -890,7 +870,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     markup();
     stubApi({
       [PEOPLE]: page([ada, grace, alan]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -933,7 +912,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     const api = stubApi({
       [BULK]: held.promise,
       [PEOPLE]: [page([ada, grace, alan]), page([ada, grace, alan])],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1002,7 +980,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     const api = stubApi({
       [BULK]: answer("untag", [{ outcome: "done", personId }]),
       [PEOPLE]: [page([ada]), page([ada])],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1043,7 +1020,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         { code: "not_found", outcome: "failed", personId: grace.id },
       ]),
       [PEOPLE]: [page([ada, grace]), page([])],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1115,7 +1091,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         page([person({ lifecycle: "archived" })], { lifecycle: "archived" }),
         page([{ ...grace, lifecycle: "archived" }], { lifecycle: "archived" }),
       ],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1190,7 +1165,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     try {
       const api = stubApi({
         [PEOPLE]: page([ada, grace]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [TAGS]: tags,
         [FACET]: noFacet,
@@ -1249,7 +1223,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     try {
       stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [TAGS]: noTags,
         [FACET]: noFacet,
@@ -1293,7 +1266,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         () => Promise.reject(new Error("offline")),
       ],
       [PEOPLE]: page([ada]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1339,7 +1311,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
     markup();
     stubApi({
       [PEOPLE]: [page([ada]), page([ada])],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1368,7 +1339,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       }));
     stubApi({
       [PEOPLE]: page(many),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [TAGS]: tags,
       [FACET]: noFacet,
@@ -1398,7 +1368,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       const api = stubApi({
         [BULK]: answer("tag", [{ outcome: "done", personId }]),
         [PEOPLE]: [page([ada]), page([ada])],
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: ({ url }) => {
@@ -1484,7 +1453,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       markup();
       const api = stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: ({ url }) =>
@@ -1540,7 +1508,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       markup();
       const api = stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [noTags, problemResponse(503)],
@@ -1567,7 +1534,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       markup();
       stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
@@ -1612,7 +1578,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       const next = deferred<Response>();
       const api = stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
@@ -1674,7 +1639,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       const laterPage = deferred<Response>();
       const api = stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
@@ -1762,7 +1726,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
       const stale = deferred<Response>();
       stubApi({
         [PEOPLE]: page([ada]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: ({ url }) => {
@@ -1825,7 +1788,6 @@ describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
     markup();
     const api = stubApi({
       [PEOPLE]: page([person()]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: facet(true),
       [TAGS]: noTags,
@@ -1877,7 +1839,6 @@ describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
       markup();
       stubApi({
         [PEOPLE]: page([person()]),
-        [PREFERENCES]: savedPreferences(),
         [SESSION]: session,
         [FACET]: answer,
         [TAGS]: noTags,
@@ -1895,7 +1856,6 @@ describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
         page([person({ isStarred: true })]),
         page([person({ isStarred: true })]),
       ],
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: noFacet,
       [TAGS]: noTags,
@@ -1946,7 +1906,6 @@ describe("PEOPLE-010 tag facet under a newer tag read", () => {
     const slow = deferred<Response>();
     const api = stubApi({
       [PEOPLE]: page([person()]),
-      [PREFERENCES]: savedPreferences(),
       [SESSION]: session,
       [FACET]: [slow.promise],
       [TAGS]: noTags,

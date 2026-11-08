@@ -176,13 +176,15 @@ export function TaskSurface(props: TaskSurfaceProps) {
   const start = async (): Promise<void> => {
     const answer = await contextRequest<Context>(async () => {
       let workspaceId = props.workspaceId;
+      let preferences = props.timePreferences;
       if (!workspaceId) {
         const session = await resolveWorkspaceSession();
         if (session.status !== "ready") throw new Error("No session");
         workspaceId = session.session.workspace.id;
+        preferences ??= session.session.preferences;
+      } else {
+        preferences ??= await loadTimePreferences(workspaceId);
       }
-      const preferences = props.timePreferences ??
-        await loadTimePreferences(workspaceId);
       const directory = page
         ? await settle(() => listPeople({ limit: PEOPLE_PAGE }, workspaceId))
         : undefined;

@@ -10,11 +10,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -24,7 +20,6 @@ import {
 import { EXPORTS_ISLAND, mountExports } from "./exports.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const LIST = "GET /api/v1/exports";
 const CREATE = "POST /api/v1/exports";
 const DOWNLOAD = "POST /api/v1/exports/:id/downloads";
@@ -55,7 +50,6 @@ const failedRun = {
 };
 const listed = (...exports: object[]) => jsonResponse({ exports });
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 
@@ -134,7 +128,6 @@ describe("EXPORT-001 settings export", () => {
     );
     expect(api.calls()).toEqual([
       SESSION,
-      PREFERENCES,
       LIST,
       CREATE,
       LIST,

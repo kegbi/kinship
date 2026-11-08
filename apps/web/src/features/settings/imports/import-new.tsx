@@ -61,6 +61,7 @@ import {
   withinStagingLimit,
 } from "./imports.ts";
 import { ReportCounts } from "./import-report.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 export const IMPORT_NEW_ISLAND = "settings-import-new";
 
@@ -301,6 +302,9 @@ export function NewImport(
       return;
     }
     committing.current = false;
+    // A Monica commit can set the member's own time zone, which the session's
+    // preferences carry (AUD-F3): the next page reads the session again.
+    clearSessionCache();
     const completed = {
       created: result.data.peopleCreated,
       importId: result.data.importId,

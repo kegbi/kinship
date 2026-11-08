@@ -1,11 +1,8 @@
 // @vitest-environment happy-dom
 
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getMemberPreferences,
-  type ResolvedMemberPreferences,
-} from "../../../../../packages/contracts/generated/auth-client.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedMemberPreferences } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   deferred,
   jsonResponse,
@@ -20,19 +17,12 @@ import {
   mountPending,
   mountSettled,
 } from "../../testing/render.tsx";
+import { clearSessionCache } from "../../lib/workspace-context.ts";
 import { SEARCH_DEBOUNCE_MS } from "./global-people-search.tsx";
 import {
   GLOBAL_PEOPLE_SEARCH_ISLAND,
   mountGlobalPeopleSearch,
 } from "./mount.tsx";
-
-vi.mock(
-  "../../../../../packages/contracts/generated/auth-client.ts",
-  async (original) => ({
-    ...await original<Record<string, unknown>>(),
-    getMemberPreferences: vi.fn(),
-  }),
-);
 
 const workspaceId = ids.workspace;
 const adaId = "00000000-0000-4000-8000-000000000101";
@@ -41,22 +31,9 @@ const session = workspaceSession({
   member: { id: ids.member, role: "member" },
 });
 
-const savedPreferences = (
-  contactNameOrder: ResolvedMemberPreferences["contactNameOrder"],
-) => ({
-  ok: true as const,
-  value: {
-    preferences: preferences({ contactNameOrder }),
-    status: "ready" as const,
-    supportedCurrencyCodes: [],
-  },
-});
-
-beforeEach(() => {
-  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue(
-    savedPreferences("given_family_nickname"),
-  );
-});
+/** The member's session, carrying the preferences it was saved with. */
+const sessionWith = (overrides: Partial<ResolvedMemberPreferences>) =>
+  jsonResponse({ ...session, preferences: preferences(overrides) });
 
 afterEach(() => {
   vi.useRealTimers();
@@ -293,10 +270,11 @@ describe("UXD-004 global people search", () => {
     "APR-008 recognizes an existing identity %s after changing display order",
     async (query) => {
       markup();
-      vi.mocked(getMemberPreferences).mockResolvedValue(
-        savedPreferences("family_given_nickname"),
+      stubPeople(
+        [directoryPerson(adaId, "Ada", "Lovelace", "Countess")],
+        [],
+        sessionWith({ contactNameOrder: "family_given_nickname" }),
       );
-      stubPeople([directoryPerson(adaId, "Ada", "Lovelace", "Countess")]);
       await mount();
       await search(query);
       await waitFor(() =>
@@ -364,21 +342,20 @@ describe("UXD-004 global people search", () => {
 
   it("APR-008 formats search results and recent identities with explicit saved preferences", async () => {
     markup();
-    vi.mocked(getMemberPreferences).mockResolvedValue(
-      savedPreferences("family_given_nickname"),
+    const api = stubPeople(
+      [directoryPerson(adaId, "Ada", "Lovelace")],
+      [{ id: adaId, name: "Do not parse this label", archived: false }],
+      sessionWith({ contactNameOrder: "family_given_nickname" }),
     );
-    stubPeople([directoryPerson(adaId, "Ada", "Lovelace")], [{
-      id: adaId,
-      name: "Do not parse this label",
-      archived: false,
-    }]);
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     await waitFor(() => expect(optionNames()).toEqual(["Lovelace Ada"]));
     await search("Ada");
     await waitFor(() => expect(statusLine()).toBe("1 person found"));
     expect(optionNames()[0]).toBe("Lovelace Ada");
-    expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
+    // The order comes with the session; nothing reads it apart (AUD-F3).
+    expect(api.calls().filter((call) => call.includes("/settings/")))
+      .toEqual([]);
   });
 
   it("PEOPLE-007 draws each person row with their avatar and initials", async () => {
@@ -442,7 +419,8 @@ describe("UXD-004 global people search", () => {
     expect(labels).not.toContain("Workspace actions · Workspace danger zone");
 
     unmount();
-    sessionStorage.clear();
+    // The admin's page is a new document with its own session.
+    clearSessionCache();
     markup();
     stubPeople(
       [],
@@ -1089,15 +1067,11 @@ describe("SEARCH-001 workspace search groups", () => {
 
   it("asks for people in the member's contact sort order", async () => {
     markup();
-    vi.mocked(getMemberPreferences).mockResolvedValue({
-      ok: true,
-      value: {
-        preferences: preferences({ contactSortOrder: "family_name_asc" }),
-        status: "ready",
-        supportedCurrencyCodes: [],
-      },
-    });
-    const api = stubPeople();
+    const api = stubPeople(
+      [],
+      [],
+      sessionWith({ contactSortOrder: "family_name_asc" }),
+    );
     await mount();
     await search("Ada");
     await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));

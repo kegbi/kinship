@@ -2,11 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getMemberPreferences,
-  type ResolvedMemberPreferences,
-} from "../../../../../packages/contracts/generated/auth-client.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ApiAnswer,
   deferred,
@@ -26,14 +22,6 @@ import {
 } from "../../testing/render.tsx";
 import { mountQuickCapture, QUICK_CAPTURE_ISLAND } from "./mount.tsx";
 
-vi.mock(
-  "../../../../../packages/contracts/generated/auth-client.ts",
-  async (original) => ({
-    ...await original<Record<string, unknown>>(),
-    getMemberPreferences: vi.fn(),
-  }),
-);
-
 const personId = ids.person;
 const otherId = "00000000-0000-4000-8000-000000000101";
 const SESSION = "GET /api/v1/session";
@@ -42,23 +30,6 @@ const OPTIONS = "GET /api/v1/interaction-options";
 const SAVE = "POST /api/v1/interactions";
 const session = workspaceSession({
   member: { id: ids.member, role: "member" },
-});
-
-const savedPreferences = (
-  contactNameOrder: ResolvedMemberPreferences["contactNameOrder"],
-) => ({
-  ok: true as const,
-  value: {
-    preferences: preferences({ contactNameOrder }),
-    status: "ready" as const,
-    supportedCurrencyCodes: [],
-  },
-});
-
-beforeEach(() => {
-  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue(
-    savedPreferences("given_family_nickname"),
-  );
 });
 
 afterEach(() => {
@@ -359,10 +330,11 @@ describe("INTERACTION-001 Quick capture", () => {
 
   it("APR-008 applies saved name order to initial and searched capture participants", async () => {
     shell();
-    vi.mocked(getMemberPreferences).mockResolvedValue(
-      savedPreferences("family_given_nickname"),
-    );
     const api = stub({
+      [SESSION]: jsonResponse(workspaceSession({
+        member: { id: ids.member, role: "member" },
+        preferences: preferences({ contactNameOrder: "family_given_nickname" }),
+      })),
       [PEOPLE]: [
         peoplePage([person(otherId, "Grace", { familyName: "Hopper" })]),
         peoplePage([person(personId, "Ada", { familyName: "Lovelace" })]),
@@ -375,7 +347,9 @@ describe("INTERACTION-001 Quick capture", () => {
     await waitFor(() =>
       expect(optionNames(participants())).toEqual(["Lovelace Ada"])
     );
-    expect(getMemberPreferences).toHaveBeenCalledWith(ids.workspace);
+    // The order comes with the session; nothing reads it apart (AUD-F3).
+    expect(api.calls().filter((call) => call.includes("/settings/")))
+      .toEqual([]);
     expect(api.calls()).toContain(
       "GET /api/v1/people?limit=20&search=Ada&starredFirst=true",
     );

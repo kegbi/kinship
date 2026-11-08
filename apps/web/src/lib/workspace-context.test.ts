@@ -9,7 +9,10 @@ import {
   unreachable,
 } from "../testing/api.ts";
 import {
+  clearSessionCache,
   resolveWorkspaceSession,
+  setActiveWorkspace,
+  updateCachedSessionPreferences,
   updateCachedSessionUiState,
 } from "./workspace-context.ts";
 
@@ -17,8 +20,20 @@ const SESSION_CACHE_KEY = "kinship.session";
 const SESSION = "GET /api/v1/session";
 const ENTRY = "POST /api/v1/application-entry";
 
+const preferences = {
+  contactNameOrder: "given_family_nickname",
+  contactSortOrder: "given_name_asc",
+  effectiveTimezone: "UTC",
+  fluidLayout: false,
+  locale: "en",
+  measurementSystem: "metric",
+  reminderDelivery: "in_app",
+  temperatureScale: "celsius",
+} as const;
+
 const session = {
   member: { id: "member", role: "owner" },
+  preferences,
   principal: { userId: "user" },
   status: "authenticated",
   workspace: { id: "workspace", name: "Circle" },
@@ -26,6 +41,7 @@ const session = {
 };
 
 afterEach(() => {
+  clearSessionCache();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -64,11 +80,14 @@ describe("protected workspace session resolution", () => {
         "/api/v1/session",
         expect.anything(),
       );
+      // The rest of the document reuses what the API answered (AUD-F3),
+      // never the entry storage could not vouch for.
       await expect(context.resolveWorkspaceSession()).resolves.toEqual({
         session,
         status: "ready",
       });
-      expect(api.fetch).toHaveBeenCalledTimes(2);
+      expect(api.fetch).toHaveBeenCalledTimes(1);
+      context.clearSessionCache();
     },
   );
 
@@ -369,5 +388,177 @@ describe("protected workspace session resolution", () => {
     expect(late).toHaveBeenCalledWith({ session: fresh, status: "ready" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(late).toHaveBeenCalledOnce();
+  });
+});
+
+describe("AUD-F3 one session read per document", () => {
+  it("serves every later caller of the document the session it resolved", async () => {
+    const api = stubApi({
+      [SESSION]: jsonResponse({ ...session, preferences }),
+    });
+
+    const first = await resolveWorkspaceSession();
+    // A code-split island whose chunk arrives after the read has settled.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const late = await resolveWorkspaceSession();
+
+    expect(late).toEqual({
+      session: { ...session, preferences },
+      status: "ready",
+    });
+    expect(first).toEqual(late);
+    expect(api.calls()).toEqual([SESSION]);
+  });
+
+  it("reads the network again after the cache is cleared or the workspace changes", async () => {
+    const api = stubApi({ [SESSION]: jsonResponse(session) });
+
+    await resolveWorkspaceSession();
+    clearSessionCache();
+    await resolveWorkspaceSession();
+    expect(setActiveWorkspace("workspace")).toBe(true);
+    await resolveWorkspaceSession();
+
+    expect(api.calls()).toEqual([SESSION, SESSION, SESSION]);
+  });
+
+  it("does not serve a remembered session past the cache's lifetime", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const api = stubApi({ [SESSION]: jsonResponse(session) });
+
+    await resolveWorkspaceSession();
+    vi.setSystemTime(new Date("2026-08-30T12:01:00Z"));
+    await resolveWorkspaceSession();
+
+    expect(api.calls()).toEqual([SESSION, SESSION]);
+  });
+
+  it("serves a stored session that ages out while its revalidation is still on the wire", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-30T12:00:59.500Z"));
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({
+        savedAt: Date.parse("2026-08-30T12:00:00Z"),
+        session: { ...session, preferences },
+      }),
+    );
+    const revalidation = deferred<Response>();
+    const api = stubApi({ [SESSION]: revalidation.promise });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+
+    await context.resolveWorkspaceSession();
+    vi.setSystemTime(new Date("2026-08-30T12:01:05Z"));
+    await expect(context.resolveWorkspaceSession()).resolves.toEqual({
+      session: { ...session, preferences },
+      status: "ready",
+    });
+    expect(api.calls()).toEqual([SESSION]);
+    revalidation.resolve(jsonResponse({ ...session, preferences }));
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null")
+          ?.savedAt,
+      ).toBeGreaterThanOrEqual(Date.parse("2026-08-30T12:01:05Z"))
+    );
+    context.clearSessionCache();
+  });
+
+  it("reads a stored entry without preferences, written before they came with the session, as a miss", async () => {
+    const { preferences: _absent, ...legacy } = session;
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now(), session: legacy }),
+    );
+    const api = stubApi({ [SESSION]: jsonResponse(session) });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+
+    // The legacy entry is not served; the API's answer is.
+    await expect(context.resolveWorkspaceSession()).resolves.toEqual({
+      session,
+      status: "ready",
+    });
+    expect(api.calls()).toEqual([SESSION]);
+    context.clearSessionCache();
+  });
+
+  it("replaces the preferences this document and the next one read after a save", async () => {
+    stubApi({ [SESSION]: jsonResponse({ ...session, preferences }) });
+    await resolveWorkspaceSession();
+    const saved = { ...preferences, locale: "sr", fluidLayout: true };
+
+    updateCachedSessionPreferences("workspace", saved);
+
+    await expect(resolveWorkspaceSession()).resolves.toEqual({
+      session: { ...session, preferences: saved },
+      status: "ready",
+    });
+    expect(
+      JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null").session
+        .preferences,
+    ).toEqual(saved);
+  });
+
+  it("never applies another workspace's preferences to the session", async () => {
+    stubApi({ [SESSION]: jsonResponse({ ...session, preferences }) });
+    await resolveWorkspaceSession();
+
+    updateCachedSessionPreferences("another-workspace", {
+      ...preferences,
+      locale: "de",
+    });
+
+    await expect(resolveWorkspaceSession()).resolves.toEqual({
+      session: { ...session, preferences },
+      status: "ready",
+    });
+    expect(
+      JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null").session
+        .preferences,
+    ).toEqual(preferences);
+  });
+
+  it("keeps a saved UI state for the rest of the document", async () => {
+    stubApi({ [SESSION]: jsonResponse(session) });
+    await resolveWorkspaceSession();
+
+    updateCachedSessionUiState({ theme: "dark" });
+
+    await expect(resolveWorkspaceSession()).resolves.toEqual({
+      session: { ...session, uiState: { theme: "dark" } },
+      status: "ready",
+    });
+  });
+
+  it("hands later callers the revalidated session once it changes", async () => {
+    sessionStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        session: { ...session, preferences },
+      }),
+    );
+    const fresh = {
+      ...session,
+      preferences: { ...preferences, locale: "fr" },
+    };
+    const api = stubApi({ [SESSION]: jsonResponse(fresh) });
+    vi.resetModules();
+    const context = await import("./workspace-context.ts");
+
+    await context.resolveWorkspaceSession();
+    const revalidated = vi.fn();
+    context.onSessionRevalidated(revalidated);
+    await vi.waitFor(() => expect(revalidated).toHaveBeenCalledOnce());
+
+    await expect(context.resolveWorkspaceSession()).resolves.toEqual({
+      session: fresh,
+      status: "ready",
+    });
+    expect(api.calls()).toEqual([SESSION]);
+    context.clearSessionCache();
   });
 });

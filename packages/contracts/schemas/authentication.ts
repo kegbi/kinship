@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 import { legalDocument } from "./governance.ts";
-import { memberUiState } from "./settings.ts";
+import { memberUiState, resolvedMemberPreferences } from "./settings.ts";
 
 export const authenticatedMember = z.strictObject({
   id: z.uuid(),
@@ -73,6 +73,12 @@ export const sessionContext = z.strictObject({
   workspaces: z.array(authenticatedWorkspace).min(1),
   requiredLegalDocuments: z.array(legalDocument),
   uiState: memberUiState.optional(),
+  /**
+   * The member's own resolved preferences in the active workspace, read with
+   * the UI state (AUD-F3). Absent only when that read could not answer; the
+   * preferences form keeps its own read for the supported currencies.
+   */
+  preferences: resolvedMemberPreferences.optional(),
 }).meta({ id: "SessionContext" });
 
 export const signInInput = z.strictObject({

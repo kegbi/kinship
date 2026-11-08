@@ -45,10 +45,7 @@ import {
   settle,
   useLatestRequest,
 } from "../../../islands/core/index.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../../lib/time-presentation.ts";
+import { type TimePreferences } from "../../../lib/time-presentation.ts";
 import { nameInitials } from "../../../lib/person-name.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
@@ -80,10 +77,8 @@ async function readAttention(): Promise<ApiResult<AttentionAnswer>> {
   if (session.status !== "ready") throw new Error("No workspace session");
   const workspaceId = session.session.workspace.id;
   const principalId = session.session.principal.userId;
-  const [snapshot, preferences] = await Promise.all([
-    getTodayAttention(workspaceId),
-    loadTimePreferences(workspaceId),
-  ]);
+  const snapshot = await getTodayAttention(workspaceId);
+  const preferences = session.session.preferences;
   return snapshot.ok
     ? {
       ok: true,

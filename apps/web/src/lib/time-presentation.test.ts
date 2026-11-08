@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  jsonResponse,
-  problemResponse,
-  stubApi,
-  unreachable,
-} from "../testing/api.ts";
+import { jsonResponse, stubApi, unreachable } from "../testing/api.ts";
+import { ids, preferences, workspaceSession } from "../testing/fixtures.ts";
 import {
   formatCalendarDate,
   formatInstant,
@@ -12,7 +8,7 @@ import {
   loadTimePreferences,
 } from "./time-presentation.ts";
 
-const PREFERENCES = "GET /api/v1/settings/preferences";
+const SESSION = "GET /api/v1/session";
 
 describe("APR-009 explicit date presentation", () => {
   it.each([
@@ -125,9 +121,10 @@ describe("APR-009 explicit date presentation", () => {
       ).toBe(expected);
     }
   });
-  it("does not use the browser timezone when preferences cannot be loaded", async () => {
-    stubApi({ [PREFERENCES]: unreachable });
+  it("does not use the browser timezone when the session cannot be loaded", async () => {
+    const api = stubApi({ [SESSION]: unreachable });
     expect(await loadTimePreferences("workspace-a")).toBeUndefined();
+    expect(api.calls()).toEqual([SESSION]);
     expect(formatInstant("2026-09-04T22:10:00Z", undefined)).toBe(
       "Time unavailable",
     );
@@ -144,28 +141,16 @@ describe("APR-009 explicit date presentation", () => {
       }),
     ).toBe("Time unavailable");
   });
-  it("loads each workspace's resolved preferences without caching another membership", async () => {
-    const api = stubApi({
-      [PREFERENCES]: ({ headers }) =>
-        jsonResponse({
-          status: "ready",
-          preferences: {
-            locale: "de-DE",
-            effectiveTimezone: headers.get("X-Workspace-Id") === "a"
-              ? "Europe/Belgrade"
-              : "Asia/Tokyo",
-          },
-        }),
-    });
-    expect(await loadTimePreferences("a")).toEqual({
-      locale: "de-DE",
+  it("AUD-F3 takes the preferences from the session, and only for its own workspace", async () => {
+    const saved = preferences({
       effectiveTimezone: "Europe/Belgrade",
-    });
-    expect(await loadTimePreferences("b")).toEqual({
       locale: "de-DE",
-      effectiveTimezone: "Asia/Tokyo",
     });
-    api.route(PREFERENCES, problemResponse(403, { title: "Forbidden" }));
-    expect(await loadTimePreferences("b")).toBeUndefined();
+    const api = stubApi({
+      [SESSION]: jsonResponse(workspaceSession({ preferences: saved })),
+    });
+    expect(await loadTimePreferences(ids.workspace)).toEqual(saved);
+    expect(await loadTimePreferences("another-workspace")).toBeUndefined();
+    expect(api.calls()).toEqual([SESSION]);
   });
 });

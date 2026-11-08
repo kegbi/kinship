@@ -52,7 +52,6 @@ const CHANGE = "PATCH /api/v1/tasks/:taskId";
 const COMPLETION = "PUT /api/v1/tasks/:taskId/completion";
 const PEOPLE = "GET /api/v1/people";
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 
 const listed = (items: readonly object[], nextCursor?: string) =>
   jsonResponse({
@@ -128,10 +127,6 @@ const mountPage = () => mountSettled(() => mountTasksPage());
 function pageRoutes(people: Response = directory()) {
   return {
     [SESSION]: jsonResponse(workspaceSession()),
-    [PREFERENCES]: jsonResponse({
-      preferences: preferences(),
-      status: "ready",
-    }),
     [PEOPLE]: people,
   };
 }

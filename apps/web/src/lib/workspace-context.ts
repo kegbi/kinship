@@ -2,6 +2,7 @@ import {
   consumeApplicationEntry,
   getSession,
   type MemberUiState,
+  type ResolvedMemberPreferences,
   type SessionContext,
 } from "../../../../packages/contracts/generated/auth-client.ts";
 
@@ -36,10 +37,15 @@ let activeRevalidation:
   | Promise<WorkspaceSessionResolution | undefined>
   | undefined;
 let completedRevalidation: WorkspaceSessionResolution | undefined;
-// This is a cross-document accelerator, not a same-document memo:
-// optimisticSession serves concurrent startup consumers during revalidation,
-// while later resolutions in a long-lived document make a real round trip.
-let optimisticSession: SessionContext | undefined;
+/**
+ * The session this document resolved (FEQ-03, AUD-F3). Every later caller of
+ * the document gets it, so an island whose chunk arrives after the first read
+ * settled reads nothing; `sessionStorage` carries it to the next document.
+ * It keeps the storage entry's lifetime and dies with the document: only
+ * `clearSessionCache` (sign-out, a workspace switch, lost access) or its age
+ * sends a caller back to the network.
+ */
+let documentSession: SessionCacheEntry | undefined;
 let sessionCacheChecked = false;
 
 interface SessionCacheEntry {
@@ -74,7 +80,12 @@ function isSessionCacheEntry(value: unknown): value is SessionCacheEntry {
     Array.isArray(session.workspaces) &&
     session.workspaces.every(isWorkspace) &&
     (session.requiredLegalDocuments === undefined ||
-      Array.isArray(session.requiredLegalDocuments));
+      Array.isArray(session.requiredLegalDocuments)) &&
+    // An entry without preferences was written before the session carried
+    // them, or when they could not be read: the page reads them afresh.
+    isRecord(session.preferences) &&
+    typeof session.preferences.locale === "string" &&
+    typeof session.preferences.effectiveTimezone === "string";
 }
 
 function isCurrentSessionCacheEntry(
@@ -86,6 +97,25 @@ function isCurrentSessionCacheEntry(
   return age >= 0 && age < SESSION_CACHE_TTL_MS &&
     (activeWorkspace === null ||
       activeWorkspace === value.session.workspace.id);
+}
+
+/**
+ * The document's session while it is young, or while its revalidation is on
+ * the wire, and while its workspace is the selected one.
+ */
+function currentDocumentSession(): SessionCacheEntry | undefined {
+  const entry = documentSession;
+  if (!entry) return undefined;
+  const age = Date.now() - entry.savedAt;
+  const activeWorkspace = readActiveWorkspace();
+  if (
+    (activeRevalidation !== undefined ||
+      age >= 0 && age < SESSION_CACHE_TTL_MS) &&
+    (activeWorkspace === undefined ||
+      activeWorkspace === entry.session.workspace.id)
+  ) return entry;
+  documentSession = undefined;
+  return undefined;
 }
 
 function readSessionCache(): SessionCacheEntry | undefined {
@@ -110,6 +140,7 @@ function readSessionCache(): SessionCacheEntry | undefined {
 }
 
 function writeSessionCache(session: SessionContext): void {
+  documentSession = { savedAt: Date.now(), session };
   try {
     sessionStorage.setItem(
       SESSION_CACHE_KEY,
@@ -120,17 +151,34 @@ function writeSessionCache(session: SessionContext): void {
   }
 }
 
-export function updateCachedSessionUiState(uiState: MemberUiState): void {
+/**
+ * Applies a saved change to the document's session and to the stored one,
+ * without refreshing either's age; with a `workspaceId`, only to a session of
+ * that workspace.
+ */
+function updateCachedSession(
+  workspaceId: string | undefined,
+  change: (session: SessionContext) => SessionContext,
+): void {
+  const belongs = (session: SessionContext): boolean =>
+    workspaceId === undefined || session.workspace.id === workspaceId;
+  const remembered = currentDocumentSession();
+  if (remembered && belongs(remembered.session)) {
+    documentSession = {
+      savedAt: remembered.savedAt,
+      session: change(remembered.session),
+    };
+  }
   try {
     const raw = sessionStorage.getItem(SESSION_CACHE_KEY);
     if (!raw) return;
     const entry: unknown = JSON.parse(raw);
-    if (!isCurrentSessionCacheEntry(entry)) return;
+    if (!isCurrentSessionCacheEntry(entry) || !belongs(entry.session)) return;
     sessionStorage.setItem(
       SESSION_CACHE_KEY,
       JSON.stringify({
         savedAt: entry.savedAt,
-        session: { ...entry.session, uiState },
+        session: change(entry.session),
       }),
     );
   } catch {
@@ -138,8 +186,24 @@ export function updateCachedSessionUiState(uiState: MemberUiState): void {
   }
 }
 
+export function updateCachedSessionUiState(uiState: MemberUiState): void {
+  updateCachedSession(undefined, (session) => ({ ...session, uiState }));
+}
+
+/**
+ * Replaces the preferences the session carries once the member saved them in
+ * `workspaceId` (AUD-F3); a session of another workspace keeps its own.
+ */
+export function updateCachedSessionPreferences(
+  workspaceId: string,
+  preferences: ResolvedMemberPreferences,
+): void {
+  updateCachedSession(workspaceId, (session) => ({ ...session, preferences }));
+}
+
 export function clearSessionCache(): void {
   completedRevalidation = undefined;
+  documentSession = undefined;
   try {
     sessionStorage.removeItem(SESSION_CACHE_KEY);
   } catch {
@@ -237,28 +301,27 @@ async function revalidateSession(
 function startSessionRevalidation(cachedSession: SessionContext): void {
   if (activeRevalidation) return;
   completedRevalidation = undefined;
-  optimisticSession = cachedSession;
   const revalidation = revalidateSession(cachedSession);
   activeRevalidation = revalidation;
   void revalidation.then((resolution) => {
     completedRevalidation = resolution;
   }).finally(() => {
-    if (activeRevalidation === revalidation) {
-      activeRevalidation = undefined;
-      optimisticSession = undefined;
-    }
+    if (activeRevalidation === revalidation) activeRevalidation = undefined;
   });
 }
 
 export function resolveWorkspaceSession(): Promise<WorkspaceSessionResolution> {
   if (activeResolution) return activeResolution;
-  if (activeRevalidation && optimisticSession) {
-    return Promise.resolve({ session: optimisticSession, status: "ready" });
+  const remembered = currentDocumentSession();
+  if (remembered) {
+    return Promise.resolve({ session: remembered.session, status: "ready" });
   }
   if (!sessionCacheChecked) {
     sessionCacheChecked = true;
     const cached = readSessionCache();
     if (cached) {
+      // The stored entry serves the document while it is revalidated.
+      documentSession = cached;
       startSessionRevalidation(cached.session);
       return Promise.resolve({ session: cached.session, status: "ready" });
     }

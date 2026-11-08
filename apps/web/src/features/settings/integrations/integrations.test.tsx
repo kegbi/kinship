@@ -15,11 +15,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -27,9 +23,9 @@ import {
   mountSettled,
 } from "../../../testing/render.tsx";
 import { INTEGRATIONS_ISLAND, mountIntegrations } from "./integrations.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const LIST = "GET /api/v1/settings/integrations/dav";
 const CREATE = "POST /api/v1/settings/integrations/dav";
 const SYNC = "POST /api/v1/settings/integrations/dav/:id/sync";
@@ -44,7 +40,6 @@ const record = {
 const listed = (...subscriptions: object[]) =>
   jsonResponse({ status: "ready", subscriptions });
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 
@@ -310,6 +305,7 @@ describe("INTEGRATION-001 DAV settings", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi(routes);
       const unmount = await mount();
       expect(state().textContent).toBe(message);

@@ -1149,7 +1149,7 @@ these:
       collector; web unit and build show only REL-107 and REL-098, and fmt,
       contracts, architecture, and lint (only REL-096) are clean.
 
-- [ ] **AUD-F3 — Preferences come with the session, and each document reads the
+- [x] **AUD-F3 — Preferences come with the session, and each document reads the
       session once.** M. High. Depends: AUD-F1, AUD-F2. Closes: FEQ-02, FEQ-03,
       FER-04 (the ordering on the person page).
   - Scope:
@@ -1172,6 +1172,25 @@ these:
   - Verify: `test:unit --module=web` and `--module=workspaces`; contracts; E2E
     `today.TODAY-001`, `people-directory.PEOPLE-002`,
     `person-workspace.PEOPLE-003`, and `settings.AUTH-004`.
+  - Delivered 2026-11-08: `GET /api/v1/session` carries the member's resolved
+    preferences, read by the UI-state statement (one statement bound to the
+    member, user, and workspace), so the session still sends 4 statements
+    (measured before and after, now pinned by an integration test); a membership
+    without a preference row keeps a session without them. The document keeps
+    the session it resolved for the storage entry's 60 s (and while its
+    revalidation is on the wire); `clearSessionCache`, a workspace switch, and
+    sign-out drop it, and preference and UI-state saves update it and
+    `kinship.session`, and so does every other reachable write a session
+    preference is built from, including a successful Monica import commit. Every
+    island takes preferences from the session; only the preferences form reads
+    `GET /settings/preferences`. Today mounts with one session read and no
+    preference read (was two and one in the unit harness), and the person read
+    starts right after the session, so it needs no `Promise.all`. Web unit 1779
+    (only REL-107), workspaces unit 193, api unit only REL-106, contract 239,
+    eight session integration files 48; changed files at least 96% lines and
+    82.7% branches (91% in the web); build only REL-098; contracts current; fmt,
+    eslint, architecture, and lint (only REL-096). E2E: TODAY-001, PEOPLE-002,
+    PEOPLE-003, AUTH-004, and IMPORT-001 11 passed on Chromium.
 
 - [ ] **AUD-F4 — Secondary reads wait until they are needed.** S–M. Normal.
       Depends: AUD-F3. Closes: FEQ-06, FEQ-11, FEQ-09 (the page part).

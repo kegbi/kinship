@@ -31,7 +31,6 @@ import {
 import { flushSync } from "react-dom";
 import {
   dismissPeopleDuplicate,
-  getMemberPreferences,
   listPeopleDuplicates,
   type PeopleDuplicatePair,
   type PeopleDuplicatePerson,
@@ -92,18 +91,15 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
       return;
     }
     const workspaceId = session.session.workspace.id;
-    const preferences = await settle(() => getMemberPreferences(workspaceId));
+    const nameOrder = session.session.preferences?.contactNameOrder ??
+      "given_family_nickname";
     const pairs = await settle(() => listPeopleDuplicates(workspaceId));
     if (!pairs.data) {
       dispatch({ type: "failed" });
       return;
     }
     dispatch({
-      context: {
-        nameOrder: preferences.data?.preferences.contactNameOrder ??
-          "given_family_nickname",
-        workspaceId,
-      },
+      context: { nameOrder, workspaceId },
       pairs: pairs.data.pairs,
       truncated: pairs.data.truncated,
       type: "loaded",

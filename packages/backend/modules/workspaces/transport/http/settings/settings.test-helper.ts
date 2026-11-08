@@ -84,6 +84,7 @@ export function memberUiState(
 ): MemberUiStateManagement {
   return {
     read: () => Promise.resolve({ status: "ready", uiState: {} }),
+    readSession: () => Promise.resolve({ status: "ready", uiState: {} }),
     save: (_actor, input) =>
       Promise.resolve({ status: "ready", uiState: input }),
     ...overrides,

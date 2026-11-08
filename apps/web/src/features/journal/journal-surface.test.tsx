@@ -16,7 +16,7 @@ import {
   stubApi,
   unreachable,
 } from "../../testing/api.ts";
-import { ids, preferences, workspaceSession } from "../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -26,7 +26,6 @@ import {
 import { JOURNAL_ISLAND, mountJournal } from "./journal.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const LIST = "GET /api/v1/journal";
 const ITEM = "GET /api/v1/journal/items/:itemId";
 const CREATE = "POST /api/v1/journal/posts";
@@ -77,10 +76,6 @@ function routes(extra: Record<string, Answer | readonly Answer[]>) {
   return stubApi(
     {
       [SESSION]: jsonResponse(workspaceSession()),
-      [PREFERENCES]: jsonResponse({
-        preferences: preferences(),
-        status: "ready",
-      }),
       ...extra,
     } as Parameters<typeof stubApi>[0],
   );
@@ -224,7 +219,7 @@ describe("JOURNAL-001 journal island", () => {
     expect(more.hidden).toBe(false);
     click(more);
     await waitFor(() => expect(list().textContent).toContain("Yesterday"));
-    expect(api.calls().at(-2)).toBe(
+    expect(api.calls().at(-1)).toBe(
       "GET /api/v1/journal?cursor=journal-cursor",
     );
     expect(list().textContent).toContain("Today");
@@ -609,10 +604,6 @@ describe("JOURNAL-001 journal island", () => {
     timelineShell();
     const api = stubApi({
       [SESSION]: [problemResponse(503), jsonResponse(workspaceSession())],
-      [PREFERENCES]: jsonResponse({
-        preferences: preferences(),
-        status: "ready",
-      }),
       [LIST]: timeline([]),
     });
     await mount();

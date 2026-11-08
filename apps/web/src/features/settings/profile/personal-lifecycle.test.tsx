@@ -27,6 +27,7 @@ import {
   mountPersonalLifecycle,
   PERSONAL_LIFECYCLE_ISLAND,
 } from "./personal-lifecycle.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
 const PREVIEW = "GET /api/v1/settings/personal-lifecycle";
@@ -326,6 +327,7 @@ describe("AUTH-005 personal lifecycle", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi({
         ...routes,
         [SESSION]: Object.keys(routes).length

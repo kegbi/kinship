@@ -27,10 +27,7 @@ import {
   type Settled,
   useLatestRequest,
 } from "../../../islands/core/index.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../../lib/time-presentation.ts";
+import { type TimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { InteractionEntry } from "../interaction-entry.tsx";
 import { INTERACTION_CREATED_EVENT, profilePersonId } from "../shared.ts";
@@ -148,14 +145,12 @@ export function ActivityReport(props: ActivityReportProps) {
       const session = await resolveWorkspaceSession();
       if (session.status !== "ready") return { ok: true, value: undefined };
       const workspaceId = session.session.workspace.id;
-      const [report, preferences] = await Promise.all([
-        getActivityReport(personId, {
-          ...(cursor ? { cursor } : {}),
-          limit: PAGE_SIZE,
-          ...(year === undefined ? {} : { year }),
-        }, workspaceId),
-        loadTimePreferences(workspaceId),
-      ]);
+      const report = await getActivityReport(personId, {
+        ...(cursor ? { cursor } : {}),
+        limit: PAGE_SIZE,
+        ...(year === undefined ? {} : { year }),
+      }, workspaceId);
+      const preferences = session.session.preferences;
       return report.ok
         ? { ok: true, value: { preferences, report: report.value } }
         : report;

@@ -14,20 +14,16 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
 import {
   IMPORT_HISTORY_ISLAND,
   mountImportHistory,
 } from "./import-history.tsx";
 import { IMPORT_REPORT_ISLAND, mountImportReport } from "./import-report.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const LIST = "GET /api/v1/imports";
 const REPORT = "GET /api/v1/imports/:id";
 const importId = "00000000-0000-4000-8000-000000000010";
@@ -50,7 +46,6 @@ const summary = (overrides: object = {}) => ({
   ...overrides,
 });
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 const member = jsonResponse(
@@ -134,6 +129,7 @@ describe("IMPORT-001 import history", () => {
 
   it("keeps member data hidden and says when the session is unconfirmed", async () => {
     shell();
+    clearSessionCache();
     const api = stubApi({ [SESSION]: member });
     let unmount = await mount();
     expect(state().textContent).toBe(
@@ -144,6 +140,7 @@ describe("IMPORT-001 import history", () => {
     unmount();
 
     shell();
+    clearSessionCache();
     stubApi({ [SESSION]: unreachable });
     unmount = await mount();
     expect(state().textContent).toBe("Your session could not be confirmed.");
@@ -176,6 +173,7 @@ describe("IMPORT-001 import report", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       const api = stubApi({
         [REPORT]: jsonResponse(summary({ status })),
         [SESSION]: jsonResponse(workspaceSession()),
@@ -243,6 +241,7 @@ describe("IMPORT-001 import report", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       const api = stubApi({ [SESSION]: answer });
       const unmount = await mount(path);
       expect(state().textContent).toBe(message);

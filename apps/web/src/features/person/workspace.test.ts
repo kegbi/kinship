@@ -15,7 +15,6 @@ import {
 import { clearToasts } from "../shell/toasts/toasts.ts";
 import { TOAST_REGION } from "../../testing/shell.ts";
 
-import { getMemberPreferences } from "../../../../../packages/contracts/generated/auth-client.ts";
 import {
   badgeVariants,
   segmentVariants,
@@ -40,13 +39,6 @@ import { adoptMount, drawShell } from "../../testing/render.tsx";
 
 const segment = segmentVariants();
 
-vi.mock(
-  "../../../../../packages/contracts/generated/auth-client.ts",
-  async (original) => ({
-    ...await original<Record<string, unknown>>(),
-    getMemberPreferences: vi.fn(),
-  }),
-);
 // The page keeps no handle on the islands it mounts, so each is handed to the
 // test's teardown here: every island a test mounted is unmounted when it
 // ends, and none renders into a later test or after the document is gone
@@ -73,14 +65,6 @@ beforeEach(async () => {
       TIMELINE_MOUNT,
     ].map((owner) => owner.load()),
   );
-  vi.mocked(getMemberPreferences).mockReset().mockResolvedValue({
-    ok: true,
-    value: {
-      status: "ready",
-      preferences: preferences(),
-      supportedCurrencyCodes: [],
-    },
-  });
 });
 
 const { person: personId, workspace: workspaceId } = ids;
@@ -521,19 +505,23 @@ function zeroProfile(
 
 it("APR-008 applies membership name order to profile heading, breadcrumb, mini identity and title", async () => {
   markup();
-  vi.mocked(getMemberPreferences).mockResolvedValue({
-    ok: true,
-    value: {
-      status: "ready",
-      supportedCurrencyCodes: [],
+  const api = stubProfile(undefined, {
+    [SESSION]: jsonResponse(workspaceSession({
+      member: { id: ids.member, role: "member" },
       preferences: preferences({
         contactNameOrder: "family_given_nickname",
         contactSortOrder: "family_name_asc",
       }),
-    },
+    })),
   });
-  const api = stubProfile();
   await mountPersonWorkspace();
+  // The order comes with the session, so the person's read is the page's
+  // first after it (AUD-F3, FER-04).
+  expect(api.calls().slice(0, 2)).toEqual([
+    SESSION,
+    `GET /api/v1/people/${personId}?include=summary`,
+  ]);
+  expect(requested(api, "/settings/")).toEqual([]);
   expect(document.querySelector("#person-profile-name")?.textContent).toBe(
     "Lovelace Ada",
   );
@@ -543,7 +531,6 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
     "Lovelace Ada",
   );
   expect(document.title).toBe("Lovelace Ada — Kinship");
-  expect(getMemberPreferences).toHaveBeenCalledWith(workspaceId);
   document.querySelector<HTMLButtonElement>("#person-edit-open")!.click();
   const form = document.querySelector<HTMLFormElement>("#person-edit-form")!;
   (form.elements.namedItem("familyName") as HTMLInputElement).value = "Byron";
@@ -2698,7 +2685,6 @@ describe("GAP-033 person workspace renders only what the shell drew", () => {
 
   it("reports an unreachable person as temporarily unavailable", async () => {
     markup();
-    vi.mocked(getMemberPreferences).mockRejectedValue(new Error("offline"));
     stubProfile(undefined, { [PROFILE]: unreachable });
     await mountPersonWorkspace();
     expect(document.querySelector("#person-profile-state h1")?.textContent)

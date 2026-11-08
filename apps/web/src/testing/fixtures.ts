@@ -120,6 +120,8 @@ export function workspaceSession(
   const workspace = { id: ids.workspace, name: "Personal" };
   return {
     member: { id: ids.member, role: "owner" },
+    // The session carries the member's preferences (AUD-F3).
+    preferences: preferences(),
     principal: { userId: ids.user },
     requiredLegalDocuments: [],
     status: "authenticated",
@@ -127,6 +129,14 @@ export function workspaceSession(
     workspaces: [workspace],
     ...overrides,
   };
+}
+
+/** A session whose preferences the API could not read (AUD-F3). */
+export function sessionWithoutPreferences(
+  overrides: Partial<SessionContext> = {},
+): SessionContext {
+  const { preferences: _unread, ...session } = workspaceSession(overrides);
+  return session;
 }
 
 /** What a person section's owner receives on mount. */

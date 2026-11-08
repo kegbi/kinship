@@ -10,7 +10,6 @@
  */
 
 import {
-  getMemberPreferences,
   getSession,
   type SessionContext,
   signOut,
@@ -308,33 +307,22 @@ export async function mountApplicationShell(
   }
   renderSession(elements, resolved.session, resolved.firstName);
   let activeWorkspaceId = resolved.session.workspace.id;
-  let activeMemberId = resolved.session.member.id;
-  let layoutRevision = 0;
-  const resetLayout = (): void => {
-    layoutRevision += 1;
-    elements.root.dataset.fluidLayout = "false";
-  };
-  const loadLayout = async (): Promise<void> => {
-    const revision = ++layoutRevision;
-    const result = await getMemberPreferences(activeWorkspaceId).catch(() =>
-      undefined
-    );
-    if (revision !== layoutRevision || !elements.root.isConnected) return;
+  // The layout width comes with the session (AUD-F3); without it, or without
+  // a session, the layout stays fixed.
+  const applyLayout = (session?: SessionContext): void => {
     elements.root.dataset.fluidLayout = String(
-      result?.ok ? result.value.preferences.fluidLayout : false,
+      session?.preferences?.fluidLayout ?? false,
     );
   };
   elements.root.addEventListener(MEMBER_LAYOUT_SAVED_EVENT, (event) => {
     const saved = (event as CustomEvent<MemberLayoutSavedDetail>).detail;
     if (saved.workspaceId !== activeWorkspaceId || elements.root.hidden) return;
-    // A completed save supersedes any older preference read on this page.
-    layoutRevision += 1;
     elements.root.dataset.fluidLayout = String(saved.fluidLayout);
   });
-  void loadLayout();
+  applyLayout(resolved.session);
   onSessionRevalidated((revalidated) => {
     if (revalidated.status === "access-lost") {
-      resetLayout();
+      applyLayout();
       renderAccessFailure(elements);
     } else if (revalidated.status === "ready") {
       if (
@@ -342,17 +330,10 @@ export async function mountApplicationShell(
           "allowed"
       ) {
         renderWorkspacePresentation(elements, revalidated.session);
-        const membershipChanged = activeWorkspaceId !==
-            revalidated.session.workspace.id ||
-          activeMemberId !== revalidated.session.member.id;
         activeWorkspaceId = revalidated.session.workspace.id;
-        activeMemberId = revalidated.session.member.id;
-        if (membershipChanged) {
-          resetLayout();
-          void loadLayout();
-        }
+        applyLayout(revalidated.session);
       } else {
-        resetLayout();
+        applyLayout();
       }
     }
   });
@@ -418,7 +399,7 @@ export async function mountApplicationShell(
       if (setActiveWorkspace(selected.value.workspace.id)) {
         change.proceed();
         activeWorkspaceId = selected.value.workspace.id;
-        resetLayout();
+        applyLayout();
         elements.select.disabled = false;
         navigate(
           `${globalThis.location.pathname}${globalThis.location.search}`,
@@ -449,7 +430,7 @@ export async function mountApplicationShell(
     const result = await signOut().catch(() => undefined);
     if (result?.ok) {
       clearActiveWorkspace();
-      resetLayout();
+      applyLayout();
       navigate(result.value.next);
       return;
     }

@@ -16,7 +16,6 @@
  */
 
 import {
-  getMemberPreferences,
   getPerson,
   type PersonProfileSummary,
   type ProblemDetails,
@@ -966,11 +965,9 @@ export async function mountPersonWorkspace(): Promise<void> {
     globalThis.history.replaceState({}, "", url);
     if (zoneFilter) applyZoneView(zoneFilter, storedView);
   }
-  const preferences = await getMemberPreferences(workspaceId)
-    .catch(() => undefined);
-  const memberPreferences = preferences?.ok
-    ? preferences.value.preferences
-    : undefined;
+  // The preferences come with the session (AUD-F3), so the person's own read
+  // starts as soon as the session is known (FER-04).
+  const memberPreferences = session.session.preferences;
   const result = await getPerson(id, workspaceId, "summary").catch(() =>
     undefined
   );

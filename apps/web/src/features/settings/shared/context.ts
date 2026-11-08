@@ -5,10 +5,7 @@
  */
 
 import type { SessionContext } from "../../../../../../packages/contracts/generated/auth-client.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../../lib/time-presentation.ts";
+import type { TimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 
 export interface SettingsContext {
@@ -18,8 +15,9 @@ export interface SettingsContext {
 }
 
 /**
- * Resolves the session, and the time preferences when `timePreferences` is
- * set; answers `undefined` when the session could not be confirmed.
+ * Resolves the session, with the time preferences it carries when
+ * `timePreferences` is set (AUD-F3); answers `undefined` when the session
+ * could not be confirmed.
  */
 export async function resolveSettingsContext(
   options: { readonly timePreferences?: boolean } = {},
@@ -31,7 +29,7 @@ export async function resolveSettingsContext(
   if (!options.timePreferences) return { role, workspaceId };
   return {
     role,
-    timePreferences: await loadTimePreferences(workspaceId),
+    timePreferences: session.session.preferences,
     workspaceId,
   };
 }

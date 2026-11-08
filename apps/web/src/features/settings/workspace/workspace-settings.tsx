@@ -17,6 +17,7 @@ import {
 } from "../form/settings-form.tsx";
 import { CurrencyOptions } from "../form/currency-select.tsx";
 import { TimezoneSelect } from "@/components/ui/timezone-select.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 export const WORKSPACE_SETTINGS_ISLAND = "settings-workspace";
 
@@ -141,6 +142,10 @@ export function WorkspaceSettingsForm(
       loadFailed={(problem) =>
         problem?.detail ?? "Workspace settings could not be loaded."}
       loading="Loading workspace settings…"
+      // The session carries the workspace's name and, for a member without
+      // a time zone of their own, its default time zone (AUD-F3); the next
+      // page reads it again rather than patching who keeps which zone.
+      onSaved={() => clearSessionCache()}
       onSettled={props.onSettled}
       save={(form, workspaceId) =>
         updateWorkspaceSettings(workspaceInput(form), workspaceId)}

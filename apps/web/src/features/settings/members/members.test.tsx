@@ -15,11 +15,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -27,9 +23,9 @@ import {
   mountSettled,
 } from "../../../testing/render.tsx";
 import { MEMBERS_ISLAND, mountMembersPage } from "./members.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const MEMBERS = "GET /api/v1/workspace-members";
 const INVITE = "POST /api/v1/workspace-invitations";
 const MANAGED = "GET /api/v1/settings/members";
@@ -64,7 +60,6 @@ const lists = (members: object[] = [owner], invitations = [pending]) =>
 const managed = (...members: object[]) =>
   jsonResponse({ members, status: "ready" });
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 
@@ -223,6 +218,7 @@ describe("AUTH-002 members settings", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi(routes);
       const unmount = await mount();
       expect(element("#members-state").textContent).toBe(members);

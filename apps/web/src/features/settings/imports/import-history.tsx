@@ -10,10 +10,7 @@ import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import { listImports } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import { useLatestRequest } from "../../../islands/core/index.ts";
-import {
-  formatInstant,
-  loadTimePreferences,
-} from "../../../lib/time-presentation.ts";
+import { formatInstant } from "../../../lib/time-presentation.ts";
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
 import {
@@ -50,7 +47,7 @@ export function ImportHistory(props: { readonly onSettled?: () => void }) {
   };
 
   const first = useEffectEvent(async () => {
-    const context = await resolveSettingsContext();
+    const context = await resolveSettingsContext({ timePreferences: true });
     if (!context) {
       dispatch({
         message: "Your session could not be confirmed.",
@@ -64,7 +61,7 @@ export function ImportHistory(props: { readonly onSettled?: () => void }) {
     }
     workspace.current = context.workspaceId;
     dispatch({
-      timePreferences: await loadTimePreferences(context.workspaceId),
+      timePreferences: context.timePreferences,
       type: "context",
     });
     await load();

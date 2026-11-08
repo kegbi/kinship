@@ -11,11 +11,11 @@ import {
   problemResponse,
   sendWrite,
   stubApi,
-  unreachable,
 } from "../../../testing/api.ts";
 import {
   ids,
   preferences,
+  sessionWithoutPreferences,
   workspaceSession,
 } from "../../../testing/fixtures.ts";
 import {
@@ -28,12 +28,15 @@ import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
 import {
+  clearSessionCache,
+  updateCachedSessionPreferences,
+} from "../../../lib/workspace-context.ts";
+import {
   mountTodayAttention,
   TODAY_ATTENTION_ISLAND,
 } from "./today-attention.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const ATTENTION = "GET /api/v1/today/attention";
 const COMPLETION = "PUT /api/v1/tasks/:taskId/completion";
 const ACKNOWLEDGEMENT =
@@ -97,10 +100,6 @@ function routes(
   return stubApi(
     {
       [SESSION]: jsonResponse(workspaceSession()),
-      [PREFERENCES]: jsonResponse({
-        preferences: preferences(),
-        status: "ready",
-      }),
       [ATTENTION]: answers as Response,
       ...extra,
     } as Parameters<typeof stubApi>[0],
@@ -360,10 +359,9 @@ describe("PLANNING-001 Today attention island", () => {
       attention([], [], { date: "2026-03-07" }),
     ], {
       [COMPLETION]: saved(),
-      [PREFERENCES]: jsonResponse({
+      [SESSION]: jsonResponse(workspaceSession({
         preferences: preferences({ effectiveTimezone: "America/New_York" }),
-        status: "ready",
-      }),
+      })),
     });
     await mount();
     expect(
@@ -521,17 +519,15 @@ describe("PLANNING-001 Today attention island", () => {
     routes([
       attention([task(1, "Preserved task")]),
       attention([task(2, "Current task", { person: undefined })]),
-    ], {
-      [PREFERENCES]: [
-        jsonResponse({ preferences: preferences(), status: "ready" }),
-        jsonResponse({
-          preferences: preferences({ locale: "en-USA" }),
-          status: "ready",
-        }),
-      ],
-    });
+    ]);
     await mount();
     expect(date().textContent).toBe("Tuesday, August 18, 2026");
+    // The member saves an unsupported locale; the session carries it from
+    // then on (AUD-F3), so the next read formats with it.
+    updateCachedSessionPreferences(
+      workspaceSession().workspace.id,
+      preferences({ locale: "en-USA" }),
+    );
     // The retry is hidden; the reader cannot reach it, a click still reads.
     click(retry());
     await waitFor(() =>
@@ -712,12 +708,12 @@ describe("PLANNING-001 Today attention island", () => {
     globalThis.removeEventListener(REMINDER_ACKNOWLEDGED_EVENT, acknowledged);
   });
 
-  it("REL-048 settles the queue once its read answers, even when the preferences read fails or a newer read replaced it", async () => {
+  it("REL-048 settles the queue once its read answers, even when the session carries no preferences or a newer read replaced it", async () => {
     todayShell();
     const first = deferred<Response>();
     const second = deferred<Response>();
     const api = routes([first.promise, second.promise], {
-      [PREFERENCES]: unreachable,
+      [SESSION]: jsonResponse(sessionWithoutPreferences()),
     });
     const mounted = mountPending(() => mountTodayAttention());
     await waitFor(() => expect(reads(api)).toHaveLength(1));
@@ -903,11 +899,12 @@ describe("PLANNING-001 Today attention island", () => {
     unmount();
     todayShell();
     // The remount asks for the read the unmounted island left on the wire, so
-    // it joins it (AUD-F1, D7); the old island's completion and read change
+    // it joins it (AUD-F1, D7), and it takes the document's session without a
+    // read of its own (AUD-F3); the old island's completion and read change
     // nothing on the new page.
     const sessions = api.calls().filter((call) => call === SESSION).length;
     const remounted = mountPending(() => mountTodayAttention());
-    await afterRequests(api, SESSION, sessions + 1);
+    await afterRequests(api, SESSION, sessions);
     expect(reads(api)).toHaveLength(2);
     await act(async () => {
       obsolete.resolve(problemResponse(503));
@@ -943,7 +940,9 @@ describe("PLANNING-001 Today attention island", () => {
       expect(state().textContent).toMatch(/could not be completed/i)
     );
     expect(completions(api)).toHaveLength(1);
+    // Switching the workspace forgets the document's session.
     active = { ...active, workspace: other };
+    clearSessionCache();
     act(() => {
       globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
     });
@@ -1015,9 +1014,9 @@ describe("PLANNING-001 Today attention island", () => {
     click(retry());
     click(upcomingRetry());
     // Both retries ask for the same read, so the second joins the first
-    // (AUD-F1, D7): one request settles both regions. They also share one
-    // session read.
-    await afterRequests(api, SESSION, sessions + 1);
+    // (AUD-F1, D7): one request settles both regions. Neither reads the
+    // session again: the document already holds it (AUD-F3).
+    await afterRequests(api, SESSION, sessions);
     expect(reads(api)).toHaveLength(2);
     expect(state().textContent).toBe("Loading relationship priorities…");
     expect(upcomingState().textContent).toBe("Loading upcoming work…");

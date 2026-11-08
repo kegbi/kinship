@@ -36,10 +36,7 @@ import {
   useLatestRequest,
 } from "../../islands/core/index.ts";
 import { readStaticForm } from "../../lib/static-form.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../lib/time-presentation.ts";
+import { type TimePreferences } from "../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import {
   type AuditFailure,
@@ -88,7 +85,7 @@ async function readPage(
     };
   }
   const workspaceId = session.session.workspace.id;
-  const preferences = await loadTimePreferences(workspaceId);
+  const preferences = session.session.preferences;
   const input = filterInput(values, cursor);
   const answer = await settle(() =>
     personId

@@ -57,6 +57,29 @@ export function createMemberUiStateManagement(
         : result;
     },
 
+    /**
+     * What the session carries of the member: the UI state and the resolved
+     * preferences, from one statement (AUD-F3), admitted as `read` is.
+     */
+    async readSession(actor: MemberUiStateActor) {
+      if (!await actorMayRead(dependencies, actor)) {
+        return { status: "forbidden" as const };
+      }
+      const reads = dependencies.connection ?? dependencies.transaction;
+      const result = await reads.run((connection) =>
+        dependencies.repository.readSession({
+          ...actor,
+          transaction: connection,
+        })
+      );
+      if (result.status !== "ready") return result;
+      return {
+        ...(result.preferences ? { preferences: result.preferences } : {}),
+        status: "ready" as const,
+        uiState: projection(result.uiState),
+      };
+    },
+
     async save(actor: MemberUiStateActor, input: MemberUiState) {
       if (!validMemberUiState(input)) return { status: "forbidden" as const };
       return await dependencies.transaction.run(async (transaction) => {

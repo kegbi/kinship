@@ -11,11 +11,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -30,7 +26,6 @@ import {
 } from "./today-interactions.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const FAVORITES = "GET /api/v1/today/favorite-notes";
 const RECENT = "GET /api/v1/today/recent-activity";
 const personId = ids.person;
@@ -73,10 +68,6 @@ function routes(
 ) {
   return stubApi({
     [SESSION]: jsonResponse(workspaceSession()),
-    [PREFERENCES]: jsonResponse({
-      preferences: preferences(),
-      status: "ready",
-    }),
     [FAVORITES]: favorites as Response,
     [RECENT]: recent as Response,
   });

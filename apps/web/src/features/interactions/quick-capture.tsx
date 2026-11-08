@@ -37,7 +37,6 @@ import {
   useRef,
 } from "react";
 import {
-  getMemberPreferences,
   type Interaction,
   listInteractionOptions,
   listPeople,
@@ -191,11 +190,9 @@ export function QuickCapture(props: QuickCaptureProps) {
         return;
       }
       const workspaceId = resolved.session.workspace.id;
-      const preferences = await settle(() => getMemberPreferences(workspaceId));
-      if (!live) return;
       dispatch({
         session: {
-          nameOrder: preferences.data?.preferences.contactNameOrder ??
+          nameOrder: resolved.session.preferences?.contactNameOrder ??
             "given_family_nickname",
           status: "ready",
           workspaceId,

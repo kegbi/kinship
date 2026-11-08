@@ -11,6 +11,10 @@ import {
 import { workspaceSession } from "../../../testing/fixtures.ts";
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
 import {
+  resolveWorkspaceSession,
+  SESSION_CACHE_KEY,
+} from "../../../lib/workspace-context.ts";
+import {
   mountWorkspaceSettings,
   WORKSPACE_SETTINGS_ISLAND,
 } from "./workspace-settings.tsx";
@@ -87,6 +91,50 @@ describe("WORKSPACE-001 workspace settings", () => {
     );
     expect(api.bodies()[0]).toMatchObject({ defaultTimezone: "Europe/Moscow" });
   });
+  it("AUD-F3 drops the session after a save, so the next page reads the new default time zone", async () => {
+    shell();
+    const api = stubApi({
+      [SAVE]: loaded({ ...value, defaultTimezone: "Europe/Moscow" }),
+      [SESSION]: jsonResponse(workspaceSession()),
+      [WORKSPACE]: loaded(),
+    });
+    await mount();
+    expect(sessionStorage.getItem(SESSION_CACHE_KEY)).not.toBeNull();
+    type(field("Default time zone"), "Europe/Moscow");
+    submit();
+    await waitFor(() =>
+      expect(status().textContent).toBe("Workspace settings saved.")
+    );
+
+    // A member without a time zone of their own takes the workspace's, so
+    // the stored session's effective time zone is stale until it is read.
+    expect(sessionStorage.getItem(SESSION_CACHE_KEY)).toBeNull();
+    await resolveWorkspaceSession();
+    expect(api.calls().filter((call) => call === SESSION)).toHaveLength(2);
+  });
+
+  it("keeps the session when a save is refused", async () => {
+    shell();
+    const api = stubApi({
+      [SAVE]: problemResponse(400, {
+        detail: "Review the workspace identity and default values.",
+        errors: { defaultTimezone: "Enter a valid IANA time zone." },
+      }),
+      [SESSION]: jsonResponse(workspaceSession()),
+      [WORKSPACE]: loaded(),
+    });
+    await mount();
+    type(field("Default time zone"), "Not/AZone");
+    submit();
+    await waitFor(() =>
+      expect(field("Default time zone").getAttribute("aria-invalid")).toBe(
+        "true",
+      )
+    );
+    await resolveWorkspaceSession();
+    expect(api.calls().filter((call) => call === SESSION)).toHaveLength(1);
+  });
+
   it("does nothing when the form is absent", async () => {
     drawShell("<p>Other page</p>");
     const api = stubApi();

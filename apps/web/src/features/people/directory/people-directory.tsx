@@ -50,7 +50,6 @@ import { flushSync } from "react-dom";
 import {
   bulkPeople,
   exportPeopleVCards,
-  getMemberPreferences,
   listPeople,
   listPeopleTagFacet,
   listPeopleTagOptions,
@@ -135,13 +134,12 @@ type ContextAnswer =
   | { readonly status: "ready"; readonly context: Context }
   | { readonly status: "access-lost" | "unavailable" };
 
-/** The workspace and the member's name and sort order, in that order. */
+/** The workspace and the member's name and sort order, from the session. */
 async function readContext(): Promise<ContextAnswer> {
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") return { status: session.status };
   const workspaceId = session.session.workspace.id;
-  const preferences = await settle(() => getMemberPreferences(workspaceId));
-  const saved = preferences.data?.preferences;
+  const saved = session.session.preferences;
   return {
     context: {
       defaultSort: saved?.contactSortOrder === "family_name_asc"

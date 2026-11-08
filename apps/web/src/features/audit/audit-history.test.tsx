@@ -21,6 +21,7 @@ import {
 } from "../../testing/api.ts";
 import { ids, workspaceSession } from "../../testing/fixtures.ts";
 import { drawShell, element, mountSettled } from "../../testing/render.tsx";
+import { clearSessionCache } from "../../lib/workspace-context.ts";
 import { mountAuditHistory } from "./audit-history.tsx";
 
 const { person: personId } = ids;
@@ -237,6 +238,9 @@ describe("GOVERNANCE-002 audit history UI", () => {
       });
 
       await mount();
+      // The document holds its session (AUD-F3); only once it has lapsed
+      // does the continuation read it again, and that read can fail.
+      if (failureAt === "session") clearSessionCache();
       const user = userEvent.setup();
       const more = button("Load older events");
       await user.click(more);

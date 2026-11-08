@@ -21,6 +21,7 @@ import {
   SettingsForm,
 } from "../form/settings-form.tsx";
 import { CurrencyOptions } from "../form/currency-select.tsx";
+import { updateCachedSessionPreferences } from "../../../lib/workspace-context.ts";
 import { TimezoneSelect } from "@/components/ui/timezone-select.tsx";
 
 export const PREFERENCE_SETTINGS_ISLAND = "settings-preferences";
@@ -219,6 +220,8 @@ export function PreferenceSettingsForm(
       loading="Loading your preferences…"
       onSaved={(form, value, workspaceId) => {
         const saved = value as { readonly preferences: Preferences };
+        // The session carries the preferences every island reads (AUD-F3).
+        updateCachedSessionPreferences(workspaceId, saved.preferences);
         form.dispatchEvent(
           new CustomEvent<MemberLayoutSavedDetail>(MEMBER_LAYOUT_SAVED_EVENT, {
             bubbles: true,

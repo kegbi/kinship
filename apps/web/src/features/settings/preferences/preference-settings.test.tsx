@@ -16,6 +16,10 @@ import {
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
 import { MEMBER_LAYOUT_SAVED_EVENT } from "../../../lib/app-shell.ts";
 import {
+  resolveWorkspaceSession,
+  SESSION_CACHE_KEY,
+} from "../../../lib/workspace-context.ts";
+import {
   mountPreferenceSettings,
   PREFERENCE_SETTINGS_ISLAND,
 } from "./preference-settings.tsx";
@@ -119,6 +123,35 @@ describe("AUTH-004 personal preferences", () => {
     }]);
     expect(saved).toEqual([{ fluidLayout: true, workspaceId: ids.workspace }]);
     expect(element("#settings-dirty").textContent).toBe("All changes saved.");
+  });
+
+  it("AUD-F3 hands the saved preferences to the session every island reads", async () => {
+    shell();
+    const saved = preferences({ fluidLayout: true, locale: "sr-Latn" });
+    const api = stubApi({
+      [PREFERENCES]: loaded(),
+      [SAVE]: jsonResponse({ preferences: saved, status: "ready" }),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    await mount();
+    act(() => {
+      fireEvent.click(field("Use fluid layout"));
+    });
+    submit();
+    await waitFor(() =>
+      expect(status().textContent).toBe("Preferences saved.")
+    );
+
+    const resolution = await resolveWorkspaceSession();
+    expect(resolution.status === "ready" && resolution.session.preferences)
+      .toEqual(saved);
+    expect(
+      JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) ?? "null")?.session
+        ?.preferences,
+    ).toEqual(saved);
+    // The form alone reads the preferences apart, for the currency choices.
+    expect(api.calls().filter((call) => call === PREFERENCES)).toHaveLength(1);
+    expect(api.calls().filter((call) => call === SESSION)).toHaveLength(1);
   });
 
   it("focuses field-adjacent errors for an invalid IANA time zone", async () => {

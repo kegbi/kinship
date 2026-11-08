@@ -3,6 +3,7 @@ import {
   createAuthenticationRoutes,
 } from "./authentication.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
+import { sessionContext } from "../../../../../contracts/schemas/authentication.ts";
 
 function services(
   signOut: (token: string) => Promise<void>,
@@ -211,7 +212,8 @@ Deno.test("session context exposes the active workspace and accessible switcher 
         }),
     },
     memberUiState: {
-      read: (actor) => {
+      read: () => Promise.reject(new Error("the session reads once")),
+      readSession: (actor) => {
         assert(
           actor.memberId === resolvedSession.memberId &&
             actor.workspaceId === resolvedSession.workspaceId,
@@ -283,6 +285,7 @@ Deno.test("session context exposes the active workspace and accessible switcher 
       ...base,
       memberUiState: {
         read,
+        readSession: read,
         save: () => Promise.resolve({ status: "forbidden" }),
       },
       protectedSessions: {
@@ -301,6 +304,120 @@ Deno.test("session context exposes the active workspace and accessible switcher 
     assert(
       degradedResponse.status === 200 && !("uiState" in degradedBody),
       "non-ready preference state broke the resolved session",
+    );
+  }
+});
+
+Deno.test("AUD-F3 the session carries the member's own preferences from one read", async () => {
+  const base = services(() => Promise.resolve());
+  const workspace = {
+    id: "00000000-0000-4000-8000-000000000003",
+    name: "Ada's circle",
+  };
+  const resolvedSession = {
+    accessibleWorkspaces: [{
+      memberId: "00000000-0000-4000-8000-000000000002",
+      role: "owner" as const,
+      userId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+    }],
+    memberId: "00000000-0000-4000-8000-000000000002",
+    role: "owner" as const,
+    userId: "00000000-0000-4000-8000-000000000001",
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+  };
+  const preferences = {
+    contactNameOrder: "family_given_nickname" as const,
+    contactSortOrder: "family_name_asc" as const,
+    effectiveTimezone: "Europe/Belgrade",
+    fluidLayout: true,
+    locale: "sr-Latn",
+    measurementSystem: "metric" as const,
+    reminderDelivery: "in_app" as const,
+    temperatureScale: "celsius" as const,
+    timezone: "Europe/Belgrade",
+  };
+  let reads = 0;
+  const app = createAuthenticationRoutes({
+    ...base,
+    memberUiState: {
+      read: () => Promise.reject(new Error("the session reads once")),
+      readSession: (actor) => {
+        reads += 1;
+        assert(
+          actor.memberId === resolvedSession.memberId &&
+            actor.workspaceId === resolvedSession.workspaceId,
+          "the session's own read receives the resolved actor",
+        );
+        return Promise.resolve({
+          preferences,
+          status: "ready",
+          uiState: { theme: "dark" },
+        });
+      },
+      save: () => Promise.resolve({ status: "forbidden" }),
+    },
+    protectedSessions: {
+      ...base.protectedSessions,
+      resolve: () => Promise.resolve(resolvedSession),
+    },
+  });
+
+  const response = await app.request("http://localhost/api/v1/session", {
+    headers: { cookie: "kinship_session=active-session-token" },
+  });
+  assertStatus(response, 200, "active session resolves");
+  const body: unknown = await response.json();
+  const parsed = sessionContext.safeParse(body);
+  assert(
+    parsed.success,
+    `the session no longer matches its published contract: ${
+      JSON.stringify(parsed.error?.issues)
+    }`,
+  );
+  assert(
+    JSON.stringify(Object.entries(parsed.data.preferences ?? {}).sort()) ===
+        JSON.stringify(Object.entries(preferences).sort()) &&
+      parsed.data.uiState?.theme === "dark",
+    `the session omitted the member's preferences: ${JSON.stringify(body)}`,
+  );
+  assert(reads === 1, `the session read its member state ${reads} times`);
+
+  // Preferences the read could not answer leave the session usable, as the
+  // UI state already does: the islands fall back to their neutral defaults.
+  for (
+    const readSession of [
+      () => Promise.resolve({ status: "forbidden" as const }),
+      () => Promise.resolve({ status: "ready" as const, uiState: {} }),
+      () => Promise.reject(new Error("private database detail")),
+    ]
+  ) {
+    const degraded = createAuthenticationRoutes({
+      ...base,
+      memberUiState: {
+        read: () => Promise.reject(new Error("the session reads once")),
+        readSession,
+        save: () => Promise.resolve({ status: "forbidden" }),
+      },
+      protectedSessions: {
+        ...base.protectedSessions,
+        resolve: () => Promise.resolve(resolvedSession),
+      },
+    });
+    const degradedResponse = await degraded.request(
+      "http://localhost/api/v1/session",
+      { headers: { cookie: "kinship_session=active-session-token" } },
+    );
+    const degradedBody = await degradedResponse.json() as Record<
+      string,
+      unknown
+    >;
+    assert(
+      degradedResponse.status === 200 && !("preferences" in degradedBody) &&
+        sessionContext.safeParse(degradedBody).success,
+      "unanswered preferences broke the resolved session",
     );
   }
 });

@@ -38,7 +38,6 @@ import {
   StickyNote,
 } from "lucide-react";
 import {
-  getMemberPreferences,
   getPerson,
   getTodayRecentPeople,
   searchWorkspace,
@@ -356,7 +355,8 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
     setQuery("");
   }, []);
 
-  // The session and preferences load once, after every handler is bound.
+  // The session, with its preferences, loads once, after every handler is
+  // bound.
   useEffect(() => {
     let live = true;
     void (async () => {
@@ -366,18 +366,13 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
         return;
       }
       const workspaceId = session.session.workspace.id;
-      const preferences = await getMemberPreferences(workspaceId)
-        .catch(() => undefined);
+      const preferences = session.session.preferences;
       if (!live) return;
       setContextState({
         context: {
           commands: commandIndex(session.session.member.role),
-          nameOrder: preferences?.ok
-            ? preferences.value.preferences.contactNameOrder
-            : "given_family_nickname",
-          peopleSort: preferences?.ok &&
-              preferences.value.preferences.contactSortOrder ===
-                "family_name_asc"
+          nameOrder: preferences?.contactNameOrder ?? "given_family_nickname",
+          peopleSort: preferences?.contactSortOrder === "family_name_asc"
             ? "family-name"
             : "given-name",
           workspaceId,

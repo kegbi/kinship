@@ -21,7 +21,6 @@ import {
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import { settle, useLatestRequest } from "../../../islands/core/index.ts";
-import { loadTimePreferences } from "../../../lib/time-presentation.ts";
 import { mountSettingsSurface } from "../form/settings-form.tsx";
 import { managesWorkspace, resolveSettingsContext } from "../shared/context.ts";
 import { useHeldSubmit } from "../shared/hooks.ts";
@@ -59,7 +58,7 @@ export function Integrations(props: { readonly onSettled?: () => void }) {
   };
 
   const first = useEffectEvent(async () => {
-    const context = await resolveSettingsContext();
+    const context = await resolveSettingsContext({ timePreferences: true });
     if (!context) {
       dispatch({ type: "no-session" });
       return;
@@ -70,7 +69,7 @@ export function Integrations(props: { readonly onSettled?: () => void }) {
     }
     workspace.current = context.workspaceId;
     dispatch({
-      timePreferences: await loadTimePreferences(context.workspaceId),
+      timePreferences: context.timePreferences,
       type: "context",
     });
     await load();

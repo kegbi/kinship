@@ -6,10 +6,23 @@ import * as fixtures from "../../../testing/fixtures.ts";
 const actor = fixtures.actor();
 const transaction = { opaque: {} };
 
-function management(repository: MemberUiStateRepository) {
+/** A fake repository; the session read is optional where a suite skips it. */
+type RepositoryFake =
+  & Omit<MemberUiStateRepository, "readSession">
+  & Partial<Pick<MemberUiStateRepository, "readSession">>;
+
+function withSessionRead(repository: RepositoryFake): MemberUiStateRepository {
+  return {
+    readSession: () =>
+      Promise.reject(new Error("this suite does not read the session")),
+    ...repository,
+  };
+}
+
+function management(repository: RepositoryFake) {
   return createMemberUiStateManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
-    repository,
+    repository: withSessionRead(repository),
     transaction: {
       run<T>(work: (value: typeof transaction) => Promise<T>) {
         return work(transaction);
@@ -114,10 +127,10 @@ const uiStateTransactionRunner = {
     return work(uiStateTransaction);
   },
 };
-const manageUiState = (repository: MemberUiStateRepository) =>
+const manageUiState = (repository: RepositoryFake) =>
   createMemberUiStateManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
-    repository,
+    repository: withSessionRead(repository),
     transaction: uiStateTransactionRunner,
   });
 
@@ -206,7 +219,7 @@ Deno.test("UXD-002C3 member UI-state ignores unknown reads and stops forbidden a
     "read leaked unrecognised presentation state",
   );
 
-  const deniedRepository: MemberUiStateRepository = {
+  const deniedRepository: RepositoryFake = {
     read: () => Promise.resolve({ status: "forbidden" }),
     lock: () => Promise.resolve({ status: "forbidden" }),
     save: () => {
@@ -282,4 +295,104 @@ Deno.test("UXD-002C3 member UI-state repairs malformed storage and fails closed"
     save: () => Promise.resolve(false),
   }).save(uiStateActor, {});
   assert(rejected.status === "forbidden", "repository refusal reported ready");
+});
+
+Deno.test("AUD-F3 the session read projects the UI state and passes the preferences through", async () => {
+  const preferences = {
+    contactNameOrder: "family_given_nickname",
+    contactSortOrder: "family_name_asc",
+    effectiveTimezone: "Europe/Belgrade",
+    fluidLayout: true,
+    locale: "sr-Latn",
+    measurementSystem: "metric",
+    reminderDelivery: "in_app",
+    temperatureScale: "celsius",
+  } as const;
+  const commands: unknown[] = [];
+  const connection = { opaque: "connection" };
+  const reads = createMemberUiStateManagement({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    connection: {
+      run<T>(work: (value: typeof connection) => Promise<T>) {
+        return work(connection);
+      },
+    },
+    repository: withSessionRead({
+      read: () => Promise.reject(new Error("the session reads once")),
+      readSession: (command) => {
+        commands.push(command);
+        return Promise.resolve({
+          preferences,
+          status: "ready",
+          uiState: { recentPersonIds: ["hidden"], theme: "dark" },
+        });
+      },
+      lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+      save: () => Promise.resolve(true),
+    }),
+    transaction: {
+      run<T>(work: (value: typeof transaction) => Promise<T>) {
+        return work(transaction);
+      },
+    },
+  });
+
+  const result = await reads.readSession(actor);
+  assert(
+    result.status === "ready" &&
+      JSON.stringify(result.uiState) === JSON.stringify({ theme: "dark" }) &&
+      result.preferences === preferences,
+    `the session read changed what it was given: ${JSON.stringify(result)}`,
+  );
+  assert(commands.length === 1, "the session read was not one statement");
+  const [command] = commands as [Record<string, unknown>];
+  assert(
+    command.memberId === actor.memberId &&
+      command.workspaceId === actor.workspaceId &&
+      command.userId === actor.userId && command.transaction === connection,
+    "the session read was not bound to the actor's membership on the plain connection",
+  );
+
+  const blank = await management({
+    read: () => Promise.reject(new Error("the session reads once")),
+    readSession: () => Promise.resolve({ status: "ready", uiState: undefined }),
+    lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+    save: () => Promise.resolve(true),
+  }).readSession(actor);
+  assert(
+    blank.status === "ready" && !("preferences" in blank) &&
+      Object.keys(blank.uiState).length === 0,
+    "a membership without a preference row invented preferences",
+  );
+
+  const refused = await management({
+    read: () => Promise.reject(new Error("the session reads once")),
+    readSession: () => Promise.resolve({ status: "forbidden" }),
+    lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+    save: () => Promise.resolve(true),
+  }).readSession(actor);
+  assert(refused.status === "forbidden", "a refused read was reported ready");
+
+  let reached = false;
+  const revoked = await createMemberUiStateManagement({
+    actors: { revalidate: () => Promise.resolve("revoked" as const) },
+    repository: withSessionRead({
+      read: () => Promise.reject(new Error("the session reads once")),
+      readSession: () => {
+        reached = true;
+        return Promise.resolve({ status: "ready", uiState: {} });
+      },
+      lock: () => Promise.resolve({ status: "ready", uiState: {} }),
+      save: () => Promise.resolve(true),
+    }),
+    transaction: {
+      run<T>(work: (value: typeof transaction) => Promise<T>) {
+        return work(transaction);
+      },
+    },
+  }).readSession(actor);
+  assert(
+    revoked.status === "forbidden" && !reached,
+    "a revoked actor reached the session read",
+  );
 });

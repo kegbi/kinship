@@ -15,15 +15,15 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import { preferences, workspaceSession } from "../../../testing/fixtures.ts";
+import { workspaceSession } from "../../../testing/fixtures.ts";
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
 import {
   mountSecuritySettings,
   SECURITY_SESSIONS_ISLAND,
 } from "./security-sessions.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const SESSIONS = "GET /api/v1/settings/sessions";
 const REVOKE = "DELETE /api/v1/settings/sessions/:id";
 const other = {
@@ -55,7 +55,6 @@ const status = () => element("#settings-status");
 const count = () => element("#session-count");
 
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 
@@ -185,6 +184,7 @@ describe("AUTH-004 security sessions", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi(routes);
       const unmount = await mount();
       expect(status().textContent).toBe(message);

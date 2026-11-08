@@ -28,7 +28,6 @@ import {
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { badgeVariants, buttonVariants } from "@/components/ui/variants.ts";
 import { mountIsland, useLatestRequest } from "../../../islands/core/index.ts";
-import { loadTimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
@@ -50,10 +49,8 @@ async function readReminders(): Promise<ApiResult<RemindersAnswer>> {
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") throw new Error("No workspace session");
   const workspaceId = session.session.workspace.id;
-  const [value, preferences] = await Promise.all([
-    getTodayReminders(workspaceId),
-    loadTimePreferences(workspaceId),
-  ]);
+  const value = await getTodayReminders(workspaceId);
+  const preferences = session.session.preferences;
   return value.ok
     ? { ok: true, value: { preferences, value: value.value } }
     : value;

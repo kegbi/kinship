@@ -44,10 +44,7 @@ import {
   settle,
   useLatestRequest,
 } from "../../islands/core/index.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../lib/time-presentation.ts";
+import { type TimePreferences } from "../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import {
   activityChoice,
@@ -103,13 +100,13 @@ export function Journal(props: JournalProps) {
       const session = await resolveWorkspaceSession();
       if (session.status !== "ready") return { ok: true, value: undefined };
       const workspaceId = session.session.workspace.id;
-      const [result, preferences] = await Promise.all([
-        itemId
-          ? getJournalItem(itemId, workspaceId)
-          : listJournal(workspaceId, cursor ? { cursor } : {}),
-        loadTimePreferences(workspaceId),
-      ]);
-      if (!result.ok) return result;
+      const result = await (itemId
+        ? getJournalItem(itemId, workspaceId)
+        : listJournal(workspaceId, cursor ? { cursor } : {}));
+      const preferences = session.session.preferences;
+      if (!result.ok) {
+        return result;
+      }
       return {
         ok: true,
         value: "item" in result.value

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { jsonResponse, stubApi } from "../../testing/api.ts";
 import { preferences, workspaceSession } from "../../testing/fixtures.ts";
 import { drawShell, mountSettled } from "../../testing/render.tsx";
+import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import { mountToday } from "./mount.tsx";
 
 const page = readFileSync("apps/web/src/pages/app.astro", "utf8");
@@ -82,6 +83,53 @@ describe("TODAY-001 Today page islands", () => {
     expect(document.body.textContent).not.toContain("Loading");
     unmount();
     expect(document.querySelectorAll("[data-island]")).toHaveLength(0);
+  });
+
+  it("AUD-F3 mounts with exactly one session read and no preference reads", async () => {
+    pageShell();
+    const empty = { items: [], status: "ready" };
+    const api = stubApi({
+      "GET /api/v1/session": jsonResponse(
+        workspaceSession({
+          preferences: preferences({
+            effectiveTimezone: "Europe/Belgrade",
+            locale: "en-GB",
+          }),
+        }),
+      ),
+      "GET /api/v1/today/attention": jsonResponse({
+        attention: { nextSevenDays: [], overdue: [], today: [] },
+        date: "2026-08-18",
+        status: "ready",
+        timezone: "Europe/Belgrade",
+        upcoming: [],
+      }),
+      "GET /api/v1/today/reminders": jsonResponse({
+        cadences: [],
+        reminders: [],
+        status: "ready",
+        timezone: "Europe/Belgrade",
+      }),
+      "GET /api/v1/today/recent-people": jsonResponse({
+        people: [],
+        status: "ready",
+      }),
+      "GET /api/v1/today/favorite-notes": jsonResponse(empty),
+      "GET /api/v1/today/recent-activity": jsonResponse(empty),
+    });
+    // The shell resolves the session first; Today's islands arrive after it.
+    await resolveWorkspaceSession();
+    const unmount = await mountSettled(() => mountToday());
+
+    const calls = api.calls();
+    expect(calls.filter((call) => call === "GET /api/v1/session"))
+      .toHaveLength(1);
+    expect(calls.filter((call) => call.includes("/settings/preferences")))
+      .toEqual([]);
+    expect(
+      document.querySelectorAll("[data-island][data-island-ready]"),
+    ).toHaveLength(5);
+    unmount();
   });
 
   it("does nothing on a page without Today's sections", async () => {

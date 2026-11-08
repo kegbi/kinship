@@ -15,11 +15,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -29,7 +25,6 @@ import {
 import { API_ACCESS_ISLAND, mountApiAccess } from "./api-access.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const LIST = "GET /api/v1/settings/api-tokens";
 const CREATE = "POST /api/v1/settings/api-tokens";
 const REVOKE = "DELETE /api/v1/settings/api-tokens/:id";
@@ -50,7 +45,6 @@ const listed = (...records: object[]) =>
     status: "ready",
   });
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 

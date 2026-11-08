@@ -7,11 +7,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import { renderIsland } from "../../../testing/render.tsx";
 import type { ReactNode } from "react";
 import { ComplianceReview } from "../../compliance/compliance.tsx";
@@ -47,10 +43,6 @@ afterEach(() => {
 describe("GAP-033 settings island context", () => {
   it("resolves the workspace, the role, and the time preferences on request", async () => {
     stubApi({
-      [PREFERENCES]: jsonResponse({
-        preferences: preferences(),
-        status: "ready",
-      }),
       [SESSION]: jsonResponse(workspaceSession()),
     });
     await expect(resolveSettingsContext()).resolves.toEqual({
@@ -159,10 +151,6 @@ describe("GAP-033 settings islands", () => {
       const answer = deferred<Response>();
       const api = stubApi({
         [read]: answer.promise,
-        [PREFERENCES]: jsonResponse({
-          preferences: preferences(),
-          status: "ready",
-        }),
         [SESSION]: jsonResponse(workspaceSession()),
       });
       const { island, unmount } = await renderIsland(ui);

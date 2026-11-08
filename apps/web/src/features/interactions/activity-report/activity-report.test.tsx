@@ -12,11 +12,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -33,7 +29,6 @@ import {
 } from "./activity-report.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const REPORT = "GET /api/v1/people/:personId/activity-report";
 const personId = ids.person;
 
@@ -69,10 +64,6 @@ type Answer = ApiAnswer;
 function routes(answers: Answer | readonly Answer[]) {
   return stubApi({
     [SESSION]: jsonResponse(workspaceSession()),
-    [PREFERENCES]: jsonResponse({
-      preferences: preferences(),
-      status: "ready",
-    }),
     [REPORT]: answers as Response,
   });
 }

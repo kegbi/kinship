@@ -4473,6 +4473,7 @@ export interface components {
             readonly workspaces: readonly components["schemas"]["AuthenticatedWorkspace"][];
             readonly requiredLegalDocuments: readonly components["schemas"]["LegalDocument"][];
             readonly uiState?: components["schemas"]["MemberUiState"];
+            readonly preferences?: components["schemas"]["ResolvedMemberPreferences"];
         };
         readonly SessionRevoked: {
             /** @constant */

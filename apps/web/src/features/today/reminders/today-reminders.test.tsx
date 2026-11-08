@@ -33,7 +33,6 @@ import {
 } from "./today-reminders.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const FEED = "GET /api/v1/today/reminders";
 
 const personId = ids.person;
@@ -65,11 +64,9 @@ type Answer = ApiAnswer;
 
 function routes(answers: Answer | readonly Answer[], timezone = "UTC") {
   return stubApi({
-    [SESSION]: jsonResponse(workspaceSession()),
-    [PREFERENCES]: jsonResponse({
+    [SESSION]: jsonResponse(workspaceSession({
       preferences: preferences({ effectiveTimezone: timezone }),
-      status: "ready",
-    }),
+    })),
     [FEED]: answers as Response,
   });
 }
@@ -167,8 +164,9 @@ describe("PLANNING-002 Today reminder regions island", () => {
       await waitFor(() => expect(reads(api)).toBe(2));
       // The same read again while the first retry is held joins it (AUD-F1,
       // D7): no third request, and the one answer settles the region once.
+      // No retry reads the session again: the document holds it (AUD-F3).
       click(reminderRetry());
-      await afterRequests(api, SESSION, 3);
+      await afterRequests(api, SESSION, 1);
       expect(reads(api)).toBe(2);
       await act(async () => {
         held.resolve(succeeds ? feed("Retried") : problemResponse(503));
@@ -272,9 +270,10 @@ describe("PLANNING-002 Today reminder regions island", () => {
     await waitFor(() => expect(reads(api)).toBe(1));
     todayShell();
     // The new mount asks for the read the old one is still waiting for, so it
-    // joins it (AUD-F1, D7); only the new mount draws the answer.
+    // joins it (AUD-F1, D7), with the document's session (AUD-F3); only the
+    // new mount draws the answer.
     const current = mountPending(() => mountTodayReminders());
-    await afterRequests(api, SESSION, 2);
+    await afterRequests(api, SESSION, 1);
     expect(reads(api)).toBe(1);
     await act(async () => {
       shared.resolve(feed("Current mount"));

@@ -26891,6 +26891,9 @@
           },
           "uiState": {
             "$ref": "#/components/schemas/MemberUiState"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/ResolvedMemberPreferences"
           }
         },
         "required": [

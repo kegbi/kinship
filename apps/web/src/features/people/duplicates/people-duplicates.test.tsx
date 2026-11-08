@@ -10,7 +10,11 @@ import {
   problemResponse,
   stubApi,
 } from "../../../testing/api.ts";
-import { preferences, workspaceSession } from "../../../testing/fixtures.ts";
+import {
+  sessionWithoutPreferences,
+  workspaceSession,
+} from "../../../testing/fixtures.ts";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 import {
   drawShell,
   element,
@@ -23,7 +27,6 @@ import {
 } from "./people-duplicates.tsx";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const DUPLICATES = "GET /api/v1/people/duplicates";
 const MERGE = "POST /api/v1/people/:primaryId/merge";
 const PREVIEW = "GET /api/v1/people/:primaryId/merge-preview";
@@ -68,7 +71,6 @@ const preview = (request: {
   });
 };
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [PREVIEW]: preview,
   [SESSION]: jsonResponse(workspaceSession()),
 };
@@ -107,6 +109,8 @@ describe("PEOPLE-008 duplicate review island", () => {
         { [SESSION]: problemResponse(503) },
       ]
     ) {
+      // Each page is its own document, with no session yet.
+      clearSessionCache();
       drawShell(`<div data-people-duplicates></div>`);
       stubApi(routes);
       await mountSettled(() => mountPeopleDuplicates());
@@ -118,12 +122,11 @@ describe("PEOPLE-008 duplicate review island", () => {
     expect(unmount()).toBeUndefined();
   });
 
-  it("reads names in the default order when the member's preferences could not be read", async () => {
+  it("reads names in the default order when the session carries no preferences", async () => {
     drawShell(`<div data-people-duplicates></div>`);
     stubApi({
       [DUPLICATES]: review([pair]),
-      [PREFERENCES]: problemResponse(503),
-      [SESSION]: jsonResponse(workspaceSession()),
+      [SESSION]: jsonResponse(sessionWithoutPreferences()),
     });
     await mountSettled(() => mountPeopleDuplicates());
     expect(element("#people-duplicates").textContent).toContain(

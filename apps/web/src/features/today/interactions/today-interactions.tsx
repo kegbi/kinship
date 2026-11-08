@@ -29,10 +29,7 @@ import {
   type Settled,
   useLatestRequest,
 } from "../../../islands/core/index.ts";
-import {
-  loadTimePreferences,
-  type TimePreferences,
-} from "../../../lib/time-presentation.ts";
+import { type TimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { InteractionEntry } from "../../interactions/interaction-entry.tsx";
 import { INTERACTION_CREATED_EVENT } from "../../interactions/shared.ts";
@@ -147,10 +144,8 @@ export function TodayInteractions(
       const session = await resolveWorkspaceSession();
       if (session.status !== "ready") return { ok: true, value: undefined };
       const workspaceId = session.session.workspace.id;
-      const [result, preferences] = await Promise.all([
-        wording.read(workspaceId),
-        loadTimePreferences(workspaceId),
-      ]);
+      const result = await wording.read(workspaceId);
+      const preferences = session.session.preferences;
       return result.ok
         ? { ok: true, value: { items: result.value.items, preferences } }
         : result;

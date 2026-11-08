@@ -1,15 +1,23 @@
-import { getMemberPreferences } from "../../../../packages/contracts/generated/auth-client.ts";
+import { resolveWorkspaceSession } from "./workspace-context.ts";
 
 export interface TimePreferences {
   readonly locale: string;
   readonly effectiveTimezone: string;
 }
 
+/**
+ * The member's time preferences in `workspaceId`, from the document's session
+ * (AUD-F3), for an island handed its workspace rather than resolving it. A
+ * session of another workspace answers nothing rather than its own member's.
+ */
 export async function loadTimePreferences(
   workspaceId: string,
 ): Promise<TimePreferences | undefined> {
-  const result = await getMemberPreferences(workspaceId).catch(() => undefined);
-  return result?.ok ? result.value.preferences : undefined;
+  const resolution = await resolveWorkspaceSession().catch(() => undefined);
+  return resolution?.status === "ready" &&
+      resolution.session.workspace.id === workspaceId
+    ? resolution.session.preferences
+    : undefined;
 }
 
 /** Instants always use the selected membership's resolved display settings. */

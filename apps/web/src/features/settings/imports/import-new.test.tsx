@@ -19,6 +19,11 @@ import {
 import { IMPORT_NEW_ISLAND, mountNewImport } from "./import-new.tsx";
 import { TOAST_REGION } from "../../../testing/shell.ts";
 import { clearToasts } from "../../shell/toasts/toasts.ts";
+import {
+  clearSessionCache,
+  resolveWorkspaceSession,
+  SESSION_CACHE_KEY,
+} from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
 const DRY_RUN = "POST /api/v1/imports/dry-runs";
@@ -164,6 +169,58 @@ it("closes commit progress and shows a dismissible error without announcing comp
   expect(element("#app-toasts").textContent).toContain("Try again.");
   expect(commit().disabled).toBe(false);
   await waitFor(() => expect(document.activeElement).toBe(commit()));
+});
+
+it("AUD-F3 drops the session after a commit, so the next page reads the imported time zone", async () => {
+  shell();
+  const api = stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: dryRun(),
+    [COMMIT]: jsonResponse({
+      importId,
+      peopleCreated: 1,
+      peopleReused: 0,
+      peopleSkippedDeleted: 0,
+      status: "completed",
+    }),
+  });
+  await mount();
+  expect(sessionStorage.getItem(SESSION_CACHE_KEY)).not.toBeNull();
+  await choose(monica());
+  submit();
+  await waitFor(() => expect(hook("contacts").textContent).toBe("1"));
+  confirm();
+  fireEvent.click(commit());
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: "Open import report" }))
+      .toBeDefined()
+  );
+
+  // A Monica commit can set the member's own time zone, which the session's
+  // preferences carry; the next page reads them again.
+  expect(sessionStorage.getItem(SESSION_CACHE_KEY)).toBeNull();
+  await resolveWorkspaceSession();
+  expect(api.calls().filter((call) => call === SESSION)).toHaveLength(2);
+});
+
+it("keeps the session when a commit is refused", async () => {
+  shell();
+  const api = stubApi({
+    [SESSION]: jsonResponse(workspaceSession()),
+    [DRY_RUN]: dryRun(),
+    [COMMIT]: problemResponse(503, { detail: "Try again." }),
+  });
+  await mount();
+  await choose(monica());
+  submit();
+  await waitFor(() => expect(hook("contacts").textContent).toBe("1"));
+  confirm();
+  fireEvent.click(commit());
+  await waitFor(() => expect(hook("state").textContent).toBe("Try again."));
+
+  expect(sessionStorage.getItem(SESSION_CACHE_KEY)).not.toBeNull();
+  await resolveWorkspaceSession();
+  expect(api.calls().filter((call) => call === SESSION)).toHaveLength(1);
 });
 
 describe("IMPORT-001 settings import", () => {
@@ -428,6 +485,7 @@ describe("IMPORT-001 settings import", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi({ [SESSION]: answer });
       const unmount = await mount();
       expect(hook("state").textContent).toBe(message);

@@ -528,8 +528,10 @@ export function createAuthenticationRoutes(
     if (requirements.status !== "ready") {
       return definedProblem(context, LEGAL_UNAVAILABLE);
     }
-    const memberUiState = services.memberUiState
-      ? await services.memberUiState.read(actor).catch(() => undefined)
+    // The UI state and the preferences come from one statement (AUD-F3), so
+    // the islands of the page need no read of their own.
+    const memberState = services.memberUiState
+      ? await services.memberUiState.readSession(actor).catch(() => undefined)
       : undefined;
     context.header("Cache-Control", "private, no-store");
     return context.json({
@@ -537,8 +539,13 @@ export function createAuthenticationRoutes(
       principal: { userId: resolved.userId },
       member: { id: resolved.memberId, role: resolved.role },
       requiredLegalDocuments: requirements.documents,
-      ...(memberUiState?.status === "ready"
-        ? { uiState: memberUiState.uiState }
+      ...(memberState?.status === "ready"
+        ? {
+          uiState: memberState.uiState,
+          ...(memberState.preferences
+            ? { preferences: memberState.preferences }
+            : {}),
+        }
         : {}),
       workspace: { id: resolved.workspaceId, name: resolved.workspaceName },
       workspaces: resolved.accessibleWorkspaces.map((workspace) => ({

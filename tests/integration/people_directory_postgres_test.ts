@@ -1229,6 +1229,118 @@ Deno.test({
   },
 });
 
+/**
+ * What `GET /api/v1/session` sends, measured with this harness on 2026-11-08:
+ * 4 statements before AUD-F3 (the session, the membership, the legal
+ * requirements, the UI state) and 4 after it, because the preferences are
+ * read by the UI-state statement.
+ */
+const SESSION_STATEMENTS = 4;
+
+Deno.test({
+  name:
+    "AUD-F3 the session carries the member's own preferences at no extra statement",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // A pool of its own whose every statement is observed (AUD-K3).
+    let observed: string[] | undefined;
+    const countedMail = new CapturedVerificationMail();
+    const counted = createConfiguredApiApp(
+      databaseUrl,
+      countedMail,
+      browserSecurityPolicy("test", "http://localhost"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (url) =>
+        connectDatabase(url, {
+          onStatement: (text) => observed?.push(text),
+        }),
+    );
+    const countedApi = apiSupport(counted.app, countedMail, sql);
+    await resetDatabase(sql);
+    try {
+      const owner = await countedApi.register(
+        "session-preferences-owner@example.test",
+        "Session preferences circle",
+      );
+      const peer = await countedApi.register(
+        "session-preferences-peer@example.test",
+        "Peer circle",
+      );
+      await sql`
+        update crm.member_preferences set locale = 'sr-Latn',
+          timezone = 'Europe/Belgrade', contact_name_order = 'family_given_nickname',
+          fluid_layout = true
+        where member_id = ${owner.memberId}::uuid
+      `;
+      // The first read prepares what later reads reuse.
+      const warm = await countedApi.request(owner, "/api/v1/session");
+      assert(warm.status === 200, "the warm-up session read answers");
+      await warm.body?.cancel();
+
+      observed = [];
+      const read = await countedApi.request(owner, "/api/v1/session");
+      const statements = observed;
+      observed = undefined;
+      const body = await read.json() as {
+        readonly preferences?: Readonly<Record<string, unknown>>;
+        readonly uiState?: unknown;
+      };
+      // The preferences add no round trip to the session (AUD-K3's budget).
+      assert(
+        statements.length <= SESSION_STATEMENTS,
+        `GET /api/v1/session sent ${statements.length} statements:\n${
+          statements.map((text) => text.replace(/\s+/g, " ").slice(0, 90))
+            .join("\n")
+        }`,
+      );
+
+      assert(
+        read.status === 200 && body.preferences?.locale === "sr-Latn" &&
+          body.preferences.effectiveTimezone === "Europe/Belgrade" &&
+          body.preferences.contactNameOrder === "family_given_nickname" &&
+          body.preferences.fluidLayout === true && body.uiState !== undefined,
+        `the session omitted the member's preferences: ${JSON.stringify(body)}`,
+      );
+      const peerRead = await countedApi.request(peer, "/api/v1/session");
+      const peerBody = await peerRead.json() as {
+        readonly preferences?: Readonly<Record<string, unknown>>;
+      };
+      assert(
+        peerRead.status === 200 && peerBody.preferences?.locale !== "sr-Latn" &&
+          peerBody.preferences?.fluidLayout === false,
+        `another member's session carried the owner's preferences: ${
+          JSON.stringify(peerBody)
+        }`,
+      );
+
+      // A membership without a preference row still has a session; its
+      // islands fall back to their neutral defaults.
+      await sql`delete from crm.member_preferences
+        where member_id = ${peer.memberId}::uuid`;
+      const bare = await countedApi.request(peer, "/api/v1/session");
+      const bareBody = await bare.json() as Record<string, unknown>;
+      assert(
+        bare.status === 200 && !("preferences" in bareBody) &&
+          JSON.stringify(bareBody.uiState) === "{}",
+        `a membership without preferences broke its session: ${
+          JSON.stringify(bareBody)
+        }`,
+      );
+    } finally {
+      await counted.close();
+    }
+  },
+});
+
 /** Rows a scan read and then discarded on its filter, across its loops. */
 function rowsFiltered(node: PlanNode): number {
   const removed = (node as { readonly "Rows Removed by Filter"?: number })[

@@ -9,17 +9,13 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import {
-  ids,
-  preferences,
-  workspaceSession,
-} from "../../../testing/fixtures.ts";
+import { ids, workspaceSession } from "../../../testing/fixtures.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import { drawShell, element, mountSettled } from "../../../testing/render.tsx";
 import { CALENDAR_FEED_ISLAND, mountCalendarFeed } from "./calendar-feed.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
-const PREFERENCES = "GET /api/v1/settings/preferences";
 const READ = "GET /api/v1/settings/calendar-feed";
 const CREATE = "POST /api/v1/settings/calendar-feed";
 const ROTATE = "POST /api/v1/settings/calendar-feed/rotation";
@@ -30,7 +26,6 @@ const FIRST =
 const SECOND =
   "http://localhost/api/v1/calendar-feeds/kin_cal_00000000-0000-4000-8000-000000000002.second-secret-value.ics";
 const base = {
-  [PREFERENCES]: jsonResponse({ preferences: preferences(), status: "ready" }),
   [SESSION]: jsonResponse(workspaceSession()),
 };
 
@@ -325,6 +320,7 @@ describe("INTEGRATION-002 calendar feed settings", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi(routes);
       const unmount = await mount();
       expect(state().textContent).toBe(message);

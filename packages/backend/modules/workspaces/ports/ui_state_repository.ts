@@ -13,6 +13,7 @@
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import type { ResolvedMemberPreferences } from "../domain/settings_rules.ts";
 import type {
   MemberUiStateActor,
   MemberUiStateTransaction,
@@ -30,6 +31,23 @@ export interface MemberUiStateRepository {
   ): Promise<
     | Failure<"forbidden">
     | { readonly status: "ready"; readonly uiState: unknown }
+  >;
+  /**
+   * The UI state and the resolved preferences together, in one statement, for
+   * the session read (AUD-F3). `preferences` is absent when the membership
+   * has no preference row in the actor's workspace.
+   */
+  readSession(
+    command: MemberUiStateActor & {
+      readonly transaction: MemberUiStateTransaction;
+    },
+  ): Promise<
+    | Failure<"forbidden">
+    | {
+      readonly preferences?: ResolvedMemberPreferences;
+      readonly status: "ready";
+      readonly uiState: unknown;
+    }
   >;
   lock(
     command: MemberUiStateActor & {

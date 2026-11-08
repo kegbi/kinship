@@ -24,6 +24,7 @@ import {
   type ProblemDetails,
   recordInteraction,
 } from "../../../../packages/contracts/generated/auth-client.ts";
+import { clearSessionCache } from "../lib/workspace-context.ts";
 
 /** A JSON answer, as the API writes it. */
 export function jsonResponse(
@@ -251,6 +252,9 @@ export function stubApi(routes: ApiRoutes = {}): StubbedApi {
   globalThis.fetch = mock as unknown as typeof fetch;
   onTestFinished(() => {
     ended.reject(new DOMException("The test ended", "AbortError"));
+    // Each test is a new document: the session one test resolved is not the
+    // next test's (AUD-F3).
+    clearSessionCache();
     if (realFetch) globalThis.fetch = realFetch;
     realFetch = undefined;
     if (unmatched.length > 0) {

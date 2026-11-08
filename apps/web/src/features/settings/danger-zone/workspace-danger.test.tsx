@@ -27,6 +27,7 @@ import {
   mountWorkspaceDanger,
   WORKSPACE_DANGER_ISLAND,
 } from "./workspace-danger.tsx";
+import { clearSessionCache } from "../../../lib/workspace-context.ts";
 
 const SESSION = "GET /api/v1/session";
 const PREVIEW = "GET /api/v1/settings/workspace-lifecycle";
@@ -210,6 +211,7 @@ describe("WORKSPACE-002 workspace danger zone", () => {
       ] as const
     ) {
       shell();
+      clearSessionCache();
       stubApi(routes);
       const unmount = await mount();
       expect(status().textContent).toBe(message);
