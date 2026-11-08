@@ -475,10 +475,45 @@ export interface CanonicalSchemaArtifacts {
   readonly migrationV13ToV14: string;
 }
 
+/**
+ * Brings the database at `databaseUrl` to canonical schema v14, or refuses.
+ * Every artifact checksum is verified before the runner connects.
+ */
 export async function applyCanonicalSchema(
   databaseUrl: string,
   artifacts: CanonicalSchemaArtifacts,
 ): Promise<Exclude<SchemaAction, "reject">> {
+  await verifyCanonicalArtifacts(artifacts);
+  const client = postgres(databaseUrl, {
+    connect_timeout: 5,
+    idle_timeout: 5,
+    max: 1,
+    onnotice: () => undefined,
+    prepare: false,
+  });
+  try {
+    return await migrateCanonicalSchema(client, artifacts);
+  } finally {
+    await client.end({ timeout: 2 });
+  }
+}
+
+/**
+ * Runs the same migration on a caller-owned single-connection client, so a
+ * caller can observe the connection's session state afterwards. The client is
+ * left open.
+ */
+export async function applyCanonicalSchemaWith(
+  client: postgres.Sql,
+  artifacts: CanonicalSchemaArtifacts,
+): Promise<Exclude<SchemaAction, "reject">> {
+  await verifyCanonicalArtifacts(artifacts);
+  return await migrateCanonicalSchema(client, artifacts);
+}
+
+async function verifyCanonicalArtifacts(
+  artifacts: CanonicalSchemaArtifacts,
+): Promise<void> {
   await Promise.all([
     verifyArtifactChecksum(artifacts.v1Sql, V1_SQL_SHA256, "Schema v1 SQL"),
     verifyArtifactChecksum(artifacts.v2Sql, V2_SQL_SHA256, "Schema v2 SQL"),
@@ -582,140 +617,183 @@ export async function applyCanonicalSchema(
       "Canonical schema v14 does not contain the accepted table catalog.",
     );
   }
-  const client = postgres(databaseUrl, {
-    connect_timeout: 5,
-    idle_timeout: 5,
-    max: 1,
-    onnotice: () => undefined,
-    prepare: false,
-  });
-  try {
-    const expectedCatalog = async (sqlText: string, version: string) => {
-      const schema = `kinship_expected_${version}_${
-        crypto.randomUUID().replaceAll("-", "")
-      }`;
-      return await client.begin(async (transaction) => {
-        await transaction.unsafe(canonicalSqlForSchema(sqlText, schema));
-        await transaction`set local search_path = public`;
-        const structure = await catalogStructure(transaction, schema);
-        const currencies = await currencyCatalog(transaction, schema);
-        await transaction.unsafe(`drop schema ${schema} cascade`);
-        return { currencies, structure };
-      });
-    };
-    // Build each immutable expected catalog in its own short transaction. This
-    // releases relation locks between versions and keeps the production
-    // verifier within PostgreSQL's default max_locks_per_transaction setting.
-    const expectedV1 = await expectedCatalog(artifacts.v1Sql, "v1");
-    const expectedV2 = await expectedCatalog(artifacts.v2Sql, "v2");
-    const expectedV3 = await expectedCatalog(artifacts.v3Sql, "v3");
-    const expectedV4 = await expectedCatalog(artifacts.v4Sql, "v4");
-    const expectedV5 = await expectedCatalog(artifacts.v5Sql, "v5");
-    const expectedV6 = await expectedCatalog(artifacts.v6Sql, "v6");
-    const expectedV7 = await expectedCatalog(artifacts.v7Sql, "v7");
-    const expectedV8 = await expectedCatalog(artifacts.v8Sql, "v8");
-    const expectedV9 = await expectedCatalog(artifacts.v9Sql, "v9");
-    const expectedV10 = await expectedCatalog(artifacts.v10Sql, "v10");
-    const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
-    const expectedV12 = await expectedCatalog(artifacts.v12Sql, "v12");
-    const expectedV13 = await expectedCatalog(artifacts.v13Sql, "v13");
-    const expectedV14 = await expectedCatalog(artifacts.v14Sql, "v14");
+}
+
+/**
+ * Migration 0004 wraps itself in `BEGIN;` ... `COMMIT;`. Sent inside the
+ * runner's one transaction, that COMMIT would end it early and release the
+ * advisory lock and timeouts (REL-118). The runner strips exactly a file's own
+ * leading `BEGIN;` and trailing `COMMIT;` after the unmodified file's checksum
+ * is verified, and refuses a file with any other top-level transaction control.
+ */
+export function withinRunnerTransaction(sqlText: string): string {
+  const own = /^BEGIN;\n([\s\S]*)\nCOMMIT;\n?$/.exec(sqlText);
+  const body = own ? own[1] ?? "" : sqlText;
+  if (/^\s*(?:BEGIN|COMMIT|ROLLBACK|START\s+TRANSACTION)\s*;/im.test(body)) {
+    throw new Error(
+      "Refusing a schema file with transaction control the runner cannot contain.",
+    );
+  }
+  return body;
+}
+
+interface SearchPathRow {
+  readonly search_path: string;
+}
+
+// Canonical DDL preambles, 0011, and 0014 `SET search_path` for the session;
+// inside a transaction that value outlives the commit. The runner records the
+// session's path first and restores it before committing, leaving only a
+// transaction-local path for its catalog reads (REL-118).
+async function sessionSearchPath(
+  transaction: postgres.TransactionSql,
+): Promise<string> {
+  const [row] = await transaction<SearchPathRow[]>`
+    select current_setting('search_path') as search_path
+  `;
+  if (!row) throw new Error("Could not read the session search_path.");
+  return row.search_path;
+}
+
+async function restoreSessionSearchPath(
+  transaction: postgres.TransactionSql,
+  searchPath: string,
+): Promise<void> {
+  await transaction`select set_config('search_path', ${searchPath}, false)`;
+  await transaction`set local search_path = public`;
+}
+
+async function migrateCanonicalSchema(
+  client: postgres.Sql,
+  artifacts: CanonicalSchemaArtifacts,
+): Promise<Exclude<SchemaAction, "reject">> {
+  const expectedCatalog = async (sqlText: string, version: string) => {
+    const schema = `kinship_expected_${version}_${
+      crypto.randomUUID().replaceAll("-", "")
+    }`;
     return await client.begin(async (transaction) => {
-      await transaction`set local lock_timeout = '5s'`;
-      await transaction`set local statement_timeout = '120s'`;
-      await transaction`select pg_advisory_xact_lock(492337110)`;
-      const [state] = await transaction<StateRow[]>`
+      const searchPath = await sessionSearchPath(transaction);
+      await transaction.unsafe(canonicalSqlForSchema(sqlText, schema));
+      await restoreSessionSearchPath(transaction, searchPath);
+      const structure = await catalogStructure(transaction, schema);
+      const currencies = await currencyCatalog(transaction, schema);
+      await transaction.unsafe(`drop schema ${schema} cascade`);
+      return { currencies, structure };
+    });
+  };
+  // Build each immutable expected catalog in its own short transaction. This
+  // releases relation locks between versions and keeps the production
+  // verifier within PostgreSQL's default max_locks_per_transaction setting.
+  const expectedV1 = await expectedCatalog(artifacts.v1Sql, "v1");
+  const expectedV2 = await expectedCatalog(artifacts.v2Sql, "v2");
+  const expectedV3 = await expectedCatalog(artifacts.v3Sql, "v3");
+  const expectedV4 = await expectedCatalog(artifacts.v4Sql, "v4");
+  const expectedV5 = await expectedCatalog(artifacts.v5Sql, "v5");
+  const expectedV6 = await expectedCatalog(artifacts.v6Sql, "v6");
+  const expectedV7 = await expectedCatalog(artifacts.v7Sql, "v7");
+  const expectedV8 = await expectedCatalog(artifacts.v8Sql, "v8");
+  const expectedV9 = await expectedCatalog(artifacts.v9Sql, "v9");
+  const expectedV10 = await expectedCatalog(artifacts.v10Sql, "v10");
+  const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
+  const expectedV12 = await expectedCatalog(artifacts.v12Sql, "v12");
+  const expectedV13 = await expectedCatalog(artifacts.v13Sql, "v13");
+  const expectedV14 = await expectedCatalog(artifacts.v14Sql, "v14");
+  return await client.begin(async (transaction) => {
+    await transaction`set local lock_timeout = '5s'`;
+    await transaction`set local statement_timeout = '120s'`;
+    await transaction`select pg_advisory_xact_lock(492337110)`;
+    const searchPath = await sessionSearchPath(transaction);
+    await transaction`set local search_path = public`;
+    const [state] = await transaction<StateRow[]>`
         select
           exists(select 1 from pg_namespace where nspname = 'crm') as crm_schema_exists,
           (select count(*)::int from information_schema.tables where table_schema = 'crm' and table_type = 'BASE TABLE') as crm_table_count
       `;
-      if (!state) throw new Error("Could not inspect database state.");
-      const actual = state.crm_schema_exists
-        ? await catalogStructure(transaction, "crm")
-        : [];
-      const catalogState = !state.crm_schema_exists &&
-          state.crm_table_count === 0
-        ? "empty"
-        : structuresMatch(actual, expectedV1.structure)
-        ? "v1"
-        : structuresMatch(actual, expectedV2.structure)
-        ? "v2"
-        : structuresMatch(actual, expectedV3.structure)
-        ? "v3"
-        : structuresMatch(actual, expectedV4.structure)
-        ? "v4"
-        : structuresMatch(actual, expectedV5.structure)
-        ? "v5"
-        : structuresMatch(actual, expectedV6.structure)
-        ? "v6"
-        : structuresMatch(actual, expectedV7.structure)
-        ? "v7"
-        : structuresMatch(actual, expectedV8.structure)
-        ? "v8"
-        : structuresMatch(actual, expectedV9.structure)
-        ? "v9"
-        : structuresMatch(actual, expectedV10.structure)
-        ? "v10"
-        : structuresMatch(actual, expectedV11.structure)
-        ? "v11"
-        : structuresMatch(actual, expectedV12.structure)
-        ? "v12"
-        : structuresMatch(actual, expectedV13.structure)
-        ? "v13"
-        : structuresMatch(actual, expectedV14.structure)
-        ? "v14"
-        : "drift";
-      const action = decideSchemaAction({
-        crmSchemaExists: state.crm_schema_exists,
-        state: catalogState,
-      });
-      if (action === "reject") {
-        throw new Error("Refusing ambiguous or drifted database state.");
-      }
-      const migrations = [
-        artifacts.migrationV1ToV2,
-        artifacts.migrationV2ToV3,
-        artifacts.migrationV3ToV4,
-        artifacts.migrationV4ToV5,
-        artifacts.migrationV5ToV6,
-        artifacts.migrationV6ToV7,
-        artifacts.migrationV7ToV8,
-        artifacts.migrationV8ToV9,
-        artifacts.migrationV9ToV10,
-        artifacts.migrationV10ToV11,
-        artifacts.migrationV11ToV12,
-        artifacts.migrationV12ToV13,
-        artifacts.migrationV13ToV14,
-      ];
-      if (action === "apply-v14") {
-        await transaction.unsafe(artifacts.v14Sql);
-      } else if (action !== "verify-v14") {
-        // An exact vN target applies every immutable migration from vN onward.
-        for (const migration of migrations.slice(UPGRADE_FROM[action])) {
-          await transaction.unsafe(migration);
-        }
-      }
-      await transaction`set local search_path = public`;
-      const finalStructure = await catalogStructure(transaction, "crm");
-      if (!structuresMatch(finalStructure, expectedV14.structure)) {
-        const mismatch = finalStructure.findIndex((item, index) =>
-          item !== expectedV14.structure[index]
-        );
-        throw new Error(
-          `Canonical schema v14 structural verification failed at ${mismatch}: actual=${
-            finalStructure[mismatch] ?? "<missing>"
-          }; expected=${expectedV14.structure[mismatch] ?? "<missing>"}.`,
-        );
-      }
-      const actualCurrencies = await currencyCatalog(transaction, "crm");
-      if (!currencyCatalogMatches(actualCurrencies, expectedV14.currencies)) {
-        throw new Error(
-          "Canonical schema v14 currency reference-data verification failed.",
-        );
-      }
-      return action;
+    if (!state) throw new Error("Could not inspect database state.");
+    const actual = state.crm_schema_exists
+      ? await catalogStructure(transaction, "crm")
+      : [];
+    const catalogState = !state.crm_schema_exists &&
+        state.crm_table_count === 0
+      ? "empty"
+      : structuresMatch(actual, expectedV1.structure)
+      ? "v1"
+      : structuresMatch(actual, expectedV2.structure)
+      ? "v2"
+      : structuresMatch(actual, expectedV3.structure)
+      ? "v3"
+      : structuresMatch(actual, expectedV4.structure)
+      ? "v4"
+      : structuresMatch(actual, expectedV5.structure)
+      ? "v5"
+      : structuresMatch(actual, expectedV6.structure)
+      ? "v6"
+      : structuresMatch(actual, expectedV7.structure)
+      ? "v7"
+      : structuresMatch(actual, expectedV8.structure)
+      ? "v8"
+      : structuresMatch(actual, expectedV9.structure)
+      ? "v9"
+      : structuresMatch(actual, expectedV10.structure)
+      ? "v10"
+      : structuresMatch(actual, expectedV11.structure)
+      ? "v11"
+      : structuresMatch(actual, expectedV12.structure)
+      ? "v12"
+      : structuresMatch(actual, expectedV13.structure)
+      ? "v13"
+      : structuresMatch(actual, expectedV14.structure)
+      ? "v14"
+      : "drift";
+    const action = decideSchemaAction({
+      crmSchemaExists: state.crm_schema_exists,
+      state: catalogState,
     });
-  } finally {
-    await client.end({ timeout: 2 });
-  }
+    if (action === "reject") {
+      throw new Error("Refusing ambiguous or drifted database state.");
+    }
+    const migrations = [
+      artifacts.migrationV1ToV2,
+      artifacts.migrationV2ToV3,
+      artifacts.migrationV3ToV4,
+      artifacts.migrationV4ToV5,
+      artifacts.migrationV5ToV6,
+      artifacts.migrationV6ToV7,
+      artifacts.migrationV7ToV8,
+      artifacts.migrationV8ToV9,
+      artifacts.migrationV9ToV10,
+      artifacts.migrationV10ToV11,
+      artifacts.migrationV11ToV12,
+      artifacts.migrationV12ToV13,
+      artifacts.migrationV13ToV14,
+    ];
+    if (action === "apply-v14") {
+      await transaction.unsafe(withinRunnerTransaction(artifacts.v14Sql));
+    } else if (action !== "verify-v14") {
+      // An exact vN target applies every immutable migration from vN onward,
+      // all inside this one transaction.
+      for (const migration of migrations.slice(UPGRADE_FROM[action])) {
+        await transaction.unsafe(withinRunnerTransaction(migration));
+      }
+    }
+    await restoreSessionSearchPath(transaction, searchPath);
+    const finalStructure = await catalogStructure(transaction, "crm");
+    if (!structuresMatch(finalStructure, expectedV14.structure)) {
+      const mismatch = finalStructure.findIndex((item, index) =>
+        item !== expectedV14.structure[index]
+      );
+      throw new Error(
+        `Canonical schema v14 structural verification failed at ${mismatch}: actual=${
+          finalStructure[mismatch] ?? "<missing>"
+        }; expected=${expectedV14.structure[mismatch] ?? "<missing>"}.`,
+      );
+    }
+    const actualCurrencies = await currencyCatalog(transaction, "crm");
+    if (!currencyCatalogMatches(actualCurrencies, expectedV14.currencies)) {
+      throw new Error(
+        "Canonical schema v14 currency reference-data verification failed.",
+      );
+    }
+    return action;
+  });
 }

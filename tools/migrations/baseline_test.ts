@@ -3,6 +3,7 @@ import {
   decideSchemaAction,
   verifyArtifactChecksum,
   verifyBaselineShape,
+  withinRunnerTransaction,
 } from "./baseline.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -245,4 +246,37 @@ Deno.test("schema v13 declares the query indexes, the MFA challenge purpose, and
       ),
     "v13 does not seed the global emotion and pet catalogs",
   );
+});
+
+Deno.test("[REL-118] the runner strips exactly a file's own transaction wrapper", () => {
+  const body =
+    "SET LOCAL lock_timeout = '5s';\n\nDO $$\nBEGIN\n  NULL;\nEND\n$$;\n";
+  assert(
+    withinRunnerTransaction(`BEGIN;\n\n${body}\nCOMMIT;\n`) === `\n${body}`,
+    "a leading BEGIN; and trailing COMMIT; were not stripped exactly",
+  );
+  assert(
+    withinRunnerTransaction(body) === body,
+    "a file without its own transaction was changed",
+  );
+  for (
+    const contained of [
+      "ALTER TABLE t ADD c int;\nCOMMIT;\n",
+      "BEGIN;\nALTER TABLE t ADD c int;\n",
+      "BEGIN;\nSELECT 1;\nCOMMIT;\nSELECT 2;\n",
+      "SELECT 1;\n  rollback;\n",
+      "START TRANSACTION;\nSELECT 1;\n",
+    ]
+  ) {
+    let refused = "";
+    try {
+      withinRunnerTransaction(contained);
+    } catch (error) {
+      refused = error instanceof Error ? error.message : String(error);
+    }
+    assert(
+      refused.startsWith("Refusing a schema file with transaction control"),
+      `uncontainable transaction control was accepted: ${contained}`,
+    );
+  }
 });

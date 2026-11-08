@@ -10,6 +10,7 @@
 
 import {
   applyCanonicalSchema,
+  applyCanonicalSchemaWith,
   canonicalTableNames,
 } from "../../tools/migrations/baseline.ts";
 import {
@@ -128,6 +129,147 @@ for (const [version, baselineSql] of priorBaselines) {
     });
   });
 }
+
+async function searchPath(sql: Sql): Promise<string | undefined> {
+  const [row] = await sql<{ readonly search_path: string }[]>`
+    select current_setting('search_path') as search_path
+  `;
+  return row?.search_path;
+}
+
+// Migration 0004 carries its own BEGIN/COMMIT. A v1 upgrade must still be one
+// transaction: a failure in 0014, after 0004, leaves the v1 catalog and its
+// rows exactly as they were (REL-118).
+Deno.test("[REL-118] a v1 upgrade that fails after 0004 leaves the database unchanged", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v1Sql);
+    const [userId, workspaceId, otherWorkspaceId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    const [ada, stranger, noteId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await sql`insert into crm.users (id, email) values (${userId}, 'v1-atomic@example.test')`;
+    await sql`
+      insert into crm.workspaces (id, name, created_by_user_id) values
+        (${workspaceId}, 'V1 atomic', ${userId}),
+        (${otherWorkspaceId}, 'V1 other', ${userId})
+    `;
+    await sql`
+      insert into crm.people (id, workspace_id, given_name) values
+        (${ada}, ${workspaceId}, 'Ada'), (${stranger}, ${otherWorkspaceId}, 'Ada')
+    `;
+    // v1 admits a note whose person lives in another workspace; 0014's
+    // workspace-bound key refuses it, so the upgrade fails after 0004.
+    await sql`
+      insert into crm.notes (id, workspace_id, person_id, body)
+      values (${noteId}, ${workspaceId}, ${stranger}, 'Bridges two workspaces')
+    `;
+    const before = await crmTables(sql);
+    const [currenciesBefore] = await sql<{ readonly found: number }[]>`
+      select count(*)::int as found from crm.currencies
+    `;
+
+    const message = await refusal(() => runMigration(environment(url)));
+    assert(
+      message.includes("notes_person_id_fkey"),
+      `the bridging note did not fail the upgrade in 0014: ${message}`,
+    );
+
+    assert(
+      JSON.stringify(await crmTables(sql)) === JSON.stringify(before),
+      "the failed upgrade left tables from later migrations behind",
+    );
+    const [state] = await sql<
+      {
+        readonly currencies: number;
+        readonly digest: boolean;
+        readonly note: boolean;
+      }[]
+    >`
+      select
+        (select count(*)::int from crm.currencies) as currencies,
+        exists (select 1 from information_schema.columns
+          where table_schema = 'crm' and table_name = 'api_request_logs'
+            and column_name = 'authentication_subject_digest') as digest,
+        exists (select 1 from crm.notes where id = ${noteId}) as note
+    `;
+    assert(
+      state !== undefined && state.currencies === currenciesBefore?.found &&
+        state.digest === false &&
+        state.note === true,
+      `the failed upgrade committed part of 0002-0004: ${
+        JSON.stringify(state)
+      }`,
+    );
+  });
+});
+
+// 0011 and 0014 set search_path for the session; the runner keeps that inside
+// its transaction, so the connection it used is unchanged afterwards.
+Deno.test("[REL-118] the v1 upgrade and a v14 verification leave the connection's search_path unchanged", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v1Sql);
+    const client = openSql(url, { max: 1, prepare: false });
+    try {
+      const original = await searchPath(client);
+      assert(
+        await applyCanonicalSchemaWith(client, artifacts) ===
+          "upgrade-v1-to-v14",
+        "an exact v1 database was not upgraded on the caller's connection",
+      );
+      const afterUpgrade = await searchPath(client);
+      assert(
+        afterUpgrade === original,
+        `the upgrade changed search_path from ${original} to ${afterUpgrade}`,
+      );
+      assert(
+        await applyCanonicalSchemaWith(client, artifacts) === "verify-v14",
+        "the upgraded database is not recognised as exact v14",
+      );
+      const afterVerify = await searchPath(client);
+      assert(
+        afterVerify === original,
+        `verification changed search_path from ${original} to ${afterVerify}`,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// Production databases are already v14: a fresh v14 database still verifies.
+Deno.test("[REL-118] a fresh v14 database applies once and then verifies as exact v14", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    const client = openSql(url, { max: 1, prepare: false });
+    try {
+      const original = await searchPath(client);
+      assert(
+        await applyCanonicalSchemaWith(client, artifacts) === "apply-v14",
+        "an empty database was not given the v14 schema",
+      );
+      const afterApply = await searchPath(client);
+      assert(
+        afterApply === original,
+        `applying v14 changed search_path from ${original} to ${afterApply}`,
+      );
+    } finally {
+      await client.end();
+    }
+    assert(
+      await runMigration(environment(url)) === "verify-v14",
+      "a fresh v14 database is not recognised as exact v14",
+    );
+    assert(
+      (await crmTables(sql)).length === 92,
+      "verification changed the v14 catalog",
+    );
+  });
+});
 
 Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery column comment", async () => {
   const columnComment = (sql: Sql) =>

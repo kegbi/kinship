@@ -1650,7 +1650,7 @@ Playwright test carrying its stable flow ID.
       the same four failures. Public-page no-React checks pass in both builds.
       Repair the owning output contracts separately.
 
-- [ ] **REL-099 — Legacy upgrades disagree on schema-qualified foreign keys.**
+- [x] **REL-099 — Legacy upgrades disagree on schema-qualified foreign keys.**
       Registration's legacy non-activation check and the v1–v3 migration cases
       fail structural verification: the actual activities foreign key is
       unqualified while the expected signature contains `<schema>`. A disposable
@@ -1658,6 +1658,14 @@ Playwright test carrying its stable flow ID.
       upgrade and registration failures. Diagnose catalog
       normalization/search-path handling separately; do not edit immutable
       schema baselines to hide it.
+  - [x] Resolved 2026-11-08 by REL-118: the cause was 0004's own `COMMIT` ending
+        the runner's transaction, so 0011's session `search_path` put `crm` on
+        the path for the final catalog read. With the runner keeping the whole
+        upgrade in one transaction and restoring the session path, the v1–v3
+        `[REL-061]` cases in `tests/integration/migrations_postgres_test.ts` and
+        the registration case "real PostgreSQL registration, verification,
+        replay, duplicate race, and legacy non-activation"
+        (`test:integration --module=identity`) pass. No schema baseline changed.
 
 - [ ] **REL-100 — Monica import currency conversion disagrees with its
       three-decimal fixture.** The existing live-choice import case expects
@@ -1931,7 +1939,7 @@ Playwright test carrying its stable flow ID.
       the same 400 and body for a fresh and a registered address, and no
       registration or mail call.
 
-- [ ] **REL-118 — Migration 0004 commits the runner's transaction, so v1–v3
+- [x] **REL-118 — Migration 0004 commits the runner's transaction, so v1–v3
       upgrades are not atomic.** Found by AUD-V2 during the 2026-11-07
       audit-remediation run on the REL-105 Windows host; the defect predates the
       remediation tickets and reproduces with the base runner on an exact v1
@@ -1954,6 +1962,25 @@ Playwright test carrying its stable flow ID.
       strip a file's own transaction control, or apply such a file so the
       upgrade stays one transaction, and prove an exact v1 upgrade verifies as
       v13 and a forced failure rolls it back completely.
+  - [x] Resolved 2026-11-08: after every checksum passes on the unmodified
+        files, the runner (`withinRunnerTransaction` in
+        `tools/migrations/baseline.ts`) strips exactly a file's own leading
+        `BEGIN;` and trailing `COMMIT;`, which only 0004 has, and refuses a file
+        with any other top-level transaction control, so every upgrade runs in
+        the one locked, time-limited transaction. Each runner transaction
+        records the session `search_path` and restores it before committing, so
+        the session `SET search_path` in the DDL preambles, 0011, and 0014 no
+        longer outlives the transaction, and the catalog reads use a
+        transaction-local `public` path. A new `applyCanonicalSchemaWith` runs
+        the same migration on a connection the caller owns. The v1–v3
+        `[REL-061]` cases in `tests/integration/migrations_postgres_test.ts` now
+        pass. New `[REL-118]` cases prove that a v1 upgrade failing in 0014 on a
+        note that bridges two workspaces leaves the v1 tables, currencies, and
+        the 0002 column unchanged; that a v1 upgrade and then `verify-v14` leave
+        the connection's `search_path` unchanged; and that a fresh v14 database
+        still verifies as `verify-v14`. A unit case in
+        `tools/migrations/baseline_test.ts` covers the stripping and refusal
+        rules. No migration or schema file changed.
 
 - [ ] **REL-119 — WebKit refuses some styles under the CSP, and Firefox and
       WebKit each fail one more E2E case.** Found during AUD-V2's all-browser
