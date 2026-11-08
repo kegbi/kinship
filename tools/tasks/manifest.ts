@@ -247,6 +247,8 @@ export const API_CONFIGURATION_READS = [
   "docs/architecture/module-boundaries.yaml",
   "docs/architecture/observability.md",
   "docs/architecture/technology-baseline.md",
+  // AUD-G5's FND-001S topology pins.
+  "docs/product/information-architecture.md",
   "docs/product/user-flows.yaml",
   "docs/product/page-catalog.yaml",
   "docs/product/release-slices.md",

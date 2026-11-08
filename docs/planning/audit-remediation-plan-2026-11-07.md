@@ -1412,6 +1412,31 @@ these:
     AUTH-003 passed (AUTH-001 now awaits the navigation that carries the token,
     ending its URL-poll race; one rerun after a host `ERR_NO_BUFFER_SPACE`), and
     fmt, contracts, architecture, and lint (only REL-096) are clean.
+  - [x] **AUD-G5-fix — The api unit set can read the documents AUD-G5's topology
+        test pins.** S. Normal. Depends: AUD-G5. Closes: the api unit regression
+        from AUD-G5's FND-001S pins.
+    - Scope:
+      `tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts`
+      runs in the `api` unit and coverage sets, and AUD-G5's review amendment
+      made it read `docs/product/information-architecture.md`, which neither set
+      could read, so the test failed with NotCapable. Grant
+      `API_CONFIGURATION_READS`, which both sets spread, that one file; drop no
+      file from a gate, keep the test as it is, and keep the api unit command
+      under this host's argv limit (REL-105).
+    - RED: `test:unit --module=api` fails "FND-001S authoritative repository
+      contracts require DG-01 topology" with NotCapable on
+      `docs/product/information-architecture.md`, beside the known REL-106
+      failure.
+    - Verify: `test:unit --module=api` (only REL-106);
+      `test:unit --module=tasks` (only REL-097); fmt, architecture, and lint
+      (only REL-096).
+    - Delivered 2026-11-08: `API_CONFIGURATION_READS` also grants
+      `docs/product/information-architecture.md`, so `test:unit --module=api`
+      fails only REL-106 again (497 passed) at 7,882 characters, under this
+      host's limit; tasks unit shows only REL-097, and fmt, architecture, and
+      lint (only REL-096) are clean. The api unit set's
+      `OWNERSHIP_BOUNDARY_READS` spread may be unused, which would free about
+      140 characters (parked with REL-105).
 
 ### Lane V — Schema versions (one at a time)
 
