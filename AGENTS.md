@@ -135,16 +135,15 @@ Modules communicate through public application interfaces or explicitly approved
 read models, never by importing another module's adapters or repository
 internals.
 
-Two accepted decisions from the 2026-11-07 audit are not implemented yet.
-[ADR 0007](docs/architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md)
-limits on-demand rendering to `/privacy` and `/terms`, with pages prerendered by
-default; it takes effect with AUD-G5.
+[ADR 0007](docs/architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md),
+from the 2026-11-07 audit, is implemented: pages are prerendered by default, and
+only `/privacy` and `/terms` render on demand. One accepted decision from that
+audit is not implemented yet.
 [ADR 0008](docs/architecture/decisions/0008-database-enforced-workspace-isolation.md)
 adds database-enforced workspace isolation in schema v14: least-privilege roles,
 workspace-bound foreign keys, and forced row-level security. It does not replace
-application authorization. Until those tickets land, the rules above and ADR
-0001 describe the running system. Do not add code that depends on a superuser
-database connection.
+application authorization. Until that ticket lands, the rules above describe the
+running system. Do not add code that depends on a superuser database connection.
 
 The selected implementation stack includes Hono, Zod, Kysely with Postgres.js,
 and Lefthook. A bounded Better Auth compatibility spike is approved, but Better

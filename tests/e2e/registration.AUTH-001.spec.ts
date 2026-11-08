@@ -301,10 +301,19 @@ test(
         };
         await route.fulfill({ response });
       });
+      // The reset page opens with the token, then reads it and removes it
+      // from the address; a static page (ADR 0007) can do that before a URL
+      // poll looks, so the navigation itself is awaited.
+      const openedWithToken = otherPage.waitForEvent("framenavigated", {
+        predicate: (frame) =>
+          frame === otherPage.mainFrame() &&
+          /\/auth\/reset-password\?token=/.test(frame.url()),
+      });
       await otherPage.goto(
         `/auth/verify-email?token=${encodeURIComponent(token)}`,
       );
-      await expect(otherPage).toHaveURL(/\/auth\/reset-password\?token=/);
+      await openedWithToken;
+      await expect(otherPage).toHaveURL(/\/auth\/reset-password$/);
       expect(verified).toEqual({
         body: expect.objectContaining({ status: "password-required" }),
         status: 200,

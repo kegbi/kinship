@@ -210,13 +210,14 @@ the place for work that is due.
 
 ## Rendering Contract
 
-| Page class                                               | Default strategy                  | Reason                                                             |
-| -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
-| Marketing, legal, and API reference                      | Static                            | Public and stable content.                                         |
-| Sign-in and simple recovery forms                        | Static shell with an island       | Only the form and session result are dynamic.                      |
-| Token, invitation, MFA, and cookie-sensitive transitions | On-demand                         | The first response depends on protected server state.              |
-| Authenticated CRM pages                                  | Static shell with focused islands | Preserves static-first delivery while loading private data safely. |
-| Exceptional personalized first paint                     | On-demand by ADR                  | Allowed only after the page-level trade-off is demonstrated.       |
+| Page class                                   | Default strategy                  | Reason                                                                          |
+| -------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
+| Marketing and API reference                  | Static                            | Public and stable content.                                                      |
+| Legal documents                              | On-demand (ADR 0007)              | Request-time public data, readable without JavaScript.                          |
+| Sign-in and simple recovery forms            | Static shell with an island       | Only the form and session result are dynamic.                                   |
+| Token, invitation, MFA, and compliance pages | Static shell with an island       | Served `private, no-store`; the island reads the token or state in the browser. |
+| Authenticated CRM pages                      | Static shell with focused islands | Preserves static-first delivery while loading private data safely.              |
+| Exceptional personalized first paint         | On-demand by ADR                  | Allowed only after the page-level trade-off is demonstrated.                    |
 
 Client rendering never weakens authorization: every API query and mutation
 independently verifies the principal and active workspace.

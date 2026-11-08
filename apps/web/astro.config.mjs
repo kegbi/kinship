@@ -30,17 +30,37 @@ const reactRefreshPreamble = {
   },
 };
 
+/**
+ * A renderer that needs no `node_modules` (ADR 0007, FER-03). The server
+ * build bundles the few packages Astro would otherwise leave as imports
+ * (React's server renderer, Zod, clsx), so the `web` image copies only the
+ * build output, not the toolchain. Development keeps Vite's defaults.
+ */
+const selfContainedServer = {
+  name: "kinship-self-contained-server",
+  hooks: {
+    "astro:config:setup": ({ command, updateConfig }) => {
+      if (command !== "build") return;
+      updateConfig({ vite: { ssr: { noExternal: true } } });
+    },
+  },
+};
+
 const apiOrigin = process.env.API_ORIGIN ?? "http://127.0.0.1:8000";
 const webPort = Number(process.env.WEB_PORT ?? "4321");
 
 export default defineConfig({
-  output: "server",
+  // ADR 0007: every page is prerendered unless it opts out with
+  // `export const prerender = false`; only the page catalog's `on-demand`
+  // routes (`/privacy` and `/terms`) do, and the Node adapter renders them.
+  output: "static",
   adapter: node({ mode: "standalone" }),
   // React runs only inside hydrated islands (ADR 0006); no page renders it
   // unless it mounts one.
   integrations: [
     react(),
     reactRefreshPreamble,
+    selfContainedServer,
     // Each built page preloads its scripts' static import closure (FER-02).
     // The person shell also preloads the islands it mounts as soon as the
     // person resolves — the hero, the rail summary, and the profile fact

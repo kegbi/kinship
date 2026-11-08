@@ -1,0 +1,18 @@
+---
+import type { PublicLegalPage } from "../lib/legal.ts";
+
+interface Props {
+  readonly legal: PublicLegalPage;
+}
+
+// The text is drawn on the server (ADR 0007), so it reads without JavaScript;
+// Astro escapes it, and `.legal-document` keeps its line breaks.
+const { legal } = Astro.props;
+---
+
+<main id="main-content" class="legal-page" tabindex="-1">
+  {legal.status !== 200 && <p data-legal-state role="status">{legal.message}</p>}
+  <h1 data-legal-title>{legal.title}</h1>
+  {legal.status === 200 && <p data-legal-version>{legal.version}</p>}
+  {legal.status === 200 && <article data-legal-content class="legal-document">{legal.content}</article>}
+</main>

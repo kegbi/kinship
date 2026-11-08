@@ -1331,7 +1331,7 @@ these:
     architecture, and lint (only REL-096) are clean. CRM values in PostgreSQL
     error DETAIL lines are parked (REL-115).
 
-- [ ] **AUD-G5 — The renderer serves only `/privacy` and `/terms` (ADR 0007).**
+- [x] **AUD-G5 — The renderer serves only `/privacy` and `/terms` (ADR 0007).**
       M. Low. Depends: AUD-G1, AUD-G2, AUD-F6. Closes: FER-03, FER-10.
   - Scope, implementing
     [ADR 0007](../architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md):
@@ -1359,6 +1359,23 @@ these:
   - Verify: the gateway and `web-build` tests; `deno task build`; E2E
     `legal-acceptance.GOVERNANCE-001`, `invitations.AUTH-002`,
     `registration.AUTH-001`, and `sign-in.AUTH-003` (Chromium).
+  - Delivered 2026-11-08: `output: "static"` with the Node adapter; only
+    `/privacy` and `/terms` render on demand, without JavaScript, from the API's
+    public read, behind a 5 minute gateway cache that keeps only 200 responses
+    without cookies, takes nothing from the request, and is capped at 2 MB;
+    verify-email, reset-password, MFA, compliance, and the invitation shell are
+    prerendered `private, no-store` files with `no-referrer`, and a live Compose
+    fixture shows the gateway healthy and those pages served with the renderer
+    stopped, `/privacy` from its kept copy, and an uncached `/terms` answering
+    503; the renderer image fell from 1.08 GB to 339 MB. ADR 0001, ADR 0007, the
+    catalog (2 on-demand pages), the information architecture, traceability,
+    compose-contract, AGENTS.md, and the topology and gateway tests moved
+    together. Gateway unit 5 (live nginx), operations-compose 10,
+    gateway/FND-001S/release/flow contracts 32, build and web-build only
+    REL-098, web unit only REL-107, E2E GOVERNANCE-001, AUTH-002, AUTH-001, and
+    AUTH-003 passed (AUTH-001 now awaits the navigation that carries the token,
+    ending its URL-poll race; one rerun after a host `ERR_NO_BUFFER_SPACE`), and
+    fmt, contracts, architecture, and lint (only REL-096) are clean.
 
 ### Lane V — Schema versions (one at a time)
 

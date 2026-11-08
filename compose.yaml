@@ -195,11 +195,12 @@ services:
       api:
         condition: service_healthy
     healthcheck:
+      # ADR 0007: the renderer answers requests and reaches the private API.
       test: [
         "CMD",
         "node",
         "-e",
-        "Promise.all([fetch('http://127.0.0.1:4321/auth/mfa'),fetch('http://api:8000/api/v1/health')]).then(r=>{if(r.some(x=>!x.ok))process.exit(1)}).catch(()=>process.exit(1))",
+        "Promise.all([fetch('http://127.0.0.1:4321/favicon.svg'),fetch('http://api:8000/api/v1/health')]).then(r=>{if(r.some(x=>!x.ok))process.exit(1)}).catch(()=>process.exit(1))",
       ]
       interval: 5s
       timeout: 3s
@@ -217,10 +218,10 @@ services:
       context: .
       dockerfile: Dockerfile.web
       target: gateway
+    # ADR 0007: the gateway's health and startup do not depend on the
+    # renderer, which serves only the two legal pages.
     depends_on:
       api:
-        condition: service_healthy
-      web:
         condition: service_healthy
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8443}:8443"

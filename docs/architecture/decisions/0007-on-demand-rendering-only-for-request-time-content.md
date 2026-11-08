@@ -1,6 +1,6 @@
 # ADR 0007: On-Demand Rendering Only For Request-Time Content
 
-- Status: accepted; takes effect when AUD-G5 integrates
+- Status: accepted; implemented by AUD-G5
 - Date: 2026-11-07
 - Amends: [ADR 0001](0001-astro-personalized-rendering.md)
 
@@ -67,8 +67,8 @@ On 2026-11-07 the product owner accepted option B of decision D1 in the
   - `tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts`;
   - `tools/web_build_output_test.ts` and the gateway contract tests.
 
-  Until then, ADR 0001 describes the running system, and the FND-001S test keeps
-  enforcing it.
+  ADR 0001 now describes the two on-demand routes, and the FND-001S test
+  enforces them.
 - The legal pages become readable, and crawlable, without JavaScript. A newly
   activated legal version can take up to the cache lifetime to appear on the
   public page. Acceptance always reads the API, never this page.

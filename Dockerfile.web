@@ -1,6 +1,6 @@
 # One Astro build feeds both web-facing images. Compose and CI select a target:
 #   --target gateway  nginx serving the static client output (public entry)
-#   --target web      the private Node renderer for on-demand routes
+#   --target web      the private Node renderer for the on-demand legal pages
 # Building both targets solves the shared build stage once; the second reuses
 # it from the build cache. `web` is last, so it stays the default target. Node
 # matches `nodejs` in .tool-versions.
@@ -35,8 +35,9 @@ FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b34
 WORKDIR /app
 ENV HOST=0.0.0.0
 ENV PORT=4321
+# ADR 0007 (FER-03): the server build bundles its dependencies
+# (`astro.config.mjs`), so the renderer carries the build output and no
+# node_modules: no toolchain, test runner, or browser download.
 COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/package.json ./package.json
 USER node
 CMD ["node", "apps/web/dist/server/entry.mjs"]

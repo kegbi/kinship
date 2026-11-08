@@ -251,8 +251,8 @@ rows on that page; they do not create additional page routes.
 - Invitation creation stays on the members page as a dialog or drawer;
   invitation acceptance remains the external `/invite/:token` route.
 - Password/MFA/passkey/session actions stay within the security page. Challenge
-  steps can use dialogs or on-demand authentication transitions without adding
-  discoverable settings pages.
+  steps can use dialogs or the static authentication transition pages without
+  adding discoverable settings pages.
 - Personalization vocabularies share one route and stable section deep links;
   individual CRUD forms are not pages.
 - Billing-provider callbacks, downloads, and API mutations are transport

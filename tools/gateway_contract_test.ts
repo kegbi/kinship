@@ -183,7 +183,7 @@ Deno.test("renderer proxy locations hide gateway-owned response headers", async 
 
   const rendererLocations = nginxLocations(gateway).filter(({ body }) =>
     /^\s*include \/etc\/nginx\/security_headers\.conf;$/m.test(body) &&
-    /^\s*proxy_pass \$web_upstream;$/m.test(body)
+    /^\s*proxy_pass \$web_upstream\b/m.test(body)
   );
   assert(
     rendererLocations.length > 0,
@@ -341,32 +341,29 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     "gateway telemetry is structured, low-cardinality, and excludes request secrets",
   );
   assert(
-    gateway.includes("log_subrequest on") &&
-      gateway.includes(
-        "log_format kinship_gateway_readiness_api escape=json",
-      ) &&
-      gateway.includes(
-        "log_format kinship_gateway_readiness_web escape=json",
-      ) &&
+    gateway.includes(
+      "log_format kinship_gateway_readiness_api escape=json",
+    ) &&
       gateway.includes('"event":"gateway.readiness"') &&
       gateway.includes('"boundary":"api"') &&
-      gateway.includes('"boundary":"web"') &&
       gateway.includes('"state":"$kinship_readiness_state"') &&
       gateway.includes('"dependency_status":"$upstream_status"') &&
       !gateway.includes("location = /gateway-health {\n      access_log off;"),
-    "gateway safely distinguishes API and renderer readiness diagnostics",
+    "gateway safely records its API readiness diagnostic",
   );
+  // ADR 0007: the gateway is ready when the API is; the renderer serves only
+  // the two legal pages, so its outage does not take the entry point down.
   assert(
     !gateway.includes('return 200 "ready') &&
       gateway.includes("location = /gateway-health") &&
-      gateway.includes("auth_request /_gateway_web_readiness") &&
-      gateway.includes("location = /_gateway_web_readiness") &&
+      !gateway.includes("auth_request") &&
+      !gateway.includes("log_subrequest") &&
       gateway.includes("proxy_pass $api_upstream/api/v1/health") &&
       gateway.includes(
         "error_page 401 403 404 500 502 503 504 = @gateway_unavailable",
       ) &&
       gateway.includes('return 503 "Gateway dependencies unavailable'),
-    "gateway readiness is bounded by both required private upstreams and fails honestly",
+    "gateway readiness is bounded by the private API and fails honestly",
   );
   for (
     const directive of [
@@ -394,7 +391,10 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
       "= /auth/mfa",
     ]
   ) {
-    assert(gateway.includes(`location ${route}`), `${route} is on-demand`);
+    assert(
+      gateway.includes(`location ${route}`),
+      `${route} has its own private location`,
+    );
   }
   assert(
     gateway.includes("try_files $uri $uri/index.html $uri.html") &&
@@ -443,16 +443,26 @@ Deno.test("production-like Compose exposes only the gateway application entry", 
     /location ~ \^\/invite\/\[\^\/\]\+\$ \{[\s\S]*?\n {4}\}/,
   )?.[0] ?? "";
   assert(
-    invitationLocation.includes("proxy_hide_header Cache-Control;") &&
+    invitationLocation.includes(
+      "try_files /internal/invite-shell/index.html =404;",
+    ) &&
       invitationLocation.includes(
         'add_header Cache-Control "private, no-store" always;',
       ),
     "invitation responses expose one private no-store policy through the gateway",
   );
+  // ADR 0007: the renderer image carries the build output, not the toolchain.
   assert(
     stage("build").includes("pnpm install --frozen-lockfile") &&
-      rendererImage.includes("server/entry.mjs"),
-    "renderer image uses frozen dependencies and production output",
+      rendererImage.includes("server/entry.mjs") &&
+      rendererImage.includes(
+        "COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist",
+      ) &&
+      !/node_modules|pnpm|corepack/.test(
+        rendererImage.split("\n").filter((line) => !line.startsWith("#"))
+          .join("\n"),
+      ),
+    "renderer image uses frozen dependencies and only the production output",
   );
 });
 
@@ -939,7 +949,7 @@ Deno.test("[GAP-040] every proxied location forwards the gateway's request ident
     /^\s*proxy_pass /m.test(body)
   );
   assert(
-    proxied.length >= 8,
+    proxied.length >= 6,
     `the gateway proxies the API, readiness, and renderer locations (${proxied.length})`,
   );
   for (const { selector, body } of proxied) {
@@ -963,8 +973,10 @@ Deno.test("[AUD-G1] static HTML revalidates and only fingerprinted assets are im
     new URL("../gateway/nginx.conf", import.meta.url),
   );
   const locations = nginxLocations(gateway);
+  // The invitation shell is private, no-store instead (AUD-G5, below).
   const shells = locations.filter(({ body }) =>
-    /^\s*try_files \/internal\/[a-z-]+-shell\/index\.html =404;$/m.test(body)
+    /^\s*try_files \/internal\/[a-z-]+-shell\/index\.html =404;$/m.test(body) &&
+    !body.includes("/internal/invite-shell/")
   );
   assert(shells.length === 5, `five static shell rewrites (${shells.length})`);
   const html = [
@@ -1250,7 +1262,7 @@ Deno.test("[AUD-G2] the gateway compresses API JSON except secret-bearing answer
   // Renderer pages and the gateway's own answers keep nginx's default.
   for (const { selector, body } of locations) {
     if (
-      /^\s*proxy_pass \$web_upstream;$/m.test(body) || selector.startsWith("@")
+      /^\s*proxy_pass \$web_upstream\b/m.test(body) || selector.startsWith("@")
     ) {
       assert(!/^\s*gzip on;$/m.test(body), `${selector} stays uncompressed`);
     }
@@ -1284,6 +1296,161 @@ Deno.test("[AUD-G2] static assets are compressed once at build time and served p
       `the build pre-compresses .${extension} files`,
     );
   }
+});
+
+/** The page catalog's routes by rendering strategy, as `id path` pairs. */
+async function catalogRoutes(rendering: string): Promise<string[]> {
+  const catalog = await Deno.readTextFile(
+    new URL("../docs/product/page-catalog.yaml", import.meta.url),
+  );
+  return catalog.replaceAll("\r\n", "\n").split(/\n(?= {2}- id: )/).flatMap(
+    (block) => {
+      const page = block.match(/^ {2}- id: (\S+)\n {4}path: (\S+)/m);
+      return page && new RegExp(`^ {4}rendering: ${rendering}$`, "m").test(
+          block,
+        )
+        ? [`${page[1]} ${page[2]}`]
+        : [];
+    },
+  );
+}
+
+/**
+ * The pages that carry a single-use token, an MFA challenge, or a pending
+ * compliance step (ADR 0007), the file each is served from, and a request
+ * path for it.
+ */
+const PRIVATE_STATIC_PAGES = [
+  ["/auth/verify-email", "/auth/verify-email/index.html"],
+  ["/auth/reset-password", "/auth/reset-password/index.html"],
+  ["/auth/mfa", "/auth/mfa/index.html"],
+  ["/app/compliance", "/app/compliance/index.html"],
+  ["/invite/fixture-token", "/internal/invite-shell/index.html"],
+  // The built files at their own paths answer the same way.
+  ["/auth/verify-email/", "/$1/index.html"],
+  ["/auth/reset-password/index.html", "/$1/index.html"],
+  ["/auth/mfa/index.html", "/$1/index.html"],
+  ["/app/compliance/", "/$1/index.html"],
+] as const;
+
+Deno.test("[AUD-G5] the token, MFA, and compliance pages are private static files and only the legal pages reach the renderer", async () => {
+  const [gateway, base] = await Promise.all([
+    Deno.readTextFile(new URL("../gateway/nginx.conf", import.meta.url)),
+    Deno.readTextFile(new URL("../compose.yaml", import.meta.url)),
+  ]);
+  const locations = nginxLocations(gateway);
+
+  assert(
+    JSON.stringify(await catalogRoutes("on-demand")) ===
+      JSON.stringify(["legal.privacy /privacy", "legal.terms /terms"]),
+    `the catalog renders exactly the legal pages on demand: ${await catalogRoutes(
+      "on-demand",
+    )}`,
+  );
+
+  for (const [path, file] of PRIVATE_STATIC_PAGES) {
+    const location = servingLocation(locations, path);
+    assert(location, `${path} has a location`);
+    assert(
+      !/^\s*proxy_pass /m.test(location.body) &&
+        location.body.split("\n").some((line) =>
+          line.trim() === `try_files ${file} =404;`
+        ),
+      `${path} is served from ${file}, not the renderer (${location.selector})`,
+    );
+    assert(
+      addedHeaderValue(location.body, "Cache-Control") ===
+          "private, no-store" &&
+        SECURITY_HEADERS_INCLUDE.test(location.body),
+      `${path} is private, no-store with the browser policy`,
+    );
+  }
+  for (
+    const selector of ["= /internal/invite-shell", "^~ /internal/invite-shell/"]
+  ) {
+    assert(
+      /^\s*return 404;$/m.test(nginxLocation(gateway, selector)),
+      `the invitation shell is not reachable at its own path (${selector})`,
+    );
+  }
+
+  // Only the catalog's on-demand pages reach the renderer.
+  const rendered = locations.filter(({ body }) =>
+    /^\s*proxy_pass \$web_upstream\b/m.test(body)
+  );
+  for (const path of ["/privacy", "/terms"]) {
+    assert(
+      rendered.includes(servingLocation(locations, path)!),
+      `${path} renders on demand`,
+    );
+  }
+  assert(
+    rendered.length === 1,
+    `one renderer location serves both legal pages: ${
+      rendered.map(({ selector }) => selector)
+    }`,
+  );
+  const legal = rendered[0]!.body;
+
+  // The legal pages are public and the same for every reader: nothing
+  // personal goes up, nothing client-chosen varies the shared copy, and only
+  // a successful render is kept, for five minutes.
+  const http = gateway.slice(0, gateway.indexOf("\n  server {"));
+  assert(
+    /^ {2}proxy_cache_path \/tmp\/\S+ levels=1:2 keys_zone=kinship_legal:1m max_size=\d+m inactive=\d+m use_temp_path=off;$/m
+      .test(http),
+    "the legal page cache lives in the gateway's writable /tmp",
+  );
+  for (
+    const directive of [
+      "proxy_pass $web_upstream$uri;",
+      "proxy_cache kinship_legal;",
+      "proxy_cache_key $uri;",
+      "proxy_cache_valid 200 5m;",
+      "proxy_cache_lock on;",
+      'proxy_set_header Cookie "";',
+      'proxy_set_header Authorization "";',
+      "proxy_set_header Host kinship-private-web;",
+      "proxy_hide_header Set-Cookie;",
+      "proxy_hide_header Cache-Control;",
+      "error_page 502 504 = @renderer_unavailable;",
+    ]
+  ) {
+    assert(
+      legal.split("\n").some((line) => line.trim() === directive),
+      `the legal location declares ${directive}`,
+    );
+  }
+  assert(
+    (legal.match(/^\s*proxy_cache_valid /gm) ?? []).length === 1 &&
+      !/proxy_ignore_headers/.test(legal) &&
+      !/\$(http_cookie|cookie_|args|query_string|request_uri|http_)/.test(
+        legal.match(/^\s*proxy_cache_key (.+);$/m)?.[1] ?? "$missing",
+      ),
+    "no other status is cached and the key carries no cookie or query",
+  );
+  assert(
+    addedHeaderValue(legal, "Cache-Control") === "no-cache" &&
+      SECURITY_HEADERS_INCLUDE.test(legal),
+    "a reader's browser revalidates the legal page with the browser policy",
+  );
+
+  // The gateway's own health does not depend on the renderer.
+  const health = nginxLocation(gateway, "= /gateway-health");
+  assert(
+    health.includes("proxy_pass $api_upstream/api/v1/health") &&
+      !/auth_request/.test(gateway) &&
+      !gateway.includes("_gateway_web_readiness") &&
+      !gateway.includes('"boundary":"web"'),
+    "the gateway's health asks only the API",
+  );
+  const gatewayService =
+    base.slice(base.indexOf("\n  gateway:") + 1).split(/\n {2}\S/, 1)[0] ?? "";
+  assert(
+    gatewayService.includes("api:\n        condition: service_healthy") &&
+      !/^ {6}web:$/m.test(gatewayService),
+    "the gateway starts without waiting for the renderer",
+  );
 });
 
 Deno.test("AUTH-003 E2E has no direct product API or host Astro escape hatch", async () => {

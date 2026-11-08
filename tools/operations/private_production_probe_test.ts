@@ -91,11 +91,12 @@ Deno.test("OPS-001B fixes proportionate private-production objectives", async ()
       `gateway structured request log is missing ${field}`,
     );
   }
+  // ADR 0007: the gateway's readiness follows the API alone.
   assert(
     gateway.includes('"event":"gateway.readiness"') &&
       gateway.includes('"boundary":"api"') &&
-      gateway.includes('"boundary":"web"'),
-    "operator probe must use the existing API and renderer readiness boundary",
+      !gateway.includes('"boundary":"web"'),
+    "operator probe must use the existing API readiness boundary",
   );
 
   const mvp = JSON.parse(

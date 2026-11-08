@@ -19,6 +19,8 @@ const shellRoutes = [
     new RegExp(`^/app/settings/import/${uuid}/?$`),
     "/internal/import-report-shell",
   ],
+  // ADR 0007: every invitation link shares one static shell.
+  [/^\/invite\/[^/]+$/, "/internal/invite-shell"],
 ] as const;
 
 export function resolveDevStaticShellRoute(

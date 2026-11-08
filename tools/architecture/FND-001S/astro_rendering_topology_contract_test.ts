@@ -3,35 +3,28 @@ const MAX_ROUTE_ROWS = 32;
 
 type Route = Readonly<{ id: string; path: string }>;
 
+/**
+ * ADR 0007: only the pages whose first response carries request-time data,
+ * the active legal documents, render on demand.
+ */
 const EXPECTED_ON_DEMAND_ROUTES: readonly Route[] = [
-  { id: "auth.verify-email", path: "/auth/verify-email" },
-  { id: "auth.reset", path: "/auth/reset-password" },
-  { id: "auth.mfa", path: "/auth/mfa" },
-  { id: "invitation.accept", path: "/invite/:token" },
-  { id: "compliance.accept", path: "/app/compliance" },
+  { id: "legal.privacy", path: "/privacy" },
+  { id: "legal.terms", path: "/terms" },
 ];
 
 const CATALOG_FIXTURE = `pages:
-  - id: auth.verify-email
-    path: /auth/verify-email
-    access: anonymous-or-authenticated
+  - id: legal.privacy
+    path: /privacy
+    access: public
     rendering: on-demand
-  - id: auth.reset
-    path: /auth/reset-password
-    access: anonymous
+  - id: legal.terms
+    path: /terms
+    access: public
     rendering: on-demand
   - id: auth.mfa
     path: /auth/mfa
     access: authentication-challenge
-    rendering: on-demand
-  - id: invitation.accept
-    path: /invite/:token
-    access: anonymous-or-authenticated
-    rendering: on-demand
-  - id: compliance.accept
-    path: /app/compliance
-    access: authenticated
-    rendering: on-demand
+    rendering: static-shell-islands
 `;
 
 const NETWORK_CLAIMS = [
@@ -222,8 +215,7 @@ Deno.test("FND-001S in-memory complete-section discriminators", async (t) => {
   const routes = parseOnDemandRoutes(CATALOG_FIXTURE);
   const canonicalGateway = gatewaySection(routes);
   const canonicalExposure = networkExposureSection();
-  const lastRoute =
-    "| `compliance.accept` | `/app/compliance` | private `web` |";
+  const lastRoute = "| `legal.terms` | `/terms` | private `web` |";
   const extraRoute = "| `unexpected.route` | `/unexpected` | private `web` |";
 
   assert(
@@ -316,7 +308,7 @@ Deno.test("FND-001S in-memory complete-section discriminators", async (t) => {
   await t.step("malformed route row fails", () => {
     const changed = canonicalGateway.replace(
       lastRoute,
-      "| compliance.accept | /app/compliance | private web |",
+      "| legal.terms | /terms | private web |",
     );
     assert(
       !validateGatewayRouting(changed, routes),
@@ -451,6 +443,7 @@ Deno.test("FND-001S authoritative repository contracts require DG-01 topology", 
     configuration: "docs/architecture/configuration-and-secrets.md",
     observability: "docs/architecture/observability.md",
     catalog: "docs/product/page-catalog.yaml",
+    informationArchitecture: "docs/product/information-architecture.md",
   } as const;
   const keys = Object.keys(paths) as (keyof typeof paths)[];
   const documents = Object.fromEntries(
@@ -477,17 +470,34 @@ Deno.test("FND-001S authoritative repository contracts require DG-01 topology", 
   ], issues);
   requireClauses("ADR 0001", documents.adr, [
     "public and stable content is static;",
-    "Production and test run a private Astro `web` renderer for exactly the page catalog's five `on-demand` ID/path pairs.",
-    "The gateway serves static and prerendered output, routes `/api/v1/*` to private `api`, routes only those five on-demand patterns to private `web`, and is the sole public entry point.",
+    "Production and test run a private Astro `web` renderer for exactly the page catalog's two `on-demand` ID/path pairs, `legal.privacy` and `legal.terms`.",
+    "The gateway serves static and prerendered output, routes `/api/v1/*` to private `api`, routes only those two on-demand patterns to private `web`, and is the sole public entry point.",
     "Development alone replaces the private renderer command with `astro dev`.",
   ], issues);
+  // Wrapped prose and padded table cells are compared with runs of
+  // whitespace collapsed, so reflowing either document keeps the pin.
+  const flatten = (text: string) => text.replace(/\s+/g, " ");
+  requireClauses("ADR 0001", flatten(documents.adr), [
+    "token, invitation, MFA, and compliance pages are prerendered shells that read their token or state in the browser;",
+    "only a page whose first response carries request-time data renders on demand, as ADR 0007 decides, and it requires a page-catalog update and measured reason.",
+  ], issues);
+  requireClauses(
+    "information architecture",
+    flatten(documents.informationArchitecture),
+    [
+      "| Marketing and API reference | Static | Public and stable content. |",
+      "| Legal documents | On-demand (ADR 0007) | Request-time public data, readable without JavaScript. |",
+      "| Token, invitation, MFA, and compliance pages | Static shell with an island | Served `private, no-store`; the island reads the token or state in the browser. |",
+    ],
+    issues,
+  );
   requireClauses("technology baseline", documents.technology, [
     "`web` is a long-running private Astro renderer in production and test and an `astro dev` server only in development.",
     "`web` may consume only generated API contracts, a private API origin, forwarded request context, and renderer operations configuration.",
     "It receives no database, object-store, provider credential, identity key, backend-internal import, or direct-adapter authority.",
   ], issues);
   requireClauses("Compose contract", documents.compose, [
-    "The gateway waits only for `web` readiness before forwarding an on-demand request and returns a bounded unavailable response when that dependency is not ready.",
+    "The gateway's own readiness does not depend on `web`; it forwards an on-demand request to `web` and returns a bounded unavailable response when that dependency is not ready, unless it still holds a successful render of that page.",
     "`web` liveness reports whether its renderer process is alive; readiness additionally requires the renderer to accept requests and its private `api` origin to be reachable.",
     "Development alone overrides the `web` command to `astro dev`; production-like and test profiles use the private production renderer.",
   ], issues);
@@ -498,7 +508,7 @@ Deno.test("FND-001S authoritative repository contracts require DG-01 topology", 
   requireClauses("observability contract", documents.observability, [
     "Gateway-to-`web`-to-`api` requests preserve one correlation context, and each hop records its own service span.",
     "Renderer telemetry uses safe route templates and redacts token path segments, query values, cookies, authorization data, verification and reset data, invitation data, MFA data, and compliance payloads.",
-    "Personalized renderer responses use `Cache-Control: private, no-store`; fingerprinted static assets use `Cache-Control: public, max-age=31536000, immutable`.",
+    "Token, MFA, invitation, and compliance pages use `Cache-Control: private, no-store`; the on-demand legal pages use `Cache-Control: no-cache` behind the gateway's five-minute shared copy; fingerprinted static assets use `Cache-Control: public, max-age=31536000, immutable`.",
   ], issues);
 
   assert(

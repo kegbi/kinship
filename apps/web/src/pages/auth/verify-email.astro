@@ -1,8 +1,5 @@
 ---
 import AuthLayout from "../../layouts/AuthLayout.astro";
-export const prerender = false;
-Astro.response.headers.set("Cache-Control", "private, no-store");
-Astro.response.headers.set("Referrer-Policy", "no-referrer");
 ---
 
 <AuthLayout description="Verify your Kinship email address." pageId="auth.verify-email" title="Verify your email — Kinship">

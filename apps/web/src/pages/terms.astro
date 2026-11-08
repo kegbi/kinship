@@ -1,18 +1,17 @@
 ---
+import LegalDocument from "../components/LegalDocument.astro";
 import PublicLayout from "../layouts/PublicLayout.astro";
-export const prerender = true;
+import { readPublicLegalPage } from "../lib/legal.ts";
+// ADR 0007: the active terms are request-time public data, so this page
+// renders on demand; the gateway keeps a successful page for five minutes.
+export const prerender = false;
+const legal = await readPublicLegalPage("terms", {
+  apiOrigin: process.env.API_ORIGIN ?? "http://127.0.0.1:8000",
+  requestId: Astro.request.headers.get("x-request-id"),
+});
+Astro.response.status = legal.status;
 ---
 
 <PublicLayout currentPath="/terms" description="Review the current Kinship terms of service." pageId="legal.terms" title="Terms of service — Kinship">
-  <main id="main-content" class="legal-page" tabindex="-1">
-    <p data-legal-state role="status" aria-live="polite">Loading terms…</p>
-    <h1 data-legal-title>Terms of service</h1>
-    <p data-legal-version></p>
-    <article data-legal-content class="legal-document"></article>
-  </main>
+  <LegalDocument legal={legal} />
 </PublicLayout>
-
-<script>
-  import { mountPublicLegal } from "../lib/legal.ts";
-  void mountPublicLegal("terms");
-</script>

@@ -2245,7 +2245,7 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           "apps/web/dist/client",
-          "apps/web/dist/server/entry.mjs",
+          "apps/web/dist/server",
           "apps/web/src/styles",
           "gateway/security_headers.conf",
         ],

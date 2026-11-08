@@ -16,6 +16,8 @@ describe("Astro development static-shell routing", () => {
       `/app/settings/import/${personId}`,
       "/internal/import-report-shell",
     ],
+    ["/invite/private-token", "/internal/invite-shell"],
+    ["/invite/continue", "/internal/invite-shell"],
   ])("maps %s to its reusable shell", (requested, expected) => {
     expect(resolveDevStaticShellRoute(requested)).toBe(expected);
   });
@@ -25,6 +27,8 @@ describe("Astro development static-shell routing", () => {
     "/app/people/not-a-uuid",
     `/app/people/${personId}/unknown`,
     "/internal/person-profile-shell",
+    "/invite/",
+    "/invite/token/extra",
   ])("leaves ordinary and internal paths unchanged: %s", (requested) => {
     expect(resolveDevStaticShellRoute(requested)).toBeUndefined();
   });

@@ -8,7 +8,7 @@ const authCss = readFileSync("apps/web/src/styles/auth.css", "utf8");
 
 /** Every page the auth layout (and so only `auth.css`) styles. */
 function authPages(): readonly string[] {
-  return ["apps/web/src/pages/auth", "apps/web/src/pages/invite"].flatMap((
+  return ["apps/web/src/pages/auth", "apps/web/src/pages/internal"].flatMap((
     directory,
   ) =>
     readdirSync(directory).filter((name) => name.endsWith(".astro")).map((
@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe("REL-045 auth stylesheet", () => {
   it("keeps the invitation actions out of reach while the markup hides them", () => {
-    mount("apps/web/src/pages/invite/[token].astro");
+    mount("apps/web/src/pages/internal/invite-shell.astro");
     const actions = document.querySelector<HTMLElement>("#invitation-actions")!;
     expect(actions.hidden).toBe(true);
     expect(getComputedStyle(actions).display).toBe("none");

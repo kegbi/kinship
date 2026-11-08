@@ -14,9 +14,10 @@
  * the hero, the rail summary, the timeline, life events, gifts, files, the
  * audit summary, and the seven profile fact sections — each loaded on
  * demand — and the protected pages in `PAGE_ISLANDS` (Today, the journal,
- * people, tasks, and every settings page) mount theirs from their own page
- * script, as the on-demand pages in `ON_DEMAND_ISLANDS` (the required legal
- * review) do. Every island's bytes are measured, so the evidence line
+ * people, tasks, the required legal review, and every settings page) mount
+ * theirs from their own page script. The two pages rendered on demand, the
+ * legal documents (ADR 0007), ship no script at all. Every island's bytes are
+ * measured, so the evidence line
  * records real numbers. Each page preloads exactly the static import closure
  * of its scripts (FER-02), and the person shell also the hero, rail, and fact
  * sections it always mounts, so no lazy chunk and no React is preloaded where
@@ -37,17 +38,22 @@ const REACT_MARKERS = [
   "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE",
 ];
 
-/** The prerendered public pages the page catalog serves as static files. */
+/**
+ * The prerendered public pages the page catalog serves as static files,
+ * including the token pages and the invitation shell (ADR 0007).
+ */
 const PUBLIC_PAGES = [
   "404.html",
   "auth/forgot-password/index.html",
+  "auth/mfa/index.html",
+  "auth/reset-password/index.html",
   "auth/sign-in/index.html",
   "auth/sign-up/index.html",
+  "auth/verify-email/index.html",
   "features/index.html",
   "docs/api/index.html",
   "index.html",
-  "privacy/index.html",
-  "terms/index.html",
+  "internal/invite-shell/index.html",
 ];
 
 /** The static person shell, which loads its islands lazily. */
@@ -68,6 +74,7 @@ const PAGE_ISLANDS: Readonly<Record<string, readonly string[]>> = {
     "today-favorite-notes",
     "today-recent-activity",
   ],
+  "app/compliance/index.html": ["compliance-review"],
   "app/journal/index.html": ["journal-surface"],
   "app/people/archived/index.html": ["people-directory"],
   "app/people/index.html": ["people-directory"],
@@ -96,15 +103,6 @@ const PAGE_ISLANDS: Readonly<Record<string, readonly string[]>> = {
   "internal/import-report-shell/index.html": ["settings-import-report"],
   "internal/journal-item-shell/index.html": ["journal-surface"],
   "internal/person-audit-shell/index.html": ["audit-history"],
-};
-
-/**
- * The protected pages rendered on demand whose own script mounts islands
- * (GAP-033): they have no HTML in the client output, so each is found by
- * its page script's name, and the islands it mounts.
- */
-const ON_DEMAND_ISLANDS: Readonly<Record<string, readonly string[]>> = {
-  compliance: ["compliance-review"],
 };
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -292,17 +290,6 @@ async function islandEntries(name: string): Promise<string[]> {
   return entries.sort();
 }
 
-/** The one page script an on-demand page named `page` ships. */
-async function onDemandScript(page: string): Promise<string> {
-  const scripts: string[] = [];
-  const pattern = new RegExp(`^${page}\\.astro_astro_type_script_.*\\.js$`);
-  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
-    if (pattern.test(entry.name)) scripts.push(`_astro/${entry.name}`);
-  }
-  assert(scripts.length === 1, `one ${page} page script, not ${scripts}`);
-  return scripts[0]!;
-}
-
 function eagerScripts(html: string): Set<string> {
   return new Set(
     [...html.matchAll(/<script\b[^>]*\bsrc="\/(_astro\/[\w.-]+\.js)"/g)].map((
@@ -366,15 +353,12 @@ async function pageScript(page: string): Promise<string> {
 }
 
 Deno.test("[GAP-027] no page script but the layout's, the person shell's, and the island pages' can reach React", async () => {
-  // Pages rendered on demand (auth resets, invitations) have no HTML in the
-  // client output, but their scripts do: every page script is checked. The
-  // layout's reaches React only through its islands' dynamic imports (FER-01).
+  // Every page script in the client output is checked, whichever page loads
+  // it. The layout's reaches React only through its islands' dynamic imports
+  // (FER-01).
   const allowed = new Set([await layoutScript()]);
   for (const page of Object.keys(PAGE_ISLANDS)) {
     allowed.add(await pageScript(page));
-  }
-  for (const page of Object.keys(ON_DEMAND_ISLANDS)) {
-    allowed.add(await onDemandScript(page));
   }
   let scripts = 0;
   for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
@@ -512,33 +496,11 @@ Deno.test("[GAP-031] [GAP-033] each island page loads its islands from its own s
   }
 });
 
-/**
- * The public pages rendered on demand (GAP-033): their HTML is not in the
- * client output, so they are named by the page scripts the build wrote.
- */
-const ON_DEMAND_PUBLIC_SCRIPTS = [
-  /^mfa\.astro_astro_type_script_/,
-  /^reset-password\.astro_astro_type_script_/,
-  /^verify-email\.astro_astro_type_script_/,
-  /^_token_\.astro_astro_type_script_/,
-] as const;
-
-Deno.test("[GAP-033] no public page, prerendered or on demand, reaches React or builds an element", async () => {
+Deno.test("[GAP-033] no public page reaches React or builds an element", async () => {
+  // The legal pages rendered on demand ship no script (AUD-G5, below).
   const entries: string[] = [];
   for (const page of PUBLIC_PAGES) {
     entries.push(...chunkReferences(await read(page), page));
-  }
-  const names: string[] = [];
-  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
-    names.push(entry.name);
-  }
-  for (const pattern of ON_DEMAND_PUBLIC_SCRIPTS) {
-    const matched = names.filter((name) => pattern.test(name));
-    assert(
-      matched.length === 1,
-      `${pattern} names one on-demand page script, not ${matched}`,
-    );
-    entries.push(`_astro/${matched[0]}`);
   }
   for (const chunk of await reachable(entries)) {
     const source = await read(chunk);
@@ -550,24 +512,123 @@ Deno.test("[GAP-033] no public page, prerendered or on demand, reaches React or 
   }
 });
 
-Deno.test("[GAP-033] each on-demand island page loads its islands from its own script", async () => {
-  const fromLayout = await reachable([await layoutScript()]);
-  for (const [page, islands] of Object.entries(ON_DEMAND_ISLANDS)) {
-    const script = await onDemandScript(page);
-    const fromScript = await reachable([script]);
-    const react: string[] = [];
-    for (const chunk of fromScript) {
-      if (carriesReact(await read(chunk))) react.push(chunk);
-    }
-    assert(react.length > 0, `${page}'s script loads React for its islands`);
-    for (const name of islands) {
-      const [entry, ...others] = await islandEntries(name);
-      assert(entry && others.length === 0, `one ${name} island entry`);
-      assert(fromScript.has(entry), `${page}'s script loads ${name}`);
-      assert(!fromLayout.has(entry), `${name} does not load with the layout`);
-      await logHydratedBytes(`${page} ${name}`, entry, react);
+/**
+ * The pages a single-use token, an MFA challenge, or a pending compliance
+ * step opens (ADR 0007), by built file, with their catalog IDs. None reads the
+ * request, so each is a static file the gateway serves `private, no-store`.
+ */
+const PRIVATE_STATIC_PAGES: Readonly<Record<string, string>> = {
+  "auth/verify-email/index.html": "auth.verify-email",
+  "auth/reset-password/index.html": "auth.reset",
+  "auth/mfa/index.html": "auth.mfa",
+  "app/compliance/index.html": "compliance.accept",
+  "internal/invite-shell/index.html": "invitation.accept",
+};
+
+/** The catalog's on-demand pages: each renders the active legal document. */
+const ON_DEMAND_PAGES = ["privacy", "terms"] as const;
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(new URL(path, CLIENT));
+    return true;
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+}
+
+Deno.test("[AUD-G5] the token, MFA, and compliance pages are static files and only the legal pages render on demand", async () => {
+  for (const [page, id] of Object.entries(PRIVATE_STATIC_PAGES)) {
+    assert(await exists(page), `the build prerendered ${page}`);
+    assert(
+      (await read(page)).includes(`data-page-id="${id}"`),
+      `${page} is the ${id} page`,
+    );
+  }
+  for (const name of ON_DEMAND_PAGES) {
+    for (const page of [`${name}/index.html`, `${name}.html`]) {
+      assert(!await exists(page), `${page} renders on demand, not at build`);
     }
   }
+  // The renderer writes their text into the page, so they ship no page
+  // script: the build's modulepreload rewrite (FER-02), which reaches only
+  // prerendered HTML, has nothing to preload for them.
+  for await (const entry of Deno.readDir(new URL("_astro/", CLIENT))) {
+    assert(
+      !/^(privacy|terms)\.astro_astro_type_script_/.test(entry.name),
+      `an on-demand legal page ships a script: ${entry.name}`,
+    );
+  }
+});
+
+const SERVER = new URL("../apps/web/dist/server/", import.meta.url);
+
+/** Every module specifier a built server module imports, statically or not. */
+export function moduleSpecifiers(source: string): string[] {
+  const patterns = [
+    /\b(?:import|export)\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\}|[\w$]+(?:\s*,\s*(?:\{[^}]*\}|\*\s*as\s+[\w$]+))?)\s*from\s*["']([^"']+)["']/g,
+    // A side-effect import starts a statement; `"import"` inside data does not.
+    /(?:^|[;}])\s*import\s*["']([^"']+)["']/gm,
+    /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  const found = new Set<string>();
+  for (const pattern of patterns) {
+    for (const [, specifier] of source.matchAll(pattern)) found.add(specifier!);
+  }
+  return [...found].sort();
+}
+
+Deno.test("[AUD-G5] the server-module reader finds static, re-exported, and dynamic imports", () => {
+  const source = [
+    'import { a } from "react";',
+    "import * as z from 'zod/v4';",
+    'import "./side-effect.mjs";',
+    'export { b } from "./chunks/b.mjs";',
+    'const c = () => import("./chunks/c.mjs");',
+    'const text = "not an import from here";',
+    'const data = { "import": "./not-a-module.mjs" };',
+  ].join("\n");
+  assert(
+    JSON.stringify(moduleSpecifiers(source)) ===
+      JSON.stringify([
+        "./chunks/b.mjs",
+        "./chunks/c.mjs",
+        "./side-effect.mjs",
+        "react",
+        "zod/v4",
+      ]),
+    `module specifiers: ${moduleSpecifiers(source)}`,
+  );
+});
+
+Deno.test("[AUD-G5] the renderer's server output imports only Node built-ins and itself", async () => {
+  // The `web` image copies the build output and no node_modules (FER-03).
+  const external = new Set<string>();
+  let modules = 0;
+  async function scan(directory: URL): Promise<void> {
+    for await (const entry of Deno.readDir(directory)) {
+      const path = new URL(
+        entry.isDirectory ? `${entry.name}/` : entry.name,
+        directory,
+      );
+      if (entry.isDirectory) await scan(path);
+      else if (entry.name.endsWith(".mjs")) {
+        modules += 1;
+        for (
+          const specifier of moduleSpecifiers(await Deno.readTextFile(path))
+        ) {
+          if (!/^(\.{1,2}\/|node:)/.test(specifier)) external.add(specifier);
+        }
+      }
+    }
+  }
+  await scan(SERVER);
+  assert(modules > 3, `the build wrote the server modules, found ${modules}`);
+  assert(
+    external.size === 0,
+    `the server output needs packages at run time: ${[...external].sort()}`,
+  );
 });
 
 /** The `href` of every `<link rel="modulepreload">` in a page's `<head>`. */
@@ -990,11 +1051,16 @@ function linkedStylesheets(html: string): string[] {
   ].map(([, href]) => href!);
 }
 
-/** Every built protected page, with the group it belongs to. */
+/**
+ * Every built protected page, with the group it belongs to. The invitation
+ * shell lives under `internal/` but is a public page on the auth layout
+ * (ADR 0007), so it is checked with the public pages instead.
+ */
 async function protectedPageGroups(): Promise<
   { page: string; group: (typeof STYLE_GROUPS)[number] }[]
 > {
-  const pages = [...await builtPages("app/"), ...await builtPages("internal/")];
+  const pages = [...await builtPages("app/"), ...await builtPages("internal/")]
+    .filter((page) => !PUBLIC_PAGES.includes(page));
   return pages.map((page) => ({
     page,
     group: STYLE_GROUPS.find(({ pages }) => pages.test(page))!,
@@ -1040,6 +1106,29 @@ Deno.test("[FER-09] each protected page group loads only its own CSS", async () 
         !css[0]!.includes(group.marker) && css[1]!.includes(group.marker),
       `${page} links the shared stylesheet, then the ${group.name} one: ${sheets}`,
     );
+  }
+});
+
+Deno.test("[FER-09] no public page loads the protected CSS", async () => {
+  // The public pages, the invitation shell among them, keep their own layout
+  // sheet and download neither the shell's rules nor any group's.
+  for (const page of PUBLIC_PAGES) {
+    const html = await read(page);
+    assert(!/<style/i.test(html), `${page} inlines no style`);
+    const sheets = linkedStylesheets(html);
+    assert(sheets.length > 0, `${page} links a stylesheet`);
+    const css = await Promise.all(sheets.map(read));
+    for (
+      const marker of [
+        SHARED_STYLE_MARKER,
+        ...STYLE_GROUPS.map((group) => group.marker),
+      ]
+    ) {
+      assert(
+        !css.some((sheet) => sheet.includes(marker)),
+        `${page} loads protected CSS (${marker}): ${sheets}`,
+      );
+    }
   }
 });
 

@@ -9,8 +9,10 @@ renderingStrategies:
     description: Built without request-specific data.
   static-shell-islands:
     description: Prerendered shell with authenticated data loaded by focused islands.
+  # ADR 0007: only a page whose first response must carry request-time data
+  # renders on demand; every other page is prerendered.
   on-demand:
-    description: Server-rendered per request because protected state affects the first response.
+    description: Server-rendered per request because its first response carries request-time data.
 
 defaultStates:
   public:
@@ -113,14 +115,14 @@ pages:
   - id: legal.privacy
     path: /privacy
     access: public
-    rendering: static
+    rendering: on-demand
     owner: governance
     flowIds: [GOVERNANCE-001]
 
   - id: legal.terms
     path: /terms
     access: public
-    rendering: static
+    rendering: on-demand
     owner: governance
     flowIds: [GOVERNANCE-001]
 
@@ -141,7 +143,7 @@ pages:
   - id: auth.verify-email
     path: /auth/verify-email
     access: anonymous-or-authenticated
-    rendering: on-demand
+    rendering: static-shell-islands
     owner: identity
     flowIds: [AUTH-001]
 
@@ -155,21 +157,21 @@ pages:
   - id: auth.reset
     path: /auth/reset-password
     access: anonymous
-    rendering: on-demand
+    rendering: static-shell-islands
     owner: identity
     flowIds: [AUTH-003]
 
   - id: auth.mfa
     path: /auth/mfa
     access: authentication-challenge
-    rendering: on-demand
+    rendering: static-shell-islands
     owner: identity
     flowIds: [AUTH-003]
 
   - id: invitation.accept
     path: /invite/:token
     access: anonymous-or-authenticated
-    rendering: on-demand
+    rendering: static-shell-islands
     owner: workspaces
     flowIds: [AUTH-002]
 
@@ -747,6 +749,6 @@ pages:
   - id: compliance.accept
     path: /app/compliance
     access: authenticated
-    rendering: on-demand
+    rendering: static-shell-islands
     owner: governance
     flowIds: [GOVERNANCE-001]

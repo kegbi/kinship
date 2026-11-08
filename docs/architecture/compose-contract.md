@@ -15,7 +15,7 @@ are created during the executable scaffold, then pinned for reproducibility.
 | `worker`         | Reminder, import/export, synchronization, and maintenance commands           | default, dev, test | Long-running |
 | `migrate`        | Applies and verifies immutable SQL before API/worker readiness               | default, test      | One-shot     |
 | `postgres`       | Canonical durable database                                                   | default, dev, test | Long-running |
-| `web`            | Private Astro renderer; hot reload in development                            | default, dev, test | Long-running |
+| `web`            | Private Astro renderer for the legal pages; hot reload in development        | default, dev, test | Long-running |
 | `object-store`   | S3-compatible development/test attachment storage                            | dev, test          | Long-running |
 | `mail`           | Captured development/test email                                              | dev, test          | Long-running |
 | `otel-collector` | Optional OTLP receiver and local telemetry routing                           | observability      | Long-running |
@@ -46,7 +46,9 @@ that installs the frozen pnpm lockfile and runs the Astro build once, and two
 targets that copy from it: `web`, the private Node renderer, and `gateway`,
 nginx serving the static client output. Compose selects each with `target:`,
 so the images keep their per-service names. Node images use the exact
-`nodejs` version in `.tool-versions`, pinned by digest.
+`nodejs` version in `.tool-versions`, pinned by digest. The server build
+bundles its dependencies, so the `web` image carries only the build output and
+no `node_modules` (ADR 0007): 339 MB in place of 1.08 GB.
 
 `Dockerfile.storage-init` is separate administrative tooling for the Dokploy
 one-shot initializer. It uses the pinned Deno runtime and a SHA-256-verified
@@ -73,7 +75,7 @@ until the application stack supersedes none of its checks.
    exits successfully.
 3. API and worker start only after successful migration completion.
 4. Gateway becomes ready only after the API readiness endpoint succeeds and its
-   static assets exist.
+   static assets exist. It neither waits for `web` nor asks it (ADR 0007).
 
 Liveness means the process event loop is responsive. Readiness means the process
 can perform its role. API readiness includes a bounded database probe; API
@@ -81,7 +83,7 @@ liveness must not restart the process merely because PostgreSQL is briefly
 unavailable. Worker readiness reports whether it can claim work, separately from
 whether an external mail or object provider is degraded.
 
-The gateway waits only for `web` readiness before forwarding an on-demand request and returns a bounded unavailable response when that dependency is not ready. `web` liveness reports whether its renderer process is alive; readiness additionally requires the renderer to accept requests and its private `api` origin to be reachable. Development alone overrides the `web` command to `astro dev`; production-like and test profiles use the private production renderer.
+The gateway's own readiness does not depend on `web`; it forwards an on-demand request to `web` and returns a bounded unavailable response when that dependency is not ready, unless it still holds a successful render of that page. `web` liveness reports whether its renderer process is alive; readiness additionally requires the renderer to accept requests and its private `api` origin to be reachable. Development alone overrides the `web` command to `astro dev`; production-like and test profiles use the private production renderer.
 
 ## Gateway Routing
 
@@ -89,13 +91,24 @@ The gateway serves static, prerendered, and fingerprinted Astro output directly.
 
 | Page catalog ID | Path pattern | Destination |
 | --- | --- | --- |
-| `auth.verify-email` | `/auth/verify-email` | private `web` |
-| `auth.reset` | `/auth/reset-password` | private `web` |
-| `auth.mfa` | `/auth/mfa` | private `web` |
-| `invitation.accept` | `/invite/:token` | private `web` |
-| `compliance.accept` | `/app/compliance` | private `web` |
+| `legal.privacy` | `/privacy` | private `web` |
+| `legal.terms` | `/terms` | private `web` |
 
 No other page or request path may be routed to `web`. Production and test keep both `web` and `api` private; development alone overrides `web` to run `astro dev`.
+
+## Rendering Strategy
+
+ADR 0007 (AUD-G5) set the routing table above. Pages are prerendered unless the catalog says `on-demand`:
+
+- **The legal pages.** Each renders the active document from the API's public `GET /api/v1/legal-documents/{documentType}`, so its text reads without JavaScript and the page ships no script.
+  - **Shared copy.** The gateway keeps a `200` render for five minutes (`proxy_cache`, with `proxy_cache_lock`), so a burst of visits costs one render, and a newly activated version can take that long to appear. Acceptance always reads the API.
+  - **Never kept.** Any other status, and any render that sets a cookie.
+  - **Nothing client-chosen reaches or varies it.** The key is the path alone. The gateway sends no cookie, authorization, or query, and a fixed `Host`.
+  - **Answers.** Only `GET` and `HEAD`. A reader's browser receives `Cache-Control: no-cache`.
+  - **Outages.** A kept page also covers an API or renderer outage (`proxy_cache_use_stale`). Without one, a renderer outage answers the bounded `503`.
+- **The token, MFA, invitation, and compliance pages.** `/auth/verify-email`, `/auth/reset-password`, `/auth/mfa`, and `/app/compliance` are prerendered files, and `/invite/:token` serves one internal shell (`/internal/invite-shell`, itself unreachable).
+  - **Caching.** Each answers `Cache-Control: private, no-store`, with the shared security headers, which include `Referrer-Policy: no-referrer`. The built files at their own paths, such as `/auth/mfa/` and `/auth/mfa/index.html`, answer the same way.
+  - **The token.** It stays in the browser, which reads it and removes it from the address.
 
 ## Gateway Hardening
 
@@ -105,16 +118,16 @@ GAP-040 fixed the gateway's edge policy in `gateway/nginx.conf` and `gateway/sec
 - **TLS.** `TLSv1.2` and `TLSv1.3` only. TLS 1.2 offers only forward-secret ECDHE suites with AES-GCM or ChaCha20-Poly1305 (Mozilla's intermediate profile without its DHE suites), `ssl_prefer_server_ciphers off` because every offered suite is strong, a shared session cache, and `ssl_session_tickets off` so a ticket key never outlives the process's forward secrecy.
 - **HSTS.** `Strict-Transport-Security: max-age=31536000`, without `includeSubDomains` and without `preload`. The private deployment is one owner-operated host; asserting HSTS for sibling subdomains the operator may not control, or committing a whole domain to browser preload lists, is the operator's decision at the domain level, not this application's. The 2026-11-07 audit (SECA-13 item 3) reconfirmed this as standing decision D6 of the audit remediation plan; an operator who controls every sibling host may add both at the edge.
 - **CSP.** `script-src 'self'` plus a SHA-256 hash for each inline script. Pages are static files the gateway serves directly, so a per-request nonce would need response rewriting; the hash of static output is fixed at build time instead. The one inline script is the theme bootstrap in `ApplicationLayout.astro`, which must run before first paint. `astro.config.mjs` stops Astro inlining small bundled page scripts, so every other script is a same-origin file and no build output changes the policy. The contract test hashes every `is:inline` script in the Astro sources and rejects a missing or stale hash; the `build` verb's output suite checks every built page, and the gateway Compose fixture checks pages rendered on demand. No page uses an inline event attribute, which a hash cannot allow. `style-src` is `'self'` alone (AUD-G3; FER-15, SECA-13 item 4): no page carries a `<style>` element or a `style` attribute in markup, and `astro.config.mjs` sets `inlineStylesheets: "never"` so Astro ships every stylesheet as a same-origin file. Styles that React, Base UI, and floating-ui positioning set at runtime through the CSSOM are not inline styles and stay allowed; Base UI's only `<style>` elements belong to `ScrollArea` and an aligned `Select`, which the application does not use, and either would need its own decision. Every E2E spec takes `test` from `tests/e2e/support/test.ts`, which collects each browser context's `securitypolicyviolation` events and fails the test on any refusal; the gateway contract test rejects a spec that bypasses it, and the `build` verb's output suite rejects an inline style in any built page.
-- **Request identifier.** The gateway forwards its own `$request_id` as `X-Request-Id` on every proxied location — the API, the readiness probes, and each on-demand renderer route — replacing any client value.
+- **Request identifier.** The gateway forwards its own `$request_id` as `X-Request-Id` on every proxied location — the API, the readiness probe, and the on-demand legal pages, whose render forwards it to the API — replacing any client value.
 
 AUD-G1 (2026-11-07 audit: FER-05, FEQ-07, FER-07, SECA-12, and SECA-13 items 2, 3, 5, and 8) added the delivery rules below; the same contract test and the live gateway fixture in `tools/gateway_log_capture_test.ts` reject each weaker form.
 
-- **Caching.** Every static HTML response — `location /`, the five internal shell rewrites (person profile, person audit, activity report, import report, and journal item), and `/docs/api/openapi.json` — carries `Cache-Control: no-cache`, so a browser revalidates the document with a cheap `304` against `Last-Modified` and `ETag` instead of reusing a heuristically fresh copy that names fingerprinted chunks a deploy has deleted. `/_astro/*` stays `public, max-age=31536000, immutable`, `/favicon.svg` is `public, max-age=86400`, and the on-demand renderer pages stay `private, no-store`. nginx's `add_header` in a location replaces the server-level headers, so every location that adds a header repeats `include security_headers.conf`; the contract test rejects one that does not.
+- **Caching.** Every static HTML response — `location /`, the five internal shell rewrites (person profile, person audit, activity report, import report, and journal item), and `/docs/api/openapi.json` — carries `Cache-Control: no-cache`, so a browser revalidates the document with a cheap `304` against `Last-Modified` and `ETag` instead of reusing a heuristically fresh copy that names fingerprinted chunks a deploy has deleted. The on-demand legal pages carry `no-cache` too. `/_astro/*` stays `public, max-age=31536000, immutable`, and `/favicon.svg` is `public, max-age=86400`. The token, MFA, invitation, and compliance pages are `private, no-store` (ADR 0007). nginx's `add_header` in a location replaces the server-level headers, so every location that adds a header repeats `include security_headers.conf`; the contract test rejects one that does not.
 - **Subresource headers.** `/_astro/*` responses carry only `Cache-Control`, `X-Content-Type-Options: nosniff`, and `Cross-Origin-Resource-Policy: same-origin`. The CSP, framing, permissions, referrer, and HSTS headers govern documents, and every document still carries them.
 - **HTTP/2.** The TLS listener (`8443`) has `http2 on`, so a browser reaching it directly multiplexes one connection with compressed headers instead of six HTTP/1.1 connections; the cleartext `8080` listener the edge proxies to still answers HTTP/1.1. The fixture asserts that `curl --http2` against `8443` negotiates `2`. The Dokploy edge is Dokploy's Traefik, whose entry points and TLS options this repository does not configure; Traefik offers `h2` through ALPN on a TLS entry point by default, so the edge is expected to serve HTTP/2. That is unverified against the live edge. After a deploy or an edge change, an operator confirms it from outside the deployment network with `curl -sS -o /dev/null -w '%{http_version}' https://<public-origin>/`, which prints `2`, or with `openssl s_client -connect <public-host>:443 -servername <public-host> -alpn h2,http/1.1 </dev/null 2>/dev/null | grep '^ALPN'`, which prints `ALPN protocol: h2`. Record the answer here when it is measured.
 - **Request bodies.** `/api/v1/*` admits 1,501,024 bytes, the 1.5 MB import source plus its JSON envelope. `/api/v1/people/:personId/files` streams a person file as its raw body, so it admits `PERSON_FILE_MAX_BYTES` (10 MiB) plus 64 KiB, streams the body to the API (`proxy_request_buffering off`, because two buffered files would not fit the gateway's 16 MiB `/tmp` tmpfs), ends a stalled body with `client_body_timeout 15s`, and otherwise proxies exactly like `/api/v1/*`; the API answers its own `file_storage_limit` problem for a file between the two, and the avatar keeps the ordinary envelope. A body past any API location's envelope gets `413` with `Cache-Control: no-store` and the API's own RFC 9457 `request_too_large` problem, not nginx's HTML page. Residual: that timeout bounds each read, not the whole body, so a client that trickles a byte every few seconds can hold an API request for as long as it keeps sending; the per-address `limit_conn` of 64 bounds how many it can hold at once.
 - **Server identity.** `server_tokens off`: the `Server` header says `nginx` without its version.
-- **Forwarded host.** The gateway forwards the client's `Host` (`proxy_set_header Host $http_host`) with `server_name _`, so a client can choose it. Nothing consumes it: mail and other absolute links come from `PUBLIC_WEB_ORIGIN`, the API builds no URL from the request, and the on-demand renderer pages read no request data. A change that starts reading the request host must first pin it to the configured public host.
+- **Forwarded host.** The gateway forwards the client's `Host` (`proxy_set_header Host $http_host`) with `server_name _`, so a client can choose it. Nothing consumes it: mail and other absolute links come from `PUBLIC_WEB_ORIGIN`, the API builds no URL from the request, and the on-demand legal pages receive a fixed `Host` because the gateway shares their render. A change that starts reading the request host must first pin it to the configured public host.
 
 ## Compression
 
@@ -126,7 +139,7 @@ AUD-G2 (2026-11-07 audit: FEQ-12 and FER-08) implements decision D4 of the [audi
   - `issues-secret`, a body that carries a secret minted for the request: API-token creation (`POST /api/v1/settings/api-tokens`), calendar-feed creation and rotation (`POST /api/v1/settings/calendar-feed` and `/rotation`), and export-download issuance (`POST /api/v1/exports/{exportId}/downloads`);
   - `credential`, excluded conservatively: sign-in, MFA, registration and email verification, password reset, and each invitation-acceptance step, the same endpoints the credential rate-limit zone counts.
 
-  A location serves every method on its path, so the token list, the feed status, and the feed revocation on those paths stay uncompressed too; they are small. The contract test fails when a marked route's path is compressed, when any other API path is not, or when the registry's marks drift from D4's list, so a new or moved route must be marked before it ships. The renderer pages, which include the invitation page carrying its token in the path, keep nginx's uncompressed default.
+  A location serves every method on its path, so the token list, the feed status, and the feed revocation on those paths stay uncompressed too; they are small. The contract test fails when a marked route's path is compressed, when any other API path is not, or when the registry's marks drift from D4's list, so a new or moved route must be marked before it ships. The token, MFA, invitation, and compliance pages are static files whose body holds no secret, and they compress like every other static page. The token stays in the address, never in the body. The on-demand legal pages keep nginx's uncompressed default.
 - **Brotli at the edge.** The pinned nginx image has no brotli module, so the gateway offers gzip only. FER-08 measured brotli level 11 at about 12–17% fewer bytes than gzip for scripts and styles. The Dokploy edge is Traefik, which this repository does not configure; an operator may add its `compress` middleware with brotli. That middleware leaves a response that already carries `Content-Encoding` alone, so the gateway's gzip passes through, but it would compress the excluded answers, which arrive uncompressed. An edge compressor must therefore be attached only to a router that excludes the paths above, or not at all. Until an operator measures and records one here, the edge adds no compression.
 
 ## Container Hardening

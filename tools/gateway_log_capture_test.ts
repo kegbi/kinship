@@ -185,13 +185,13 @@ Deno.test("Dokploy gateway ignores generic upstream names on its shared edge net
       "-q",
       "-O",
       "-",
-      "http://web:4321/auth/mfa",
+      "http://web:4321/privacy",
     ]);
     assert(
       collision === "unrelated-shared-application",
       "generic web resolves to the unrelated shared application",
     );
-    for (const path of ["/auth/mfa", "/api/v1/health", "/gateway-health"]) {
+    for (const path of ["/privacy", "/api/v1/health", "/gateway-health"]) {
       assert(
         await request(path) === "kinship-private",
         `${path} must route to the private Kinship service despite shared aliases`,
@@ -243,6 +243,12 @@ async function requestHealthFromGateway(
     "Cookie: kinship_session=readiness-cookie-secret",
     `http://127.0.0.1:8080/gateway-health${query}`,
   ], true);
+}
+
+/** How many times the gateway logged its API readiness as ready. */
+function countReady(logs: string): number {
+  return logs.split('"boundary":"api","state":"ready","status":200').length -
+    1;
 }
 
 async function waitForContainerLog(
@@ -404,7 +410,23 @@ Deno.test({
         `type=bind,source=${tls.certificate},target=/run/secrets/gateway_tls_certificate,readonly`,
         "--mount",
         `type=bind,source=${tls.privateKey},target=/run/secrets/gateway_tls_private_key,readonly`,
+        // The token pages are static files (ADR 0007); the static root is a
+        // tmpfs the gateway fills before nginx starts.
+        "--tmpfs",
+        "/usr/share/nginx/html:rw,mode=1777",
+        "--entrypoint",
+        "sh",
         NGINX_IMAGE,
+        "-c",
+        `${
+          [
+            "auth/reset-password",
+            "auth/verify-email",
+            "internal/invite-shell",
+          ].map((page) =>
+            `mkdir -p /usr/share/nginx/html/${page} && printf fixture > /usr/share/nginx/html/${page}/index.html`
+          ).join(" && ")
+        } && exec nginx -g 'daemon off;'`,
       ]);
       started = true;
       const mapping = await docker(["port", container, "8080/tcp"]);
@@ -595,7 +617,7 @@ Deno.test({
 
 Deno.test({
   name:
-    "pinned Compose gateway identifies API and renderer readiness outages without secrets",
+    "pinned Compose gateway reports API outages, outlives the renderer, and serves the legal pages it rendered",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
@@ -682,9 +704,46 @@ Deno.test({
         "a client-chosen request identifier never reaches a log line",
       );
 
+      // ADR 0007 (AUD-G5): while no privacy policy is active, the renderer
+      // answers 404, which the gateway does not keep; once one is, the page
+      // carries its text, so it reads without JavaScript.
+      const missingPrivacy = await pageThroughGateway(
+        gatewayContainer,
+        "/privacy",
+      );
+      assert(
+        missingPrivacy.status === 404,
+        `an unpublished policy answers 404: ${missingPrivacy.status}`,
+      );
+      const privacyText = "AUD-G5 fixture privacy policy, rendered on demand.";
+      await docker(
+        [
+          ...E2E_COMPOSE_ARGS,
+          "exec",
+          "-T",
+          "postgres",
+          "psql",
+          "-U",
+          "kinship_e2e",
+          "-d",
+          "kinship_e2e",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-c",
+          `insert into crm.legal_documents
+            (id, document_type, version, content, published_at, is_active)
+            values ('${crypto.randomUUID()}'::uuid, 'privacy', 'AUD-G5',
+              '${privacyText}', now() - interval '1 minute', true)`,
+        ],
+        false,
+        environment,
+      );
+
       // GAP-040: every inline script a served page carries, static or
-      // rendered on demand, is one the served CSP allows by hash.
+      // rendered on demand, is one the served CSP allows by hash. The token,
+      // MFA, invitation, and compliance pages are static files (ADR 0007).
       const seen: string[] = [];
+      const pages = new Map<string, string>();
       for (
         const path of [
           "/",
@@ -696,21 +755,16 @@ Deno.test({
           "/auth/verify-email",
           "/app/compliance",
           "/invite/unknown-invitation-token",
+          "/privacy",
         ]
       ) {
         const page = await pageThroughGateway(gatewayContainer, path);
-        if (page.status !== 200) {
-          assert(
-            !["/", "/auth/sign-in", "/app", "/auth/mfa", "/app/compliance"]
-              .includes(path),
-            `${path} answered ${page.status}`,
-          );
-          continue;
-        }
+        assert(page.status === 200, `${path} answered ${page.status}`);
         assert(
           page.policy === CONTENT_SECURITY_POLICY,
           `${path} is served the gateway's CSP: ${page.policy}`,
         );
+        pages.set(path, page.html);
         const allowed = scriptSources(page.policy);
         for (const hash of await inlineScriptHashes(page.html)) {
           seen.push(`${path} ${hash}`);
@@ -720,8 +774,16 @@ Deno.test({
       assert(
         seen.some((entry) => entry.startsWith("/app ")) &&
           seen.some((entry) => entry.startsWith("/app/compliance ")) &&
+          seen.some((entry) => entry.startsWith("/privacy ")) &&
           seen.every((entry) => entry.endsWith(THEME_SCRIPT_HASH)),
         `static and rendered pages carry only the theme script: ${seen}`,
+      );
+      const privacy = pages.get("/privacy")!;
+      assert(
+        privacy.includes(privacyText) && privacy.includes("Version AUD-G5") &&
+          !/<script\b[^>]*\bsrc=/.test(privacy) && !/<style\b/i.test(privacy) &&
+          !/\sstyle=/i.test(privacy),
+        `the rendered policy carries its text and no script or inline style: ${privacy}`,
       );
 
       await docker(
@@ -743,9 +805,15 @@ Deno.test({
         gatewayContainer,
         /"event":"gateway\.readiness","boundary":"api","state":"unavailable","status":503/,
       );
+      // The kept page covers the outage: the gateway does not ask again.
+      const keptDuringApiOutage = await pageThroughGateway(
+        gatewayContainer,
+        "/privacy",
+      );
       assert(
-        logs.includes('"boundary":"web","state":"ready"'),
-        "API outage retains a successful renderer boundary diagnostic",
+        keptDuringApiOutage.status === 200 &&
+          keptDuringApiOutage.html.includes(privacyText),
+        `the kept policy is served while the API is down: ${keptDuringApiOutage.status}`,
       );
 
       await docker(
@@ -775,10 +843,40 @@ Deno.test({
         false,
         environment,
       );
+      // ADR 0007: a renderer outage leaves the gateway healthy and every
+      // static page served; only a legal page it has not kept is unavailable.
+      const readyBefore = countReady(await docker(["logs", gatewayContainer]));
       await requestHealthFromGateway(gatewayContainer);
-      logs = await waitForContainerLog(
-        gatewayContainer,
-        /"event":"gateway\.readiness","boundary":"web","state":"unavailable","status":5\d\d/,
+      const deadline = Date.now() + 15_000;
+      logs = await docker(["logs", gatewayContainer]);
+      while (countReady(logs) <= readyBefore && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        logs = await docker(["logs", gatewayContainer]);
+      }
+      assert(
+        countReady(logs) > readyBefore && !logs.includes('"boundary":"web"'),
+        "the gateway stays ready through a renderer outage and never asks it",
+      );
+      const duringRendererOutage: [string, number][] = [];
+      for (
+        const path of ["/auth/mfa", "/app/compliance", "/privacy", "/terms"]
+      ) {
+        duringRendererOutage.push([
+          path,
+          (await pageThroughGateway(gatewayContainer, path)).status,
+        ]);
+      }
+      assert(
+        JSON.stringify(duringRendererOutage) ===
+          JSON.stringify([
+            ["/auth/mfa", 200],
+            ["/app/compliance", 200],
+            ["/privacy", 200],
+            ["/terms", 503],
+          ]),
+        `a renderer outage reaches only an unkept legal page: ${
+          JSON.stringify(duringRendererOutage)
+        }`,
       );
       for (
         const secret of [
@@ -865,7 +963,12 @@ async function compressionResponse(
 async function curlInGateway(
   container: string,
   url: string,
-  options: { readonly http2?: boolean; readonly bodyBytes?: number } = {},
+  options: {
+    readonly http2?: boolean;
+    readonly bodyBytes?: number;
+    readonly headers?: readonly string[];
+    readonly method?: string;
+  } = {},
 ) {
   const send = options.bodyBytes === undefined
     ? ""
@@ -880,8 +983,10 @@ async function curlInGateway(
     "-c",
     `${send}curl -sk ${
       options.http2 ? "--http2" : "--http1.1"
-    } ${upload} -D /dev/shm/curl-headers -o /dev/shm/curl-body -w '%{http_code} %{http_version}' "$1" && printf '\\nHEADERS\\n' && cat /dev/shm/curl-headers && printf '\\nBODY\\n' && cat /dev/shm/curl-body`,
+    } ${upload} -D /dev/shm/curl-headers -o /dev/shm/curl-body -w '%{http_code} %{http_version}' "$@" && printf '\\nHEADERS\\n' && cat /dev/shm/curl-headers && printf '\\nBODY\\n' && cat /dev/shm/curl-body`,
     "sh",
+    ...(options.method ? ["-X", options.method] : []),
+    ...(options.headers ?? []).flatMap((header) => ["-H", header]),
     url,
   ]);
   const [summary = "", rest = ""] = output.split("\nHEADERS\n");
@@ -916,6 +1021,12 @@ Deno.test({
       "internal/activity-report-shell/index.html",
       "internal/import-report-shell/index.html",
       "internal/journal-item-shell/index.html",
+      // ADR 0007: the token, MFA, invitation, and compliance pages.
+      "auth/verify-email/index.html",
+      "auth/reset-password/index.html",
+      "auth/mfa/index.html",
+      "app/compliance/index.html",
+      "internal/invite-shell/index.html",
     ];
     // The static root is a tmpfs the gateway fills before nginx starts, so the
     // fixture needs no host directory.
@@ -928,9 +1039,14 @@ Deno.test({
       await docker(["network", "create", id]);
       networkCreated = true;
       const upstream = `${id}-upstream`;
-      // The API stand-in answers 201 with the body length it received.
+      // The API stand-in answers 201 with the body length it received. The
+      // renderer stand-in echoes what reached it under a fresh identifier, so
+      // a kept page is the same bytes; its terms set a cookie.
       const upstreamConfig =
-        `events {} http { server { listen 8000; listen 4321; client_max_body_size 0; location / { return 201 '{"received":$content_length}'; } } }`;
+        `events {} http { server { listen 8000; client_max_body_size 0; location / { return 201 '{"received":$content_length}'; } } ` +
+        `server { listen 4321; default_type text/html; ` +
+        `location = /privacy { return 200 'privacy $request_id cookie=[$http_cookie] authorization=[$http_authorization] host=[$host] args=[$args] uri=[$request_uri]'; } ` +
+        `location = /terms { add_header Set-Cookie 'tracker=$request_id'; return 200 'terms $request_id'; } } }`;
       await docker([
         "run",
         "--detach",
@@ -1044,6 +1160,96 @@ Deno.test({
           }`,
         );
       }
+      // ADR 0007 (AUD-G5): a page whose address carries a token, an MFA
+      // challenge, or a pending compliance step is a static file no cache
+      // keeps, with the browser policy; its shell is not reachable itself.
+      for (
+        const path of [
+          "/auth/verify-email?token=fixture-secret",
+          "/auth/reset-password?token=fixture-secret",
+          "/auth/mfa",
+          "/app/compliance?next=%2Fapp",
+          "/invite/fixture-secret",
+          "/invite/continue",
+          // The built files at their own paths answer the same way.
+          "/auth/reset-password/?token=fixture-secret",
+          "/auth/verify-email/index.html?token=fixture-secret",
+          "/auth/mfa/",
+          "/app/compliance/index.html",
+        ]
+      ) {
+        const page = await curlInGateway(gateway, `${http}${path}`);
+        assert(
+          page.status === 200 && page.body === "fixture" &&
+            one(page.headers, "cache-control") === "private, no-store" &&
+            one(page.headers, "content-security-policy") ===
+              CONTENT_SECURITY_POLICY &&
+            one(page.headers, "referrer-policy") === "no-referrer" &&
+            one(page.headers, "x-frame-options") === "DENY",
+          `${path} is a private static page: ${page.status} ${
+            JSON.stringify(page.headers)
+          }`,
+        );
+      }
+      for (
+        const path of [
+          "/internal/invite-shell",
+          "/internal/invite-shell/",
+          "/internal/invite-shell/index.html",
+        ]
+      ) {
+        assert(
+          (await curlInGateway(gateway, `${http}${path}`)).status === 404,
+          `${path} is not reachable`,
+        );
+      }
+
+      // The legal pages render on demand behind a five-minute shared copy
+      // that nothing a client sends reaches or varies.
+      const legal = (query: string, cookie: string) =>
+        curlInGateway(gateway, `${http}/privacy${query}`, {
+          headers: [
+            `Cookie: kinship_session=${cookie}`,
+            `Authorization: Bearer ${cookie}`,
+          ],
+        });
+      const first = await legal("?first=1", "reader-one-secret");
+      assert(
+        first.status === 200 &&
+          first.body.includes("cookie=[] authorization=[]") &&
+          first.body.includes("host=[kinship-private-web]") &&
+          first.body.includes("args=[] uri=[/privacy]") &&
+          one(first.headers, "cache-control") === "no-cache" &&
+          one(first.headers, "content-security-policy") ===
+            CONTENT_SECURITY_POLICY &&
+          first.headers["content-encoding"] === undefined,
+        `the legal page renders without the reader's cookie, credentials, host, or query: ${first.body} ${
+          JSON.stringify(first.headers)
+        }`,
+      );
+      const second = await legal("?second=2", "reader-two-secret");
+      assert(
+        second.status === 200 && second.body === first.body,
+        `another reader gets the kept page: ${second.body}`,
+      );
+      const terms = [
+        await curlInGateway(gateway, `${http}/terms`),
+        await curlInGateway(gateway, `${http}/terms`),
+      ];
+      assert(
+        terms.every(({ status, headers }) =>
+          status === 200 && headers["set-cookie"] === undefined
+        ) && terms[0]!.body !== terms[1]!.body,
+        `a render that sets a cookie is neither kept nor passed on: ${
+          JSON.stringify(terms)
+        }`,
+      );
+      assert(
+        (await curlInGateway(gateway, `${http}/privacy`, { method: "POST" }))
+          .status === 403,
+        "the legal pages answer only GET and HEAD",
+      );
+
       const favicon = await curlInGateway(gateway, `${http}/favicon.svg`);
       assert(
         favicon.status === 200 &&
@@ -1151,7 +1357,17 @@ Deno.test("[AUD-G2] real Nginx compresses static files and API JSON behind a pro
     ],
     ["internal/import-report-shell/index.html", `/app/settings/import/${uuid}`],
     ["internal/journal-item-shell/index.html", `/app/journal/${uuid}`],
+    // ADR 0007: static files whose address may carry a token. The body is the
+    // same file for every reader and holds no secret, so it compresses too.
+    ["auth/verify-email/index.html", "/auth/verify-email?token=fixture"],
+    ["auth/reset-password/index.html", "/auth/reset-password?token=fixture"],
+    ["auth/mfa/index.html", "/auth/mfa"],
+    ["app/compliance/index.html", "/app/compliance"],
+    ["internal/invite-shell/index.html", "/invite/fixture-token"],
   ] as const;
+  /** The pages no cache keeps (ADR 0007); every other document revalidates. */
+  const privatePage = (path: string) =>
+    /^\/(auth\/|app\/compliance|invite\/)/.test(path);
   // The build pre-compresses this one, as `Dockerfile.web` does every asset.
   const precompressed = "/usr/share/nginx/html/_astro/fixture.js.gz";
   // The static root is a tmpfs the gateway fills before nginx starts, so the
@@ -1322,8 +1538,9 @@ Deno.test("[AUD-G2] real Nginx compresses static files and API JSON behind a pro
               response.headers["content-security-policy"] &&
                 response.headers["strict-transport-security"] ===
                   "max-age=31536000" &&
-                response.headers["cache-control"] === "no-cache",
-              `${path} preserves CSP and HSTS and revalidates`,
+                response.headers["cache-control"] ===
+                  (privatePage(path) ? "private, no-store" : "no-cache"),
+              `${path} preserves CSP and HSTS and its cache policy`,
             );
           }
         }
@@ -1417,11 +1634,8 @@ Deno.test("[AUD-G2] real Nginx compresses static files and API JSON behind a pro
 
     for (
       const [path, expected] of [
-        ["/auth/mfa", html],
-        ["/auth/verify-email", html],
-        ["/auth/reset-password", html],
-        ["/invite/fixture", html],
-        ["/app/compliance", html],
+        ["/privacy", html],
+        ["/terms", html],
         [
           "/api/v1/calendar-feeds/kin_cal_0f8b2c1e-5d4a-4b3c-9a21-7e6d5c4b3a29.fixture_Calendar-Feed.ics",
           calendar,
@@ -1439,8 +1653,8 @@ Deno.test("[AUD-G2] real Nginx compresses static files and API JSON behind a pro
       );
       if (!path.startsWith("/api/")) {
         assert(
-          response.headers["cache-control"] === "private, no-store",
-          `${path} retains renderer cache policy`,
+          response.headers["cache-control"] === "no-cache",
+          `${path} keeps the legal pages' revalidation policy`,
         );
       }
     }

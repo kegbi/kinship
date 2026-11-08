@@ -1,7 +1,8 @@
 /**
  * Accepting a workspace invitation (AUTH-002; GAP-033).
  *
- * `pages/invite/[token].astro` is public and stays React-free. It draws the
+ * `pages/internal/invite-shell.astro`, which the gateway serves for every
+ * `/invite/:token` (ADR 0007), is public and stays React-free. It draws the
  * heading, the status detail, every action hidden until this module wires
  * it (REL-041, REL-045), and the accepted answer's link as a `<template>`;
  * this module sets text, toggles `hidden`, and clones that template. The

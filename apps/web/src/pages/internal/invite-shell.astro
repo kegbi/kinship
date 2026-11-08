@@ -1,8 +1,7 @@
 ---
 import AuthLayout from "../../layouts/AuthLayout.astro";
-export const prerender = false;
-Astro.response.headers.set("Cache-Control", "private, no-store");
-Astro.response.headers.set("Referrer-Policy", "no-referrer");
+// ADR 0007: one static shell for every `/invite/:token`; the gateway serves
+// it `private, no-store`, and the token is read and scrubbed in the browser.
 ---
 
 <AuthLayout description="Review and accept a single-use Kinship workspace invitation." pageId="invitation.accept" title="Workspace invitation — Kinship">

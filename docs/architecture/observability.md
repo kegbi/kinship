@@ -40,7 +40,7 @@ calls are forbidden outside approved bootstrap/tool paths. Message strings do
 not contain arbitrary user content; variable data uses allowlisted fields.
 
 <!-- deno-fmt-ignore -->
-Renderer telemetry uses safe route templates and redacts token path segments, query values, cookies, authorization data, verification and reset data, invitation data, MFA data, and compliance payloads. Personalized renderer responses use `Cache-Control: private, no-store`; fingerprinted static assets use `Cache-Control: public, max-age=31536000, immutable`.
+Renderer telemetry uses safe route templates and redacts token path segments, query values, cookies, authorization data, verification and reset data, invitation data, MFA data, and compliance payloads. Token, MFA, invitation, and compliance pages use `Cache-Control: private, no-store`; the on-demand legal pages use `Cache-Control: no-cache` behind the gateway's five-minute shared copy; fingerprinted static assets use `Cache-Control: public, max-age=31536000, immutable`.
 
 Minimum event classes:
 
@@ -188,9 +188,12 @@ a cast or a spread:
 ### Correlation
 
 - The gateway forwards its own `$request_id` as `X-Request-Id` on every proxied
-  location (`/api/v1/`, `/gateway-health`, the renderer readiness probe, and
-  each on-demand renderer route; GAP-040) and logs it as `request_id` in
-  `gateway.request`. A client-supplied `X-Request-Id` does not pass the gateway.
+  location (`/api/v1/`, `/gateway-health`, and the on-demand legal pages;
+  GAP-040) and logs it as `request_id` in `gateway.request`. A client-supplied
+  `X-Request-Id` does not pass the gateway. The renderer forwards it on the
+  legal page's API read (ADR 0007), so the API's line for that read carries the
+  gateway's identifier; a page the gateway serves from its shared copy makes no
+  API read.
 - The API's request-ID middleware keeps a supplied `[\w-]{1,128}` value or mints
   a UUID, echoes it in the `X-Request-Id` response header, and logs it in
   `api.request`.
@@ -210,8 +213,8 @@ a cast or a spread:
 
 Not correlated yet: audit events written before an actor exists (registration,
 authentication, invitation acceptance, legal acceptance) and the lifecycle
-events built from a resolved session rather than an actor; the Astro renderer's
-server-side API calls; the workspace-cleanup reconciler, which logs nothing yet.
+events built from a resolved session rather than an actor; the workspace-cleanup
+reconciler, which logs nothing yet.
 
 ### Database Statements
 

@@ -6,6 +6,7 @@ import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 
 let documentId = "";
+let privacyId = "";
 
 test.beforeEach(() => {
   // The active terms are instance-wide, so this spec runs only in its
@@ -22,6 +23,10 @@ test.beforeEach(() => {
 });
 
 test.afterEach(() => {
+  if (privacyId) {
+    database(`delete from crm.legal_documents where id = '${privacyId}'::uuid`);
+    privacyId = "";
+  }
   if (!documentId) return;
   database(`begin;
     delete from crm.legal_acceptances
@@ -39,7 +44,7 @@ test("[GOVERNANCE-001] reviews and accepts an exact required legal version", {
     type: "leaf",
     description: "APP-008B",
   }],
-}, async ({ browserName, page, request }) => {
+}, async ({ browser, browserName, page, request }) => {
   test.setTimeout(300_000);
   page.setDefaultTimeout(15_000);
   await page.goto("/terms");
@@ -106,4 +111,55 @@ test("[GOVERNANCE-001] reviews and accepts an exact required legal version", {
     "journal.index",
   );
   await expectAccessible(page);
+
+  // ADR 0007 (AUD-G5): the legal pages render on demand with their text, so
+  // a reader without JavaScript can read them. The privacy policy is
+  // published only now, after the review above required the terms alone.
+  privacyId = crypto.randomUUID();
+  database(`insert into crm.legal_documents
+    (id, document_type, version, content, published_at, is_active)
+    values ('${privacyId}'::uuid, 'privacy', 'AUD-G5',
+      'Kinship exact privacy test policy.', now() - interval '1 minute', true)`);
+  const reader = await browser.newContext({
+    baseURL: origin,
+    ignoreHTTPSErrors: true,
+    javaScriptEnabled: false,
+  });
+  try {
+    const withoutScript = await reader.newPage();
+    for (
+      const [path, pageId, heading, version, text] of [
+        [
+          "/privacy",
+          "legal.privacy",
+          "Privacy policy",
+          "AUD-G5",
+          "Kinship exact privacy test policy.",
+        ],
+        [
+          "/terms",
+          "legal.terms",
+          "Terms of service",
+          "APP-008B",
+          "Kinship exact acceptance test terms.",
+        ],
+      ] as const
+    ) {
+      const response = await withoutScript.goto(path);
+      expect(response?.status()).toBe(200);
+      await expect(withoutScript.locator("body")).toHaveAttribute(
+        "data-page-id",
+        pageId,
+      );
+      await expect(withoutScript.getByRole("heading", { name: heading }))
+        .toBeVisible();
+      await expect(withoutScript.locator("[data-legal-version]"))
+        .toContainText(version);
+      await expect(withoutScript.locator("[data-legal-content]")).toHaveText(
+        text,
+      );
+    }
+  } finally {
+    await reader.close();
+  }
 });

@@ -43,7 +43,7 @@ const accepted = () =>
 
 function openPage(path = `/invite/${TOKEN}`): void {
   history.replaceState({}, "", path);
-  drawPage("invite/[token]");
+  drawPage("internal/invite-shell");
 }
 
 const heading = () => screen.getByRole("heading", { level: 1 }).textContent;
@@ -77,7 +77,7 @@ afterEach(() => {
 
 describe("AUTH-002 invitation acceptance", () => {
   it("draws the accepted answer's link as the template the module names", () => {
-    expect(pageMain("invite/[token]")).toContain(
+    expect(pageMain("internal/invite-shell")).toContain(
       `<template id="${INVITATION_OPEN_TEMPLATE_ID}"><a class="button-link" href="/app">Open workspace</a></template>`,
     );
   });

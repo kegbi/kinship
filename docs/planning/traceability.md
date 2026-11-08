@@ -12,7 +12,7 @@ The current baseline contains:
 - 15 backend modules and 9 read models in `module-boundaries.yaml`; 14 modules
   and all 9 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
-- 40 cataloged pages (30 `static-shell-islands`, 5 `on-demand`, 5 `static`), all
+- 40 cataloged pages (35 `static-shell-islands`, 2 `on-demand`, 3 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
 - 42 required flows: 17 P0, 20 P1, and 5 P2;
@@ -179,10 +179,11 @@ currently declares optional availability in the page catalog. DG-07 must add
 authoritative availability/feature-gating metadata or reclassify the other pages
 before optional-platform promotion.
 
-The five cataloged `on-demand` pages are `auth.verify-email`, `auth.reset`,
-`auth.mfa`, `invitation.accept`, and `compliance.accept`. They require a
-deployed Astro server adapter/runtime or a formally approved recataloging to
-static-shell/island behavior. The roadmap recommends the former.
+The two cataloged `on-demand` pages are `legal.privacy` and `legal.terms`, which
+the private Astro Node renderer serves behind the gateway (ADR 0007).
+`auth.verify-email`, `auth.reset`, `auth.mfa`, `invitation.accept`, and
+`compliance.accept` are prerendered static shells with islands, served
+`private, no-store`, and need no renderer.
 
 ## Deferred Catalog Repairs Before Affected Work
 
