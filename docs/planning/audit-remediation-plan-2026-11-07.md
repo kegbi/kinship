@@ -760,6 +760,30 @@ these:
     permission gap); E2E INTEGRATION-002 and PEOPLE-007 3 passed on Chromium;
     calendar-feed coverage 99.4% lines, 97.7% branches, 100% functions;
     contracts, fmt, architecture, and lint (only REL-096).
+  - [x] **AUD-K7-fix — The integrations domain set covers AUD-K7's feed rules.**
+        S. Normal. Depends: AUD-K7. Closes: the integrations-domain coverage
+        regression from AUD-K7.
+    - Scope: AUD-K7 added `calendarFeedTag` to
+      `integrations/domain/calendar_feed_rules.ts`, and only the application
+      tests call it, so the `integrations-domain` coverage set, which runs
+      `dav_rules_test.ts` and `ical_test.ts` alone, fell below its 95% bar. Add
+      focused domain tests in `ical_test.ts`: a known-answer tag computed
+      outside Deno whose base64 form carries `+`, `/`, and padding, and a tag
+      that is stable and moves with the revision and the origin. Change no
+      production code or threshold, and add no path to the `api` unit set
+      (REL-105).
+    - RED: `test:coverage --module=integrations-domain` exits 1 with line 93.42%
+      and function 94.73% below 95% (`calendar_feed_rules.ts` 84.1% lines, 85.7%
+      functions).
+    - Verify: `test:coverage --module=integrations-domain` and
+      `--module=integrations`; `test:unit --module=integrations`; fmt,
+      architecture, and lint (only REL-096).
+    - Delivered 2026-11-08: two `[INTEGRATION-002]` tests in `ical_test.ts` pin
+      `calendarFeedTag`'s known answer (recomputed with Python `hashlib`), its
+      quoted base64url form, and that it moves with the revision, the origin,
+      and their order; the integrations-domain set is back to 100% (16 passed),
+      integrations coverage and unit pass (39), and fmt, architecture, and lint
+      (only REL-096) are clean.
 
 ### Lane W — Worker and planning
 

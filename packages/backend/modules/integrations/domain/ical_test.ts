@@ -3,6 +3,7 @@ import {
   CALENDAR_FEED_BASE_YEAR,
   type CalendarFeedContent,
   calendarFeedDocument,
+  calendarFeedTag,
 } from "./calendar_feed_rules.ts";
 import { escapeText, foldLine, renderCalendar } from "./ical.ts";
 
@@ -227,4 +228,29 @@ Deno.test("[INTEGRATION-002] a reminder day that does not exist is left out, and
   assert(document.includes("SUMMARY:Unattached\r\n"), document);
   assert(!document.includes("DESCRIPTION"), document);
   assert(!document.includes("URL:"), document);
+});
+
+const REVISION =
+  "2026-11-08|Lovelace circle|2:2026-09-01T08:30:15.123Z|1:2026-09-03T10:00:00.000Z";
+
+Deno.test("[INTEGRATION-002] the feed tag is a strong base64url SHA-256 of the format, origin, and revision", async () => {
+  // SHA-256 over `["kinship-calendar-feed/1","https://kinship.example",REVISION]`,
+  // computed outside Deno; its base64 form is `0/vc…+1dmH1Co=`, so the tag
+  // proves both alphabet substitutions and the dropped padding.
+  assertEquals(
+    await calendarFeedTag(REVISION, ORIGIN),
+    '"0_vcdxK6d3qO_5j1MfArLKAOUePxymPin98-1dmH1Co"',
+  );
+});
+
+Deno.test("[INTEGRATION-002] the feed tag is stable and moves with the revision and the origin", async () => {
+  const tag = await calendarFeedTag(REVISION, ORIGIN);
+  assertEquals(await calendarFeedTag(REVISION, ORIGIN), tag);
+  assert(/^"[A-Za-z0-9_-]{43}"$/.test(tag), tag);
+  const moved = [
+    await calendarFeedTag(`${REVISION}x`, ORIGIN),
+    await calendarFeedTag(REVISION, "https://other.example"),
+    await calendarFeedTag(ORIGIN, REVISION),
+  ];
+  assertEquals(new Set([tag, ...moved]).size, 4, moved.join(" "));
 });
