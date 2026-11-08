@@ -2025,6 +2025,121 @@ Playwright test carrying its stable flow ID.
       token in the header, and prove with an HTTP test that a two-cookie
       sign-out leaves neither session usable.
 
+- [ ] **REL-123 — Firefox PEOPLE-005 asserts a loading state its route hold does
+      not control.** Found during AUD-V2's all-browser E2E run in the 2026-11-07
+      audit-remediation run on the REL-105 Windows host, and in its one bounded
+      Firefox reproduction, in which two of three runs passed; it is not a
+      database or product failure. The spec's hold is unchanged since AUD-G3 and
+      GAP-036, but the person read it waits on was reworked by AUD-F3
+      (`54a9b31c`), AUD-F5 (`af6a5390`), and AUD-Q3, and whether it reproduces
+      before them was not checked. "[PEOPLE-005] manages honest important dates
+      on the person profile" (`tests/e2e/important-dates.PEOPLE-005.spec.ts:9`)
+      installs its route before saving the new person and holds only the first
+      `GET …/people/*/dates` it sees (`:25–36`), then waits for `load` (`:41`),
+      opens the profile again (`:42`), and expects `data-section-state` to be
+      `loading` and "Loading important dates…" to show (`:45–46`) before it
+      releases the hold (`:47`). At AUD-V2's candidate `9ab36e91` the dates
+      island read its own dates (`important-dates.tsx:157` there) only after the
+      deferred person read answered, which can be after `load`, so the held
+      request could belong to the profile the app opened after the save, and the
+      profile the spec opened reached `ready` at once. Since AUD-Q3 (`6e8b0329`)
+      the island takes its first answer from
+      `GET /api/v1/people/{id}?include=rail`
+      (`apps/web/src/features/person/workspace.ts:1115`) and reads `…/dates`
+      only when the rail is missing
+      (`apps/web/src/features/person/important-dates/important-dates.tsx:181–195`),
+      so the hold matches nothing the profile sends at open. The loading state
+      is the prerendered shell's
+      (`apps/web/src/components/person/PersonSection.astro:50`, `:74`) and lasts
+      only until the composed person read answers, on every browser. Hold the
+      request that drives the asserted page's loading state, now the
+      `?include=rail` read of the profile the spec opens, rather than the first
+      request seen, and keep both assertions.
+
+- [ ] **REL-124 — Firefox context teardown sometimes fails with a protocol
+      error.** Seen in AUD-F5-fix's Firefox runs of the person specs during the
+      2026-11-07 audit-remediation run on the REL-105 Windows host; a
+      test-infrastructure flake on that host that nothing ties to the
+      remediation tickets, and whether it reproduces before them was not
+      checked. After a test body passed, closing its context threw
+      `browserContext.close: Protocol error (Browser.removeBrowserContext): can't access property "_maybeDontRestoreTabs"`,
+      on a different test in each run, while every other Firefox test in those
+      runs passed. The repository pins `@playwright/test` 1.62.1
+      (`package.json:16`; `playwright-core@1.62.1` at `pnpm-lock.yaml:3570`),
+      which installs its own Firefox build, and runs with `retries: 0`
+      (`playwright.config.ts:20`). Reproduce it on those pinned versions, then
+      report it upstream with the trace, or pin or upgrade to a Playwright
+      release whose Firefox build closes contexts cleanly. Keep the failure
+      visible: do not add retries or swallow teardown errors.
+
+- [ ] **REL-125 — The v14 reference guard's `workspace_id` exemption is looser
+      than documented.** Found in the AUD-V2 final re-check during the
+      2026-11-07 audit-remediation run on the REL-105 Windows host. ADR 0008
+      (`docs/architecture/decisions/0008-database-enforced-workspace-isolation.md:158–159`)
+      and both guards' own comments
+      (`tests/integration/workspace_isolation_postgres_test.ts:358–360`,
+      `tools/schema/assert_isolation.sql:97–99`) allow into the eleven unforced
+      tenant tables only a tenant table's own `workspace_id` key. Both guards
+      compute that exemption as any foreign key from a forced table whose key
+      columns include one named `workspace_id` — `workspaceKey` in
+      `referenceGuardViolations`
+      (`workspace_isolation_postgres_test.ts:377–382`, applied at `:416`) and
+      `fk.workspace_key` (`assert_isolation.sql:134–138`, applied at `:159`) —
+      without checking the target table or its columns. The re-check proved it
+      live: after adding a unique index on `pets(person_id, id)`, a forced table
+      with
+      `FOREIGN KEY (workspace_id, pet_id) REFERENCES crm.pets(person_id, id)`,
+      which compares a workspace id with a person id, passed with no violation.
+      It needs a deliberately added unique index, so it is contrived and not
+      realistically exploitable. In both guards, exempt exactly
+      `(workspace_id) → workspaces(id)`: check the referenced columns
+      (`confkey`) as well as the source key (`conkey`), since v14's `workspaces`
+      also has the uuid `created_by_user_id`
+      (`personal_crm_schema_v14.sql:245`), and a unique index on it would let
+      `FOREIGN KEY (workspace_id) REFERENCES crm.workspaces(created_by_user_id)`
+      through. Add a self-test beside the AUD-V2 guard tests
+      (`workspace_isolation_postgres_test.ts:425–489`) that both this key and
+      the `pets` key fail. REL-120's backstop for the same eleven tables changes
+      what the guards exempt; keep the two consistent.
+
+- [ ] **REL-126 — The composed person rail trades requests for statements and
+      couples two sections.** Found in the AUD-Q3 review's Low notes during the
+      2026-11-07 audit-remediation run on the REL-105 Windows host; AUD-Q3
+      introduced all three. First, the relationships section needs both its list
+      and its types
+      (`packages/backend/read-models/person-profile/application/compose_person_rail.ts:146–158`,
+      read at `:181–190`), so a failed or thrown types read makes the whole
+      section `unavailable`, which the island draws as "This relationship
+      section is temporarily unavailable. Try again."
+      (`apps/web/src/features/person/relationships/person-relationships.tsx:348`,
+      `relationships.ts:292–293`) with no control to try again; it recovers only
+      on reload or a lifecycle change (`person-relationships.tsx:424`). Before
+      AUD-Q3 the island's own `readAll` settled the two reads apart
+      (`:225–239`), so the list still showed and only the editor's vocabulary
+      failed. Second, the rail reads every section whatever the summary the same
+      read already counted (`get_person_profile.ts:318–333`): the seven facts,
+      the relationships, their types (8 statements through
+      `ensureDefaultRelationshipTypes`, which takes the seeding advisory lock
+      only when a default is missing,
+      `packages/backend/modules/workspaces/adapters/postgres/relationship_workspace_boundary.ts:49–61`),
+      the dates, and the reminders, while most islands' own reads skip a section
+      the summary counted empty (FEQ-04,
+      `apps/web/src/features/person/section-mounts.ts:79–91`).
+      `RAIL_STATEMENT_BUDGET` = 83
+      (`tests/integration/people_profile_postgres_test.ts:929–943`) is measured
+      for a filled rail; a blank person's open sends the same section reads in
+      one request, and its count is not measured. Third, the page now waits for
+      `include=rail` instead of `include=summary` before it draws the hero
+      (`apps/web/src/features/person/workspace.ts:1115`; `:1114` at `9ab36e91`),
+      and the server runs the section reads one after another
+      (`compose_person_rail.ts:176–200`). Answer zero-count sections from the
+      profile's counts, skip the types read when the list is empty (the island
+      then reads the vocabulary itself when the editor first needs it,
+      `person-relationships.tsx:571–579`, so adding a first relationship keeps
+      working), return the list with only the vocabulary marked unavailable, and
+      measure the hero's time at the release checkpoint; AUD-P1's budgets
+      (`tests/e2e/perf.PERF-002.spec.ts`) must stay green.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
