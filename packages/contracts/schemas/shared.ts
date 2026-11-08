@@ -39,6 +39,31 @@ export const EXACTLY_ONE = "x-exactly-one";
  */
 export const uuid = z.uuid();
 
+/** What a name holding a control character is told. */
+export const CONTROL_CHARACTER_MESSAGE =
+  "Text may not contain control characters.";
+
+/**
+ * Text with no C0 control, DEL, or C1 control in it.
+ *
+ * PostgreSQL refuses U+0000 in `text`, so a NUL in a name that reached the
+ * database would fail only for an address that writes one, and the answer
+ * would say which addresses have accounts (SECA-02). The HTTP kit refuses a
+ * NUL first (SECA-08); the contract says so too (REL-117). No name holds a
+ * tab, a newline, or any other control either, so the pattern refuses them
+ * all.
+ */
+// deno-lint-ignore no-control-regex
+const CONTROL_FREE = /^[^\u0000-\u001F\u007F-\u009F]*$/;
+
+/**
+ * One line of trimmed text a person typed as a name: a person's first or last
+ * name, a workspace's name. The caller adds its own bounds.
+ */
+export function singleLineText(): z.ZodString {
+  return z.string().trim().regex(CONTROL_FREE, CONTROL_CHARACTER_MESSAGE);
+}
+
 /**
  * The continuation token a list resumes from.
  *

@@ -332,3 +332,90 @@ Deno.test("UXD-002C3 OpenAPI publishes member UI state and optional session comp
     "the client exposes both operations and aliases the published UI state",
   );
 });
+
+Deno.test("[REL-117] SECA-02 pre-account and account name fields refuse control characters", async () => {
+  const { registrationInput } = await import(
+    "../../packages/contracts/schemas/registration.ts"
+  );
+  const { invitationRegistrationInput } = await import(
+    "../../packages/contracts/schemas/invitations.ts"
+  );
+  const { profileInput, workspaceSettingsInput } = await import(
+    "../../packages/contracts/schemas/settings.ts"
+  );
+  const registration = {
+    email: "owner@example.test",
+    firstName: "Zoë",
+    lastName: "O'Brien-Łukasz",
+    password: "a sufficiently long password",
+    workspaceName: "Circle — Ünïcode",
+  };
+  const invitee = {
+    email: "invitee@example.test",
+    firstName: "Zoë",
+    lastName: "",
+    password: "a sufficiently long password",
+    token: "a-valid-private-invitation-token-0000000000",
+  };
+  const settings = {
+    name: "Circle",
+    defaultLocale: "en",
+    defaultReminderTime: "09:00",
+  };
+  assert(
+    registrationInput.safeParse(registration).success &&
+      invitationRegistrationInput.safeParse(invitee).success &&
+      profileInput.safeParse({ firstName: "Zoë", lastName: "Ø" }).success &&
+      workspaceSettingsInput.safeParse(settings).success,
+    "ordinary Unicode names stay valid",
+  );
+  const controls = ["\u0000", "\u0001", "\u0009", "\u000A", "\u001F", "\u007F"];
+  const cases: [
+    string,
+    { safeParse(value: unknown): { success: boolean } },
+    Record<string, string>,
+    string,
+  ][] = [
+    ["registration", registrationInput, registration, "firstName"],
+    ["registration", registrationInput, registration, "lastName"],
+    ["registration", registrationInput, registration, "workspaceName"],
+    ["invitee", invitationRegistrationInput, invitee, "firstName"],
+    ["invitee", invitationRegistrationInput, invitee, "lastName"],
+    ["profile", profileInput, { firstName: "Ada", lastName: "L" }, "firstName"],
+    ["profile", profileInput, { firstName: "Ada", lastName: "L" }, "lastName"],
+    ["workspace", workspaceSettingsInput, settings, "name"],
+  ];
+  for (const [surface, schema, valid, field] of cases) {
+    for (const control of controls) {
+      const value = { ...valid, [field]: `Ad${control}a` };
+      assert(
+        !schema.safeParse(value).success,
+        `${surface}.${field} must refuse U+${
+          control.charCodeAt(0).toString(16).padStart(4, "0")
+        }`,
+      );
+    }
+  }
+  const schemas = (buildOpenApiDocument().components as {
+    schemas: Record<
+      string,
+      { properties: Record<string, { pattern?: string }> }
+    >;
+  }).schemas;
+  for (
+    const [component, field] of [
+      ["RegistrationInput", "firstName"],
+      ["RegistrationInput", "lastName"],
+      ["RegistrationInput", "workspaceName"],
+      ["InvitationRegistrationInput", "firstName"],
+      ["InvitationRegistrationInput", "lastName"],
+    ] as const
+  ) {
+    const pattern = schemas[component]?.properties[field]?.pattern;
+    assert(
+      pattern !== undefined && !new RegExp(pattern).test("A\u0000") &&
+        new RegExp(pattern).test("Zoë"),
+      `${component}.${field} publishes the control-character refusal: ${pattern}`,
+    );
+  }
+});

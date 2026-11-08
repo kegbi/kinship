@@ -168,3 +168,60 @@ Deno.test("[AUD-M3] SECA-03 an invitee past the address's registration-mail ceil
     "a refused registration leaves no continuation behind",
   );
 });
+
+Deno.test("[REL-117] SECA-02 a control character in an invitee's name answers alike for a fresh and a registered address", async () => {
+  const registered = new Set(["owner@example.test"]);
+  let reached = 0;
+  const app = createInvitationRoutes(services({
+    // A fresh address writes both names, which PostgreSQL refuses when one
+    // holds a NUL; a registered one writes none.
+    registerInvitee: (command) => {
+      reached += 1;
+      const written = !registered.has(command.email);
+      return written &&
+          `${command.firstName}${command.lastName}`.includes("\u0000")
+        ? Promise.reject(new Error("invalid byte sequence: 0x00"))
+        : Promise.resolve("verification-required");
+    },
+  }));
+  async function register(email: string, field: string, control: string) {
+    const response = await app.request(
+      "https://kinship.test/api/v1/workspace-invitations/register",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://kinship.test",
+        },
+        body: JSON.stringify({
+          email,
+          firstName: "New",
+          lastName: "Invitee",
+          password: "correct horse battery staple",
+          token: "a-valid-private-invitation-token-0000000000",
+          [field]: `Ne${control}w`,
+        }),
+      },
+    );
+    return {
+      status: response.status,
+      body: await response.text(),
+      cookies: response.headers.getSetCookie().length,
+    };
+  }
+  for (const field of ["firstName", "lastName"]) {
+    for (const control of ["\u0000", "\u0001", "\u000A", "\u001F", "\u007F"]) {
+      const label = `${field} U+${
+        control.charCodeAt(0).toString(16).padStart(4, "0")
+      }`;
+      const fresh = await register("fresh@example.test", field, control);
+      const known = await register("owner@example.test", field, control);
+      assert(
+        fresh.status === 400 && fresh.status === known.status &&
+          fresh.body === known.body && fresh.cookies === known.cookies,
+        `${label}: fresh ${fresh.status} ${fresh.body} vs registered ${known.status} ${known.body}`,
+      );
+    }
+  }
+  assert(reached === 0, `no invitee registration is attempted: ${reached}`);
+});

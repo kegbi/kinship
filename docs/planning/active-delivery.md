@@ -1897,7 +1897,7 @@ Playwright test carrying its stable flow ID.
       bulk-loaded; prove that the worker's claim plan uses
       `reminder_occurrences_due_idx` right after an import.
 
-- [ ] **REL-117 — Registration text fields accept NUL characters, which reveals
+- [x] **REL-117 — Registration text fields accept NUL characters, which reveals
       whether an address has an account.** Found in the AUD-A2 re-check review
       during the 2026-11-07 audit-remediation run on the REL-105 Windows host;
       the defect predates AUD-A2 and is present at `367c50aa`.
@@ -1914,7 +1914,22 @@ Playwright test carrying its stable flow ID.
       control characters in the registration contract, and in any other text
       field that reaches a PostgreSQL text column the same way, and prove with
       contract and HTTP tests that a NUL gives the same answer for a fresh and a
-      registered address.
+      registered address. Resolved 2026-11-08: over HTTP a NUL was already
+      refused as 400 for both addresses by `parseJsonBody`'s SECA-08 guard
+      (`packages/http-kit/validate.ts`), which predates `367c50aa`; the contract
+      itself, and every other control character, still passed. The shared
+      `singleLineText()` (`packages/contracts/schemas/shared.ts`) now refuses
+      C0, DEL, and C1 controls, and publishes the pattern, in the registration
+      names and workspace name, the invitee's names, the profile names, and the
+      workspace settings name. The sign-in, recovery, reset, verification, and
+      invitation sign-in forms carry no free text: their addresses already fail
+      `email()` on a control and their tokens and passwords are hashed before
+      PostgreSQL. Proven by the `[REL-117]` tests in
+      `tools/contracts/registration_contract_test.ts`,
+      `apps/api/registration_test.ts`, and
+      `packages/backend/modules/workspaces/transport/http/invitations/register_test.ts`:
+      the same 400 and body for a fresh and a registered address, and no
+      registration or mail call.
 
 - [ ] **REL-118 — Migration 0004 commits the runner's transaction, so v1–v3
       upgrades are not atomic.** Found by AUD-V2 during the 2026-11-07

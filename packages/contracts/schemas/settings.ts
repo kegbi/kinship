@@ -20,6 +20,7 @@
  */
 
 import { z } from "zod";
+import { singleLineText } from "./shared.ts";
 
 /** A language tag, as the member's and the workspace's locales are spelled. */
 const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
@@ -408,8 +409,8 @@ export const preferencesInput = z.strictObject({
 }).meta({ id: "PreferencesInput" });
 
 export const profileInput = z.strictObject({
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().max(100),
+  firstName: singleLineText().min(1).max(100),
+  lastName: singleLineText().max(100),
 }).meta({ id: "ProfileInput" });
 
 export const profileSettings = z.strictObject({
@@ -440,7 +441,7 @@ export const sessionSettings = z.strictObject({
 }).meta({ id: "SessionSettings" });
 
 export const workspaceSettingsInput = z.strictObject({
-  name: z.string().trim().min(1).max(200),
+  name: singleLineText().min(1).max(200),
   slug: workspaceSlug.optional(),
   defaultLocale: locale,
   defaultTimezone: timezone.optional(),

@@ -501,3 +501,76 @@ Deno.test("[AUD-K4] the entry handoff sets __Host-kinship_session over HTTPS and
     "the new session travels in the prefixed cookie",
   );
 });
+
+Deno.test("[REL-117] SECA-02 a control character in a registration name answers alike for a fresh and a registered address", async () => {
+  const registered = new Set(["owner@example.test"]);
+  const mail: string[] = [];
+  let reached = 0;
+  const app = createApiApp(services({
+    // The use case as it behaves: a registered address writes no name and is
+    // mailed; a fresh one writes every name, which PostgreSQL refuses when a
+    // name holds a NUL, before any mail is sent.
+    register: (command) => {
+      reached += 1;
+      if (!registered.has(command.email)) {
+        const names = [
+          command.firstName,
+          command.lastName,
+          command.workspaceName,
+        ];
+        if (names.some((name) => name.includes("\u0000"))) {
+          return Promise.reject(
+            new Error("invalid byte sequence for encoding UTF8: 0x00"),
+          );
+        }
+      }
+      mail.push(command.email);
+      return resolved({ status: "verification-required" });
+    },
+  }));
+  async function register(email: string, field: string, control: string) {
+    const response = await app.request(
+      "http://localhost/api/v1/registrations",
+      {
+        method: "POST",
+        headers: jsonFromOrigin,
+        body: JSON.stringify({
+          email,
+          firstName: "Ada",
+          lastName: "Lovelace",
+          password: "a sufficiently long password",
+          workspaceName: "Circle",
+          [field]: `Ad${control}a`,
+        }),
+      },
+    );
+    return {
+      status: response.status,
+      body: await response.text(),
+      cookies: response.headers.getSetCookie().length,
+    };
+  }
+  const controls = ["\u0000", "\u0001", "\u000A", "\u001F", "\u007F"];
+  for (const field of ["firstName", "lastName", "workspaceName"]) {
+    for (const control of controls) {
+      const label = `${field} U+${
+        control.charCodeAt(0).toString(16).padStart(4, "0")
+      }`;
+      const fresh = await register("fresh@example.test", field, control);
+      const known = await register("owner@example.test", field, control);
+      assert(
+        fresh.status === known.status && fresh.body === known.body &&
+          fresh.cookies === known.cookies,
+        `${label}: fresh ${fresh.status} ${fresh.body} vs registered ${known.status} ${known.body}`,
+      );
+      assert(
+        fresh.status === 400 && fresh.body.includes(`"${field}"`),
+        `${label}: a control character is a validation failure on the field: ${fresh.status} ${fresh.body}`,
+      );
+    }
+  }
+  assert(
+    reached === 0 && mail.length === 0,
+    `no registration or provider call is made: ${reached} ${mail}`,
+  );
+});

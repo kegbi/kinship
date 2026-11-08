@@ -21275,11 +21275,13 @@
           "firstName": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "lastName": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "password": {
             "type": "string",
@@ -25818,11 +25820,13 @@
           "firstName": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "lastName": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           }
         },
         "required": [
@@ -26152,11 +26156,13 @@
           "firstName": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "lastName": {
             "type": "string",
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "password": {
             "type": "string",
@@ -26167,7 +26173,8 @@
           "workspaceName": {
             "type": "string",
             "minLength": 2,
-            "maxLength": 120
+            "maxLength": 120,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           }
         },
         "required": [
@@ -28747,7 +28754,8 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 200,
+            "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
           },
           "slug": {
             "type": "string"
