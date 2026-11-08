@@ -435,7 +435,7 @@ these:
     on Chromium; changed scope 88.9% branches, 98% functions, 94.6% lines;
     contracts, fmt, architecture, and lint (only REL-096).
 
-- [ ] **AUD-A4 — MFA challenges survive restarts and replicas.** S. Normal.
+- [x] **AUD-A4 — MFA challenges survive restarts and replicas.** S. Normal.
       Depends: AUD-V1, AUD-A3. Closes: SECA-06 (the MFA part) and SECA-14 item
       4.
   - Scope: store the `kinship_mfa` challenge as a hashed `user_sessions` row
@@ -445,6 +445,20 @@ these:
     and submits a valid code. It must answer 200; today it answers 410
     `mfa_challenge_expired`.
   - Verify: `test:integration --module=identity`; the AUTH-003 E2E.
+  - Delivered 2026-11-08: the password step stores the challenge as a hashed
+    `user_sessions` row with `purpose = 'mfa-challenge'`, and the in-memory map
+    is gone; the `kinship_mfa` cookie carries the row id and a secret, and the
+    stored hash commits to the wrong-factor count and the credential version, so
+    attempts stay durable without a column (six concurrent wrong factors across
+    two processes give five 401s and one 429) and a password change voids the
+    challenge. A challenge started on one composition completes on a rebuilt one
+    with 200 (was 410); success revokes the row in the same transaction; every
+    session reader filters on purpose, and the workspace lifecycle impact
+    preview no longer counts challenges; AUD-A2's purge covers every purpose.
+    Identity integration 21 (only REL-099), workspace-lifecycle 7, identity,
+    workspaces, and workspace-lifecycle unit, api unit only REL-106, tasks only
+    REL-097, AUTH-003 6 passed, and fmt, contracts, architecture, and lint (only
+    REL-096).
 
 ### Lane M — Membership and workspace lifecycle
 

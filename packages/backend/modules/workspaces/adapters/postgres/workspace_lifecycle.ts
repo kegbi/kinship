@@ -85,7 +85,7 @@ export class PostgresWorkspaceLifecycleRepository
             and m.left_at is null) as members,
         (select count(*)::int from crm.user_sessions s
           where s.user_id in (${soleMembers(command.workspaceId)})
-            and s.revoked_at is null
+            and s.purpose <> 'mfa-challenge' and s.revoked_at is null
             and s.expires_at > now()) as "activeSessionCount",
         md5(jsonb_build_object(
           'workspace', to_jsonb(w),

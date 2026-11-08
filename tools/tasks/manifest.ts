@@ -2010,6 +2010,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/registration_mail_ceiling_postgres_test.ts",
       // SECA-04 (AUD-A2): provisioning at verification, and the purge.
       "tests/integration/authentication_retention_postgres_test.ts",
+      // SECA-06 (AUD-A4): the MFA challenge is a durable session row.
+      "tests/integration/mfa_challenge_postgres_test.ts",
     ],
     coverage: {
       directory: "identity-domain",

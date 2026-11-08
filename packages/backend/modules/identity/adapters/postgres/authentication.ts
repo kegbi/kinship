@@ -25,17 +25,27 @@ interface CredentialRow {
   readonly user_id: string;
 }
 
-interface Challenge {
-  readonly credentialVersion: Date | null;
-  readonly entryCredentialVersion: string;
-  readonly expiresAt: number;
-  failures: number;
-  readonly userId: string;
+/** How long a proved password waits for its second factor. */
+const CHALLENGE_MILLISECONDS = 5 * 60_000;
+/** Wrong factors one challenge absorbs before it refuses every factor. */
+const CHALLENGE_ATTEMPTS = 5;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A `kinship_mfa` value is `<row id>.<secret>`: the id finds the
+ * `mfa-challenge` row, and only the secret proves the caller holds it.
+ */
+function parseChallenge(
+  token: string,
+): { readonly id: string; readonly secret: string } | undefined {
+  const [id, secret, rest] = token.split(".");
+  return id && secret && rest === undefined && UUID.test(id)
+    ? { id, secret }
+    : undefined;
 }
 
 export class PostgresIdentityAuthentication
   implements IdentityAuthenticationFacade {
-  readonly #challenges = new Map<string, Challenge>();
   readonly #dummyHash: Promise<string>;
 
   constructor(
@@ -50,11 +60,12 @@ export class PostgresIdentityAuthentication
   }
 
   async authenticationSubjectForMfa(challengeToken: string): Promise<string> {
-    const challengeHash = await this.tokens.hash(challengeToken);
-    const challenge = this.#challenges.get(challengeHash);
-    return challenge
-      ? `user:${challenge.userId}`
-      : `challenge:${challengeHash}`;
+    const challenge = parseChallenge(challengeToken);
+    const userId = challenge &&
+      await this.#challengeUser(this.database, challenge.id);
+    return userId
+      ? `user:${userId}`
+      : `challenge:${await this.tokens.hash(challengeToken)}`;
   }
 
   async resolveAuthenticationAuditUser(command: {
@@ -92,6 +103,7 @@ export class PostgresIdentityAuthentication
     readonly email: string;
     readonly ipAddress?: string;
     readonly password: string;
+    readonly userAgent?: string;
   }): Promise<PasswordAuthenticationResult> {
     const now = this.clock.now();
     const result = await sql<CredentialRow>`
@@ -133,17 +145,26 @@ export class PostgresIdentityAuthentication
         userId: credential.user_id,
       };
     }
-    const challenge = await this.tokens.create();
-    this.#pruneChallenges(now.getTime());
-    this.#challenges.set(challenge.hash, {
-      credentialVersion: credential.password_changed_at,
-      entryCredentialVersion: credential.credential_version,
-      expiresAt: now.getTime() + 5 * 60_000,
-      failures: 0,
-      userId: credential.user_id,
-    });
+    const challengeId = this.ids.create();
+    const secret = (await this.tokens.create()).raw;
+    const challengeHash = await this.#challengeHash(
+      secret,
+      0,
+      credential.credential_version,
+    );
+    await sql`
+      insert into crm.user_sessions (
+        id, user_id, session_hash, purpose, ip_address, user_agent,
+        created_at, last_seen_at, expires_at, revoked_at
+      ) values (
+        ${challengeId}::uuid, ${credential.user_id}::uuid, ${challengeHash},
+        'mfa-challenge', ${command.ipAddress ?? null}::inet,
+        ${command.userAgent ?? null}, ${now}, ${now},
+        ${new Date(now.getTime() + CHALLENGE_MILLISECONDS)}, null
+      )
+    `.execute(this.database);
     return {
-      challengeToken: challenge.raw,
+      challengeToken: `${challengeId}.${secret}`,
       credentialVersion: credential.password_changed_at,
       entryCredentialVersion: credential.credential_version,
       status: "mfa-required",
@@ -177,32 +198,22 @@ export class PostgresIdentityAuthentication
     }
   }
 
+  /**
+   * Answers a challenge with a factor, on whichever process proved the
+   * password (SECA-06). An attempt locks the user, then the challenge row, the
+   * order a password reset takes them in, so attempts on one challenge are
+   * counted one at a time and a reset either revokes the row first or waits.
+   */
   async completeMfa(command: {
     readonly challengeToken: string;
     readonly factor: string;
     readonly transaction: IdentityTransaction;
   }): Promise<MfaAuthenticationResult> {
-    const challengeHash = await this.tokens.hash(command.challengeToken);
-    const challenge = this.#challenges.get(challengeHash);
-    const now = this.clock.now();
-    if (!challenge || challenge.expiresAt <= now.getTime()) {
-      if (challenge) this.#challenges.delete(challengeHash);
-      return {
-        ...(challenge ? { auditUserId: challenge.userId } : {}),
-        status: "expired",
-      };
-    }
-    if (challenge.failures >= 5) {
-      return {
-        auditUserId: challenge.userId,
-        retryAfterSeconds: Math.max(
-          1,
-          Math.ceil((challenge.expiresAt - now.getTime()) / 1_000),
-        ),
-        status: "rate-limited",
-      };
-    }
     const database = databaseFromSession(command.transaction);
+    const parsed = parseChallenge(command.challengeToken);
+    const userId = parsed && await this.#challengeUser(database, parsed.id);
+    if (!parsed || !userId) return { status: "expired" };
+    const now = this.clock.now();
     const mfaResult = await sql<{
       readonly encrypted_secret: string;
       readonly credential_version: string;
@@ -213,23 +224,53 @@ export class PostgresIdentityAuthentication
         coalesce(extract(epoch from u.password_changed_at)::text, 'none')
           credential_version
       from crm.users u join crm.user_mfa_totp mfa on mfa.user_id = u.id
-      where u.id = ${challenge.userId}::uuid and u.status = 'active'
+      where u.id = ${userId}::uuid and u.status = 'active'
         and mfa.confirmed_at is not null
       for update of u, mfa
     `.execute(database);
     const mfa = mfaResult.rows[0];
-    if (
-      !mfa ||
-      mfa.credential_version !== challenge.entryCredentialVersion
-    ) {
-      this.#challenges.delete(challengeHash);
-      return { auditUserId: challenge.userId, status: "expired" };
+    const challengeResult = await sql<{
+      readonly expires_at: Date;
+      readonly revoked: boolean;
+      readonly session_hash: string;
+    }>`
+      select session_hash, expires_at, revoked_at is not null revoked
+      from crm.user_sessions
+      where id = ${parsed.id}::uuid and purpose = 'mfa-challenge'
+      for update
+    `.execute(database);
+    const challenge = challengeResult.rows[0];
+    const expiresAt = new Date(challenge?.expires_at ?? 0).getTime();
+    if (!challenge || challenge.revoked || expiresAt <= now.getTime()) {
+      return { auditUserId: userId, status: "expired" };
+    }
+    // A credential changed since the password was proved, or a secret that is
+    // not this row's, matches no attempt count; either way the row is spent.
+    const failures = mfa &&
+      await this.#challengeFailures(
+        challenge.session_hash,
+        parsed.secret,
+        mfa.credential_version,
+      );
+    if (!mfa || failures === undefined) {
+      await this.#revokeChallenge(database, parsed.id, now);
+      return { auditUserId: userId, status: "expired" };
+    }
+    if (failures >= CHALLENGE_ATTEMPTS) {
+      return {
+        auditUserId: userId,
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((expiresAt - now.getTime()) / 1_000),
+        ),
+        status: "rate-limited",
+      };
     }
     let accepted = false;
     if (/^\d{6}$/.test(command.factor)) {
       const secret = await this.secretBox.decrypt(
         mfa.encrypted_secret,
-        challenge.userId,
+        userId,
       );
       if (secret) {
         const verification = await verifyTotp(
@@ -243,7 +284,7 @@ export class PostgresIdentityAuthentication
           await sql`
             update crm.user_mfa_totp set last_used_at = ${acceptedAt},
               updated_at = ${now}
-            where user_id = ${challenge.userId}::uuid
+            where user_id = ${userId}::uuid
           `.execute(database);
           accepted = true;
         }
@@ -252,7 +293,7 @@ export class PostgresIdentityAuthentication
       const recoveryHash = await this.tokens.hash(command.factor.trim());
       const recovery = await sql<{ readonly id: string }>`
         select id::text from crm.user_recovery_codes
-        where user_id = ${challenge.userId}::uuid
+        where user_id = ${userId}::uuid
           and code_hash = ${recoveryHash} and used_at is null
         for update
       `.execute(database);
@@ -265,15 +306,24 @@ export class PostgresIdentityAuthentication
       }
     }
     if (!accepted) {
-      challenge.failures += 1;
-      return { auditUserId: challenge.userId, status: "invalid" };
+      const counted = await this.#challengeHash(
+        parsed.secret,
+        failures + 1,
+        mfa.credential_version,
+      );
+      await sql`
+        update crm.user_sessions set session_hash = ${counted},
+          last_seen_at = ${now}
+        where id = ${parsed.id}::uuid and purpose = 'mfa-challenge'
+      `.execute(database);
+      return { auditUserId: userId, status: "invalid" };
     }
-    this.#challenges.delete(challengeHash);
+    await this.#revokeChallenge(database, parsed.id, now);
     return {
-      credentialVersion: challenge.credentialVersion,
-      entryCredentialVersion: challenge.entryCredentialVersion,
+      credentialVersion: mfa.password_changed_at,
+      entryCredentialVersion: mfa.credential_version,
       status: "verified",
-      userId: challenge.userId,
+      userId,
     };
   }
 
@@ -432,15 +482,61 @@ export class PostgresIdentityAuthentication
     return this.tokens.hash(`authenticated-session:${token}`);
   }
 
-  #pruneChallenges(now: number): void {
-    for (const [hash, challenge] of this.#challenges) {
-      if (challenge.expiresAt <= now) this.#challenges.delete(hash);
+  /**
+   * A challenge row's hash commits to its secret, to the credential version
+   * the password was proved against, and to the wrong factors it has
+   * absorbed. Each wrong factor rewrites it with the next count, so the count
+   * is as durable as the row, and a password changed since matches no count.
+   */
+  #challengeHash(
+    secret: string,
+    failures: number,
+    credentialVersion: string,
+  ): Promise<string> {
+    return this.tokens.hash(
+      `mfa-challenge:${failures}:${credentialVersion}:${secret}`,
+    );
+  }
+
+  /** The wrong factors a stored hash records, or none if it matches none. */
+  async #challengeFailures(
+    sessionHash: string,
+    secret: string,
+    credentialVersion: string,
+  ): Promise<number | undefined> {
+    for (let failures = 0; failures <= CHALLENGE_ATTEMPTS; failures += 1) {
+      const candidate = await this.#challengeHash(
+        secret,
+        failures,
+        credentialVersion,
+      );
+      if (candidate === sessionHash) return failures;
     }
-    while (this.#challenges.size >= 10_000) {
-      const oldest = this.#challenges.keys().next().value;
-      if (!oldest) break;
-      this.#challenges.delete(oldest);
-    }
+    return undefined;
+  }
+
+  /** Whose challenge row an id names, in whatever state the row is. */
+  async #challengeUser(
+    database: Kysely<ApplicationDatabase>,
+    challengeId: string,
+  ): Promise<string | undefined> {
+    const result = await sql<{ readonly user_id: string }>`
+      select user_id::text from crm.user_sessions
+      where id = ${challengeId}::uuid and purpose = 'mfa-challenge'
+    `.execute(database);
+    return result.rows[0]?.user_id;
+  }
+
+  async #revokeChallenge(
+    database: Kysely<ApplicationDatabase>,
+    challengeId: string,
+    now: Date,
+  ): Promise<void> {
+    await sql`
+      update crm.user_sessions set revoked_at = ${now}, last_seen_at = ${now}
+      where id = ${challengeId}::uuid and purpose = 'mfa-challenge'
+        and revoked_at is null
+    `.execute(database);
   }
 }
 
