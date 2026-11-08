@@ -563,4 +563,52 @@ describe("GAP-029 contact methods island", () => {
     expect(block("contact-methods").querySelector("form")!.hidden).toBe(true);
     expect(api.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it("FEQ-04 shows a section the summary counted empty without reading it, and reads it after the first write", async () => {
+    shell(railBlock("contact-methods"));
+    const record = contact("ada@example.test", personId);
+    let saved = false;
+    const api = stubApi({
+      "POST /api/v1/people/:personId/facts/contact-methods": () => {
+        saved = true;
+        return factSaved(record);
+      },
+      "GET /api/v1/*": ({ url }) =>
+        factRead(saved ? [record] : [], {
+          options: url.searchParams.has("includeOptions") || saved
+            ? [email]
+            : [],
+        }),
+    });
+    await mountFacts(mountContactMethods, {
+      sectionCounts: [{ count: 0, id: "contact-methods", status: "ready" }],
+    });
+    expect(api.calls()).toEqual([]);
+    expect(block("contact-methods").dataset.sectionState).toBe("ready");
+    expect(summary.railEmpty("contact-methods")).toBe(true);
+    expect(summary.railCount("contact-methods")).toBe("0");
+    const user = userEvent.setup();
+    await user.click(
+      section().getByRole("button", { name: "Add contact methods" }),
+    );
+    const type = section().getByLabelText("Contact type");
+    await waitFor(() => expect(document.activeElement).toBe(type));
+    await user.selectOptions(type, typeId);
+    await user.type(
+      section().getByLabelText("Contact value"),
+      "ada@example.test",
+    );
+    await user.click(
+      section().getByRole("button", { name: "Save profile fact" }),
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(
+      api.calls().filter((call) =>
+        call.includes("/facts/") && !call.includes("includeOptions")
+      ),
+    ).toEqual([
+      `POST /api/v1/people/${personId}/facts/contact-methods`,
+      `GET /api/v1/people/${personId}/facts/contact-methods`,
+    ]);
+  });
 });

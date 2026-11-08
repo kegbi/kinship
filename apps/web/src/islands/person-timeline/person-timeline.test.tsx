@@ -11,7 +11,13 @@ import {
   stubApi,
   unreachable,
 } from "../../testing/api.ts";
-import { ids, preferences, sectionProps } from "../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  preferences,
+  profileSummary,
+  sectionProps,
+} from "../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -74,6 +80,40 @@ const rows = () => [
 ];
 
 describe("merged person timeline island", () => {
+  it("FEQ-04 shows an empty timeline without reading it when the summary counted nothing it merges, and reads it on a change", async () => {
+    const root = markup();
+    const counted = (count: number) =>
+      ([
+        "notes",
+        "activities",
+        "calls",
+        "conversations",
+        "life-events",
+      ] as const)
+        .map((id) => ({ count, id, status: "ready" as const }));
+    const api = serve([item({ excerpt: "First note" })]);
+    await mountSection(
+      mountPersonTimeline,
+      sectionProps({
+        initial: personProfile({
+          summary: profileSummary({ sectionCounts: counted(0) }),
+        }),
+        preferences: preferences(),
+      }),
+    );
+    expect(api.calls()).toEqual([]);
+    expect(root.dataset.timelineState).toBe("empty");
+    await act(() => {
+      document.dispatchEvent(
+        new CustomEvent("person-timeline-changed", {
+          detail: { personIds: [personId] },
+        }),
+      );
+    });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(api.calls()).toHaveLength(1);
+  });
+
   it("accepts an immediate filter click and supersedes the initial request", async () => {
     const root = markup();
     const initial = deferred<Response>();

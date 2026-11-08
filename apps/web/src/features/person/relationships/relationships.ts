@@ -170,7 +170,8 @@ export function lifecycleChange(
 // --- The block's state ------------------------------------------------------
 
 export type ListStatus = "loading" | "ready" | "error" | "forbidden";
-export type TypeStatus = "loading" | "ready" | "error" | "hidden";
+/** `idle` until an editor first needs the types (FEQ-04). */
+export type TypeStatus = "idle" | "loading" | "ready" | "error" | "hidden";
 export type PeopleStatus = "idle" | "loading" | "error";
 
 export interface PersonChoice {
@@ -300,14 +301,20 @@ export const READ_ONLY =
 export const DUPLICATE_NOTICE =
   "A person with this name may already exist. Select the existing person or explicitly create another.";
 
+/**
+ * The block as it mounts: loading, or — when the profile summary counted no
+ * relationship (`empty`) — already showing its empty list, with the types
+ * left until the editor opens (FEQ-04).
+ */
 export function initialRelationshipsState(
   archived: boolean,
+  empty = false,
 ): RelationshipsState {
   return {
     candidates: [],
     editorOpen: false,
     expanded: false,
-    list: "loading",
+    list: empty ? "ready" : "loading",
     listProblem: "",
     people: "idle",
     peopleQuery: "",
@@ -322,14 +329,17 @@ export function initialRelationshipsState(
     typePrevious: [],
     typeProblem: "",
     typeSearch: "",
-    types: "loading",
+    types: empty ? "idle" : "loading",
   };
 }
 
-/** Whether the block may write: its list, person, and types are all ready. */
+/**
+ * Whether the block may write: its list and person are ready, and its types
+ * are ready or not yet asked for, which opening the editor does.
+ */
 export function writesReady(state: RelationshipsState): boolean {
   return state.list === "ready" && state.personStatus === "ready" &&
-    state.types === "ready";
+    (state.types === "ready" || state.types === "idle");
 }
 
 /** Whether the module is off, which conceals the block entirely. */
@@ -337,9 +347,9 @@ export function concealed(state: RelationshipsState): boolean {
   return state.personStatus === "hidden" || state.types === "hidden";
 }
 
-/** Whether the editor shows. */
+/** Whether the editor shows: open, writable, and holding its types. */
 export function editorVisible(state: RelationshipsState): boolean {
-  return state.editorOpen && writesReady(state);
+  return state.editorOpen && writesReady(state) && state.types === "ready";
 }
 
 function focus(

@@ -13,7 +13,11 @@
  * one never retires another. The editor's people search goes through the
  * second. A lifecycle change, or the island unmounting, retires both, so a
  * late answer never reaches a block that has moved on. Writes are never
- * optimistic: each re-reads the relationships and only then says so.
+ * optimistic: each re-reads the relationships and only then says so. A
+ * person the profile summary counted without relationships reads nothing as
+ * the block mounts, and its relationship types load when the editor first
+ * opens (FEQ-04); a block with rows reads them with the list, since each
+ * row's own type picker offers them.
  *
  * It tells the rail its count and empty state through `profile-summary.ts`,
  * as the vanilla block it replaced did, and announces a state the reader must hear
@@ -69,7 +73,11 @@ import { saveWithLockedForm } from "../../../lib/unsaved-changes.ts";
 import { nameInitials } from "../../../lib/person-name.ts";
 import { Quiet } from "../facts/fact-list.tsx";
 import { setRailCount, setRailEmpty } from "../profile-summary.ts";
-import { sectionHidden, type SectionMount } from "../section-mounts.ts";
+import {
+  sectionHidden,
+  type SectionMount,
+  summaryCount,
+} from "../section-mounts.ts";
 import {
   editorVisible,
   groupRelationships,
@@ -103,6 +111,8 @@ export interface PersonRelationshipsProps {
   readonly heading?: HTMLElement | undefined;
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /** How many relationships the profile summary counted, when it did. */
+  readonly total?: number | undefined;
 }
 
 type TypeAnswer = Settled<
@@ -126,8 +136,8 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
   const { personId, root, workspaceId } = props;
   const [state, dispatch] = useReducer(
     relationshipsReducer,
-    props.archived,
-    initialRelationshipsState,
+    undefined,
+    () => initialRelationshipsState(props.archived, props.total === 0),
   );
   const view = relationshipsView(state);
   const sectionRequest = useLatestRequest();
@@ -165,14 +175,15 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
       workspaceId,
     );
 
+  /** Shows a type read's answer; answers whether the types are ready. */
   const applyTypes = (
     answer: TypeAnswer,
     cursor: string | undefined,
     focus?: RelationshipFocus,
-  ) => {
+  ): boolean => {
     if (answer.status !== "ready" || !answer.data) {
       dispatch({ detail: answer.problem?.detail, type: "types-failed" });
-      return;
+      return false;
     }
     dispatch({
       cursor,
@@ -183,6 +194,7 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
       type: "types-loaded",
       ...(focus ? { focus } : {}),
     });
+    return answer.data.status === "ready";
   };
 
   const applyList = (
@@ -244,19 +256,28 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
     options: {
       readonly previous: readonly (string | undefined)[];
       readonly search?: string;
+      /**
+       * Where focus goes once they answer; `null` leaves it, and the read
+       * leaves the block as it is meanwhile (the editor's first opening).
+       */
+      readonly focus?: RelationshipFocus | null;
     },
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const search = options.search ?? state.typeSearch;
     const selected = selectedTypeIds(state.typeId, state.rows);
-    dispatch({
-      previous: options.previous,
-      type: "types-loading",
-      ...(options.search !== undefined ? { search: options.search } : {}),
-    });
+    if (options.focus !== null) {
+      dispatch({
+        previous: options.previous,
+        type: "types-loading",
+        ...(options.search !== undefined ? { search: options.search } : {}),
+      });
+    }
     const answer = await sectionRequest(() =>
       typeRequest(cursor, search, selected)
     );
-    if (answer) applyTypes(answer, cursor, "type");
+    if (!answer) return false;
+    const focus = options.focus === undefined ? "type" : options.focus;
+    return applyTypes(answer, cursor, focus ?? undefined);
   };
 
   const findPeople = async (term: string): Promise<void> => {
@@ -296,8 +317,11 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
     };
   }, [editorOpen, peopleRequest, state.peopleQuery, state.targetId]);
 
-  // The first read starts in the loading state the island mounted with.
-  const first = useEffectEvent(() => readAll());
+  // The first read starts in the loading state the island mounted with; a
+  // block counted empty has nothing to read.
+  const first = useEffectEvent(() =>
+    state.list === "loading" ? readAll() : Promise.resolve()
+  );
   useEffect(() => {
     void first().finally(() => {
       settled.current?.();
@@ -517,7 +541,15 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
 
   const add = (opener: HTMLElement) => {
     if (!requestRailEditorOpen(form.current!, false, opener)) return;
-    dispatch({ type: "open" });
+    if (state.types !== "idle") {
+      dispatch({ type: "open" });
+      return;
+    }
+    // The editor's first opening reads the types it offers, and it opens
+    // once they are there (FEQ-04).
+    void readTypes(undefined, { focus: null, previous: [] }).then((ready) => {
+      if (ready) dispatch({ type: "open" });
+    });
   };
 
   const cancel = () => {
@@ -1039,6 +1071,7 @@ export const mountPersonRelationships: SectionMount = (container, props) => {
         personId={props.personId}
         personUpdatedAt={props.initial?.person.updatedAt}
         root={root}
+        total={summaryCount(props, "relationships")}
         workspaceId={props.workspaceId}
       />,
     );

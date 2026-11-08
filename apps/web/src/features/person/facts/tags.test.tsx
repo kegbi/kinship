@@ -39,6 +39,16 @@ const tags = (ids: readonly string[]) => fact("tags", { tagIds: ids });
 const TAG_OPTIONS = "GET /api/v1/people/tag-options";
 
 describe("GAP-029 tags island", () => {
+  it("FEQ-04 still reads the assignments the summary counted as none, since the editor saves that record", async () => {
+    const api = stubApi({ [anyRoute]: factRead([tags([])]) });
+    shell(tagsBlock());
+    await mountFacts(mountTags, {
+      sectionCounts: [{ count: 0, id: "tags", status: "ready" }],
+    });
+    expect(api.calls()).toHaveLength(1);
+    expect(block("tags").dataset.sectionState).toBe("ready");
+  });
+
   it("keeps the hero's preview slot and edits beside it", async () => {
     stubApi({ [anyRoute]: factRead([tags([])]) });
     shell(tagsBlock());

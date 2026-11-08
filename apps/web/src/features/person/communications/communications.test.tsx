@@ -18,6 +18,7 @@ import {
   ids,
   personProfile,
   preferences,
+  profileSummary,
   sectionProps,
 } from "../../../testing/fixtures.ts";
 import {
@@ -41,7 +42,6 @@ const emotionId = "00000000-0000-4000-8000-000000000400";
 const HISTORY = "GET /api/v1/people/:personId/communications";
 const OPTIONS = "GET /api/v1/communication-options";
 const CONTACTS = "GET /api/v1/people/:personId/facts/contact-methods";
-const PERSON = "GET /api/v1/people/:personId";
 const SAVE = "POST /api/v1/interactions";
 const utc = { effectiveTimezone: "UTC", locale: "en" };
 
@@ -136,33 +136,47 @@ const offline = () => Promise.reject(new TypeError("Failed to fetch"));
 const created = (record: unknown) =>
   jsonResponse({ record, status: "created" }, 201);
 
-const profile = (lastContactAt?: string) =>
-  jsonResponse(personProfile({
-    person: lastContactAt ? { lastContactAt } : {},
-  }));
-
 function stub(routes: Record<string, ApiAnswer | readonly ApiAnswer[]>) {
   return stubApi({
     [CONTACTS]: contactMethods(),
     [HISTORY]: history(),
     [OPTIONS]: communicationOptions(),
-    [PERSON]: profile(),
     ...routes,
   });
 }
 
-const mount = (archived = false, hidden: readonly string[] = []) =>
+const mount = (
+  archived = false,
+  hidden: readonly string[] = [],
+  counted?: { readonly calls: number; readonly conversations: number },
+  lastContactAt?: string,
+) =>
   mountSection(
     mountPersonCommunications,
     sectionProps({
       archived,
       initial: personProfile({
         person: {
+          ...(lastContactAt ? { lastContactAt } : {}),
           profileSections: hidden.map((id) => ({
             id: id as "calls",
             status: "hidden" as const,
           })),
         },
+        ...(counted
+          ? {
+            summary: profileSummary({
+              sectionCounts: [
+                { count: counted.calls, id: "calls", status: "ready" },
+                {
+                  count: counted.conversations,
+                  id: "conversations",
+                  status: "ready",
+                },
+              ],
+            }),
+          }
+          : {}),
       }),
       preferences: {
         contactNameOrder: "given_family_nickname",
@@ -212,6 +226,52 @@ const lifecycle = (detail: Record<string, unknown>) =>
   });
 
 describe("INTERACTION-002 person communications", () => {
+  it("FEQ-04 reads nothing for cards the summary counted empty, and loads the options when an editor opens", async () => {
+    shell();
+    const api = stub({ [SAVE]: created(callRecord()) });
+    await mount(false, [], { calls: 0, conversations: 0 });
+    expect(api.calls()).toEqual([]);
+    expect(stateLine("call")).toBe("No calls recorded yet.");
+    expect(stateLine("conversation")).toBe("No conversations recorded yet.");
+    expect(card("call").dataset.sectionState).toBe("ready");
+    fireEvent.click(add("call"));
+    await waitFor(() => expect(notice("call").textContent).toBe(""));
+    expect(api.calls()).toEqual(["GET /api/v1/communication-options"]);
+    set(input("call", "happenedAt"), "2026-08-16T18:15");
+    submit("call");
+    await waitFor(() => expect(notice("call").textContent).toBe("Call saved."));
+    // FEQ-10: the saved record is counted, and it says when Ada was last in
+    // contact, so nothing is read again.
+    expect(stateLine("call")).toBe(
+      "1 recent call. Listed in the timeline above.",
+    );
+    expect(summary.vital("last-contact")).toBe(
+      formatInstant("2026-08-16T18:15:00.000Z", utc),
+    );
+    expect(api.calls()).toEqual([
+      "GET /api/v1/communication-options",
+      "POST /api/v1/interactions",
+    ]);
+  });
+
+  it("FEQ-10 keeps a later last contact the page already knows", async () => {
+    shell();
+    const api = stub({ [SAVE]: created(callRecord()) });
+    await mount(false, [], undefined, "2026-08-20T12:00:00.000Z");
+    expect(api.calls()).toEqual([
+      `GET /api/v1/people/${personId}/communications`,
+    ]);
+    fireEvent.click(add("call"));
+    await waitFor(() => expect(notice("call").textContent).toBe(""));
+    submit("call");
+    await waitFor(() => expect(notice("call").textContent).toBe("Call saved."));
+    expect(summary.vital("last-contact")).toBe(
+      formatInstant("2026-08-20T12:00:00.000Z", utc),
+    );
+    expect(count(api, "/communications")).toBe(1);
+    expect(count(api, `/people/${personId}`)).toBe(0);
+  });
+
   it("keeps successful communication cards ready while their records are listed in the timeline", async () => {
     shell();
     stub({ [HISTORY]: history([callRecord(), conversationRecord()]) });
@@ -333,6 +393,8 @@ describe("INTERACTION-002 person communications", () => {
     });
     await mount();
     fireEvent.click(view("call").getByRole("button", { name: "Log call" }));
+    // The editor's options load when it opens (FEQ-04).
+    await waitFor(() => expect(notice("call").textContent).toBe(""));
     const form = within(cardForm("call"));
     set(form.getByLabelText("When it happened"), "2026-08-16T18:15");
     set(form.getByLabelText("Call direction"), "contact");
@@ -356,7 +418,11 @@ describe("INTERACTION-002 person communications", () => {
       .toBe("1 recent");
     await waitFor(() => expect(notice("call").textContent).toBe("Call saved."));
     expect(timeline).toEqual([{ personIds: [personId] }]);
-    expect(summary.vital("last-contact")).toBe("None recorded");
+    // The saved call is the person's last contact (FEQ-10).
+    expect(summary.vital("last-contact")).toBe(
+      formatInstant(new Date("2026-08-16T18:15").toISOString(), utc),
+    );
+    expect(count(api, `/people/${personId}`)).toBe(0);
     expect(cardForm("call").hidden).toBe(false);
   });
 
@@ -470,31 +536,37 @@ describe("INTERACTION-002 person communications", () => {
     expect(posts(api)[1]!["requestId"]).toBe(posts(api)[0]!["requestId"]);
   });
 
-  it("refreshes authoritative last contact for backdated occurrences and later messages", async () => {
+  it("FEQ-10 takes last contact from the saved record, for backdated occurrences and later messages", async () => {
     shell();
-    let saves = 0;
-    stub({
-      [PERSON]: () =>
-        profile(
-          saves === 1 ? "2026-08-20T12:00:00.000Z" : "2026-08-22T12:00:00.000Z",
-        ),
-      [SAVE]: () => {
-        saves += 1;
-        return created(conversationRecord());
+    const api = stub({
+      [SAVE]: ({ body }) => {
+        const input = body as {
+          readonly happenedAt: string;
+          readonly messages: readonly { readonly writtenAt: string }[];
+        };
+        return created(conversationRecord({
+          happenedAt: input.happenedAt,
+          messages: input.messages.map((message, index) => ({
+            content: "Later",
+            direction: "outbound",
+            id: `message-${index}`,
+            writtenAt: message.writtenAt,
+          })),
+        }));
       },
     });
-    await mount();
+    await mount(false, [], undefined, "2026-08-20T12:00:00.000Z");
     fireEvent.click(add("conversation"));
+    await waitFor(() => expect(notice("conversation").textContent).toBe(""));
     set(input("conversation", "channelTypeId"), channelTypeId);
     set(input("conversation", "happenedAt"), "2026-08-16T18:15");
     submit("conversation");
     await waitFor(() =>
-      expect(summary.vital("last-contact")).toBe(
-        formatInstant("2026-08-20T12:00:00.000Z", utc),
-      )
-    );
-    await waitFor(() =>
       expect(notice("conversation").textContent).toBe("Conversation saved.")
+    );
+    // A backdated conversation leaves the later last contact as it was.
+    expect(summary.vital("last-contact")).toBe(
+      formatInstant("2026-08-20T12:00:00.000Z", utc),
     );
     fireEvent.click(
       view("conversation").getByRole("button", {
@@ -505,22 +577,21 @@ describe("INTERACTION-002 person communications", () => {
     set(within(row).getByRole("textbox", { name: "Message" }), "Later");
     set(within(row).getByLabelText("Written at"), "2026-08-22T12:00");
     submit("conversation");
-    await waitFor(() => expect(saves).toBe(2));
     await waitFor(() =>
       expect(summary.vital("last-contact")).toBe(
-        formatInstant("2026-08-22T12:00:00.000Z", utc),
+        formatInstant(new Date("2026-08-22T12:00").toISOString(), utc),
       )
     );
+    expect(count(api, `/people/${personId}`)).toBe(0);
+    expect(count(api, "/communications")).toBe(1);
   });
 
   it("retries a rejected initial load from a visible section control without duplicate handlers", async () => {
     shell();
     const api = stub({
-      [HISTORY]: history([callRecord(), conversationRecord()]),
-      [OPTIONS]: [
+      [HISTORY]: [
         unreachable,
-        communicationOptions(),
-        communicationOptions(),
+        history([callRecord(), conversationRecord()]),
       ],
     });
     await mount();
@@ -531,7 +602,6 @@ describe("INTERACTION-002 person communications", () => {
       expect(card(kind).dataset.sectionState).toBe("error");
       expect(element("[data-communication-badge]", card(kind)).textContent)
         .toBe("Unavailable");
-      expect(add(kind).hidden).toBe(true);
     }
     const retries = [
       ...document.querySelectorAll<HTMLButtonElement>(
@@ -555,7 +625,7 @@ describe("INTERACTION-002 person communications", () => {
       "1 recent conversation. Listed in the timeline above.",
     );
     expect(retries.every((retry) => retry.hidden)).toBe(true);
-    expect(count(api, "/communication-options")).toBe(2);
+    expect(count(api, "/communication-options")).toBe(0);
     expect(count(api, "/communications")).toBe(2);
   });
 
@@ -579,22 +649,25 @@ describe("INTERACTION-002 person communications", () => {
     expect(posts(api)[1]!["requestId"]).toBe(posts(api)[0]!["requestId"]);
   });
 
-  it.each([
-    ["history", true, false],
-    ["profile", false, true],
-    ["history and profile", true, true],
-  ])(
-    "reports a saved-but-degraded state when %s refresh fails",
-    async (_label, failHistory, failProfile) => {
+  it.each([["unavailable", false], ["full", true]])(
+    "reports a saved-but-degraded state when an %s history's refresh fails",
+    async (_label, full) => {
       shell();
       mountUnsavedChangesGuard({
         confirmMessage: "Discard?",
         root: document.body,
       });
+      // A history that failed, or holds a full page, cannot simply count
+      // the saved record, so it is read again (FEQ-10).
       let saved = false;
+      let healthy = false;
       const api = stub({
-        [HISTORY]: () => saved && failHistory ? offline() : history(),
-        [PERSON]: () => failProfile ? offline() : profile(),
+        [HISTORY]: () =>
+          healthy
+            ? history()
+            : full && !saved
+            ? history(Array.from({ length: 50 }, () => callRecord()))
+            : offline(),
         [SAVE]: () => {
           saved = true;
           return created(callRecord({ contactWasCaller: false }));
@@ -602,6 +675,7 @@ describe("INTERACTION-002 person communications", () => {
       });
       await mount();
       fireEvent.click(add("call"));
+      await waitFor(() => expect(notice("call").textContent).toBe(""));
       const occurrence = input<HTMLInputElement>("call", "happenedAt");
       occurrence.focus();
       set(occurrence, "2026-08-16T18:15");
@@ -633,8 +707,7 @@ describe("INTERACTION-002 person communications", () => {
         card("call"),
       );
       expect(refresh.hidden).toBe(false);
-      saved = false;
-      api.route(PERSON, profile());
+      healthy = true;
       fireEvent.click(refresh);
       await waitFor(() =>
         expect(notice("call").textContent).toBe(
@@ -642,14 +715,16 @@ describe("INTERACTION-002 person communications", () => {
         )
       );
       expect(refresh.hidden).toBe(true);
+      expect(count(api, `/people/${personId}`)).toBe(0);
     },
   );
 
   it("keeps a failed refresh retry retryable", async () => {
     shell();
-    const api = stub({ [PERSON]: unreachable, [SAVE]: created(callRecord()) });
+    const api = stub({ [HISTORY]: unreachable, [SAVE]: created(callRecord()) });
     await mount();
     fireEvent.click(add("call"));
+    await waitFor(() => expect(notice("call").textContent).toBe(""));
     submit("call");
     await waitFor(() =>
       expect(notice("call").textContent).toMatch(/saved, but/)
@@ -668,7 +743,7 @@ describe("INTERACTION-002 person communications", () => {
     expect(refresh.hidden).toBe(false);
     expect(refresh.disabled).toBe(false);
     expect(document.activeElement).toBe(notice("call"));
-    expect(count(api, `/people/${personId}`)).toBe(2);
+    expect(count(api, "/communications")).toBe(3);
   });
 
   it("reports invalid occurrence and message timestamps without calling the API", async () => {

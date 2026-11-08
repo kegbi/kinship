@@ -182,3 +182,103 @@ test("[PEOPLE-003] reads the complete canonical person workspace", {
 
   await expectAccessible(page);
 });
+
+test(
+  "[PEOPLE-003] reads only what a blank person shows, and a note refreshes only the timeline",
+  {
+    annotation: [{ type: "flow", description: "PEOPLE-003" }, {
+      type: "finding",
+      description: "FEQ-04 FEQ-10",
+    }],
+  },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(20_000);
+    const email = `blank-profile-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Blank",
+      lastName: "Reader",
+      workspaceName: "Blank profile circle",
+    }, bareToken);
+    await signInAcceptingCompliance(page, email, { expectToday: true });
+    const created = await page.request.post(`${origin}/api/v1/people`, {
+      data: { familyName: "Hopper", givenName: "Grace", isPartial: false },
+      headers: { origin },
+    });
+    expect(created.status()).toBe(201);
+    const personId = (await created.json() as { person: { id: string } }).person
+      .id;
+
+    const api: string[] = [];
+    page.on("request", (sent) => {
+      const url = new URL(sent.url());
+      if (url.pathname.startsWith("/api/v1/")) {
+        api.push(`${sent.method()} ${url.pathname}${url.search}`);
+      }
+    });
+    await page.goto(`/app/people/${personId}`);
+    await expect(page.locator("#person-profile-ready")).toHaveAttribute(
+      "data-workspace-settled",
+      "",
+    );
+    await expect(page.locator("#person-first-run")).toBeVisible();
+    // FEQ-04: an empty section reads nothing, and still offers its Add control.
+    await expect(
+      page.locator('[data-profile-section="contact-methods"]'),
+    ).toHaveAttribute("data-section-state", "ready");
+    await expect(
+      page.getByRole("button", { name: "Add contact methods" }),
+    ).toBeEnabled();
+    expect(api.length, api.join("\n")).toBeLessThanOrEqual(10);
+    expect(api.filter((line) => line.includes("/relationship-types")))
+      .toEqual([]);
+
+    // A note saved from the hero before the Timeline cards mount: the cards
+    // that mount afterwards read it, whatever the summary counted.
+    const capture = page.getByRole("dialog", {
+      name: "Record an activity or note",
+    });
+    await page.locator("[data-person-profile-actions]").getByRole("button", {
+      name: "Add note",
+    }).click();
+    await expect(capture).toBeVisible();
+    await capture.getByRole("textbox", { name: "Note", exact: true }).fill(
+      "Wrote the first compiler manual.",
+    );
+    await capture.getByRole("button", { name: "Save interaction" }).click();
+    await expect(capture.getByText("Note saved.")).toBeVisible();
+    await capture.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Show all sections" }).click();
+    const notes = page.locator("#profile-section-notes");
+    await expect(notes).toContainText("1 recent note");
+    await expect(page.locator("#person-timeline")).toContainText(
+      "Wrote the first compiler manual.",
+    );
+
+    // FEQ-10: a note makes one write and refreshes only the timeline.
+    await page.goto(`/app/people/${personId}?view=timeline`);
+    await expect(page.locator("#person-profile-ready")).toHaveAttribute(
+      "data-workspace-settled",
+      "",
+    );
+    await expect(notes).toHaveAttribute("data-section-state", "ready");
+    await notes.getByRole("button", { name: "Add note" }).click();
+    await expect(capture).toBeVisible();
+    await capture.getByRole("textbox", { name: "Note", exact: true }).fill(
+      "Invented the first compiler.",
+    );
+    api.length = 0;
+    await capture.getByRole("button", { name: "Save interaction" }).click();
+    await expect(capture.getByText("Note saved.")).toBeVisible();
+    await expect(page.locator("#person-timeline")).toContainText(
+      "Invented the first compiler.",
+    );
+    await expect(notes).toContainText("2 recent notes");
+    expect(api.filter((line) => line.startsWith("POST "))).toEqual([
+      "POST /api/v1/interactions",
+    ]);
+    expect(api.filter((line) => line.startsWith("GET ")).length, api.join("\n"))
+      .toBeLessThanOrEqual(1);
+  },
+);

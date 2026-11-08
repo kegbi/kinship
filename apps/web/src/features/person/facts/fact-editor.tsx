@@ -373,10 +373,24 @@ export function FactEditor<Values extends FieldValues>(
     return read();
   }, [read]);
 
-  // The first read starts in the loading state the section mounted with.
-  const firstRead = useEffectEvent(() =>
-    props.hidden ? Promise.resolve() : read()
-  );
+  // The first read starts in the loading state the section mounted with. A
+  // section the profile summary counted empty needs none: it shows its empty
+  // state and its add control, and the first write reads it (FEQ-04). Tags
+  // always read: their one record, the person's assignments, is what the
+  // editor saves, even while it assigns none.
+  const firstRead = useEffectEvent(() => {
+    if (props.hidden) return Promise.resolve();
+    if (props.total !== 0 || section === "tags") return read();
+    const empty: ProfileFactSection = {
+      options: [],
+      personUpdatedAt: revision.current,
+      records: [],
+      status: archived ? "archived" : "ready",
+    };
+    return Promise.resolve().then(() =>
+      flushSync(() => show({ data: empty, status: "ready" }))
+    );
+  });
   useEffect(() => {
     void firstRead().finally(() => {
       settled.current?.();

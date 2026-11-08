@@ -17,6 +17,7 @@ import {
   type PersonProfile,
   sectionHidden,
   type SectionMount,
+  summaryCount,
 } from "../section-mounts.ts";
 import type { FactSectionProps } from "./fact-editor.tsx";
 
@@ -48,9 +49,6 @@ export function factSectionMount(
     const heading = kept.find((element) => element.localName === "header");
     // The island draws the add control; the shell's hidden one goes.
     heading?.querySelector("[data-profile-fact-add]")?.remove();
-    const counted = props.initial?.summary?.sectionCounts.find((entry) =>
-      entry.id === section
-    );
     return new Promise((resolve) => {
       const unmount = mountIsland(
         root,
@@ -64,7 +62,7 @@ export function factSectionMount(
           personId={props.personId}
           personUpdatedAt={props.initial?.person.updatedAt ?? ""}
           root={root}
-          total={counted?.status === "ready" ? counted.count : undefined}
+          total={summaryCount(props, section)}
           workspaceId={props.workspaceId}
         />,
       );

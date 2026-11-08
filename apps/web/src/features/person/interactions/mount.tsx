@@ -5,7 +5,11 @@
  */
 
 import { mountIsland } from "../../../islands/core/index.ts";
-import { sectionHidden, type SectionMount } from "../section-mounts.ts";
+import {
+  sectionHidden,
+  type SectionMount,
+  summaryCount,
+} from "../section-mounts.ts";
 import { statusRegion } from "../status-region.ts";
 import { PersonInteractions } from "./person-interactions.tsx";
 
@@ -41,6 +45,10 @@ export const mountPersonInteractions: SectionMount = (container, props) => {
         personId={props.personId}
         sections={{ activities, notes }}
         statusRegion={statusRegion(props)}
+        totals={{
+          activities: summaryCount(props, "activities"),
+          notes: summaryCount(props, "notes"),
+        }}
         workspaceId={props.workspaceId}
       />,
     );

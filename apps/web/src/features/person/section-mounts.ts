@@ -75,6 +75,20 @@ export function sectionHidden(
   ) ?? false;
 }
 
+/**
+ * How many records the profile summary counted for `id`, when it counted
+ * them; a section it counted empty reads nothing until a write (FEQ-04).
+ */
+export function summaryCount(
+  props: SectionProps,
+  id: string,
+): number | undefined {
+  const entry = props.initial?.summary?.sectionCounts.find((counted) =>
+    counted.id === id
+  );
+  return entry?.status === "ready" ? entry.count : undefined;
+}
+
 function island(
   load: () => Promise<SectionMount>,
 ): SectionMountEntry<"island"> {

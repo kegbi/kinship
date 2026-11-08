@@ -5,7 +5,11 @@
  */
 
 import { mountIsland } from "../../../islands/core/index.ts";
-import { sectionHidden, type SectionMount } from "../section-mounts.ts";
+import {
+  sectionHidden,
+  type SectionMount,
+  summaryCount,
+} from "../section-mounts.ts";
 import { statusRegion } from "../status-region.ts";
 import { PersonCommunications } from "./communications.tsx";
 
@@ -33,10 +37,13 @@ export const mountPersonCommunications: SectionMount = (container, props) => {
       PERSON_COMMUNICATIONS_ISLAND,
       <PersonCommunications
         archived={props.archived}
+        empty={summaryCount(props, "calls") === 0 &&
+          summaryCount(props, "conversations") === 0}
         hidden={{
           calls: sectionHidden(props, "calls"),
           conversations: sectionHidden(props, "conversations"),
         }}
+        lastContactAt={props.initial?.person.lastContactAt}
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         sections={{ call, conversation }}

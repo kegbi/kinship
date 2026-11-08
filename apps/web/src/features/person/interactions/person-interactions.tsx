@@ -5,9 +5,11 @@
  * many recent records it has, keeps a failure local with its own retry, and
  * offers Quick capture for its kind. Each card reads its own kind, through
  * its own latest-request slot, so a page of newer notes can never hide an
- * activity and a late answer never replaces a newer one; both read again
- * whenever Quick capture records an interaction. A card whose profile module
- * is turned off shows nothing and asks nothing.
+ * activity and a late answer never replaces a newer one. A card the profile
+ * summary counted empty reads nothing (FEQ-04), and a recorded interaction
+ * is counted on its own card from the record Quick capture announces, which
+ * `recentCardReducer` folds in (FEQ-10). A card whose profile module is
+ * turned off shows nothing and asks nothing.
  *
  * One component owns both cards — the activities card is the island's root,
  * the notes card a portal — and the person's Quick capture shortcuts: the
@@ -23,6 +25,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -35,6 +38,10 @@ import {
   useLatestRequest,
 } from "../../../islands/core/index.ts";
 import { INTERACTION_CREATED_EVENT } from "../../interactions/shared.ts";
+import {
+  initialRecentCard,
+  recentCardReducer,
+} from "../recorded-interactions.ts";
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
 import type { StatusRegionProps } from "../status-region.ts";
@@ -47,6 +54,11 @@ export interface PersonInteractionsProps {
   readonly archived: boolean;
   /** Which cards the workspace turned off when the page loaded. */
   readonly hidden: { readonly activities: boolean; readonly notes: boolean };
+  /** How many of each the profile summary counted, when it did. */
+  readonly totals?: {
+    readonly activities?: number | undefined;
+    readonly notes?: number | undefined;
+  };
   /** The two server-rendered cards; the activities card is the root. */
   readonly sections: {
     readonly activities: HTMLElement;
@@ -103,11 +115,8 @@ const CARDS: Readonly<Record<InteractionKind, CardWording>> = {
 
 const SHORTCUT = "[data-person-interaction-capture]";
 
-type CardState =
-  | { readonly status: "hidden" }
-  | { readonly status: "loading"; readonly initial: boolean }
-  | { readonly status: "ready"; readonly count: number }
-  | { readonly status: "error" };
+/** How many recent records of its kind each card's read lists. */
+const RECENT = 20;
 
 export function PersonInteractions(props: PersonInteractionsProps) {
   const { hidden, personId, sections } = props;
@@ -153,6 +162,9 @@ export function PersonInteractions(props: PersonInteractionsProps) {
       personId={personId}
       section={section}
       statusRegion={props.statusRegion}
+      total={kind === "activity"
+        ? props.totals?.activities
+        : props.totals?.notes}
       workspaceId={props.workspaceId}
     />
   );
@@ -174,56 +186,80 @@ function InteractionCard(
     readonly section: HTMLElement;
     readonly onSettled: () => void;
     readonly statusRegion?: StatusRegionProps | undefined;
+    readonly total?: number | undefined;
   },
 ) {
   const { kind, personId, section, workspaceId } = props;
   const wording = CARDS[kind];
-  const [state, setState] = useState<CardState>(
-    props.hidden ? { status: "hidden" } : { initial: true, status: "loading" },
+  const [state, dispatch] = useReducer(
+    recentCardReducer,
+    undefined,
+    () => initialRecentCard(props.hidden, props.total),
   );
+  const current = useRef(state);
+  useLayoutEffect(() => {
+    current.current = state;
+  }, [state]);
   const request = useLatestRequest();
   const settled = useRef(props.onSettled);
 
   const read = useCallback(
     (): Promise<void> =>
       request(() =>
-        getActivityReport(personId, { kind, limit: 20 }, workspaceId)
+        getActivityReport(personId, { kind, limit: RECENT }, workspaceId)
       ).then((answer) => {
         if (!answer) return;
-        setState(
+        dispatch(
           answer.status === "ready" && answer.data
             ? {
               count: answer.data.items.filter((item) => item.kind === kind)
                 .length,
-              status: "ready",
+              type: "loaded",
             }
-            : { status: "error" },
+            : { type: "failed" },
         );
       }),
     [kind, personId, request, workspaceId],
   );
 
   const load = useCallback(() => {
-    setState({ initial: false, status: "loading" });
+    dispatch({ type: "loading" });
     void read();
   }, [read]);
 
-  // The first read starts in the loading state the card mounted with.
+  // The first read starts in the loading state the card mounted with; a
+  // card counted empty or hidden has nothing to read.
   const firstRead = useEffectEvent(() =>
-    props.hidden ? Promise.resolve() : read()
+    current.current.status === "loading" ? read() : Promise.resolve()
   );
   useEffect(() => {
     void firstRead().finally(() => settled.current());
   }, []);
 
+  // A recorded interaction is counted on its card, which reads again only
+  // when the record alone cannot say what it now holds (FEQ-10).
+  const created = useEffectEvent((detail: unknown) => {
+    const event = {
+      detail,
+      kind,
+      limit: RECENT,
+      personId,
+      type: "created",
+    } as const;
+    const next = recentCardReducer(current.current, event);
+    if (next === current.current) return;
+    if (next.status === "loading") load();
+    else dispatch(event);
+  });
   const hidden = props.hidden;
   useEffect(() => {
     if (hidden) return;
-    const refresh = () => load();
-    globalThis.addEventListener(INTERACTION_CREATED_EVENT, refresh);
+    const onCreated = (event: Event) =>
+      created((event as CustomEvent<unknown>).detail);
+    globalThis.addEventListener(INTERACTION_CREATED_EVENT, onCreated);
     return () =>
-      globalThis.removeEventListener(INTERACTION_CREATED_EVENT, refresh);
-  }, [hidden, load]);
+      globalThis.removeEventListener(INTERACTION_CREATED_EVENT, onCreated);
+  }, [hidden]);
 
   useLayoutEffect(() => {
     section.setAttribute("data-section-state", state.status);

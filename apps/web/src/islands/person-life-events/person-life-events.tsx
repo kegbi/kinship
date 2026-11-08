@@ -96,6 +96,8 @@ export interface PersonLifeEventsProps {
   readonly onSettled?: () => void;
   /** What the state line spreads to be a live region, if anything. */
   readonly statusRegion?: StatusRegionProps;
+  /** How many events the profile summary counted, when it did. */
+  readonly total?: number | undefined;
 }
 
 const BADGES: Readonly<Record<string, string>> = {
@@ -123,8 +125,11 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
   const [state, dispatch] = useReducer(
     lifeEventsReducer,
     undefined,
-    () => initialLifeEventsState(props.hidden, props.archived),
+    () =>
+      initialLifeEventsState(props.hidden, props.archived, props.total === 0),
   );
+  // A card counted empty has not read its types until the editor opens.
+  const unread = useRef(!props.hidden && props.total === 0);
   const request = useLatestRequest();
   const settled = useRef(props.onSettled);
   const form = useRef<HTMLFormElement | null>(null);
@@ -132,9 +137,13 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
   const formState = useRef<HTMLParagraphElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
 
-  /** Reads the events and applies the answer if it is still the latest. */
+  /**
+   * Reads the events and applies the answer if it is still the latest. The
+   * read an editor's first opening starts (`forEditor`) keeps that editor
+   * when it fails, and the next opening asks again.
+   */
   const read = useCallback(
-    (): Promise<void> =>
+    (forEditor = false): Promise<void> =>
       request(() => listPersonLifeEvents(personId, workspaceId)).then(
         (answer) => {
           if (!answer) return;
@@ -155,6 +164,11 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
             });
             return;
           }
+          if (forEditor) {
+            unread.current = true;
+            dispatch({ type: "types-failed" });
+            return;
+          }
           const status = answer.problem?.status ?? 503;
           dispatch({
             detail: answer.problem?.detail ?? UNAVAILABLE,
@@ -172,7 +186,7 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
 
   // The first read starts in the loading state the island mounted with.
   useEffect(() => {
-    const first = props.hidden ? Promise.resolve() : read();
+    const first = props.hidden || unread.current ? Promise.resolve() : read();
     void first.finally(() => {
       settled.current?.();
       settled.current = undefined;
@@ -221,6 +235,11 @@ export function PersonLifeEvents(props: PersonLifeEventsProps) {
     flushSync(() =>
       dispatch(event ? { event, type: "open" } : { type: "open" })
     );
+    // The editor offers the types the read answers with (FEQ-04).
+    if (unread.current) {
+      unread.current = false;
+      void read(true);
+    }
   };
 
   const timelineChanged = () =>

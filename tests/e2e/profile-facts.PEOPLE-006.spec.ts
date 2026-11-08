@@ -1373,6 +1373,25 @@ test(
         },
       });
     });
+    // The facts come from the reads stubbed above, so the summary must not
+    // count those sections empty, or they would not be read (FEQ-04).
+    await page.route(
+      `**/api/v1/people/${personId}?include=summary`,
+      async (route) => {
+        const upstream = await route.fetch();
+        const profile = await upstream.json() as {
+          summary?: { sectionCounts: { readonly id: string }[] };
+        };
+        if (profile.summary) {
+          profile.summary.sectionCounts = profile.summary.sectionCounts.filter(
+            (entry) =>
+              !["contact-methods", "addresses", "work", "food-preferences"]
+                .includes(entry.id),
+          );
+        }
+        await route.fulfill({ json: profile, response: upstream });
+      },
+    );
     await page.goto(`/app/people/${personId}`);
     const contacts = page.locator("#profile-section-contact-methods");
     const relationships = page.locator("#profile-section-relationships");
@@ -1594,28 +1613,23 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
   await page.goto("/app/people/new");
   await page.getByLabel("Given name").fill("Ada");
   await page.getByLabel("Family name").fill("Lovelace");
-  let releaseContacts = () => {};
-  const contactsReleased = new Promise<void>((resolve) =>
-    releaseContacts = resolve
-  );
-  let delayContacts = true;
-  await page.route("**/facts/contact-methods", async (route) => {
-    if (delayContacts && route.request().method() === "GET") {
-      delayContacts = false;
-      await contactsReleased;
-    }
-    await route.continue();
+  const contactReads: string[] = [];
+  page.on("request", (sent) => {
+    if (
+      sent.method() === "GET" && sent.url().includes("/facts/contact-methods")
+    ) contactReads.push(sent.url());
   });
   await page.getByRole("button", { name: "Save person", exact: true }).click();
   await expect(page).toHaveURL(/\/app\/people\/[0-9a-f-]+$/);
   const profilePath = new URL(page.url()).pathname;
   await settleNavigation(page);
+  contactReads.length = 0;
   await page.goto(profilePath);
   const contacts = page.locator("#profile-section-contact-methods");
-  await expect(contacts).toHaveAttribute("data-section-state", "loading");
-  await expect(contacts.getByText("Loading contact methods…")).toBeVisible();
-  releaseContacts();
+  // The summary counted no contact method, so the section shows its empty
+  // state without reading it (FEQ-04).
   await expect(contacts).toHaveAttribute("data-section-state", "ready");
+  expect(contactReads).toEqual([]);
   await expect(contacts.getByText("No contact methods saved.")).toBeVisible();
   await expect(
     page.locator(

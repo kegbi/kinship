@@ -12,7 +12,12 @@ import {
   stubApi,
   unreachable,
 } from "../../testing/api.ts";
-import { ids, personProfile, sectionProps } from "../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  profileSummary,
+  sectionProps,
+} from "../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -70,7 +75,7 @@ const listed = (events: readonly PersonLifeEvent[]) =>
     types: [{ id: TYPE_ID, name: "Relocation" }],
   });
 
-const props = (hidden = false, archived = false) =>
+const props = (hidden = false, archived = false, counted?: number) =>
   sectionProps({
     archived,
     initial: personProfile({
@@ -79,11 +84,20 @@ const props = (hidden = false, archived = false) =>
           ? [{ id: "life-events", status: "hidden" }]
           : [],
       },
+      ...(counted === undefined ? {} : {
+        summary: profileSummary({
+          sectionCounts: [{
+            count: counted,
+            id: "life-events",
+            status: "ready",
+          }],
+        }),
+      }),
     }),
   });
 
-const mount = (hidden = false, archived = false) =>
-  mountSection(mountPersonLifeEvents, props(hidden, archived));
+const mount = (hidden = false, archived = false, counted?: number) =>
+  mountSection(mountPersonLifeEvents, props(hidden, archived, counted));
 
 const card = () => within(element("[data-person-life-events]"));
 const stateLine = () =>
@@ -137,6 +151,63 @@ describe("complete person life-event history island", () => {
       },
     );
     await expectNoAxeViolations(root);
+  });
+
+  it("FEQ-04 shows a card the summary counted empty without reading it, and reads its types when the editor opens", async () => {
+    const root = markup();
+    const api = stubApi({ [LIFE_EVENTS]: listed([]) });
+    await mount(false, false, 0);
+    expect(api.calls()).toEqual([]);
+    expect(root.dataset.sectionState).toBe("empty");
+    expect(add().disabled).toBe(false);
+    fireEvent.click(add());
+    // The field takes focus inside the click (REL-051); the types follow.
+    expect(document.activeElement).toBe(
+      card().getByRole("textbox", { name: "Name" }),
+    );
+    await waitFor(() =>
+      expect(
+        [
+          ...card().getByRole<HTMLSelectElement>("combobox", { name: "Type" })
+            .options,
+        ].map((option) => option.value),
+      ).toContain(TYPE_ID)
+    );
+    expect(editorOpen()).toBe(true);
+    expect(api.calls()).toEqual([`GET /api/v1/people/${personId}/life-events`]);
+  });
+
+  it("FEQ-04 keeps the opened editor and its draft when the types it waits for fail to load", async () => {
+    markup();
+    const api = stubApi({ [LIFE_EVENTS]: [unreachable, listed([])] });
+    await mount(false, false, 0);
+    fireEvent.click(add());
+    const name = card().getByRole<HTMLInputElement>("textbox", {
+      name: "Name",
+    });
+    fireEvent.change(name, { target: { value: "Moved to London" } });
+    await waitFor(() =>
+      expect(stateLine()).toBe(
+        "Life event types could not be loaded. You can save without a type.",
+      )
+    );
+    expect(editorOpen()).toBe(true);
+    expect(name.value).toBe("Moved to London");
+    expect(element("[data-person-life-events]").dataset.sectionState).toBe(
+      "empty",
+    );
+    // The next opening asks for the types again.
+    fireEvent.click(card().getByRole("button", { name: "Cancel" }));
+    fireEvent.click(add());
+    await waitFor(() =>
+      expect(
+        [
+          ...card().getByRole<HTMLSelectElement>("combobox", { name: "Type" })
+            .options,
+        ].map((option) => option.value),
+      ).toContain(TYPE_ID)
+    );
+    expect(api.calls()).toHaveLength(2);
   });
 
   it("counts a single event in the singular", async () => {

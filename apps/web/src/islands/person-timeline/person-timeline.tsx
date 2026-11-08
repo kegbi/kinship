@@ -48,6 +48,11 @@ export interface PersonTimelineProps {
   readonly onSettled?: () => void;
   /** What the state line spreads to be a live region, if anything. */
   readonly statusRegion?: StatusRegionProps;
+  /**
+   * Whether the profile summary counted none of the records the timeline
+   * merges, so its first page is known to be empty (FEQ-04).
+   */
+  readonly empty?: boolean;
 }
 
 type TimelineStatus =
@@ -101,10 +106,10 @@ export function PersonTimeline(props: PersonTimelineProps) {
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [state, setState] = useState<TimelineState>({
     appending: false,
-    initial: true,
+    initial: !props.empty,
     items: [],
     retryable: false,
-    status: "loading",
+    status: props.empty ? "empty" : "loading",
   });
   // Where focus goes once an older page has rendered.
   const focusAfterAppend = useRef<
@@ -186,13 +191,17 @@ export function PersonTimeline(props: PersonTimelineProps) {
     return fetchPage(next);
   }, [fetchPage]);
 
-  // The first page starts in the loading state the island mounted with.
+  // The first page starts in the loading state the island mounted with; a
+  // timeline known to be empty reads its first page on its first change.
+  const empty = props.empty === true;
   useEffect(() => {
-    void fetchPage({ filter: "all" }).finally(() => {
-      settled.current?.();
-      settled.current = undefined;
-    });
-  }, [fetchPage]);
+    void (empty ? Promise.resolve() : fetchPage({ filter: "all" })).finally(
+      () => {
+        settled.current?.();
+        settled.current = undefined;
+      },
+    );
+  }, [empty, fetchPage]);
 
   useLayoutEffect(() => {
     section.setAttribute("data-timeline-state", state.status);

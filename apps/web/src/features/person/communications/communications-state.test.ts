@@ -41,7 +41,10 @@ function run(
 }
 
 const loaded = (given = options) =>
-  run([{ history, options: given, type: "loaded" }]);
+  run([{ history, type: "loaded" }, {
+    options: given,
+    type: "options-settled",
+  }]);
 
 describe("calls and conversations state", () => {
   it("counts each kind the history holds", () => {
@@ -61,8 +64,101 @@ describe("calls and conversations state", () => {
     ).toEqual({ counts: { call: 0, conversation: 0 }, status: "ready" });
   });
 
+  it("FEQ-04 starts empty without a read when the summary counted nothing", () => {
+    expect(initialCommunicationsState(false, true).list).toEqual({
+      counts: { call: 0, conversation: 0 },
+      status: "ready",
+    });
+    expect(initialCommunicationsState(false).list).toEqual({
+      initial: true,
+      status: "loading",
+    });
+  });
+
+  it("FEQ-04 loads the editors' options when one opens", () => {
+    const opened = run([
+      { kind: "call", requestId: "r1", type: "open" },
+      { kind: "call", type: "options-loading" },
+    ]);
+    expect(opened.editors.call.notice).toBe(
+      COMMUNICATION_MESSAGES.optionsLoading,
+    );
+    const ready = run(
+      [{ options, type: "options-settled" }],
+      opened,
+    );
+    expect(ready.options).toBe(options);
+    expect(ready.editors.call).toMatchObject({ notice: "", open: true });
+    // A notice something else wrote while they loaded stays.
+    expect(
+      run([
+        {
+          kind: "call",
+          notice: "Choose a valid occurrence time.",
+          type: "notice",
+        },
+        { options, type: "options-settled" },
+      ], opened).editors.call.notice,
+    ).toBe("Choose a valid occurrence time.");
+    // Every editor that waited for the one read is settled by its answer.
+    const both = run([
+      { kind: "conversation", requestId: "r2", type: "open" },
+      { kind: "conversation", type: "options-loading" },
+      { options, type: "options-settled" },
+    ], opened);
+    expect(both.editors.call.notice).toBe("");
+    expect(both.editors.conversation.notice).toBe("");
+    const failed = run(
+      [{ type: "options-settled" }],
+      opened,
+    );
+    expect(failed.options).toBeUndefined();
+    expect(failed.editors.call.notice).toBe(
+      COMMUNICATION_MESSAGES.optionsFailed,
+    );
+    const unavailable = run([{
+      options: {
+        ...options,
+        availability: { call: false, conversation: true },
+      },
+      type: "options-settled",
+    }], opened);
+    expect(unavailable.editors.call.open).toBe(false);
+    expect(writable(unavailable, "call")).toBe(false);
+  });
+
+  it("FEQ-10 counts a saved record, and reads again when it cannot", () => {
+    const call = history.items[0]!;
+    expect(run([{ record: call, type: "recorded" }], loaded()).list).toEqual({
+      counts: { call: 2, conversation: 0 },
+      status: "ready",
+    });
+    const note = {
+      body: "A note",
+      createdAt: "2026-08-16T18:15:00.000Z",
+      id: "note",
+      isFavorited: false,
+      kind: "note",
+      participants: [],
+    } as const;
+    const ready = loaded();
+    expect(run([{ record: note, type: "recorded" }], ready)).toBe(ready);
+    expect(
+      run([{ record: call, type: "recorded" }], run([{ type: "load-failed" }]))
+        .list,
+    ).toEqual({ status: "loading" });
+    const full = run([{
+      history: { items: Array(50).fill(call), status: "ready" },
+      type: "history",
+    }]);
+    expect(run([{ record: call, type: "recorded" }], full).list).toEqual({
+      status: "loading",
+    });
+  });
+
   it("opens an editor only for an available kind of an active person", () => {
-    expect(writable(run([]), "call")).toBe(false);
+    // Before the options load, an editor opens and loads them.
+    expect(writable(run([]), "call")).toBe(true);
     const unavailable = loaded({
       ...options,
       availability: { call: false, conversation: true },

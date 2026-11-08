@@ -2,8 +2,9 @@
  * The calls and conversations cards' state and every transition it takes
  * (GAP-031).
  *
- * One surface owns both cards: one read loads the person's communications
- * and the options their editors need, and each card has one editor — closed
+ * One surface owns both cards: one read loads the person's communications —
+ * none when the profile summary counted none (FEQ-04) — the options their
+ * editors need load when an editor first opens, and each card has one editor — closed
  * or open, idle or saving — with its request key, its status line, and, for a
  * conversation, its channel and message rows. `communicationsReducer` is the
  * pure function the island (`communications.tsx`) consumes with
@@ -18,6 +19,7 @@
 import type {
   CommunicationList,
   CommunicationOptions,
+  Interaction,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 
 export type CommunicationKind = "call" | "conversation";
@@ -58,7 +60,9 @@ export type ContactMethodsState =
   };
 
 export type ListState =
-  | { readonly status: "loading" | "error" }
+  /** `initial` until the first read has answered; a skeleton shows meanwhile. */
+  | { readonly status: "loading"; readonly initial?: boolean }
+  | { readonly status: "error" }
   | {
     readonly status: "ready";
     readonly counts: Readonly<Record<CommunicationKind, number>>;
@@ -74,13 +78,18 @@ export interface CommunicationsState {
 
 export type CommunicationsAction =
   | { readonly type: "loading" }
-  | {
-    readonly type: "loaded";
-    readonly history: CommunicationList;
-    readonly options: CommunicationOptions;
-  }
+  | { readonly type: "loaded"; readonly history: CommunicationList }
   | { readonly type: "load-failed" }
   | { readonly type: "history"; readonly history: CommunicationList }
+  | { readonly type: "options-loading"; readonly kind: CommunicationKind }
+  | {
+    /** Settles every editor waiting for the options. */
+    readonly type: "options-settled";
+    /** Absent when the options could not be loaded. */
+    readonly options?: CommunicationOptions | undefined;
+  }
+  /** A save answered with `record`, which the cards count (FEQ-10). */
+  | { readonly type: "recorded"; readonly record: Interaction }
   | { readonly type: "archived"; readonly archived: boolean }
   | {
     readonly type: "open";
@@ -131,6 +140,9 @@ export const COMMUNICATION_MESSAGES = {
   contactsLoading: "Loading specific contact methods…",
   invalidMessage: "Choose a valid message time.",
   invalidOccurrence: "Choose a valid occurrence time.",
+  optionsFailed:
+    "Communication options could not be loaded. Close and reopen the editor to try again.",
+  optionsLoading: "Loading communication options…",
   refreshFailed:
     "Saved communication still could not be refreshed. Retry or reload the page.",
   refreshed: "Communication view refreshed.",
@@ -153,14 +165,27 @@ const CLOSED: EditorState = {
   refresh: "hidden",
 };
 
+/**
+ * How many communications the history read lists, newest first; a new
+ * record may push the oldest of either kind out of a full one.
+ */
+export const HISTORY_LIMIT = 50;
+
+/**
+ * The cards as they mount: loading, or — when the profile summary counted
+ * neither kind (`empty`) — already empty (FEQ-04).
+ */
 export function initialCommunicationsState(
   archived: boolean,
+  empty = false,
 ): CommunicationsState {
   return {
     archived,
     contacts: { status: "idle" },
     editors: { call: CLOSED, conversation: CLOSED },
-    list: { status: "loading" },
+    list: empty
+      ? { counts: { call: 0, conversation: 0 }, status: "ready" }
+      : { initial: true, status: "loading" },
   };
 }
 
@@ -212,18 +237,61 @@ export function communicationsReducer(
     case "loading":
       return { ...state, list: { status: "loading" } };
     case "loaded":
-      return {
-        ...state,
-        list: { counts: communicationCounts(action.history), status: "ready" },
-        options: action.options,
-      };
-    case "load-failed":
-      return { ...state, list: { status: "error" } };
     case "history":
       return {
         ...state,
         list: { counts: communicationCounts(action.history), status: "ready" },
       };
+    case "load-failed":
+      return { ...state, list: { status: "error" } };
+    case "options-loading":
+      return withEditor(state, action.kind, (editor) => ({
+        ...editor,
+        notice: COMMUNICATION_MESSAGES.optionsLoading,
+      }));
+    case "options-settled": {
+      const { options } = action;
+      const settle = (
+        kind: CommunicationKind,
+        editor: EditorState,
+      ): EditorState => {
+        if (editor.notice !== COMMUNICATION_MESSAGES.optionsLoading) {
+          return editor;
+        }
+        if (!options) {
+          return { ...editor, notice: COMMUNICATION_MESSAGES.optionsFailed };
+        }
+        // A kind the options say is not available closes its editor.
+        return options.availability[kind]
+          ? { ...editor, notice: "" }
+          : { ...discard(editor), notice: "", open: false };
+      };
+      return {
+        ...state,
+        ...(options ? { options } : {}),
+        editors: {
+          call: settle("call", state.editors.call),
+          conversation: settle("conversation", state.editors.conversation),
+        },
+      };
+    }
+    case "recorded": {
+      const { list } = state;
+      const kind = action.record.kind;
+      if (kind !== "call" && kind !== "conversation") return state;
+      // A record the cards cannot simply count is read again.
+      if (
+        list.status !== "ready" ||
+        list.counts.call + list.counts.conversation >= HISTORY_LIMIT
+      ) return { ...state, list: { status: "loading" } };
+      return {
+        ...state,
+        list: {
+          counts: { ...list.counts, [kind]: list.counts[kind] + 1 },
+          status: "ready",
+        },
+      };
+    }
     case "archived": {
       if (!action.archived) return { ...state, archived: false };
       const close = (editor: EditorState): EditorState => ({
@@ -352,10 +420,13 @@ export function communicationsReducer(
   }
 }
 
-/** Whether `kind` can be recorded for this person now. */
+/**
+ * Whether `kind` can be recorded for this person now: not while archived, and
+ * not once the options say it is unavailable.
+ */
 export function writable(
   state: CommunicationsState,
   kind: CommunicationKind,
 ): boolean {
-  return !state.archived && state.options?.availability[kind] === true;
+  return !state.archived && state.options?.availability[kind] !== false;
 }

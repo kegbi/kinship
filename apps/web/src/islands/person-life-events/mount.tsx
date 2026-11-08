@@ -7,6 +7,7 @@
 import {
   sectionHidden,
   type SectionMount,
+  summaryCount,
 } from "../../features/person/section-mounts.ts";
 import { statusRegion } from "../../features/person/status-region.ts";
 import { mountIsland } from "../core/index.ts";
@@ -35,6 +36,7 @@ export const mountPersonLifeEvents: SectionMount = (container, props) => {
         personId={props.personId}
         section={section}
         statusRegion={statusRegion(props)}
+        total={summaryCount(props, "life-events")}
         workspaceId={props.workspaceId}
       />,
     );

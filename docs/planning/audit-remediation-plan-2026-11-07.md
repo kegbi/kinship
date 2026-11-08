@@ -1255,7 +1255,7 @@ these:
     and lint (only REL-096). E2E PLANNING-001, PEOPLE-002, AUTH-004, AUTH-003,
     and AUTH-005 13 passed on Chromium.
 
-- [ ] **AUD-F5 — The person page reads only what it shows, and refreshes only
+- [x] **AUD-F5 — The person page reads only what it shows, and refreshes only
       what changed.** M. Normal. Depends: AUD-F3. Closes: FEQ-04 (steps 1–3),
       FEQ-10.
   - Scope:
@@ -1274,6 +1274,22 @@ these:
   - Verify: `test:unit --module=web`; E2E `person-workspace.PEOPLE-003`,
     `activities.INTERACTION-001`, `communications.INTERACTION-002`,
     `profile-facts.PEOPLE-006`, and `relationships.RELATIONSHIP-001`.
+  - Delivered 2026-11-08: a section whose summary counts 0 skips its list read
+    and shows its empty state with Add; `relationship-types` and
+    `communication-options` load when their editor opens (a person with
+    relationships still reads the types with the list, for the rows' inline
+    pickers; tags always read, since saving needs the assignment record); each
+    timeline card activates on its own observer with a 400 px margin. One pure
+    reducer fed by the creation event updates the affected card and the hero's
+    last contact (GAP-053's rule); after any write for this person on the page,
+    later-mounting cards stop trusting the page-open counts and read. A hero or
+    rail chunk failure still settles the workspace. A blank person opens with 7
+    requests (15 at base after AUD-F3; the audit's 19 predates it), and adding a
+    note makes one POST and one GET. Web unit 1825 (only REL-107); changed files
+    99.9% lines, 96.5% branches, 99.8% functions; fmt, eslint, astro check,
+    architecture, and lint (only REL-096). E2E PEOPLE-003 (both specs),
+    INTERACTION-001, INTERACTION-002, PEOPLE-006, and RELATIONSHIP-001 16 passed
+    on Chromium.
 
 - [x] **AUD-F6 — Pages preload their module graph.** S–M. Normal. Depends:
       AUD-F2. Closes: FER-02.

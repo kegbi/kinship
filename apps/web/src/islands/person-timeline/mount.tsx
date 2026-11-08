@@ -4,12 +4,24 @@
  * first page, as it did for the vanilla module.
  */
 
-import type { SectionMount } from "../../features/person/section-mounts.ts";
+import {
+  type SectionMount,
+  summaryCount,
+} from "../../features/person/section-mounts.ts";
 import { statusRegion } from "../../features/person/status-region.ts";
 import { mountIsland } from "../core/index.ts";
 import { PersonTimeline } from "./person-timeline.tsx";
 
 export const PERSON_TIMELINE_ISLAND = "person-timeline";
+
+/** The sections whose records the timeline merges. */
+const MERGED = [
+  "notes",
+  "activities",
+  "calls",
+  "conversations",
+  "life-events",
+] as const;
 
 /**
  * Mounts the island over `#person-timeline` inside `container` and resolves,
@@ -26,6 +38,7 @@ export const mountPersonTimeline: SectionMount = (container, props) => {
       section,
       PERSON_TIMELINE_ISLAND,
       <PersonTimeline
+        empty={MERGED.every((id) => summaryCount(props, id) === 0)}
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         preferences={props.preferences}

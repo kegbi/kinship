@@ -352,6 +352,91 @@ function stubDeferredZoneObserver(): {
   };
 }
 
+/** Every Timeline card as the shell draws them, the unified timeline first. */
+function timelineCardsMarkup(): void {
+  const zone = document.querySelector('[data-zone="timeline"]');
+  zone?.setAttribute("aria-busy", "true");
+  zone?.insertAdjacentHTML(
+    "beforeend",
+    `<section id="person-timeline">
+       <p data-timeline-state></p><ul data-timeline-list></ul>
+     </section>
+     <section data-profile-section="life-events" data-person-life-events tabindex="-1"></section>
+     <section data-profile-section="notes" tabindex="-1"></section>
+     <section data-profile-section="conversations" data-communication-kind="conversation" tabindex="-1"></section>
+     <section data-profile-section="calls" data-communication-kind="call" tabindex="-1"></section>
+     <section data-profile-section="activities" tabindex="-1"></section>`,
+  );
+}
+
+/**
+ * Records every observer the page creates with what it observes, so a test
+ * can bring one target into view.
+ */
+function stubObservers(): {
+  readonly observers: readonly {
+    readonly rootMargin: string;
+    readonly targets: Element[];
+  }[];
+  readonly show: (target: Element) => void;
+} {
+  const observers: {
+    readonly callback: IntersectionObserverCallback;
+    readonly rootMargin: string;
+    readonly targets: Element[];
+    readonly self: IntersectionObserver;
+  }[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      readonly root = null;
+      readonly rootMargin: string;
+      readonly thresholds = [0];
+      readonly targets: Element[] = [];
+
+      constructor(
+        callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        this.rootMargin = options?.rootMargin ?? "0px";
+        observers.push({
+          callback,
+          rootMargin: this.rootMargin,
+          self: this as unknown as IntersectionObserver,
+          targets: this.targets,
+        });
+      }
+
+      disconnect = () => {
+        this.targets.length = 0;
+      };
+      observe = (target: Element) => {
+        this.targets.push(target);
+      };
+      takeRecords = () => [];
+      unobserve = (target: Element) => {
+        const index = this.targets.indexOf(target);
+        if (index >= 0) this.targets.splice(index, 1);
+      };
+    },
+  );
+  return {
+    observers,
+    show(target) {
+      for (const observer of observers) {
+        if (!observer.targets.includes(target)) continue;
+        observer.callback(
+          [{
+            isIntersecting: true,
+            target,
+          } as unknown as IntersectionObserverEntry],
+          observer.self,
+        );
+      }
+    },
+  };
+}
+
 function interactionSectionMarkup(): void {
   document.querySelector("#person-profile-sections ul")?.insertAdjacentHTML(
     "beforeend",
@@ -704,6 +789,152 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       "/api/v1/member/ui-state",
       `/api/v1/people/${personId}/audit?limit=3`,
     ]);
+  });
+
+  it("FEQ-04 reads a card that mounts after a write on the page, whatever the summary counted", async () => {
+    markup();
+    timelineCardsMarkup();
+    const { show } = stubObservers();
+    const savedNote = {
+      body: "Invented the first compiler.",
+      createdAt: "2026-08-17T12:31:00.000Z",
+      id: "00000000-0000-4000-8000-000000000301",
+      isFavorited: false,
+      kind: "note",
+      participants: [{ id: personId, name: "Empty Profile" }],
+    };
+    const api = stubProfile(zeroProfile(), {
+      "GET /api/v1/people/:personId/activity-report": ({ url }) =>
+        jsonResponse({
+          items: url.searchParams.get("kind") === "note" ? [savedNote] : [],
+          person: { id: personId, name: "Empty Profile" },
+          status: "ready",
+        }),
+      "GET /api/v1/people/:personId/timeline": jsonResponse({
+        items: [{
+          datePrecision: "full",
+          excerpt: savedNote.body,
+          id: savedNote.id,
+          kind: "note",
+          occurredAt: savedNote.createdAt,
+          title: savedNote.body,
+        }],
+        status: "ready",
+      }),
+      [VIEW]: recorded,
+    });
+    await mountPersonWorkspace();
+    const reads = () =>
+      api.calls().filter((call) => /\/(timeline|activity-report)/.test(call));
+    expect(reads()).toEqual([]);
+    // Quick capture saves a note from the hero before any Timeline card has
+    // mounted; the summary's zero no longer describes the page.
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:interaction-created", { detail: savedNote }),
+    );
+    document.dispatchEvent(
+      new CustomEvent("person-timeline-changed", {
+        detail: { personIds: [personId] },
+      }),
+    );
+    show(document.querySelector('[data-profile-section="notes"]')!);
+    await vi.waitFor(() =>
+      expect(document.querySelector("#person-notes-state")?.textContent).toBe(
+        "1 recent note. Listed in the timeline above.",
+      )
+    );
+    show(document.querySelector("#person-timeline")!);
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll("[data-timeline-id]")).toHaveLength(1)
+    );
+    expect(requested(api, "/timeline")).toHaveLength(1);
+  });
+
+  it("FEQ-04 keeps trusting the summary after another person's write", async () => {
+    markup();
+    timelineCardsMarkup();
+    const { show } = stubObservers();
+    const api = stubProfile(zeroProfile(), { [VIEW]: recorded });
+    await mountPersonWorkspace();
+    document.dispatchEvent(
+      new CustomEvent("person-timeline-changed", {
+        detail: { personIds: ["00000000-0000-4000-8000-000000000199"] },
+      }),
+    );
+    show(document.querySelector('[data-profile-section="notes"]')!);
+    await vi.waitFor(() =>
+      expect(document.querySelector("#person-notes-state")?.textContent).toBe(
+        "No notes recorded yet.",
+      )
+    );
+    expect(requested(api, "/activity-report")).toEqual([]);
+  });
+
+  it("FEQ-04 activates each Timeline card on its own as it nears the viewport", async () => {
+    markup();
+    timelineCardsMarkup();
+    const { observers, show } = stubObservers();
+    const api = stubProfile(undefined, {
+      "GET /api/v1/people/:personId/activity-report": jsonResponse({
+        items: [],
+        person: { id: personId, name: "Ada Lovelace" },
+        status: "ready",
+      }),
+      "GET /api/v1/people/:personId/communications": jsonResponse({
+        items: [],
+        status: "ready",
+      }),
+      "GET /api/v1/people/:personId/life-events": jsonResponse({
+        events: [],
+        status: "ready",
+        types: [],
+      }),
+      "GET /api/v1/people/:personId/timeline": jsonResponse({
+        items: [],
+        status: "ready",
+      }),
+      [VIEW]: recorded,
+    });
+    await mountPersonWorkspace();
+    const zone = document.querySelector<HTMLElement>('[data-zone="timeline"]')!;
+    const card = (selector: string) =>
+      document.querySelector<HTMLElement>(selector)!;
+    // One observer per card, each with the 400 px margin; the zone itself is
+    // not observed.
+    const cards = [
+      "#person-timeline",
+      '[data-profile-section="life-events"]',
+      '[data-profile-section="notes"]',
+      '[data-profile-section="conversations"]',
+      '[data-profile-section="calls"]',
+      '[data-profile-section="activities"]',
+    ].map(card);
+    const watching = (target: Element) =>
+      observers.filter((observer) => observer.targets.includes(target));
+    for (const target of cards) {
+      expect(watching(target)).toHaveLength(1);
+      expect(watching(target)[0]!.rootMargin).toBe("400px");
+    }
+    expect(watching(zone)).toHaveLength(0);
+    const timelineReads = () =>
+      api.calls().filter((call) =>
+        /\/(timeline|activity-report|communications|life-events)/.test(call)
+      );
+    expect(timelineReads()).toEqual([]);
+
+    show(card('[data-profile-section="notes"]'));
+    await vi.waitFor(() => expect(timelineReads()).toHaveLength(2));
+    expect(timelineReads().every((call) => call.includes("activity-report")))
+      .toBe(true);
+    expect(zone.getAttribute("aria-busy")).toBe("true");
+
+    show(card("#person-timeline"));
+    show(card('[data-profile-section="calls"]'));
+    await vi.waitFor(() => expect(timelineReads()).toHaveLength(4));
+    show(card('[data-profile-section="life-events"]'));
+    // Every card of the zone is live, so the zone is no longer busy.
+    await vi.waitFor(() => expect(zone.hasAttribute("aria-busy")).toBe(false));
+    expect(requested(api, "/life-events")).toHaveLength(1);
   });
 
   it("REL-021 gives a deferred Things mount the current archived state", async () => {
@@ -1523,11 +1754,18 @@ describe("PEOPLE-001 canonical person identity shell", () => {
         block,
       );
       const held = deferred<Response>();
-      const api = stubProfile(zeroProfile(), {
-        ...routes,
-        [read]: held.promise,
-        [REST]: recorded,
-      });
+      // A section the summary counted empty reads nothing (FEQ-04); one it
+      // did not count reads, and the action may be clicked meanwhile.
+      const api = stubProfile(
+        zeroProfile({
+          summary: {
+            sectionCounts: zeroSummary.sectionCounts.filter((entry) =>
+              entry.id !== "first-meeting"
+            ),
+          },
+        }),
+        { ...routes, [read]: held.promise, [REST]: recorded },
+      );
 
       const mounting = mountPersonWorkspace();
       await vi.waitFor(() => expect(requested(api, path)).toHaveLength(1));
@@ -2282,6 +2520,40 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       expect(ready.hasAttribute("data-workspace-settled")).toBe(true)
     );
   });
+
+  it.each([
+    ["hero", () => SECTION_MOUNTS["identity-summary"]],
+    ["rail summary", () => RAIL_MOUNT],
+  ])(
+    "FEQ-04 settles the workspace when the %s code cannot load",
+    async (_label, owner) => {
+      markup(`/app/people/${personId}?section=documents`);
+      vi.spyOn(owner(), "load").mockRejectedValue(new Error("chunk"));
+      const documents = document.querySelector<HTMLElement>(
+        "#profile-section-documents",
+      )!;
+      const scroll = vi.fn();
+      documents.scrollIntoView = scroll;
+      stubProfile(undefined, { [VIEW]: recorded });
+      documents.getBoundingClientRect = () =>
+        new DOMRect(0, innerHeight + 400, 600, 300);
+
+      await expect(mountPersonWorkspace()).resolves.toBeUndefined();
+
+      // The deep link is reconciled once every zone has settled (REL-045),
+      // and the state lines become live regions (UXD-003B).
+      expect(scroll).toHaveBeenCalledTimes(2);
+      const state = document.querySelector("[data-test-section-state]")!;
+      expect(state.getAttribute("role")).toBe("status");
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector("#person-profile-ready")?.hasAttribute(
+            "data-workspace-settled",
+          ),
+        ).toBe(true)
+      );
+    },
+  );
 
   it("REL-045 brings back a deep-linked section that drifted out of view, without animating", async () => {
     markup(`/app/people/${personId}?section=documents`);

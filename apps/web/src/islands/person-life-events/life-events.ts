@@ -83,6 +83,8 @@ export function sortLifeEvents(
 
 export const UNAVAILABLE =
   "Life events are temporarily unavailable. Other person sections remain available.";
+export const TYPES_UNAVAILABLE =
+  "Life event types could not be loaded. You can save without a type.";
 export const CONFIRM_REMOVE =
   "Press the remove button again to confirm. Reminders attached to this life event are deleted too.";
 export const DISCARD_EDIT =
@@ -240,6 +242,11 @@ export type LifeEventsAction =
     readonly status: "error" | "forbidden" | "not-found";
     readonly detail: string;
   }
+  /**
+   * The types an editor opened on a card counted empty did not load: the
+   * editor and its draft stay, and say so (FEQ-04).
+   */
+  | { readonly type: "types-failed" }
   | { readonly type: "retry" }
   | { readonly type: "lifecycle"; readonly archived: boolean }
   | { readonly type: "open"; readonly event?: PersonLifeEvent }
@@ -256,16 +263,22 @@ export type LifeEventsAction =
   | { readonly type: "remove-failed"; readonly message: string }
   | { readonly type: "removed"; readonly id: string };
 
+/**
+ * The card as it mounts: hidden, loading, or — when the profile summary
+ * counted no event (`empty`) — already empty, its read left until the editor
+ * first opens and needs the types (FEQ-04).
+ */
 export function initialLifeEventsState(
   hidden: boolean,
   archived: boolean,
+  empty = false,
 ): LifeEventsState {
   return {
     archived,
     events: [],
-    initial: true,
+    initial: !empty,
     opened: 0,
-    status: hidden ? "hidden" : "loading",
+    status: hidden ? "hidden" : empty ? "ready" : "loading",
     types: [],
   };
 }
@@ -378,6 +391,8 @@ export function lifeEventsReducer(
           status: action.status,
         }),
       );
+    case "types-failed":
+      return { ...state, feedback: TYPES_UNAVAILABLE };
     case "retry":
       return redrawn(state, { initial: false, status: "loading" });
     case "lifecycle": {

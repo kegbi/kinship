@@ -5,18 +5,21 @@
  * card reports how many recent ones there are and offers an editor that logs
  * a new one: a call with its direction, details, and emotions; a
  * conversation with its channel, the specific contact method it used, a
- * title, and any number of directed messages. The contact methods load only
- * when a conversation editor first opens.
+ * title, and any number of directed messages. The options the editors offer
+ * load when an editor first opens, and the contact methods when a
+ * conversation editor first opens (FEQ-04).
  *
  * One component owns both cards — the calls card is the island's root, the
- * conversations card a portal — because one read answers both: the history
- * and the options. Every read, the first, a retry, and the refresh after a
- * save, goes through one latest-request slot; every transition goes through
- * `communicationsReducer` (`communications-state.ts`). A save is never
- * optimistic: it locks its form, and only an authoritative refresh — the
- * history and the person, whose last contact the hero shows — says it is
- * current. The forms stay the same elements for the section's life, so the
- * page's unsaved-changes guard (`lib/unsaved-changes.ts`) keeps tracking them.
+ * conversations card a portal — because one read answers both: the history,
+ * which a person the profile summary counted without communications never
+ * needs. Every read, the first, a retry, and a refresh, goes through one
+ * latest-request slot; every transition goes through `communicationsReducer`
+ * (`communications-state.ts`). A save is never optimistic: it locks its form
+ * until the server answers with the saved record, which the cards count and
+ * whose time gives the hero its last contact (FEQ-10); the history is read
+ * again only when the record cannot simply be counted. The forms stay the
+ * same elements for the section's life, so the page's unsaved-changes guard
+ * (`lib/unsaved-changes.ts`) keeps tracking them.
  */
 
 import {
@@ -32,7 +35,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  getPerson,
   listCommunicationOptions,
   listPersonCommunications,
   listProfileFacts,
@@ -62,6 +64,7 @@ import {
   PERSON_TIMELINE_CHANGED_EVENT,
 } from "../../interactions/shared.ts";
 import { setLastContact } from "../profile-summary.ts";
+import { lastContactAfter } from "../recorded-interactions.ts";
 import { SectionGlyph } from "../section-glyph.tsx";
 import { SectionLoading } from "../section-loading.tsx";
 import type { StatusRegionProps } from "../status-region.ts";
@@ -81,6 +84,10 @@ export interface PersonCommunicationsProps {
   readonly archived: boolean;
   /** Which cards the workspace turned off when the page loaded. */
   readonly hidden: { readonly calls: boolean; readonly conversations: boolean };
+  /** Whether the profile summary counted neither calls nor conversations. */
+  readonly empty?: boolean;
+  /** The person's last contact the page loaded, if any. */
+  readonly lastContactAt?: string | undefined;
   readonly timePreferences?: TimePreferences | undefined;
   /** The two server-rendered cards; the calls card is the root. */
   readonly sections: {
@@ -114,9 +121,16 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
   const { personId, sections, timePreferences, workspaceId } = props;
   const [state, dispatch] = useReducer(
     communicationsReducer,
-    props.archived,
-    initialCommunicationsState,
+    undefined,
+    () => initialCommunicationsState(props.archived, props.empty === true),
   );
+  // What the handlers that outlive a render read: the latest state, and the
+  // last contact the hero shows.
+  const latest = useRef(state);
+  useLayoutEffect(() => {
+    latest.current = state;
+  }, [state]);
+  const lastContact = useRef(props.lastContactAt);
   const request = useLatestRequest();
   const settled = useRef(props.onSettled);
   // One save at a time per card, even before its render says so.
@@ -125,31 +139,26 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
     conversation: false,
   });
   const contactsLoad = useRef<Promise<void> | undefined>(undefined);
+  const optionsLoad = useRef<Promise<void> | undefined>(undefined);
 
-  /** Reads the history and the options, as the cards first did. */
+  /** Reads the history, as the cards first did. */
   const load = useCallback(
     (): Promise<void> =>
-      request(async () => {
-        const [history, options] = await Promise.all([
-          listPersonCommunications(personId, workspaceId),
-          listCommunicationOptions(workspaceId),
-        ]);
-        if (!history.ok) return history;
-        if (!options.ok) return options;
-        return {
-          ok: true as const,
-          value: { history: history.value, options: options.value },
-        };
-      }).then((answer) => {
-        if (!answer) return;
-        if (answer.status === "ready" && answer.data) {
-          dispatch({ ...answer.data, type: "loaded" });
-        } else dispatch({ type: "load-failed" });
-      }),
+      request(() => listPersonCommunications(personId, workspaceId)).then(
+        (answer) => {
+          if (!answer) return;
+          if (answer.status === "ready" && answer.data) {
+            dispatch({ history: answer.data, type: "loaded" });
+          } else dispatch({ type: "load-failed" });
+        },
+      ),
     [personId, request, workspaceId],
   );
 
-  const firstLoad = useEffectEvent(() => load());
+  // Cards counted empty have nothing to read.
+  const firstLoad = useEffectEvent(() =>
+    latest.current.list.status === "loading" ? load() : Promise.resolve()
+  );
   useEffect(() => {
     void firstLoad().finally(() => {
       settled.current?.();
@@ -158,28 +167,16 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
   }, []);
 
   /**
-   * Reads the history and the person again, shows what answered, and says
-   * whether both did. A newer read under way will show its own answer.
+   * Reads the history again, shows what answered, and says whether it did. A
+   * newer read under way will show its own answer.
    */
   const refresh = async (): Promise<boolean> => {
-    const answer = await request(async () => {
-      const [history, profile] = await Promise.all([
-        settle(() => listPersonCommunications(personId, workspaceId)),
-        settle(() => getPerson(personId, workspaceId)),
-      ]);
-      return { ok: true as const, value: { history, profile } };
-    });
-    if (!answer?.data) return true;
-    const { history, profile } = answer.data;
-    if (history.data) dispatch({ history: history.data, type: "history" });
-    // The hero shows the last contact (GAP-028).
-    if (profile.data) {
-      const last = profile.data.person.lastContactAt;
-      setLastContact(
-        last ? formatInstant(last, timePreferences) : "None recorded",
-      );
-    }
-    return history.status === "ready" && profile.status === "ready";
+    const answer = await request(() =>
+      listPersonCommunications(personId, workspaceId)
+    );
+    if (!answer) return true;
+    if (answer.data) dispatch({ history: answer.data, type: "history" });
+    return answer.status === "ready";
   };
 
   useDocumentEvent<CustomEvent<{ archived?: unknown; personId?: unknown }>>(
@@ -210,10 +207,21 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
     });
   };
 
+  /** Loads the options an editor offers, once (FEQ-04). */
+  const loadOptions = (kind: CommunicationKind) => {
+    dispatch({ kind, type: "options-loading" });
+    optionsLoad.current ??= settle(() => listCommunicationOptions(workspaceId))
+      .then((answer) => {
+        if (!answer.data) optionsLoad.current = undefined;
+        dispatch({ options: answer.data, type: "options-settled" });
+      });
+  };
+
   const open = (kind: CommunicationKind) => {
     const current = state;
     if (!writable(current, kind) || current.editors[kind].pending) return;
     dispatch({ kind, requestId: crypto.randomUUID(), type: "open" });
+    if (!current.options) loadOptions(kind);
     if (kind !== "conversation") return;
     dispatch({ type: "contacts-loading" });
     if (current.contacts.status !== "ready") loadContacts();
@@ -280,7 +288,7 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
       form,
       () => settle(() => recordInteraction(input, workspaceId)),
     );
-    if (answer.status !== "ready") {
+    if (answer.status !== "ready" || !answer.data) {
       saving.current[kind] = false;
       dispatch({
         kind,
@@ -295,7 +303,18 @@ export function PersonCommunications(props: PersonCommunicationsProps) {
         detail: { personIds: [personId] },
       }),
     );
-    const now = await refresh();
+    // The saved record says when the person was last in contact (GAP-053),
+    // and the cards count it; only a list it cannot be counted on is read.
+    const { record } = answer.data;
+    lastContact.current = lastContactAfter(lastContact.current, record);
+    if (lastContact.current) {
+      setLastContact(formatInstant(lastContact.current, timePreferences));
+    }
+    const recorded = { record, type: "recorded" } as const;
+    const counted =
+      communicationsReducer(latest.current, recorded).list.status === "ready";
+    dispatch(recorded);
+    const now = counted || await refresh();
     saving.current[kind] = false;
     dispatch({ current: now, kind, type: "saved" });
   };
@@ -442,9 +461,9 @@ function CommunicationCard(
         {...props.statusRegion}
       >
         {list.status === "loading"
-          ? state.options
-            ? `Loading ${wording.section}…`
-            : <SectionLoading label={`Loading ${wording.section}…`} />
+          ? list.initial
+            ? <SectionLoading label={`Loading ${wording.section}…`} />
+            : `Loading ${wording.section}…`
           : list.status === "error"
           ? COMMUNICATION_MESSAGES.unavailable
           : count
@@ -495,7 +514,7 @@ function CommunicationCard(
         <div className={formActionsVariants()} data-form-actions="">
           <button
             className={buttonVariants()}
-            disabled={state.archived || editor.pending}
+            disabled={state.archived || editor.pending || !state.options}
             type="submit"
           >
             Save {wording.one}

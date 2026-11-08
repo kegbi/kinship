@@ -12,7 +12,12 @@ import {
   unreachable,
 } from "../../../testing/api.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
-import { ids, personProfile, sectionProps } from "../../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  profileSummary,
+  sectionProps,
+} from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -89,7 +94,11 @@ const page = (
   );
 
 const mount = (
-  options: { readonly archived?: boolean; readonly hidden?: string[] } = {},
+  options: {
+    readonly archived?: boolean;
+    readonly hidden?: string[];
+    readonly counts?: Readonly<Record<"activities" | "notes", number>>;
+  } = {},
 ) =>
   mountSection(
     mountPersonInteractions,
@@ -102,6 +111,19 @@ const mount = (
             status: "hidden" as const,
           })),
         },
+        ...(options.counts
+          ? {
+            summary: profileSummary({
+              sectionCounts: Object.entries(options.counts).map((
+                [id, count],
+              ) => ({
+                count,
+                id: id as "notes",
+                status: "ready" as const,
+              })),
+            }),
+          }
+          : {}),
       }),
     }),
   );
@@ -116,9 +138,11 @@ const shortcut = (where: "header" | "main", kind: "activity" | "note") =>
   element<HTMLButtonElement>(
     `${where} [data-person-interaction-capture][data-interaction-intended-kind="${kind}"]`,
   );
-const created = () =>
+const created = (record?: unknown) =>
   act(() => {
-    globalThis.dispatchEvent(new CustomEvent("kinship:interaction-created"));
+    globalThis.dispatchEvent(
+      new CustomEvent("kinship:interaction-created", { detail: record }),
+    );
   });
 /** Quick capture's write, then its announcement, as the application does. */
 const recorded = (api: StubbedApi) =>
@@ -492,6 +516,78 @@ describe("INTERACTION-001 person notes and activities", () => {
     expect(stateOf("notes")).toBe(
       "Notes could not be loaded. Saved notes are unchanged.",
     );
+  });
+
+  it("FEQ-10 counts a recorded interaction on its own card without reading either card", async () => {
+    shell();
+    const api = stubApi({
+      [REPORT]: ({ url }) =>
+        page(url.searchParams.get("kind") as "activity" | "note", 1),
+    });
+    await mount();
+    expect(api.calls()).toHaveLength(2);
+    await created(note("Remember the engine"));
+    expect(stateOf("notes")).toBe(
+      "2 recent notes. Listed in the timeline above.",
+    );
+    expect(stateOf("activities")).toBe(
+      "1 recent activity. Listed in the timeline above.",
+    );
+    await created(activity("Walked together"));
+    expect(stateOf("activities")).toBe(
+      "2 recent activities. Listed in the timeline above.",
+    );
+    // Another person's note changes nothing here.
+    await created({
+      ...note("Someone else"),
+      participants: [{
+        id: "00000000-0000-4000-8000-000000000199",
+        name: "Grace Hopper",
+      }],
+    });
+    expect(stateOf("notes")).toBe(
+      "2 recent notes. Listed in the timeline above.",
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(api.calls()).toHaveLength(2);
+  });
+
+  it("FEQ-04 reads neither card when the summary counted none, and still counts a new note", async () => {
+    shell();
+    const api = stubApi({ [REPORT]: report([]) });
+    await mount({ counts: { activities: 0, notes: 0 } });
+    expect(api.calls()).toEqual([]);
+    expect(stateOf("notes")).toBe("No notes recorded yet.");
+    expect(stateOf("activities")).toBe("No activities recorded yet.");
+    expect(section("notes").dataset.sectionState).toBe("ready");
+    await created(note("First note"));
+    expect(stateOf("notes")).toBe(
+      "1 recent note. Listed in the timeline above.",
+    );
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("FEQ-10 reads a card again when a recorded interaction finds it failed", async () => {
+    shell();
+    let noteCalls = 0;
+    stubApi({
+      [REPORT]: ({ url }) => {
+        if (url.searchParams.get("kind") === "activity") {
+          return page("activity", 1);
+        }
+        noteCalls += 1;
+        return noteCalls === 1 ? problemResponse(503) : page("note", 1);
+      },
+    });
+    await mount();
+    expect(section("notes").dataset.sectionState).toBe("error");
+    await created(note("Recovered"));
+    await waitFor(() =>
+      expect(stateOf("notes")).toBe(
+        "1 recent note. Listed in the timeline above.",
+      )
+    );
+    expect(noteCalls).toBe(2);
   });
 
   it("reads both cards again whenever Quick capture records an interaction", async () => {

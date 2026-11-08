@@ -3,9 +3,10 @@
  * `/app/people/:personId` as one static shell that this module brings to
  * life. It resolves the session, the member's preferences, and the person;
  * mounts the hero and the rail summary, then each section's owner from the
- * section registry (`sections.ts`, `section-mounts.ts`) as its zone
- * activates; keeps the zone filter and the section navigation, `?section=`
- * and `?view=` deep links, the first-run card, and the page's states; and
+ * section registry (`sections.ts`, `section-mounts.ts`) as its zone — or, in
+ * the Timeline zone, its own card — nears the viewport; keeps the zone filter
+ * and the section navigation, `?section=` and `?view=` deep links, the
+ * first-run card, and the page's states; and
  * marks the workspace `data-workspace-settled` once its first sections have
  * answered and its view is recorded (REL-046).
  *
@@ -53,6 +54,11 @@ import {
   TIMELINE_MOUNT,
 } from "./section-mounts.ts";
 import { SECTION_NOTICE_LINK_TEMPLATE_ID } from "./shell-templates.ts";
+import {
+  INTERACTION_CREATED_EVENT,
+  PERSON_TIMELINE_CHANGED_EVENT,
+} from "../interactions/shared.ts";
+import { recordedFor, withoutRecordedCounts } from "./recorded-interactions.ts";
 
 /**
  * The page's own elements. The hero, the rail summary, and every section
@@ -104,6 +110,10 @@ interface ZoneRegistry {
    * owner mounts once per page.
    */
   readonly mountRail: () => Promise<void>;
+  /** Mounts one owner now, once per page, as its card nears the viewport. */
+  readonly mount: (owner: SectionOwner) => Promise<void>;
+  /** Counts `zone` activated once every owner it holds has mounted. */
+  readonly complete: (zone: Zone) => void;
   readonly settled: () => Promise<void>;
 }
 
@@ -277,10 +287,16 @@ function createZoneRegistry(
 ): ZoneRegistry {
   const owners = new Map<SectionOwner, Promise<void>>();
   const activations = new Map<Zone, Promise<void>>();
-  const mount = (owner: SectionOwner): Promise<void> => {
+  /**
+   * Mounts `owner` once. A `tolerated` owner's failure is the page's to
+   * absorb (a summary whose code cannot load leaves its skeleton), so what
+   * `settled()` waits on for it never rejects.
+   */
+  const mount = (owner: SectionOwner, tolerated = false): Promise<void> => {
     let mounted = owners.get(owner);
     if (!mounted) {
-      mounted = Promise.resolve().then(() => mountOwner(owner));
+      const mounting = Promise.resolve().then(() => mountOwner(owner));
+      mounted = tolerated ? mounting.catch(() => undefined) : mounting;
       owners.set(owner, mounted);
     }
     return mounted;
@@ -288,9 +304,9 @@ function createZoneRegistry(
   const activate = (zone: Zone): Promise<void> => {
     let activation = activations.get(zone);
     if (!activation) {
-      activation = Promise.all(zoneOwners(zone, hidden).map(mount)).then(() =>
-        undefined
-      ).finally(() => {
+      activation = Promise.all(
+        zoneOwners(zone, hidden).map((owner) => mount(owner)),
+      ).then(() => undefined).finally(() => {
         document.querySelector<HTMLElement>(`[data-zone="${zone}"]`)
           ?.removeAttribute("aria-busy");
       });
@@ -300,23 +316,85 @@ function createZoneRegistry(
   };
   return {
     activate,
+    complete: (zone) => {
+      if (zoneOwners(zone, hidden).every((owner) => owners.has(owner))) {
+        void activate(zone);
+      }
+    },
+    mount: (owner) => mount(owner),
     mountSummaries: () =>
       Promise.all([
-        mount(SECTION_MOUNTS["identity-summary"]),
-        mount(RAIL_MOUNT),
+        mount(SECTION_MOUNTS["identity-summary"], true),
+        mount(RAIL_MOUNT, true),
       ]).then(() => undefined),
     mountRail: () =>
       Promise.all(
         [...sectionOwners(shownSections(railSections(), hidden)), TAGS_MOUNT]
-          .map(mount),
+          .map((owner) => mount(owner)),
       ).then(() => undefined),
-    settled: () => Promise.all(activations.values()).then(() => undefined),
+    // Every owner mounted so far, by its zone, its card, or the rail.
+    settled: () =>
+      Promise.all([...activations.values(), ...owners.values()]).then(() =>
+        undefined
+      ),
   };
 }
 
-function mountZoneVisibilityActivation(
-  activate: (zone: Zone) => Promise<void>,
+/** How near the viewport a zone or a card comes before it activates. */
+const ACTIVATION_MARGIN = "400px";
+
+/**
+ * Each Timeline owner with the cards it draws into: the unified timeline's
+ * card, and each shown section's. An owner shared by two cards (notes and
+ * activities, calls and conversations) mounts when either nears the
+ * viewport. Without a card for every owner the zone activates as a whole.
+ */
+function timelineCards(
+  hidden: ReadonlySet<string>,
+): readonly { readonly owner: SectionOwner; readonly card: HTMLElement }[] {
+  const sections = shownSections(zoneSections("timeline"), hidden);
+  const cards = zoneOwners("timeline", hidden).map((owner) => ({
+    cards: owner === TIMELINE_MOUNT
+      ? [document.querySelector<HTMLElement>("#person-timeline")]
+      : sections.filter((entry) => SECTION_MOUNTS[entry.id] === owner)
+        .map((entry) => section(entry.id)),
+    owner,
+  }));
+  return cards.every(({ cards }) => cards.some(Boolean))
+    ? cards.flatMap(({ cards, owner }) =>
+      cards.flatMap((card) => card ? [{ card, owner }] : [])
+    )
+    : [];
+}
+
+/**
+ * Activates each Timeline card on its own, one observer per card (FEQ-04):
+ * a card below the fold reads nothing until the reader scrolls near it. Once
+ * every owner of the zone has mounted, the zone counts as activated.
+ */
+function mountTimelineCardActivation(
+  registry: ZoneRegistry,
+  cards: readonly {
+    readonly owner: SectionOwner;
+    readonly card: HTMLElement;
+  }[],
 ): void {
+  for (const { card, owner } of cards) {
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      void registry.mount(owner);
+      registry.complete("timeline");
+    }, { rootMargin: ACTIVATION_MARGIN });
+    observer.observe(card);
+  }
+}
+
+function mountZoneVisibilityActivation(
+  registry: ZoneRegistry,
+  hidden: ReadonlySet<string>,
+): void {
+  const { activate } = registry;
   const zones = [...document.querySelectorAll<HTMLElement>("[data-zone]")]
     .flatMap<{ readonly element: HTMLElement; readonly zone: Zone }>(
       (element) => {
@@ -332,16 +410,21 @@ function mountZoneVisibilityActivation(
     for (const { zone } of zones) void activate(zone);
     return;
   }
+  const cards = timelineCards(hidden);
+  if (cards.length > 0) mountTimelineCardActivation(registry, cards);
+  const observed = zones.filter(({ zone }) =>
+    zone !== "timeline" || cards.length === 0
+  );
   const observer = new IntersectionObserver((entries) => {
-    for (const observed of entries) {
-      if (!observed.isIntersecting) continue;
-      const match = zones.find(({ element }) => element === observed.target);
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const match = observed.find(({ element }) => element === entry.target);
       if (!match) continue;
       observer.unobserve(match.element);
       void activate(match.zone);
     }
-  }, { rootMargin: "400px" });
-  for (const { element } of zones) observer.observe(element);
+  }, { rootMargin: ACTIVATION_MARGIN });
+  for (const { element } of observed) observer.observe(element);
 }
 
 /**
@@ -945,6 +1028,19 @@ export async function mountPersonWorkspace(): Promise<void> {
   profileAbort = new AbortController();
   const { signal } = profileAbort;
   mountSectionNavigation(profile, sectionNavigation, signal);
+  // Once a write records something for this person on the page, the
+  // summary's counts of what it touches are out of date, and the owners
+  // that mount afterwards read those sections themselves (FEQ-04).
+  let recorded = false;
+  globalThis.addEventListener(INTERACTION_CREATED_EVENT, (event) => {
+    const detail = (event as CustomEvent<unknown>).detail;
+    if (recordedFor(id, detail) !== undefined) recorded = true;
+  }, { signal });
+  document.addEventListener(PERSON_TIMELINE_CHANGED_EVENT, (event) => {
+    const changed = (event as CustomEvent<{ readonly personIds?: unknown }>)
+      .detail?.personIds;
+    if (Array.isArray(changed) && changed.includes(id)) recorded = true;
+  }, { signal });
   const session = await resolveWorkspaceSession();
   if (session.status !== "ready") {
     renderState(
@@ -1006,7 +1102,7 @@ export async function mountPersonWorkspace(): Promise<void> {
   let statesLive = false;
   const sectionProps = (): SectionProps => ({
     archived,
-    initial: profileAnswer,
+    initial: recorded ? withoutRecordedCounts(profileAnswer) : profileAnswer,
     personId: id,
     preferences: memberPreferences,
     statesLive: () => statesLive,
@@ -1028,7 +1124,7 @@ export async function mountPersonWorkspace(): Promise<void> {
   if (zoneFilter) zoneFilter.activate = activate;
   const selectedView = currentView();
   if (selectedView !== "all") void activate(selectedView);
-  mountZoneVisibilityActivation(activate);
+  mountZoneVisibilityActivation(zoneRegistry, hiddenSectionIds);
   renderReady(profile, sectionNavigation);
   mountUnsavedChangesGuard({
     confirmMessage:

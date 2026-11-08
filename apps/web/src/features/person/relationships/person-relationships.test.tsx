@@ -25,7 +25,12 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import { ids, personProfile, sectionProps } from "../../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  profileSummary,
+  sectionProps,
+} from "../../../testing/fixtures.ts";
 import {
   adoptMount,
   drawShell,
@@ -140,6 +145,8 @@ function props(
     readonly archived?: boolean;
     readonly hidden?: boolean;
     readonly person?: string;
+    /** How many relationships the profile summary counted. */
+    readonly counted?: number;
   } = {},
 ) {
   return sectionProps({
@@ -151,6 +158,15 @@ function props(
           : [],
         updatedAt,
       },
+      ...(options.counted === undefined ? {} : {
+        summary: profileSummary({
+          sectionCounts: [{
+            count: options.counted,
+            id: "relationships",
+            status: "ready",
+          }],
+        }),
+      }),
     }),
     personId: options.person ?? personId,
   });
@@ -308,6 +324,39 @@ describe("RELATIONSHIP-001 relationships island", () => {
     expect(summary.railCount("relationships")).toBe("1");
     expect(summary.railEmpty("relationships")).toBe(false);
     await expectNoAxeViolations(section());
+  });
+
+  it("FEQ-04 shows a block the summary counted empty without reading it, and loads the types when the editor opens", async () => {
+    shell();
+    const api = stubApi(routes({
+      [CREATE]: changed("created"),
+      [LIST]: listed([relationship]),
+    }));
+    await mount({ counted: 0 });
+    expect(api.calls()).toEqual([]);
+    expect(section().dataset.sectionState).toBe("ready");
+    expect(summary.railCount("relationships")).toBe("0");
+    expect(summary.railEmpty("relationships")).toBe(true);
+    expect(add().hidden).toBe(false);
+    fireEvent.click(add());
+    await waitFor(() => expect(form().hidden).toBe(false));
+    expect(api.calls()).toEqual(["GET /api/v1/relationship-types"]);
+    await waitFor(() => expect(document.activeElement).toBe(searchInput()));
+    expect([...typeSelect().options].map((option) => option.value))
+      .toContain(typeId);
+  });
+
+  it("FEQ-04 keeps a failed type read in the block's state after the editor asked for it", async () => {
+    shell();
+    stubApi(routes({ [TYPES]: unreachable }));
+    await mount({ counted: 0 });
+    fireEvent.click(add());
+    await waitFor(() =>
+      expect(state().textContent).toBe(
+        "Relationship types are temporarily unavailable.",
+      )
+    );
+    expect(form().hidden).toBe(true);
   });
 
   it.each(["clean", "declined", "accepted"])(
