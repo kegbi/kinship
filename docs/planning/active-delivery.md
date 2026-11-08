@@ -2140,6 +2140,64 @@ Playwright test carrying its stable flow ID.
       measure the hero's time at the release checkpoint; AUD-P1's budgets
       (`tests/e2e/perf.PERF-002.spec.ts`) must stay green.
 
+- [ ] **REL-127 — A section refused at open draws three different ways.** Found
+      in the AUD-Q3-fix review during the 2026-11-07 audit-remediation run on
+      the REL-105 Windows host; AUD-Q3 (`6e8b0329`) introduced it. The composed
+      rail turns a module's `forbidden` answer into `hidden`
+      (`packages/backend/read-models/person-profile/application/compose_person_rail.ts:140`,
+      `:163`, `:186`), and for facts and relationships folds it into the
+      module's own `hidden` (`:129`, `:150–153`), for facts a disabled profile
+      module, so the page cannot tell the two apart. A fact section then shows
+      the empty hidden answer
+      (`apps/web/src/features/person/facts/fact-editor.tsx:403–404`) and hides
+      its root (`:428`), as relationships do
+      (`apps/web/src/features/person/relationships/person-relationships.tsx:343`,
+      `:361`); important dates draw it as `forbidden` with "Your active
+      workspace no longer permits this action."
+      (`apps/web/src/features/person/important-dates/important-dates.tsx:140–141`);
+      and reminders draw it as an outage
+      (`apps/web/src/features/person/reminders/person-reminders.tsx:241`,
+      `:193–194`). The person read refuses a revoked actor before it builds the
+      rail, so the whole page answers 403
+      (`packages/backend/read-models/person-profile/application/get_person_profile.ts:315`);
+      a section answers `forbidden` at open only when its module's own standing
+      check fails after that
+      (`packages/backend/modules/people/application/profile_fact_context.ts:83`,
+      `packages/backend/modules/planning/application/reminder_definitions.ts:202–216`,
+      and the other modules' equivalents). So a member whose permission is
+      revoked while the page's read is running sees the dates message, while the
+      contact methods section simply vanishes. Before AUD-Q3 a fact section's
+      own 403 at open showed the forbidden state (`fact-editor.tsx:310–319`).
+      Decide and test one presentation for a section refused at open, such as a
+      distinct `forbidden` rail status or hidden everywhere, keeping the read
+      model read-only and each rail section isolated. At `90b25fd2`
+      "[PEOPLE-006] maintains enabled profile facts in local person sections"
+      (`tests/e2e/profile-facts.PEOPLE-006.spec.ts:1576`) still expects to reach
+      the forbidden state by refusing the section's own read on reload
+      (`:1995–2015`), which the open no longer sends when the rail answers
+      (`fact-editor.tsx:389–407`), and its earlier `error` step (`:1971–1993`)
+      has the same problem; AUD-Q3-fix adapts both, answering the contact
+      methods rail section `unavailable` so the reload shows `error` and its
+      Retry reaches the forbidden state. Update that case with the chosen
+      presentation.
+
+- [ ] **REL-128 — WebKit loses window focus in a PEOPLE-006 local-editor step.**
+      Seen in AUD-Q3-fix's WebKit runs during the 2026-11-07 audit-remediation
+      run on the REL-105 Windows host, which passed one of three; the reviewer
+      judged it environmental, and it is distinct from REL-119's CSP refusals.
+      Whether it reproduces before AUD-Q3-fix or the remediation was not
+      checked. "[PEOPLE-006] maintains enabled profile facts in local person
+      sections" (`tests/e2e/profile-facts.PEOPLE-006.spec.ts:1576`) failed at
+      the first-meeting add (`:1792` at `90b25fd2`) and the tags edit (`:1847`),
+      `:1826` and `:1881` in AUD-Q3-fix, with `toBeFocused` receiving "inactive"
+      because the WebKit window had lost focus. Both are `openLocalEditor`'s
+      focus check (`:34`), before any line AUD-Q3-fix changed. The repository
+      pins `@playwright/test` 1.62.1 (`package.json:16`) with `retries: 0`
+      (`playwright.config.ts:20`). Reproduce it on the pinned WebKit build, then
+      make the focus assertions robust to an inactive window without hiding a
+      real focus regression, for example by asserting `document.activeElement`
+      within the page or bringing the page to the front. Do not add retries.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
