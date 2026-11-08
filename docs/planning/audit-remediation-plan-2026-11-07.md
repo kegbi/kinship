@@ -809,6 +809,28 @@ these:
     99.4% functions; contracts, fmt, architecture, and lint (only REL-096). At
     the large profile a steady-state replenish costs 7 statements and about 145
     ms, so `reminders.generated_through` is not needed.
+  - [x] **AUD-W1-fix — PERF-001 times its worker tick on analyzed data.** S.
+        Normal. Depends: AUD-W1. Closes: the intermittent `workerDueToDelivery`
+        ceiling failure introduced with AUD-W1's recurring-reminder seed.
+    - Scope: end the recurring-reminder seed with
+      `analyze crm.reminders, crm.reminder_occurrences`, and analyze
+      `crm.people` after the large people insert, before any timed window. No
+      production change and no ceiling change.
+    - RED: run PERF-001 at least 3 times on the base and record the spread; with
+      the fix, `workerDueToDelivery` stays well under the ceiling in at least 5
+      consecutive runs.
+    - Verify:
+      `deno task test:e2e tests/e2e/perf.PERF-001.spec.ts --project=chromium` 5
+      times; `test:unit --module=performance`.
+    - Note: a large Monica import leaves the planning tables unanalyzed until
+      autovacuum runs; a parked reliability item asks the import job to
+      `analyze` them after a bulk load.
+    - Delivered 2026-11-08: the spec analyzes `crm.reminders` and
+      `crm.reminder_occurrences` after the recurring seed and `crm.people` after
+      the large insert; on the base `workerDueToDelivery` failed 3 of 3 at about
+      11 s, and with the fix PERF-001 passed 5 consecutive runs at the
+      implementer (1.4–2.0 s) and 5 more at integration; performance unit,
+      contracts, fmt, architecture, and lint (only REL-096) are clean.
 
 - [ ] **AUD-W2 — The worker claims through the due index and survives
       failures.** S. Normal. Depends: AUD-W1. Closes: BEQ-08, BEQ-09.

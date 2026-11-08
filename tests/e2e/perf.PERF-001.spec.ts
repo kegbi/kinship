@@ -305,6 +305,10 @@ test(
         'pending', recurring.title
       from recurring cross join generate_series(0, 7) week;
     `);
+    // A bulk seed is not steady state: the planner has no statistics until
+    // autovacuum analyzes it. A large import, its production equivalent, is slow
+    // only until then, and that import-time risk is tracked separately.
+    databaseSql("analyze crm.reminders, crm.reminder_occurrences;");
     const recurringOccurrences = databaseValue(`
       select count(*) from crm.reminder_occurrences occurrence
       join crm.reminders reminder on reminder.id = occurrence.reminder_id
@@ -337,6 +341,7 @@ test(
         ${profile.datasets.large.historyRecords}
       ) sequence;
     `);
+    databaseSql("analyze crm.people;");
     expect(databaseValue(
       `select count(*) from crm.people where workspace_id = '${workspaceId}'::uuid`,
     )).toBe(String(profile.datasets.large.people));
