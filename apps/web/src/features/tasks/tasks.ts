@@ -192,9 +192,9 @@ export function changeInput(
 // --- The surface's state ----------------------------------------------------
 
 /**
- * Where the surface stands: `context` while it resolves the workspace, time
- * preferences, and people it needs; `unavailable` when the session could not
- * be resolved; then the list's own status.
+ * Where the surface stands: `context` while it resolves the workspace and
+ * time preferences it needs; `unavailable` when the session could not be
+ * resolved; then the list's own status.
  */
 export type TaskStatus =
   | "context"
@@ -204,6 +204,15 @@ export type TaskStatus =
   | "error";
 
 export type TaskFocus = "title" | "add";
+
+/**
+ * The page's read of the directory's people (FEQ-06): `idle` until a person
+ * choice is wanted, `wanted` once the reader reached for one (it is read as
+ * soon as the workspace is known), `loading` while it is read, and `done`
+ * once it answered. A failed read goes back to `idle`, so the next reach
+ * reads again.
+ */
+export type PeopleRead = "idle" | "wanted" | "loading" | "done";
 
 export interface TaskEditor {
   /** Bumped on every open, so the fields start from the opened task. */
@@ -236,6 +245,7 @@ export interface TaskState {
   /** The people the filter offers, including ones only past tasks name. */
   readonly filterChoices: readonly PersonChoice[];
   readonly peopleCursor?: string;
+  readonly peopleRead: PeopleRead;
   readonly editor?: TaskEditor;
   /** Whether a save holds the editor. */
   readonly saving: boolean;
@@ -251,10 +261,11 @@ export type TaskAction =
     readonly type: "context";
     readonly workspaceId: string;
     readonly preferences?: TimePreferences | undefined;
-    readonly people?: readonly PersonChoice[];
-    readonly peopleCursor?: string | undefined;
   }
   | { readonly type: "unavailable" }
+  | { readonly type: "people-wanted" }
+  | { readonly type: "people-loading" }
+  | { readonly type: "people-failed" }
   | {
     readonly type: "people";
     readonly people: readonly PersonChoice[];
@@ -293,6 +304,7 @@ export function initialTaskState(archived: boolean): TaskState {
     filters: { personId: "", status: "" },
     formChoices: [],
     moving: {},
+    peopleRead: "idle",
     saving: false,
     status: "context",
     tasks: [],
@@ -329,22 +341,28 @@ function merged(
 export function taskReducer(state: TaskState, action: TaskAction): TaskState {
   switch (action.type) {
     case "context":
-    case "people": {
-      const people = action.people ?? [];
-      const next = {
-        ...without(state, "peopleCursor"),
-        filterChoices: withChoices(state.filterChoices, people),
-        formChoices: withChoices(state.formChoices, people),
-        ...(action.peopleCursor ? { peopleCursor: action.peopleCursor } : {}),
-      };
-      if (action.type === "people") return next;
       return {
-        ...next,
+        ...state,
         status: "loading",
         workspaceId: action.workspaceId,
         ...(action.preferences ? { preferences: action.preferences } : {}),
       };
-    }
+    case "people-wanted":
+      return state.peopleRead === "idle"
+        ? { ...state, peopleRead: "wanted" }
+        : state;
+    case "people-loading":
+      return { ...state, peopleRead: "loading" };
+    case "people-failed":
+      return { ...state, peopleRead: "idle" };
+    case "people":
+      return {
+        ...without(state, "peopleCursor"),
+        filterChoices: withChoices(state.filterChoices, action.people),
+        formChoices: withChoices(state.formChoices, action.people),
+        peopleRead: "done",
+        ...(action.peopleCursor ? { peopleCursor: action.peopleCursor } : {}),
+      };
     case "unavailable":
       return { ...state, status: "unavailable" };
     case "loading":

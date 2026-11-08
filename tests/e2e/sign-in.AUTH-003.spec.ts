@@ -223,6 +223,8 @@ test(
       }),
     )
       .toBeVisible();
+    // FEQ-11: the tag filter reads its options once the reader reaches it.
+    await page.getByRole("combobox", { name: "Tag", exact: true }).focus();
     await expect(page.locator("#people-tag-options-status")).toHaveText(
       "0 tag options shown.",
     );

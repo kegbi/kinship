@@ -343,7 +343,7 @@ describe("PEOPLE-002 people directory island", () => {
     });
 
     const mounted = mountPending(() => mountPeopleDirectory());
-    await waitFor(() => expect(tagRequests(api)).toHaveLength(1));
+    await waitFor(() => expect(listRequests(api)).toHaveLength(1));
     expect(element("#people-directory-state").hidden).toBe(false);
     expect(element("#people-directory-list").hidden).toBe(true);
     expect(region().getByRole("button", { name: "Find people" }))
@@ -366,7 +366,8 @@ describe("PEOPLE-002 people directory island", () => {
       "/api/v1/people?lifecycle=active&limit=20&sort=given-name",
     );
     expect(list?.headers.get("X-Workspace-Id")).toBe(workspaceId);
-    expect(tagRequests(api)[0]?.url.search).toBe("");
+    expect(tagRequests(api), "FEQ-11: no options before the filter is reached")
+      .toHaveLength(0);
     expect(element("#people-directory-state").hidden).toBe(true);
     const link = region().getByRole("link", { name: /Ada Lovelace/ });
     expect(link.getAttribute("href")).toBe(`/app/people/${personId}`);
@@ -382,9 +383,13 @@ describe("PEOPLE-002 people directory island", () => {
     expect(element("#people-directory-announcement").textContent).toBe(
       "1 active person shown.",
     );
-    expect(element("#people-tag-options-status").textContent).toBe(
-      "1 tag option shown.",
+    act(() => region().getByLabelText("Tag").focus());
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "1 tag option shown.",
+      )
     );
+    expect(tagRequests(api)[0]?.url.search).toBe("");
     expect(element("[data-people-directory]").dataset.island).toBe(
       "people-directory",
     );
@@ -695,6 +700,12 @@ describe("PEOPLE-002 people directory island", () => {
     const user = userEvent.setup();
     await user.type(region().getByLabelText("Search people"), " Ada ");
     await user.selectOptions(region().getByLabelText("Sort by"), "family-name");
+    await user.click(region().getByLabelText("Tag"));
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "1 tag option shown.",
+      )
+    );
     await user.selectOptions(region().getByLabelText("Tag"), tagId);
     await user.click(region().getByRole("button", { name: "Find people" }));
     await waitFor(() => expect(listRequests(api)).toHaveLength(2));
@@ -1431,10 +1442,11 @@ describe("PEOPLE-009 bulk directory actions", () => {
       expect(element("#people-bulk-tag-status").textContent).toBe(
         "1 tag option shown.",
       );
-      // The directory's own tag filter is left as it was.
+      // The directory's own tag filter is left as it was: never reached, it
+      // offers only the (empty) facet's tags.
       expect(
         region().getByLabelText<HTMLSelectElement>("Tag").options.length,
-      ).toBe(21);
+      ).toBe(1);
 
       await user.click(within(bar()).getByRole("button", { name: "Add tag" }));
       await waitFor(() =>
@@ -1510,7 +1522,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [PEOPLE]: page([ada]),
         [SESSION]: session,
         [FACET]: noFacet,
-        [TAGS]: [noTags, problemResponse(503)],
+        [TAGS]: [problemResponse(503)],
       });
       await mount();
       const user = userEvent.setup();
@@ -1537,7 +1549,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
-          noTags,
           jsonResponse({
             nextCursor: "picker-next",
             options: [friends],
@@ -1581,7 +1592,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
-          noTags,
           jsonResponse({
             nextCursor: "picker-next",
             options: [friends],
@@ -1642,7 +1652,6 @@ describe("PEOPLE-009 bulk directory actions", () => {
         [SESSION]: session,
         [FACET]: noFacet,
         [TAGS]: [
-          noTags,
           firstPage.promise,
           laterPage.promise,
           jsonResponse({ options: [friends, family], status: "ready" }),
@@ -1671,7 +1680,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       );
       await cancel();
       await open();
-      expect(tagReads()).toHaveLength(2);
+      expect(tagReads()).toHaveLength(1);
       await act(async () => {
         firstPage.resolve(
           jsonResponse({
@@ -1694,7 +1703,7 @@ describe("PEOPLE-009 bulk directory actions", () => {
       await waitFor(() => expect(picker().options.length).toBe(2));
       const search = within(bar()).getByLabelText("Search tags to add");
       expect(document.activeElement).toBe(search);
-      expect(tagReads().slice(2)).toEqual([
+      expect(tagReads().slice(1)).toEqual([
         `${TAGS}?cursor=picker-next`,
         TAGS,
       ]);
@@ -1783,6 +1792,174 @@ describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
       ],
       truncated,
     });
+
+  it("FEQ-11 builds the tag filter from the facet and reads its options only when it gets focus", async () => {
+    markup();
+    const api = stubApi({
+      [PEOPLE]: page([person()]),
+      [SESSION]: session,
+      [FACET]: facet(true),
+      [TAGS]: jsonResponse({
+        options: [{ id: family, name: "Family" }, {
+          id: "00000000-0000-4000-8000-000000000092",
+          name: "Work",
+        }],
+        status: "ready",
+      }),
+    });
+    await mount();
+    expect(api.calls()).toEqual([
+      SESSION,
+      `${PEOPLE}?lifecycle=active&limit=20&sort=given-name`,
+      `${FACET}?lifecycle=active`,
+    ]);
+    const tag = region().getByLabelText<HTMLSelectElement>("Tag");
+    expect([...tag.options].map((option) => option.text)).toEqual([
+      "All tags",
+      "Friends",
+      "Family",
+    ]);
+    act(() => tag.focus());
+    await waitFor(() =>
+      expect([...tag.options].map((option) => option.text)).toEqual([
+        "All tags",
+        "Family",
+        "Work",
+      ])
+    );
+    act(() => {
+      tag.blur();
+      tag.focus();
+      region().getByLabelText("Search tag options").focus();
+    });
+    expect(tagRequests(api)).toHaveLength(1);
+  });
+
+  it("FEQ-11 keeps a facet tag chosen while the first options read is in flight by its real name, once", async () => {
+    markup();
+    const options = deferred<Response>();
+    stubApi({
+      [PEOPLE]: page([person()]),
+      [SESSION]: session,
+      [FACET]: facet(),
+      [TAGS]: () => options.promise,
+    });
+    await mount();
+    const tag = region().getByLabelText<HTMLSelectElement>("Tag");
+    act(() => tag.focus());
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "Loading tag options…",
+      )
+    );
+    await userEvent.setup().selectOptions(tag, family);
+    expect(tag.value).toBe(family);
+    await act(async () => {
+      options.resolve(
+        jsonResponse({
+          options: [{ id: family, name: "Family" }, {
+            id: "00000000-0000-4000-8000-000000000092",
+            name: "Work",
+          }],
+          status: "ready",
+        }),
+      );
+      await options.promise;
+    });
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "2 tag options shown.",
+      )
+    );
+    expect([...tag.options].map((option) => [option.text, option.selected]))
+      .toEqual([
+        ["All tags", false],
+        ["Family", true],
+        ["Work", false],
+      ]);
+  });
+
+  it("FEQ-11 keeps the current choice when the options read answers for an earlier one", async () => {
+    markup();
+    const options = deferred<Response>();
+    const api = stubApi({
+      [PEOPLE]: page([person()]),
+      [SESSION]: session,
+      [FACET]: facet(),
+      [TAGS]: () => options.promise,
+    });
+    await mount();
+    const user = userEvent.setup();
+    await user.click(
+      within(element("#people-tag-facet")).getByRole("button", {
+        name: "Friends, 3 people",
+      }),
+    );
+    await waitFor(() => expect(listRequests(api)).toHaveLength(2));
+    const tag = region().getByLabelText<HTMLSelectElement>("Tag");
+    await waitFor(() => expect(tag.disabled).toBe(false));
+    act(() => tag.focus());
+    await waitFor(() => expect(tagRequests(api)).toHaveLength(1));
+    expect(tagRequests(api)[0]!.url.searchParams.get("selected")).toBe(
+      friends,
+    );
+    await user.selectOptions(tag, family);
+    expect(tag.value).toBe(family);
+    await act(async () => {
+      options.resolve(
+        jsonResponse({
+          nextCursor: "tag-cursor",
+          options: [{ id: friends, name: "Friends" }],
+          selected: { id: friends, name: "Friends" },
+          status: "ready",
+        }),
+      );
+      await options.promise;
+    });
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "2 tag options shown.",
+      )
+    );
+    const shown = [...tag.options].map((option) => [
+      option.text,
+      option.selected,
+    ]);
+    expect(shown.filter(([text]) => text === "Family")).toEqual([
+      ["Family", true],
+    ]);
+    expect(shown.filter(([text]) => text === "Friends")).toEqual([
+      ["Friends", false],
+    ]);
+    expect(tag.value).toBe(family);
+  });
+
+  it("FEQ-11 reads the tag options again on the next focus after they failed", async () => {
+    markup();
+    const api = stubApi({
+      [PEOPLE]: page([person()]),
+      [SESSION]: session,
+      [FACET]: facet(),
+      [TAGS]: [problemResponse(503), noTags],
+    });
+    await mount();
+    expect(tagRequests(api)).toHaveLength(0);
+    const search = region().getByLabelText("Search tag options");
+    act(() => search.focus());
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "Tag options are temporarily unavailable.",
+      )
+    );
+    act(() => search.blur());
+    act(() => search.focus());
+    await waitFor(() =>
+      expect(element("#people-tag-options-status").textContent).toBe(
+        "0 tag options shown.",
+      )
+    );
+    expect(tagRequests(api)).toHaveLength(2);
+  });
 
   it("shows the view's tags with counts and filters by a chip at once", async () => {
     markup();
@@ -1928,7 +2105,7 @@ describe("PEOPLE-010 tag facet under a newer tag read", () => {
         api.requests().filter((request) =>
           request.url.pathname === "/api/v1/people/tag-options"
         ),
-      ).toHaveLength(2)
+      ).toHaveLength(1)
     );
     // The newer tag read owes the same facet the replaced one is still
     // counting, so it joins that read (AUD-F1, D7) instead of asking again,

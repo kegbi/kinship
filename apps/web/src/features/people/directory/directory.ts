@@ -340,6 +340,12 @@ export interface TagPickerState {
   readonly options: readonly PeopleDirectoryTag[];
   readonly cursor: string | undefined;
   readonly loading: boolean;
+  /**
+   * Whether a page of options has been read. Until one is, the picker offers
+   * the facet's tags, and the options are read once the reader reaches for
+   * the tag filter (FEQ-11).
+   */
+  readonly loaded: boolean;
   readonly status: string;
 }
 
@@ -419,6 +425,7 @@ export function initialDirectory(
     status: "context",
     tag: {
       cursor: undefined,
+      loaded: false,
       loading: false,
       options: [],
       selected: selectedTag,
@@ -436,6 +443,23 @@ function countAnnouncement(
     : `${count} ${lifecycle} ${count === 1 ? "person" : "people"} shown.`;
 }
 
+/**
+ * The tag filter's choices after "All tags": its options once a page of them
+ * has been read, and until then the facet's tags with any tag a chip chose
+ * (FEQ-11).
+ */
+export function tagChoices(
+  state: Pick<DirectoryState, "facet" | "tag">,
+): readonly PeopleDirectoryTag[] {
+  if (state.tag.loaded) return state.tag.options;
+  const choices = state.facet.tags.map(({ id, name }) => ({ id, name }));
+  const known = new Set(choices.map((choice) => choice.id));
+  return [
+    ...choices,
+    ...state.tag.options.filter((option) => !known.has(option.id)),
+  ];
+}
+
 /** What a tag picker announces once its options have arrived. */
 export function tagOptionsStatus(count: number): string {
   return `${count} tag ${count === 1 ? "option" : "options"} shown.`;
@@ -447,14 +471,21 @@ export function tagOptionsStatus(count: number): string {
  * what is new.
  */
 function tagOptions(
-  tag: TagPickerState,
+  state: Pick<DirectoryState, "facet" | "tag">,
   page: PeopleTagOptionsPage,
   append: boolean,
 ): readonly PeopleDirectoryTag[] {
+  const { tag } = state;
   const kept: PeopleDirectoryTag[] = append
     ? [...tag.options]
     : tag.selected
-    ? [page.selected ?? { id: tag.selected, name: "Selected tag" }]
+    ? [
+      // A page names the tag chosen when it was asked for; the reader may
+      // have chosen another since (FEQ-11).
+      page.selected?.id === tag.selected
+        ? page.selected
+        : chosenTag(state, page),
+    ]
     : [];
   const seen = new Set(kept.map((option) => option.id));
   for (const option of page.options) {
@@ -463,6 +494,21 @@ function tagOptions(
     seen.add(option.id);
   }
   return kept;
+}
+
+/**
+ * The chosen tag a page did not name as the current choice, as it is already
+ * known: the page may still list it (it was chosen after the page was asked
+ * for, FEQ-11), or the picker or the facet already named it.
+ */
+function chosenTag(
+  state: Pick<DirectoryState, "facet" | "tag">,
+  page: PeopleTagOptionsPage,
+): PeopleDirectoryTag {
+  const id = state.tag.selected;
+  const named = [...page.options, ...state.tag.options, ...state.facet.tags]
+    .find((option) => option.id === id);
+  return { id, name: named?.name ?? "Selected tag" };
 }
 
 /** A list that changes under a selection takes the selection with it. */
@@ -628,12 +674,13 @@ export function directoryReducer(
         },
       };
     case "tags-loaded": {
-      const options = tagOptions(state.tag, action.page, action.append);
+      const options = tagOptions(state, action.page, action.append);
       return {
         ...state,
         tag: {
           ...state.tag,
           cursor: action.page.nextCursor,
+          loaded: true,
           loading: false,
           options,
           status: tagOptionsStatus(options.length),

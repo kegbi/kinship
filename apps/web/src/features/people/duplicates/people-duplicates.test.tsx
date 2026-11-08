@@ -2,7 +2,7 @@
 
 import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
   deferred,
@@ -14,6 +14,7 @@ import {
   sessionWithoutPreferences,
   workspaceSession,
 } from "../../../testing/fixtures.ts";
+import { IDLE_TIMEOUT_MS } from "../../../lib/idle.ts";
 import { clearSessionCache } from "../../../lib/workspace-context.ts";
 import {
   drawShell,
@@ -120,6 +121,35 @@ describe("PEOPLE-008 duplicate review island", () => {
     // A page without the region mounts nothing, and unmounts nothing.
     const unmount = await mountPeopleDuplicates();
     expect(unmount()).toBeUndefined();
+  });
+
+  it("FEQ-11 reads no duplicates until the browser is idle, waiting at most its timeout", async () => {
+    const idle: IdleRequestCallback[] = [];
+    const options: (IdleRequestOptions | undefined)[] = [];
+    onTestFinished(() => void vi.unstubAllGlobals());
+    vi.stubGlobal(
+      "requestIdleCallback",
+      (callback: IdleRequestCallback, option?: IdleRequestOptions) => {
+        idle.push(callback);
+        options.push(option);
+        return idle.length;
+      },
+    );
+    drawShell(`<div data-people-duplicates></div>`);
+    const api = stubApi({ ...base, [DUPLICATES]: review([pair]) });
+    const mounted = mountPeopleDuplicates();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.fetch).not.toHaveBeenCalled();
+    expect(element("[data-people-duplicates]").dataset.island).toBeUndefined();
+    expect(options).toEqual([{ timeout: IDLE_TIMEOUT_MS }]);
+    await mountSettled(() => {
+      idle[0]!({ didTimeout: true, timeRemaining: () => 0 });
+      return mounted;
+    });
+    expect(api.calls()).toEqual([SESSION, DUPLICATES]);
+    expect(element("#people-duplicates").hidden).toBe(false);
   });
 
   it("reads names in the default order when the session carries no preferences", async () => {

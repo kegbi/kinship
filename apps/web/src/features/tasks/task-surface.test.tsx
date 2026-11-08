@@ -201,6 +201,60 @@ describe("PLANNING-001 task surface island", () => {
     expect(add().disabled).toBe(false);
   });
 
+  it("FEQ-06 reads only the session and the tasks, and the filter's people when it gets focus", async () => {
+    pageShell();
+    const api = stubApi({
+      ...pageRoutes(directory([{
+        givenName: "Grace",
+        id: "00000000-0000-4000-8000-000000000031",
+        isPartial: false,
+        isStarred: false,
+        lifecycle: "active",
+      }])),
+      [TASKS]: listed([task]),
+    });
+    await mountPage();
+    expect(api.calls()).toEqual([SESSION, `${TASKS}?limit=50`]);
+    const filter = element<HTMLSelectElement>("[data-task-person-filter]");
+    expect(filter.textContent).not.toContain("Grace");
+    fireEvent.focus(filter);
+    await waitFor(() => expect(filter.textContent).toContain("Grace"));
+    fireEvent.focus(filter);
+    fireEvent.pointerDown(filter);
+    expect(api.calls().filter((call) => call.startsWith(PEOPLE)))
+      .toEqual([`${PEOPLE}?limit=50`]);
+  });
+
+  it("FEQ-06 offers the directory's people when the editor opens, and retries a failed read", async () => {
+    pageShell();
+    const grace = {
+      givenName: "Grace",
+      id: "00000000-0000-4000-8000-000000000031",
+      isPartial: false,
+      isStarred: false,
+      lifecycle: "active",
+    };
+    const api = stubApi({
+      ...pageRoutes(),
+      [PEOPLE]: [problemResponse(503), directory([grace])],
+      [TASKS]: listed([]),
+    });
+    await mountPage();
+    expect(api.calls()).toEqual([SESSION, `${TASKS}?limit=50`]);
+    fireEvent.pointerDown(element("[data-task-person-filter]"));
+    await waitFor(() =>
+      expect(api.calls().filter((call) => call.startsWith(PEOPLE)))
+        .toHaveLength(1)
+    );
+    fireEvent.click(add());
+    const writable = within(form()).getByLabelText<HTMLSelectElement>(
+      "Person (optional)",
+    );
+    await waitFor(() => expect(writable.textContent).toContain("Grace"));
+    expect(api.calls().filter((call) => call.startsWith(PEOPLE)))
+      .toHaveLength(2);
+  });
+
   it("keeps Add task unavailable until its action is wired", async () => {
     expect(readFileSync("apps/web/src/pages/app/tasks/index.astro", "utf8"))
       .toMatch(/<button data-task-add[^>]*\sdisabled>/);
@@ -827,6 +881,9 @@ describe("PLANNING-001 task surface island", () => {
     expect(writable.querySelector(`[value='${unavailableId}']`)).toBeNull();
     expect(historicalFilter.querySelector(`[value='${unavailableId}']`)).not
       .toBeNull();
+    await waitFor(() =>
+      expect(element("[data-task-people-more]").hidden).toBe(false)
+    );
     fireEvent.click(
       within(element("main")).getByRole("button", {
         name: "Load more people",

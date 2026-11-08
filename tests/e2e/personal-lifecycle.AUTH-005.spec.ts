@@ -58,6 +58,8 @@ test("[AUTH-005] leaves a workspace or deletes personal identity safely", {
     "data-page-id",
     "settings.profile",
   );
+  // FEQ-11: the panel reads the current impact once the reader reaches it.
+  await page.locator("#lifecycle-impact").scrollIntoViewIfNeeded();
   await expect(page.locator("#lifecycle-blockers")).toContainText(
     "final active owner",
   );
@@ -94,6 +96,7 @@ test("[AUTH-005] leaves a workspace or deletes personal identity safely", {
   );
   addBackupOwner(deletingWorkspace);
   await page.goto("/app/settings/profile");
+  await page.locator("#lifecycle-impact").scrollIntoViewIfNeeded();
   const deleteForm = page.locator("#delete-identity-form");
   await expect(deleteForm.locator("#delete-confirmation-value")).toHaveText(
     `DELETE ${deletingEmail}`,

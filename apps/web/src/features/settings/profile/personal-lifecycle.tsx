@@ -3,9 +3,11 @@
  * deleting the member's identity, each behind the current impact, a typed
  * confirmation, and the current password.
  *
- * One read loads the impact. Until it is shown both actions are disabled,
- * and a submission made meanwhile is dropped rather than replayed (REL-041):
- * the impact must be reviewed first. Each action revalidates on the server;
+ * One read loads the impact, once the panel comes into view, at idle
+ * (FEQ-11): the profile beside it is what the page opens for. Until the
+ * impact is shown both actions are disabled, and a submission made meanwhile
+ * is dropped rather than replayed (REL-041): the impact must be reviewed
+ * first. Each action revalidates on the server;
  * a refusal keeps the page and says why, and a success follows the
  * destination the server names.
  */
@@ -24,6 +26,7 @@ import {
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { buttonVariants } from "@/components/ui/variants.ts";
 import { settle, useLatestRequest } from "../../../islands/core/index.ts";
+import { whenInView } from "../../../lib/idle.ts";
 import {
   clearActiveWorkspace,
   setActiveWorkspace,
@@ -62,6 +65,7 @@ export function PersonalLifecycle(
   const [state, dispatch] = useReducer(lifecycleReducer, initialLifecycle);
   const request = useLatestRequest();
   const settled = useRef(props.onSettled);
+  const impact = useRef<HTMLDivElement>(null);
   const { navigate } = props;
 
   const first = useEffectEvent(async () => {
@@ -85,12 +89,13 @@ export function PersonalLifecycle(
       dispatch({ message: SESSION_UNCONFIRMED, type: "unavailable" });
     } else dispatch({ ...answer.data, type: "loaded" });
   });
-  useEffect(() => {
-    void first().finally(() => {
-      settled.current?.();
-      settled.current = undefined;
-    });
-  }, []);
+  useEffect(() =>
+    whenInView(impact.current!, () => {
+      void first().finally(() => {
+        settled.current?.();
+        settled.current = undefined;
+      });
+    }), []);
 
   const { preview, workspaceId } = state;
   const ready = state.phase === "ready" && preview !== undefined &&
@@ -162,7 +167,7 @@ export function PersonalLifecycle(
           your identity.
         </p>
       </header>
-      <div aria-live="polite" id="lifecycle-impact">
+      <div aria-live="polite" id="lifecycle-impact" ref={impact}>
         <p hidden={state.phase === "ready"} id="lifecycle-loading">
           Loading current memberships and sessions…
         </p>

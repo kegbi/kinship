@@ -1223,7 +1223,7 @@ these:
     eslint, architecture, and lint (only REL-096). E2E: TODAY-001, PEOPLE-002,
     PEOPLE-003, AUTH-004, and IMPORT-001 11 passed on Chromium.
 
-- [ ] **AUD-F4 — Secondary reads wait until they are needed.** S–M. Normal.
+- [x] **AUD-F4 — Secondary reads wait until they are needed.** S–M. Normal.
       Depends: AUD-F3. Closes: FEQ-06, FEQ-11, FEQ-09 (the page part).
   - Scope:
     - Tasks starts `listTasks` as soon as the session is known, and loads the
@@ -1239,6 +1239,21 @@ these:
     view.
   - Verify: `test:unit --module=web`; E2E `tasks.PLANNING-001`,
     `people-directory.PEOPLE-002`, and `settings.AUTH-004`.
+  - Delivered 2026-11-08: tasks reads only the session and the tasks, and loads
+    the filter's people on focus or pointerdown of the filter or when the editor
+    opens; the directory builds its tag select from the facet and reads tag
+    options on intent (at start only for a chosen tag, typed search, or focus),
+    keeping the reader's current choice by its real name when the options answer
+    for an earlier one, and reads duplicates at idle (2 s timeout); the profile
+    page has no deletion dialog, so the lifecycle impact loads when its inline
+    panel comes into view, through a new `whenInView`. The two member-list reads
+    stay separate because they return different data (active and pending
+    invitations versus active and suspended), and idle or intent stands in for
+    `priority: "low"`, which the contracts client lacks. Web unit 1795 (only
+    REL-107); the changed production files 99.7% lines, 96.6% branches, 100%
+    functions, and `directory.ts` 100%; fmt, eslint, astro check, architecture,
+    and lint (only REL-096). E2E PLANNING-001, PEOPLE-002, AUTH-004, AUTH-003,
+    and AUTH-005 13 passed on Chromium.
 
 - [ ] **AUD-F5 — The person page reads only what it shows, and refreshes only
       what changed.** M. Normal. Depends: AUD-F3. Closes: FEQ-04 (steps 1–3),

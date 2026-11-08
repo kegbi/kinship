@@ -16,6 +16,7 @@ import {
   personDetails,
   personName,
   starredCriteria,
+  tagChoices,
 } from "./directory.ts";
 
 const person = (overrides: Partial<PeopleDirectoryPerson> = {}) =>
@@ -680,6 +681,110 @@ describe("PEOPLE-010 directory stars, orders, and tag facet", () => {
       type: "tag",
     });
     expect(again.tag.options, "a loaded tag is not repeated").toHaveLength(1);
+  });
+
+  it("FEQ-11 offers the facet's tags until a page of options is read", () => {
+    const facet = directoryReducer(initialDirectory(""), {
+      facet: {
+        lifecycle: "active",
+        status: "ready",
+        tags: [
+          { count: 2, id: "f", name: "Friends" },
+          { count: 1, id: "w", name: "Work" },
+        ],
+        truncated: true,
+      },
+      type: "facet-loaded",
+    });
+    expect(facet.tag.loaded).toBe(false);
+    expect(tagChoices(facet)).toEqual([
+      { id: "f", name: "Friends" },
+      { id: "w", name: "Work" },
+    ]);
+    const chosen = directoryReducer(facet, {
+      name: "Beyond the facet",
+      selected: "b",
+      type: "tag",
+    });
+    expect(tagChoices(chosen).map((choice) => choice.id)).toEqual([
+      "f",
+      "w",
+      "b",
+    ]);
+    const failed = directoryReducer(
+      directoryReducer(chosen, { append: false, type: "tags-loading" }),
+      { type: "tags-failed" },
+    );
+    expect(failed.tag.loaded, "a failed first read is read again").toBe(false);
+    const loaded = directoryReducer(chosen, {
+      append: false,
+      page: { options: [{ id: "x", name: "Other" }], status: "ready" },
+      type: "tags-loaded",
+    });
+    expect(loaded.tag.loaded).toBe(true);
+    expect(tagChoices(loaded)).toEqual(loaded.tag.options);
+    expect(tagChoices(loaded).map((choice) => choice.id)).toEqual(["b", "x"]);
+  });
+
+  it("FEQ-11 names a chosen tag the options page does not mark from what is known", () => {
+    const facet = directoryReducer(initialDirectory(""), {
+      facet: {
+        lifecycle: "active",
+        status: "ready",
+        tags: [{ count: 2, id: "f", name: "Friends" }],
+        truncated: false,
+      },
+      type: "facet-loaded",
+    });
+    const chosen = directoryReducer(facet, { selected: "f", type: "tag" });
+    const answered = (options: readonly { id: string; name: string }[]) =>
+      directoryReducer(chosen, {
+        append: false,
+        page: { options, status: "ready" },
+        type: "tags-loaded",
+      }).tag.options;
+    expect(answered([{ id: "w", name: "Work" }])).toEqual([
+      { id: "f", name: "Friends" },
+      { id: "w", name: "Work" },
+    ]);
+    expect(answered([{ id: "w", name: "Work" }, { id: "f", name: "Pals" }]))
+      .toEqual([{ id: "f", name: "Pals" }, { id: "w", name: "Work" }]);
+  });
+
+  it("FEQ-11 trusts a page's chosen tag only while it is still the choice", () => {
+    const facet = directoryReducer(initialDirectory("a"), {
+      facet: {
+        lifecycle: "active",
+        status: "ready",
+        tags: [
+          { count: 2, id: "a", name: "Alpha" },
+          { count: 1, id: "b", name: "Beta" },
+        ],
+        truncated: false,
+      },
+      type: "facet-loaded",
+    });
+    const page = {
+      options: [{ id: "w", name: "Work" }],
+      selected: { id: "a", name: "Alpha" },
+      status: "ready" as const,
+    };
+    const answer = (selected: string) =>
+      directoryReducer(
+        directoryReducer(facet, { selected, type: "tag" }),
+        { append: false, page, type: "tags-loaded" },
+      );
+    const still = answer("a");
+    expect(tagChoices(still)).toEqual([
+      { id: "a", name: "Alpha" },
+      { id: "w", name: "Work" },
+    ]);
+    const moved = answer("b");
+    expect(moved.tag.selected).toBe("b");
+    expect(tagChoices(moved)).toEqual([
+      { id: "b", name: "Beta" },
+      { id: "w", name: "Work" },
+    ]);
   });
 
   it("words a facet chip and the star on a row", () => {

@@ -2,13 +2,14 @@
  * The duplicate review on `/app/people` (GAP-049, PEOPLE-008), as one island
  * in its own region beside the directory.
  *
- * It reads the workspace's possible duplicates once, says how many pairs
- * there are, and folds the list away until the member asks for it. Each pair
- * offers "Merge…", which opens the merge confirmation for that pair; a merge
- * lands on the person who was kept. It also offers "Not duplicates"
- * (REL-064), which records for the whole workspace that the two are different
- * people: the button is busy while it saves, the pair leaves the list once it
- * is saved, and the review's status line says what happened either way. With
+ * Once the browser is idle (FEQ-11), it reads the workspace's possible
+ * duplicates once, says how many pairs there are, and folds the list away
+ * until the member asks for it. Each pair offers "Merge…", which opens the
+ * merge confirmation for that pair; a merge lands on the person who was
+ * kept. It also offers "Not duplicates" (REL-064), which records for the
+ * whole workspace that the two are different people: the button is busy
+ * while it saves, the pair leaves the list once it is saved, and the
+ * review's status line says what happened either way. With
  * nothing to review, or when the review could not be read, the region stays
  * empty: the directory beside it keeps its own loading and error states, and
  * this never adds a second set.
@@ -42,6 +43,7 @@ import {
   settle,
   useLatestRequest,
 } from "../../../islands/core/index.ts";
+import { whenIdle } from "../../../lib/idle.ts";
 import { displayPersonName } from "../../../lib/person-name.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { MergeDialog } from "../merge/merge-dialog.tsx";
@@ -278,6 +280,10 @@ export function PeopleDuplicates(props: PeopleDuplicatesProps) {
 /**
  * Mounts the review over the region the page drew (`[data-people-duplicates]`)
  * and resolves, once its read has settled, with the function that unmounts it.
+ *
+ * The review is secondary to the directory beside it and draws nothing until
+ * it has read something, so it mounts, and reads, only once the browser is
+ * idle, or after `whenIdle`'s timeout on a page that never is (FEQ-11).
  */
 export function mountPeopleDuplicates(
   root: ParentNode = document,
@@ -285,10 +291,12 @@ export function mountPeopleDuplicates(
   const region = root.querySelector<HTMLElement>("[data-people-duplicates]");
   if (!region) return Promise.resolve(() => undefined);
   return new Promise((resolve) => {
-    const unmount = mountIsland(
-      region,
-      PEOPLE_DUPLICATES_ISLAND,
-      <PeopleDuplicates onSettled={() => resolve(unmount)} />,
-    );
+    whenIdle(() => {
+      const unmount = mountIsland(
+        region,
+        PEOPLE_DUPLICATES_ISLAND,
+        <PeopleDuplicates onSettled={() => resolve(unmount)} />,
+      );
+    });
   });
 }

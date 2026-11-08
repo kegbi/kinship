@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
   deferred,
@@ -100,7 +100,14 @@ function submit(form: HTMLFormElement): void {
   });
 }
 
-afterEach(() => sessionStorage.clear());
+// The panel reads its impact once it is in view (FEQ-11); happy-dom's
+// observer never reports, so these tests take the browser-without-one path
+// unless they observe it themselves.
+beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
+afterEach(() => {
+  vi.unstubAllGlobals();
+  sessionStorage.clear();
+});
 
 describe("AUTH-005 personal lifecycle", () => {
   it("does nothing when the panel is absent", async () => {
@@ -109,6 +116,44 @@ describe("AUTH-005 personal lifecycle", () => {
     await mount();
     expect(api.calls()).toEqual([]);
     expect(PERSONAL_LIFECYCLE_ISLAND).toBe("settings-personal-lifecycle");
+  });
+
+  it("FEQ-11 reads the current impact only once the panel comes into view", async () => {
+    let report: IntersectionObserverCallback | undefined;
+    const observed: Element[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          report = callback;
+        }
+        observe(target: Element) {
+          observed.push(target);
+        }
+        disconnect() {}
+      },
+    );
+    shell();
+    const api = stubApi({
+      [PREVIEW]: jsonResponse(preview()),
+      [SESSION]: jsonResponse(workspaceSession()),
+    });
+    const settled = mountPending(() => mountPersonalLifecycle(document));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(api.calls()).toEqual([]);
+    expect(observed).toEqual([element("#lifecycle-impact")]);
+    expect([leave().disabled, remove().disabled]).toEqual([true, true]);
+    await act(async () => {
+      report!(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      await settled;
+    });
+    expect(api.calls()).toEqual([SESSION, PREVIEW]);
+    expect([leave().disabled, remove().disabled]).toEqual([false, false]);
   });
 
   it("labels mixed active and suspended membership impact truthfully", async () => {

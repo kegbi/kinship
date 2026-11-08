@@ -212,6 +212,11 @@ test(
     await expect(
       page.getByRole("button", { name: "Load more people" }),
     ).toBeVisible();
+    // FEQ-11: the tag filter reads its options once the reader reaches it.
+    await page.getByRole("combobox", { name: "Tag", exact: true }).focus();
+    await expect(page.locator("#people-tag-options-status")).toHaveText(
+      "20 tag options shown.",
+    );
     await expect(page.locator("#people-directory-tag option")).toHaveCount(21);
     await expect(page.getByRole("option", { name: "Friends" })).toHaveCount(0);
     await expect(page.getByRole("option", { name: "Private" })).toHaveCount(0);

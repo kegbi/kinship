@@ -6,13 +6,15 @@
  * directory.
  *
  * Its state moves through one pure reducer (`tasks.ts`). It has two read
- * slots, never more: one for the context it needs before anything else —
- * the workspace, when the page must resolve it from the session, the time
- * preferences, and the directory's pages of people — and one for every read
- * of the task list, so only the latest list answer lands. Saves are never
- * optimistic: a save refreshes the list and only then shows it. Completing
- * or reopening a task moves its row at once, busy, and puts it back exactly
- * where it was if the server refuses.
+ * slots, never more: one for its context — the workspace, when the page must
+ * resolve it from the session, the time preferences, and the directory's
+ * pages of people — and one for every read of the task list, so only the
+ * latest list answer lands. The list is read as soon as the workspace is
+ * known; the directory's people are read only once the reader reaches for a
+ * person choice, by focusing or opening the filter or opening the editor
+ * (FEQ-06). Saves are never optimistic: a save refreshes the list and only
+ * then shows it. Completing or reopening a task moves its row at once, busy,
+ * and puts it back exactly where it was if the server refuses.
  *
  * Every write tells other surfaces through `TASK_CHANGED_EVENT`. Every
  * control renders with its handler attached; Add task stays disabled until
@@ -34,6 +36,7 @@ import {
   createTask,
   listPeople,
   listTasks,
+  type PeopleDirectoryPage,
   setTaskCompletion,
   type Task,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
@@ -109,12 +112,26 @@ const FAILED = "Tasks could not be loaded. Saved tasks are unchanged.";
 const LOADING = "Loading tasks…";
 const PEOPLE_PAGE = 50;
 
-/** The workspace, preferences, and first people the surface needs first. */
+/** The workspace and preferences the surface needs first. */
 interface Context {
   readonly workspaceId: string;
   readonly preferences?: TimePreferences | undefined;
-  readonly people?: readonly PersonChoice[];
-  readonly peopleCursor?: string | undefined;
+}
+
+/** A page of the directory as the person choices read it. */
+function choicesOf(
+  page: PeopleDirectoryPage,
+): {
+  readonly people: readonly PersonChoice[];
+  readonly peopleCursor?: string;
+} {
+  return {
+    people: page.people.map((person) => ({
+      id: person.id,
+      name: directoryName(person),
+    })),
+    ...(page.nextCursor ? { peopleCursor: page.nextCursor } : {}),
+  };
 }
 
 function announceTaskChange(): void {
@@ -185,25 +202,7 @@ export function TaskSurface(props: TaskSurfaceProps) {
       } else {
         preferences ??= await loadTimePreferences(workspaceId);
       }
-      const directory = page
-        ? await settle(() => listPeople({ limit: PEOPLE_PAGE }, workspaceId))
-        : undefined;
-      return {
-        ok: true,
-        value: {
-          preferences,
-          workspaceId,
-          ...(directory?.data
-            ? {
-              people: directory.data.people.map((person) => ({
-                id: person.id,
-                name: directoryName(person),
-              })),
-              peopleCursor: directory.data.nextCursor,
-            }
-            : {}),
-        },
-      };
+      return { ok: true, value: { preferences, workspaceId } };
     });
     if (!answer) return;
     if (!answer.data) {
@@ -251,6 +250,30 @@ export function TaskSurface(props: TaskSurfaceProps) {
     void load(true);
   });
 
+  // The directory's first people are read once a person choice is wanted and
+  // the workspace is known; a failed read is read again on the next reach.
+  const wantPeople = () => {
+    if (page) dispatch({ type: "people-wanted" });
+  };
+  const readPeople = useEffectEvent(async (workspaceId: string) => {
+    dispatch({ type: "people-loading" });
+    const answer = await contextRequest(() =>
+      listPeople({ limit: PEOPLE_PAGE }, workspaceId)
+    );
+    if (!answer) return;
+    dispatch(
+      answer.data
+        ? { ...choicesOf(answer.data), type: "people" }
+        : { type: "people-failed" },
+    );
+  });
+  const { peopleRead, workspaceId: knownWorkspace } = state;
+  useEffect(() => {
+    if (peopleRead === "wanted" && knownWorkspace) {
+      void readPeople(knownWorkspace);
+    }
+  }, [peopleRead, knownWorkspace]);
+
   const retry = () => {
     if (state.status === "unavailable") void start();
     else void load(true);
@@ -263,14 +286,7 @@ export function TaskSurface(props: TaskSurfaceProps) {
       listPeople({ cursor, limit: PEOPLE_PAGE }, reading.current.workspaceId)
     );
     if (!answer?.data) return;
-    dispatch({
-      people: answer.data.people.map((person) => ({
-        id: person.id,
-        name: directoryName(person),
-      })),
-      peopleCursor: answer.data.nextCursor,
-      type: "people",
-    });
+    dispatch({ ...choicesOf(answer.data), type: "people" });
   };
 
   const filter = (filters: TaskFilters) => {
@@ -281,10 +297,14 @@ export function TaskSurface(props: TaskSurfaceProps) {
 
   const add = () => {
     form.current?.reset();
+    wantPeople();
     dispatch({ requestId: crypto.randomUUID(), type: "open" });
   };
 
-  const edit = (task: Task) => dispatch({ task, type: "open" });
+  const edit = (task: Task) => {
+    wantPeople();
+    dispatch({ task, type: "open" });
+  };
 
   const cancel = () => {
     form.current?.reset();
@@ -574,6 +594,8 @@ export function TaskSurface(props: TaskSurfaceProps) {
                   data-task-person-filter=""
                   onChange={(event) =>
                     filter({ ...state.filters, personId: event.target.value })}
+                  onFocus={wantPeople}
+                  onPointerDown={wantPeople}
                   value={state.filters.personId}
                 >
                   <option value="">All people and workspace tasks</option>

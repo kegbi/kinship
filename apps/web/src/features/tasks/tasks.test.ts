@@ -195,15 +195,36 @@ describe("PLANNING-001 task requests", () => {
 describe("GAP-031 task reducer", () => {
   const ready = (state: TaskState = initialTaskState(false)) =>
     taskReducer(
-      taskReducer(state, {
-        people: [{ id: "p1", name: "Person 1" }],
-        peopleCursor: "people",
-        preferences: utc,
-        type: "context",
-        workspaceId: "workspace",
-      }),
+      taskReducer(
+        taskReducer(state, {
+          preferences: utc,
+          type: "context",
+          workspaceId: "workspace",
+        }),
+        {
+          people: [{ id: "p1", name: "Person 1" }],
+          peopleCursor: "people",
+          type: "people",
+        },
+      ),
       { nextCursor: "next", reset: true, tasks: [task()], type: "loaded" },
     );
+
+  it("FEQ-06 reads the directory's people once they are wanted, and again after a failure", () => {
+    const start = initialTaskState(false);
+    expect(start.peopleRead).toBe("idle");
+    const wanted = taskReducer(start, { type: "people-wanted" });
+    expect(wanted.peopleRead).toBe("wanted");
+    expect(taskReducer(wanted, { type: "people-wanted" })).toBe(wanted);
+    const loading = taskReducer(wanted, { type: "people-loading" });
+    expect(loading.peopleRead).toBe("loading");
+    expect(taskReducer(loading, { type: "people-wanted" })).toBe(loading);
+    expect(taskReducer(loading, { type: "people-failed" }).peopleRead)
+      .toBe("idle");
+    const done = taskReducer(loading, { people: [], type: "people" });
+    expect(done.peopleRead).toBe("done");
+    expect(taskReducer(done, { type: "people-wanted" })).toBe(done);
+  });
 
   it("resolves its context, then lists a page and its people", () => {
     const state = ready();

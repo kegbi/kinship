@@ -25,9 +25,14 @@
  *
  * GAP-053 (PEOPLE-010) adds the starred filter, starred-first, two more
  * orders, a star on starred rows, and the tag facet. The facet is not a
- * third slot either: it is read with the tag options' first page, through
- * the tag slot, when the directory starts and after a bulk run changed the
- * counts. A facet chip applies the existing tag filter and reads the list.
+ * third slot either: it is read through the tag slot when the directory
+ * starts and after a bulk run changed the counts. A facet chip applies the
+ * existing tag filter and reads the list.
+ *
+ * FEQ-11: the tag filter offers the facet's tags until the reader reaches
+ * for it. Its options are read, through the same slot, when its select or
+ * its search gets focus or is pressed, and at the start only when a tag is
+ * already chosen, a tag search was typed, or the reader is already there.
  *
  * REL-066 gives the bar's tag choice its own picker, `BulkTagPicker`: a
  * surface of its own, drawn only while the choice is open, with its own pure
@@ -110,6 +115,7 @@ import {
   personDetails,
   personName,
   starredCriteria,
+  tagChoices,
 } from "./directory.ts";
 
 export const PEOPLE_DIRECTORY_ISLAND = "people-directory";
@@ -182,6 +188,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   const search = useRef<HTMLInputElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const tagSearch = useRef<HTMLInputElement>(null);
+  const tagSelect = useRef<HTMLSelectElement>(null);
   const error = useRef<HTMLElement>(null);
   const bulkTagSearch = useRef<HTMLInputElement>(null);
   // The bar control a choice was opened from, which takes focus back. The
@@ -268,10 +275,15 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
   };
 
   /**
-   * A page of tag options and, when `facet` asks, the tag facet with it:
-   * both through the tag slot, so only the latest answer of either lands.
+   * A page of tag options, unless `withOptions` says the reader has not
+   * reached for them yet, and, when `asked`, the tag facet with it: both
+   * through the tag slot, so only the latest answer of either lands.
    */
-  const loadTags = async (append: boolean, asked = false): Promise<void> => {
+  const loadTags = async (
+    append: boolean,
+    asked = false,
+    withOptions = true,
+  ): Promise<void> => {
     const known = context.current;
     if (!known) return;
     if (asked) facetOwed.current = true;
@@ -279,7 +291,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     const cursor = append ? state.tag.cursor : undefined;
     const text = tagSearch.current?.value.trim() ?? "";
     const selectedTagId = reading.current.tagId;
-    dispatch({ append, type: "tags-loading" });
+    if (withOptions) dispatch({ append, type: "tags-loading" });
     // The options land as soon as they answer, so a slow facet never holds
     // the tag picker; the facet lands after them unless a newer tag read
     // replaced this one, which then carries the owed facet itself.
@@ -289,22 +301,22 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       const counts = facet
         ? settle(() => listPeopleTagFacet(lifecycle, known.workspaceId))
         : undefined;
-      const options = await settle(() =>
-        listPeopleTagOptions({
-          ...(cursor ? { cursor } : {}),
-          ...(text ? { search: text } : {}),
-          ...(selectedTagId ? { selectedTagId } : {}),
-        }, known.workspaceId)
-      );
+      const options = withOptions
+        ? await settle(() =>
+          listPeopleTagOptions({
+            ...(cursor ? { cursor } : {}),
+            ...(text ? { search: text } : {}),
+            ...(selectedTagId ? { selectedTagId } : {}),
+          }, known.workspaceId)
+        )
+        : undefined;
       return { ok: true as const, value: { counts, options } };
     });
     if (!answer) return;
     const { counts, options } = answer.data!;
-    if (options.status !== "ready") {
-      dispatch({ type: "tags-failed" });
-    } else {
+    if (options?.status === "ready") {
       dispatch({ append, page: options.data!, type: "tags-loaded" });
-    }
+    } else if (options) dispatch({ type: "tags-failed" });
     if (!counts) return;
     const counted = await counts;
     if (retired?.aborted) return;
@@ -340,7 +352,17 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       sort,
       type: "context",
     });
-    await Promise.all([load(false), loadTags(false, true)]);
+    const active = document.activeElement;
+    const reached = Boolean(
+      reading.current.tagId || tagSearch.current?.value.trim(),
+    ) || (active !== null &&
+      (active === tagSearch.current || active === tagSelect.current));
+    await Promise.all([load(false), loadTags(false, true, reached)]);
+  };
+
+  /** The tag options' first page, once, when the reader reaches for them. */
+  const reachTags = () => {
+    if (!state.tag.loaded && !state.tag.loading) void loadTags(false);
   };
 
   // A search typed while the page loaded is kept over the address's.
@@ -375,6 +397,12 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       ]),
     );
 
+  // A bulk run changed the facet's counts; the options are read with it only
+  // once the reader has reached for them. The tag controls wait while a run
+  // is in flight, so whether they have is still what this render saw.
+  const refreshTags = () =>
+    loadTags(false, true, state.tag.loaded || state.tag.loading);
+
   const runBulk = async (
     kind: Exclude<BulkKind, "export" | "delete">,
     tag?: { readonly id: string; readonly name: string },
@@ -408,7 +436,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
     });
     // The run changed who carries which tag in this view, so the facet's
     // counts are read again with the list.
-    await Promise.all([load(false), loadTags(false, true)]);
+    await Promise.all([load(false), refreshTags()]);
   };
 
   const runDelete = async (
@@ -426,7 +454,7 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
       report: bulkReport("delete", answer, names),
       type: "bulk-finished",
     });
-    await Promise.all([load(false), loadTags(false, true)]);
+    await Promise.all([load(false), refreshTags()]);
   };
 
   const exportSelection = async (): Promise<void> => {
@@ -582,6 +610,8 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
               disabled={busy}
               id="people-tag-options-search"
               name="tagSearch"
+              onFocus={reachTags}
+              onPointerDown={reachTags}
               maxLength={200}
               placeholder="Tag name"
               type="search"
@@ -601,10 +631,13 @@ export function PeopleDirectory(props: PeopleDirectoryProps) {
             id="people-directory-tag"
             name="tag"
             onChange={(event) => chooseTag(event.target.value)}
+            onFocus={reachTags}
+            onPointerDown={reachTags}
+            ref={tagSelect}
             value={state.tag.selected}
           >
             <option value="">All tags</option>
-            {state.tag.options.map((option) => (
+            {tagChoices(state).map((option) => (
               <option key={option.id} value={option.id}>{option.name}</option>
             ))}
           </select>

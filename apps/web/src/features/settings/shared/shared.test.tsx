@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deferred,
   jsonResponse,
@@ -145,6 +145,11 @@ const islands: readonly {
 ];
 
 describe("GAP-033 settings islands", () => {
+  // The personal lifecycle reads once it is in view (FEQ-11); happy-dom's
+  // observer never reports, so it takes the browser-without-one path.
+  beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
+  afterEach(() => vi.unstubAllGlobals());
+
   it.each(islands)(
     "drops the $name read that answers after the island is gone",
     async ({ read, ui }) => {
