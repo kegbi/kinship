@@ -18,7 +18,7 @@ Deno.test("APP-006B keeps interaction-to-planning coordination on public boundar
       "";
   assert(
     manifest.includes(
-      "schemaSource: personal-crm-schema/v12/personal_crm_schema_v12.sql",
+      "schemaSource: personal-crm-schema/v13/personal_crm_schema_v13.sql",
     ) &&
       planningBlock.includes("interactions.interaction-recorded") &&
       planningBlock.includes("stay_in_touch_cadence_requests"),

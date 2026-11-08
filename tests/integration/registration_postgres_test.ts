@@ -708,6 +708,12 @@ Deno.test({
       "personal-crm-schema/v10/migrations/0010_add_recurring_debts.sql",
     );
     const artifacts = {
+      v13Sql: await Deno.readTextFile(
+        "personal-crm-schema/v13/personal_crm_schema_v13.sql",
+      ),
+      migrationV12ToV13: await Deno.readTextFile(
+        "personal-crm-schema/v13/migrations/0013_index_queries_and_seed_catalogs.sql",
+      ),
       v12Sql: await Deno.readTextFile(
         "personal-crm-schema/v12/personal_crm_schema_v12.sql",
       ),
@@ -741,7 +747,7 @@ Deno.test({
       v10Sql,
     };
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v12",
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v13",
       "unmodified canonical catalog verifies",
     );
     await sql`
@@ -910,8 +916,8 @@ Deno.test({
     `;
     assert(
       await applyCanonicalSchema(databaseUrl, artifacts) ===
-        "upgrade-v1-to-v12",
-      "exact repository v1 upgrades transactionally to v12",
+        "upgrade-v1-to-v13",
+      "exact repository v1 upgrades transactionally to v13",
     );
     const [upgraded] = await sql<{
       readonly digest_column: boolean;
@@ -929,8 +935,8 @@ Deno.test({
       "v1 upgrade preserves rows and adds the v2 field",
     );
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v12",
-      "upgraded repository v12 verifies idempotently",
+      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v13",
+      "upgraded repository v13 verifies idempotently",
     );
     await expectStructuralDrift(
       () =>
@@ -940,8 +946,9 @@ Deno.test({
       "same-table-count missing foreign key must be rejected",
     );
     await expectStructuralDrift(
-      () => sql`drop index crm.users_status_idx`,
-      () => sql`create index users_status_idx on crm.users (status)`,
+      () => sql`drop index crm.workspace_members_user_idx`,
+      () =>
+        sql`create index workspace_members_user_idx on crm.workspace_members (user_id)`,
       "same-table-count missing index must be rejected",
     );
   },

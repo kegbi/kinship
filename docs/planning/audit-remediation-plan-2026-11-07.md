@@ -1391,7 +1391,7 @@ these:
 
 ### Lane V — Schema versions (one at a time)
 
-- [ ] **AUD-V1 — Schema v13: indexes that match the queries, and the small
+- [x] **AUD-V1 — Schema v13: indexes that match the queries, and the small
       schema facts other tickets need.** L. Normal. Depends: AUD-Q1, AUD-W1.
       Closes: BEQ-06 (the index), BEQ-07 (the indexes), BEQ-10 (the name sort),
       BEQ-12, BEQ-13 (the duplicate-check index), SECT-10 (the catalog seed),
@@ -1437,6 +1437,33 @@ these:
   - Verify: `deno task test:schema:matrix`; `test:integration` (including
     `migrations_postgres_test.ts`); `test:coverage`; `check:architecture`; image
     builds.
+  - Delivered 2026-11-08: schema v13 adds `notes_workspace_created_idx`,
+    `reminder_occurrences_member_feed_idx` (the feed's exact order) and
+    `_member_open_idx`, `people_active_given_name_idx` with a row-comparison
+    seek, `people_active_duplicate_name_idx`, the three partial `reminders`
+    reference indexes, and `api_request_logs_post_subject_idx` (the AUD-A3 and
+    AUD-M3 counts, 14 ms to 0.2 ms); it drops `people_workspace_idx`,
+    `people_active_name_idx`, `person_dates_person_idx`,
+    `person_contact_methods_normalized_idx`, the users, workspaces,
+    workspace-members, and debts status indexes, and the unused
+    `api_request_logs_auth_subject_idx` (157 explicit indexes, as before). Two
+    deviations, measured on 18.4 and 17.10 and recorded in the changes file:
+    `gifts_status_idx` stays as the only full workspace-leading index on
+    `gifts`, and `reminder_occurrences_member_idx` stays because the `member_id`
+    cascade needs a full index (one workspace delete's member cascade 45–95 ms
+    without, 5–7 ms with), so D5's sent history also costs that index.
+    `calls_workspace_date_idx` and `conversation_threads_workspace_idx` stay for
+    the cascades. `user_sessions.purpose` admits `mfa-challenge`; nullable
+    `users.pending_workspace_name` (trimmed, 1–120 characters, which accepts
+    everything the registration contract's two UTF-16 units accept) holds a
+    registration's workspace name for AUD-A2; `emotion_options` and
+    `pet_categories` are seeded, keeping imported rows. Version-7 ids were
+    measured and not adopted: no consistent win on 17.10, and they would expose
+    creation times (Decided). Checkpoint C3: `test:schema:matrix` on both
+    versions, every unit, integration, and coverage set at its known baseline,
+    `build` only REL-098, the api, web, and gateway images, and the Chromium
+    project 79 passed with only IMPORT-002 (REL-108); it also found AUD-G5's and
+    AUD-K7's regressions (AUD-G5-fix, AUD-K7-fix).
 
 - [ ] **AUD-V2 — Schema v14: the database backstops tenancy.** L. Low. Depends:
       AUD-V1, AUD-G4, AUD-T1, AUD-W3. Closes: SECT-01, SECT-02.

@@ -19,7 +19,7 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v12.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v13.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
@@ -33,8 +33,8 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 876 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 876, got %', actual_count;
+  IF actual_count <> 877 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 877, got %', actual_count;
   END IF;
 
   IF (
@@ -185,12 +185,8 @@ BEGIN
     WHERE connamespace = 'crm'::regnamespace
       AND conname = 'api_request_logs_auth_subject_digest_ck'
       AND convalidated
-  ) OR NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_indexes
-    WHERE schemaname = 'crm'
-      AND indexname = 'api_request_logs_auth_subject_idx'
   ) THEN
-    RAISE EXCEPTION 'schema authentication subject constraint/index missing';
+    RAISE EXCEPTION 'schema authentication subject constraint missing';
   END IF;
 
   IF NOT EXISTS (
@@ -223,6 +219,143 @@ BEGIN
       AND convalidated
   ) THEN
     RAISE EXCEPTION 'schema v5 person-date approximation invariant missing';
+  END IF;
+END
+$$;
+
+-- Schema v13 (AUD-V1): the indexes match the statements that read them.
+DO $$
+DECLARE
+  expected record;
+  actual_definition text;
+  dropped text;
+BEGIN
+  FOR expected IN
+    SELECT * FROM (VALUES
+      ('notes_workspace_created_idx',
+        'CREATE INDEX notes_workspace_created_idx ON crm.notes USING btree (workspace_id, created_at DESC, id DESC)'),
+      ('reminder_occurrences_member_feed_idx',
+        'CREATE INDEX reminder_occurrences_member_feed_idx ON crm.reminder_occurrences USING btree (member_id, date_trunc(''milliseconds''::text, (visible_at AT TIME ZONE ''UTC''::text)) DESC, id DESC) WHERE ((channel = ''in_app''::text) AND (status = ''sent''::text) AND (visible_at IS NOT NULL))'),
+      ('reminder_occurrences_member_open_idx',
+        'CREATE INDEX reminder_occurrences_member_open_idx ON crm.reminder_occurrences USING btree (member_id, ( CASE WHEN (status = ''retry''::text) THEN next_attempt_at ELSE deliver_at END)) WHERE (status = ANY (ARRAY[''pending''::text, ''retry''::text, ''failed''::text, ''manual_attention''::text]))'),
+      ('people_active_given_name_idx',
+        'CREATE INDEX people_active_given_name_idx ON crm.people USING btree (workspace_id, lower(COALESCE(NULLIF(btrim(given_name), ''''::text), NULLIF(btrim(nickname), ''''::text), NULLIF(btrim(family_name), ''''::text), ''''::text)), lower(COALESCE(family_name, ''''::text)), id) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
+      ('people_active_duplicate_name_idx',
+        'CREATE INDEX people_active_duplicate_name_idx ON crm.people USING btree (workspace_id, lower(btrim(given_name)), lower(btrim(COALESCE(family_name, ''''::text))), lower(btrim(COALESCE(nickname, ''''::text)))) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
+      ('reminders_person_date_idx',
+        'CREATE INDEX reminders_person_date_idx ON crm.reminders USING btree (person_date_id) WHERE (person_date_id IS NOT NULL)'),
+      ('reminders_life_event_idx',
+        'CREATE INDEX reminders_life_event_idx ON crm.reminders USING btree (life_event_id) WHERE (life_event_id IS NOT NULL)'),
+      ('reminders_task_idx',
+        'CREATE INDEX reminders_task_idx ON crm.reminders USING btree (task_id) WHERE (task_id IS NOT NULL)'),
+      ('api_request_logs_post_subject_idx',
+        'CREATE INDEX api_request_logs_post_subject_idx ON crm.api_request_logs USING btree (path, authentication_subject_digest, occurred_at DESC) WHERE (method = ''POST''::text)'),
+      -- Kept: the worker's claim and lease scans (AUD-W2), and the only
+      -- workspace-leading indexes the workspace delete and reset cascades,
+      -- lifecycle counts, and last-contact aggregate have on these tables.
+      ('reminder_occurrences_due_idx',
+        'CREATE INDEX reminder_occurrences_due_idx ON crm.reminder_occurrences USING btree (status, COALESCE(next_attempt_at, deliver_at)) WHERE (status = ANY (ARRAY[''pending''::text, ''retry''::text]))'),
+      ('reminder_occurrences_lease_idx',
+        'CREATE INDEX reminder_occurrences_lease_idx ON crm.reminder_occurrences USING btree (lease_expires_at) WHERE (status = ''claimed''::text)'),
+      -- A removed member's delete cascade reads their occurrences, the sent
+      -- history included, through it.
+      ('reminder_occurrences_member_idx',
+        'CREATE INDEX reminder_occurrences_member_idx ON crm.reminder_occurrences USING btree (member_id)'),
+      ('calls_workspace_date_idx',
+        'CREATE INDEX calls_workspace_date_idx ON crm.calls USING btree (workspace_id, called_at DESC)'),
+      ('conversation_threads_workspace_idx',
+        'CREATE INDEX conversation_threads_workspace_idx ON crm.conversation_threads USING btree (workspace_id, happened_at DESC)'),
+      ('gifts_status_idx',
+        'CREATE INDEX gifts_status_idx ON crm.gifts USING btree (workspace_id, status)')
+    ) AS indexes (name, definition)
+  LOOP
+    SELECT regexp_replace(indexdef, '\s+', ' ', 'g') INTO actual_definition
+    FROM pg_catalog.pg_indexes
+    WHERE schemaname = 'crm' AND indexname = expected.name;
+    IF actual_definition IS DISTINCT FROM expected.definition THEN
+      RAISE EXCEPTION 'v13 index % is missing or changed: %',
+        expected.name, coalesce(actual_definition, '<missing>');
+    END IF;
+  END LOOP;
+
+  FOREACH dropped IN ARRAY ARRAY[
+    'people_workspace_idx',
+    'people_active_name_idx',
+    'person_dates_person_idx',
+    'api_request_logs_auth_subject_idx',
+    'person_contact_methods_normalized_idx',
+    'users_status_idx',
+    'workspaces_status_idx',
+    'workspace_members_status_idx',
+    'debts_status_idx'
+  ] LOOP
+    IF to_regclass('crm.' || dropped) IS NOT NULL THEN
+      RAISE EXCEPTION 'v13 drops the unused or redundant index %', dropped;
+    END IF;
+  END LOOP;
+
+  -- Whatever its name, a full index leads with the member foreign key, so the
+  -- member delete cascade never reads every tenant's occurrences.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_index AS indexes
+    JOIN pg_catalog.pg_attribute AS columns
+      ON columns.attrelid = indexes.indrelid
+     AND columns.attnum = indexes.indkey[0]
+    WHERE indexes.indrelid = 'crm.reminder_occurrences'::regclass
+      AND columns.attname = 'member_id'
+      AND indexes.indpred IS NULL
+      AND indexes.indisvalid
+  ) THEN
+    RAISE EXCEPTION 'no full index leads with reminder_occurrences.member_id';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE connamespace = 'crm'::regnamespace
+      AND conname = 'user_sessions_purpose_check'
+      AND pg_get_constraintdef(oid) =
+        'CHECK ((purpose = ANY (ARRAY[''authenticated''::text, ''verified-entry''::text, ''legacy''::text, ''mfa-challenge''::text])))'
+  ) THEN
+    RAISE EXCEPTION 'v13 user-session purposes do not admit mfa-challenge';
+  END IF;
+
+  -- A registration holds the workspace name it asked for until verification
+  -- provisions the workspace (AUD-A2), within the registration contract's
+  -- limits: trimmed and 1 to 120 characters.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'crm' AND table_name = 'users'
+      AND column_name = 'pending_workspace_name' AND data_type = 'text'
+      AND is_nullable = 'YES' AND column_default IS NULL
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conrelid = 'crm.users'::regclass
+      AND conname = 'users_pending_workspace_name_ck'
+      AND convalidated
+      AND pg_get_constraintdef(oid) =
+        'CHECK (((pending_workspace_name IS NULL) OR ((pending_workspace_name = btrim(pending_workspace_name)) AND ((char_length(pending_workspace_name) >= 1) AND (char_length(pending_workspace_name) <= 120)))))'
+  ) THEN
+    RAISE EXCEPTION 'v13 users.pending_workspace_name or its limits are missing';
+  END IF;
+
+  IF (SELECT count(*) FROM crm.emotion_options) <> 132 OR (
+    SELECT count(DISTINCT lower(name)) FROM crm.emotion_options
+  ) <> 132 OR NOT EXISTS (
+    SELECT 1 FROM crm.emotion_options
+    WHERE name = 'adoration' AND sort_order = 1 AND parent_id IS NULL
+      AND is_active
+  ) OR NOT EXISTS (
+    SELECT 1 FROM crm.emotion_options WHERE name = 'dread' AND sort_order = 133
+  ) THEN
+    RAISE EXCEPTION 'v13 global emotion catalog is not seeded';
+  END IF;
+
+  IF (SELECT count(*) FROM crm.pet_categories) <> 11 OR (
+    SELECT string_agg(name || ':' || is_common, ',' ORDER BY sort_order)
+    FROM crm.pet_categories
+  ) <> 'reptile:false,bird:false,cat:true,dog:true,fish:true,hamster:false,horse:false,rabbit:false,rat:false,small_animal:false,other:false' THEN
+    RAISE EXCEPTION 'v13 global pet category catalog is not seeded';
   END IF;
 END
 $$;

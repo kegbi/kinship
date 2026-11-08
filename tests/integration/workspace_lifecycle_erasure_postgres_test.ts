@@ -29,6 +29,12 @@ import {
   type Sql,
 } from "../support/database.ts";
 import { apiSupport, PASSWORD, type SignedInFixture } from "../support/api.ts";
+import {
+  describePlan,
+  type PlanNode,
+  planNodes,
+  withScratchCrm,
+} from "../support/query_plan.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl, { max: 4, prepare: false });
@@ -621,6 +627,112 @@ Deno.test({
       await sessionStatus(owner, owner.workspaceId) === 401,
       "the owner whose only workspace was reset is signed out",
     );
+  },
+});
+
+Deno.test({
+  name:
+    "WORKSPACE-002 AUD-V1 a removed member's reminder occurrences cascade through a member index",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await withScratchCrm(sql, databaseUrl, async ({ sql: scratch }) => {
+      // Forty workspaces of two members, each member with two years of a
+      // monthly reminder for fifty people: D5 keeps the sent history, so
+      // nearly every occurrence is outside both partial member indexes.
+      await scratch`
+        insert into crm.users (id, email)
+        select md5('user' || n)::uuid, 'cascade-' || n || '@example.test'
+        from generate_series(1, 80) n
+      `;
+      await scratch`
+        insert into crm.workspaces (id, name, created_by_user_id)
+        select md5('workspace' || w)::uuid, 'Workspace ' || w,
+          md5('user' || 2 * w - 1)::uuid
+        from generate_series(1, 40) w
+      `;
+      await scratch`
+        insert into crm.workspace_members (id, workspace_id, user_id, role,
+          status, joined_at)
+        select md5('member' || n)::uuid, md5('workspace' || (n + 1) / 2)::uuid,
+          md5('user' || n)::uuid,
+          case when n % 2 = 1 then 'owner' else 'member' end, 'active', now()
+        from generate_series(1, 80) n
+      `;
+      await scratch`
+        insert into crm.people (id, workspace_id, given_name)
+        select md5('person' || p)::uuid,
+          md5('workspace' || (p - 1) / 50 + 1)::uuid, 'Person ' || p
+        from generate_series(1, 2000) p
+      `;
+      await scratch`
+        insert into crm.reminders (id, workspace_id, person_id, target_kind,
+          title, anchor_on, recurrence_unit, created_by_member_id)
+        select md5('reminder' || p)::uuid,
+          md5('workspace' || (p - 1) / 50 + 1)::uuid,
+          md5('person' || p)::uuid, 'person', 'Check in', current_date,
+          'month', md5('member' || 2 * ((p - 1) / 50) + 1)::uuid
+        from generate_series(1, 2000) p
+      `;
+      await scratch`
+        insert into crm.reminder_occurrences (reminder_id, member_id,
+          occurs_on, deliver_at, channel, status, sent_at,
+          provider_result_state, provider_receipt, provider_effect_at,
+          visible_at)
+        select md5('reminder' || p)::uuid,
+          md5('member' || 2 * ((p - 1) / 50) + 1 + k)::uuid,
+          current_date - months.n * 30,
+          now() - months.n * interval '30 days', 'in_app', 'sent',
+          now() - months.n * interval '30 days', 'confirmed', 'in-app',
+          now() - months.n * interval '30 days',
+          now() - months.n * interval '30 days'
+        from generate_series(1, 2000) p
+        cross join (values (0), (1)) member(k)
+        cross join generate_series(1, 24) months(n)
+      `;
+      await scratch`analyze`;
+
+      const memberLeading = new Set(
+        (await scratch<{ readonly name: string }[]>`
+          select index_class.relname as name
+          from pg_catalog.pg_index i
+          join pg_catalog.pg_class index_class on index_class.oid = i.indexrelid
+          join pg_catalog.pg_attribute a
+            on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+          where i.indrelid = 'crm.reminder_occurrences'::regclass
+            and a.attname = 'member_id' and i.indpred is null
+        `).map((row) => row.name),
+      );
+      // The exact statement the member foreign key's cascade runs, planned
+      // both the way a first execution and a cached execution plan it.
+      await scratch.unsafe(
+        `prepare member_cascade(uuid) as
+          delete from only crm.reminder_occurrences
+          where $1 operator(pg_catalog.=) member_id`,
+      );
+      for (const mode of ["force_custom_plan", "force_generic_plan"]) {
+        await scratch.unsafe(`set plan_cache_mode = ${mode}`);
+        const [row] = await scratch.unsafe(
+          `explain (format json) execute member_cascade(md5('member1')::uuid)`,
+        );
+        const plan = (row?.["QUERY PLAN"] as
+          | readonly { readonly Plan: PlanNode }[]
+          | undefined)?.[0]?.Plan;
+        assert(plan !== undefined, "the cascade statement was not explained");
+        const nodes = planNodes(plan);
+        const indexes = nodes.flatMap((node) =>
+          node["Index Name"] ? [node["Index Name"]] : []
+        );
+        assert(
+          nodes.every((node) => node["Node Type"] !== "Seq Scan") &&
+            indexes.length > 0 &&
+            indexes.every((name) => memberLeading.has(name)),
+          `${mode}: deleting one member reads every tenant's occurrences: ${
+            describePlan(plan)
+          }`,
+        );
+      }
+    });
   },
 });
 

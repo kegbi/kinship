@@ -56,6 +56,7 @@ const V8_UPGRADE_DATABASE = "crm_v8_upgrade_test";
 const V9_UPGRADE_DATABASE = "crm_v9_upgrade_test";
 const V10_UPGRADE_DATABASE = "crm_v10_upgrade_test";
 const V11_UPGRADE_DATABASE = "crm_v11_upgrade_test";
+const V12_UPGRADE_DATABASE = "crm_v12_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -63,10 +64,10 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v12");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v13");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v12_validation.json",
+  "personal_crm_schema_v13_validation.json",
 );
 
 /**
@@ -85,6 +86,7 @@ const IMMUTABLE_BASELINES = [
   ["v9", "personal_crm_schema_v9_validation.json"],
   ["v10", "personal_crm_schema_v10_validation.json"],
   ["v11", "personal_crm_schema_v11_validation.json"],
+  ["v12", "personal_crm_schema_v12_validation.json"],
 ] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
@@ -157,20 +159,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v12 validation status is ${validation.status}`);
+    throw new Error(`Schema v13 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v12 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v13 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v12.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v13.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -394,9 +396,94 @@ async function verifyArtifacts(
   ) {
     contractErrors.push("the v12 migration must be comment-only");
   }
+  const indexMigration = await Deno.readTextFile(
+    resolve(
+      schemaDirectory,
+      "migrations/0013_index_queries_and_seed_catalogs.sql",
+    ),
+  );
+  for (
+    const name of [
+      "notes_workspace_created_idx",
+      "reminder_occurrences_member_feed_idx",
+      "reminder_occurrences_member_open_idx",
+      "people_active_given_name_idx",
+      "people_active_duplicate_name_idx",
+      "reminders_person_date_idx",
+      "reminders_life_event_idx",
+      "reminders_task_idx",
+      "api_request_logs_post_subject_idx",
+    ]
+  ) {
+    if (
+      !ddl.includes(`CREATE INDEX ${name} ON `) ||
+      !indexMigration.includes(`CREATE INDEX ${name}\n`)
+    ) {
+      contractErrors.push(`${name} is missing from the DDL or migration`);
+    }
+  }
+  for (
+    const name of [
+      "people_workspace_idx",
+      "people_active_name_idx",
+      "person_dates_person_idx",
+      "api_request_logs_auth_subject_idx",
+      "person_contact_methods_normalized_idx",
+      "users_status_idx",
+      "workspaces_status_idx",
+      "workspace_members_status_idx",
+      "debts_status_idx",
+    ]
+  ) {
+    if (
+      ddl.includes(`CREATE INDEX ${name} `) ||
+      !indexMigration.includes(`DROP INDEX crm.${name};`)
+    ) {
+      contractErrors.push(`${name} is still declared or not dropped`);
+    }
+  }
+  if (
+    !ddl.includes(
+      "CREATE INDEX reminder_occurrences_member_idx ON reminder_occurrences (member_id);",
+    ) || indexMigration.includes("reminder_occurrences_member_idx;")
+  ) {
+    contractErrors.push(
+      "reminder_occurrences_member_idx must stay for the member delete cascade",
+    );
+  }
+  if (
+    !ddl.includes(
+      "CHECK (purpose IN ('authenticated', 'verified-entry', 'legacy', 'mfa-challenge'))",
+    ) ||
+    !indexMigration.includes(
+      "CHECK (purpose IN ('authenticated', 'verified-entry', 'legacy', 'mfa-challenge'))",
+    )
+  ) {
+    contractErrors.push("the mfa-challenge session purpose is missing");
+  }
+  if (
+    !ddl.includes("  pending_workspace_name text,\n") ||
+    !indexMigration.includes(
+      "ALTER TABLE crm.users\n  ADD COLUMN pending_workspace_name text,",
+    ) || indexMigration.includes("UPDATE crm.users")
+  ) {
+    contractErrors.push(
+      "users.pending_workspace_name must be added without a backfill",
+    );
+  }
+  if (
+    !ddl.includes("INSERT INTO emotion_options (name, sort_order) VALUES") ||
+    !ddl.includes(
+      "INSERT INTO pet_categories (name, is_common, sort_order) VALUES",
+    ) ||
+    !indexMigration.includes("INSERT INTO crm.emotion_options") ||
+    !indexMigration.includes("ON CONFLICT ((lower(name))) DO NOTHING")
+  ) {
+    contractErrors.push("the global catalog seeds are missing");
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v12 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v13 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -519,7 +606,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v12 validation JSON");
+    throw new Error("Invalid schema v13 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -569,21 +656,21 @@ async function assertArtifactCounts(
   assertEqual(
     "table mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_table_mapping_v12.csv"),
+      resolve(schemaDirectory, "monica_table_mapping_v13.csv"),
     ),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v12.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v13.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v12.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v13.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -593,7 +680,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v12.sql",
+    "/tmp/personal_crm_schema_v13.sql",
   ], { quiet: true });
 }
 
@@ -608,7 +695,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v12.sql",
+      "/tmp/personal_crm_schema_v13.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -646,6 +733,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V9_UPGRADE_DATABASE,
       V10_UPGRADE_DATABASE,
       V11_UPGRADE_DATABASE,
+      V12_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -685,6 +773,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -742,6 +832,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -780,6 +872,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -814,6 +908,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -869,6 +965,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -924,6 +1022,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -966,6 +1066,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
       "-A",
@@ -1009,6 +1111,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v8Upgraded = await runPsql(V8_UPGRADE_DATABASE, [
       "-A",
@@ -1050,6 +1154,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     ], { quiet: true });
     const v9Upgraded = await runPsql(V9_UPGRADE_DATABASE, [
       "-A",
@@ -1170,6 +1276,72 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       throw new Error("v12 migration did not roll back atomically.");
     }
 
+    // An exact v12 database whose Monica import already named a stock emotion
+    // and pet category keeps those rows, with their ids, and gains the rest.
+    await runPsql(V12_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v12.sql",
+      "-c",
+      `
+      INSERT INTO crm.users (id,email) VALUES ('00000000-0000-4000-8000-000000001201','v13-upgrade@example.test');
+      INSERT INTO crm.workspaces (id,name) VALUES ('00000000-0000-4000-8000-000000001202','V13 upgrade');
+      INSERT INTO crm.emotion_options (id,name) VALUES ('00000000-0000-4000-8000-000000001203','Joy');
+      INSERT INTO crm.pet_categories (id,name,is_common) VALUES ('00000000-0000-4000-8000-000000001204','dog',true);
+      INSERT INTO crm.user_sessions (user_id,session_hash,purpose,expires_at) VALUES ('00000000-0000-4000-8000-000000001201','v13-upgrade-session','authenticated',now() + interval '1 hour');
+    `,
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
+    ], { quiet: true });
+    const v12Upgraded = await runPsql(V12_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT (SELECT count(*) FROM crm.emotion_options) = 132
+        AND (SELECT id FROM crm.emotion_options WHERE lower(name) = 'joy') = '00000000-0000-4000-8000-000000001203'
+        AND (SELECT count(*) FROM crm.pet_categories) = 11
+        AND (SELECT id FROM crm.pet_categories WHERE name = 'dog') = '00000000-0000-4000-8000-000000001204'
+        AND EXISTS (SELECT 1 FROM crm.user_sessions WHERE session_hash = 'v13-upgrade-session' AND purpose = 'authenticated')
+        AND (SELECT pending_workspace_name IS NULL FROM crm.users WHERE email = 'v13-upgrade@example.test')
+        AND to_regclass('crm.reminder_occurrences_member_feed_idx') IS NOT NULL
+        AND to_regclass('crm.reminder_occurrences_member_idx') IS NOT NULL
+        AND to_regclass('crm.api_request_logs_auth_subject_idx') IS NULL;`,
+    ], { quiet: true });
+    if (v12Upgraded !== "t") {
+      throw new Error(
+        "v12-to-v13 did not keep the imported catalog rows and sessions.",
+      );
+    }
+    await runPsql(V12_UPGRADE_DATABASE, [
+      "-c",
+      "DROP SCHEMA crm CASCADE;",
+      "-f",
+      "/tmp/personal_crm_schema_v12.sql",
+    ], { quiet: true });
+    await runPsql(V12_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
+      "-c",
+      "SELECT 1 / 0;",
+    ], { allowFailure: true, quiet: true });
+    const v13RolledBack = await runPsql(V12_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT NOT EXISTS (SELECT 1 FROM crm.emotion_options)
+        AND NOT EXISTS (SELECT 1 FROM crm.pet_categories)
+        AND to_regclass('crm.api_request_logs_auth_subject_idx') IS NOT NULL
+        AND to_regclass('crm.notes_workspace_created_idx') IS NULL
+        AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'crm' AND table_name = 'users'
+            AND column_name = 'pending_workspace_name')
+        AND pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'user_sessions_purpose_check')) NOT LIKE '%mfa-challenge%';`,
+    ], { quiet: true });
+    if (v13RolledBack !== "t") {
+      throw new Error("v13 migration did not roll back atomically.");
+    }
+
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
       "--single-transaction",
       "-f",
@@ -1288,6 +1460,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0011_add_debt_settlements.sql",
       "-f",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+      "-f",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
       "-c",
       "SELECT 1 / 0",
     ], { allowFailure: true, quiet: true });
@@ -1319,6 +1493,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V9_UPGRADE_DATABASE,
         V10_UPGRADE_DATABASE,
         V11_UPGRADE_DATABASE,
+        V12_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -1348,6 +1523,10 @@ async function main(): Promise<void> {
     await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
     started = true;
 
+    await copyFixture(
+      "personal-crm-schema/v13/personal_crm_schema_v13.sql",
+      "/tmp/personal_crm_schema_v13.sql",
+    );
     await copyFixture(
       "personal-crm-schema/v12/personal_crm_schema_v12.sql",
       "/tmp/personal_crm_schema_v12.sql",
@@ -1389,8 +1568,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v12/personal_crm_field_catalog_v12.csv",
-      "/tmp/personal_crm_field_catalog_v12.csv",
+      "personal-crm-schema/v13/personal_crm_field_catalog_v13.csv",
+      "/tmp/personal_crm_field_catalog_v13.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -1429,16 +1608,20 @@ async function main(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v12/migrations/0010_add_recurring_debts.sql",
+      "personal-crm-schema/v13/migrations/0010_add_recurring_debts.sql",
       "/tmp/0010_add_recurring_debts.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v12/migrations/0011_add_debt_settlements.sql",
+      "personal-crm-schema/v13/migrations/0011_add_debt_settlements.sql",
       "/tmp/0011_add_debt_settlements.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v12/migrations/0012_reword_member_reminder_delivery_comment.sql",
+      "personal-crm-schema/v13/migrations/0012_reword_member_reminder_delivery_comment.sql",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v13/migrations/0013_index_queries_and_seed_catalogs.sql",
+      "/tmp/0013_index_queries_and_seed_catalogs.sql",
     );
     await copyFixture(
       "personal-crm-schema/v10/personal_crm_schema_v10.sql",
@@ -1465,7 +1648,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

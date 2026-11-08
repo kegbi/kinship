@@ -17,7 +17,7 @@ import { type Kysely, type KyselyPlugin, RawNode } from "kysely";
 import { openSql, type Sql } from "./database.ts";
 
 /** The canonical DDL the scratch databases are created from. */
-const CANONICAL_SCHEMA = "personal-crm-schema/v12/personal_crm_schema_v12.sql";
+const CANONICAL_SCHEMA = "personal-crm-schema/v13/personal_crm_schema_v13.sql";
 
 /**
  * Runs `work` on a scratch database holding the canonical DDL, created
@@ -68,11 +68,16 @@ export function scansOf(
   return planNodes(plan).filter((node) => node["Relation Name"] === relation);
 }
 
-/** The branches of every `Append` in `plan`: one list per union. */
+/**
+ * The branches of every union in `plan`, one list per union: an `Append`,
+ * or a `Merge Append` when each branch already reads in the union's order.
+ */
 export function unionBranches(
   plan: PlanNode,
 ): readonly (readonly PlanNode[])[] {
-  return planNodes(plan).filter((node) => node["Node Type"] === "Append").map(
+  return planNodes(plan).filter((node) =>
+    node["Node Type"] === "Append" || node["Node Type"] === "Merge Append"
+  ).map(
     (append) =>
       (append.Plans ?? []).filter((child) =>
         child["Parent Relationship"] === "Member"

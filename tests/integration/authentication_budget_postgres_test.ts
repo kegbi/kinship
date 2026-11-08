@@ -47,6 +47,14 @@ import {
 } from "./authentication.test-helper.ts";
 import { closeResources } from "./authentication.test-helper.ts";
 import { resetDatabase } from "../support/database.ts";
+import {
+  describePlan,
+  explainedPlan,
+  planNodes,
+  scansOf,
+  withScratchCrm,
+} from "../support/query_plan.ts";
+import { PostgresOutboundMailBudget } from "../../packages/backend/modules/api-access/adapters/postgres/outbound_mail_budget.ts";
 import type { PasswordHasher } from "../../packages/backend/modules/identity/public.ts";
 
 const CURRENT_ARGON2ID = {
@@ -1552,6 +1560,97 @@ Deno.test({
     } finally {
       await connection.destroy();
     }
+  },
+});
+
+Deno.test({
+  name:
+    "[AUD-V1] the sign-in and registration-mail budgets count one subject through its path and subject index",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await withScratchCrm(
+      database,
+      databaseUrl,
+      async ({ sql: scratch, url }) => {
+        const now = new Date("2026-11-08T12:00:00.000Z");
+        // A busy quarter hour, every row inside both budgets' windows: sign-in,
+        // registration-mail, and reset attempts across 4,000 subjects in every
+        // outcome the budgets count or ignore, and the other requests.
+        await scratch`
+        insert into crm.api_request_logs (method, path, client_ip,
+          authentication_subject_digest, status_code, occurred_at)
+        select 'POST', paths.path, ('10.0.' || n % 250 || '.' || n % 200 + 1)::inet,
+          'hmac-sha256:v1:' || encode(sha256(convert_to((n % 4000)::text, 'UTF8')), 'hex'),
+          (array[null, 200, 401, 202])[1 + n % 4],
+          ${now}::timestamptz - (n % 840) * interval '1 second'
+        from generate_series(1, 40000) n
+        cross join (values ('/api/v1/sessions'), ('mail-budget/registration'),
+          ('/api/v1/password-resets')) paths(path)
+      `;
+        await scratch`
+        insert into crm.api_request_logs (method, path, status_code, occurred_at)
+        select 'GET', '/api/v1/people', 200,
+          ${now}::timestamptz - (n % 840) * interval '1 second'
+        from generate_series(1, 60000) n
+      `;
+        await scratch`analyze`;
+
+        const digester = new AuthenticationSubjectDigester({
+          activeVersion: 1,
+          keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+        });
+        const explaining = connectDatabase(url);
+        try {
+          const signIn = await explainedPlan(
+            explaining.db,
+            (statement) => statement.includes("with attempts as"),
+            (db) =>
+              new PostgresAuthenticationAttemptBudget(db, digester).reserve({
+                clientAddress: "203.0.113.7",
+                occurredAt: now,
+                scope: "password",
+                subject: "budget-plan@example.test",
+              }),
+          );
+          const recipient = await explainedPlan(
+            explaining.db,
+            (statement) =>
+              statement.includes(
+                "select count(*)::int count from crm.api_request_logs",
+              ),
+            (db) =>
+              new PostgresOutboundMailBudget(db, digester).reserve({
+                occurredAt: now,
+                recipient: "budget-plan@example.test",
+                recipientCeiling: 10,
+                scope: "registration",
+                windowMilliseconds: 24 * 60 * 60_000,
+              }),
+          );
+          for (
+            const [budget, plan] of [["sign-in", signIn], [
+              "mail",
+              recipient,
+            ]] as const
+          ) {
+            assert(
+              planNodes(plan).some((node) =>
+                node["Index Name"] === "api_request_logs_post_subject_idx"
+              ) &&
+                scansOf(plan, "api_request_logs").every((scan) =>
+                  scan["Node Type"] !== "Seq Scan"
+                ),
+              `the ${budget} budget does not seek one subject: ${
+                describePlan(plan)
+              }`,
+            );
+          }
+        } finally {
+          await explaining.destroy();
+        }
+      },
+    );
   },
 });
 

@@ -179,6 +179,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v10",
   "personal-crm-schema/v11",
   "personal-crm-schema/v12",
+  "personal-crm-schema/v13",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -278,6 +279,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "personal-crm-schema/v10",
     "personal-crm-schema/v11",
     "personal-crm-schema/v12",
+    "personal-crm-schema/v13",
     "tools",
   ],
 };
@@ -616,8 +618,8 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v12/personal_crm_schema_spec_v12.md",
-          "personal-crm-schema/v12/personal_crm_schema_v12.sql",
+          "personal-crm-schema/v13/personal_crm_schema_spec_v13.md",
+          "personal-crm-schema/v13/personal_crm_schema_v13.sql",
           "packages/contracts",
           // The role table reads the matrix it executes (AUD-K5).
           "docs/architecture/authorization-matrix.yaml",
@@ -2152,6 +2154,7 @@ export const MODULES: readonly TaskModule[] = [
           "personal-crm-schema/v10",
           "personal-crm-schema/v11",
           "personal-crm-schema/v12",
+          "personal-crm-schema/v13",
           "apps",
           "packages",
           "tools",

@@ -15,8 +15,12 @@ import { type ApplicationDatabase } from "../../packages/backend/platform/postgr
 import {
   createPeopleDirectory,
   createPeopleTagOptions,
+  type PeopleDirectoryCursor,
 } from "../../packages/backend/read-models/people-directory/public.ts";
-import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import {
+  PostgresPeopleRepository,
+  PostgresPeopleTransaction,
+} from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresPeopleDirectoryRepository } from "../../packages/backend/read-models/people-directory/adapters/postgres/people_directory_repository.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
@@ -49,6 +53,15 @@ import {
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { apiSupport } from "../support/api.ts";
+import {
+  describePlan,
+  explainedPlan,
+  type PlanNode,
+  planNodes,
+  rowsProduced,
+  scansOf,
+  withScratchCrm,
+} from "../support/query_plan.ts";
 
 Deno.test({
   name:
@@ -1213,6 +1226,137 @@ Deno.test({
       await locker.end();
       await counted.close();
     }
+  },
+});
+
+/** Rows a scan read and then discarded on its filter, across its loops. */
+function rowsFiltered(node: PlanNode): number {
+  const removed = (node as { readonly "Rows Removed by Filter"?: number })[
+    "Rows Removed by Filter"
+  ] ?? 0;
+  return removed * (node["Actual Loops"] ?? 1);
+}
+
+Deno.test({
+  name:
+    "PEOPLE-001 AUD-V1 the name order, its continuation, and the duplicate check read their people through an index",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+      const [userId, workspaceId, memberId] = [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ];
+      await scratch`insert into crm.users (id, email) values (${userId}, 'plan@example.test')`;
+      await scratch`
+        insert into crm.workspaces (id, name, created_by_user_id)
+        values (${workspaceId}, 'Large', ${userId})
+      `;
+      await scratch`
+        insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+        values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now())
+      `;
+      // Enough people that reading them all is visibly different from
+      // reading a page, some archived and some with a nickname only.
+      await scratch`
+        insert into crm.people (workspace_id, given_name, family_name,
+          nickname, archived_at)
+        select ${workspaceId}::uuid,
+          case when n % 7 = 0 then '' else 'Given ' || lpad(n::text, 5, '0') end,
+          'Family ' || (n % 97), 'Nick ' || n,
+          case when n % 11 = 0 then now() end
+        from generate_series(1, 6000) n
+      `;
+      await scratch`analyze`;
+      const actor = { memberId, role: "owner" as const, userId, workspaceId };
+      const explaining = connectDatabase(url);
+      try {
+        const directoryRepository = new PostgresPeopleDirectoryRepository(
+          explaining.db,
+        );
+        const criteria = {
+          ...actor,
+          lifecycle: "active" as const,
+          limit: 20,
+          nameFold: [],
+          nameForms: [],
+          search: "",
+          sort: "given-name" as const,
+          starred: false,
+          starredFirst: false,
+        };
+        let middle: PeopleDirectoryCursor | undefined;
+        for (let index = 0; index < 50; index++) {
+          const page = await directoryRepository.list({
+            ...criteria,
+            ...(middle ? { after: middle } : {}),
+          });
+          assert(page.status === "ready", "a page reads");
+          middle = page.people.at(-1)!.cursor;
+        }
+        for (
+          const [label, after] of [
+            ["the first page", undefined],
+            ["a continuation a thousand people in", middle],
+          ] as const
+        ) {
+          const plan = await explainedPlan(
+            explaining.db,
+            (statement) => statement.includes("row_number() over"),
+            (database) =>
+              new PostgresPeopleDirectoryRepository(database).list({
+                ...criteria,
+                ...(after ? { after } : {}),
+              }),
+          );
+          const scans = scansOf(plan, "people");
+          const read = scans.reduce(
+            (sum, scan) => sum + rowsProduced(scan) + rowsFiltered(scan),
+            0,
+          );
+          assert(
+            scans.some((scan) =>
+              scan["Index Name"] === "people_active_given_name_idx"
+            ) && read <= 4 * criteria.limit,
+            `${label} reads ${read} people rather than its page: ${
+              describePlan(plan)
+            }`,
+          );
+        }
+
+        const duplicates = await explainedPlan(
+          explaining.db,
+          (statement) => statement.includes("lower(btrim(given_name))"),
+          (database) =>
+            new PostgresPeopleRepository().findPossibleDuplicates({
+              ...actor,
+              familyName: "Family 3",
+              givenName: "Given 00003",
+              isPartial: false,
+              nickname: "Nick 3",
+              transaction: { opaque: database },
+            }),
+        );
+        const duplicateScans = scansOf(duplicates, "people");
+        assert(
+          planNodes(duplicates).some((node) =>
+            node["Index Name"] === "people_active_duplicate_name_idx"
+          ) &&
+            duplicateScans.every((scan) => scan["Node Type"] !== "Seq Scan") &&
+            duplicateScans.reduce(
+                (sum, scan) => sum + rowsProduced(scan) + rowsFiltered(scan),
+                0,
+              ) <= 5,
+          `the duplicate check scans the workspace's people: ${
+            describePlan(duplicates)
+          }`,
+        );
+      } finally {
+        await explaining.destroy();
+      }
+    });
   },
 });
 

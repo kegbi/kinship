@@ -33,8 +33,11 @@ import { createPerson } from "../support/fixtures.ts";
 import {
   describePlan,
   explainedPlan,
+  planNodes,
   rowsProduced,
+  scansOf,
   unionBranches,
+  withScratchCrm,
 } from "../support/query_plan.ts";
 
 const databaseUrl = requireDatabaseUrl();
@@ -645,4 +648,93 @@ Deno.test("[TODAY-002] AUD-Q1 each feed arm takes its own page before the arms a
   } finally {
     await connection.destroy();
   }
+});
+
+Deno.test("[TODAY-002] AUD-V1 the reminder arm reads the member's newest delivered reminders in index order", async () => {
+  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const [userId, otherUserId, workspaceId, memberId, otherMemberId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await scratch`
+      insert into crm.users (id, email) values
+        (${userId}, 'plan@example.test'), (${otherUserId}, 'other@example.test')
+    `;
+    await scratch`
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${workspaceId}, 'Large', ${userId})
+    `;
+    await scratch`
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+      values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now()),
+        (${otherMemberId}, ${workspaceId}, ${otherUserId}, 'member', 'active', now())
+    `;
+    // Years of delivered in-app reminders for two members, and the open
+    // occurrence each reminder has next: the feed shows the newest page.
+    await scratch`
+      with person as (
+        insert into crm.people (workspace_id, given_name)
+        select ${workspaceId}::uuid, 'Person ' || n
+        from generate_series(1, 300) n
+        returning id
+      ), reminder as (
+        insert into crm.reminders (workspace_id, person_id, target_kind,
+          title, anchor_on, recurrence_unit, created_by_member_id)
+        select ${workspaceId}::uuid, person.id, 'person', 'Check in',
+          current_date, 'month', ${memberId}::uuid
+        from person
+        returning id
+      )
+      insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+        deliver_at, channel, status, sent_at, provider_result_state,
+        provider_receipt, provider_effect_at, visible_at)
+      select reminder.id, member.id, current_date - months.n * 30,
+        now() - months.n * interval '30 days', 'in_app', 'sent',
+        now() - months.n * interval '30 days', 'confirmed', 'in-app',
+        now() - months.n * interval '30 days',
+        now() - months.n * interval '30 days' - random() * interval '1 day'
+      from reminder
+      cross join generate_series(1, 20) months(n)
+      cross join (values (${memberId}::uuid), (${otherMemberId}::uuid))
+        member(id)
+    `;
+    await scratch`analyze`;
+
+    const explaining = connectDatabase(url);
+    try {
+      const limit = 11;
+      const plan = await explainedPlan(
+        explaining.db,
+        (statement) => statement.includes("crm.audit_events"),
+        (database) =>
+          new PostgresNotificationsRepository(database).list({
+            memberId,
+            limit,
+            role: "owner",
+            userId,
+            workspaceId,
+          }),
+      );
+      const occurrences = scansOf(plan, "reminder_occurrences");
+      const read = occurrences.reduce(
+        (sum, scan) => sum + rowsProduced(scan),
+        0,
+      );
+      assert(
+        planNodes(plan).some((node) =>
+          node["Index Name"] === "reminder_occurrences_member_feed_idx"
+        ) &&
+          occurrences.every((scan) => scan["Node Type"] !== "Seq Scan") &&
+          read <= 4 * limit,
+        `the reminder arm reads ${read} of 6,000 delivered occurrences for a page of ${limit}: ${
+          describePlan(plan)
+        }`,
+      );
+    } finally {
+      await explaining.destroy();
+    }
+  });
 });

@@ -1,20 +1,21 @@
 import postgres from "postgres";
 
 export type SchemaAction =
-  | "apply-v12"
+  | "apply-v13"
   | "reject"
-  | "upgrade-v1-to-v12"
-  | "upgrade-v2-to-v12"
-  | "upgrade-v3-to-v12"
-  | "upgrade-v4-to-v12"
-  | "upgrade-v5-to-v12"
-  | "upgrade-v6-to-v12"
-  | "upgrade-v7-to-v12"
-  | "upgrade-v8-to-v12"
-  | "upgrade-v9-to-v12"
-  | "upgrade-v10-to-v12"
-  | "upgrade-v11-to-v12"
-  | "verify-v12";
+  | "upgrade-v1-to-v13"
+  | "upgrade-v2-to-v13"
+  | "upgrade-v3-to-v13"
+  | "upgrade-v4-to-v13"
+  | "upgrade-v5-to-v13"
+  | "upgrade-v6-to-v13"
+  | "upgrade-v7-to-v13"
+  | "upgrade-v8-to-v13"
+  | "upgrade-v9-to-v13"
+  | "upgrade-v10-to-v13"
+  | "upgrade-v11-to-v13"
+  | "upgrade-v12-to-v13"
+  | "verify-v13";
 
 export const V1_SQL_SHA256 =
   "3d082df6641ddeea9706adee39b41b90656709979a5f980cc93a7d98d1a79e91";
@@ -44,6 +45,10 @@ export const V12_SQL_SHA256 =
   "fd28ae460da3242e7c062cb77f80043fee474e520808eda6fb4c0542905f3693";
 export const V11_TO_V12_MIGRATION_SHA256 =
   "4146b3ed7c1f7da3523c6759e522fc0d98e80cd47b3e40f9d38fb1118153e3df";
+export const V13_SQL_SHA256 =
+  "5c1f1041ff031d9b046e9b314d0ba2c537524fa6ae08a78c107930567ebeb53f";
+export const V12_TO_V13_MIGRATION_SHA256 =
+  "7ae2931b2dcb462d4186a1ab8eca77402ec802d865b1d590fbabb28582f49cde";
 
 export const V1_TO_V2_MIGRATION_SHA256 =
   "6483b51b4d432a265087ccc8e7045dfb42b22b2d0dc5b0e5da548b1966a3cef5";
@@ -66,19 +71,20 @@ export const V9_TO_V10_MIGRATION_SHA256 =
 
 /** The index of the first migration each exact-baseline upgrade applies. */
 const UPGRADE_FROM: Readonly<
-  Record<Exclude<SchemaAction, "apply-v12" | "reject" | "verify-v12">, number>
+  Record<Exclude<SchemaAction, "apply-v13" | "reject" | "verify-v13">, number>
 > = {
-  "upgrade-v1-to-v12": 0,
-  "upgrade-v2-to-v12": 1,
-  "upgrade-v3-to-v12": 2,
-  "upgrade-v4-to-v12": 3,
-  "upgrade-v5-to-v12": 4,
-  "upgrade-v6-to-v12": 5,
-  "upgrade-v7-to-v12": 6,
-  "upgrade-v8-to-v12": 7,
-  "upgrade-v9-to-v12": 8,
-  "upgrade-v10-to-v12": 9,
-  "upgrade-v11-to-v12": 10,
+  "upgrade-v1-to-v13": 0,
+  "upgrade-v2-to-v13": 1,
+  "upgrade-v3-to-v13": 2,
+  "upgrade-v4-to-v13": 3,
+  "upgrade-v5-to-v13": 4,
+  "upgrade-v6-to-v13": 5,
+  "upgrade-v7-to-v13": 6,
+  "upgrade-v8-to-v13": 7,
+  "upgrade-v9-to-v13": 8,
+  "upgrade-v10-to-v13": 9,
+  "upgrade-v11-to-v13": 10,
+  "upgrade-v12-to-v13": 11,
 };
 
 export function canonicalTableNames(sqlText: string): string[] {
@@ -106,33 +112,37 @@ export function decideSchemaAction(state: {
     | "v9"
     | "v10"
     | "v11"
-    | "v12";
+    | "v12"
+    | "v13";
 }): SchemaAction {
-  if (!state.crmSchemaExists && state.state === "empty") return "apply-v12";
+  if (!state.crmSchemaExists && state.state === "empty") return "apply-v13";
   if (state.crmSchemaExists && state.state === "v1") {
-    return "upgrade-v1-to-v12";
+    return "upgrade-v1-to-v13";
   }
   if (state.crmSchemaExists && state.state === "v2") {
-    return "upgrade-v2-to-v12";
+    return "upgrade-v2-to-v13";
   }
   if (state.crmSchemaExists && state.state === "v3") {
-    return "upgrade-v3-to-v12";
+    return "upgrade-v3-to-v13";
   }
-  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v12";
-  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v12";
-  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v12";
-  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v12";
-  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v12";
+  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v13";
+  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v13";
+  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v13";
+  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v13";
+  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v13";
   if (state.crmSchemaExists && state.state === "v9") {
-    return "upgrade-v9-to-v12";
+    return "upgrade-v9-to-v13";
   }
   if (state.crmSchemaExists && state.state === "v10") {
-    return "upgrade-v10-to-v12";
+    return "upgrade-v10-to-v13";
   }
   if (state.crmSchemaExists && state.state === "v11") {
-    return "upgrade-v11-to-v12";
+    return "upgrade-v11-to-v13";
   }
-  if (state.crmSchemaExists && state.state === "v12") return "verify-v12";
+  if (state.crmSchemaExists && state.state === "v12") {
+    return "upgrade-v12-to-v13";
+  }
+  if (state.crmSchemaExists && state.state === "v13") return "verify-v13";
   return "reject";
 }
 
@@ -435,6 +445,8 @@ export interface CanonicalSchemaArtifacts {
   readonly migrationV10ToV11: string;
   readonly v12Sql: string;
   readonly migrationV11ToV12: string;
+  readonly v13Sql: string;
+  readonly migrationV12ToV13: string;
 }
 
 export async function applyCanonicalSchema(
@@ -518,10 +530,20 @@ export async function applyCanonicalSchema(
     V11_TO_V12_MIGRATION_SHA256,
     "Schema v11-to-v12 migration",
   );
-  const expectedTables = canonicalTableNames(artifacts.v12Sql);
+  await verifyArtifactChecksum(
+    artifacts.v13Sql,
+    V13_SQL_SHA256,
+    "Schema v13 SQL",
+  );
+  await verifyArtifactChecksum(
+    artifacts.migrationV12ToV13,
+    V12_TO_V13_MIGRATION_SHA256,
+    "Schema v12-to-v13 migration",
+  );
+  const expectedTables = canonicalTableNames(artifacts.v13Sql);
   if (expectedTables.length !== 92) {
     throw new Error(
-      "Canonical schema v12 does not contain the accepted table catalog.",
+      "Canonical schema v13 does not contain the accepted table catalog.",
     );
   }
   const client = postgres(databaseUrl, {
@@ -560,6 +582,7 @@ export async function applyCanonicalSchema(
     const expectedV10 = await expectedCatalog(artifacts.v10Sql, "v10");
     const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
     const expectedV12 = await expectedCatalog(artifacts.v12Sql, "v12");
+    const expectedV13 = await expectedCatalog(artifacts.v13Sql, "v13");
     return await client.begin(async (transaction) => {
       await transaction`set local lock_timeout = '5s'`;
       await transaction`set local statement_timeout = '120s'`;
@@ -600,6 +623,8 @@ export async function applyCanonicalSchema(
         ? "v11"
         : structuresMatch(actual, expectedV12.structure)
         ? "v12"
+        : structuresMatch(actual, expectedV13.structure)
+        ? "v13"
         : "drift";
       const action = decideSchemaAction({
         crmSchemaExists: state.crm_schema_exists,
@@ -620,10 +645,11 @@ export async function applyCanonicalSchema(
         artifacts.migrationV9ToV10,
         artifacts.migrationV10ToV11,
         artifacts.migrationV11ToV12,
+        artifacts.migrationV12ToV13,
       ];
-      if (action === "apply-v12") {
-        await transaction.unsafe(artifacts.v12Sql);
-      } else if (action !== "verify-v12") {
+      if (action === "apply-v13") {
+        await transaction.unsafe(artifacts.v13Sql);
+      } else if (action !== "verify-v13") {
         // An exact vN target applies every immutable migration from vN onward.
         for (const migration of migrations.slice(UPGRADE_FROM[action])) {
           await transaction.unsafe(migration);
@@ -631,20 +657,20 @@ export async function applyCanonicalSchema(
       }
       await transaction`set local search_path = public`;
       const finalStructure = await catalogStructure(transaction, "crm");
-      if (!structuresMatch(finalStructure, expectedV12.structure)) {
+      if (!structuresMatch(finalStructure, expectedV13.structure)) {
         const mismatch = finalStructure.findIndex((item, index) =>
-          item !== expectedV12.structure[index]
+          item !== expectedV13.structure[index]
         );
         throw new Error(
-          `Canonical schema v12 structural verification failed at ${mismatch}: actual=${
+          `Canonical schema v13 structural verification failed at ${mismatch}: actual=${
             finalStructure[mismatch] ?? "<missing>"
-          }; expected=${expectedV12.structure[mismatch] ?? "<missing>"}.`,
+          }; expected=${expectedV13.structure[mismatch] ?? "<missing>"}.`,
         );
       }
       const actualCurrencies = await currencyCatalog(transaction, "crm");
-      if (!currencyCatalogMatches(actualCurrencies, expectedV12.currencies)) {
+      if (!currencyCatalogMatches(actualCurrencies, expectedV13.currencies)) {
         throw new Error(
-          "Canonical schema v12 currency reference-data verification failed.",
+          "Canonical schema v13 currency reference-data verification failed.",
         );
       }
       return action;

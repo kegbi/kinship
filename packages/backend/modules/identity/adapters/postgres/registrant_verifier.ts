@@ -1,7 +1,7 @@
 /**
  * Where the registering browser's verifier is kept (SECA-01, AUD-A1).
  *
- * Schema v12 has no column for it, so the verifier's digest is a sibling row
+ * Schema v13 has no column for it, so the verifier's digest is a sibling row
  * of the pending user's verification tokens, with a `token_hash` prefixed
  * `registrant:`. A token digest is base64url and never contains `:`, so the
  * row can never be found by a verification lookup, and the raw verifier

@@ -217,12 +217,12 @@ function seekWithinGroup(
         person.id > ${after.id}::uuid)
     )`;
   }
-  return sql`(
-    ${primary} > ${after.primary} or
-    (${primary} = ${after.primary} and ${secondary} > ${after.secondary}) or
-    (${primary} = ${after.primary} and ${secondary} = ${after.secondary}
-      and person.id > ${after.id}::uuid)
-  )`;
+  // One row comparison rather than its expanded disjunction: the two order
+  // the same never-null keys alike, and only the row form lets the name
+  // order's index (`people_active_given_name_idx`, v13) seek to the cursor
+  // instead of reading and discarding every person before it.
+  return sql`(${primary}, ${secondary}, person.id) >
+    (${after.primary}::text, ${after.secondary}::text, ${after.id}::uuid)`;
 }
 
 function seek(

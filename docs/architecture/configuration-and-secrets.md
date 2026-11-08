@@ -184,7 +184,7 @@ midnight is involved.
   is answered exactly as one that sent a link. A reset link carried by an
   "account exists" notice is a request too.
 
-`crm.api_request_logs` has no scope column in schema v12, so a mail budget is a
+`crm.api_request_logs` has no scope column in schema v13, so a mail budget is a
 distinct `path` that no HTTP route has (`mail-budget/invitation`,
 `mail-budget/registration`), with `method = 'POST'` and `status_code = 202`, as
 the sign-in throttle separates its scopes by path (AUD-A3). The address is kept

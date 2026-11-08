@@ -2,9 +2,9 @@
 
 ## Canonical Baseline
 
-[`personal-crm-schema/v12/personal_crm_schema_v12.sql`](../../personal-crm-schema/v12/personal_crm_schema_v12.sql)
-is repository schema version 12 and the accepted DDL and reference-data
-baseline. Repository v1 through v11 are immutable prior states. SQL generated
+[`personal-crm-schema/v13/personal_crm_schema_v13.sql`](../../personal-crm-schema/v13/personal_crm_schema_v13.sql)
+is repository schema version 13 and the accepted DDL and reference-data
+baseline. Repository v1 through v12 are immutable prior states. SQL generated
 from Kysely, an ORM, or an authentication library cannot replace or amend any
 accepted version.
 

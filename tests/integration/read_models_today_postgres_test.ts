@@ -23,6 +23,7 @@ import { revokeMembership } from "../support/database.ts";
 import {
   describePlan,
   explainedPlan,
+  planNodes,
   rowsProduced,
   scansOf,
   unionBranches,
@@ -681,10 +682,11 @@ const SCALED = { activities: 4000, notes: 8000, people: 2000 } as const;
 const RECENT_LIMIT = 20;
 /**
  * The tables whose recent rows the recent-activity statement must reach
- * through an index, reading about a page of them rather than the history.
- * AUD-V1 adds `notes_workspace_created_idx` and, with it, `notes`.
+ * through an index, reading about a page of them rather than the history:
+ * `activities_workspace_time_idx` and, since v13 (AUD-V1),
+ * `notes_workspace_created_idx`.
  */
-const RECENT_ACTIVITY_INDEXED = ["activities"] as const;
+const RECENT_ACTIVITY_INDEXED = ["activities", "notes"] as const;
 
 Deno.test("[TODAY-001] AUD-Q1 Today's recent activity and recent people read their page, not the workspace's history", async () => {
   await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
@@ -807,6 +809,108 @@ Deno.test("[TODAY-001] AUD-Q1 Today's recent activity and recent people read the
             recentIds.length,
         `recent people do not look their ${recentIds.length} people up by index: ${
           describePlan(recentPeople)
+        }`,
+      );
+    } finally {
+      await explaining.destroy();
+    }
+  });
+});
+
+Deno.test("[TODAY-001] AUD-V1 attention reads a member's open occurrences, not their delivered history", async () => {
+  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
+    const [userId, otherUserId, workspaceId, memberId, otherMemberId] = [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+    ];
+    await scratch`
+      insert into crm.users (id, email) values
+        (${userId}, 'plan@example.test'), (${otherUserId}, 'other@example.test')
+    `;
+    await scratch`
+      insert into crm.workspaces (id, name, created_by_user_id)
+      values (${workspaceId}, 'Large', ${userId})
+    `;
+    await scratch`
+      insert into crm.workspace_members (id, workspace_id, user_id, role, status, joined_at)
+      values (${memberId}, ${workspaceId}, ${userId}, 'owner', 'active', now()),
+        (${otherMemberId}, ${workspaceId}, ${otherUserId}, 'member', 'active', now())
+    `;
+    // Years of delivered reminders for both members, and one open
+    // occurrence per reminder: the open ones are what attention lists.
+    await scratch`
+      with person as (
+        insert into crm.people (workspace_id, given_name)
+        select ${workspaceId}::uuid, 'Person ' || n
+        from generate_series(1, 300) n
+        returning id
+      ), reminder as (
+        insert into crm.reminders (workspace_id, person_id, target_kind,
+          title, anchor_on, recurrence_unit, created_by_member_id)
+        select ${workspaceId}::uuid, person.id, 'person', 'Check in',
+          current_date, 'month', ${memberId}::uuid
+        from person
+        returning id
+      )
+      insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+        deliver_at, channel, status, sent_at, provider_result_state,
+        provider_receipt, provider_effect_at, visible_at)
+      select reminder.id, member.id, current_date - months.n * 30,
+        now() - months.n * interval '30 days', 'in_app', 'sent',
+        now() - months.n * interval '30 days', 'confirmed', 'in-app',
+        now() - months.n * interval '30 days',
+        now() - months.n * interval '30 days'
+      from reminder
+      cross join generate_series(1, 20) months(n)
+      cross join (values (${memberId}::uuid), (${otherMemberId}::uuid))
+        member(id)
+    `;
+    await scratch`
+      insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
+        deliver_at, channel, status)
+      select reminder.id, ${memberId}::uuid, ${inDays(10).slice(0, 10)}::date,
+        ${inDays(10)}::timestamptz, 'in_app', 'pending'
+      from crm.reminders reminder
+    `;
+    await scratch`analyze`;
+
+    const explaining = connectDatabase(url);
+    try {
+      const plan = await explainedPlan(
+        explaining.db,
+        (statement) => statement.includes("reminder_source"),
+        (database) =>
+          new PostgresTodayAttentionRepository(database).getSnapshot({
+            memberId,
+            now: NOW,
+            perAttentionGroupLimit: 2,
+            role: "owner",
+            upcomingLimit: 3,
+            userId,
+            workspaceId,
+          }),
+        [{}],
+      );
+      const occurrences = scansOf(plan, "reminder_occurrences");
+      const read = occurrences.reduce(
+        (sum, scan) =>
+          sum + rowsProduced(scan) +
+          ((scan as { readonly "Rows Removed by Filter"?: number })[
+              "Rows Removed by Filter"
+            ] ?? 0) * (scan["Actual Loops"] ?? 1),
+        0,
+      );
+      assert(
+        occurrences.length > 0 &&
+          occurrences.every((scan) => scan["Node Type"] !== "Seq Scan") &&
+          planNodes(plan).some((node) =>
+            node["Index Name"] === "reminder_occurrences_member_open_idx"
+          ) && read <= 600,
+        `attention reads ${read} occurrences to find the member's 300 open ones: ${
+          describePlan(plan)
         }`,
       );
     } finally {

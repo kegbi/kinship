@@ -2,7 +2,7 @@
  * The durable mail budget (SECA-03, AUD-M3), kept where the sign-in throttle
  * is: `crm.api_request_logs`.
  *
- * Schema v12 gives that table no scope column, so a budget is told apart the
+ * Schema v13 gives that table no scope column, so a budget is told apart the
  * way the throttle tells its two scopes apart (AUD-A3): by `path`. Each
  * admitted reservation is one row, `method = 'POST'`, `status_code = 202`,
  * with a `path` no HTTP route has —
