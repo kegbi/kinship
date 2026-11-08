@@ -24091,6 +24091,9 @@
             "$ref": "#/components/schemas/PersonRailSectionHidden"
           },
           {
+            "$ref": "#/components/schemas/PersonRailSectionForbidden"
+          },
+          {
             "$ref": "#/components/schemas/PersonRailSectionUnavailable"
           }
         ]
@@ -24114,7 +24117,7 @@
             "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/PersonRailSectionHidden"
+            "$ref": "#/components/schemas/PersonRailSectionForbidden"
           },
           {
             "$ref": "#/components/schemas/PersonRailSectionUnavailable"
@@ -24156,6 +24159,9 @@
             "$ref": "#/components/schemas/PersonRailSectionHidden"
           },
           {
+            "$ref": "#/components/schemas/PersonRailSectionForbidden"
+          },
+          {
             "$ref": "#/components/schemas/PersonRailSectionUnavailable"
           }
         ]
@@ -24179,12 +24185,24 @@
             "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/PersonRailSectionHidden"
+            "$ref": "#/components/schemas/PersonRailSectionForbidden"
           },
           {
             "$ref": "#/components/schemas/PersonRailSectionUnavailable"
           }
         ]
+      },
+      "PersonRailSectionForbidden": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "forbidden"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
       },
       "PersonRailSectionHidden": {
         "type": "object",

@@ -2163,7 +2163,7 @@ Playwright test carrying its stable flow ID.
       measure the hero's time at the release checkpoint; AUD-P1's budgets
       (`tests/e2e/perf.PERF-002.spec.ts`) must stay green.
 
-- [ ] **REL-127 — A section refused at open draws three different ways.** Found
+- [x] **REL-127 — A section refused at open draws three different ways.** Found
       in the AUD-Q3-fix review during the 2026-11-07 audit-remediation run on
       the REL-105 Windows host; AUD-Q3 (`6e8b0329`) introduced it. The composed
       rail turns a module's `forbidden` answer into `hidden`
@@ -2202,7 +2202,21 @@ Playwright test carrying its stable flow ID.
       has the same problem; AUD-Q3-fix adapts both, answering the contact
       methods rail section `unavailable` so the reload shows `error` and its
       Retry reaches the forbidden state. Update that case with the chosen
-      presentation.
+      presentation. Resolved 2026-11-08: `include=rail` answers a section its
+      module refused `forbidden`, apart from `hidden`, which only a fact section
+      or the relationships whose module the workspace turned off can answer (the
+      dates and reminders sections can no longer be `hidden` in the contract);
+      the seven fact sections, relationships, important dates, and reminders
+      each show their forbidden state at open ("Your active workspace no longer
+      permits this action.", `data-section-state="forbidden"`) without a read of
+      their own, and reminders, which had no forbidden state, show it for their
+      own refused read too. Tests: the integration case "REL-127 a rail section
+      its module refuses answers forbidden, not hidden" (a member revoked after
+      the person read's check), the rail and HTTP unit cases, the facts,
+      relationships, dates, and reminders island cases, and PEOPLE-006's
+      contact-methods case, which now reaches the forbidden state at open;
+      PEOPLE-005 fulfils its dates rail section `forbidden`.
+      `RAIL_STATEMENT_BUDGET` is unchanged at 83.
 
 - [ ] **REL-128 — WebKit loses window focus in a PEOPLE-006 local-editor step.**
       Seen in AUD-Q3-fix's WebKit runs during the 2026-11-07 audit-remediation

@@ -77,14 +77,19 @@ import {
   nextReminderText,
   type PendingRow,
   REMINDERS_FAILED,
+  REMINDERS_FORBIDDEN,
   REMINDERS_LOADING,
   remindersReducer,
+  type RemindersStatus,
   reminderStateText,
   reminderSummary,
   stayInTouchText,
 } from "./reminders.ts";
 
 export const PERSON_REMINDERS_ISLAND = "person-reminders";
+
+/** A read the workspace refused the member (REL-127). */
+const REFUSED = "refused";
 
 export interface PersonRemindersProps {
   readonly personId: string;
@@ -112,10 +117,7 @@ export interface PersonRemindersProps {
   readonly preloaded?: PersonRail["reminders"] | undefined;
 }
 
-function sectionState(
-  status: "loading" | "ready" | "error",
-  count: number,
-): string {
+function sectionState(status: RemindersStatus, count: number): string {
   return status === "ready" ? count === 0 ? "empty" : "ready" : status;
 }
 
@@ -181,17 +183,25 @@ export function PersonReminders(props: PersonRemindersProps) {
           nextReminderText(profile?.data?.dueInformation, timePreferences),
         );
       }
-      apply(list.status === "ready" ? list.data : undefined, cursor);
+      const refused = list.problem?.status === 401 ||
+        list.problem?.status === 403;
+      apply(
+        list.status === "ready" ? list.data : refused ? REFUSED : undefined,
+        cursor,
+      );
     });
   };
 
-  /** Shows a page of both sections, or that they could not be read. */
+  /**
+   * Shows a page of both sections, that the workspace refused the member, or
+   * that they could not be read.
+   */
   const apply = (
-    page: PersonRemindersPage | undefined,
+    page: PersonRemindersPage | typeof REFUSED | undefined,
     cursor?: string,
   ): void => {
-    if (!page) {
-      dispatch({ type: "failed" });
+    if (!page || page === REFUSED) {
+      dispatch({ forbidden: page === REFUSED, type: "failed" });
       setStayInTouch("Unavailable");
       setRailCount("stay-in-touch", undefined);
       setRailEmpty("stay-in-touch", false);
@@ -232,13 +242,20 @@ export function PersonReminders(props: PersonRemindersProps) {
 
   // The first read starts in the loading state the island mounted with. A
   // page that came with the person read is the first answer, drawn before
-  // the read settles (AUD-Q3, REL-049); refused or failed, it is the error.
+  // the read settles (AUD-Q3, REL-049); refused, it is the forbidden state its
+  // own read would meet (REL-127), and failed, the error.
   const first = useEffectEvent(() => {
     const preloaded = props.preloaded;
     if (!preloaded) return reload();
     return Promise.resolve().then(() =>
       flushSync(() =>
-        apply(preloaded.status === "ready" ? preloaded.value : undefined)
+        apply(
+          preloaded.status === "ready"
+            ? preloaded.value
+            : preloaded.status === "forbidden"
+            ? REFUSED
+            : undefined,
+        )
       )
     );
   });
@@ -449,12 +466,16 @@ export function PersonReminders(props: PersonRemindersProps) {
   const addable = status === "ready" && !archived;
   const reminderLine = status === "loading"
     ? REMINDERS_LOADING
+    : status === "forbidden"
+    ? REMINDERS_FORBIDDEN
     : state.reminderNotice ??
       (status === "error"
         ? REMINDERS_FAILED
         : reminderSummary(state.reminders.length, !!state.nextCursor));
   const cadenceLine = status === "loading"
     ? CADENCE_LOADING
+    : status === "forbidden"
+    ? REMINDERS_FORBIDDEN
     : state.cadenceNotice ??
       (status === "error"
         ? CADENCE_FAILED

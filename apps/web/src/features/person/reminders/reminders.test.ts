@@ -176,6 +176,31 @@ describe("GAP-031 reminders reducer", () => {
     expect(failed.reminders).toEqual([reminder]);
   });
 
+  it("REL-127 a refused read keeps neither section's records nor editors", () => {
+    const loaded = remindersReducer(
+      remindersReducer(start, { editor: "cadence", type: "open" }),
+      {
+        cadences: [cadence()],
+        continued: false,
+        nextCursor: "next",
+        reminders: [reminder],
+        type: "loaded",
+      },
+    );
+    const refused = remindersReducer(loaded, {
+      forbidden: true,
+      type: "failed",
+    });
+    expect(refused).toMatchObject({
+      cadenceOpen: false,
+      cadences: [],
+      reminderOpen: false,
+      reminders: [],
+      status: "forbidden",
+    });
+    expect(refused.nextCursor).toBeUndefined();
+  });
+
   it("clears each section's notice when a read starts", () => {
     const noticed = remindersReducer(
       remindersReducer(start, {

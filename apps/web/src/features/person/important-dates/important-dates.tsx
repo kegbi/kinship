@@ -137,7 +137,7 @@ function preloadedAnswer(
   if (preloaded.status === "ready") {
     return { dates: preloaded.value.dates, type: "loaded" };
   }
-  return preloaded.status === "hidden"
+  return preloaded.status === "forbidden"
     ? { message: ACCESS_LOST, status: "forbidden", type: "failed" }
     : { message: LIST_UNAVAILABLE, status: "error", type: "failed" };
 }

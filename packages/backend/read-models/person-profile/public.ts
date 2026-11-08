@@ -38,6 +38,7 @@ export type {
   PersonRail,
   PersonRailFacts,
   PersonRailFactSection,
+  PersonRailHideableSection,
   PersonRailImportantDates,
   PersonRailRelationships,
   PersonRailReminders,

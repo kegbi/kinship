@@ -1,4 +1,9 @@
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import type {
+  APIRequestContext,
+  Locator,
+  Page,
+  Request,
+} from "@playwright/test";
 import { expect, test } from "./support/test.ts";
 import { randomUUID } from "node:crypto";
 import {
@@ -2019,10 +2024,15 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     await route.continue();
   });
   // The page opens with the section's first page in the person read's rail
-  // (AUD-Q3), which reports a read the server could not compose unavailable.
+  // (AUD-Q3), which reports a read the server could not compose unavailable,
+  // and a section its module refused forbidden (REL-127).
+  let contactRailStatus: "unavailable" | "forbidden" = "unavailable";
   const contactRail = await routePersonRail(page, (answer) => ({
     ...answer,
-    rail: { ...answer.rail, "contact-methods": { status: "unavailable" } },
+    rail: {
+      ...answer.rail,
+      "contact-methods": { status: contactRailStatus },
+    },
   }));
   await page.reload();
   await expect(contacts).toHaveAttribute("data-section-state", "error");
@@ -2032,32 +2042,25 @@ test("[PEOPLE-006] maintains enabled profile facts in local person sections", {
     ),
   ).toBeVisible();
   await page.unroute("**/facts/contact-methods");
-  await page.route("**/facts/contact-methods", async (route) => {
-    if (route.request().method() === "GET") {
-      return route.fulfill({
-        contentType: "application/problem+json",
-        json: {
-          code: "people_forbidden",
-          detail: "Fixture",
-          status: 403,
-          title: "Forbidden",
-          type: "about:blank",
-        },
-        status: 403,
-      });
-    }
-    await route.continue();
-  });
-  // The rail shows a section the server refused as hidden, so the refusal
-  // reaches the section through its own read, which its Retry issues.
+  // A refused section shows the forbidden state at open, without a read of
+  // its own, as its own refused read would.
+  const ownReads: string[] = [];
+  const recordOwnRead = (request: Request) => {
+    if (
+      request.method() === "GET" &&
+      new URL(request.url()).pathname.endsWith("/facts/contact-methods")
+    ) ownReads.push(request.url());
+  };
+  page.on("request", recordOwnRead);
+  contactRailStatus = "forbidden";
   await page.reload();
-  await expect(contacts).toHaveAttribute("data-section-state", "error");
-  await contacts.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(contacts).toHaveAttribute("data-section-state", "forbidden");
+  await expect(contacts).toBeVisible();
   await expect(
     contacts.getByText("Your active workspace no longer permits this action."),
   ).toBeVisible();
-  await page.unroute("**/facts/contact-methods");
+  page.off("request", recordOwnRead);
+  expect(ownReads).toEqual([]);
   await page.unroute(contactRail);
   await page.goto(profilePath);
   await openPersonMenu(page);

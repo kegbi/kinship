@@ -132,6 +132,18 @@ describe("AUD-Q3 a fact section from the person read", () => {
     expect(api.calls()).toEqual([]);
   });
 
+  it("REL-127 shows a section the rail answered forbidden as its forbidden state, without reading it", async () => {
+    shell(railBlock("pets"));
+    const api = stubApi({ [anyRoute]: () => factRead([]) });
+    await mountFacts(mountPets, { rail: { pets: { status: "forbidden" } } });
+    expect(block("pets").dataset.sectionState).toBe("forbidden");
+    expect(block("pets").hidden).toBe(false);
+    expect(block("pets").textContent).toContain(
+      "Your active workspace no longer permits this action.",
+    );
+    expect(api.calls()).toEqual([]);
+  });
+
   it("shows an unavailable rail section as its own error, and its retry reads its own endpoint", async () => {
     shell(railBlock("pets"));
     const api = stubApi({

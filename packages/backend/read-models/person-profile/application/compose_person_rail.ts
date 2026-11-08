@@ -10,9 +10,11 @@
  * the composition can neither widen nor narrow what a member sees, and a
  * module's rules stay written once.
  *
- * Each section answers on its own. A module that hides a section, or refuses
- * the actor, makes it `hidden`; a module that fails or cannot find the
- * person makes it `unavailable`, and the sections beside it still answer.
+ * Each section answers on its own. A module that hides a section (a profile
+ * module the workspace turned off) makes it `hidden`; a module that refuses
+ * the actor makes it `forbidden`, so the page draws the refusal its own read
+ * would have met (REL-127); a module that fails or cannot find the person
+ * makes it `unavailable`. The sections beside it still answer.
  *
  * The reads run one after another. Each takes a pooled connection for its own
  * transaction, and the pool is small (`DATABASE_POOL_MAX`), so one page open
@@ -42,10 +44,17 @@ export const PERSON_RAIL_FACT_SECTIONS = [
 
 export type PersonRailFactSection = typeof PERSON_RAIL_FACT_SECTIONS[number];
 
-/** One rail section, as the person page receives it. */
+/**
+ * One rail section, as the person page receives it. Only a section whose
+ * module the workspace can turn off is ever `hidden`: the profile facts and
+ * the relationships.
+ */
 export type PersonRailSection<Value> =
   | { readonly status: "ready"; readonly value: Value }
-  | { readonly status: "hidden" | "unavailable" };
+  | { readonly status: "forbidden" | "unavailable" };
+export type PersonRailHideableSection<Value> =
+  | PersonRailSection<Value>
+  | { readonly status: "hidden" };
 
 type Answer<Read extends (...args: never[]) => Promise<unknown>> = Awaited<
   ReturnType<Read>
@@ -82,13 +91,15 @@ export type PersonRailReminders = Extract<
 
 export type PersonRail =
   & {
-    readonly [Section in PersonRailFactSection]: PersonRailSection<
+    readonly [Section in PersonRailFactSection]: PersonRailHideableSection<
       PersonRailFacts
     >;
   }
   & {
     readonly "important-dates": PersonRailSection<PersonRailImportantDates>;
-    readonly relationships: PersonRailSection<PersonRailRelationships>;
+    readonly relationships: PersonRailHideableSection<
+      PersonRailRelationships
+    >;
     readonly reminders: PersonRailSection<PersonRailReminders>;
   };
 
@@ -112,12 +123,13 @@ export interface PersonRailSources {
 export const PERSON_RAIL_PAGE = 20;
 
 const HIDDEN = { status: "hidden" } as const;
+const FORBIDDEN = { status: "forbidden" } as const;
 const UNAVAILABLE = { status: "unavailable" } as const;
 
 /** A section whose read threw is unavailable; the others still answer. */
-async function section<Value>(
-  read: () => Promise<PersonRailSection<Value>>,
-): Promise<PersonRailSection<Value>> {
+async function section<Section>(
+  read: () => Promise<Section>,
+): Promise<Section | typeof UNAVAILABLE> {
   try {
     return await read();
   } catch {
@@ -125,10 +137,9 @@ async function section<Value>(
   }
 }
 
-function facts(answer: FactAnswer): PersonRailSection<PersonRailFacts> {
-  if (answer.status === "forbidden" || answer.status === "hidden") {
-    return HIDDEN;
-  }
+function facts(answer: FactAnswer): PersonRailHideableSection<PersonRailFacts> {
+  if (answer.status === "forbidden") return FORBIDDEN;
+  if (answer.status === "hidden") return HIDDEN;
   return answer.status === "ready" || answer.status === "archived"
     ? { status: "ready", value: answer }
     : UNAVAILABLE;
@@ -137,7 +148,7 @@ function facts(answer: FactAnswer): PersonRailSection<PersonRailFacts> {
 function importantDates(
   answer: DateAnswer,
 ): PersonRailSection<PersonRailImportantDates> {
-  if (answer.status === "forbidden") return HIDDEN;
+  if (answer.status === "forbidden") return FORBIDDEN;
   return answer.status === "ready" || answer.status === "archived"
     ? { status: "ready", value: answer }
     : UNAVAILABLE;
@@ -146,11 +157,11 @@ function importantDates(
 function relationships(
   list: RelationshipAnswer,
   types: RelationshipTypeAnswer,
-): PersonRailSection<PersonRailRelationships> {
-  if (
-    list.status === "forbidden" || list.status === "hidden" ||
-    types.status === "forbidden" || types.status === "hidden"
-  ) return HIDDEN;
+): PersonRailHideableSection<PersonRailRelationships> {
+  if (list.status === "forbidden" || types.status === "forbidden") {
+    return FORBIDDEN;
+  }
+  if (list.status === "hidden" || types.status === "hidden") return HIDDEN;
   return (list.status === "ready" || list.status === "archived") &&
       types.status === "ready"
     ? { status: "ready", value: { list, types } }
@@ -160,7 +171,7 @@ function relationships(
 function reminders(
   answer: ReminderAnswer,
 ): PersonRailSection<PersonRailReminders> {
-  if (answer.status === "forbidden") return HIDDEN;
+  if (answer.status === "forbidden") return FORBIDDEN;
   if (answer.status !== "ready") return UNAVAILABLE;
   return { status: "ready", value: answer };
 }
@@ -171,7 +182,7 @@ export function createPersonRail(sources: PersonRailSources) {
     personId: string,
   ): Promise<PersonRail> => {
     const factSections: Partial<
-      Record<PersonRailFactSection, PersonRailSection<PersonRailFacts>>
+      Record<PersonRailFactSection, PersonRailHideableSection<PersonRailFacts>>
     > = {};
     for (const id of PERSON_RAIL_FACT_SECTIONS) {
       factSections[id] = await section(async () =>
@@ -183,9 +194,8 @@ export function createPersonRail(sources: PersonRailSources) {
         limit: PERSON_RAIL_PAGE,
       });
       // A hidden or refused list needs no vocabulary beside it.
-      if (list.status === "forbidden" || list.status === "hidden") {
-        return HIDDEN;
-      }
+      if (list.status === "forbidden") return FORBIDDEN;
+      if (list.status === "hidden") return HIDDEN;
       return relationships(list, await sources.relationships.listTypes(actor));
     });
     const dateSection = await section(async () =>
@@ -201,7 +211,7 @@ export function createPersonRail(sources: PersonRailSources) {
     return {
       ...(factSections as Record<
         PersonRailFactSection,
-        PersonRailSection<PersonRailFacts>
+        PersonRailHideableSection<PersonRailFacts>
       >),
       "important-dates": dateSection,
       relationships: relationshipSection,

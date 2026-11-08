@@ -850,6 +850,25 @@ describe("PLANNING-002 person reminders island", () => {
     },
   );
 
+  it.each([401, 403])(
+    "REL-127 shows both sections refused when their own read answers %i",
+    async (status) => {
+      shell();
+      stubApi({ [LIST]: problemResponse(status) });
+      await mount();
+      expect(reminderAdd().hidden).toBe(true);
+      expect(cadenceAdd().hidden).toBe(true);
+      for (const block of [reminders(), stay()]) {
+        expect(block.dataset.sectionState).toBe("forbidden");
+      }
+      for (const line of [reminderState(), cadenceState()]) {
+        expect(line.textContent).toBe(
+          "Your active workspace no longer permits this action.",
+        );
+      }
+    },
+  );
+
   it("loads reminder and cadence and keeps archived mutations disabled", async () => {
     shell();
     stubApi({
@@ -1154,15 +1173,25 @@ describe("AUD-Q3 reminders from the person read", () => {
     expect(api.calls()).toEqual([]);
   });
 
-  it.each(["hidden", "unavailable"] as const)(
-    "shows a %s rail section as its own error without reading",
-    async (status) => {
-      shell();
-      const api = stubApi({ [LIST]: unreachable });
-      await mountWith({ status });
-      expect(reminders().dataset.sectionState).toBe("error");
-      expect(stay().dataset.sectionState).toBe("error");
-      expect(api.calls()).toEqual([]);
-    },
-  );
+  it("shows an unavailable rail section as its own error without reading", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable });
+    await mountWith({ status: "unavailable" });
+    expect(reminders().dataset.sectionState).toBe("error");
+    expect(stay().dataset.sectionState).toBe("error");
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("REL-127 shows a forbidden rail section as its forbidden state without reading", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable });
+    await mountWith({ status: "forbidden" });
+    for (const block of [reminders(), stay()]) {
+      expect(block.dataset.sectionState).toBe("forbidden");
+      expect(block.textContent).toContain(
+        "Your active workspace no longer permits this action.",
+      );
+    }
+    expect(api.calls()).toEqual([]);
+  });
 });

@@ -326,8 +326,8 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
 
   // The first read starts in the loading state the island mounted with; a
   // block counted empty has nothing to read, and one whose first pages came
-  // with the person read shows them, or its own outage (AUD-Q3). The answer
-  // is drawn before the read settles (REL-074).
+  // with the person read shows them, its refusal (REL-127), or its own outage
+  // (AUD-Q3). The answer is drawn before the read settles (REL-074).
   const first = useEffectEvent(() => {
     if (state.list !== "loading") return Promise.resolve();
     const preloaded = props.preloaded;
@@ -345,6 +345,9 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
             data: { relationships: [], status: "hidden" },
             status: "ready",
           }, undefined);
+        } else if (preloaded.status === "forbidden") {
+          // Refused as its own read is refused (REL-127).
+          dispatch({ status: 403, type: "list-failed" });
         } else applyList({ status: "unavailable" }, undefined);
       })
     );

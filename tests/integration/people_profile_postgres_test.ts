@@ -18,8 +18,10 @@ import { PostgresPersonProfileRepository } from "../../packages/backend/read-mod
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   CapturedVerificationMail,
+  composeApiServices,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
+import { fakeObjectStore } from "../../packages/backend/testing/fakes.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { apiSupport } from "../support/api.ts";
@@ -38,7 +40,11 @@ import {
   sql,
 } from "./people.test-helper.ts";
 import { closeResources } from "./people.test-helper.ts";
-import { assertCrossWorkspaceRefused, truncate } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  revokeMembership,
+  truncate,
+} from "../support/database.ts";
 
 Deno.test({
   name:
@@ -1173,6 +1179,95 @@ Deno.test({
     } finally {
       await counted.close();
     }
+  },
+});
+
+/** A local keyset of one repeated byte. */
+function railKeyset(fill: number) {
+  return {
+    activeKeyId: "rail-refusal",
+    keys: new Map([["rail-refusal", new Uint8Array(32).fill(fill)]]),
+  };
+}
+
+Deno.test({
+  name:
+    "REL-127 a rail section its module refuses answers forbidden, not hidden",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const actor = await createStaleActorFixture(
+      `rail-refusal-${crypto.randomUUID()}`,
+    );
+    const services = composeApiServices(peopleConnection.db, {
+      davEnabled: false,
+      davKeyset: railKeyset(0x69),
+      deviceKeyset: {
+        activeVersion: 1,
+        keys: new Map([[1, new Uint8Array(32).fill(0x44)]]),
+      },
+      mail: new CapturedVerificationMail(),
+      mfaKeyset: railKeyset(0x4b),
+      objectStore: fakeObjectStore(),
+      policy: browserSecurityPolicy("test", "http://localhost"),
+      subjectKeyset: {
+        activeVersion: 1,
+        keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
+      },
+    });
+    const { importantDates, profileFacts, relationships, reminders } = services;
+    assert(
+      importantDates && profileFacts && relationships && reminders,
+      "the rail's owning modules are composed",
+    );
+    const rail = {
+      facts: profileFacts,
+      importantDates,
+      relationships,
+      reminders,
+    };
+    const profileOf = (
+      revalidate: typeof actors.revalidate,
+    ) =>
+      createPersonProfile({
+        actors: { revalidate },
+        rail,
+        repository: new PostgresPersonProfileRepository(peopleConnection.db),
+        transaction: new PostgresPeopleTransaction(peopleConnection.db),
+      });
+
+    // While the membership is active every section answers, so the
+    // refusals below can only come from the revocation.
+    const before = await profileOf((command) => actors.revalidate(command))
+      .get(actor, actor.personId, { includeRail: true });
+    assert(before.status === "ready" && before.rail, "the rail is answered");
+    for (const [section, answer] of Object.entries(before.rail)) {
+      assert(answer.status === "ready", `${section} is ready before`);
+    }
+
+    // The person read admitted the member, and the revocation lands before
+    // each section's module checks the member's standing again.
+    await revokeMembership(sql, actor.memberId);
+    const refused = await profileOf(() => Promise.resolve("active"))
+      .get(actor, actor.personId, { includeRail: true });
+    assert(refused.status === "ready" && refused.rail, "the person answers");
+    const sections = [
+      ...RAIL_FACT_SECTIONS,
+      "relationships",
+      "important-dates",
+      "reminders",
+    ] as const;
+    assertEquals(
+      Object.keys(refused.rail).sort(),
+      [...sections].sort(),
+      "the rail answers exactly its ten sections",
+    );
+    const railAnswer = refused.rail;
+    assertEquals(
+      sections.map((section) => [section, railAnswer[section]]),
+      sections.map((section) => [section, { status: "forbidden" }]),
+      "every section its module refused is forbidden, none hidden",
+    );
   },
 });
 

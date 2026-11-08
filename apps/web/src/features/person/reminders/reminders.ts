@@ -116,10 +116,13 @@ export const REMINDERS_FAILED =
   "Reminders could not be loaded. Retry this section.";
 export const CADENCE_FAILED =
   "Cadence could not be loaded. Other profile sections remain available.";
+/** Both sections' line when the workspace refused the member (REL-127). */
+export const REMINDERS_FORBIDDEN =
+  "Your active workspace no longer permits this action.";
 
 // --- The sections' state ----------------------------------------------------
 
-export type RemindersStatus = "loading" | "ready" | "error";
+export type RemindersStatus = "loading" | "ready" | "error" | "forbidden";
 
 /** A save on its way: the muted row a list shows until it settles. */
 export interface PendingRow {
@@ -164,7 +167,11 @@ export type RemindersAction =
     readonly nextCursor?: string | undefined;
     readonly cadences: readonly StayInTouchCadence[];
   }
-  | { readonly type: "failed" }
+  | {
+    readonly type: "failed";
+    /** Whether the workspace refused the member rather than failing. */
+    readonly forbidden?: boolean;
+  }
   | { readonly type: "lifecycle"; readonly archived: boolean }
   | { readonly type: "open"; readonly editor: "reminder" | "cadence" }
   | {
@@ -232,7 +239,17 @@ export function remindersReducer(
     }
     case "failed": {
       const { nextCursor: _cursor, ...rest } = state;
-      return { ...rest, status: "error" };
+      // A refused member keeps nothing the workspace no longer shows them.
+      return action.forbidden
+        ? {
+          ...rest,
+          cadenceOpen: false,
+          cadences: [],
+          reminderOpen: false,
+          reminders: [],
+          status: "forbidden",
+        }
+        : { ...rest, status: "error" };
     }
     case "lifecycle":
       return { ...state, archived: action.archived };

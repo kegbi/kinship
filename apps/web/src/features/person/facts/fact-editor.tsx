@@ -47,7 +47,7 @@ import {
   createProfileFact,
   deleteProfileFact,
   listProfileFacts,
-  type PersonRailSection,
+  type PersonRailHideableSection,
   type ProfileFactRecord,
   type ProfileFactSection,
   type ProfileFactSectionId,
@@ -113,7 +113,9 @@ export interface FactSectionProps {
    * The first page the person read's rail answered for this section, which
    * the section shows instead of reading it (AUD-Q3).
    */
-  readonly preloaded?: PersonRailSection<ProfileFactSection> | undefined;
+  readonly preloaded?:
+    | PersonRailHideableSection<ProfileFactSection>
+    | undefined;
   /** The element the section renders into; it carries the section state. */
   readonly root: HTMLElement;
   /** The shell's heading the add control renders into, for a rail block. */
@@ -295,6 +297,17 @@ export function FactEditor<Values extends FieldValues>(
     setFormNotice(undefined);
   }, []);
 
+  /** Shows that the workspace no longer lets the member see the section. */
+  const refuse = useCallback((): ReadOutcome => {
+    setFailed(false);
+    setPage(undefined);
+    close();
+    publish.clear();
+    setStatus("forbidden");
+    setFeedback(FORBIDDEN);
+    return { status: "forbidden" };
+  }, [close, publish]);
+
   /** Shows what a read of the section's first page answered. */
   const show = useCallback((
     answer: Settled<ProfileFactSection> | undefined,
@@ -303,21 +316,12 @@ export function FactEditor<Values extends FieldValues>(
     const knownTotal = total.current;
     total.current = undefined;
     const retryable = answer.status !== "ready" || !answer.data;
-    setFailed(
+    if (
       retryable &&
-        answer.problem?.status !== 401 && answer.problem?.status !== 403,
-    );
+      (answer.problem?.status === 401 || answer.problem?.status === 403)
+    ) return refuse();
+    setFailed(retryable);
     if (retryable) {
-      const denied = answer.problem?.status === 401 ||
-        answer.problem?.status === 403;
-      if (denied) {
-        setPage(undefined);
-        close();
-        publish.clear();
-        setStatus("forbidden");
-        setFeedback(FORBIDDEN);
-        return { status: "forbidden" };
-      }
       publish.failed();
       setStatus("error");
       setFeedback(UNAVAILABLE);
@@ -360,7 +364,7 @@ export function FactEditor<Values extends FieldValues>(
     setFeedback(undefined);
     publish.page(loaded);
     return { page: loaded, status: "loaded" };
-  }, [applyRevision, close, publish, reset, section]);
+  }, [applyRevision, close, publish, refuse, reset, section]);
 
   // A read's answer is drawn before the read settles, so the page acting on a
   // settled section finds the add control it shows (REL-074).
@@ -380,14 +384,18 @@ export function FactEditor<Values extends FieldValues>(
   }, [read]);
 
   // The first read starts in the loading state the section mounted with. A
-  // section whose first page came with the person read shows it, or its own
-  // outage (AUD-Q3). Otherwise a section the profile summary counted empty
-  // needs none: it shows its empty state and its add control, and the first
-  // write reads it (FEQ-04). Tags always read: their one record, the person's
-  // assignments, is what the editor saves, even while it assigns none.
+  // section whose first page came with the person read shows it, its
+  // refusal (REL-127), or its own outage (AUD-Q3). Otherwise a section the
+  // profile summary counted empty needs none: it shows its empty state and
+  // its add control, and the first write reads it (FEQ-04). Tags always
+  // read: their one record, the person's assignments, is what the editor
+  // saves, even while it assigns none.
   const firstRead = useEffectEvent(() => {
     if (props.hidden) return Promise.resolve();
     const preloaded = props.preloaded;
+    if (preloaded?.status === "forbidden") {
+      return Promise.resolve().then(() => flushSync(() => refuse()));
+    }
     const empty: ProfileFactSection = {
       options: [],
       personUpdatedAt: revision.current,

@@ -129,7 +129,7 @@ Deno.test("AUD-Q3 the rail reads each section's first page from its owning modul
   );
 });
 
-Deno.test("AUD-Q3 a failing or refusing module affects only its own rail section", async () => {
+Deno.test("AUD-Q3 REL-127 a failing or refusing module affects only its own rail section", async () => {
   const { recorded, sources: railSources } = sources({
     addresses: { status: "not-found" },
     "contact-methods": new Error("connection reset"),
@@ -138,33 +138,44 @@ Deno.test("AUD-Q3 a failing or refusing module affects only its own rail section
     pets: { ...factPage("pets"), records: [], status: "hidden" },
     relationships: { relationships: [], status: "hidden" },
     reminders: { status: "validation-error" },
-    work: { status: "forbidden" },
+    tags: { status: "forbidden" },
+    work: { ...factPage("work"), records: [], status: "hidden" },
   });
   const rail = await createPersonRail(railSources)(actor, personId);
 
   assertEquals(rail["contact-methods"], { status: "unavailable" }, "thrown");
   assertEquals(rail.addresses, { status: "unavailable" }, "not found");
   assertEquals(rail["first-meeting"], { status: "unavailable" }, "stale");
-  assertEquals(rail.work, { status: "hidden" }, "a refused actor sees none");
-  assertEquals(rail.pets, { status: "hidden" }, "a hidden module");
+  assertEquals(rail.tags, { status: "forbidden" }, "a refused actor");
+  assertEquals(rail.work, { status: "hidden" }, "a hidden module");
+  assertEquals(rail.pets, { status: "hidden" }, "another hidden module");
   assertEquals(rail.relationships, { status: "hidden" }, "hidden edges");
   assert(
     !recorded.calls.includes("relationship-types"),
     "a hidden relationship list reads no vocabulary",
   );
-  assertEquals(rail["important-dates"], { status: "hidden" }, "refused");
+  assertEquals(rail["important-dates"], { status: "forbidden" }, "refused");
   assertEquals(rail.reminders, { status: "unavailable" }, "invalid");
-  assertEquals(rail.tags, {
+  assertEquals(rail["food-preferences"], {
     status: "ready",
-    value: factPage("tags"),
+    value: factPage("food-preferences"),
   }, "the sections beside them still answer");
+});
+
+Deno.test("REL-127 refused reminders are forbidden, never hidden", async () => {
+  const { sources: railSources } = sources({
+    reminders: { status: "forbidden" },
+  });
+  const rail = await createPersonRail(railSources)(actor, personId);
+  assertEquals(rail.reminders, { status: "forbidden" }, "refused reminders");
+  assertEquals(rail.pets.status, "ready", "the sections beside them answer");
 });
 
 Deno.test("AUD-Q3 relationships answer only when both their list and their types do", async () => {
   const cases = [
-    [{ status: "forbidden" }, typePage, "hidden"],
+    [{ status: "forbidden" }, typePage, "forbidden"],
     [{ status: "not-found" }, typePage, "unavailable"],
-    [relationshipPage, { status: "forbidden" }, "hidden"],
+    [relationshipPage, { status: "forbidden" }, "forbidden"],
     [
       relationshipPage,
       { options: [], selected: [], status: "hidden" },

@@ -949,7 +949,7 @@ describe("AUD-Q3 important dates from the person read", () => {
   it.each(
     [
       [
-        "hidden",
+        "forbidden",
         "forbidden",
         "Your active workspace no longer permits this action.",
       ],

@@ -1944,6 +1944,18 @@ describe("AUD-Q3 relationships from the person read", () => {
     expect(api.calls()).toEqual([]);
   });
 
+  it("REL-127 shows a forbidden rail section as its forbidden state without reading", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable, [TYPES]: unreachable });
+    await mountWith({ status: "forbidden" });
+    expect(section().hidden).toBe(false);
+    expect(section().dataset.sectionState).toBe("forbidden");
+    expect(state().textContent).toContain(
+      "Your active workspace no longer permits this action.",
+    );
+    expect(api.calls()).toEqual([]);
+  });
+
   it("shows an unavailable rail section as its own error without reading", async () => {
     shell();
     const api = stubApi({ [LIST]: unreachable, [TYPES]: unreachable });

@@ -177,8 +177,9 @@ test(
     });
     // The page opens with the dates' first page in the person read's rail
     // (AUD-Q3), which reports an outage as unavailable and a refusal as
-    // hidden; the dates' own read, routed beside it, answers the same.
-    let railDates: "unavailable" | "hidden" = "unavailable";
+    // forbidden (REL-127); the dates' own read, routed beside it, answers the
+    // same.
+    let railDates: "unavailable" | "forbidden" = "unavailable";
     const datesRail = await routePersonRail(page, (answer) => ({
       ...answer,
       rail: { ...answer.rail, "important-dates": { status: railDates } },
@@ -205,7 +206,7 @@ test(
       }
       await route.continue();
     });
-    railDates = "hidden";
+    railDates = "forbidden";
     await page.reload();
     await expect(section).toHaveAttribute("data-section-state", "forbidden");
     await expect(section.getByText(

@@ -3782,12 +3782,12 @@ export interface components {
             /** @constant */
             readonly status: "ready";
             readonly value: components["schemas"]["ProfileFactSection"];
-        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionForbidden"] | components["schemas"]["PersonRailSectionUnavailable"];
         readonly PersonRailImportantDates: {
             /** @constant */
             readonly status: "ready";
             readonly value: components["schemas"]["ImportantDateList"];
-        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        } | components["schemas"]["PersonRailSectionForbidden"] | components["schemas"]["PersonRailSectionUnavailable"];
         readonly PersonRailRelationships: {
             /** @constant */
             readonly status: "ready";
@@ -3795,12 +3795,16 @@ export interface components {
                 readonly list: components["schemas"]["RelationshipList"];
                 readonly types: components["schemas"]["RelationshipTypeList"];
             };
-        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionForbidden"] | components["schemas"]["PersonRailSectionUnavailable"];
         readonly PersonRailReminders: {
             /** @constant */
             readonly status: "ready";
             readonly value: components["schemas"]["PersonReminders"];
-        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        } | components["schemas"]["PersonRailSectionForbidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        readonly PersonRailSectionForbidden: {
+            /** @constant */
+            readonly status: "forbidden";
+        };
         readonly PersonRailSectionHidden: {
             /** @constant */
             readonly status: "hidden";

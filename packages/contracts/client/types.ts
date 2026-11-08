@@ -762,22 +762,28 @@ export interface ImportantDateList {
 
 /**
  * One section of the composed rail (AUD-Q3): its first page exactly as its
- * own endpoint answers it, or why it is not shown.
+ * own endpoint answers it, or why it is not shown — `forbidden` when its
+ * module refused the member, as its own endpoint's 403 would (REL-127).
  */
 export type PersonRailSection<Value> =
   | { readonly status: "ready"; readonly value: Value }
-  | { readonly status: "hidden" | "unavailable" };
+  | { readonly status: "forbidden" | "unavailable" };
+
+/** A rail section whose module the workspace can turn off. */
+export type PersonRailHideableSection<Value> =
+  | PersonRailSection<Value>
+  | { readonly status: "hidden" };
 
 /** What `getPerson(…, "rail")` adds: every rail section's first page. */
 export interface PersonRail {
-  readonly "contact-methods": PersonRailSection<ProfileFactSection>;
-  readonly addresses: PersonRailSection<ProfileFactSection>;
-  readonly "first-meeting": PersonRailSection<ProfileFactSection>;
-  readonly work: PersonRailSection<ProfileFactSection>;
-  readonly "food-preferences": PersonRailSection<ProfileFactSection>;
-  readonly pets: PersonRailSection<ProfileFactSection>;
-  readonly tags: PersonRailSection<ProfileFactSection>;
-  readonly relationships: PersonRailSection<{
+  readonly "contact-methods": PersonRailHideableSection<ProfileFactSection>;
+  readonly addresses: PersonRailHideableSection<ProfileFactSection>;
+  readonly "first-meeting": PersonRailHideableSection<ProfileFactSection>;
+  readonly work: PersonRailHideableSection<ProfileFactSection>;
+  readonly "food-preferences": PersonRailHideableSection<ProfileFactSection>;
+  readonly pets: PersonRailHideableSection<ProfileFactSection>;
+  readonly tags: PersonRailHideableSection<ProfileFactSection>;
+  readonly relationships: PersonRailHideableSection<{
     readonly list: RelationshipListPage;
     readonly types: RelationshipTypePage;
   }>;

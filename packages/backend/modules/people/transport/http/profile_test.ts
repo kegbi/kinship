@@ -251,6 +251,7 @@ Deno.test("AUD-Q3 HTTP answers the composed rail as each section's own endpoint 
   let options: unknown;
   const unavailable = { status: "unavailable" } as const;
   const hidden = { status: "hidden" } as const;
+  const forbidden = { status: "forbidden" } as const;
   const record = {
     id: fixtures.personId(),
     section: "pets",
@@ -314,7 +315,7 @@ Deno.test("AUD-Q3 HTTP answers the composed rail as each section's own endpoint 
             },
             relationships: hidden,
             reminders: { status: "ready", value: reminders },
-            tags: hidden,
+            tags: forbidden,
             work: unavailable,
           },
           status: "ready",
@@ -364,9 +365,8 @@ Deno.test("AUD-Q3 HTTP answers the composed rail as each section's own endpoint 
   for (const section of ["addresses", "contact-methods", "work"]) {
     assertEquals(body.rail[section], unavailable, `${section} is unavailable`);
   }
-  for (const section of ["relationships", "tags"]) {
-    assertEquals(body.rail[section], hidden, `${section} is hidden`);
-  }
+  assertEquals(body.rail.relationships, hidden, "relationships are hidden");
+  assertEquals(body.rail.tags, forbidden, "a refused section is forbidden");
 
   const summary = await app.request(
     `http://localhost/api/v1/people/${personId}?include=summary`,
