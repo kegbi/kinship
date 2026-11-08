@@ -1715,7 +1715,7 @@ these:
 
 ### Lane P — Proof
 
-- [ ] **AUD-P1 — Budgets keep the fixes fixed (PERF-002).** M. Normal. Depends:
+- [x] **AUD-P1 — Budgets keep the fixes fixed (PERF-002).** M. Normal. Depends:
       AUD-F1–F8, AUD-G1, AUD-G2, AUD-Q2. Closes: FEQ-13, FER-11, and FER-16 (the
       measurement), and sets the triggers for D5 and AUD-Q4.
   - Scope:
@@ -1745,6 +1745,25 @@ these:
   - Verify:
     `deno task test:e2e tests/e2e/perf.PERF-002.spec.ts --project=chromium`;
     `test:unit --module=web-build`.
+  - Delivered 2026-11-08: `perf.PERF-002.spec.ts` opens all 27 cataloged
+    authenticated pages (billing and the MFA challenge excluded) on the
+    production build with a fixed 150 ms request latency and fails on a
+    duplicate GET, a count over budget, or too many sequential steps; a fixture
+    with a repeated GET proves it discriminates. Budgets match the 01 report:
+    shell 2, Today 7, people 5, tasks 3, journal 3, palette 1, settings 2 to 4;
+    a blank person 7 (AUD-F5); pages without a target at their measured value;
+    the rich person at its interim 20 requests and 4 steps, for AUD-F5-fix and
+    AUD-Q3 to lower. Brotli JS budgets (layout, default page, and named pages)
+    and gzip CSS budgets per page group sit 10 to 14% over measured. Today's CLS
+    is 0.0027 (ceiling 0.1) and the rich person's LCP on 4x CPU 1,260 to 2,188
+    ms (ceiling 4,000). `mvp-capacity-profile.json` records the four navigation
+    timings, `sort=last-contacted` at the large profile (p50 65 to 72 ms, max 73
+    to 94 ms; ceiling p50 250 ms, max 500 ms, so AUD-Q4 does not run), and
+    `reminder_occurrences` (2.68 million rows, 1.62 GB, hot queries at most 1.4
+    ms; ceiling 2.5 million rows or 1.5 GiB, which reopens D5), with reproduce
+    steps; PERF-002 is documented in `quality-and-operations.md`. PERF-002
+    passed four runs on Chromium with the CSP collector; web-build 29 (only
+    REL-098); performance 2; fmt, architecture, and lint (only REL-096).
 
 - [ ] **AUD-P2 — Closure checkpoint.** M. Depends: every other ticket, or its
       recorded decision. Closes: nothing new; it proves the rest.

@@ -27,6 +27,8 @@
  * `astro build` rather than in the aggregate unit gate.
  */
 
+import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
+
 const CLIENT = new URL("../apps/web/dist/client/", import.meta.url);
 
 /**
@@ -1257,4 +1259,136 @@ Deno.test("[FER-14] the API reference renders each operation only near the viewp
     operation.includes("contain-intrinsic-size:auto 600px"),
     `an operation reserves no intrinsic size: ${operation}`,
   );
+});
+
+// --- [FER-11] Byte budgets (AUD-P1, PERF-002) -------------------------------
+
+/**
+ * Brotli at quality 11: the unit FER-08 and FER-11 measured in, not what is
+ * served. The gateway serves gzip only and the edge adds no compression
+ * (`compose-contract.md`), so these budgets track the code's size, not a
+ * transfer size.
+ */
+function brotliSize(bytes: Uint8Array): number {
+  return brotliCompressSync(bytes, {
+    params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 },
+  }).byteLength;
+}
+
+const brotliSizes = new Map<string, number>();
+
+/** The brotli bytes of `chunks`, each compressed on its own as it is served. */
+async function brotliBytes(chunks: Iterable<string>): Promise<number> {
+  let bytes = 0;
+  for (const chunk of chunks) {
+    let size = brotliSizes.get(chunk);
+    if (size === undefined) {
+      size = brotliSize(await Deno.readFile(new URL(chunk, CLIENT)));
+      brotliSizes.set(chunk, size);
+    }
+    bytes += size;
+  }
+  return bytes;
+}
+
+/**
+ * The most JavaScript, brotli, a page may load before anyone interacts: its
+ * scripts and their static imports, which are exactly what it preloads
+ * (FER-02), and for the person shell also its hero, rail, and fact islands.
+ * Island code a page imports on demand is not counted. Each budget is 10-14%
+ * over the largest page it covers, as measured when AUD-P1 set it
+ * (2026-11-08); the default protected budget leaves its smallest page 18%.
+ * A protected page names its own budget where its islands make it larger
+ * than the typical island page.
+ */
+const PUBLIC_PAGE_JS_BUDGET = 4 * 1024; // largest 3,628 B (sign-in)
+const SHELL_ONLY_PAGE_JS_BUDGET = 14.5 * 1024; // 13,143 B
+/** The typical island page: 93,721 B (compliance) to 97,870 B (imports). */
+const PROTECTED_PAGE_JS_BUDGET = 108 * 1024;
+const PAGE_JS_BUDGETS: Readonly<Record<string, number>> = {
+  [PERSON_SHELL]: 195 * 1024, // 177,103 B
+  "app/index.html": 113 * 1024, // 104,924 B (Today)
+  "app/people/archived/index.html": 140 * 1024, // 127,131 B
+  "app/people/index.html": 170 * 1024, // 154,526 B
+  "app/settings/import/new/index.html": 185 * 1024, // 168,344 B
+  "app/settings/personalization/index.html": 130 * 1024, // 117,264 B
+  "app/settings/preferences/index.html": 160 * 1024, // 143,972 B
+  "app/settings/workspace/index.html": 155 * 1024, // 141,249 B
+  "app/tasks/index.html": 114 * 1024, // 105,648 B
+};
+
+function pageJsBudget(page: string): number {
+  if (PAGE_JS_BUDGETS[page] !== undefined) return PAGE_JS_BUDGETS[page];
+  if (page === SHELL_ONLY_PAGE) return SHELL_ONLY_PAGE_JS_BUDGET;
+  return PUBLIC_PAGES.includes(page) || !/^(app|internal)\//.test(page)
+    ? PUBLIC_PAGE_JS_BUDGET
+    : PROTECTED_PAGE_JS_BUDGET;
+}
+
+/**
+ * The most JavaScript, brotli, the layout loads before a session is ready
+ * (FER-01): 13,091 B when AUD-P1 set it. The header's islands load on demand
+ * and are not counted.
+ */
+const LAYOUT_EAGER_JS_BUDGET = 14.5 * 1024;
+
+/**
+ * The most CSS, gzip, each protected page group may load, below FER-09's
+ * 30 KB ceiling, so a group's growth shows before it reaches the ceiling:
+ * 13-15% over what AUD-P1 measured (general 11,291 B, people 11,184 B,
+ * settings 13,090 B, and person 15,377 B).
+ */
+const PAGE_GROUP_CSS_BUDGETS: Readonly<Record<string, number>> = {
+  general: 12.5 * 1024,
+  people: 12.5 * 1024,
+  person: 17 * 1024,
+  settings: 14.5 * 1024,
+};
+
+Deno.test("[FER-11] each page's eager JavaScript stays within its brotli budget", async () => {
+  const pages = await builtPages();
+  assert(pages.length > 20, `the build wrote pages, found ${pages.length}`);
+  for (const page of Object.keys(PAGE_JS_BUDGETS)) {
+    assert(pages.includes(page), `${page} has a JS budget but was not built`);
+  }
+  const over: string[] = [];
+  const sizes: string[] = [];
+  for (const page of pages) {
+    const budget = pageJsBudget(page);
+    const bytes = await brotliBytes(await expectedPreloads(page));
+    sizes.push(`${page} ${bytes} B`);
+    if (bytes > budget) over.push(`${page} ${bytes} B > ${budget} B`);
+  }
+  console.log(`Eager JS per page, brotli: ${sizes.join(", ")}`);
+  assert(over.length === 0, `pages over their JS budget: ${over.join("; ")}`);
+});
+
+Deno.test("[FER-11] the layout's eager JavaScript stays within its brotli budget", async () => {
+  const bytes = await brotliBytes(
+    await eagerlyReachable([await layoutScript()]),
+  );
+  console.log(`Layout eager JS, brotli: ${bytes} B`);
+  assert(
+    bytes <= LAYOUT_EAGER_JS_BUDGET,
+    `the layout loads ${bytes} B of brotli JS before a session, over ${LAYOUT_EAGER_JS_BUDGET}`,
+  );
+});
+
+Deno.test("[FER-11] each protected page group's CSS stays within its gzip budget", async () => {
+  for (const { page, group } of await protectedPageGroups()) {
+    const budget = PAGE_GROUP_CSS_BUDGETS[group.name];
+    assert(budget !== undefined, `${group.name} has a CSS budget`);
+    assert(
+      budget <= PAGE_GROUP_CSS_BUDGET,
+      `${group.name} is under FER-09's ceiling`,
+    );
+    let bytes = 0;
+    for (const sheet of linkedStylesheets(await read(page))) {
+      bytes += await gzipSize(sheet);
+    }
+    assert(
+      bytes <= budget,
+      `${page} (${group.name}) loads ${bytes} B of gzipped CSS, over ${budget}`,
+    );
+  }
 });

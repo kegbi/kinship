@@ -540,6 +540,77 @@ Chromium boundary
 budgets are MVP regression thresholds, not production SLOs or a claim about a
 named deployment.
 
+### PERF-002: request, byte, and Web Vitals budgets
+
+AUD-P1 pins the 2026-11-07 audit's fixes (FEQ-13, FER-11, FER-16) so a later
+change cannot undo them unnoticed. Every ticket keeps these budgets green.
+
+- **Requests per page.**
+  `deno task test:e2e tests/e2e/perf.PERF-002.spec.ts --project=chromium` opens
+  every authenticated page in `docs/product/page-catalog.yaml` (less the
+  optional billing module) against a seeded workspace, on the production build,
+  at 1280x900, each in a fresh tab: an empty `sessionStorage` and a warm HTTP
+  cache. It collects the `/api/v1/` requests until the API has been quiet for
+  1.5 s and fails on a repeated GET URL, on more requests than the page's
+  budget, or on more sequential steps than its budget. A step is the 01 report's
+  sequential depth: one more than the deepest request already answered when a
+  request was sent. Each measured tab adds a fixed 150 ms latency to every
+  request (`requestBudgets.latencyMs`, as the 01 report's 100 ms runs did), so
+  reads that do not wait for one another are sent while the earlier ones are
+  still on the wire and share a step however the browser schedules the effects
+  that send them. Counts depend only on the seeded data. Steps depend on timing
+  only if a page sends an independent read more than that latency after its
+  siblings. Across four runs on a heavily loaded host every count and step
+  repeated exactly, except the rich person's: its five Timeline reads start from
+  their cards' viewport observers just before or just after the rail's answers
+  arrive, at step 3 or 4, so its step budget is that upper bound. The reads a
+  page defers to idle by design (the bell's first count, the person page's
+  recorded view, and the directory's duplicates) count as requests but take no
+  step, because when the browser goes idle is timing, not the page's chain. The
+  palette's empty query is budgeted the same way. A positive control serves a
+  fixture page that reads one URL twice and proves the check fails it. The
+  budgets live in `requestBudgets` in
+  [`mvp-capacity-profile.json`](mvp-capacity-profile.json), each with its basis:
+  the 01 report's targets (the shell 2, Today 7, people 5, tasks 3, the journal
+  3, settings 2–4, and the palette 1), otherwise the measured count. The person
+  page is budgeted twice. A blank person (`people.profile#blank`) has AUD-F5's 7
+  requests. The rich person (`people.profile`) has its measured 20 requests in 4
+  steps, an interim value until AUD-Q3 delivers the target of at most 6; AUD-Q3
+  or AUD-F5-fix lowers that number.
+- **Bytes.** `deno task test:unit --module=web-build`, which `deno task build`
+  runs after `astro build`, fails when a page's eager JavaScript exceeds its
+  budget. Eager JavaScript is the static closure of the page's scripts, which
+  the page preloads, measured in brotli at quality 11. Brotli is FER-08's and
+  FER-11's measuring unit, not what is served: the gateway serves gzip and the
+  edge adds no compression. The budgets are 4 KiB for public pages, 14.5 KiB for
+  the island-free settings overview, and 108 KiB for the typical island page,
+  with a named budget for each of the nine larger pages (Today 113 KiB, tasks
+  114 KiB, the person shell 195 KiB). The layout's eager JavaScript before a
+  session is ready has 14.5 KiB (13,091 B measured). Each protected page group's
+  gzipped CSS has its own budget below FER-09's 30 KB ceiling. Each JavaScript
+  budget is 10–14% over the largest page it covers, as measured on 2026-11-08;
+  the smallest page under the 108 KiB default has 18%. The CSS budgets are
+  13–15% over. The test file records each measurement beside its budget.
+- **Web Vitals.** The same spec asserts Today's cumulative layout shift below
+  `webVitals.todayCls.ceiling` (0.1) and the person page's largest contentful
+  paint at 4x CPU throttling at or below `webVitals.personLcpCpu4Ms.ceiling`
+  (4,000 ms, the Web Vitals poor threshold). These are the only timed
+  assertions. On 2026-11-08 Today measured 0.0027–0.0028 and the rich person
+  1,260–2,188 ms on a heavily loaded host; the profile records both.
+- **Navigation (FER-16, recorded, never asserted).** A third test times the four
+  primary clicks at 4x CPU (Today to People, People to a person, the person to
+  Today, and the settings overview to Preferences), median of three, and records
+  them in the test's annotations. The profile keeps the 2026-11-08 values as the
+  baseline; D6 accepts full document loads.
+- **Growth ceilings.** `growthCeilings` in the profile records two measured
+  ceilings at the large profile, each with its schema version and PostgreSQL
+  version. The directory's `sort=last-contacted` read has a ceiling of 250 ms
+  median and 500 ms per page; AUD-Q4 runs only if a measurement exceeds it.
+  `reminder_occurrences` has a ceiling of 2,500,000 rows or 1.5 GiB of table and
+  indexes, whichever comes first; crossing it reopens D5. Its `reproduce` entry
+  holds the seed and the three timed queries (the feed page, the open-reminder
+  arm, and the worker's due claim), so the measurement can be repeated.
+
 Measure at least:
 
 - public/static and authenticated-shell asset budgets and Web Vitals;

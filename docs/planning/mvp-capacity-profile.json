@@ -125,5 +125,394 @@
         ]
       }
     ]
+  },
+  "requestBudgets": {
+    "flowId": "PERF-002",
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    },
+    "quietMs": 1500,
+    "latencyMs": 150,
+    "offChain": [
+      {
+        "method": "GET",
+        "path": "/api/v1/notifications",
+        "reason": "The bell's first count waits for idle (FEQ-09)."
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/people/[^/]+/view",
+        "reason": "The person page records its view at idle (REL-046)."
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/people/duplicates",
+        "reason": "The directory reads its duplicates at idle (FEQ-11)."
+      }
+    ],
+    "palette": {
+      "requests": 1,
+      "steps": 1,
+      "basis": "01 report target 1"
+    },
+    "pages": {
+      "app.today": {
+        "requests": 7,
+        "steps": 2,
+        "basis": "01 report target 7"
+      },
+      "compliance.accept": {
+        "requests": 3,
+        "steps": 1,
+        "basis": "measured 2 or 3, the 01 report states no target; counted until the review forwards to Today, and the bell's idle read may go out first"
+      },
+      "journal.index": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 3"
+      },
+      "journal.item": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "measured; the 01 report states no target"
+      },
+      "people.activity-report": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "measured; the 01 report states no target"
+      },
+      "people.archived": {
+        "requests": 4,
+        "steps": 2,
+        "basis": "measured; the 01 report states no target"
+      },
+      "people.audit": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "measured; the 01 report states no target"
+      },
+      "people.create": {
+        "requests": 2,
+        "steps": 1,
+        "basis": "01 report shell target 2"
+      },
+      "people.index": {
+        "requests": 5,
+        "steps": 2,
+        "basis": "01 report target 5"
+      },
+      "people.profile": {
+        "requests": 20,
+        "steps": 4,
+        "basis": "measured rich person, an interim value; over the 01 report's target of at most 6, which AUD-Q3 delivers, and AUD-Q3 or AUD-F5-fix lowers this budget. Steps measure 3 or 4: the five Timeline reads start from their cards' viewport observers just before or just after the rail's answers arrive, and 4 is their upper bound"
+      },
+      "people.profile#blank": {
+        "requests": 7,
+        "steps": 3,
+        "basis": "AUD-F5's blank person, 7 requests, as measured here"
+      },
+      "settings.api-access": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.audit": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.export": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.import": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.import-new": {
+        "requests": 2,
+        "steps": 1,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.import-report": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.index": {
+        "requests": 2,
+        "steps": 1,
+        "basis": "01 report shell target 2"
+      },
+      "settings.integrations": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.members": {
+        "requests": 4,
+        "steps": 3,
+        "basis": "01 report target 2-4 for settings; the role controls read after the member and invitation lists"
+      },
+      "settings.personalization": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.preferences": {
+        "requests": 4,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.profile": {
+        "requests": 4,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.security": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.storage": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.workspace": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "settings.workspace-danger": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 2-4 for settings"
+      },
+      "tasks.index": {
+        "requests": 3,
+        "steps": 2,
+        "basis": "01 report target 3"
+      }
+    }
+  },
+  "webVitals": {
+    "todayCls": {
+      "ceiling": 0.1,
+      "basis": "FER-06 and the Web Vitals good threshold",
+      "measured": {
+        "on": "2026-11-08",
+        "values": [
+          0.0027,
+          0.0027,
+          0.0027,
+          0.0028,
+          0.0027,
+          0.0027
+        ]
+      }
+    },
+    "personLcpCpu4Ms": {
+      "ceiling": 4000,
+      "cpuThrottlingRate": 4,
+      "basis": "the Web Vitals poor threshold, headroom over the value measured on a heavily loaded host; the rich person in a fresh tab",
+      "measured": {
+        "on": "2026-11-08",
+        "valuesMs": [
+          2188,
+          1756,
+          1592,
+          2112,
+          1700,
+          1260
+        ]
+      }
+    },
+    "navigationClicksCpu4": {
+      "cpuThrottlingRate": 4,
+      "runs": 3,
+      "basis": "FER-16, recorded and never asserted (D6); click to the destination's first content, warm tab, median of three",
+      "measured": {
+        "on": "2026-11-08",
+        "medianMsPerRun": {
+          "Today to People (primary nav)": [
+            702,
+            654,
+            809,
+            746,
+            739,
+            649,
+            621
+          ],
+          "People to Person (row link)": [
+            1006,
+            1191,
+            1104,
+            1220,
+            1051,
+            927,
+            915
+          ],
+          "Person to Today (brand link)": [
+            680,
+            647,
+            774,
+            640,
+            691,
+            661,
+            563
+          ],
+          "Settings overview to Preferences": [
+            533,
+            549,
+            617,
+            518,
+            571,
+            506,
+            511
+          ]
+        }
+      }
+    }
+  },
+  "growthCeilings": {
+    "directoryLastContacted": {
+      "dataset": "large",
+      "query": "GET /api/v1/people?sort=last-contacted, through the people-directory repository: six 20-person pages after one warming read, with and without starred-first",
+      "ceilingMs": {
+        "p50": 250,
+        "max": 500
+      },
+      "rationale": "The representative-query and ordinary-API-read ceilings above, which every directory order must meet. last-contacted is the order that reads the interaction history; D6 builds no projection (AUD-Q4) and no trigram index until a measurement at the large profile is above this ceiling.",
+      "gates": "AUD-Q4 (D6, BEQ-10)",
+      "proof": "tests/integration/people_directory_capacity_postgres_test.ts",
+      "measured": {
+        "on": "2026-11-08",
+        "schemaVersion": 13,
+        "postgres": "18.4",
+        "runs": 4,
+        "p50Ms": [
+          65,
+          70,
+          72,
+          71
+        ],
+        "maxMs": [
+          73,
+          75,
+          75,
+          94
+        ],
+        "starredFirstP50Ms": [
+          72,
+          72,
+          67,
+          71
+        ],
+        "starredFirstMaxMs": [
+          82,
+          82,
+          73,
+          86
+        ]
+      }
+    },
+    "reminderOccurrences": {
+      "ceiling": {
+        "rows": 2500000,
+        "totalRelationBytes": 1610612736
+      },
+      "check": "select count(*), pg_total_relation_size('crm.reminder_occurrences') from crm.reminder_occurrences",
+      "rationale": "D5 keeps every sent occurrence. Measured at the large profile with a weekly reminder for each of 10,000 people (an eight-week pending window plus sent history), the table and its indexes grow by about 600 bytes a row while the in-app feed page, the open-reminder arm, and the worker's due claim stay under 1.2 ms. The ceiling is the measured envelope, about five years of that history; beyond either number the retention decision reopens.",
+      "reopens": "D5 (BEQ-07, BEQ-15)",
+      "measured": {
+        "on": "2026-11-08",
+        "schemaVersion": 13,
+        "postgres": "18.4",
+        "points": [
+          {
+            "rows": 600000,
+            "sentRows": 520000,
+            "totalRelationBytes": 336363520,
+            "feedPageMs": [
+              3.7,
+              1.1,
+              0.9
+            ],
+            "openArmMs": [
+              0.1,
+              0.05,
+              0.04
+            ],
+            "dueClaimMs": [
+              2.6,
+              0.18,
+              0.12
+            ]
+          },
+          {
+            "rows": 2680000,
+            "sentRows": 2600000,
+            "totalRelationBytes": 1612685312,
+            "heapBytes": 806027264,
+            "indexBytes": 806395904,
+            "feedPageMs": [
+              1.2,
+              0.58,
+              0.59
+            ],
+            "openArmMs": [
+              0.07,
+              0.04,
+              0.04
+            ],
+            "dueClaimMs": [
+              0.18,
+              0.11,
+              0.15
+            ]
+          },
+          {
+            "rows": 2680000,
+            "sentRows": 2600000,
+            "totalRelationBytes": 1619165184,
+            "feedPageMs": [
+              1.39,
+              0.36,
+              0.39
+            ],
+            "openArmMs": [
+              0.13,
+              0.06,
+              0.05
+            ],
+            "dueClaimMs": [
+              0.13,
+              0.13,
+              0.14
+            ],
+            "note": "a fresh database seeded by reproduce.seed"
+          }
+        ]
+      },
+      "reproduce": {
+        "database": "A migrated v13 database after tests/integration/people_directory_capacity_postgres_test.ts has seeded its large-profile workspace (10,000 people). Run with psql, setting :workspace and :member to that workspace and its owner's membership, then analyze crm.reminders and crm.reminder_occurrences.",
+        "seed": [
+          "insert into crm.reminders (workspace_id, person_id, target_kind, title, anchor_on, recurrence_unit, recurrence_interval, send_time, created_by_member_id) select :'workspace'::uuid, person.id, 'person', 'Weekly ' || person.given_name, current_date - 364, 'week', 1, '09:00', :'member'::uuid from crm.people person where person.workspace_id = :'workspace'::uuid",
+          "insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, status, title_snapshot) select reminder.id, :'member'::uuid, reminder.anchor_on + week * 7, (reminder.anchor_on + week * 7 + time '09:00') at time zone 'UTC', 'pending', reminder.title from crm.reminders reminder cross join generate_series(52, 59) week where reminder.workspace_id = :'workspace'::uuid",
+          "insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, status, sent_at, title_snapshot, provider_receipt, provider_result_state, provider_effect_at, visible_at, attempt_count, last_attempt_at) select reminder.id, :'member'::uuid, reminder.anchor_on + week * 7, at.value, 'sent', at.value, reminder.title, 'in-app:' || gen_random_uuid(), 'confirmed', at.value, at.value, 1, at.value from crm.reminders reminder cross join generate_series(-208, 51) week cross join lateral (select (reminder.anchor_on + week * 7 + time '09:00') at time zone 'UTC' as value) at where reminder.workspace_id = :'workspace'::uuid"
+        ],
+        "seedNote": "The sent-history insert writes weeks -208 to 51, five years (2,600,000 rows); the 600,000-row point is weeks 0 to 51 only.",
+        "queries": {
+          "feedPage": "explain (analyze) select occurrence.id from crm.reminder_occurrences occurrence join crm.reminders reminder on reminder.id = occurrence.reminder_id and reminder.workspace_id = :'workspace'::uuid and reminder.deleted_at is null where occurrence.member_id = :'member'::uuid and occurrence.channel = 'in_app' and occurrence.status = 'sent' and occurrence.visible_at is not null order by date_trunc('milliseconds', occurrence.visible_at at time zone 'UTC') desc, occurrence.id desc limit 51",
+          "openArm": "explain (analyze) select occurrence.id from crm.reminder_occurrences occurrence where occurrence.member_id = :'member'::uuid and occurrence.status in ('pending', 'retry', 'failed', 'manual_attention') order by (case when occurrence.status = 'retry' then occurrence.next_attempt_at else occurrence.deliver_at end) limit 20",
+          "dueClaim": "explain (analyze) select id from crm.reminder_occurrences where status in ('pending', 'retry') and coalesce(next_attempt_at, deliver_at) <= now() order by status, coalesce(next_attempt_at, deliver_at) limit 100 for update skip locked"
+        },
+        "queryNote": "Each query is the index-bearing core of its production read: the in-app arm of the notifications feed (notifications_repository.ts), the open-reminder order Today and the person page share, and the worker's due claim. Three consecutive runs each; the first is cold."
+      }
+    }
   }
 }
