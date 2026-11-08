@@ -1271,7 +1271,12 @@ export function composeApiServices(
     people: { ...people.people, ...people.lifecycle },
     personalization,
     personalLifecycle: workspaces.personalLifecycle,
-    profile: composePersonProfile(shared),
+    profile: composePersonProfile(shared, {
+      facts: people.profileFacts,
+      importantDates: people.importantDates,
+      relationships: relationships.relationships,
+      reminders: planning.reminders,
+    }),
     profileFacts: people.profileFacts,
     protectedSessions: workspaces.protectedSessions,
     readiness: () => databaseReadiness(database),

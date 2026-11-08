@@ -20,7 +20,7 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import { ids, sectionProps } from "../../../testing/fixtures.ts";
+import { ids, personProfile, sectionProps } from "../../../testing/fixtures.ts";
 import { drawShell, element, mountSection } from "../../../testing/render.tsx";
 import {
   registerRailEditors,
@@ -920,4 +920,54 @@ describe("GAP-047 the date of death", () => {
     act(() => requestImportantDate("deceased"));
     expect(form().hidden).toBe(true);
   });
+});
+
+describe("AUD-Q3 important dates from the person read", () => {
+  const preloaded = (entry: unknown) =>
+    sectionProps({
+      initial: { ...personProfile(), rail: { "important-dates": entry } } as
+        & ReturnType<typeof personProfile>
+        & { readonly rail: never },
+    });
+
+  it("shows the dates that came with the person read without reading them", async () => {
+    const root = shell();
+    const api = stubApi({ [listRoute]: unreachable });
+    await mountSection(
+      mountImportantDates,
+      preloaded({
+        status: "ready",
+        value: { dates: [date()], status: "ready" },
+      }),
+    );
+    expect(root.dataset.sectionState).toBe("ready");
+    expect(block().getAllByText("Birthday")).not.toHaveLength(0);
+    expect(summary.railCount("important-dates")).toBe("1");
+    expect(api.calls()).toEqual([]);
+  });
+
+  it.each(
+    [
+      [
+        "hidden",
+        "forbidden",
+        "Your active workspace no longer permits this action.",
+      ],
+      [
+        "unavailable",
+        "error",
+        "Important dates are temporarily unavailable. Try again.",
+      ],
+    ] as const,
+  )(
+    "shows a %s rail section as its own %s state",
+    async (status, state, message) => {
+      const root = shell();
+      const api = stubApi({ [listRoute]: unreachable });
+      await mountSection(mountImportantDates, preloaded({ status }));
+      expect(root.dataset.sectionState).toBe(state);
+      expect(stateLine().textContent).toContain(message);
+      expect(api.calls()).toEqual([]);
+    },
+  );
 });

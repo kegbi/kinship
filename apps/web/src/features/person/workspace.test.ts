@@ -36,6 +36,7 @@ import {
   workspaceSession,
 } from "../../testing/fixtures.ts";
 import { adoptMount, drawShell } from "../../testing/render.tsx";
+import { fact, railBlock } from "./facts/facts.test-helper.ts";
 
 const segment = segmentVariants();
 
@@ -660,7 +661,7 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
   // first after it (AUD-F3, FER-04).
   expect(api.calls().slice(0, 2)).toEqual([
     SESSION,
-    `GET /api/v1/people/${personId}?include=summary`,
+    `GET /api/v1/people/${personId}?include=rail`,
   ]);
   expect(requested(api, "/settings/")).toEqual([]);
   expect(document.querySelector("#person-profile-name")?.textContent).toBe(
@@ -837,7 +838,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
       ...requests.slice(5),
     ]).toEqual([
       "/api/v1/session",
-      `/api/v1/people/${personId}?include=summary`,
+      `/api/v1/people/${personId}?include=rail`,
       `/api/v1/people/${personId}/view`,
       `/api/v1/people/${personId}/files`,
       `/api/v1/people/${personId}/gifts`,
@@ -1433,6 +1434,124 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     }
   });
 
+  it("AUD-Q3 opens the rail from the person read, and an unavailable section shows its own error while the others render", async () => {
+    markup();
+    document.querySelector("#person-profile-ready")?.insertAdjacentHTML(
+      "beforeend",
+      `<header class="profile-facts-heading"><h2>Profile facts</h2></header>
+      ${railBlock("contact-methods")}${railBlock("addresses")}`,
+    );
+    const email = fact(
+      "contact-methods",
+      {
+        isPrimary: true,
+        labelIds: [],
+        typeId: ids.member,
+        value: "ada@example.test",
+      },
+      "00000000-0000-4000-8000-000000000301",
+      {
+        referencesResolved: true,
+        selectedOptions: [{ id: ids.member, kind: "email", name: "Email" }],
+      },
+    );
+    const page = (records: readonly object[] = []) => ({
+      options: [],
+      personUpdatedAt: "2026-08-15T08:00:00.000Z",
+      records,
+      status: "ready",
+    });
+    const unavailable = { status: "unavailable" } as const;
+    const api = stubProfile(
+      {
+        ...profileOf(lovelace, {
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [
+              { count: 1, id: "contact-methods", status: "ready" },
+              { count: 2, id: "addresses", status: "ready" },
+            ],
+          },
+        }),
+        rail: {
+          addresses: unavailable,
+          "contact-methods": { status: "ready", value: page([email]) },
+          "first-meeting": { status: "ready", value: page() },
+          "food-preferences": { status: "ready", value: page() },
+          "important-dates": {
+            status: "ready",
+            value: { dates: [], status: "ready" },
+          },
+          pets: { status: "ready", value: page() },
+          relationships: {
+            status: "ready",
+            value: {
+              list: { relationships: [], status: "ready" },
+              types: { options: [], selected: [], status: "ready" },
+            },
+          },
+          reminders: {
+            status: "ready",
+            value: { cadences: [], reminders: [], status: "ready" },
+          },
+          tags: { status: "ready", value: page() },
+          work: unavailable,
+        },
+      },
+      {
+        "GET /api/v1/people/:personId/facts/addresses": jsonResponse(
+          page(),
+        ),
+        [VIEW]: recorded,
+      },
+    );
+
+    await mountPersonWorkspace();
+
+    const contact = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="contact-methods"]',
+    )!;
+    const addresses = document.querySelector<HTMLElement>(
+      '[data-profile-fact-section="addresses"]',
+    )!;
+    await vi.waitFor(() => {
+      expect(contact.dataset.sectionState).toBe("ready");
+      expect(addresses.dataset.sectionState).toBe("error");
+    });
+    expect(contact.textContent).toContain("ada@example.test");
+    expect(addresses.textContent).toContain(
+      "This profile section is temporarily unavailable.",
+    );
+    // The rail came with the person: no section read its own first page.
+    expect(api.calls()[1]).toBe(
+      `GET /api/v1/people/${personId}?include=rail`,
+    );
+    for (
+      const path of [
+        "/facts/",
+        "/dates",
+        "/relationships",
+        "/relationship-types",
+        "/reminders",
+      ]
+    ) expect(requested(api, path)).toEqual([]);
+
+    // Its retry reads the owning endpoint, and only that section.
+    const retry = [...addresses.querySelectorAll("button")].find((button) =>
+      button.textContent?.trim() === "Retry"
+    )!;
+    expect(retry.hidden).toBe(false);
+    retry.click();
+    await vi.waitFor(() =>
+      expect(addresses.dataset.sectionState).toBe("ready")
+    );
+    expect(requested(api, "/facts/")).toEqual([
+      `GET /api/v1/people/${personId}/facts/addresses`,
+    ]);
+    expect(contact.dataset.sectionState).toBe("ready");
+  });
+
   it("UXD-002B requests summary and seeds visible and hidden rail counts before fact refresh", async () => {
     markup();
     summaryRailMarkup();
@@ -1593,7 +1712,7 @@ describe("PEOPLE-001 canonical person identity shell", () => {
     secondary.resolve();
     await mounting;
     expect(api.fetch.mock.calls[1]?.[0]).toBe(
-      `/api/v1/people/${personId}?include=summary`,
+      `/api/v1/people/${personId}?include=rail`,
     );
     expect(api.fetch.mock.calls[1]?.[1]?.headers).toEqual({
       "X-Workspace-Id": workspaceId,

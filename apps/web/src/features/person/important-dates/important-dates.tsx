@@ -33,6 +33,7 @@ import {
   deleteImportantDate,
   type ImportantDate,
   listImportantDates,
+  type PersonRail,
   updateImportantDate,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -64,8 +65,9 @@ import {
   setRailEmpty,
   setVitalStat,
 } from "../profile-summary.ts";
-import type { SectionMount } from "../section-mounts.ts";
+import { railSection, type SectionMount } from "../section-mounts.ts";
 import {
+  ACCESS_LOST,
   collapsedDateIds,
   type DateComponent,
   type DateEditor,
@@ -73,6 +75,7 @@ import {
   dateInput,
   type DateKind,
   type DatePrecision,
+  type DatesAction,
   datesReducer,
   dateTitle,
   DELETE_UNAVAILABLE,
@@ -80,6 +83,7 @@ import {
   formatImportantDate,
   formProblem,
   initialDatesState,
+  LIST_UNAVAILABLE,
   precisionComponents,
   problemMessage,
   schedulingText,
@@ -116,6 +120,26 @@ export interface ImportantDatesProps {
   readonly heading?: HTMLElement | undefined;
   /** Called once, when the first read has settled either way. */
   readonly onSettled?: () => void;
+  /**
+   * The dates that came with the person read, which the block shows instead
+   * of reading them (AUD-Q3).
+   */
+  readonly preloaded?: PersonRail["important-dates"] | undefined;
+}
+
+/**
+ * What the block's first read answered, from the person read's rail: a
+ * refused section is the forbidden state, an outage the error (AUD-Q3).
+ */
+function preloadedAnswer(
+  preloaded: NonNullable<ImportantDatesProps["preloaded"]>,
+): DatesAction {
+  if (preloaded.status === "ready") {
+    return { dates: preloaded.value.dates, type: "loaded" };
+  }
+  return preloaded.status === "hidden"
+    ? { message: ACCESS_LOST, status: "forbidden", type: "failed" }
+    : { message: LIST_UNAVAILABLE, status: "error", type: "failed" };
 }
 
 /** Tells the hero and the rail what the block shows. */
@@ -152,8 +176,22 @@ export function ImportantDates(props: ImportantDatesProps) {
   const addButton = useRef<HTMLButtonElement>(null);
   const saving = useRef(false);
   const settled = useRef(props.onSettled);
+  const preloaded = useRef(props.preloaded);
 
   useEffect(() => {
+    // Dates that came with the person read are the first answer (AUD-Q3),
+    // drawn before the read settles like any other (REL-074).
+    const first = preloaded.current;
+    preloaded.current = undefined;
+    if (first) {
+      void Promise.resolve().then(() =>
+        flushSync(() => dispatch(preloadedAnswer(first)))
+      ).finally(() => {
+        settled.current?.();
+        settled.current = undefined;
+      });
+      return;
+    }
     void request(() => listImportantDates(personId, workspaceId)).then(
       (answer) => {
         if (!answer) return;
@@ -697,6 +735,7 @@ export const mountImportantDates: SectionMount = (container, props) => {
         heading={heading}
         onSettled={() => resolve(unmount)}
         personId={props.personId}
+        preloaded={railSection(props, "important-dates")}
         root={root}
         workspaceId={props.workspaceId}
       />,

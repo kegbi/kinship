@@ -14,6 +14,11 @@ import {
   createPersonTimeline,
   type PersonTimelineRepository,
 } from "./list_person_timeline.ts";
+import {
+  createPersonRail,
+  type PersonRail,
+  type PersonRailSources,
+} from "./compose_person_rail.ts";
 
 export const PERSON_PROFILE_TAG_PREVIEW_LIMIT = 8;
 export const PERSON_PROFILE_PRIMARY_CONTACT_LIMIT = 3;
@@ -214,10 +219,18 @@ export type GetPersonProfileResult =
     readonly dueInformation: PersonDueInformation;
     readonly genderOptions?: readonly PersonGenderOption[];
     readonly person: PersonProfileIdentity;
+    readonly rail?: PersonRail;
     readonly status: "ready" | "archived";
     readonly summary?: PersonProfileSummary;
   }
   | Failure<"forbidden" | "not-found">;
+
+/** What a person read may add to the identity and due information. */
+export interface PersonProfileReadOptions {
+  readonly includeSummary?: boolean;
+  /** The summary and the first page of every rail section (AUD-Q3). */
+  readonly includeRail?: boolean;
+}
 
 function dueInformation(projection: PersonDueProjection): PersonDueInformation {
   const details = [
@@ -271,9 +284,14 @@ function summary(
  * Read models carry no actor join of their own. The `workspaces` port answers
  * whether the actor may still read this workspace — without a lock, because
  * these paths take none — and the repository scopes by workspace alone.
+ *
+ * The rail is composed only for a person the actor may read, after the
+ * profile has found them, from the owning modules' reads in `rail`; a
+ * composition without them answers every rail section as unavailable.
  */
 export function createPersonProfile(dependencies: {
   readonly actors: ActorRevalidation;
+  readonly rail?: PersonRailSources;
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
@@ -284,17 +302,22 @@ export function createPersonProfile(dependencies: {
 }) {
   const readable = async (actor: PersonProfileActor): Promise<boolean> =>
     await actorMayRead(dependencies, actor);
+  const rail = dependencies.rail
+    ? createPersonRail(dependencies.rail)
+    : undefined;
 
   return {
     get: async (
       actor: PersonProfileActor,
       personId: string,
-      options: { readonly includeSummary?: boolean } = {},
+      options: PersonProfileReadOptions = {},
     ): Promise<GetPersonProfileResult> => {
       if (!await readable(actor)) return { status: "forbidden" };
+      const includeSummary = options.includeSummary === true ||
+        options.includeRail === true;
       const result = await dependencies.repository.get({
         ...actor,
-        ...(options.includeSummary ? { includeSummary: true } : {}),
+        ...(includeSummary ? { includeSummary: true } : {}),
         personId,
       });
       if (result.status !== "ready" && result.status !== "archived") {
@@ -305,6 +328,9 @@ export function createPersonProfile(dependencies: {
           section.id === "tags" && section.status === "hidden"
         ) === true;
       const due = dueInformation(result.dueInformation);
+      const composed = options.includeRail
+        ? rail ? await rail(actor, personId) : unavailableRail()
+        : undefined;
       return {
         dueInformation: due,
         ...(result.genderOptions
@@ -317,8 +343,9 @@ export function createPersonProfile(dependencies: {
             ? []
             : result.person.tags.slice(0, PERSON_PROFILE_TAG_PREVIEW_LIMIT),
         },
+        ...(composed ? { rail: composed } : {}),
         status: result.status,
-        ...(options.includeSummary && result.summary
+        ...(includeSummary && result.summary
           ? {
             summary: summary(
               result.summary,
@@ -334,6 +361,23 @@ export function createPersonProfile(dependencies: {
         ? await dependencies.repository.listLifeEvents({ ...actor, personId })
         : { status: "forbidden" as const },
     ...createPersonTimeline(dependencies),
+  };
+}
+
+/** The rail of a composition that was given no module reads. */
+function unavailableRail(): PersonRail {
+  const unavailable = { status: "unavailable" } as const;
+  return {
+    addresses: unavailable,
+    "contact-methods": unavailable,
+    "first-meeting": unavailable,
+    "food-preferences": unavailable,
+    "important-dates": unavailable,
+    pets: unavailable,
+    relationships: unavailable,
+    reminders: unavailable,
+    tags: unavailable,
+    work: unavailable,
   };
 }
 

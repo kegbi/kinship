@@ -203,14 +203,14 @@
         "basis": "01 report target 5"
       },
       "people.profile": {
-        "requests": 20,
-        "steps": 4,
-        "basis": "measured rich person, an interim value; over the 01 report's target of at most 6, which AUD-Q3 delivers, and AUD-Q3 or AUD-F5-fix lowers this budget. Steps measure 3 or 4: the five Timeline reads start from their cards' viewport observers just before or just after the rail's answers arrive, and 4 is their upper bound"
+        "requests": 5,
+        "steps": 3,
+        "basis": "measured rich person after AUD-Q3 (the rail arrives in the person read) and AUD-F5-fix (the Timeline cards below the fold wait for the settled layout): session, person with rail, notifications, timeline, view; within the 01 report's target of at most 6. Steps: session, person with rail, then the unified timeline its card's observer starts"
       },
       "people.profile#blank": {
-        "requests": 7,
-        "steps": 3,
-        "basis": "AUD-F5's blank person, 7 requests, as measured here"
+        "requests": 4,
+        "steps": 2,
+        "basis": "measured blank person after AUD-Q3: session, person with rail, notifications, view. The composed rail replaced the three rail reads AUD-F5's 7 still made for a blank person (tags, important dates, and reminders, which have no summary count); AUD-F5's 7 is superseded. Steps: session, then the person with its rail"
       },
       "settings.api-access": {
         "requests": 3,

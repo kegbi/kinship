@@ -1034,7 +1034,7 @@ these:
     fmt, eslint, architecture, and lint (only REL-096). E2E SEARCH-001 2 passed
     on Chromium.
 
-- [ ] **AUD-Q3 — The person rail arrives in one composed read.** L. Normal.
+- [x] **AUD-Q3 — The person rail arrives in one composed read.** L. Normal.
       Depends: AUD-F5, AUD-K3. Closes: FEQ-04 (step 4).
   - Scope:
     - Add a read-only `include=rail` (or `GET /api/v1/people/{id}/rail`) from
@@ -1052,6 +1052,23 @@ these:
     (`people_profile_postgres_test.ts`); contracts; `check:architecture`; the
     web unit tests; E2E `person-workspace.PEOPLE-003` and
     `person-shell.PEOPLE-003`.
+  - Delivered 2026-11-08: `GET /api/v1/people/{id}?include=rail` composes, from
+    the `person-profile` read model, the first page of the seven fact sections,
+    relationships, important dates, and reminders, each `ready`, `hidden`, or
+    `unavailable`, by calling each owning module's own read use case with the
+    admitted actor, so every section applies its endpoint's checks and, under
+    schema v14, its workspace scope; the islands take it as
+    `SectionProps.initial`, and refresh, load-more, and writes still call the
+    owners. With AUD-F5-fix, a rich person at 1280×900 opens with 5 requests (19
+    before) and a failed section shows its own error while the others render;
+    PERF-002's budgets are now 5 requests in 3 steps for the rich person and 4
+    in 2 for a blank one. The composed read sends 83 statements under v14
+    (`RAIL_STATEMENT_BUDGET`). People profile and isolation integration 17,
+    people unit 135, api unit 517 with default-deny and the role matrix (only
+    REL-106), web unit 1844 (only REL-107); changed web code 99.9% lines,
+    backend 96.9% lines; contracts current; fmt, eslint, architecture, and lint
+    (only REL-096). E2E PEOPLE-003 (both specs) and PERF-002 10 passed on
+    Chromium.
 
 - [x] **AUD-Q4 — `last-contacted` ordering (conditional).** M. Low. Depends:
       AUD-P1. Closes: BEQ-10 (the `last-contacted` part).

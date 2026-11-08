@@ -98,3 +98,54 @@ describe("GAP-029 pets island", () => {
     expect(api.calls().some((call) => call.startsWith("POST"))).toBe(false);
   });
 });
+
+describe("AUD-Q3 a fact section from the person read", () => {
+  const page = (records: readonly object[]) => ({
+    options: [],
+    personUpdatedAt: revision,
+    records,
+    status: "ready" as const,
+  });
+
+  it("shows the page that came with the person read without reading it", async () => {
+    shell(railBlock("pets"));
+    const api = stubApi({ [anyRoute]: () => factRead([]) });
+    await mountFacts(mountPets, {
+      rail: {
+        pets: {
+          status: "ready",
+          value: page([fact("pets", { name: "Byron" })]) as never,
+        },
+      },
+    });
+    expect(block("pets").dataset.sectionState).toBe("ready");
+    expect(block("pets").textContent).toContain("Byron");
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("hides a section the rail answered hidden, without reading it", async () => {
+    shell(railBlock("pets"));
+    const api = stubApi({ [anyRoute]: () => factRead([]) });
+    await mountFacts(mountPets, { rail: { pets: { status: "hidden" } } });
+    expect(block("pets").dataset.sectionState).toBe("hidden");
+    expect(block("pets").hidden).toBe(true);
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("shows an unavailable rail section as its own error, and its retry reads its own endpoint", async () => {
+    shell(railBlock("pets"));
+    const api = stubApi({
+      [anyRoute]: () => factRead([fact("pets", { name: "Byron" })]),
+    });
+    await mountFacts(mountPets, { rail: { pets: { status: "unavailable" } } });
+    expect(block("pets").dataset.sectionState).toBe("error");
+    expect(api.calls()).toEqual([]);
+    await userEvent.click(section().getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(block("pets").dataset.sectionState).toBe("ready")
+    );
+    expect(api.calls()).toEqual([
+      `GET /api/v1/people/${personId}/facts/pets`,
+    ]);
+  });
+});

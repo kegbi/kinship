@@ -282,3 +282,203 @@ test(
       .toBeLessThanOrEqual(1);
   },
 );
+
+test(
+  "[PEOPLE-003] opens a rich person at laptop size in at most six requests, and a failed rail section shows its own error",
+  {
+    annotation: [{ type: "flow", description: "PEOPLE-003" }, {
+      type: "finding",
+      description: "FEQ-04",
+    }],
+  },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(180_000);
+    page.setDefaultTimeout(20_000);
+    await page.setViewportSize({ height: 900, width: 1280 });
+    const email = `rich-profile-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Rich",
+      lastName: "Reader",
+      workspaceName: "Rich profile circle",
+    }, bareToken);
+    await signInAcceptingCompliance(page, email, { expectToday: true });
+    const create = async (givenName: string, familyName: string) => {
+      const created = await page.request.post(`${origin}/api/v1/people`, {
+        data: { familyName, givenName, isPartial: false },
+        headers: { origin },
+      });
+      expect(created.status()).toBe(201);
+      return (await created.json() as { person: { id: string } }).person.id;
+    };
+    const personId = await create("Ada", "Lovelace");
+    const relatedId = await create("Charles", "Babbage");
+    const post = async (path: string, data: Record<string, unknown>) =>
+      expect(
+        (await page.request.post(`${origin}${path}`, {
+          data,
+          headers: { origin },
+        })).status(),
+      ).toBe(201);
+    await post(`/api/v1/people/${personId}/dates`, {
+      day: 10,
+      isAgeBased: false,
+      isYearApproximate: false,
+      kind: "birthday",
+      month: 12,
+      precision: "full",
+      year: 1815,
+    });
+    await post("/api/v1/reminders", {
+      anchorOn: "2030-09-15",
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "none",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title: "Write to Ada",
+    });
+    await post("/api/v1/stay-in-touch-cadences", {
+      intervalCount: 1,
+      intervalUnit: "month",
+      personId,
+      requestId: crypto.randomUUID(),
+    });
+    await post("/api/v1/tasks", {
+      personId,
+      requestId: crypto.randomUUID(),
+      title: "Review correspondence",
+    });
+    const workspaceId = databaseValue(
+      `select w.id::text from crm.workspaces w join crm.users u
+        on u.id = w.created_by_user_id where u.email = ${sqlLiteral(email)}`,
+    );
+    const memberId = databaseValue(
+      `select id::text from crm.workspace_members
+        where workspace_id = '${workspaceId}'::uuid`,
+    );
+    const typeId = crypto.randomUUID();
+    const locationId = crypto.randomUUID();
+    const relationshipTypeId = crypto.randomUUID();
+    // Every rail section holds something, so no summary count spares a read.
+    databaseValue(`
+      insert into crm.contact_method_types
+        (id, workspace_id, name, kind, protocol, sort_order)
+        values ('${typeId}'::uuid, '${workspaceId}'::uuid, 'Rail email',
+          'email', 'mailto', 99);
+      insert into crm.person_contact_methods
+        (workspace_id, person_id, type_id, value)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid, '${typeId}'::uuid, 'ada@example.test');
+      insert into crm.locations (id, workspace_id, city)
+        values ('${locationId}'::uuid, '${workspaceId}'::uuid, 'London');
+      insert into crm.person_addresses (workspace_id, person_id, location_id)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid, '${locationId}'::uuid);
+      insert into crm.person_first_meetings (workspace_id, person_id, place_text)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid, 'At the Analytical Society');
+      insert into crm.person_occupations (workspace_id, person_id, title)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid, 'Mathematician');
+      update crm.people set food_preferences = 'Tea'
+        where id = '${personId}'::uuid;
+      insert into crm.pets (person_id, name)
+        values ('${personId}'::uuid, 'Puff');
+      insert into crm.tags (id, workspace_id, name, slug)
+        values (gen_random_uuid(), '${workspaceId}'::uuid, 'Analyst',
+          'analyst');
+      insert into crm.person_tags (workspace_id, person_id, tag_id)
+        select '${workspaceId}'::uuid, '${personId}'::uuid, id from crm.tags
+        where workspace_id = '${workspaceId}'::uuid;
+      insert into crm.relationship_types
+        (id, workspace_id, forward_label, reverse_label, sort_order)
+        values ('${relationshipTypeId}'::uuid, '${workspaceId}'::uuid,
+          'colleague', 'colleague', 99);
+      insert into crm.relationships
+        (workspace_id, from_person_id, to_person_id, relationship_type_id)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid,
+          '${relatedId}'::uuid, '${relationshipTypeId}'::uuid);
+      insert into crm.notes (workspace_id, person_id, body,
+          created_by_member_id)
+        select '${workspaceId}'::uuid, '${personId}'::uuid,
+          'Corresponded about the engine, letter ' || sequence,
+          '${memberId}'::uuid
+        from generate_series(1, 24) sequence;
+      insert into crm.calls (workspace_id, person_id, called_at,
+          created_by_member_id)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid,
+          '2026-08-18T09:00:00.000Z', '${memberId}'::uuid);
+      insert into crm.life_events
+        (workspace_id, person_id, name, year, month, precision)
+        values ('${workspaceId}'::uuid, '${personId}'::uuid,
+          'Published Notes', 1843, 12, 'year_month')`);
+
+    const api: string[] = [];
+    page.on("request", (sent) => {
+      const url = new URL(sent.url());
+      if (url.pathname.startsWith("/api/v1/")) {
+        api.push(`${sent.method()} ${url.pathname}${url.search}`);
+      }
+    });
+    const settled = page.locator("#person-profile-ready");
+    const contact = page.locator('[data-profile-section="contact-methods"]');
+    const addresses = page.locator('[data-profile-section="addresses"]');
+    await page.goto(`/app/people/${personId}`);
+    await expect(settled).toHaveAttribute("data-workspace-settled", "");
+    await expect(contact).toHaveAttribute("data-section-state", "ready");
+    await expect(contact).toContainText("ada@example.test");
+    await expect(addresses).toContainText("London");
+    await expect(page.locator('[data-profile-section="relationships"]'))
+      .toContainText("Charles Babbage");
+    await expect(page.locator("[data-cadence-list]")).toContainText(
+      "Every 1 month",
+    );
+    // At laptop size the page opens in at most six requests (FEQ-04): the
+    // session, the person with its rail in one read (step 4, AUD-Q3), the
+    // notifications, the unified timeline, and the view. No rail section reads
+    // its own first page, and the Timeline cards below the fold wait for the
+    // settled layout (step 3, AUD-F5-fix).
+    expect(
+      api.filter((line) => line.includes(`/people/${personId}?`)),
+      api.join("\n"),
+    ).toEqual([`GET /api/v1/people/${personId}?include=rail`]);
+    expect(
+      api.filter((line) =>
+        /\/(facts|dates|relationships|relationship-types|reminders)/.test(
+          line,
+        )
+      ),
+      api.join("\n"),
+    ).toEqual([]);
+    expect(api.length, api.join("\n")).toBeLessThanOrEqual(6);
+
+    // One rail section the server could not compose shows its own outage;
+    // the sections beside it still render, and its retry reads its own
+    // endpoint.
+    const railRead = `**/api/v1/people/${personId}?include=rail`;
+    await page.route(railRead, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as {
+        readonly rail: Record<string, unknown>;
+      };
+      await route.fulfill({
+        json: {
+          ...body,
+          rail: { ...body.rail, addresses: { status: "unavailable" } },
+        },
+        response,
+      });
+    });
+    await page.reload();
+    await expect(settled).toHaveAttribute("data-workspace-settled", "");
+    await expect(addresses).toHaveAttribute("data-section-state", "error");
+    await expect(addresses).toContainText(
+      "This profile section is temporarily unavailable.",
+    );
+    await expect(contact).toHaveAttribute("data-section-state", "ready");
+    await expect(contact).toContainText("ada@example.test");
+    await page.unroute(railRead);
+    await addresses.getByRole("button", { name: "Retry" }).click();
+    await expect(addresses).toHaveAttribute("data-section-state", "ready");
+    await expect(addresses).toContainText("London");
+
+    await expectAccessible(page);
+  },
+);

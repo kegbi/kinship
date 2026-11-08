@@ -1909,3 +1909,49 @@ describe("RELATIONSHIP-001 relationships island", () => {
     focus.mockRestore();
   });
 });
+
+describe("AUD-Q3 relationships from the person read", () => {
+  const preloaded = (entry: unknown) =>
+    sectionProps({
+      initial: {
+        ...personProfile({ person: { updatedAt } }),
+        rail: { relationships: entry },
+      } as ReturnType<typeof personProfile> & { readonly rail: never },
+    });
+  const mountWith = (entry: unknown) =>
+    mountSection(mountPersonRelationships, preloaded(entry), element("main"));
+
+  it("shows the relationships and types that came with the person read without reading them", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable, [TYPES]: unreachable });
+    await mountWith({
+      status: "ready",
+      value: {
+        list: { relationships: [relationship], status: "ready" },
+        types: { options: [parentType], selected: [], status: "ready" },
+      },
+    });
+    expect(section().dataset.sectionState).toBe("ready");
+    expect(block().getAllByText("Ada Lovelace")).not.toHaveLength(0);
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("hides a hidden rail section", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable, [TYPES]: unreachable });
+    await mountWith({ status: "hidden" });
+    expect(section().hidden).toBe(true);
+    expect(api.calls()).toEqual([]);
+  });
+
+  it("shows an unavailable rail section as its own error without reading", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable, [TYPES]: unreachable });
+    await mountWith({ status: "unavailable" });
+    expect(section().dataset.sectionState).toBe("error");
+    expect(state().textContent).toContain(
+      "This relationship section is temporarily unavailable.",
+    );
+    expect(api.calls()).toEqual([]);
+  });
+});

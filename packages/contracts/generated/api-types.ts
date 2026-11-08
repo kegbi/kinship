@@ -3766,6 +3766,49 @@ export interface components {
             /** Format: date-time */
             readonly stayInTouchAt?: string;
         };
+        readonly PersonRail: {
+            readonly "contact-methods": components["schemas"]["PersonRailFacts"];
+            readonly addresses: components["schemas"]["PersonRailFacts"];
+            readonly "first-meeting": components["schemas"]["PersonRailFacts"];
+            readonly work: components["schemas"]["PersonRailFacts"];
+            readonly "food-preferences": components["schemas"]["PersonRailFacts"];
+            readonly pets: components["schemas"]["PersonRailFacts"];
+            readonly tags: components["schemas"]["PersonRailFacts"];
+            readonly relationships: components["schemas"]["PersonRailRelationships"];
+            readonly "important-dates": components["schemas"]["PersonRailImportantDates"];
+            readonly reminders: components["schemas"]["PersonRailReminders"];
+        };
+        readonly PersonRailFacts: {
+            /** @constant */
+            readonly status: "ready";
+            readonly value: components["schemas"]["ProfileFactSection"];
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        readonly PersonRailImportantDates: {
+            /** @constant */
+            readonly status: "ready";
+            readonly value: components["schemas"]["ImportantDateList"];
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        readonly PersonRailRelationships: {
+            /** @constant */
+            readonly status: "ready";
+            readonly value: {
+                readonly list: components["schemas"]["RelationshipList"];
+                readonly types: components["schemas"]["RelationshipTypeList"];
+            };
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        readonly PersonRailReminders: {
+            /** @constant */
+            readonly status: "ready";
+            readonly value: components["schemas"]["PersonReminders"];
+        } | components["schemas"]["PersonRailSectionHidden"] | components["schemas"]["PersonRailSectionUnavailable"];
+        readonly PersonRailSectionHidden: {
+            /** @constant */
+            readonly status: "hidden";
+        };
+        readonly PersonRailSectionUnavailable: {
+            /** @constant */
+            readonly status: "unavailable";
+        };
         readonly PersonReady: {
             /** @enum {string} */
             readonly status: "ready" | "archived";
@@ -3773,6 +3816,7 @@ export interface components {
             readonly dueInformation: components["schemas"]["PersonDueInformation"];
             readonly genderOptions?: readonly components["schemas"]["PersonGenderOption"][];
             readonly summary?: components["schemas"]["PersonProfileSummary"];
+            readonly rail?: components["schemas"]["PersonRail"];
         };
         readonly PersonRelationshipCount: {
             readonly count: number;
@@ -7991,8 +8035,8 @@ export interface operations {
     readonly getPerson: {
         readonly parameters: {
             readonly query?: {
-                /** @description Adds the bounded person summary without changing the default response. */
-                readonly include?: "summary";
+                /** @description summary adds the bounded person summary; rail adds the summary and the first page of every rail section, each with its own status. Neither changes the default response. */
+                readonly include?: "summary" | "rail";
             };
             readonly header?: {
                 /** @description Optional requested workspace; validated against active membership. */
@@ -8005,7 +8049,7 @@ export interface operations {
         };
         readonly requestBody?: never;
         readonly responses: {
-            /** @description Current-workspace person identity, lifecycle, due-information shell, and optional bounded summary */
+            /** @description Current-workspace person identity, lifecycle, due-information shell, optional bounded summary, and optional composed rail */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;

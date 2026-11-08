@@ -190,13 +190,15 @@ export const DELETE_UNAVAILABLE =
 export const SAVE_UNAVAILABLE =
   "Important date saving is temporarily unavailable.";
 export const CONFIRM_DELETE = "Press the delete button again to confirm.";
+export const ACCESS_LOST =
+  "Your active workspace no longer permits this action.";
 
 /** What a refused read or delete says; a problem's detail only for a conflict. */
 export function problemMessage(problem: ProblemDetails | undefined): string {
   if (!problem) return LIST_UNAVAILABLE;
   if (problem.status === 404) return "This person is no longer available.";
   if (problem.status === 401 || problem.status === 403) {
-    return "Your active workspace no longer permits this action.";
+    return ACCESS_LOST;
   }
   if (problem.status === 409) return problem.detail;
   return LIST_UNAVAILABLE;

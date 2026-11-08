@@ -26,7 +26,12 @@ import {
   stubApi,
   unreachable,
 } from "../../../testing/api.ts";
-import { ids, preferences, sectionProps } from "../../../testing/fixtures.ts";
+import {
+  ids,
+  personProfile,
+  preferences,
+  sectionProps,
+} from "../../../testing/fixtures.ts";
 import {
   drawShell,
   element,
@@ -1119,6 +1124,45 @@ describe("REL-052 person reminders status lines", () => {
         await mounted;
       });
       expect(lines.map((line) => line.isConnected)).toEqual([true, true]);
+    },
+  );
+});
+
+describe("AUD-Q3 reminders from the person read", () => {
+  const mountWith = (entry: unknown) =>
+    mountSection(
+      mountPersonReminders,
+      sectionProps({
+        initial: { ...personProfile(), rail: { reminders: entry } } as
+          & ReturnType<typeof personProfile>
+          & { readonly rail: never },
+        preferences: preferences(),
+      }),
+      element("#person-profile-ready"),
+    );
+
+  it("shows the reminders and cadence that came with the person read without reading them", async () => {
+    shell();
+    const api = stubApi({ [LIST]: unreachable });
+    await mountWith({
+      status: "ready",
+      value: { cadences: [cadence()], reminders: [reminder], status: "ready" },
+    });
+    expect(reminders().dataset.sectionState).toBe("ready");
+    expect(stay().dataset.sectionState).toBe("ready");
+    expect(within(reminders()).getAllByText("Call Ada")).not.toHaveLength(0);
+    expect(api.calls()).toEqual([]);
+  });
+
+  it.each(["hidden", "unavailable"] as const)(
+    "shows a %s rail section as its own error without reading",
+    async (status) => {
+      shell();
+      const api = stubApi({ [LIST]: unreachable });
+      await mountWith({ status });
+      expect(reminders().dataset.sectionState).toBe("error");
+      expect(stay().dataset.sectionState).toBe("error");
+      expect(api.calls()).toEqual([]);
     },
   );
 });

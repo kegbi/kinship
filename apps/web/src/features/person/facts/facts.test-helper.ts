@@ -7,6 +7,7 @@
 import type {
   PersonProfileSectionId,
   PersonProfileSummary,
+  PersonRail,
 } from "../../../../../../packages/contracts/generated/auth-client.ts";
 import { jsonResponse } from "../../../testing/api.ts";
 import { TOAST_REGION } from "../../../testing/shell.ts";
@@ -133,21 +134,24 @@ export function block(section: string): HTMLElement {
 export interface MountOptions extends Partial<PersonProfileSummary> {
   readonly archived?: boolean;
   readonly hidden?: readonly PersonProfileSectionId[];
+  /** The rail sections the person read answered with (AUD-Q3). */
+  readonly rail?: Partial<PersonRail>;
 }
 
 function props(
-  { archived = false, hidden = [], ...summary }: MountOptions,
+  { archived = false, hidden = [], rail, ...summary }: MountOptions,
 ): SectionProps {
+  const initial = personProfile({
+    person: {
+      profileSections: hidden.map((id) => ({ id, status: "hidden" })),
+      updatedAt: revision,
+    },
+    status: archived ? "archived" : "ready",
+    summary: profileSummary(summary),
+  });
   return sectionProps({
     archived,
-    initial: personProfile({
-      person: {
-        profileSections: hidden.map((id) => ({ id, status: "hidden" })),
-        updatedAt: revision,
-      },
-      status: archived ? "archived" : "ready",
-      summary: profileSummary(summary),
-    }),
+    initial: rail ? { ...initial, rail: rail as PersonRail } : initial,
   });
 }
 

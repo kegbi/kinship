@@ -15,7 +15,14 @@ import { createPersonProfile } from "../../packages/backend/read-models/person-p
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresPeopleDirectoryRepository } from "../../packages/backend/read-models/people-directory/adapters/postgres/people_directory_repository.ts";
 import { PostgresPersonProfileRepository } from "../../packages/backend/read-models/person-profile/adapters/postgres/person_profile_repository.ts";
-import { assert } from "../../packages/backend/testing/assert.ts";
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import {
+  CapturedVerificationMail,
+  createConfiguredApiApp,
+} from "../../apps/api/composition.ts";
+import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { apiSupport } from "../support/api.ts";
 import {
   actors,
   createStaleActorFixture,
@@ -902,6 +909,270 @@ Deno.test({
         lifeEvents.status === "forbidden" && tagged.status === "forbidden",
       "a revoked member still read a people read model",
     );
+  },
+});
+
+/**
+ * The rail sections `include=rail` composes, keyed as the answer keys them,
+ * with the path each one's own endpoint answers on (AUD-Q3).
+ */
+const RAIL_FACT_SECTIONS = [
+  "contact-methods",
+  "addresses",
+  "first-meeting",
+  "work",
+  "food-preferences",
+  "pets",
+  "tags",
+] as const;
+
+/**
+ * What `GET /api/v1/people/{id}?include=rail` sends for this filled rail,
+ * measured with K3's counting pool under schema v14 on 2026-11-08 (every
+ * statement is one round trip, `begin` and `commit` included; a scoped
+ * transaction opens with `begin; set local app.workspace_id` as one message,
+ * ADR 0008): the session resolution 5 (2 statements and its legal
+ * requirements in a scoped bracket of 3), the profile with its summary 3 (one
+ * statement in a scoped bracket), and each section's own read through its
+ * owning module, each in its own workspace-scoped transaction — the seven
+ * facts 45 (6 each, 8 for contact methods with their resolved types, 7 for
+ * tags with their names), relationships 9, their types 8, important dates 5,
+ * and reminders 8. The eleven requests it replaces sent those 75 module
+ * statements plus a session resolution each.
+ */
+const RAIL_STATEMENT_BUDGET = 83;
+
+Deno.test({
+  name:
+    "AUD-Q3 one read composes the rail as each section's own endpoint answers it, hidden and foreign included",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    let observed: string[] | undefined;
+    const countedMail = new CapturedVerificationMail();
+    const counted = createConfiguredApiApp(
+      databaseUrl,
+      countedMail,
+      browserSecurityPolicy("test", "http://localhost"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (url) =>
+        connectDatabase(url, {
+          onStatement: (text) => observed?.push(text),
+        }),
+    );
+    const countedApi = apiSupport(counted.app, countedMail, sql);
+    await truncate(sql, ["crm.users", "crm.workspaces"]);
+    try {
+      const owner = await countedApi.register(
+        `rail-owner-${crypto.randomUUID()}@example.test`,
+        "Rail circle",
+      );
+      const foreign = await countedApi.register(
+        `rail-foreign-${crypto.randomUUID()}@example.test`,
+        "Foreign rail circle",
+      );
+      const personId = crypto.randomUUID();
+      const relatedId = crypto.randomUUID();
+      const contactTypeId = crypto.randomUUID();
+      const relationshipTypeId = crypto.randomUUID();
+      await sql.begin(async (transaction) => {
+        await transaction`
+          insert into crm.people (
+            id, workspace_id, created_by_member_id, given_name, family_name,
+            food_preferences
+          ) values
+            (${personId}, ${owner.workspaceId}, ${owner.memberId}, 'Ada',
+              'Lovelace', 'Tea'),
+            (${relatedId}, ${owner.workspaceId}, ${owner.memberId}, 'Charles',
+              null, null)
+        `;
+        await transaction`
+          insert into crm.contact_method_types (
+            id, workspace_id, name, kind, protocol, sort_order
+          ) values (${contactTypeId}, ${owner.workspaceId}, 'Email', 'email',
+            'mailto', 1)
+        `;
+        await transaction`
+          insert into crm.person_contact_methods (
+            workspace_id, person_id, type_id, value, is_primary, sort_order
+          ) values (${owner.workspaceId}, ${personId}, ${contactTypeId},
+            'ada@example.test', true, 1)
+        `;
+        await transaction`
+          insert into crm.pets (person_id, name) values (${personId}, 'Puff')
+        `;
+        await transaction`
+          insert into crm.tags (id, workspace_id, name, slug)
+          values (gen_random_uuid(), ${owner.workspaceId}, 'Analyst',
+            'analyst')
+        `;
+        await transaction`
+          insert into crm.person_tags (workspace_id, person_id, tag_id)
+          select ${owner.workspaceId}, ${personId}, tag.id from crm.tags tag
+          where tag.workspace_id = ${owner.workspaceId}
+        `;
+        await transaction`
+          insert into crm.relationship_types (
+            id, workspace_id, forward_label, reverse_label, sort_order
+          ) values (${relationshipTypeId}, ${owner.workspaceId}, 'friend',
+            'friend', 1)
+        `;
+        await transaction`
+          insert into crm.relationships (
+            workspace_id, from_person_id, to_person_id, relationship_type_id
+          ) values (${owner.workspaceId}, ${personId}, ${relatedId},
+            ${relationshipTypeId})
+        `;
+        await transaction`
+          insert into crm.reminders (
+            workspace_id, person_id, target_kind, title, anchor_on,
+            created_by_member_id
+          ) values (${owner.workspaceId}, ${personId}, 'person',
+            'Write to Ada', '2026-08-20', ${owner.memberId})
+        `;
+        await transaction`
+          insert into crm.stay_in_touch_cadences (
+            workspace_id, person_id, interval_count, interval_unit, next_due_at
+          ) values (${owner.workspaceId}, ${personId}, 1, 'month',
+            '2026-08-21T09:00:00.000Z')
+        `;
+      });
+      const dated = await countedApi.request(
+        owner,
+        `/api/v1/people/${personId}/dates`,
+        "POST",
+        {
+          day: 10,
+          isAgeBased: false,
+          isYearApproximate: false,
+          kind: "birthday",
+          month: 12,
+          precision: "full",
+          year: 1815,
+        },
+      );
+      assert(dated.status === 201, `the birthday is saved (${dated.status})`);
+      await dated.body?.cancel();
+
+      const own = async (path: string): Promise<unknown> => {
+        const response = await countedApi.request(owner, path);
+        assert(response.status === 200, `${path} answers (${response.status})`);
+        return await response.json();
+      };
+      const sectionAnswers = async () => ({
+        ...Object.fromEntries(
+          await Promise.all(RAIL_FACT_SECTIONS.map(async (section) => [
+            section,
+            {
+              status: "ready",
+              value: await own(`/api/v1/people/${personId}/facts/${section}`),
+            },
+          ])),
+        ),
+        "important-dates": {
+          status: "ready",
+          value: await own(`/api/v1/people/${personId}/dates`),
+        },
+        relationships: {
+          status: "ready",
+          value: {
+            list: await own(
+              `/api/v1/people/${personId}/relationships?limit=20`,
+            ),
+            types: await own("/api/v1/relationship-types"),
+          },
+        },
+        reminders: {
+          status: "ready",
+          value: await own(`/api/v1/people/${personId}/reminders`),
+        },
+      });
+      const expected = await sectionAnswers();
+      const summary = await own(`/api/v1/people/${personId}?include=summary`);
+
+      const railPath = `/api/v1/people/${personId}?include=rail`;
+      // The first read prepares what later reads reuse.
+      const warm = await countedApi.request(owner, railPath);
+      assert(warm.status === 200, `the rail answers (${warm.status})`);
+      await warm.body?.cancel();
+      observed = [];
+      const composed = await countedApi.request(owner, railPath);
+      const statements = observed;
+      observed = undefined;
+      assert(composed.status === 200, "the counted rail read answers");
+      const body = await composed.json() as Record<string, unknown> & {
+        readonly rail: Record<string, unknown>;
+      };
+      const { rail, ...profile } = body;
+      assertEquals(profile, summary, "the rail read keeps the summary answer");
+      for (const [section, answer] of Object.entries(expected)) {
+        assertEquals(
+          rail[section],
+          answer,
+          `the rail's ${section} is what its own endpoint answers`,
+        );
+      }
+      assertEquals(
+        Object.keys(rail).sort(),
+        Object.keys(expected).sort(),
+        "the rail answers exactly its ten sections",
+      );
+      assert(
+        statements.length <= RAIL_STATEMENT_BUDGET,
+        `include=rail sent ${statements.length} statements:\n${
+          statements.map((text) => text.replace(/\s+/g, " ").slice(0, 90))
+            .join("\n")
+        }`,
+      );
+
+      // A module the workspace turned off is hidden in the rail as its own
+      // endpoint hides it; the other sections still answer.
+      await sql`
+        insert into crm.workspace_profile_modules
+          (workspace_id, key, name, is_active)
+        values
+          (${owner.workspaceId}, 'pets', 'Pets', false),
+          (${owner.workspaceId}, 'relationships', 'Relationships', false)
+        on conflict (workspace_id, key) do update set is_active = false
+      `;
+      const hidden = await countedApi.request(owner, railPath);
+      assert(hidden.status === 200, "the rail answers with hidden modules");
+      const hiddenRail = (await hidden.json() as {
+        readonly rail: Record<string, { readonly status: string }>;
+      }).rail;
+      assertEquals(hiddenRail.pets, { status: "hidden" }, "pets are hidden");
+      assertEquals(
+        hiddenRail.relationships,
+        { status: "hidden" },
+        "relationships are hidden",
+      );
+      assertEquals(
+        hiddenRail["contact-methods"],
+        expected["contact-methods"],
+        "a visible section still answers beside hidden ones",
+      );
+
+      // Another workspace learns nothing about this person, rail or not.
+      const foreignRead = await countedApi.request(foreign, railPath);
+      assert(
+        foreignRead.status === 404,
+        `a foreign rail read is not found (${foreignRead.status})`,
+      );
+      assert(
+        !("rail" in (await foreignRead.json() as Record<string, unknown>)),
+        "a foreign rail read carries no rail",
+      );
+    } finally {
+      await counted.close();
+    }
   },
 });
 

@@ -863,14 +863,19 @@ export const personGenderOption = z.strictObject({
   name: z.string(),
 }).meta({ id: "PersonGenderOption" });
 
-export const personReady = z.strictObject({
+/**
+ * The person answer without its rail. `person_rail.ts` adds the rail and
+ * names the whole `PersonReady`; the rail's sections come from the
+ * relationships and planning schemas, which already import this file.
+ */
+export const personReadyFields = z.strictObject({
   status: z.enum(["ready", "archived"]),
   person: personProfileIdentity,
   dueInformation: personDueInformation,
   /** The options the identity editor offers, current ones first. */
   genderOptions: z.array(personGenderOption).max(101).optional(),
   summary: personProfileSummary.optional(),
-}).meta({ id: "PersonReady" });
+});
 
 export const personTimelineMessage = z.strictObject({
   content: z.string(),

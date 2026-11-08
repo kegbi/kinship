@@ -40,6 +40,7 @@ import type {
   PersonMergePreview,
   PersonProfileIdentity,
   PersonProfileSummary,
+  PersonRail,
   PersonStarChanged,
   PersonTimelineKind,
   PersonTimelinePage,
@@ -132,10 +133,14 @@ export function getPersonIdentity(
   });
 }
 
+/**
+ * One person. `summary` adds the bounded summary; `rail` adds it and the
+ * first page of every rail section (AUD-Q3).
+ */
 export function getPerson(
   personId: string,
   workspaceId?: string,
-  include?: "summary",
+  include?: "summary" | "rail",
 ): Promise<
   ApiResult<
     {
@@ -143,6 +148,7 @@ export function getPerson(
       readonly genderOptions?: readonly PersonGenderOption[];
       readonly status: "ready" | "archived";
       readonly person: PersonProfileIdentity;
+      readonly rail?: PersonRail;
       readonly summary?: PersonProfileSummary;
     }
   >

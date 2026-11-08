@@ -45,7 +45,6 @@ import {
   personMerged,
   personMergeInput,
   personMergePreview,
-  personReady,
   personStarChanged,
   personTimelinePage,
   personTransitionInput,
@@ -59,6 +58,7 @@ import {
   profileFactUpdateInput,
   todayRecentPeople,
 } from "../schemas/people.ts";
+import { personReady } from "../schemas/person_rail.ts";
 import { uuid } from "../schemas/shared.ts";
 
 /**
@@ -240,9 +240,9 @@ export const deletePerson = defineRoute({
 
 /** What `getPerson` accepts in the query string. */
 export const getPersonQuery = z.strictObject({
-  include: z.enum(["summary"]).optional().meta({
+  include: z.enum(["summary", "rail"]).optional().meta({
     description:
-      "Adds the bounded person summary without changing the default response.",
+      "summary adds the bounded person summary; rail adds the summary and the first page of every rail section, each with its own status. Neither changes the default response.",
   }),
 });
 
@@ -261,7 +261,7 @@ export const getPerson = defineRoute({
   responses: {
     200: {
       description:
-        "Current-workspace person identity, lifecycle, due-information shell, and optional bounded summary",
+        "Current-workspace person identity, lifecycle, due-information shell, optional bounded summary, and optional composed rail",
       content: {
         "application/json": personReady,
       },

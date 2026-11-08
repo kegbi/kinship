@@ -68,7 +68,8 @@ function importantDateInput(input: z.infer<typeof importantDateValueSchema>) {
   };
 }
 
-function importantDate(date: ImportantDateRecord) {
+/** One important date as every answer that carries it presents it. */
+export function importantDate(date: ImportantDateRecord) {
   return {
     ...(date.day === undefined ? {} : { day: date.day }),
     createdAt: date.createdAt,

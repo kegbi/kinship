@@ -4700,10 +4700,11 @@
             "schema": {
               "type": "string",
               "enum": [
-                "summary"
+                "summary",
+                "rail"
               ]
             },
-            "description": "Adds the bounded person summary without changing the default response.",
+            "description": "summary adds the bounded person summary; rail adds the summary and the first page of every rail section, each with its own status. Neither changes the default response.",
             "required": false
           },
           {
@@ -4719,7 +4720,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Current-workspace person identity, lifecycle, due-information shell, and optional bounded summary",
+            "description": "Current-workspace person identity, lifecycle, due-information shell, optional bounded summary, and optional composed rail",
             "content": {
               "application/json": {
                 "schema": {
@@ -24018,6 +24019,195 @@
         ],
         "additionalProperties": false
       },
+      "PersonRail": {
+        "type": "object",
+        "properties": {
+          "contact-methods": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "addresses": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "first-meeting": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "work": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "food-preferences": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "pets": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "tags": {
+            "$ref": "#/components/schemas/PersonRailFacts"
+          },
+          "relationships": {
+            "$ref": "#/components/schemas/PersonRailRelationships"
+          },
+          "important-dates": {
+            "$ref": "#/components/schemas/PersonRailImportantDates"
+          },
+          "reminders": {
+            "$ref": "#/components/schemas/PersonRailReminders"
+          }
+        },
+        "required": [
+          "contact-methods",
+          "addresses",
+          "first-meeting",
+          "work",
+          "food-preferences",
+          "pets",
+          "tags",
+          "relationships",
+          "important-dates",
+          "reminders"
+        ],
+        "additionalProperties": false
+      },
+      "PersonRailFacts": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "ready"
+              },
+              "value": {
+                "$ref": "#/components/schemas/ProfileFactSection"
+              }
+            },
+            "required": [
+              "status",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionHidden"
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionUnavailable"
+          }
+        ]
+      },
+      "PersonRailImportantDates": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "ready"
+              },
+              "value": {
+                "$ref": "#/components/schemas/ImportantDateList"
+              }
+            },
+            "required": [
+              "status",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionHidden"
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionUnavailable"
+          }
+        ]
+      },
+      "PersonRailRelationships": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "ready"
+              },
+              "value": {
+                "type": "object",
+                "properties": {
+                  "list": {
+                    "$ref": "#/components/schemas/RelationshipList"
+                  },
+                  "types": {
+                    "$ref": "#/components/schemas/RelationshipTypeList"
+                  }
+                },
+                "required": [
+                  "list",
+                  "types"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionHidden"
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionUnavailable"
+          }
+        ]
+      },
+      "PersonRailReminders": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "ready"
+              },
+              "value": {
+                "$ref": "#/components/schemas/PersonReminders"
+              }
+            },
+            "required": [
+              "status",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionHidden"
+          },
+          {
+            "$ref": "#/components/schemas/PersonRailSectionUnavailable"
+          }
+        ]
+      },
+      "PersonRailSectionHidden": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "hidden"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonRailSectionUnavailable": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "unavailable"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "PersonReady": {
         "type": "object",
         "properties": {
@@ -24043,6 +24233,9 @@
           },
           "summary": {
             "$ref": "#/components/schemas/PersonProfileSummary"
+          },
+          "rail": {
+            "$ref": "#/components/schemas/PersonRail"
           }
         },
         "required": [

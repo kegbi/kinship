@@ -36,6 +36,8 @@ import {
   PERSON_ID_INVALID,
   withStoredAvatarDescriptor,
 } from "./shared.ts";
+import { importantDate } from "./dates.ts";
+import { publicProfileFact } from "./fact_schemas.ts";
 
 /** What one person's read-only page is served from. */
 export type PersonProfileHttpServices = Pick<
@@ -101,7 +103,8 @@ export const TIMELINE_CURSOR_STALE: ProblemDefinition = {
 };
 export const PERSON_QUERY_INVALID: ProblemDefinition = {
   code: "person_query_invalid",
-  detail: "Use include=summary to request the person summary.",
+  detail:
+    "Use include=summary for the person summary, or include=rail for the summary and the rail.",
   status: 400,
   title: "Invalid person query",
 };
@@ -111,6 +114,51 @@ export const PERSON_UNAVAILABLE: ProblemDefinition = {
   status: 503,
   title: "Person unavailable",
 };
+
+type PersonRail = NonNullable<
+  Extract<
+    Awaited<ReturnType<PersonProfileHttpServices["profile"]["get"]>>,
+    { readonly person: unknown }
+  >["rail"]
+>;
+
+/**
+ * The composed rail as each section's own endpoint presents it (AUD-Q3): a
+ * fact's value carries its section, and an important date its public shape.
+ */
+function presentedRail(rail: PersonRail) {
+  const facts = (entry: PersonRail["contact-methods"]) =>
+    entry.status === "ready"
+      ? {
+        status: entry.status,
+        value: {
+          ...entry.value,
+          records: entry.value.records.map(publicProfileFact),
+        },
+      }
+      : entry;
+  const dates = rail["important-dates"];
+  return {
+    addresses: facts(rail.addresses),
+    "contact-methods": facts(rail["contact-methods"]),
+    "first-meeting": facts(rail["first-meeting"]),
+    "food-preferences": facts(rail["food-preferences"]),
+    "important-dates": dates.status === "ready"
+      ? {
+        status: dates.status,
+        value: {
+          dates: dates.value.dates.map(importantDate),
+          status: dates.value.status,
+        },
+      }
+      : dates,
+    pets: facts(rail.pets),
+    relationships: rail.relationships,
+    reminders: rail.reminders,
+    tags: facts(rail.tags),
+    work: facts(rail.work),
+  };
+}
 
 export function createProfileRoutes(
   services: PersonProfileHttpServices,
@@ -187,8 +235,10 @@ export function createProfileRoutes(
     }
     const actor = await requireActor(context);
     if (actor instanceof Response) return actor;
-    const includeSummary = query.data.include === "summary";
-    const result = await (includeSummary
+    const include = query.data.include;
+    const result = await (include === "rail"
+      ? services.profile.get(actor, parsed.data, { includeRail: true })
+      : include === "summary"
       ? services.profile.get(actor, parsed.data, { includeSummary: true })
       : services.profile.get(actor, parsed.data)).catch(() =>
         undefined
@@ -205,8 +255,11 @@ export function createProfileRoutes(
       dueInformation: result.dueInformation,
       ...(result.genderOptions ? { genderOptions: result.genderOptions } : {}),
       person: withStoredAvatarDescriptor(result.person),
+      ...(include === "rail" && result.rail
+        ? { rail: presentedRail(result.rail) }
+        : {}),
       status: result.status,
-      ...(includeSummary && result.summary ? { summary: result.summary } : {}),
+      ...(include && result.summary ? { summary: result.summary } : {}),
     });
   });
 

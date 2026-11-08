@@ -52,6 +52,7 @@ import {
   listPeople,
   listRelationships,
   listRelationshipTypes,
+  type PersonRail,
   type RelationshipListPage,
   type RelationshipType,
   updateRelationship,
@@ -74,6 +75,7 @@ import { nameInitials } from "../../../lib/person-name.ts";
 import { Quiet } from "../facts/fact-list.tsx";
 import { setRailCount, setRailEmpty } from "../profile-summary.ts";
 import {
+  railSection,
   sectionHidden,
   type SectionMount,
   summaryCount,
@@ -113,6 +115,11 @@ export interface PersonRelationshipsProps {
   readonly onSettled?: () => void;
   /** How many relationships the profile summary counted, when it did. */
   readonly total?: number | undefined;
+  /**
+   * The first page of relationships and of their types that came with the
+   * person read, which the block shows instead of reading them (AUD-Q3).
+   */
+  readonly preloaded?: PersonRail["relationships"] | undefined;
 }
 
 type TypeAnswer = Settled<
@@ -318,10 +325,30 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
   }, [editorOpen, peopleRequest, state.peopleQuery, state.targetId]);
 
   // The first read starts in the loading state the island mounted with; a
-  // block counted empty has nothing to read.
-  const first = useEffectEvent(() =>
-    state.list === "loading" ? readAll() : Promise.resolve()
-  );
+  // block counted empty has nothing to read, and one whose first pages came
+  // with the person read shows them, or its own outage (AUD-Q3). The answer
+  // is drawn before the read settles (REL-074).
+  const first = useEffectEvent(() => {
+    if (state.list !== "loading") return Promise.resolve();
+    const preloaded = props.preloaded;
+    if (!preloaded) return readAll();
+    return Promise.resolve().then(() =>
+      flushSync(() => {
+        if (preloaded.status === "ready") {
+          applyTypes(
+            { data: preloaded.value.types, status: "ready" },
+            undefined,
+          );
+          applyList({ data: preloaded.value.list, status: "ready" }, undefined);
+        } else if (preloaded.status === "hidden") {
+          applyList({
+            data: { relationships: [], status: "hidden" },
+            status: "ready",
+          }, undefined);
+        } else applyList({ status: "unavailable" }, undefined);
+      })
+    );
+  });
   useEffect(() => {
     void first().finally(() => {
       settled.current?.();
@@ -1070,6 +1097,7 @@ export const mountPersonRelationships: SectionMount = (container, props) => {
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         personUpdatedAt={props.initial?.person.updatedAt}
+        preloaded={railSection(props, "relationships")}
         root={root}
         total={summaryCount(props, "relationships")}
         workspaceId={props.workspaceId}

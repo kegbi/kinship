@@ -15,6 +15,7 @@ import type { ProfileFactSectionId } from "../../../../../../packages/contracts/
 import { mountIsland } from "../../../islands/core/index.ts";
 import {
   type PersonProfile,
+  railSection,
   sectionHidden,
   type SectionMount,
   summaryCount,
@@ -61,6 +62,7 @@ export function factSectionMount(
           onSettled={() => resolve(unmount)}
           personId={props.personId}
           personUpdatedAt={props.initial?.person.updatedAt ?? ""}
+          preloaded={railSection(props, section)}
           root={root}
           total={summaryCount(props, section)}
           workspaceId={props.workspaceId}

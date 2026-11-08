@@ -558,25 +558,22 @@ change cannot undo them unnoticed. Every ticket keeps these budgets green.
   request (`requestBudgets.latencyMs`, as the 01 report's 100 ms runs did), so
   reads that do not wait for one another are sent while the earlier ones are
   still on the wire and share a step however the browser schedules the effects
-  that send them. Counts depend only on the seeded data. Steps depend on timing
-  only if a page sends an independent read more than that latency after its
-  siblings. Across four runs on a heavily loaded host every count and step
-  repeated exactly, except the rich person's: its five Timeline reads start from
-  their cards' viewport observers just before or just after the rail's answers
-  arrive, at step 3 or 4, so its step budget is that upper bound. The reads a
-  page defers to idle by design (the bell's first count, the person page's
-  recorded view, and the directory's duplicates) count as requests but take no
-  step, because when the browser goes idle is timing, not the page's chain. The
-  palette's empty query is budgeted the same way. A positive control serves a
-  fixture page that reads one URL twice and proves the check fails it. The
-  budgets live in `requestBudgets` in
-  [`mvp-capacity-profile.json`](mvp-capacity-profile.json), each with its basis:
-  the 01 report's targets (the shell 2, Today 7, people 5, tasks 3, the journal
-  3, settings 2–4, and the palette 1), otherwise the measured count. The person
-  page is budgeted twice. A blank person (`people.profile#blank`) has AUD-F5's 7
-  requests. The rich person (`people.profile`) has its measured 20 requests in 4
-  steps, an interim value until AUD-Q3 delivers the target of at most 6; AUD-Q3
-  or AUD-F5-fix lowers that number.
+  that send them. Counts and steps depend only on the seeded data. The rich
+  person's order is fixed: the session (1), the person with its rail (2), and
+  the unified timeline (3), which starts only after that read answers, with the
+  notifications and the recorded view off the chain. The reads a page defers to
+  idle by design (the bell's first count, the person page's recorded view, and
+  the directory's duplicates) count as requests but take no step, because when
+  the browser goes idle is timing, not the page's chain. The palette's empty
+  query is budgeted the same way. A positive control serves a fixture page that
+  reads one URL twice and proves the check fails it. The budgets live in
+  `requestBudgets` in [`mvp-capacity-profile.json`](mvp-capacity-profile.json),
+  each with its basis: the 01 report's targets (the shell 2, Today 7, people 5,
+  tasks 3, the journal 3, settings 2–4, and the palette 1), otherwise the
+  measured count. The person page is budgeted twice. A blank person
+  (`people.profile#blank`) has its measured 4 requests in 2 steps after AUD-Q3.
+  The rich person (`people.profile`) has its measured 5 requests in 3 steps
+  after AUD-Q3 and AUD-F5-fix, within the 01 report's target of at most 6.
 - **Bytes.** `deno task test:unit --module=web-build`, which `deno task build`
   runs after `astro build`, fails when a page's eager JavaScript exceeds its
   budget. Eager JavaScript is the static closure of the page's scripts, which

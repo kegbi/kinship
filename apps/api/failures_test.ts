@@ -684,7 +684,7 @@ Deno.test("[GAP-020] the refusals people.ts answers are unchanged", () => {
       "503 | people_unavailable | Person could not be created | The person service is temporarily unavailable.",
       "503 | people_unavailable | Person could not be deleted | The person service is temporarily unavailable.",
       "503 | people_unavailable | Person could not be updated | The person service is temporarily unavailable.",
-      "400 | person_query_invalid | Invalid person query | Use include=summary to request the person summary.",
+      "400 | person_query_invalid | Invalid person query | Use include=summary for the person summary, or include=rail for the summary and the rail.",
       "503 | people_unavailable | Person unavailable | The person service is temporarily unavailable.",
       "400 | person_view_invalid | Invalid person view | Use a canonical person identifier and an empty request body.",
       "404 | person_not_found | Person not found | No viewable person with this identifier exists in the current workspace.",

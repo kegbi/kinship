@@ -1109,9 +1109,10 @@ export async function mountPersonWorkspace(): Promise<void> {
     if (zoneFilter) applyZoneView(zoneFilter, storedView);
   }
   // The preferences come with the session (AUD-F3), so the person's own read
-  // starts as soon as the session is known (FER-04).
+  // starts as soon as the session is known (FER-04). The rail's first pages
+  // come with it, and each rail owner takes its own from `initial` (AUD-Q3).
   const memberPreferences = session.session.preferences;
-  const result = await getPerson(id, workspaceId, "summary").catch(() =>
+  const result = await getPerson(id, workspaceId, "rail").catch(() =>
     undefined
   );
   if (!result) {

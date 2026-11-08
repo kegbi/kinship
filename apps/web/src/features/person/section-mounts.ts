@@ -15,6 +15,7 @@
 
 import type {
   getPerson,
+  PersonRail,
   ResolvedMemberPreferences,
 } from "../../../../../packages/contracts/generated/auth-client.ts";
 import type {
@@ -87,6 +88,18 @@ export function summaryCount(
     counted.id === id
   );
   return entry?.status === "ready" ? entry.count : undefined;
+}
+
+/**
+ * The first page of rail section `id` that came with the person read, when
+ * it came (AUD-Q3). An owner shows it instead of reading its first page;
+ * every later read, retry, and write still goes to its own endpoint.
+ */
+export function railSection<Id extends keyof PersonRail>(
+  props: SectionProps,
+  id: Id,
+): PersonRail[Id] | undefined {
+  return props.initial?.rail?.[id];
 }
 
 function island(

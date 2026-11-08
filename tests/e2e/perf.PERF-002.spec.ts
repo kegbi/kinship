@@ -26,11 +26,11 @@ import { signInAcceptingCompliance } from "./support/sign-in.ts";
  * (`requestBudgets.latencyMs`, as the 01 report's 100 ms runs did), so reads
  * that do not wait for one another are sent while the earlier ones are still
  * on the wire and land in the same step however the browser schedules the
- * effects that send them. Counts depend only on the seeded data; steps depend
- * on timing only if a page sends an independent read more than that latency
- * after its siblings; the rich person's Timeline reads do (their cards'
- * viewport observers start them at step 3 or 4), so its step budget is that
- * upper bound. Today's CLS and the person page's LCP on the 4x-CPU
+ * effects that send them. Counts and steps depend only on the seeded data:
+ * the rich person's order is fixed, the session (1), the person with its rail
+ * (2), and the unified timeline (3), which starts only after that read
+ * answers, with the notifications and the recorded view off the chain.
+ * Today's CLS and the person page's LCP on the 4x-CPU
  * profile are the only timed assertions (the LCP ceiling carries headroom over
  * the measured value), and the four primary navigation clicks (FER-16) are
  * recorded, never asserted.
@@ -632,7 +632,7 @@ test(
 
     // A budget key is a catalog page ID, or a page ID and a variant after `#`
     // for a second shape of the same page: the person page is budgeted rich
-    // (`people.profile`) and blank (`people.profile#blank`, AUD-F5's value).
+    // (`people.profile`) and blank (`people.profile#blank`, AUD-Q3's measured value).
     const visits = [...catalogedAuthenticatedPages(), ...PAGE_VARIANTS].sort();
     expect.soft(Object.keys(budgets.pages).sort(), "a budget for every page")
       .toEqual(visits);

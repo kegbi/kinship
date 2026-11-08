@@ -36,6 +36,8 @@ import {
   createStayInTouchCadence,
   getPerson,
   listPersonReminders,
+  type PersonRail,
+  type PersonReminders as PersonRemindersPage,
   type Reminder,
   setReminderActive,
   type StayInTouchCadence,
@@ -64,7 +66,7 @@ import {
   setRailEmpty,
   setStayInTouch,
 } from "../profile-summary.ts";
-import type { SectionMount } from "../section-mounts.ts";
+import { railSection, type SectionMount } from "../section-mounts.ts";
 import { statusRegion, type StatusRegionProps } from "../status-region.ts";
 import {
   CADENCE_FAILED,
@@ -103,6 +105,11 @@ export interface PersonRemindersProps {
   readonly onSettled?: () => void;
   /** What both state lines spread to be live regions, if anything. */
   readonly statusRegion?: StatusRegionProps;
+  /**
+   * The reminders and cadence that came with the person read, which the
+   * block shows instead of reading them (AUD-Q3).
+   */
+  readonly preloaded?: PersonRail["reminders"] | undefined;
 }
 
 function sectionState(
@@ -174,25 +181,33 @@ export function PersonReminders(props: PersonRemindersProps) {
           nextReminderText(profile?.data?.dueInformation, timePreferences),
         );
       }
-      if (list.status !== "ready" || !list.data) {
-        dispatch({ type: "failed" });
-        setStayInTouch("Unavailable");
-        setRailCount("stay-in-touch", undefined);
-        setRailEmpty("stay-in-touch", false);
-        return;
-      }
-      const cadences = list.data.cadences.filter((cadence) => cadence.isActive);
-      dispatch({
-        cadences,
-        continued: cursor !== undefined,
-        nextCursor: list.data.nextCursor,
-        reminders: list.data.reminders,
-        type: "loaded",
-      });
-      setStayInTouch(stayInTouchText(cadences));
-      setRailCount("stay-in-touch", cadences.length);
-      setRailEmpty("stay-in-touch", cadences.length === 0);
+      apply(list.status === "ready" ? list.data : undefined, cursor);
     });
+  };
+
+  /** Shows a page of both sections, or that they could not be read. */
+  const apply = (
+    page: PersonRemindersPage | undefined,
+    cursor?: string,
+  ): void => {
+    if (!page) {
+      dispatch({ type: "failed" });
+      setStayInTouch("Unavailable");
+      setRailCount("stay-in-touch", undefined);
+      setRailEmpty("stay-in-touch", false);
+      return;
+    }
+    const cadences = page.cadences.filter((cadence) => cadence.isActive);
+    dispatch({
+      cadences,
+      continued: cursor !== undefined,
+      nextCursor: page.nextCursor,
+      reminders: page.reminders,
+      type: "loaded",
+    });
+    setStayInTouch(stayInTouchText(cadences));
+    setRailCount("stay-in-touch", cadences.length);
+    setRailEmpty("stay-in-touch", cadences.length === 0);
   };
 
   /** A read that holds both sections, unless a write already does. */
@@ -215,8 +230,18 @@ export function PersonReminders(props: PersonRemindersProps) {
     return true;
   };
 
-  // The first read starts in the loading state the island mounted with.
-  const first = useEffectEvent(() => reload());
+  // The first read starts in the loading state the island mounted with. A
+  // page that came with the person read is the first answer, drawn before
+  // the read settles (AUD-Q3, REL-049); refused or failed, it is the error.
+  const first = useEffectEvent(() => {
+    const preloaded = props.preloaded;
+    if (!preloaded) return reload();
+    return Promise.resolve().then(() =>
+      flushSync(() =>
+        apply(preloaded.status === "ready" ? preloaded.value : undefined)
+      )
+    );
+  });
   useEffect(() => {
     void first().finally(() => {
       settled.current?.();
@@ -686,6 +711,7 @@ export const mountPersonReminders: SectionMount = (container, props) => {
         headings={headings}
         onSettled={() => resolve(unmount)}
         personId={props.personId}
+        preloaded={railSection(props, "reminders")}
         sections={{ reminders, stayInTouch }}
         statusRegion={statusRegion(props)}
         timePreferences={props.preferences}

@@ -246,6 +246,138 @@ Deno.test("[UXD-013] HTTP leaves the person response unchanged without include",
   );
 });
 
+Deno.test("AUD-Q3 HTTP answers the composed rail as each section's own endpoint presents it", async () => {
+  const personId = fixtures.personId();
+  let options: unknown;
+  const unavailable = { status: "unavailable" } as const;
+  const hidden = { status: "hidden" } as const;
+  const record = {
+    id: fixtures.personId(),
+    section: "pets",
+    updatedAt: "2026-08-15T08:00:00.000Z",
+    value: { categoryId: fixtures.personId(), name: "Puff" },
+  };
+  const date = {
+    createdAt: "2026-08-15T08:00:00.000Z",
+    id: fixtures.personId(),
+    isAgeBased: false,
+    isYearApproximate: false,
+    kind: "birthday",
+    month: 12,
+    personId,
+    precision: "month",
+    scheduling: { status: "scheduled" },
+    updatedAt: "2026-08-15T08:00:00.000Z",
+  };
+  const reminders = { cadences: [], reminders: [], status: "ready" } as const;
+  const app = createPeopleRoutes(services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      get: (_resolved, _id, received) => {
+        options = received;
+        return Promise.resolve({
+          dueInformation: {
+            detail: "0 open tasks.",
+            openTaskCount: 0,
+            status: "ready",
+          },
+          person: {
+            givenName: "Ada",
+            id: personId,
+            isDeceased: false,
+            isPartial: false,
+            isSelf: false,
+            isStarred: false,
+            tagCount: 0,
+            tags: [],
+            updatedAt: "2026-08-15T08:00:00.000Z",
+          },
+          rail: {
+            addresses: unavailable,
+            "contact-methods": unavailable,
+            "first-meeting": unavailable,
+            "food-preferences": unavailable,
+            "important-dates": {
+              status: "ready",
+              value: { dates: [date], status: "ready" },
+            },
+            pets: {
+              status: "ready",
+              value: {
+                options: [],
+                personUpdatedAt: "2026-08-15T08:00:00.000Z",
+                records: [record],
+                status: "ready",
+              },
+            },
+            relationships: hidden,
+            reminders: { status: "ready", value: reminders },
+            tags: hidden,
+            work: unavailable,
+          },
+          status: "ready",
+          summary: {
+            primaryContactMethods: [],
+            relationshipCounts: [],
+            sectionCounts: [],
+          },
+        } as never);
+      },
+    },
+  ));
+
+  const response = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=rail`,
+    { headers },
+  );
+  const body = await response.json() as {
+    readonly rail: Record<string, unknown>;
+    readonly summary?: unknown;
+  };
+
+  assertStatus(response, 200, "the rail read answers");
+  assertEquals(options, { includeRail: true }, "the read asks for the rail");
+  assert(body.summary !== undefined, "the rail read carries the summary");
+  assertEquals(body.rail.pets, {
+    status: "ready",
+    value: {
+      options: [],
+      personUpdatedAt: "2026-08-15T08:00:00.000Z",
+      records: [{
+        ...record,
+        value: { section: "pets", ...record.value },
+      }],
+      status: "ready",
+    },
+  }, "a fact carries its section, as the fact endpoint presents it");
+  assertEquals(body.rail["important-dates"], {
+    status: "ready",
+    value: { dates: [date], status: "ready" },
+  }, "a date is presented as the dates endpoint presents it");
+  assertEquals(
+    body.rail.reminders,
+    { status: "ready", value: reminders },
+    "reminders",
+  );
+  for (const section of ["addresses", "contact-methods", "work"]) {
+    assertEquals(body.rail[section], unavailable, `${section} is unavailable`);
+  }
+  for (const section of ["relationships", "tags"]) {
+    assertEquals(body.rail[section], hidden, `${section} is hidden`);
+  }
+
+  const summary = await app.request(
+    `http://localhost/api/v1/people/${personId}?include=summary`,
+    { headers },
+  );
+  assert(
+    !("rail" in (await summary.json() as Record<string, unknown>)),
+    "a summary read never carries a rail",
+  );
+});
+
 Deno.test("PEOPLE-001 HTTP reads canonical identity only in the resolved workspace", async () => {
   const personId = fixtures.personId();
   let received: unknown;

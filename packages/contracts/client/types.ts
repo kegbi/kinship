@@ -746,6 +746,45 @@ export interface ProfileFactSection {
   readonly status: "ready" | "archived" | "hidden";
 }
 
+/** The first page of relationship types, as `listRelationshipTypes` reads it. */
+export interface RelationshipTypePage {
+  readonly nextCursor?: string;
+  readonly options: readonly RelationshipType[];
+  readonly selected: readonly RelationshipType[];
+  readonly status: "hidden" | "ready";
+}
+
+/** The important dates of one person, as `listImportantDates` reads them. */
+export interface ImportantDateList {
+  readonly dates: readonly ImportantDate[];
+  readonly status: "ready" | "archived";
+}
+
+/**
+ * One section of the composed rail (AUD-Q3): its first page exactly as its
+ * own endpoint answers it, or why it is not shown.
+ */
+export type PersonRailSection<Value> =
+  | { readonly status: "ready"; readonly value: Value }
+  | { readonly status: "hidden" | "unavailable" };
+
+/** What `getPerson(…, "rail")` adds: every rail section's first page. */
+export interface PersonRail {
+  readonly "contact-methods": PersonRailSection<ProfileFactSection>;
+  readonly addresses: PersonRailSection<ProfileFactSection>;
+  readonly "first-meeting": PersonRailSection<ProfileFactSection>;
+  readonly work: PersonRailSection<ProfileFactSection>;
+  readonly "food-preferences": PersonRailSection<ProfileFactSection>;
+  readonly pets: PersonRailSection<ProfileFactSection>;
+  readonly tags: PersonRailSection<ProfileFactSection>;
+  readonly relationships: PersonRailSection<{
+    readonly list: RelationshipListPage;
+    readonly types: RelationshipTypePage;
+  }>;
+  readonly "important-dates": PersonRailSection<ImportantDateList>;
+  readonly reminders: PersonRailSection<PersonReminders>;
+}
+
 export type GiftStatus = "archived" | "given" | "idea" | "planned" | "received";
 
 export type DebtStatus = "cancelled" | "open" | "settled";
