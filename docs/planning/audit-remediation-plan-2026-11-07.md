@@ -1878,7 +1878,7 @@ these:
     passed four runs on Chromium with the CSP collector; web-build 29 (only
     REL-098); performance 2; fmt, architecture, and lint (only REL-096).
 
-- [ ] **AUD-P2 — Closure checkpoint.** M. Depends: every other ticket, or its
+- [x] **AUD-P2 — Closure checkpoint.** M. Depends: every other ticket, or its
       recorded decision. Closes: nothing new; it proves the rest.
   - Scope:
     1. Run the full gates once on the integration branch: `deno task check`,
@@ -1895,6 +1895,23 @@ these:
        Decided, or Documented, then the commit. This is the only edit to the
        audit documents.
   - Verify: every gate's result, and all 70 IDs have a closure row.
+  - Delivered 2026-11-08: the full gates ran once at 6e8b0329, with this host's
+    per-module equivalents of `check`, `test`, and `test:coverage` (REL-095,
+    REL-097, REL-105): only known REL items failed (REL-095 to REL-108, REL-119,
+    REL-123), the schema matrix passed on 18.4 and 17.10, and `contracts:check`,
+    `check:architecture`, and `fmt:check` passed, apart from two AUD-Q3
+    regressions (GAP-003 and four PEOPLE-005/006 cases) that AUD-Q3-fix closed,
+    its re-run green apart from REL-097 and REL-119. On a fresh production-like
+    stack the audit's probes all pass: no protected route answers without a
+    session (sign-out answers 200 and clears `__Host-kinship_session`); the
+    SECA-01 takeover and invitation sequences are closed; the cross-tenant sweep
+    (183 controls, 964 attacks) reads and writes nothing across workspaces, with
+    64 tables forcing RLS and composite keys refusing cross-workspace
+    references; every page is within PERF-002's budget (Today 7 requests, audit
+    14; rich person 5, audit 25); and the worker at the medium profile sends 6
+    statements per tick with no inserts at steady state (audit about 12,000).
+    The audit README's "Closure status" table closes all 70 IDs: 61 Fixed, 1
+    Decided, 5 Fixed with a part Decided, and 3 Fixed with a part Documented.
 
 ## Part 5 — Dependencies and waves
 
