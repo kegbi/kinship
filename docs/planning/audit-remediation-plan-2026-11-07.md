@@ -1053,7 +1053,7 @@ these:
     web unit tests; E2E `person-workspace.PEOPLE-003` and
     `person-shell.PEOPLE-003`.
 
-- [ ] **AUD-Q4 — `last-contacted` ordering (conditional).** M. Low. Depends:
+- [x] **AUD-Q4 — `last-contacted` ordering (conditional).** M. Low. Depends:
       AUD-P1. Closes: BEQ-10 (the `last-contacted` part).
   - Gate: run this ticket only if AUD-P1 measures `sort=last-contacted` above
     its ceiling at the large profile. Otherwise, close the finding as Decided,
@@ -1061,6 +1061,13 @@ these:
   - Scope: a projection owned by the directory (`person_last_contact`),
     maintained through the interactions publisher port. The table needs a schema
     version: bundle it into AUD-V2, or into a V3 that follows the same rules.
+  - Decided 2026-11-08 by the gate: AUD-P1 measured `sort=last-contacted` at the
+    large profile (10,000 people, 250,000 history rows, PostgreSQL 18.4, schema
+    v13, four fresh databases) at p50 65 to 72 ms and max 73 to 94 ms, below its
+    recorded ceiling of p50 250 ms and max 500 ms in
+    `mvp-capacity-profile.json`, so no projection is built and BEQ-10's
+    `last-contacted` part closes as Decided. Crossing that ceiling, including
+    under schema v14's row-level security, reopens this ticket.
 
 ### Lane T — Tenant hardening without schema changes
 
