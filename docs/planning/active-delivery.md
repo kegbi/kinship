@@ -1897,6 +1897,134 @@ Playwright test carrying its stable flow ID.
       bulk-loaded; prove that the worker's claim plan uses
       `reminder_occurrences_due_idx` right after an import.
 
+- [ ] **REL-117 — Registration text fields accept NUL characters, which reveals
+      whether an address has an account.** Found in the AUD-A2 re-check review
+      during the 2026-11-07 audit-remediation run on the REL-105 Windows host;
+      the defect predates AUD-A2 and is present at `367c50aa`.
+      `registrationInput` (`packages/contracts/schemas/registration.ts:34–40`)
+      only trims and bounds `firstName`, `lastName`, and `workspaceName`, so a
+      NUL (U+0000) in any of them passes the contract. For a fresh address
+      `registerInTransaction`
+      (`packages/backend/modules/workspaces/application/register_first_workspace.ts:179`)
+      writes those values through `createPendingUser`, PostgreSQL refuses the
+      text, and the route answers 503 `registration_failed`
+      (`packages/backend/modules/workspaces/transport/http/registration.ts:273`);
+      for a registered address it writes no name and answers 202 (`:260`), so
+      the status says which addresses have accounts, against SECA-02. Reject
+      control characters in the registration contract, and in any other text
+      field that reaches a PostgreSQL text column the same way, and prove with
+      contract and HTTP tests that a NUL gives the same answer for a fresh and a
+      registered address.
+
+- [ ] **REL-118 — Migration 0004 commits the runner's transaction, so v1–v3
+      upgrades are not atomic.** Found by AUD-V2 during the 2026-11-07
+      audit-remediation run on the REL-105 Windows host; the defect predates the
+      remediation tickets and reproduces with the base runner on an exact v1
+      database. `applyCanonicalSchema` runs every migration inside one
+      `client.begin` transaction (`tools/migrations/baseline.ts:586`), after its
+      `set local` timeouts and `pg_advisory_xact_lock` (`:587–589`), sending
+      each file as one simple-protocol query (`:655`).
+      `personal-crm-schema/v4/migrations/0004_seed_iso_4217_currencies.sql`
+      opens with `BEGIN;` (`:1`), which only warns there, and ends with
+      `COMMIT;` (`:191`), which commits the runner's lock, timeouts, and
+      0002–0004. Each later file then runs as its own implicit transaction;
+      0011's session-level `SET search_path = crm, public;` persists, and the
+      runner's `set local search_path = public` (`:658`) is a no-op outside a
+      transaction. So the final catalog read has `crm` on the path,
+      `pg_get_constraintdef` (`:278`) prints `activity_types(...)` unqualified
+      against the expected `<schema>.activity_types`, and the runner reports
+      drift after the upgrade has already committed. This is the likely root
+      cause of REL-099's v1–v3 migration cases. Keep the migration files
+      immutable, since every v1–v3 upgrade must apply 0004: have the runner
+      strip a file's own transaction control, or apply such a file so the
+      upgrade stays one transaction, and prove an exact v1 upgrade verifies as
+      v13 and a forced failure rolls it back completely.
+
+- [ ] **REL-119 — WebKit refuses some styles under the CSP, and Firefox and
+      WebKit each fail one more E2E case.** Found during AUD-V2's all-browser
+      E2E run in the 2026-11-07 audit-remediation run on the REL-105 Windows
+      host, and reproduced at `54a9b31c`, before AUD-V2. AUD-G3 verified its
+      `securitypolicyviolation` fixture (`tests/e2e/support/test.ts`) under
+      `style-src 'self'` (`gateway/security_headers.conf:1`) on the Chromium
+      project only. WebKit reports `style-src-elem` refusals in
+      `tests/e2e/settings.AUTH-004.spec.ts`, in the APP-002C leaves of
+      `tests/e2e/shell.TODAY-001.spec.ts` (`:73`, `:322`), and in two
+      `tests/e2e/profile-facts.PEOPLE-006.spec.ts` cases. WebKit also fails
+      "[API-002] visitors read and download the reference without JavaScript"
+      (`tests/e2e/api-reference.API-002.spec.ts:9`) at its native download
+      (`:92–94`), the symptom REL-104 records; treat it as REL-104 unless
+      diagnosis shows otherwise. Firefox fails "[PEOPLE-006] PRF-001 scans
+      profile blocks and edits long facts across screen sizes"
+      (`profile-facts.PEOPLE-006.spec.ts:1298`) at its section-menu bound
+      (`:1555–1558`). Diagnose each per browser and name the exact WebKit cases;
+      do not weaken the CSP or the assertions.
+
+- [ ] **REL-120 — Tenant tables without a `workspace_id` have no
+      row-level-security backstop under v14.** Found in the AUD-V2 review during
+      the 2026-11-07 audit-remediation run on the REL-105 Windows host; schema
+      v14 (AUD-V2) is not yet integrated. v14 forces row-level security keyed on
+      `app.workspace_id` on 64 of its 92 tables, but cannot on tables with no
+      `workspace_id`: the root `workspaces` table, the single-parent children
+      `pets`, `romantic_relationship_details`, `activity_emotions`,
+      `call_emotions`, `data_import_entities`, `data_import_reports`,
+      `member_preferences`, `billing_subscriptions`, and
+      `location_weather_cache`, and the grandchild `billing_subscription_items`.
+      The reviewer verified live that an unscoped `kinship_app` query reads both
+      workspaces' rows there (`select name from crm.workspaces` and
+      `select count(*) from crm.pets`); these tables rely on the parent's
+      predicate in application code. ADR 0008's cross-workspace paths read
+      `workspaces` before any scope is set: v14 grants `SELECT` on it to
+      `kinship_session_resolver`, `kinship_registration`,
+      `kinship_account_lifecycle`, and `kinship_workspace_lifecycle`
+      (`personal_crm_schema_v14.sql:3357`, `:3452`, `:3475`, `:3502`), whose
+      definer functions include the workspace switcher's
+      `session_workspace_contexts`, and `DELETE` to `kinship_worker` (`:3673`).
+      In the next schema version, add a `workspaces` policy on `id` equal to the
+      scope, and give each of those narrow roles its own role-scoped policy on
+      `workspaces`, as v14 does on `workspace_members` (`:3358`, `:3453`,
+      `:3476`, `:3503`, `:3630`); add a denormalized `workspace_id` with a
+      composite key on the children that carry tenant data, such as `pets` and
+      `data_import_entities`, and row-level security on them. Prove an unscoped
+      `kinship_app` read of each returns no other workspace's row, and that
+      sign-in, the workspace switcher, registration cleanup, account and
+      workspace lifecycle, and the worker purge still work.
+
+- [ ] **REL-121 — Some web remount and failure tests no longer discriminate.**
+      Found in the AUD-F1 review and the AUD-F5 final re-check during the
+      2026-11-07 audit-remediation run on the REL-105 Windows host. Since
+      AUD-F1's single-flight reads a remounted island joins the read its
+      predecessor left on the wire, so "forgets an unmounted island's pending
+      completion and read; a remount starts fresh"
+      (`apps/web/src/features/today/attention/today-attention.test.tsx:973–1008`)
+      and "makes a pending old mount inert after the page draws again"
+      (`apps/web/src/features/today/reminders/today-reminders.test.tsx:265–290`)
+      resolve one shared answer for both islands and cannot tell a stale island
+      from the new one. Separately, nothing pins that a zone, rail, or card
+      owner's failure still rejects the person workspace's `settled()`: the
+      registry's internal `mount`
+      (`apps/web/src/features/person/workspace.ts:295–303`) absorbs failures
+      only for `tolerated` owners, which AUD-F5 introduced for the summaries
+      (`:325–329`), and making every owner tolerated breaks no test. Send a
+      write before the remount so the new island reads on its own and give the
+      late answer a distinct body, and add a case in which a non-summary owner's
+      failure rejects the settle.
+
+- [ ] **REL-122 — Signing out with two session cookies leaves the live session
+      live.** Found in the AUD-K4 review during the 2026-11-07 audit-remediation
+      run on the REL-105 Windows host. The sign-out route
+      (`packages/backend/modules/workspaces/transport/http/authentication.ts:561–579`)
+      revokes only what `sessionToken` returns, and `sessionToken`
+      (`packages/http-kit/cookies.ts:53–59`) returns nothing when the `Cookie`
+      header carries more than one session cookie (SECA-09). With two cookies
+      the route revokes no token, clears the cookie, and answers 200
+      `signed-out`, while the live session stays usable until it expires. Before
+      AUD-K4 (`b1499b33`) the route revoked only the first cookie's token, so
+      the gap is older, but now no token is revoked at all. It is realistic only
+      over loopback HTTP, where the cookie is `kinship_session`; over HTTPS a
+      `__Host-` cookie cannot be duplicated in one browser. Revoke each distinct
+      token in the header, and prove with an HTTP test that a two-cookie
+      sign-out leaves neither session usable.
+
 ## Just-In-Time Technical Capabilities
 
 These are cross-cutting acceptance items, not separately scheduled tickets.
