@@ -234,8 +234,9 @@ export const API_CONFIGURATION_READS = [
   "tools/e2e.ts",
   "tools/tasks/manifest.ts",
   "tools/tasks/run.ts",
-  "tests/e2e/sign-in.AUTH-003.spec.ts",
-  "tests/e2e/support",
+  // The E2E specs and their support: AUTH-003's flow and AUD-G3's check that
+  // every spec runs under the policy-violation collector.
+  "tests/e2e",
   "docs/architecture/backend-architecture.md",
   "docs/architecture/compose-contract.md",
   "docs/architecture/configuration-and-secrets.md",

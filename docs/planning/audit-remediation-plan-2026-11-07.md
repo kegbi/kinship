@@ -1226,6 +1226,29 @@ these:
     architecture, and lint (only REL-096) are clean. The console-based
     `recordPolicyViolations` helper in `tests/e2e/support/page-checks.ts` and
     its six call sites are now redundant (parked).
+  - [x] **AUD-G3-fix — The api unit set can read the E2E specs AUD-G3 checks.**
+        S. Normal. Depends: AUD-G3. Closes: the api unit regression from
+        AUD-G3's collector test.
+    - Scope: `tools/gateway_contract_test.ts` runs in the `api` unit and
+      coverage sets, which could read only `tests/e2e/support` and AUTH-003's
+      spec, so the collector test failed with NotCapable. Grant
+      `API_CONFIGURATION_READS` the one `tests/e2e` directory in place of those
+      two entries; drop no file from a gate, keep the test as it is, and keep
+      the api unit command under this host's argv limit (REL-105).
+    - RED: `test:unit --module=api` fails "[AUD-G3] every E2E spec runs under
+      the policy-violation collector" with NotCapable on `tests/e2e`, beside the
+      known REL-106 failure.
+    - Verify: `test:unit --module=api` (only REL-106);
+      `test:unit --module=tasks`; `test:coverage --module=api`; fmt,
+      architecture, and lint (only REL-096).
+    - Delivered 2026-11-08: `API_CONFIGURATION_READS` grants `tests/e2e` in
+      place of AUTH-003's spec and `support`, so `test:unit --module=api` fails
+      only REL-106 again (489 passed) and its command shrank from 7,884 to 7,841
+      characters; tasks unit shows only REL-097, and fmt, contracts,
+      architecture, and lint (only REL-096) are clean.
+      `test:coverage
+      --module=api` cannot start on this host before or
+      after (REL-105).
 
 - [ ] **AUD-G4 — Containers and PostgreSQL are hardened and observable.** S–M.
       Normal. Depends: none. Closes: SECA-13 item 7, SECA-06 (the trusted-proxy
