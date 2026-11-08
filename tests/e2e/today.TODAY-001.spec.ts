@@ -616,3 +616,215 @@ test(
     await expectAccessible(page);
   },
 );
+
+/** One layout shift the page reported without recent input (FER-06). */
+interface RecordedShift {
+  readonly value: number;
+  readonly at: number;
+  readonly sources: readonly string[];
+}
+
+test(
+  "[TODAY-001] Today does not shift while it loads",
+  { annotation: [{ type: "flow", description: "TODAY-001" }] },
+  async ({ browserName, page, request }) => {
+    test.setTimeout(180_000);
+    const email = `today-shift-${browserName}-${Date.now()}@example.test`;
+    await registerVerified(request, {
+      email,
+      firstName: "Shift",
+      lastName: "Reviewer",
+      workspaceName: "Steady Today",
+    }, bareToken);
+    await submitSignIn(page, email);
+
+    // A busy workspace: a long attention queue, people to reconnect with,
+    // upcoming work, recently viewed people, favorite notes, and activity.
+    const names = [
+      ["Ada", "Lovelace"],
+      ["Grace", "Hopper"],
+      ["Katherine", "Johnson"],
+      ["Dorothy", "Vaughan"],
+      ["Mary", "Jackson"],
+      ["Hedy", "Lamarr"],
+    ] as const;
+    const people: string[] = [];
+    for (const [givenName, familyName] of names) {
+      people.push(await createPerson(page.request, { givenName, familyName }));
+    }
+    const post = async (path: string, data: Record<string, unknown>) => {
+      const response = await page.request.post(`${origin}/api/v1${path}`, {
+        data: { requestId: crypto.randomUUID(), ...data },
+        headers: { origin },
+      });
+      expect(response.status(), path).toBeLessThan(300);
+    };
+    for (const personId of people.slice(0, 4)) {
+      await post("/stay-in-touch-cadences", {
+        intervalCount: 1,
+        intervalUnit: "day",
+        personId,
+      });
+    }
+    const hour = 60 * 60_000;
+    const now = Date.now();
+    const dues = [
+      -96,
+      -72,
+      -50,
+      -26,
+      2,
+      30,
+      54,
+      78,
+      102,
+      126,
+      14 * 24,
+      18 * 24,
+      22 * 24,
+    ];
+    for (const [index, offset] of dues.entries()) {
+      await post("/tasks", {
+        dueAt: new Date(now + offset * hour).toISOString(),
+        personId: people[index % people.length],
+        title: `Follow up on the shared project, part ${index + 1}`,
+      });
+    }
+    for (const [index, personId] of people.slice(0, 4).entries()) {
+      await post("/interactions", {
+        body: `Prefers written updates and a short agenda before calls (${
+          index + 1
+        }).`,
+        isFavorited: true,
+        kind: "note",
+        personId,
+      });
+    }
+    for (let index = 0; index < 8; index += 1) {
+      await post("/interactions", {
+        happenedAt: new Date(now - (index + 1) * hour).toISOString(),
+        kind: "activity",
+        participantIds: [people[index % people.length]],
+        summary: `Caught up over coffee about the next steps (${index + 1})`,
+      });
+    }
+    for (const personId of people.slice(0, 5)) {
+      expect((await page.request.post(
+        `${origin}/api/v1/people/${personId}/view`,
+        { headers: { origin } },
+      )).status()).toBe(200);
+    }
+
+    await page.addInitScript(() => {
+      const shifts: RecordedShift[] = [];
+      const supported = PerformanceObserver.supportedEntryTypes?.includes(
+        "layout-shift",
+      ) ?? false;
+      Object.assign(globalThis, {
+        __todayShifts: shifts,
+        __todayShiftSupported: supported,
+      });
+      // Only Chromium reports layout shifts; elsewhere nothing is measured.
+      if (!supported) return;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const shift = entry as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+            sources?: ReadonlyArray<{ node?: Node | null }>;
+          };
+          if (shift.hadRecentInput) continue;
+          shifts.push({
+            at: Math.round(shift.startTime),
+            sources: (shift.sources ?? []).map(({ node }) =>
+              node instanceof Element
+                ? `${node.tagName.toLowerCase()}${
+                  node.id ? `#${node.id}` : ""
+                }${
+                  node.className && typeof node.className === "string"
+                    ? `.${node.className.trim().split(/\s+/).join(".")}`
+                    : ""
+                }`
+                : String(node?.nodeName ?? "?")
+            ),
+            value: shift.value,
+          });
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+
+    const states = [
+      "#today-attention-state",
+      "#today-upcoming-state",
+      "#today-cadences-state",
+      "#today-reminders-state",
+      "#today-recent-people-state",
+      "#today-favorite-notes-state",
+      "#today-recent-activity-state",
+    ];
+    for (
+      const viewport of [
+        { height: 768, width: 1366 },
+        { height: 915, width: 412 },
+      ]
+    ) {
+      await page.setViewportSize(viewport);
+      await page.goto("/app");
+      for (const state of states) {
+        await expect(page.locator(state)).not.toHaveText(/Loading/);
+      }
+      await expect(page.locator("[data-today-date]")).not.toHaveText(
+        /Loading/,
+      );
+      await expect(page.locator("#today-recent-activity li")).toHaveCount(12);
+      // Let anything the answers start (fonts, images, the shell) land.
+      await page.evaluate(() =>
+        new Promise((resolve) => setTimeout(resolve, 1_500))
+      );
+      const { shifts, supported } = await page.evaluate(() => {
+        const recorded = globalThis as unknown as {
+          __todayShifts: RecordedShift[];
+          __todayShiftSupported: boolean;
+        };
+        return {
+          shifts: recorded.__todayShifts,
+          supported: recorded.__todayShiftSupported,
+        };
+      });
+      if (browserName === "chromium") {
+        // A broken observer must fail loudly, never pass with nothing seen.
+        expect(supported, "Chromium reports layout-shift entries").toBe(true);
+      }
+      if (!supported) {
+        if (viewport.width === 1366) {
+          test.info().annotations.push({
+            type: "layout-shift",
+            description:
+              `not measured: ${browserName} reports no layout-shift entries`,
+          });
+        }
+        continue;
+      }
+      const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+      expect.soft(
+        total,
+        `layout shift at ${viewport.width}x${viewport.height}: ${
+          JSON.stringify(shifts)
+        }`,
+      ).toBeLessThan(0.1);
+    }
+    // The long queue paints its first five priorities and expands in place.
+    const queue = page.locator(".attention-groups li");
+    await expect(queue).toHaveCount(5);
+    const showAll = page.getByRole("button", {
+      name: /^Show all \d+ priorities$/,
+    });
+    await expect(showAll).toHaveAttribute("aria-expanded", "false");
+    await showAll.click();
+    await expect(page.getByRole("button", { name: "Show fewer" }))
+      .toHaveAttribute("aria-expanded", "true");
+    expect(await queue.count()).toBeGreaterThan(5);
+    await expect(page).toHaveURL(/\/app$/);
+    await expectAccessible(page);
+  },
+);

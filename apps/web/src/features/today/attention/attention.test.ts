@@ -8,12 +8,14 @@ import {
   actionableItemIds,
   type AttentionAction,
   type AttentionAnswer,
+  attentionCount,
   attentionDestination,
   attentionMeta,
   attentionReducer,
   type AttentionState,
   attentionView,
   attentionWhen,
+  firstPaint,
   initialAttentionState,
   upcomingMeta,
 } from "./attention.ts";
@@ -22,6 +24,36 @@ const workspaceId = "00000000-0000-4000-8000-000000000003";
 const personId = "00000000-0000-4000-8000-000000000100";
 const person = { archived: false, id: personId, name: "Ada Lovelace" };
 const utc = { effectiveTimezone: "UTC", locale: "en" };
+
+it("FER-06 paints the first items in queue order, still grouped", () => {
+  const groups = {
+    nextSevenDays: [task("n1"), task("n2")],
+    overdue: [task("o1"), task("o2")],
+    today: [task("t1")],
+  };
+  const ids = (painted: TodayAttention["attention"]) => ({
+    nextSevenDays: painted.nextSevenDays.map((item) => item.id),
+    overdue: painted.overdue.map((item) => item.id),
+    today: painted.today.map((item) => item.id),
+  });
+  expect(attentionCount(groups)).toBe(5);
+  expect(attentionCount(undefined)).toBe(0);
+  for (
+    const [limit, expected] of [
+      [0, { nextSevenDays: [], overdue: [], today: [] }],
+      [1, { nextSevenDays: [], overdue: ["o1"], today: [] }],
+      [3, { nextSevenDays: [], overdue: ["o1", "o2"], today: ["t1"] }],
+      [4, { nextSevenDays: ["n1"], overdue: ["o1", "o2"], today: ["t1"] }],
+      [9, {
+        nextSevenDays: ["n1", "n2"],
+        overdue: ["o1", "o2"],
+        today: ["t1"],
+      }],
+    ] as const
+  ) {
+    expect(ids(firstPaint(groups, limit))).toEqual(expected);
+  }
+});
 
 it("shows calendar event dates without notification timing", () => {
   const item = task("event", {

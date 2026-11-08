@@ -517,6 +517,11 @@ describe("PLANNING-002 Today reminder regions island", () => {
     const api = routes([initial.promise, event.promise]);
     const mounted = mountPending(() => mountTodayReminders());
     await waitFor(() => expect(reads(api)).toBe(1));
+    // FER-06: until the first answer, rows hold the reconnect list's place.
+    const placeholder = () =>
+      document.querySelector('[data-today-placeholder="cadences"]');
+    expect(placeholder()?.querySelectorAll(".today-placeholder-row"))
+      .toHaveLength(3);
     // The announcement follows the write that recorded the reconnect, so its
     // read is its own request (AUD-F1, D7) and supersedes the first.
     await recordedReconnect(api);
@@ -529,6 +534,7 @@ describe("PLANNING-002 Today reminder regions island", () => {
       "1 reminder state.",
       "No one is due for contact.",
     ]);
+    expect(placeholder()).toBeNull();
     await act(async () => {
       initial.resolve(feed("Obsolete initial"));
       await initial.promise;

@@ -33,6 +33,7 @@ import { type TimePreferences } from "../../../lib/time-presentation.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { InteractionEntry } from "../../interactions/interaction-entry.tsx";
 import { INTERACTION_CREATED_EVENT } from "../../interactions/shared.ts";
+import { TodayPlaceholder } from "../today-placeholder.tsx";
 
 export const TODAY_FAVORITE_NOTES_ISLAND = "today-favorite-notes";
 export const TODAY_RECENT_ACTIVITY_ISLAND = "today-recent-activity";
@@ -217,6 +218,13 @@ export function TodayInteractions(
           />
         ))}
       </ul>
+      {state.loaded === undefined && state.status === "loading" && (
+        <TodayPlaceholder
+          kind={props.projection === "favorites"
+            ? "favorite-notes"
+            : "recent-activity"}
+        />
+      )}
       <button
         className={buttonVariants({ variant: "outline", wrap: true })}
         hidden={state.status !== "failed" && state.status !== "no-session"}

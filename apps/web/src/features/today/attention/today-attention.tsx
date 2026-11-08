@@ -11,6 +11,11 @@
  * still loading (`attention.ts`, REL-048). The session, the snapshot, and the
  * member's time preferences are read inside that one request.
  *
+ * Until that first answer the queue and Upcoming draw placeholders sized to
+ * a typical answer, and the queue paints its first five items with a "Show
+ * all" toggle, so a long queue never pushes the rest of Today down while it
+ * loads (FER-06).
+ *
  * Complete calls the tasks module's own completion use case, the same one the
  * person and global task surfaces use, and tells them with
  * `TASK_CHANGED_EVENT`. Dismiss calls planning's acknowledgement of an
@@ -25,6 +30,7 @@ import {
   useLayoutEffect,
   useReducer,
   useRef,
+  useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { Bell, CalendarHeart, Flag, ListTodo, UsersRound } from "lucide-react";
@@ -51,10 +57,13 @@ import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { TASK_CHANGED_EVENT } from "../../tasks/tasks.ts";
 import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
+import { TodayPlaceholder } from "../today-placeholder.tsx";
 import {
   acknowledgeable,
+  ATTENTION_FIRST_PAINT,
   type AttentionAction,
   type AttentionAnswer,
+  attentionCount,
   attentionDestination,
   type AttentionFocus,
   attentionMeta,
@@ -63,6 +72,7 @@ import {
   attentionView,
   attentionWhen,
   completable,
+  firstPaint,
   initialAttentionState,
   upcomingMeta,
 } from "./attention.ts";
@@ -192,6 +202,8 @@ export function TodayAttention(props: TodayAttentionProps) {
     initialAttentionState,
   );
   const request = useLatestRequest();
+  // "Show all": the reader's own choice, local to this page.
+  const [expanded, setExpanded] = useState(false);
   const completing = useRef(false);
   const settled = useRef(props.onSettled);
   const attentionStatus = useRef<HTMLParagraphElement>(null);
@@ -341,6 +353,11 @@ export function TodayAttention(props: TodayAttentionProps) {
       today={state.date}
     />
   );
+  const queued = state.attention.value;
+  const total = attentionCount(queued);
+  const shown = queued && !expanded
+    ? firstPaint(queued, ATTENTION_FIRST_PAINT)
+    : queued;
   const group = (
     key: "overdue" | "today" | "nextSevenDays",
     id: string,
@@ -350,7 +367,7 @@ export function TodayAttention(props: TodayAttentionProps) {
     <section aria-labelledby={headingId}>
       <h3 id={headingId}>{heading}</h3>
       <ul className="task-list" id={id}>
-        {state.attention.value?.[key].map(attentionRow)}
+        {shown?.[key].map(attentionRow)}
       </ul>
     </section>
   );
@@ -374,7 +391,11 @@ export function TodayAttention(props: TodayAttentionProps) {
       >
         {view.attentionStatus}
       </p>
-      <div className="attention-groups" ref={groups}>
+      <div
+        className="attention-groups"
+        id="today-attention-groups"
+        ref={groups}
+      >
         {group(
           "overdue",
           "today-overdue-list",
@@ -389,6 +410,21 @@ export function TodayAttention(props: TodayAttentionProps) {
           "Next 7 days",
         )}
       </div>
+      {total > ATTENTION_FIRST_PAINT && (
+        <button
+          aria-controls="today-attention-groups"
+          aria-expanded={expanded}
+          className={buttonVariants({ variant: "outline", wrap: true })}
+          id="today-attention-show-all"
+          onClick={() => setExpanded((open) => !open)}
+          type="button"
+        >
+          {expanded ? "Show fewer" : `Show all ${total} priorities`}
+        </button>
+      )}
+      {queued === undefined && state.attention.status === "loading" && (
+        <TodayPlaceholder kind="attention" />
+      )}
       <div hidden={!view.onboarding} id="today-onboarding">
         <p>Build the context that will make Kinship useful:</p>
         <ol className="success-loop">
@@ -445,6 +481,10 @@ export function TodayAttention(props: TodayAttentionProps) {
               />
             ))}
           </ul>
+          {state.upcoming.value === undefined &&
+            state.upcoming.status === "loading" && (
+            <TodayPlaceholder kind="upcoming" />
+          )}
           <div className={formActionsVariants()}>
             <button
               className={buttonVariants({ variant: "outline", wrap: true })}

@@ -52,6 +52,11 @@
   display: none;
 }
 
+/* "Show all" sits under the queue it expands, at its own width. */
+#today-attention-show-all {
+  justify-self: start;
+}
+
 .attention-groups h3 {
   margin-block: 0 var(--space-2);
   color: var(--ink-3);
@@ -254,6 +259,85 @@
   text-transform: uppercase;
 }
 
+/*
+ * A section's loading placeholder (FER-06) holds about the room a typical
+ * answer takes, row for row, so the sections below stay put when it lands.
+ * The agenda placeholders read as the bordered lists they stand in for; the
+ * attention one also leaves room for its first group heading.
+ */
+.today-placeholder {
+  --today-placeholder-row: 4.9rem;
+
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.today-placeholder-row {
+  display: grid;
+  gap: var(--space-2);
+  align-content: center;
+  block-size: var(--today-placeholder-row);
+  padding-inline: var(--space-4);
+}
+
+.today-placeholder-row + .today-placeholder-row {
+  border-top: 1px solid var(--line-hairline);
+}
+
+.today-section > [data-today-placeholder="attention"] {
+  margin-block-start: var(--space-5);
+}
+
+/* Upcoming shares a row with reconnect, so its titles wrap sooner. */
+[data-today-placeholder="upcoming"] {
+  --today-placeholder-row: 7.5rem;
+}
+
+[data-today-placeholder="cadences"] {
+  --today-placeholder-row: 5.85rem;
+}
+
+/* Recently viewed people: a row of chips. */
+[data-today-placeholder="recent-people"] {
+  --today-placeholder-row: 2.75rem;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  overflow: visible;
+  border: 0;
+  background: none;
+}
+
+[data-today-placeholder="recent-people"] > .today-placeholder-row {
+  inline-size: 9rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+}
+
+[data-today-placeholder="recent-people"] [data-slot="skeleton"] + [data-slot="skeleton"] {
+  display: none;
+}
+
+/* Favorite notes and recent activity: separate cards, like their entries. */
+:is([data-today-placeholder="favorite-notes"], [data-today-placeholder="recent-activity"]) {
+  --today-placeholder-row: 6.5rem;
+
+  gap: var(--space-3);
+  overflow: visible;
+  border: 0;
+  background: none;
+}
+
+:is([data-today-placeholder="favorite-notes"], [data-today-placeholder="recent-activity"]) > .today-placeholder-row {
+  border: 1px solid var(--line-1);
+  border-radius: .75rem;
+  background: var(--surface-1);
+}
+
 /* Recently viewed people are a row of chips. */
 #today-recent-people-list {
   display: flex;
@@ -296,6 +380,19 @@
 @media (max-width: 640px) {
   .attention-item {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  /* An item's person, timing, and action wrap under it: a taller row. */
+  [data-today-placeholder="attention"] {
+    --today-placeholder-row: 13.3rem;
+  }
+
+  [data-today-placeholder="upcoming"] {
+    --today-placeholder-row: 9.8rem;
+  }
+
+  [data-today-placeholder="cadences"] {
+    --today-placeholder-row: 7rem;
   }
 
   .attention-item > :is(.attention-when, .attention-actions) {

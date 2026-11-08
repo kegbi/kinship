@@ -31,6 +31,7 @@ import { mountIsland, useLatestRequest } from "../../../islands/core/index.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
 import { TODAY_RECONNECT_RECORDED_EVENT } from "../../interactions/shared.ts";
 import { REMINDER_ACKNOWLEDGED_EVENT } from "../regions.ts";
+import { TodayPlaceholder } from "../today-placeholder.tsx";
 import {
   cadenceLine,
   initialRemindersState,
@@ -162,6 +163,10 @@ export function TodayReminders(props: { readonly onSettled?: () => void }) {
           </li>
         ))}
       </ul>
+      {state.cadence.value === undefined &&
+        state.cadence.status === "loading" && (
+        <TodayPlaceholder kind="cadences" />
+      )}
       <button
         className={wrapping}
         hidden={!view.cadenceRetry}

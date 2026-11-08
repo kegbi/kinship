@@ -199,6 +199,12 @@ describe("INTERACTION-001 Today projections", () => {
     await waitFor(() =>
       expect([count(api, FAVORITES), count(api, RECENT)]).toEqual([1, 1])
     );
+    // FER-06: until each first answer, cards hold the list's place.
+    const rows = (kind: string) =>
+      document.querySelectorAll(
+        `[data-today-placeholder="${kind}"] .today-placeholder-row`,
+      ).length;
+    expect([rows("favorite-notes"), rows("recent-activity")]).toEqual([2, 4]);
     // Each announcement follows the write that recorded the interaction, so
     // each refresh is its own request (AUD-F1, D7), even during the first load.
     await recorded(api, { kind: "activity" });
@@ -216,6 +222,7 @@ describe("INTERACTION-001 Today projections", () => {
     await waitFor(() => expect(recent().textContent).toContain("Recent 3"));
     expect(document.body.textContent).not.toContain("Obsolete");
     expect(favorites().textContent).toContain("Favorite 2");
+    expect(document.querySelector("[data-today-placeholder]")).toBeNull();
   });
 
   it("isolates a favorite-note outage and retries only that region", async () => {

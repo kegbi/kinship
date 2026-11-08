@@ -369,6 +369,8 @@ describe("PLANNING-001 Today attention island", () => {
         .hasAttribute("data-island-ready"),
     ).toBe(true);
     expect(reads(api)).toHaveLength(1);
+    // Thirteen priorities paint five until the reader shows them all.
+    click(element("#today-attention-show-all"));
     for (const list of [overdue(), upcomingList()]) {
       const link = (title: string) =>
         within(row(list, title)).getByRole("link", { name: title })
@@ -576,6 +578,90 @@ describe("PLANNING-001 Today attention island", () => {
         button.getAttribute("aria-label"),
       ]),
     ).toEqual([["Dismiss", "Dismiss Failed"], ["Dismiss", "Dismiss Unclear"]]);
+  });
+
+  it("FER-06 holds the queue's and upcoming's place until the first answer, and only then", async () => {
+    todayShell();
+    const first = deferred<Response>();
+    const refresh = deferred<Response>();
+    const api = routes([first.promise, refresh.promise]);
+    const settled = mountPending(() => mountTodayAttention());
+    const placeholder = (kind: string) =>
+      document.querySelector(`[data-today-placeholder="${kind}"]`);
+    expect(placeholder("attention")?.getAttribute("aria-hidden")).toBe("true");
+    expect(placeholder("attention")?.querySelectorAll(".today-placeholder-row"))
+      .toHaveLength(5);
+    expect(placeholder("upcoming")?.querySelectorAll(".today-placeholder-row"))
+      .toHaveLength(3);
+    await act(async () => {
+      first.resolve(attention([task(1, "Call Ada")], [task(2, "Visit")]));
+      await settled;
+    });
+    expect(placeholder("attention")).toBeNull();
+    expect(placeholder("upcoming")).toBeNull();
+    act(() => {
+      globalThis.dispatchEvent(new CustomEvent(TODAY_RECONNECT_RECORDED_EVENT));
+    });
+    await waitFor(() => expect(reads(api)).toHaveLength(2));
+    expect(state().textContent).toBe("Loading relationship priorities…");
+    // A refresh keeps the rows it shows instead of a placeholder.
+    expect(row(overdue(), "Call Ada")).toBeTruthy();
+    expect(placeholder("attention")).toBeNull();
+    expect(placeholder("upcoming")).toBeNull();
+    refresh.resolve(attention([task(1, "Call Ada")]));
+    await waitFor(() =>
+      expect(state().textContent).toBe("1 relationship priority.")
+    );
+  });
+
+  it("FER-06 paints the first five priorities in queue order and shows all on request", async () => {
+    todayShell();
+    const late = [1, 2, 3].map((index) => task(index, `Late ${index}`));
+    const due = [4, 5].map((index) => task(index, `Due ${index}`));
+    const soon = [6, 7].map((index) => task(index, `Soon ${index}`));
+    routes(attention(late, [], {
+      attention: { nextSevenDays: soon, overdue: late, today: due },
+    }));
+    await mount();
+    const titles = () =>
+      [...document.querySelectorAll(".attention-groups .attention-title")]
+        .map((title) => title.textContent);
+    expect(titles()).toEqual(["Late 1", "Late 2", "Late 3", "Due 4", "Due 5"]);
+    expect(element("#today-next-seven-list").children).toHaveLength(0);
+    expect(state().textContent).toBe("7 relationship priorities.");
+    const toggle = element<HTMLButtonElement>("#today-attention-show-all");
+    expect(toggle.type).toBe("button");
+    expect(toggle.textContent).toBe("Show all 7 priorities");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("today-attention-groups");
+    expect(element("#today-attention-groups").classList).toContain(
+      "attention-groups",
+    );
+    click(toggle);
+    expect(titles()).toEqual([
+      "Late 1",
+      "Late 2",
+      "Late 3",
+      "Due 4",
+      "Due 5",
+      "Soon 6",
+      "Soon 7",
+    ]);
+    expect(toggle.textContent).toBe("Show fewer");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await expectNoAxeViolations(document.body);
+    click(toggle);
+    expect(titles()).toHaveLength(5);
+  });
+
+  it("FER-06 offers no Show all for a queue that fits its first paint", async () => {
+    todayShell();
+    routes(
+      attention([1, 2, 3, 4, 5].map((index) => task(index, `Task ${index}`))),
+    );
+    await mount();
+    expect(document.querySelectorAll(".attention-groups li")).toHaveLength(5);
+    expect(document.querySelector("#today-attention-show-all")).toBeNull();
   });
 
   it("REL-088 dismisses an undelivered reminder through planning and reads the queue again", async () => {

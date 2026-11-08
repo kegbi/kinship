@@ -99,6 +99,36 @@ export const initialAttentionState: AttentionState = {
   upcoming: initialRegion(),
 };
 
+/**
+ * How many items the queue paints before the reader asks for the rest
+ * (FER-06): a long queue never pushes the rest of Today out of view.
+ */
+export const ATTENTION_FIRST_PAINT = 5;
+
+/**
+ * The first `limit` items of `groups` in the queue's order (overdue, today,
+ * then the next seven days), still grouped; a group past the limit is empty.
+ */
+export function firstPaint(groups: Groups, limit: number): Groups {
+  let left = limit;
+  const take = (items: Groups["overdue"]) => {
+    const taken = items.slice(0, Math.max(left, 0));
+    left -= taken.length;
+    return taken;
+  };
+  const overdue = take(groups.overdue);
+  const today = take(groups.today);
+  return { nextSevenDays: take(groups.nextSevenDays), overdue, today };
+}
+
+/** How many items the queue holds across its groups. */
+export function attentionCount(groups: Groups | undefined): number {
+  return groups
+    ? groups.overdue.length + groups.today.length +
+      groups.nextSevenDays.length
+    : 0;
+}
+
 /** Whether `item` renders a Complete control: an active person's task or a workspace task. */
 export function completable(item: TodayAttentionItem): boolean {
   return item.kind === "task" && !item.person?.archived &&

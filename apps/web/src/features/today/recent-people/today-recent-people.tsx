@@ -26,6 +26,7 @@ import {
   useLatestRequest,
 } from "../../../islands/core/index.ts";
 import { resolveWorkspaceSession } from "../../../lib/workspace-context.ts";
+import { TodayPlaceholder } from "../today-placeholder.tsx";
 
 export const TODAY_RECENT_PEOPLE_ISLAND = "today-recent-people";
 
@@ -34,6 +35,11 @@ type People = TodayRecentPeople["people"];
 interface RecentPeopleState {
   readonly status: "loading" | "ready" | "no-session" | "failed";
   readonly people: People;
+  /**
+   * Whether a read has answered with the list, so a loading region holds its
+   * place with a placeholder only while it has shown nothing (FER-06).
+   */
+  readonly loaded?: boolean;
   /** Bumped by each retry's answer, so focus follows it. */
   readonly focus: number;
 }
@@ -55,6 +61,7 @@ function recentPeopleReducer(
   const { answer } = action;
   return {
     focus: state.focus + (action.focus ? 1 : 0),
+    loaded: state.loaded || (answer.status === "ready" && !!answer.data),
     people: answer.data ?? state.people,
     status: answer.status !== "ready"
       ? "failed"
@@ -187,6 +194,9 @@ export function TodayRecentPeopleList(
           </li>
         ))}
       </ul>
+      {state.status === "loading" && !state.loaded && (
+        <TodayPlaceholder kind="recent-people" />
+      )}
       <button
         className={buttonVariants({ variant: "outline", wrap: true })}
         hidden={!failed}

@@ -1,0 +1,20 @@
+---
+/**
+ * One Today section's loading placeholder in the static page (FER-06): the
+ * same markup `features/today/today-placeholder.tsx` draws until the
+ * section's island has its first answer.
+ */
+import { skeletonVariants } from "../ui/variants.ts";
+import {
+  placeholderRows,
+  type TodayPlaceholderKind,
+} from "../../features/today/placeholder.ts";
+
+interface Props {
+  readonly kind: TodayPlaceholderKind;
+}
+
+const { kind } = Astro.props;
+---
+
+<div aria-hidden="true" class="today-placeholder" data-today-placeholder={kind}>{placeholderRows(kind).map(() => <span class="today-placeholder-row"><span class={skeletonVariants({ shape: "line-80" })} data-slot="skeleton"></span><span class={skeletonVariants({ shape: "line-60" })} data-slot="skeleton"></span></span>)}</div>

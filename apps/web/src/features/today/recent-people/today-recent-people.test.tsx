@@ -43,6 +43,8 @@ const mount = () => mountSettled(() => mountTodayRecentPeople());
 const region = () => element("#today-recent-people-region");
 const status = () => element("#today-recent-people-state");
 const retry = () => element<HTMLButtonElement>("#today-recent-people-retry");
+const placeholder = () =>
+  document.querySelector('[data-today-placeholder="recent-people"]');
 
 function click(target: HTMLElement): void {
   act(() => {
@@ -131,7 +133,10 @@ describe("TODAY-001 actual recently viewed people", () => {
     expect(retry().hidden).toBe(false);
     click(retry());
     expect(region().dataset.regionState).toBe("loading");
+    // FER-06: with nothing shown yet, a retry holds the list's place again.
+    expect(placeholder()).not.toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(status()));
+    expect(placeholder()).toBeNull();
     expect(retry().hidden).toBe(false);
     click(retry());
     await waitFor(() => expect(region().dataset.regionState).toBe("ready"));
@@ -140,6 +145,10 @@ describe("TODAY-001 actual recently viewed people", () => {
     // joins it (AUD-F1, D7): one request, whose answer settles the region.
     click(retry());
     click(retry());
+    // A retry after people were shown keeps them instead of a placeholder.
+    expect(region().dataset.regionState).toBe("loading");
+    expect(document.body.textContent).toContain("Only person");
+    expect(placeholder()).toBeNull();
     await act(async () => {
       held.resolve(
         people({ archived: false, id: personId, name: "Current person" }),
@@ -218,6 +227,12 @@ describe("TODAY-001 actual recently viewed people", () => {
       [RECENT]: [first.promise],
     });
     const mounted = mountPending(() => mountTodayRecentPeople());
+    // FER-06: until the first answer a row of chips holds the list's place.
+    expect(
+      document.querySelectorAll(
+        '[data-today-placeholder="recent-people"] .today-placeholder-row',
+      ),
+    ).toHaveLength(3);
     // The retry asks for the read the mount is still waiting for, so it
     // joins it (AUD-F1, D7), and that one answer settles the mount.
     click(retry());
@@ -227,6 +242,7 @@ describe("TODAY-001 actual recently viewed people", () => {
     });
     await waitFor(() => expect(region().dataset.regionState).toBe("ready"));
     expect(document.body.textContent).toContain("Late");
+    expect(document.querySelector("[data-today-placeholder]")).toBeNull();
     expect(api.calls().filter((call) => call === RECENT)).toHaveLength(1);
   });
 });

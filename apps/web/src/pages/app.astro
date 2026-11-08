@@ -1,6 +1,7 @@
 ---
 import ApplicationLayout from "../layouts/ApplicationLayout.astro";
 import "../styles/page-general.css";
+import TodayPlaceholder from "../components/today/TodayPlaceholder.astro";
 export const prerender = true;
 import {
   badgeVariants,
@@ -35,11 +36,12 @@ import {
         <span class={badgeVariants()}>Overdue · today · next 7 days</span>
       </div>
       <p id="today-attention-state" class="section-state" role="status" aria-live="polite">Loading relationship priorities…</p>
-      <div class="attention-groups">
+      <div id="today-attention-groups" class="attention-groups">
         <section aria-labelledby="today-overdue-heading"><h3 id="today-overdue-heading">Overdue</h3><ul id="today-overdue-list" class="task-list"></ul></section>
         <section aria-labelledby="today-due-heading"><h3 id="today-due-heading">Today</h3><ul id="today-due-today-list" class="task-list"></ul></section>
         <section aria-labelledby="today-next-seven-heading"><h3 id="today-next-seven-heading">Next 7 days</h3><ul id="today-next-seven-list" class="task-list"></ul></section>
       </div>
+      <TodayPlaceholder kind="attention" />
       <div id="today-onboarding" hidden><p>Build the context that will make Kinship useful:</p><ol class="success-loop">
         <li><strong>Add a person or start an import.</strong><span>People creation and import arrive in their cataloged delivery slices.</span></li>
         <li><strong>Record the first interaction or note.</strong><span>Keep the context you want to remember.</span></li>
@@ -52,6 +54,7 @@ import {
       <div class="section-heading"><h2 id="reconnect-heading">People to reconnect</h2><span class={badgeVariants({ variant: "secondary" })}>Stay-in-touch cadence</span></div>
       <p id="today-cadences-state" class="section-state" role="status" aria-live="polite">Loading reconnect suggestions…</p>
       <ul id="today-cadences-list" class="task-list" aria-label="People due for contact"></ul>
+      <TodayPlaceholder kind="cadences" />
       <button id="today-cadences-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry reconnect suggestions</button>
       <div class="reminder-delivery-state" aria-labelledby="reminder-delivery-heading">
         <h3 id="reminder-delivery-heading">Reminder delivery state</h3>
@@ -66,6 +69,7 @@ import {
       <div class="contents" data-today-upcoming>
         <p id="today-upcoming-state" class="section-state" role="status" aria-live="polite">Loading upcoming work…</p>
         <ul id="today-upcoming-list" class="task-list" aria-label="Upcoming relationship work"></ul>
+        <TodayPlaceholder kind="upcoming" />
         <div class={formActionsVariants()}><button id="today-upcoming-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry upcoming</button><a class={buttonVariants({ variant: "outline", wrap: true })} href="/app/tasks">Open all tasks</a></div>
       </div>
     </section>
@@ -74,6 +78,7 @@ import {
       <div class="section-heading"><h2 id="recent-people-heading">Recently viewed people</h2><span id="today-recent-people-badge" class={badgeVariants({ variant: "secondary" })}>Loading</span></div>
       <p id="today-recent-people-state" class="section-state" role="status" aria-live="polite" tabindex="-1">Loading recently viewed people…</p>
       <ul id="today-recent-people-list" class="task-list" aria-label="Recently viewed people"></ul>
+      <TodayPlaceholder kind="recent-people" />
       <button id="today-recent-people-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry recent people</button>
     </section>
 
@@ -81,6 +86,7 @@ import {
       <div class="section-heading"><h2 id="favorite-notes-heading">Favorite notes</h2><span class={badgeVariants({ variant: "secondary" })}>Reference</span></div>
       <p id="today-favorite-notes-state" class="section-state" aria-live="polite">Loading favorite notes…</p>
       <ul id="today-favorite-notes" class="interaction-list" aria-label="Favorite notes"></ul>
+      <TodayPlaceholder kind="favorite-notes" />
       <button id="today-favorite-notes-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry favorite notes</button>
     </section>
 
@@ -88,6 +94,7 @@ import {
       <div class="section-heading"><h2 id="activity-heading">Recent activity</h2><span class={badgeVariants({ variant: "secondary" })}>Latest 20</span></div>
       <p id="today-recent-activity-state" class="section-state" aria-live="polite">Loading recent activity…</p>
       <ul id="today-recent-activity" class="interaction-list" aria-label="Recent activities and notes"></ul>
+      <TodayPlaceholder kind="recent-activity" />
       <button id="today-recent-activity-retry" class={buttonVariants({ variant: "outline", wrap: true })} type="button" hidden>Retry recent activity</button>
     </section>
   </main>

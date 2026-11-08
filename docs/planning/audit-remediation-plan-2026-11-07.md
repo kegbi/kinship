@@ -1282,7 +1282,7 @@ these:
     and lint (only REL-096). On-demand pages get no build-time preloads; AUD-G5
     keeps or explicitly drops them for `/privacy` and `/terms`.
 
-- [ ] **AUD-F7 — Today does not shift while it loads.** S. Normal. Depends:
+- [x] **AUD-F7 — Today does not shift while it loads.** S. Normal. Depends:
       AUD-F3. Closes: FER-06.
   - Scope:
     - Cap the first paint of "Needs attention", with "Show all".
@@ -1294,6 +1294,19 @@ these:
     `tests/e2e/today.TODAY-001.spec.ts` on the production build: below 0.1 on
     desktop and phone viewports (today 0.26 and 0.38).
   - Verify: E2E `today.TODAY-001` (Chromium); `test:unit --module=web`.
+  - Delivered 2026-11-08: each Today list reserves its space with aria-hidden
+    skeleton rows from one row-count table shared by the static page and the
+    islands, shown while a read is on the wire and the region has shown no
+    answer yet; "Needs attention" first paints five items with a "Show all" /
+    "Show fewer" toggle held in local state; no `content-visibility`. The
+    TODAY-001 layout-shift test sums every shift without recent input on the
+    production build: 0.275 desktop and 0.535 phone before, 0 on both after; it
+    asserts layout-shift support on Chromium and is annotated as not measured on
+    Firefox and WebKit. Web unit 1781 (only REL-107); `features/today` 100%
+    lines and functions, 98.8% branches; build only REL-098 with the FER-09
+    budgets green; fmt, eslint, architecture, and lint (only REL-096). E2E
+    TODAY-001 (both specs) 6 passed on Chromium, and Firefox passed with the
+    annotation.
 
 - [x] **AUD-F8 — Each page group loads only its own CSS.** S. Normal. Depends:
       AUD-F2. Closes: FER-09.
