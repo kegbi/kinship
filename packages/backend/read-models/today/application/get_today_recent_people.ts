@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
 import {
@@ -34,6 +35,7 @@ export function createTodayRecentPeople(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
   readonly repository: TodayRecentPeopleRepository;

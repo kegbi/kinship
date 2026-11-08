@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
   decodeJournalCursor,
@@ -107,6 +108,7 @@ export function createJournalTimeline(
     readonly transaction: {
       run<T>(
         work: (transaction: ReadModelTransaction) => Promise<T>,
+        scope?: TransactionScope,
       ): Promise<T>;
     };
     readonly repository: JournalTimelineRepository;

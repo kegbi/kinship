@@ -160,7 +160,7 @@ export function createApiTokenManagement(
           secret: renderToken(id, secret.raw),
           status: "created" as const,
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     list: async (actor) => {
       if (!privileged(actor)) return { status: "forbidden" };
@@ -181,7 +181,7 @@ export function createApiTokenManagement(
           records: listedTokens(issued, issuers),
           status: "ready" as const,
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     revoke: async (actor, id) => {
       if (!privileged(actor)) return { status: "forbidden" };
@@ -205,7 +205,7 @@ export function createApiTokenManagement(
           transaction,
         });
         return result;
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     revokeMemberCredentials: async (command) => {
       const revoked = await dependencies.repository.revokeHeldBy({

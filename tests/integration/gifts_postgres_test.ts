@@ -38,10 +38,12 @@ import {
 import {
   PostgresWorkspaceCalendarBoundary,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_calendar.ts";
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
   revocableActor,
   revokeMembership,
 } from "../support/database.ts";
@@ -50,6 +52,8 @@ import { createPerson as createPersonThroughApi } from "../support/fixtures.ts";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl);
+// Recurring debts are charged by the worker, as `kinship_worker` (ADR 0008).
+const workerConnection = connectDatabase(requireWorkerDatabaseUrl());
 const mail = new CapturedVerificationMail();
 const configured = createConfiguredApiApp(
   databaseUrl,
@@ -263,7 +267,7 @@ Deno.test({
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
-        transaction: new PostgresPeopleTransaction(connection.db),
+        transaction: new PostgresPeopleTransaction(workerConnection.db),
       });
       await charging.chargeDue();
       await charging.chargeDue();
@@ -318,7 +322,10 @@ Deno.test({
         transaction: new PostgresPeopleTransaction(connection.db),
       };
       const gifts = createGiftManagement(dependencies);
-      const charging = createRecurringDebtCharging(dependencies);
+      const charging = createRecurringDebtCharging({
+        ...dependencies,
+        transaction: new PostgresPeopleTransaction(workerConnection.db),
+      });
       for (const endsOn of [undefined, "2026-10-14"]) {
         const created = await gifts.createRecurringDebt(actor, actor.personId, {
           amount: "8",
@@ -462,8 +469,8 @@ Deno.test("[GIFTS-001] PostgreSQL gifts, attachments, debts, audit, and tenant g
   `;
   assert(link, "files-owned gift link is persisted atomically");
   await sql`
-    insert into crm.gift_file_links (gift_id, file_id, role, sort_order)
-    values (${attachedBody.gift.id}::uuid, ${secondFileId}::uuid, 'document', 0)
+    insert into crm.gift_file_links (gift_id, file_id, role, sort_order, workspace_id)
+    values (${attachedBody.gift.id}::uuid, ${secondFileId}::uuid, 'document', 0, (select scope.workspace_id from crm.gifts scope where scope.id = ${attachedBody.gift.id}::uuid))
   `;
   const attachmentList = await request(
     primary,
@@ -877,10 +884,10 @@ Deno.test({
            ${documentFileId}, 4, 'application/pdf', 'available', 'private')
       `;
       await sql`
-        insert into crm.person_file_links (person_id, file_id, kind)
+        insert into crm.person_file_links (person_id, file_id, kind, workspace_id)
         values
-          (${ada}::uuid, ${avatarFileId}::uuid, 'avatar'),
-          (${ada}::uuid, ${documentFileId}::uuid, 'document')
+          (${ada}::uuid, ${avatarFileId}::uuid, 'avatar', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid)),
+          (${ada}::uuid, ${documentFileId}::uuid, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))
       `;
 
       const refused = await request(
@@ -985,7 +992,7 @@ Deno.test({
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
-        transaction: new PostgresPeopleTransaction(connection.db),
+        transaction: new PostgresPeopleTransaction(workerConnection.db),
       });
       const charged = async (rule: string) =>
         (await sql<{ readonly on: string }[]>`
@@ -1302,7 +1309,10 @@ Deno.test({
         0,
         "2026-11-01",
       ]);
-      const worker = createRecurringDebtCharging(dependencies);
+      const worker = createRecurringDebtCharging({
+        ...dependencies,
+        transaction: new PostgresPeopleTransaction(workerConnection.db),
+      });
       await Promise.all([worker.chargeDue(), worker.chargeDue()]);
       assertEquals((await snapshot()).length, 4);
       assertEquals((await snapshot()).at(-1), original);
@@ -1397,7 +1407,7 @@ Deno.test({
     ) => {
       const fileId = crypto.randomUUID();
       await sql`insert into crm.files (id,workspace_id,original_filename,mime_type,status) values (${fileId}::uuid,${workspace}::uuid,'paid.png',${mime},${status})`;
-      await sql`insert into crm.person_file_links (person_id,file_id,kind) values (${linkedPerson}::uuid,${fileId}::uuid,${kind})`;
+      await sql`insert into crm.person_file_links (person_id,file_id,kind, workspace_id) values (${linkedPerson}::uuid,${fileId}::uuid,${kind}, (select scope.workspace_id from crm.people scope where scope.id = ${linkedPerson}::uuid))`;
       return fileId;
     };
     const validPhoto = await seedPhoto(owner.workspaceId, person);
@@ -1563,24 +1573,30 @@ Deno.test({
       const imports = new PostgresGiftBusinessImportBoundary(personBoundary());
       const importId = crypto.randomUUID();
       for (let attempt = 0; attempt < 2; attempt++) {
-        await connection.db.transaction().execute(async (transaction) => {
-          await imports.importRecords({
-            actor: owner,
-            transaction: { opaque: transaction },
-            records: [{
-              id: importId,
-              references: { personId: person },
-              data: {
-                kind: "debt",
-                amount: "3",
-                currencyCode: "EUR",
-                direction: "i_owe",
-                status: "settled",
-                settledAt: "2025-01-02T03:04:05.654321Z",
-              },
-            }],
-          });
-        });
+        // In the import's workspace, as the import commit's runner opens it
+        // (ADR 0008).
+        await writeWithinWorkspace(
+          connection.db,
+          owner.workspaceId,
+          async (transaction) => {
+            await imports.importRecords({
+              actor: owner,
+              transaction: { opaque: transaction },
+              records: [{
+                id: importId,
+                references: { personId: person },
+                data: {
+                  kind: "debt",
+                  amount: "3",
+                  currencyCode: "EUR",
+                  direction: "i_owe",
+                  status: "settled",
+                  settledAt: "2025-01-02T03:04:05.654321Z",
+                },
+              }],
+            });
+          },
+        );
       }
       const [imported] = await sql<
         { count: number; time: string }[]
@@ -1603,6 +1619,10 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await Promise.all([configured.close(), sql.end()]);
+    await Promise.all([
+      configured.close(),
+      sql.end(),
+      workerConnection.destroy(),
+    ]);
   },
 });

@@ -69,7 +69,7 @@ export function createAvatarDiscards(
         fileIds: images.map((image) => image.fileId),
         status: "discarded" as const,
       };
-    });
+    }, { workspaceId: actor.workspaceId });
   };
 
   return {

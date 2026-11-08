@@ -294,15 +294,15 @@ test(
           1, '09:00', '${memberId}'::uuid
         from crm.people person
         where person.workspace_id = '${workspaceId}'::uuid
-        returning id, title, anchor_on
+        returning id, title, anchor_on, workspace_id
       )
       insert into crm.reminder_occurrences (
         reminder_id, member_id, occurs_on, deliver_at, status, title_snapshot
-      )
+      , workspace_id)
       select recurring.id, '${memberId}'::uuid,
         recurring.anchor_on + week * 7,
         (recurring.anchor_on + week * 7 + time '09:00') at time zone 'UTC',
-        'pending', recurring.title
+        'pending', recurring.title, recurring.workspace_id
       from recurring cross join generate_series(0, 7) week;
     `);
     // A bulk seed is not steady state: the planner has no statistics until
@@ -438,11 +438,11 @@ test(
       insert into crm.reminder_occurrences (
         id, reminder_id, member_id, occurs_on, deliver_at, status,
         title_snapshot, provider_idempotency_key
-      ) values (
+      , workspace_id) values (
         '${occurrenceId}'::uuid, '${reminderId}'::uuid,
         '${memberId}'::uuid, current_date, now() - interval '1 second',
         'pending', 'Capacity due reminder', 'perf-${occurrenceId}'
-      );
+      , (select scope.workspace_id from crm.reminders scope where scope.id = '${reminderId}'::uuid));
     `);
     runWorkerTick();
     await expect.poll(() =>

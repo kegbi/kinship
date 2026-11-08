@@ -266,16 +266,19 @@ export function createPersonLifecycle(
       actor: PeopleActor,
       personId: string,
     ): Promise<PersonLifecycleLock> =>
-      dependencies.transaction.run((transaction) =>
-        inspectInTransaction(actor, personId, transaction)
+      dependencies.transaction.run(
+        (transaction) => inspectInTransaction(actor, personId, transaction),
+        { workspaceId: actor.workspaceId },
       ),
     edit: async (
       actor: PeopleActor,
       personId: string,
       rawInput: EditPersonInput,
     ): Promise<EditPersonResult> => {
-      return await dependencies.transaction.run((transaction) =>
-        editInTransaction(actor, personId, rawInput, transaction)
+      return await dependencies.transaction.run(
+        (transaction) =>
+          editInTransaction(actor, personId, rawInput, transaction),
+        { workspaceId: actor.workspaceId },
       );
     },
     archive: (
@@ -283,16 +286,32 @@ export function createPersonLifecycle(
       personId: string,
       input: PersonTransitionInput,
     ): Promise<TransitionPersonResult> =>
-      dependencies.transaction.run((transaction) =>
-        transitionInTransaction(actor, personId, input, "archive", transaction)
+      dependencies.transaction.run(
+        (transaction) =>
+          transitionInTransaction(
+            actor,
+            personId,
+            input,
+            "archive",
+            transaction,
+          ),
+        { workspaceId: actor.workspaceId },
       ),
     restore: (
       actor: PeopleActor,
       personId: string,
       input: PersonTransitionInput,
     ): Promise<TransitionPersonResult> =>
-      dependencies.transaction.run((transaction) =>
-        transitionInTransaction(actor, personId, input, "restore", transaction)
+      dependencies.transaction.run(
+        (transaction) =>
+          transitionInTransaction(
+            actor,
+            personId,
+            input,
+            "restore",
+            transaction,
+          ),
+        { workspaceId: actor.workspaceId },
       ),
     previewDeletion: (
       actor: PeopleActor,
@@ -317,7 +336,7 @@ export function createPersonLifecycle(
           },
           status: "ready",
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     delete: (
       actor: PeopleActor,
       personId: string,
@@ -344,7 +363,7 @@ export function createPersonLifecycle(
           transaction,
         );
         return person ? { personId, status: "deleted" } : { status: "stale" };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }
 

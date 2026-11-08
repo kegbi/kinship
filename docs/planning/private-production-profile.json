@@ -51,9 +51,15 @@
     },
     "secrets": [
       {
+        "name": "POSTGRES_APP_PASSWORD+POSTGRES_MIGRATOR_PASSWORD+POSTGRES_WORKER_PASSWORD",
+        "owner": "private-production-owner",
+        "rotation": "Change the role's secret in the deployment secret store and redeploy: the bootstrap step resets all three login passwords on every run, and migrate, API, and worker pick theirs up when they restart. Keep the four database passwords distinct.",
+        "recovery": "Recover from the deployment secret store; a restore target needs all three before its bootstrap step, and no recovery archive holds them."
+      },
+      {
         "name": "POSTGRES_PASSWORD",
         "owner": "private-production-owner",
-        "rotation": "Create a new database role credential, update the deployment secret, restart migrate/API/worker, then revoke the old credential after readiness succeeds.",
+        "rotation": "Create a new superuser credential, update the deployment secret, rerun the bootstrap step (the only service that uses it), then revoke the old credential after readiness succeeds.",
         "recovery": "Recover from the deployment secret store; never place the credential in a recovery archive."
       },
       {

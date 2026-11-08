@@ -234,6 +234,7 @@ export function createRecurringDebtWrites(
             status: "created" as const,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
 
@@ -320,6 +321,7 @@ export function createRecurringDebtWrites(
             status: "saved" as const,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
 
@@ -363,6 +365,7 @@ export function createRecurringDebtWrites(
           });
           return { recurringDebtId: id, status: "deleted" as const };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
   };
@@ -399,7 +402,7 @@ export function createRecurringDebtCharging(
         new Date(now.getTime() + WIDEST_OFFSET_MILLISECONDS),
         FALLBACK_TIMEZONE,
       );
-      let ids: readonly string[];
+      let ids: readonly { readonly id: string; readonly workspaceId: string }[];
       try {
         ids = await dependencies.transaction.run((transaction) =>
           dependencies.recurringDebts.listDue({
@@ -413,7 +416,7 @@ export function createRecurringDebtCharging(
       }
       let charged = 0;
       let failed = 0;
-      for (const id of ids) {
+      for (const { id, workspaceId } of ids) {
         try {
           charged += await dependencies.transaction.run(async (transaction) => {
             const claimed = await dependencies.recurringDebts.claim({
@@ -444,7 +447,7 @@ export function createRecurringDebtCharging(
               });
             }
             return result.debts.length;
-          });
+          }, { workspaceId });
         } catch {
           failed += 1;
         }

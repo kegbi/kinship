@@ -23,6 +23,7 @@ import {
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  assertCrossWorkspaceRefused,
   openSql,
   requireDatabaseUrl,
   revocableActor,
@@ -75,13 +76,16 @@ Deno.test("[JOURNAL-001] activity participants are named on timeline and detail 
   await sql`insert into crm.activities (id, workspace_id, summary, happened_at) values
     (${activityId}, ${primary.workspaceId}, 'Lunch together', '2026-08-22T12:00:00Z'),
     (${emptyId}, ${primary.workspaceId}, 'Solo walk', '2026-08-21T12:00:00Z')`;
-  // The canonical link has individual FKs; defend the projection even when an
-  // imported or malformed link points at a person from a different workspace.
-  for (
-    const personId of [ada, archived, nickname, unnamed, deleted, foreignPerson]
-  ) {
-    await sql`insert into crm.activity_participants (activity_id, person_id) values (${activityId}, ${personId})`;
+  for (const personId of [ada, archived, nickname, unnamed, deleted]) {
+    await sql`insert into crm.activity_participants (activity_id, person_id, workspace_id) values (${activityId}, ${personId}, ${primary.workspaceId}::uuid)`;
   }
+  // Since schema v14 a link to a person from a different workspace is refused
+  // by the database itself (ADR 0008), so no projection can meet one.
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`insert into crm.activity_participants (activity_id, person_id, workspace_id) values (${activityId}, ${foreignPerson}, ${primary.workspaceId}::uuid)`,
+    "a participant from another workspace",
+  );
   const linked = await request(primary, "/api/v1/journal/activities", "POST", {
     activityId,
   });

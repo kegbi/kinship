@@ -225,8 +225,10 @@ Deno.test("[PEOPLE-010] the tag facet counts the view's people and nothing else"
   }
   const link = async (personId: string, tag: string) =>
     await sql`
-      insert into crm.person_tags (person_id, tag_id)
-      values (${personId}, ${tags.get(tag)!})
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values (${personId}, ${tags.get(
+      tag,
+    )!}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
   const [ada, grace, alan, mary] = people as [string, string, string, string];
   await link(ada, "Friends");
@@ -242,8 +244,10 @@ Deno.test("[PEOPLE-010] the tag facet counts the view's people and nothing else"
     values (${foreign.workspaceId}, 'Friends', 'friends') returning id::text
   `;
   await sql`
-    insert into crm.person_tags (person_id, tag_id)
-    values (${outsider}, ${foreignTag!.id})
+    insert into crm.person_tags (person_id, tag_id, workspace_id)
+    values (${outsider}, ${
+    foreignTag!.id
+  }, (select scope.workspace_id from crm.people scope where scope.id = ${outsider}::uuid))
   `;
 
   const facet = async (lifecycle: string) => {
@@ -276,9 +280,9 @@ Deno.test("[PEOPLE-010] the tag facet counts the view's people and nothing else"
       values (${owner.workspaceId}, ${`Extra ${index}`}, ${`extra-${index}`})
       returning id::text
     `;
-    await sql`insert into crm.person_tags (person_id, tag_id) values (${grace}, ${
+    await sql`insert into crm.person_tags (person_id, tag_id, workspace_id) values (${grace}, ${
       row!.id
-    })`;
+    }, (select scope.workspace_id from crm.people scope where scope.id = ${grace}::uuid))`;
   }
   const bounded = await facet("active");
   assertEquals(bounded.tags.length, 30);
@@ -309,8 +313,12 @@ Deno.test("[PEOPLE-010] every order pages by cursor to exactly the whole list", 
     returning id::text
   `;
   await sql`
-    insert into crm.messages (conversation_id, content, written_at, direction)
-    values (${thread!.id}, 'Hello', '2026-09-15T10:00:00Z', 'inbound')
+    insert into crm.messages (conversation_id, content, written_at, direction, workspace_id)
+    values (${
+    thread!.id
+  }, 'Hello', '2026-09-15T10:00:00Z', 'inbound', (select scope.workspace_id from crm.conversation_threads scope where scope.id = ${
+    thread!.id
+  }::uuid))
   `;
   // Updated: Dee most recently, then Flo; the rest at creation.
   await sql`update crm.people set updated_at = now() + interval '2 minutes' where id = ${

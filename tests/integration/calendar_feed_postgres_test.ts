@@ -41,7 +41,11 @@ import { PostgresAuditEventRecorder } from "../../packages/backend/modules/gover
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { openSql, requireDatabaseUrl } from "../support/database.ts";
-import { addMembership, revokeMembership } from "../support/database.ts";
+import {
+  addMembership,
+  assertCrossWorkspaceRefused,
+  revokeMembership,
+} from "../support/database.ts";
 import {
   apiSupport,
   ORIGIN,
@@ -111,11 +115,11 @@ async function date(
   const id = crypto.randomUUID();
   await sql`
     insert into crm.person_dates (id, person_id, kind, label, year, month,
-      day, precision, updated_at)
+      day, precision, updated_at, workspace_id)
     values (${id}, ${personId}, ${value.kind ?? "custom"},
       ${value.label ?? null}, ${value.year ?? null}, ${value.month},
       ${value.day}, ${value.year === undefined ? "month_day" : "full"},
-      '2026-09-01T08:00:00Z')
+      '2026-09-01T08:00:00Z', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
   `;
   return id;
 }
@@ -153,10 +157,12 @@ async function occurrence(
 ): Promise<void> {
   await sql`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, status)
+      deliver_at, channel, status, workspace_id)
     values (${reminderId}, ${memberId}, ${occursOn},
       ${occursOn}::date + time '09:00', ${options.channel ?? "in_app"},
-      ${options.status ?? "pending"})
+      ${
+    options.status ?? "pending"
+  }, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
   `;
 }
 
@@ -307,9 +313,13 @@ Deno.test("[INTEGRATION-002] a personal token, a member who left, and a foreign 
   const theirDate = await date(theirs, { day: 2, label: "Theirs", month: 3 });
   const theirReminder = await reminder(foreign, theirs, "Foreign reminder");
   await occurrence(theirReminder, foreign.memberId, day(3));
-  // A reminder in the foreign workspace that names the reader's member.
+  // A reminder in the foreign workspace cannot name the reader's member: the
+  // database refuses the occurrence (ADR 0008), so the feed never meets it.
   const smuggled = await reminder(foreign, theirs, "Smuggled reminder");
-  await occurrence(smuggled, fixture.memberId, day(4));
+  await assertCrossWorkspaceRefused(
+    () => occurrence(smuggled, fixture.memberId, day(4)),
+    "a foreign reminder's occurrence for the reader's member",
+  );
 
   const url = await createFeed(fixture);
   const document = await feedText(url);
@@ -487,18 +497,20 @@ Deno.test("[INTEGRATION-002] a paused reminder keeps only the days it was delive
   await occurrence(paused, fixture.memberId, day(2), { status: "failed" });
   await sql`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, status, next_attempt_at)
+      deliver_at, channel, status, next_attempt_at, workspace_id)
     values (${paused}, ${fixture.memberId}, ${day(3)},
-      ${day(3)}::date + time '09:00', 'in_app', 'retry', now())
+      ${
+    day(3)
+  }::date + time '09:00', 'in_app', 'retry', now(), (select scope.workspace_id from crm.reminders scope where scope.id = ${paused}::uuid))
   `;
   // A day already delivered stays: it is visible history.
   await sql`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
       deliver_at, channel, status, sent_at, provider_result_state,
-      provider_receipt, provider_effect_at, visible_at)
+      provider_receipt, provider_effect_at, visible_at, workspace_id)
     values (${paused}, ${fixture.memberId}, ${day(-2)},
       ${day(-2)}::date + time '09:00', 'in_app', 'sent', now(), 'confirmed',
-      'in-app', now(), now())
+      'in-app', now(), now(), (select scope.workspace_id from crm.reminders scope where scope.id = ${paused}::uuid))
   `;
   const document = await feedText(await createFeed(fixture));
   assertEquals(
@@ -672,9 +684,11 @@ async function remindedPerson(
   `;
   await sql`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, status, updated_at)
+      deliver_at, channel, status, updated_at, workspace_id)
     values (${reminderId}, ${fixture.memberId}, ${day(3)},
-      ${day(3)}::date + time '09:00', 'in_app', 'pending', ${changedAt})
+      ${
+    day(3)
+  }::date + time '09:00', 'in_app', 'pending', ${changedAt}, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
   `;
   return { person: id, reminder: reminderId };
 }
@@ -751,9 +765,10 @@ Deno.test("[INTEGRATION-002] the feed stops at its event cap and says so", async
   const ada = await person(fixture, "Ada");
   await sql`
     insert into crm.person_dates (person_id, kind, label, month, day,
-      precision)
+      precision, workspace_id)
     select ${ada}, 'custom', 'Day ' || series, 1 + series % 12,
-      1 + series % 28, 'month_day'
+      1 + series % 28, 'month_day',
+        (select scope.workspace_id from crm.people scope where scope.id = ${ada})
     from generate_series(1, 2001) series
   `;
   const document = await feedText(await createFeed(fixture));
@@ -776,9 +791,10 @@ Deno.test({
     const ada = await person(fixture, "Ada");
     await sql`
       insert into crm.person_dates (person_id, kind, label, month, day,
-        precision)
+        precision, workspace_id)
       select ${ada}, 'custom', md5(series::text), 1 + series % 12,
-        1 + series % 28, 'month_day'
+        1 + series % 28, 'month_day',
+        (select scope.workspace_id from crm.people scope where scope.id = ${ada})
       from generate_series(1, 60000) series
     `;
     const feed = createCalendarFeed({

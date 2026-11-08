@@ -70,7 +70,7 @@ export function createTaskWrites(dependencies: TaskManagementDependencies) {
           status: "validation-error",
         });
       }
-      return inTransaction(dependencies, existingTransaction, async (
+      return inTransaction(dependencies, actor, existingTransaction, async (
         transaction,
       ): Promise<CreateTaskResult> => {
         if (!await actorStands(dependencies, actor, transaction)) {
@@ -142,7 +142,7 @@ export function createTaskWrites(dependencies: TaskManagementDependencies) {
           status: "validation-error",
         });
       }
-      return inTransaction(dependencies, existingTransaction, async (
+      return inTransaction(dependencies, actor, existingTransaction, async (
         transaction,
       ): Promise<ChangeTaskResult> => {
         if (!await actorStands(dependencies, actor, transaction)) {
@@ -221,7 +221,7 @@ export function createTaskWrites(dependencies: TaskManagementDependencies) {
           status: "validation-error",
         });
       }
-      return inTransaction(dependencies, existingTransaction, async (
+      return inTransaction(dependencies, actor, existingTransaction, async (
         transaction,
       ): Promise<ChangeTaskResult> => {
         if (!await actorStands(dependencies, actor, transaction)) {

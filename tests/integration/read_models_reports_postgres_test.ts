@@ -11,7 +11,10 @@ import { PostgresAuditHistoryRepository } from "../../packages/backend/read-mode
 import { PostgresJournalTimelineRepository } from "../../packages/backend/read-models/journal-timeline/adapters/postgres/journal_timeline_repository.ts";
 import { createJournalTimeline } from "../../packages/backend/read-models/journal-timeline/public.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
-import { revokeMembership } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  revokeMembership,
+} from "../support/database.ts";
 import {
   actors,
   addActivity,
@@ -70,10 +73,15 @@ Deno.test("[INTERACTION-001] GAP-037 PostgreSQL activity report reads one person
   );
   // A participant row that crosses the tenant boundary: the foreign person is
   // linked to the reader's activity and must neither surface nor be named.
-  await sql`
-    insert into crm.activity_participants (activity_id, person_id)
-    values (${walk}, ${foreign.personId})
-  `;
+  // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+    insert into crm.activity_participants (activity_id, person_id, workspace_id)
+    values (${walk}, ${foreign.personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${walk}::uuid))
+  `,
+    "a participant from another workspace",
+  );
   const repository = new PostgresActivityReportRepository(connection.db);
   const actor = actorOf(reader);
 
@@ -442,23 +450,24 @@ Deno.test("[JOURNAL-001] GAP-037 PostgreSQL journal timeline never reads a forei
     "2026-04-05T19:00:00.000Z",
     [foreign.personId],
   );
-  // A journal item whose activity belongs to another workspace: the journal
-  // facade never writes one, so it is seeded directly.
-  const item = crypto.randomUUID();
-  await sql`
-    insert into crm.journal_items (id, workspace_id, occurred_at, activity_id)
-    values (${item}, ${reader.workspaceId}, '2026-04-05T19:00:00Z',
-      ${foreignActivity})
-  `;
+  // A journal item whose activity belongs to another workspace was once
+  // seeded directly to prove the timeline conceals it. Since schema v14 the
+  // database refuses it outright (ADR 0008), so the reader's timeline holds
+  // nothing of the other workspace at all.
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.journal_items (id, workspace_id, occurred_at, activity_id)
+        values (${crypto.randomUUID()}, ${reader.workspaceId}, '2026-04-05T19:00:00Z',
+          ${foreignActivity})
+      `,
+    "a journal item naming another workspace's activity",
+  );
   const page = await new PostgresJournalTimelineRepository(connection.db)
     .read(actorOf(reader), { limit: 10 });
   assert(page.status === "ready", `journal refused: ${page.status}`);
-  const linked = page.items[0];
   assert(
-    linked?.type === "activity" && linked.id === item &&
-      linked.activity.summary === "Activity unavailable" &&
-      page.activities.length === 0 &&
-      !JSON.stringify(page).includes("Foreign"),
+    page.activities.length === 0 && !JSON.stringify(page).includes("Foreign"),
     `the journal read a cross-workspace activity: ${JSON.stringify(page)}`,
   );
 });

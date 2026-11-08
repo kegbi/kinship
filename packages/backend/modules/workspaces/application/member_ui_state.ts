@@ -49,8 +49,10 @@ export function createMemberUiStateManagement(
         return { status: "forbidden" as const };
       }
       const reads = dependencies.connection ?? dependencies.transaction;
-      const result = await reads.run((connection) =>
-        dependencies.repository.read({ ...actor, transaction: connection })
+      const result = await reads.run(
+        (connection) =>
+          dependencies.repository.read({ ...actor, transaction: connection }),
+        { workspaceId: actor.workspaceId },
       );
       return result.status === "ready"
         ? { status: "ready" as const, uiState: projection(result.uiState) }
@@ -66,11 +68,14 @@ export function createMemberUiStateManagement(
         return { status: "forbidden" as const };
       }
       const reads = dependencies.connection ?? dependencies.transaction;
-      const result = await reads.run((connection) =>
-        dependencies.repository.readSession({
-          ...actor,
-          transaction: connection,
-        })
+      // The member's rows are read inside their workspace (ADR 0008).
+      const result = await reads.run(
+        (connection) =>
+          dependencies.repository.readSession({
+            ...actor,
+            transaction: connection,
+          }),
+        { workspaceId: actor.workspaceId },
       );
       if (result.status !== "ready") return result;
       return {
@@ -102,7 +107,7 @@ export function createMemberUiStateManagement(
           })
           ? { status: "ready" as const, uiState: projection(uiState) }
           : { status: "forbidden" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

@@ -108,6 +108,7 @@ export function createDebtSettlementReads(
             : {}),
         };
       },
+      { workspaceId: actor.workspaceId },
     );
   };
 }

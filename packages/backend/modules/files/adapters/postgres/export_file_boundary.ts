@@ -1,6 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { Failure } from "../../../../shared-kernel/result.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
+import { writeWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import type {
   ExportFileBoundary,
   ExportFileBoundaryDependencies,
@@ -55,22 +56,43 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
     private readonly dependencies: ExportFileBoundaryDependencies,
   ) {}
 
+  /**
+   * Runs one statement in its own short transaction in the export's
+   * workspace (ADR 0008), so no transaction stays open across the object
+   * store calls between them.
+   */
+  #scoped<Row>(
+    workspaceId: string,
+    query: { execute(database: Kysely<ApplicationDatabase>): Promise<Row> },
+  ): Promise<Row> {
+    return writeWithinWorkspace(
+      this.database,
+      workspaceId,
+      (database) => query.execute(database),
+    );
+  }
+
   async discard(
     command: Parameters<ExportFileBoundary["discard"]>[0],
   ): Promise<Awaited<ReturnType<ExportFileBoundary["discard"]>>> {
-    const result = await sql<{ readonly storage_key: string }>`
+    const result = await this.#scoped(
+      command.workspaceId,
+      sql<{ readonly storage_key: string }>`
       select stored.storage_key
       from crm.files stored
       where stored.workspace_id = ${command.workspaceId}::uuid
         and stored.id = ${command.fileId}::uuid and stored.deleted_at is null
-    `.execute(this.database);
+    `,
+    );
     const file = result.rows[0];
     if (!file) return { status: "forbidden" };
     try {
       await this.dependencies.storage.remove({ key: file.storage_key });
-      await sql`update crm.files set status = 'quarantined', updated_at = now()
-        where id = ${command.fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`
-        .execute(this.database);
+      await this.#scoped(
+        command.workspaceId,
+        sql`update crm.files set status = 'quarantined', updated_at = now()
+        where id = ${command.fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+      );
       return { status: "discarded" };
     } catch {
       return { status: "unavailable" };
@@ -80,7 +102,9 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
   async recover(
     command: Parameters<ExportFileBoundary["recover"]>[0],
   ): Promise<Awaited<ReturnType<ExportFileBoundary["recover"]>>> {
-    const result = await sql<FileRow>`
+    const result = await this.#scoped(
+      command.workspaceId,
+      sql<FileRow>`
       select stored.id::text, stored.original_filename as filename,
         stored.mime_type, stored.status, stored.storage_key,
         stored.byte_size::text, stored.checksum_sha256
@@ -91,7 +115,8 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
         and stored.deleted_at is null
       order by stored.created_at desc, stored.id desc
       limit 1
-    `.execute(this.database);
+    `,
+    );
     const file = result.rows[0];
     if (!file) return { status: "absent" };
     const checked = await verified(this.dependencies.storage, file);
@@ -102,17 +127,21 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
           () => undefined,
         );
       }
-      await sql`update crm.files set status = ${
-        checked.status === "corrupt" ? "quarantined" : "missing"
-      }, updated_at = now()
-        where id = ${file.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-        .execute(this.database);
+      await this.#scoped(
+        command.workspaceId,
+        sql`update crm.files set status = ${
+          checked.status === "corrupt" ? "quarantined" : "missing"
+        }, updated_at = now()
+        where id = ${file.id}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+      );
       return { status: "absent" };
     }
     if (file.status !== "available") {
-      await sql`update crm.files set status = 'available', updated_at = now()
-        where id = ${file.id}::uuid and workspace_id = ${command.workspaceId}::uuid`
-        .execute(this.database);
+      await this.#scoped(
+        command.workspaceId,
+        sql`update crm.files set status = 'available', updated_at = now()
+        where id = ${file.id}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+      );
     }
     return { bytes: checked.bytes, fileId: file.id, status: "stored" };
   }
@@ -122,7 +151,9 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
   ): Promise<Awaited<ReturnType<ExportFileBoundary["store"]>>> {
     const fileId = this.dependencies.ids.next();
     const storageKey = this.dependencies.keys.next();
-    const inserted = await sql<{ readonly id: string }>`
+    const inserted = await this.#scoped(
+      command.workspaceId,
+      sql<{ readonly id: string }>`
       insert into crm.files (
         id, workspace_id, uploaded_by_member_id, original_filename,
         storage_provider, storage_bucket, storage_key, byte_size, mime_type,
@@ -137,7 +168,8 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
         ${JSON.stringify({ exportId: command.exportId })}::text::jsonb
       )
       returning id::text
-    `.execute(this.database);
+    `,
+    );
     if (!inserted.rows[0]) return { status: "forbidden" };
     try {
       await this.dependencies.storage.put({
@@ -160,42 +192,51 @@ export class PostgresExportFileBoundary implements ExportFileBoundary {
             () => undefined,
           );
         }
-        await sql`update crm.files set status = ${
-          checked.status === "corrupt" ? "quarantined" : "missing"
-        }, updated_at = now()
-          where id = ${fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`
-          .execute(this.database).catch(() => undefined);
+        await this.#scoped(
+          command.workspaceId,
+          sql`update crm.files set status = ${
+            checked.status === "corrupt" ? "quarantined" : "missing"
+          }, updated_at = now()
+          where id = ${fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+        ).catch(() => undefined);
         return { status: "unavailable" };
       }
     }
-    await sql`update crm.files set status = 'available', updated_at = now()
-      where id = ${fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`
-      .execute(this.database);
+    await this.#scoped(
+      command.workspaceId,
+      sql`update crm.files set status = 'available', updated_at = now()
+      where id = ${fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+    );
     return { fileId, status: "stored" };
   }
 
   async read(
     command: Parameters<ExportFileBoundary["read"]>[0],
   ): Promise<Awaited<ReturnType<ExportFileBoundary["read"]>>> {
-    const result = await sql<FileRow>`
+    const result = await this.#scoped(
+      command.workspaceId,
+      sql<FileRow>`
       select stored.id::text, stored.original_filename as filename,
         stored.mime_type, stored.status, stored.storage_key,
         stored.byte_size::text, stored.checksum_sha256
       from crm.files stored
       where stored.workspace_id = ${command.workspaceId}::uuid
         and stored.id = ${command.fileId}::uuid and stored.deleted_at is null
-    `.execute(this.database);
+    `,
+    );
     const file = result.rows[0];
     if (!file) return { status: "not-found" };
     if (file.status !== "available") return { status: "missing" };
     const checked = await verified(this.dependencies.storage, file);
     if (checked.status === "unavailable") return { status: "unavailable" };
     if (checked.status !== "valid") {
-      await sql`update crm.files set status = ${
-        checked.status === "corrupt" ? "quarantined" : "missing"
-      }, updated_at = now()
-        where id = ${command.fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`
-        .execute(this.database);
+      await this.#scoped(
+        command.workspaceId,
+        sql`update crm.files set status = ${
+          checked.status === "corrupt" ? "quarantined" : "missing"
+        }, updated_at = now()
+        where id = ${command.fileId}::uuid and workspace_id = ${command.workspaceId}::uuid`,
+      );
       return checked.status === "missing"
         ? { status: "missing" }
         : { status: "unavailable" };

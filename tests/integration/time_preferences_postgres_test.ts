@@ -33,8 +33,9 @@ Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without 
     temperatureScale: "celsius" as const,
   };
   const read = () =>
-    transaction.run((transaction) =>
-      repository.getPreferences({ ...actor, transaction })
+    transaction.run(
+      (transaction) => repository.getPreferences({ ...actor, transaction }),
+      { workspaceId: actor.workspaceId },
     );
   try {
     await sql`insert into crm.users (id, email) values (${actor.userId}, ${`${actor.userId}@example.test`})`;
@@ -54,13 +55,16 @@ Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without 
       "read must preserve saved locale and unset editable timezone",
     );
     assert(
-      await transaction.run((transaction) =>
-        repository.getWorkspace({ ...actor, transaction })
+      await transaction.run(
+        (transaction) => repository.getWorkspace({ ...actor, transaction }),
+        { workspaceId: actor.workspaceId },
       ) === "forbidden",
       "preference read does not grant workspace management",
     );
-    const saved = await transaction.run((transaction) =>
-      repository.updatePreferences({ ...actor, ...input, transaction })
+    const saved = await transaction.run(
+      (transaction) =>
+        repository.updatePreferences({ ...actor, ...input, transaction }),
+      { workspaceId: actor.workspaceId },
     ) as typeof inherited;
     assert(
       saved.effectiveTimezone === "Europe/Belgrade" &&
@@ -85,8 +89,10 @@ Deno.test("APR-009 settings resolve member, workspace, and UTC timezone without 
       }, { memberId: crypto.randomUUID() }]
     ) {
       assert(
-        await transaction.run((transaction) =>
-          repository.getPreferences({ ...actor, ...forged, transaction })
+        await transaction.run(
+          (transaction) =>
+            repository.getPreferences({ ...actor, ...forged, transaction }),
+          { workspaceId: actor.workspaceId },
         ) === undefined,
         "forged membership must not expose settings",
       );

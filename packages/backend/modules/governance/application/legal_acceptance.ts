@@ -70,11 +70,13 @@ export function createLegalAcceptance(
           return { status: "forbidden" as const };
         }
         const reads = dependencies.connection ?? dependencies.transaction;
-        return await reads.run((connection) =>
-          dependencies.repository.requirements({
-            ...actor,
-            transaction: connection,
-          })
+        return await reads.run(
+          (connection) =>
+            dependencies.repository.requirements({
+              ...actor,
+              transaction: connection,
+            }),
+          { workspaceId: actor.workspaceId },
         );
       } catch {
         return { status: "unavailable" as const };
@@ -100,7 +102,7 @@ export function createLegalAcceptance(
             now: dependencies.clock.now(),
             transaction,
           });
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch {
         return { status: "unavailable" as const };
       }

@@ -8,6 +8,7 @@
  * the ports in this directory are the only files that need them.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -31,5 +32,8 @@ export interface PeopleActor extends Correlation {
 
 /** The transaction a people use case runs its work in. */
 export interface PeopleTransactionRunner {
-  run<T>(work: (transaction: PeopleTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: PeopleTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

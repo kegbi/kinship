@@ -208,7 +208,7 @@ export function createProfileFactWrites(dependencies: ProfileFactDependencies) {
         auditId,
       });
       return { personUpdatedAt, record, status: "saved" };
-    });
+    }, { workspaceId: actor.workspaceId });
   };
 
   return {
@@ -290,6 +290,6 @@ export function createProfileFactWrites(dependencies: ProfileFactDependencies) {
           auditId,
         });
         return { factId, personUpdatedAt, status: "deleted" };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }

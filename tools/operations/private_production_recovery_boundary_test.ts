@@ -59,19 +59,61 @@ async function waitForPostgres(databaseUrl: string): Promise<void> {
   throw new Error("Disposable PostgreSQL did not become ready.");
 }
 
-async function applyCanonicalSchema(databaseUrl: string): Promise<void> {
+/** The login-role passwords of one disposable server (ADR 0008). */
+function rolePasswords(password: string): Record<string, string> {
+  return {
+    POSTGRES_APP_PASSWORD: `${password}-app`,
+    POSTGRES_MIGRATOR_PASSWORD: `${password}-migrator`,
+    POSTGRES_WORKER_PASSWORD: `${password}-worker`,
+  };
+}
+
+async function runTask(
+  args: readonly string[],
+  env: Record<string, string>,
+  what: string,
+): Promise<void> {
   const output = await new Deno.Command("deno", {
-    args: ["task", "migration:apply"],
-    env: { DATABASE_URL: databaseUrl, DENO_NO_PACKAGE_JSON: "1" },
+    args: ["task", ...args],
+    env: { ...env, DENO_NO_PACKAGE_JSON: "1" },
     stdin: "null",
     stdout: "null",
     stderr: "piped",
   }).output();
   if (!output.success) {
-    throw new Error(
-      `canonical migration verifier failed with exit code ${output.code}`,
-    );
+    throw new Error(`${what} failed with exit code ${output.code}`);
   }
+}
+
+/**
+ * Creates schema v14's roles on a server, as the deployment's bootstrap step
+ * does; a restore target needs them before the archive's owners and grants.
+ */
+async function bootstrapRoles(
+  databaseUrl: string,
+  password: string,
+): Promise<void> {
+  await runTask(
+    ["ops", "bootstrap"],
+    { ...rolePasswords(password), DATABASE_URL: databaseUrl },
+    "role bootstrap",
+  );
+}
+
+/** Bootstraps the roles, then migrates as the schema owner, as Compose does. */
+async function applyCanonicalSchema(
+  databaseUrl: string,
+  password: string,
+): Promise<void> {
+  await bootstrapRoles(databaseUrl, password);
+  const migrator = new URL(databaseUrl);
+  migrator.username = "kinship_migrator";
+  migrator.password = rolePasswords(password).POSTGRES_MIGRATOR_PASSWORD ?? "";
+  await runTask(
+    ["migration:apply"],
+    { DATABASE_URL: migrator.href },
+    "canonical migration verifier",
+  );
 }
 
 async function waitForS3(client: S3Client): Promise<void> {
@@ -186,7 +228,8 @@ Deno.test({
         waitForPostgres(sourceUrl),
         waitForPostgres(targetUrl),
       ]);
-      await applyCanonicalSchema(sourceUrl);
+      await applyCanonicalSchema(sourceUrl, password);
+      await bootstrapRoles(targetUrl, password);
 
       const sourceSql = postgres(sourceUrl, { max: 1 });
       await sourceSql`

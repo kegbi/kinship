@@ -194,10 +194,16 @@ export class PostgresSearchRepository implements SearchRepository {
    * cancels past the timeout, opened in one round trip (`readOnlyWithin`).
    */
   private async bounded<T>(
+    workspaceId: string,
     work: (transaction: Kysely<ApplicationDatabase>) => Promise<T>,
   ): Promise<T | { readonly status: "timed-out" }> {
     try {
-      return await readOnlyWithin(this.database, this.statementTimeoutMs, work);
+      return await readOnlyWithin(
+        this.database,
+        this.statementTimeoutMs,
+        work,
+        workspaceId,
+      );
     } catch (error) {
       if (postgresErrorCode(error) === QUERY_CANCELED) {
         return { status: "timed-out" };
@@ -215,7 +221,8 @@ export class PostgresSearchRepository implements SearchRepository {
   recentPeople(
     command: Parameters<SearchRepository["recentPeople"]>[0],
   ): ReturnType<SearchRepository["recentPeople"]> {
-    return this.bounded(async (transaction) => {
+    // In the member's workspace (ADR 0008), like every other search read.
+    return this.bounded(command.workspaceId, async (transaction) => {
       const stored = await sql<{ readonly ui_state: unknown }>`
         select preference.ui_state
         from crm.member_preferences preference
@@ -263,7 +270,7 @@ export class PostgresSearchRepository implements SearchRepository {
     const secondary = command.sort === "family-name"
       ? sql`lower(coalesce(person.given_name, ''))`
       : sql`lower(coalesce(person.family_name, ''))`;
-    return this.bounded(async (transaction) => {
+    return this.bounded(command.workspaceId, async (transaction) => {
       const result = await sql<PersonRow>`
         select person.id::text as id, person.given_name, person.middle_name,
           person.family_name, person.nickname, ${avatarColumns}
@@ -297,7 +304,7 @@ export class PostgresSearchRepository implements SearchRepository {
     const workspace = sql`${command.workspaceId}::uuid`;
     const limit = command.limit;
     const terms = command.terms;
-    return this.bounded(async (transaction) => {
+    return this.bounded(command.workspaceId, async (transaction) => {
       const result = await sql<TextRow>`
       with parsed as (
         -- A query the parser finds no word in ("!!!", "<b>") would make

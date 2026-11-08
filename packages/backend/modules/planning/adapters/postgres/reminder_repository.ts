@@ -1,3 +1,4 @@
+import { writeWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
@@ -1402,16 +1403,18 @@ export class PostgresReminderDeliveryRepository
       workspaceId: row.workspace_id,
     }));
     for (const batch of topUpBatches(windows)) {
-      // One short transaction per batch.
-      await this.database.transaction().execute((transaction) =>
+      // One short transaction per batch, in the batch's one workspace, so
+      // the rows it inserts belong there (ADR 0008).
+      await writeWithinWorkspace(this.database, batch[0]!.workspaceId, (
+        transaction,
+      ) =>
         topUpWindows(
           transaction,
           this.recipients,
           this.preferences,
           batch,
           command.now,
-        )
-      );
+        ));
     }
     // Withdrawn only now, so a date whose sole notices belonged to a removed
     // rule was still short above and kept its day-of notice.
@@ -1423,7 +1426,9 @@ export class PostgresReminderDeliveryRepository
       members.set(recipient.workspaceId, workspace);
     }
     for (const [workspaceId, memberIds] of members) {
-      await this.database.transaction().execute(async (transaction) => {
+      await writeWithinWorkspace(this.database, workspaceId, async (
+        transaction,
+      ) => {
         const current = await lockedRecipients(
           transaction,
           this.recipients,

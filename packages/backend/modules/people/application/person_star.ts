@@ -76,7 +76,7 @@ export function createPersonStarManagement(
           });
         }
         return { isStarred: starred, status: "ready" as const };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }
 

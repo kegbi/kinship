@@ -309,11 +309,16 @@ Deno.test("AUD-F3 the session read projects the UI state and passes the preferen
     temperatureScale: "celsius",
   } as const;
   const commands: unknown[] = [];
+  const scopes: ({ readonly workspaceId: string } | undefined)[] = [];
   const connection = { opaque: "connection" };
   const reads = createMemberUiStateManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     connection: {
-      run<T>(work: (value: typeof connection) => Promise<T>) {
+      run<T>(
+        work: (value: typeof connection) => Promise<T>,
+        scope?: { readonly workspaceId: string },
+      ) {
+        scopes.push(scope);
         return work(connection);
       },
     },
@@ -351,6 +356,12 @@ Deno.test("AUD-F3 the session read projects the UI state and passes the preferen
       command.workspaceId === actor.workspaceId &&
       command.userId === actor.userId && command.transaction === connection,
     "the session read was not bound to the actor's membership on the plain connection",
+  );
+  assert(
+    scopes.length === 1 && scopes[0]?.workspaceId === actor.workspaceId,
+    `the session read did not run in the actor's workspace (ADR 0008): ${
+      JSON.stringify(scopes)
+    }`,
   );
 
   const blank = await management({

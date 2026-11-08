@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -56,11 +57,15 @@ export class PostgresTodayInteractionsRepository
   ): Promise<
     Awaited<ReturnType<TodayInteractionsRepository["getRecentActivity"]>>
   > {
-    // Each kind takes its own most recent page first, on the real
-    // `timestamptz` the activities index is ordered by, so the history behind
-    // the page is never read; only those survivors gather participants and
-    // names, and the final sort sees at most two pages.
-    const rows = await sql<TodayRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        // Each kind takes its own most recent page first, on the real
+        // `timestamptz` the activities index is ordered by, so the history behind
+        // the page is never read; only those survivors gather participants and
+        // names, and the final sort sees at most two pages.
+        const rows = await sql<TodayRow>`
       with recent_activity as (
         select activity.id, activity.activity_type_id, activity.summary,
           activity.happened_at
@@ -119,14 +124,16 @@ export class PostgresTodayInteractionsRepository
       from projection
       order by projection.happened_at desc, projection.id desc
       limit ${command.recentLimit}
-    `.execute(this.database);
-    return {
-      items: rows.rows.flatMap((row) => {
-        const mapped = item(row);
-        return mapped ? [mapped] : [];
-      }),
-      status: "ready",
-    };
+    `.execute(database);
+        return {
+          items: rows.rows.flatMap((row) => {
+            const mapped = item(row);
+            return mapped ? [mapped] : [];
+          }),
+          status: "ready",
+        };
+      },
+    );
   }
 
   async getFavoriteNotes(
@@ -134,7 +141,11 @@ export class PostgresTodayInteractionsRepository
   ): Promise<
     Awaited<ReturnType<TodayInteractionsRepository["getFavoriteNotes"]>>
   > {
-    const favoriteRows = await sql<TodayRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const favoriteRows = await sql<TodayRow>`
       select note.id::text, 'note'::text as kind, null::text as summary,
         null::text as activity_type, note.body, note.is_favorited,
         jsonb_build_array(jsonb_build_object(
@@ -150,13 +161,15 @@ export class PostgresTodayInteractionsRepository
         and note.is_favorited = true
       order by note.created_at desc, note.id desc
       limit ${command.favoriteLimit}
-    `.execute(this.database);
-    return {
-      items: favoriteRows.rows.flatMap((row) => {
-        const mapped = item(row);
-        return mapped?.kind === "note" ? [mapped] : [];
-      }),
-      status: "ready",
-    };
+    `.execute(database);
+        return {
+          items: favoriteRows.rows.flatMap((row) => {
+            const mapped = item(row);
+            return mapped?.kind === "note" ? [mapped] : [];
+          }),
+          status: "ready",
+        };
+      },
+    );
   }
 }

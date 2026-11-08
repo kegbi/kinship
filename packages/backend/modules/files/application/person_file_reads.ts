@@ -102,6 +102,7 @@ export function createPersonFileReads(
             transaction,
           });
         },
+        { workspaceId: actor.workspaceId },
       );
       if (result.status !== "ready") return result;
       return {
@@ -137,6 +138,7 @@ export function createPersonFileReads(
             transaction,
           });
         },
+        { workspaceId: actor.workspaceId },
       );
       if (found.status !== "found") return found;
       if (found.file.status !== "available") {
@@ -165,6 +167,7 @@ export function createPersonFileReads(
             });
             return { status: "missing" } as const;
           },
+          { workspaceId: actor.workspaceId },
         );
       }
       if (!recordsReads(found.file.kind)) {
@@ -191,6 +194,7 @@ export function createPersonFileReads(
           });
           return { status: "recorded" } as const;
         },
+        { workspaceId: actor.workspaceId },
       );
       if (recorded.status !== "recorded") return recorded;
       return { bytes, file: publicFile(found.file), status: "ready" };

@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely, RawBuilder } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -175,12 +176,14 @@ function ordering(sort: PeopleDirectoryCriteria["sort"]): {
     ? sql<string>`lower(coalesce(nullif(btrim(person.family_name), ''),
         nullif(btrim(person.nickname), ''),
         nullif(btrim(person.given_name), ''), ''))`
-    : sql<string>`lower(coalesce(nullif(btrim(person.given_name), ''),
-        nullif(btrim(person.nickname), ''),
-        nullif(btrim(person.family_name), ''), ''))`;
+    // The given-name order reads the stored keys v14 generates from these
+    // same expressions: under row-level security an index condition may not
+    // call lower(), which is not leakproof, so only a stored key can seek
+    // people_active_given_name_idx (ADR 0008, Q4).
+    : sql<string>`person.sort_given_name`;
   const secondary = sort === "family-name"
     ? sql<string>`lower(coalesce(person.given_name, ''))`
-    : sql<string>`lower(coalesce(person.family_name, ''))`;
+    : sql<string>`person.sort_family_name`;
   return {
     order: sql`${primary} asc, ${secondary} asc, person.id asc`,
     primary,
@@ -271,17 +274,21 @@ export class PostgresPeopleDirectoryRepository
       NonNullable<PeopleDirectoryRepository["findSelected"]>
     >[0],
   ): Promise<PeopleDirectoryPersonRecord | undefined> {
-    const selected = await sql<
-      AvatarColumns & {
-        readonly family_name: string | null;
-        readonly given_name: string;
-        readonly id: string;
-        readonly is_partial: boolean;
-        readonly is_starred: boolean;
-        readonly middle_name: string | null;
-        readonly nickname: string | null;
-      }
-    >`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const selected = await sql<
+          AvatarColumns & {
+            readonly family_name: string | null;
+            readonly given_name: string;
+            readonly id: string;
+            readonly is_partial: boolean;
+            readonly is_starred: boolean;
+            readonly middle_name: string | null;
+            readonly nickname: string | null;
+          }
+        >`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.is_partial,
         person.is_starred, ${avatarColumns}
@@ -295,40 +302,49 @@ export class PostgresPeopleDirectoryRepository
         end
         and person.deleted_at is null
       limit 1
-    `.execute(this.database);
-    const row = selected.rows[0];
-    if (!row) return undefined;
-    return {
-      avatar: avatar(row),
-      cursor: {
-        id: row.id,
-        primary: row.given_name.toLowerCase(),
-        secondary: row.family_name?.toLowerCase() ?? "",
-        starred: row.is_starred,
+    `.execute(database);
+        const row = selected.rows[0];
+        if (!row) return undefined;
+        return {
+          avatar: avatar(row),
+          cursor: {
+            id: row.id,
+            primary: row.given_name.toLowerCase(),
+            secondary: row.family_name?.toLowerCase() ?? "",
+            starred: row.is_starred,
+          },
+          ...pickDefined({ familyName: row.family_name }),
+          givenName: row.given_name,
+          id: row.id,
+          isPartial: row.is_partial,
+          isStarred: row.is_starred,
+          lifecycle: command.lifecycle,
+          ...pickDefined({
+            middleName: row.middle_name,
+            nickname: row.nickname,
+          }),
+          tagCount: 0,
+          tags: [],
+        };
       },
-      ...pickDefined({ familyName: row.family_name }),
-      givenName: row.given_name,
-      id: row.id,
-      isPartial: row.is_partial,
-      isStarred: row.is_starred,
-      lifecycle: command.lifecycle,
-      ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-      tagCount: 0,
-      tags: [],
-    };
+    );
   }
 
   async list(
     command: Parameters<PeopleDirectoryRepository["list"]>[0],
   ): Promise<Awaited<ReturnType<PeopleDirectoryRepository["list"]>>> {
-    const criteria = filters(command);
-    const sort = ordering(command.sort);
-    if (command.after) {
-      const anchor = await sql<{
-        readonly is_starred: boolean;
-        readonly sort_primary: string;
-        readonly sort_secondary: string;
-      }>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const criteria = filters(command);
+        const sort = ordering(command.sort);
+        if (command.after) {
+          const anchor = await sql<{
+            readonly is_starred: boolean;
+            readonly sort_primary: string;
+            readonly sort_secondary: string;
+          }>`
         select ${sort.primary} as sort_primary,
           ${sort.secondary} as sort_secondary, person.is_starred
         from crm.people person
@@ -341,27 +357,27 @@ export class PostgresPeopleDirectoryRepository
           ${criteria.search}
           ${criteria.starred}
           ${criteria.tag}
-      `.execute(this.database);
-      const row = anchor.rows[0];
-      if (
-        !row || row.sort_primary !== command.after.primary ||
-        row.sort_secondary !== command.after.secondary ||
-        (command.starredFirst && row.is_starred !== command.after.starred)
-      ) {
-        return { status: "stale-cursor" };
-      }
-    }
+      `.execute(database);
+          const row = anchor.rows[0];
+          if (
+            !row || row.sort_primary !== command.after.primary ||
+            row.sort_secondary !== command.after.secondary ||
+            (command.starredFirst && row.is_starred !== command.after.starred)
+          ) {
+            return { status: "stale-cursor" };
+          }
+        }
 
-    const continuation = seek(
-      command,
-      command.after,
-      sort.primary,
-      sort.secondary,
-    );
-    // The page is chosen first, on the sort keys alone, and only its rows
-    // are then drawn with their avatar and tag preview, so a large workspace
-    // pays for twenty rows' laterals rather than every person's (GAP-053).
-    const people = await sql<PersonRow>`
+        const continuation = seek(
+          command,
+          command.after,
+          sort.primary,
+          sort.secondary,
+        );
+        // The page is chosen first, on the sort keys alone, and only its rows
+        // are then drawn with their avatar and tag preview, so a large workspace
+        // pays for twenty rows' laterals rather than every person's (GAP-053).
+        const people = await sql<PersonRow>`
       with page as (
         select person.id, ${sort.primary} as sort_primary,
           ${sort.secondary} as sort_secondary,
@@ -412,28 +428,33 @@ export class PostgresPeopleDirectoryRepository
         ) preview
       ) tag_preview on true
       order by page.position
-    `.execute(this.database);
-    return {
-      people: people.rows.map((row): PeopleDirectoryPersonRecord => ({
-        avatar: avatar(row),
-        cursor: {
-          id: row.id,
-          primary: row.sort_primary,
-          secondary: row.sort_secondary,
-          starred: row.is_starred,
-        },
-        ...pickDefined({ familyName: row.family_name }),
-        givenName: row.given_name,
-        id: row.id,
-        isPartial: row.is_partial,
-        isStarred: row.is_starred,
-        lifecycle: command.lifecycle,
-        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-        tagCount: row.tag_count,
-        tags: row.tags,
-      })),
-      status: "ready",
-    };
+    `.execute(database);
+        return {
+          people: people.rows.map((row): PeopleDirectoryPersonRecord => ({
+            avatar: avatar(row),
+            cursor: {
+              id: row.id,
+              primary: row.sort_primary,
+              secondary: row.sort_secondary,
+              starred: row.is_starred,
+            },
+            ...pickDefined({ familyName: row.family_name }),
+            givenName: row.given_name,
+            id: row.id,
+            isPartial: row.is_partial,
+            isStarred: row.is_starred,
+            lifecycle: command.lifecycle,
+            ...pickDefined({
+              middleName: row.middle_name,
+              nickname: row.nickname,
+            }),
+            tagCount: row.tag_count,
+            tags: row.tags,
+          })),
+          status: "ready",
+        };
+      },
+    );
   }
 
   async listTagOptions(
@@ -441,17 +462,21 @@ export class PostgresPeopleDirectoryRepository
   ): Promise<
     Awaited<ReturnType<PeopleTagOptionsRepository["listTagOptions"]>>
   > {
-    const search = command.search
-      ? sql`and strpos(lower(tag.name), ${command.search}) > 0`
-      : sql``;
-    const continuation = command.after
-      ? sql`and (
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const search = command.search
+          ? sql`and strpos(lower(tag.name), ${command.search}) > 0`
+          : sql``;
+        const continuation = command.after
+          ? sql`and (
           lower(tag.name) > ${command.after.primary} or
           (lower(tag.name) = ${command.after.primary}
             and tag.id > ${command.after.id}::uuid)
         )`
-      : sql``;
-    const options = await sql<TagOptionRow>`
+          : sql``;
+        const options = await sql<TagOptionRow>`
       select tag.id::text, tag.name, lower(tag.name) as sort_primary
       from crm.tags tag
       where tag.workspace_id = ${command.workspaceId}::uuid
@@ -459,26 +484,28 @@ export class PostgresPeopleDirectoryRepository
         ${continuation}
       order by lower(tag.name), tag.id
       limit ${command.limit + 1}
-    `.execute(this.database);
-    let selected: PeopleDirectoryTag | undefined;
-    if (command.selectedTagId) {
-      const selectedResult = await sql<PeopleDirectoryTag>`
+    `.execute(database);
+        let selected: PeopleDirectoryTag | undefined;
+        if (command.selectedTagId) {
+          const selectedResult = await sql<PeopleDirectoryTag>`
         select tag.id::text, tag.name
         from crm.tags tag
         where tag.id = ${command.selectedTagId}::uuid
           and tag.workspace_id = ${command.workspaceId}::uuid
-      `.execute(this.database);
-      selected = selectedResult.rows[0];
-    }
-    return {
-      options: options.rows.map((row): PeopleTagOptionRecord => ({
-        cursor: { id: row.id, primary: row.sort_primary },
-        id: row.id,
-        name: row.name,
-      })),
-      ...(selected ? { selected } : {}),
-      status: "ready",
-    };
+      `.execute(database);
+          selected = selectedResult.rows[0];
+        }
+        return {
+          options: options.rows.map((row): PeopleTagOptionRecord => ({
+            cursor: { id: row.id, primary: row.sort_primary },
+            id: row.id,
+            name: row.name,
+          })),
+          ...(selected ? { selected } : {}),
+          status: "ready",
+        };
+      },
+    );
   }
   /**
    * The tag facet (GAP-053): each workspace tag with the non-deleted people
@@ -488,10 +515,14 @@ export class PostgresPeopleDirectoryRepository
   async listTagFacet(
     command: Parameters<PeopleTagFacetRepository["listTagFacet"]>[0],
   ): Promise<readonly PeopleTagFacetEntry[]> {
-    const lifecycle = command.lifecycle === "active"
-      ? sql`person.archived_at is null`
-      : sql`person.archived_at is not null`;
-    const result = await sql<PeopleTagFacetEntry>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const lifecycle = command.lifecycle === "active"
+          ? sql`person.archived_at is null`
+          : sql`person.archived_at is not null`;
+        const result = await sql<PeopleTagFacetEntry>`
       select tag.id::text, tag.name, count(*)::int as count
       from crm.tags tag
       join crm.person_tags link on link.tag_id = tag.id
@@ -503,12 +534,14 @@ export class PostgresPeopleDirectoryRepository
       group by tag.id, tag.name
       order by count(*) desc, lower(tag.name), tag.id
       limit ${command.limit}
-    `.execute(this.database);
-    return result.rows.map((row) => ({
-      count: row.count,
-      id: row.id,
-      name: row.name,
-    }));
+    `.execute(database);
+        return result.rows.map((row) => ({
+          count: row.count,
+          id: row.id,
+          name: row.name,
+        }));
+      },
+    );
   }
 
   /**
@@ -521,7 +554,11 @@ export class PostgresPeopleDirectoryRepository
   async listPairs(
     command: Parameters<PeopleDuplicatesRepository["listPairs"]>[0],
   ): Promise<readonly PeopleDuplicatePairRecord[]> {
-    const pairs = await sql<DuplicatePairRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const pairs = await sql<DuplicatePairRow>`
       with candidate as (
         select person.id, person.created_at,
           lower(regexp_replace(btrim(concat_ws(' ',
@@ -601,12 +638,14 @@ export class PostgresPeopleDirectoryRepository
       order by first_person.created_at, matched.first_id,
         second_person.created_at, matched.second_id
       limit ${command.limit}
-    `.execute(this.database);
-    if (pairs.rows.length === 0) return [];
-    const ids = [
-      ...new Set(pairs.rows.flatMap((row) => [row.first_id, row.second_id])),
-    ];
-    const people = await sql<DuplicatePersonRow>`
+    `.execute(database);
+        if (pairs.rows.length === 0) return [];
+        const ids = [
+          ...new Set(
+            pairs.rows.flatMap((row) => [row.first_id, row.second_id]),
+          ),
+        ];
+        const people = await sql<DuplicatePersonRow>`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname,
         ${instantColumn("person.updated_at")} as updated_at,
@@ -615,23 +654,30 @@ export class PostgresPeopleDirectoryRepository
       ${avatarJoin(command.workspaceId)}
       where person.workspace_id = ${command.workspaceId}::uuid
         and person.id = any(${ids}::uuid[])
-    `.execute(this.database);
-    const byId = new Map(
-      people.rows.map((row): [string, PeopleDuplicatePerson] => [row.id, {
-        ...(Object.keys(avatar(row)).length > 0 ? { avatar: avatar(row) } : {}),
-        ...pickDefined({ familyName: row.family_name }),
-        givenName: row.given_name,
-        id: row.id,
-        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-        updatedAt: row.updated_at,
-      }]),
+    `.execute(database);
+        const byId = new Map(
+          people.rows.map((row): [string, PeopleDuplicatePerson] => [row.id, {
+            ...(Object.keys(avatar(row)).length > 0
+              ? { avatar: avatar(row) }
+              : {}),
+            ...pickDefined({ familyName: row.family_name }),
+            givenName: row.given_name,
+            id: row.id,
+            ...pickDefined({
+              middleName: row.middle_name,
+              nickname: row.nickname,
+            }),
+            updatedAt: row.updated_at,
+          }]),
+        );
+        return pairs.rows.flatMap((row) => {
+          const first = byId.get(row.first_id);
+          const second = byId.get(row.second_id);
+          return first && second
+            ? [{ people: [first, second] as const, reasons: row.reasons }]
+            : [];
+        });
+      },
     );
-    return pairs.rows.flatMap((row) => {
-      const first = byId.get(row.first_id);
-      const second = byId.get(row.second_id);
-      return first && second
-        ? [{ people: [first, second] as const, reasons: row.reasons }]
-        : [];
-    });
   }
 }

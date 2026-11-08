@@ -61,7 +61,7 @@ export function createTaskListing(dependencies: TaskManagementDependencies) {
       if (id === undefined) {
         return Promise.resolve({ status: "validation-error" });
       }
-      return inTransaction(dependencies, existingTransaction, async (
+      return inTransaction(dependencies, actor, existingTransaction, async (
         transaction,
       ): Promise<GetTaskResult> => {
         if (!await actorStands(dependencies, actor, transaction)) {
@@ -131,6 +131,6 @@ export function createTaskListing(dependencies: TaskManagementDependencies) {
             : {}),
           status: "ready",
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }

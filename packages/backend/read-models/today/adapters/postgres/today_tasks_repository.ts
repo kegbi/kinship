@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -30,7 +31,11 @@ export class PostgresTodayTasksRepository implements TodayTasksRepository {
   async getDueTasks(
     command: Parameters<TodayTasksRepository["getDueTasks"]>[0],
   ): Promise<Awaited<ReturnType<TodayTasksRepository["getDueTasks"]>>> {
-    const result = await sql<TodayTaskRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const result = await sql<TodayTaskRow>`
       select task.id::text, task.title, task.description, task.status,
         ${instantColumn("task.due_at")} as due_at,
         ${instantColumn("task.completed_at")} as completed_at,
@@ -51,45 +56,48 @@ export class PostgresTodayTasksRepository implements TodayTasksRepository {
         and task.due_at is not null and task.due_at <= ${command.dueBefore}
       order by task.due_at, task.id
       limit ${command.limit}
-    `.execute(this.database);
-    return {
-      items: result.rows.flatMap((row) =>
-        row.id && row.created_at && row.status && row.title && row.updated_at
-          ? [{
-            ...pickDefined({
-              completedAt: row.completed_at,
-              completedByMemberId: row.completed_by_member_id,
-            }),
-            createdAt: row.created_at,
-            ...pickDefined({
-              createdByMemberId: row.created_by_member_id,
-              description: row.description,
-              dueAt: row.due_at,
-            }),
-            id: row.id,
-            ...(row.person_id
-              ? {
-                person: row.person_name
+    `.execute(database);
+        return {
+          items: result.rows.flatMap((row) =>
+            row.id && row.created_at && row.status && row.title &&
+              row.updated_at
+              ? [{
+                ...pickDefined({
+                  completedAt: row.completed_at,
+                  completedByMemberId: row.completed_by_member_id,
+                }),
+                createdAt: row.created_at,
+                ...pickDefined({
+                  createdByMemberId: row.created_by_member_id,
+                  description: row.description,
+                  dueAt: row.due_at,
+                }),
+                id: row.id,
+                ...(row.person_id
                   ? {
-                    archived: row.archived === true,
-                    id: row.person_id,
-                    name: row.person_name,
+                    person: row.person_name
+                      ? {
+                        archived: row.archived === true,
+                        id: row.person_id,
+                        name: row.person_name,
+                      }
+                      : {
+                        archived: true,
+                        id: row.person_id,
+                        name: "Deleted/Unavailable person",
+                        unavailable: true,
+                      },
                   }
-                  : {
-                    archived: true,
-                    id: row.person_id,
-                    name: "Deleted/Unavailable person",
-                    unavailable: true,
-                  },
-              }
-              : {}),
-            status: row.status,
-            title: row.title,
-            updatedAt: row.updated_at,
-          }]
-          : []
-      ),
-      status: "ready",
-    };
+                  : {}),
+                status: row.status,
+                title: row.title,
+                updatedAt: row.updated_at,
+              }]
+              : []
+          ),
+          status: "ready",
+        };
+      },
+    );
   }
 }

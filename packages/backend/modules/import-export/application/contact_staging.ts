@@ -165,7 +165,7 @@ export function createContactStaging(
           transaction,
         );
         return { importId, report, status: "dry_run" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
 
     stageCsv: async (
@@ -210,7 +210,7 @@ export function createContactStaging(
           sourceProfile: "csv",
         }, transaction);
         return { importId, preview, status: "mapping" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
 
     mapColumns: async (
@@ -270,7 +270,7 @@ export function createContactStaging(
           transaction,
         );
         return { importId, report, status: "dry_run" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

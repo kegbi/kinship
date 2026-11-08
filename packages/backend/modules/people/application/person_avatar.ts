@@ -155,6 +155,7 @@ export function createPersonAvatarManagement(
       const checked = await runOrUnavailable(
         dependencies.transaction,
         (transaction) => writable(actor, personId, transaction),
+        { workspaceId: actor.workspaceId },
       );
       if (checked.status !== "ready") return checked;
 
@@ -194,6 +195,7 @@ export function createPersonAvatarManagement(
             status: "updated" as const,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
       if (linked.status !== "updated") {
         await discard(actor, personId, stored.fileId, "avatar-unlinked");
@@ -241,6 +243,7 @@ export function createPersonAvatarManagement(
             status: "removed" as const,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
       if (reset.status !== "removed") return reset;
       await discard(actor, personId, reset.previous, "avatar-removed");

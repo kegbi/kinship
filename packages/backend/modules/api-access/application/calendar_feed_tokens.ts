@@ -150,7 +150,7 @@ export function createCalendarFeedTokens(
           return { status: "conflict" as const };
         }
         return { ...await mint(actor, transaction, now), status: "created" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     current: async (actor) =>
       await dependencies.transaction.run(async (transaction) => {
@@ -162,7 +162,7 @@ export function createCalendarFeedTokens(
           transaction,
         });
         return { ...(feed ? { feed } : {}), status: "ready" as const };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     revoke: async (actor) => {
       const now = dependencies.clock.now();
       return await dependencies.transaction.run(async (transaction) => {
@@ -172,7 +172,7 @@ export function createCalendarFeedTokens(
         return await revokeAll(actor, transaction, now) > 0
           ? { status: "revoked" as const }
           : { status: "not-found" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     rotate: async (actor) => {
       const now = dependencies.clock.now();
@@ -184,7 +184,7 @@ export function createCalendarFeedTokens(
           return { status: "not-found" as const };
         }
         return { ...await mint(actor, transaction, now), status: "rotated" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

@@ -59,8 +59,12 @@ test(
         created_by_member_id)
       values (${sqlLiteral(activityId)}::uuid, ${workspace}::uuid,
         'Lighthouse walk', now(), ${member}::uuid);
-      insert into crm.activity_participants (activity_id, person_id)
-      values (${sqlLiteral(activityId)}::uuid, ${sqlLiteral(adaId)}::uuid);
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      values (${sqlLiteral(activityId)}::uuid, ${
+      sqlLiteral(adaId)
+    }::uuid, (select scope.workspace_id from crm.activities scope where scope.id = ${
+      sqlLiteral(activityId)
+    }::uuid));
       insert into crm.journal_posts (id, workspace_id, title, body,
         created_by_member_id)
       values (${sqlLiteral(postId)}::uuid, ${workspace}::uuid, null,

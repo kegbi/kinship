@@ -13,11 +13,11 @@ import { createTodayAttention } from "../../packages/backend/read-models/today/p
 import * as generatedPlanningClient from "../../packages/contracts/generated/auth-client.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  apiConnection,
   createPerson,
   createReminder,
   createTask,
   databaseUrl,
-  deliveryConnection,
   register,
   request,
   signInTo,
@@ -49,10 +49,10 @@ Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, chann
     year: number | null = null,
   ) => {
     const id = crypto.randomUUID();
-    await sql`insert into crm.person_dates (id, person_id, kind, label, year, month, day, precision)
+    await sql`insert into crm.person_dates (id, person_id, kind, label, year, month, day, precision, workspace_id)
       values (${id}::uuid, ${person}::uuid, 'custom', ${label}, ${year}, ${month}, ${day}, ${
       year === null ? "month_day" : "full"
-    })`;
+    }, (select scope.workspace_id from crm.people scope where scope.id = ${person}::uuid))`;
     return id;
   };
   const november = await date("November birthday", 11, 22);
@@ -79,8 +79,17 @@ Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, chann
   await sql`insert into crm.life_events (id, workspace_id, person_id, name, year, month, day, precision)
     values (${event}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Future move', 2026, 10, 26, 'full'),
       (${oldEvent}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Past move', 2025, 10, 26, 'full'),
-      (${impreciseEvent}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Unknown year move', null, 10, 26, 'month_day'),
-      (gen_random_uuid(), ${fixture.workspaceId}::uuid, ${foreignPerson}::uuid, 'Foreign-linked move', 2026, 10, 26, 'full')`;
+      (${impreciseEvent}::uuid, ${fixture.workspaceId}::uuid, ${personId}::uuid, 'Unknown year move', null, 10, 26, 'month_day')`;
+  // Since schema v14 (AUD-V2) a life event naming another workspace's person
+  // is refused by the database itself, so it can never reach the calendar.
+  let refused = false;
+  try {
+    await sql`insert into crm.life_events (workspace_id, person_id, name, year, month, day, precision)
+      values (${fixture.workspaceId}::uuid, ${foreignPerson}::uuid, 'Foreign-linked move', 2026, 10, 26, 'full')`;
+  } catch (error) {
+    refused = (error as { readonly code?: string }).code === "23503";
+  }
+  assert(refused, "a life event naming another workspace's person was stored");
   const notify = async (
     id: string,
     occursOn: string,
@@ -93,8 +102,8 @@ Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, chann
       values (${reminder}::uuid, ${fixture.workspaceId}::uuid, ${id}::uuid, 'person_date', ${occursOn}::date, 'year', ${fixture.memberId}::uuid)`;
     for (const lead of leads) {
       for (const channel of emailOnly ? ["email"] : ["in_app", "email"]) {
-        await sql`insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, channel, status, lead_time_days)
-          values (${reminder}::uuid, ${fixture.memberId}::uuid, ${occursOn}::date, ${deliverAt}::timestamptz, ${channel}, 'pending', ${lead})`;
+        await sql`insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, channel, status, lead_time_days, workspace_id)
+          values (${reminder}::uuid, ${fixture.memberId}::uuid, ${occursOn}::date, ${deliverAt}::timestamptz, ${channel}, 'pending', ${lead}, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminder}::uuid))`;
       }
     }
     return reminder;
@@ -117,7 +126,7 @@ Deno.test("TODAY-001 PostgreSQL calendar dates ignore notification timing, chann
       actors: { revalidate: () => Promise.resolve("active" as const) },
       transaction: { run: (work) => work({ opaque: undefined }) },
       clock: { now: () => new Date(now) },
-      repository: new PostgresTodayAttentionRepository(deliveryConnection.db),
+      repository: new PostgresTodayAttentionRepository(apiConnection.db),
     }).get(fixture);
     assert(result.status === "ready", "calendar snapshot ready");
     return generatedPlanningClient.parseTodayAttention(result);
@@ -280,15 +289,31 @@ Deno.test("TODAY-001 PostgreSQL never projects cross-workspace person links", as
     foreignPersonId,
     dueAt,
   );
+  // Since schema v14 (AUD-V2) the database itself refuses a task that names
+  // another workspace's person, even from the superuser; the tasks below are
+  // what is left of such a link, a task without its person.
+  let refused = false;
+  try {
+    await sql`
+      insert into crm.tasks (id, workspace_id, person_id, title, due_at,
+        created_by_member_id)
+      values (${directTaskId}::uuid, ${fixture.workspaceId}::uuid,
+        ${foreignPersonId}::uuid, 'Foreign-linked direct task',
+        ${dueAt}::timestamptz, ${fixture.memberId}::uuid)
+    `;
+  } catch (error) {
+    refused = (error as { readonly code?: string }).code === "23503";
+  }
+  assert(refused, "a task naming another workspace's person was stored");
   await sql`
     insert into crm.tasks (id, workspace_id, person_id, title, due_at,
       created_by_member_id)
     values
       (${directTaskId}::uuid, ${fixture.workspaceId}::uuid,
-        ${foreignPersonId}::uuid, 'Foreign-linked direct task',
+        null, 'Foreign-linked direct task',
         ${dueAt}::timestamptz, ${fixture.memberId}::uuid),
       (${targetTaskId}::uuid, ${fixture.workspaceId}::uuid,
-        ${foreignPersonId}::uuid, 'Foreign-linked target task', null,
+        null, 'Foreign-linked target task', null,
         ${fixture.memberId}::uuid)
   `;
   await sql`
@@ -313,16 +338,16 @@ Deno.test("TODAY-001 PostgreSQL never projects cross-workspace person links", as
   `;
   await sql`
     insert into crm.reminder_occurrences (id, reminder_id, member_id,
-      occurs_on, deliver_at, channel, status, title_snapshot)
+      occurs_on, deliver_at, channel, status, title_snapshot, workspace_id)
     values
       (${targetOccurrenceId}::uuid, ${targetReminderId}::uuid,
         ${fixture.memberId}::uuid, ${dueAt.slice(0, 10)}::date,
         ${dueAt}::timestamptz, 'in_app', 'pending',
-        'Foreign-linked target occurrence'),
+        'Foreign-linked target occurrence', (select scope.workspace_id from crm.reminders scope where scope.id = ${targetReminderId}::uuid)),
       (${deletedTargetOccurrenceId}::uuid, ${deletedTargetReminderId}::uuid,
         ${fixture.memberId}::uuid, ${earlierDueAt.slice(0, 10)}::date,
         ${earlierDueAt}::timestamptz, 'in_app', 'pending',
-        'Deleted person target occurrence')
+        'Deleted person target occurrence', (select scope.workspace_id from crm.reminders scope where scope.id = ${deletedTargetReminderId}::uuid))
   `;
 
   const response = await request(fixture, "/api/v1/today/attention");
@@ -542,10 +567,10 @@ Deno.test("TODAY-001 PostgreSQL projects every v6 reminder target through its au
     `;
     await sql`
       insert into crm.reminder_occurrences (id, reminder_id, member_id,
-        occurs_on, deliver_at, channel, status, title_snapshot)
+        occurs_on, deliver_at, channel, status, title_snapshot, workspace_id)
       values (${occurrenceId}::uuid, ${reminderId}::uuid,
         ${fixture.memberId}::uuid, ${anchorOn}::date, ${targetDeliverAt}::timestamptz,
-        'in_app', 'pending', ${input.title})
+        'in_app', 'pending', ${input.title}, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
     `;
     return { occurrenceId, reminderId };
   };
@@ -626,11 +651,11 @@ Deno.test("TODAY-001 PostgreSQL projects every v6 reminder target through its au
 
   const personDateId = crypto.randomUUID();
   await sql`
-    insert into crm.person_dates (id, person_id, kind, month, day, precision)
+    insert into crm.person_dates (id, person_id, kind, month, day, precision, workspace_id)
     values (${personDateId}::uuid, ${personId}::uuid, 'birthday', ${
     Number(anchorOn.slice(5, 7))
   }, ${Number(anchorOn.slice(8, 10))},
-      'month_day')
+      'month_day', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
   `;
   await insertTarget({
     kind: "person_date",
@@ -903,9 +928,10 @@ Deno.test("[PLANNING-003] REL-088 PostgreSQL clears an acknowledged undelivered 
   `;
   const [emailCopy] = await sql<{ readonly id: string }[]>`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, status, attempt_count, title_snapshot)
+      deliver_at, channel, status, attempt_count, title_snapshot, workspace_id)
     select reminder_id, member_id, occurs_on, deliver_at, 'email', 'failed',
-      1, title_snapshot
+      1, title_snapshot,
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder_id)
     from crm.reminder_occurrences where id = ${failedId}::uuid
     returning id::text
   `;

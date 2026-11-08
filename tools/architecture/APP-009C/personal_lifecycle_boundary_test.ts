@@ -41,7 +41,7 @@ Deno.test("[AUTH-005] personal lifecycle coordinates only owning public boundari
   if (
     !memberships.includes(
       "pg_advisory_xact_lock(hashtextextended(${workspaceId}, 2))",
-    ) || !memberships.includes("order by wm.workspace_id")
+    ) || !memberships.includes("order by membership.workspace_id")
   ) {
     throw new Error(
       "lifecycle owner counts must share the deterministic settings member lock",

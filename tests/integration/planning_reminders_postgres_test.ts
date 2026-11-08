@@ -7,6 +7,7 @@
  * `planning.test-helper.ts`.
  */
 
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import {
   createReminderDeliveryWorker,
   reminderDeliveryAuditFrom,
@@ -670,13 +671,14 @@ Deno.test("PLANNING-002 PostgreSQL projects one relevant occurrence from bounded
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       sent_at, title_snapshot, body_snapshot, provider_receipt,
       provider_result_state, provider_effect_at, visible_at
-    )
+    , workspace_id)
     select reminder_id, member_id, (current_date - generated)::date,
       now() - generated * interval '1 day', channel, 'sent',
       now() - generated * interval '1 day', title_snapshot, body_snapshot,
       'history-' || generated::text, 'confirmed',
       now() - generated * interval '1 day',
-      now() - generated * interval '1 day'
+      now() - generated * interval '1 day',
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder_id)
     from crm.reminder_occurrences cross join generate_series(1, 150) generated
     where id = ${occurrenceId}::uuid
   `;
@@ -822,10 +824,11 @@ Deno.test("PLANNING-002 PostgreSQL important dates publish one deliverable in-ap
     insert into crm.reminder_occurrences (
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       title_snapshot, created_at, updated_at
-    )
+    , workspace_id)
     select reminder_id, member_id, occurs_on,
       now() - interval '1 minute', 'email', 'pending',
-      title_snapshot, now(), now()
+      title_snapshot, now(), now(),
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder_id)
     from crm.reminder_occurrences where id = ${occurrence.id}::uuid
   `;
   const attention = await request(fixture, "/api/v1/today/attention");
@@ -910,10 +913,11 @@ Deno.test("PLANNING-002 PostgreSQL person reminder projection is member-scoped",
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       attempt_count, provider_result_state, error, title_snapshot,
       created_at, updated_at
-    )
+    , workspace_id)
     select reminder_id, ${membership.id}::uuid, occurs_on,
       deliver_at - interval '1 day', channel, 'manual_attention', 1,
-      'rejected', 'other member failure', title_snapshot, now(), now()
+      'rejected', 'other member failure', title_snapshot, now(), now(),
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder_id)
     from crm.reminder_occurrences where id = ${
     reminder.nextOccurrence!.id
   }::uuid
@@ -1362,9 +1366,10 @@ Deno.test("[AUD-W1] a lead rule's notices are inserted in bounded chunks", async
     from unnest(${people}::uuid[]) as id
   `;
   await sql`
-    insert into crm.person_dates (id, person_id, kind, month, day, precision)
+    insert into crm.person_dates (id, person_id, kind, month, day, precision, workspace_id)
     select copy.date_id, copy.person_id, source.kind, source.month,
-      source.day, source.precision
+      source.day, source.precision,
+        (select scope.workspace_id from crm.people scope where scope.id = copy.person_id)
     from unnest(${dates}::uuid[], ${people}::uuid[])
       as copy(date_id, person_id)
     cross join crm.person_dates source
@@ -1388,10 +1393,11 @@ Deno.test("[AUD-W1] a lead rule's notices are inserted in bounded chunks", async
     insert into crm.reminder_occurrences (
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       title_snapshot, created_at, updated_at
-    )
+    , workspace_id)
     select copy.reminder_id, source.member_id, source.occurs_on,
       source.deliver_at, source.channel, 'pending', source.title_snapshot,
-      now(), now()
+      now(), now(),
+        (select scope.workspace_id from crm.reminders scope where scope.id = copy.reminder_id)
     from unnest(${reminders}::uuid[]) as copy(reminder_id)
     cross join crm.reminder_occurrences source
     join crm.reminders reminder on reminder.id = source.reminder_id
@@ -1419,8 +1425,12 @@ Deno.test("[AUD-W1] a lead rule's notices are inserted in bounded chunks", async
       return Promise.resolve(args.result);
     },
   });
-  await counted.transaction().execute((transaction) =>
-    refreshLeadNotices({ opaque: transaction }, fixture.workspaceId)
+  // A rule change refreshes the notices inside its own workspace's scope.
+  await writeWithinWorkspace(
+    counted,
+    fixture.workspaceId,
+    (transaction) =>
+      refreshLeadNotices({ opaque: transaction }, fixture.workspaceId),
   );
   const total = inserted.reduce((sum, rows) => sum + rows, 0);
   assert(

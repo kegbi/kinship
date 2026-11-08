@@ -1213,10 +1213,10 @@ test(
         ('${steamTypeId}'::uuid, '${workspaceId}'::uuid, 'Steam', 'url'),
         ('${usernameTypeId}'::uuid, '${workspaceId}'::uuid, 'Username', 'username'),
         ('${emailTypeId}'::uuid, '${workspaceId}'::uuid, 'Email', 'email');
-      insert into crm.person_contact_methods (person_id, type_id, value, is_primary) values
-        ('${personId}'::uuid, '${steamTypeId}'::uuid, '${steam}', true),
-        ('${personId}'::uuid, '${usernameTypeId}'::uuid, '${username}', true),
-        ('${personId}'::uuid, '${emailTypeId}'::uuid, '${longEmail}', true);
+      insert into crm.person_contact_methods (person_id, type_id, value, is_primary, workspace_id) values
+        ('${personId}'::uuid, '${steamTypeId}'::uuid, '${steam}', true, (select scope.workspace_id from crm.people scope where scope.id = '${personId}'::uuid)),
+        ('${personId}'::uuid, '${usernameTypeId}'::uuid, '${username}', true, (select scope.workspace_id from crm.people scope where scope.id = '${personId}'::uuid)),
+        ('${personId}'::uuid, '${emailTypeId}'::uuid, '${longEmail}', true, (select scope.workspace_id from crm.people scope where scope.id = '${personId}'::uuid));
     `);
     await page.goto(`/app/people/${personId}`);
     const contacts = page.locator("#profile-section-contact-methods");

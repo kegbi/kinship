@@ -13,7 +13,8 @@ are created during the executable scaffold, then pinned for reproducibility.
 | `gateway`        | Same-origin entry point, TLS in production-like use, and static Astro assets | default, test      | Long-running |
 | `api`            | Deno/Hono HTTP composition root                                              | default, dev, test | Long-running |
 | `worker`         | Reminder, import/export, synchronization, and maintenance commands           | default, dev, test | Long-running |
-| `migrate`        | Applies and verifies immutable SQL before API/worker readiness               | default, test      | One-shot     |
+| `bootstrap`      | The only superuser step: creates or corrects the database roles (ADR 0008)   | default, test      | One-shot     |
+| `migrate`        | Applies and verifies immutable SQL, as the schema owner, before API/worker   | default, test      | One-shot     |
 | `postgres`       | Canonical durable database                                                   | default, dev, test | Long-running |
 | `web`            | Private Astro renderer for the legal pages; hot reload in development        | default, dev, test | Long-running |
 | `object-store`   | S3-compatible development/test attachment storage                            | dev, test          | Long-running |
@@ -71,10 +72,12 @@ until the application stack supersedes none of its checks.
 ## Startup And Readiness
 
 1. PostgreSQL becomes healthy.
-2. `migrate` obtains the migration lock, applies/verifies schema state, and
-   exits successfully.
-3. API and worker start only after successful migration completion.
-4. Gateway becomes ready only after the API readiness endpoint succeeds and its
+2. `bootstrap`, connected as the bootstrap superuser, creates or corrects the
+   database roles and exits successfully (see Database Roles).
+3. `migrate`, connected as `kinship_migrator`, obtains the migration lock,
+   applies/verifies schema state, and exits successfully.
+4. API and worker start only after successful migration completion.
+5. Gateway becomes ready only after the API readiness endpoint succeeds and its
    static assets exist. It neither waits for `web` nor asks it (ADR 0007).
 
 Liveness means the process event loop is responsive. Readiness means the process
@@ -84,6 +87,31 @@ unavailable. Worker readiness reports whether it can claim work, separately from
 whether an external mail or object provider is degraded.
 
 The gateway's own readiness does not depend on `web`; it forwards an on-demand request to `web` and returns a bounded unavailable response when that dependency is not ready, unless it still holds a successful render of that page. `web` liveness reports whether its renderer process is alive; readiness additionally requires the renderer to accept requests and its private `api` origin to be reachable. Development alone overrides the `web` command to `astro dev`; production-like and test profiles use the private production renderer.
+
+## Database Roles
+
+Schema v14 makes the database enforce the workspace boundary
+([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md)), so each
+service connects as its own role and only `bootstrap` uses the superuser that
+the `postgres` image creates:
+
+| Service     | Role                     | Attributes                                    | Credential                    |
+| ----------- | ------------------------ | --------------------------------------------- | ----------------------------- |
+| `bootstrap` | `POSTGRES_USER`          | Bootstrap superuser                           | `POSTGRES_PASSWORD`           |
+| `migrate`   | `kinship_migrator`       | Owns schema `crm`; `BYPASSRLS`; not superuser | `POSTGRES_MIGRATOR_PASSWORD`  |
+| `api`       | `kinship_app`            | DML on `crm`, no DDL; `NOBYPASSRLS`           | `POSTGRES_APP_PASSWORD`       |
+| `worker`    | `kinship_worker`         | Only the tables its jobs need; `NOBYPASSRLS`  | `POSTGRES_WORKER_PASSWORD`    |
+
+`bootstrap` (`tools/migrations/bootstrap.ts`) is idempotent and runs before
+each migrate job. It also creates the non-login roles that own the narrow
+cross-workspace functions, lets the migrator assign ownership to them without
+inheriting their privileges, grants the migrator `CREATE` on the database,
+revokes `CREATE` on schema `public`, and hands a schema `crm` that an earlier
+migrate job created as the superuser to the migrator, so a v13 deployment
+upgrades in place. The API and worker never hold the superuser's credentials.
+`tools/schema/assert_isolation.sql` asserts on both supported PostgreSQL
+versions that no service role is a superuser or bypasses row-level security,
+and the compose and configuration contract tests assert each service's role.
 
 ## Gateway Routing
 
@@ -153,6 +181,7 @@ AUD-G4 (2026-11-07 audit: SECA-13 item 7, the trusted-proxy part of SECA-06, and
 | Service | `mem_limit` | `pids_limit` | `cap_add` | Idle use (test stack) |
 | --- | --- | --- | --- | --- |
 | `postgres` | `2g` | 256 | `CHOWN`, `DAC_READ_SEARCH`, `SETGID`, `SETUID` | 236 MiB, 11 pids |
+| `bootstrap` | `256m` | 128 | none | one-shot |
 | `migrate` | `512m` | 128 | none | one-shot |
 | `api` | `1g` | 256 | none | 98 MiB, 7 pids |
 | `worker` | `512m` | 256 | none | 59 MiB, 7 pids |

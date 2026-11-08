@@ -286,6 +286,6 @@ export function createProfileFactListing(
         records: responseRecords,
         status: context.status,
       };
-    });
+    }, { workspaceId: actor.workspaceId });
   };
 }

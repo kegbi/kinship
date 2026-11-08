@@ -19,7 +19,10 @@ import {
   createTodayTasks,
 } from "../../packages/backend/read-models/today/public.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
-import { revokeMembership } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  revokeMembership,
+} from "../support/database.ts";
 import {
   describePlan,
   explainedPlan,
@@ -99,10 +102,10 @@ async function addPersonReminder(
   `;
   await sql`
     insert into crm.reminder_occurrences (id, reminder_id, member_id,
-      occurs_on, deliver_at, channel, status, title_snapshot)
+      occurs_on, deliver_at, channel, status, title_snapshot, workspace_id)
     values (${occurrenceId}, ${reminderId}, ${actor.memberId},
       ${deliverAt.slice(0, 10)}::date, ${deliverAt}, 'in_app', 'pending',
-      ${title})
+      ${title}, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
   `;
   return occurrenceId;
 }
@@ -111,8 +114,8 @@ async function addCadence(personId: string, dueAt: string): Promise<string> {
   const id = crypto.randomUUID();
   await sql`
     insert into crm.stay_in_touch_cadences (id, person_id, interval_count,
-      interval_unit, next_due_at)
-    values (${id}, ${personId}, 2, 'week', ${dueAt})
+      interval_unit, next_due_at, workspace_id)
+    values (${id}, ${personId}, 2, 'week', ${dueAt}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
   `;
   return id;
 }
@@ -326,9 +329,12 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today reminders and cadences stay in t
 Deno.test("[TODAY-001] GAP-037 PostgreSQL Today reminders never name a foreign person", async () => {
   const { foreign, reader } = await twoWorkspaces("today-reminder-link");
   // A reminder row whose person belongs to another workspace: the planning
-  // facade never writes one, so it is seeded directly, and the read model must
-  // still not project the foreign person.
-  await addPersonReminder(reader, foreign.personId, "Linked", inDays(2));
+  // facade never writes one, and the database refuses one seeded directly
+  // (ADR 0008), so the read model has nothing foreign to project.
+  await assertCrossWorkspaceRefused(
+    () => addPersonReminder(reader, foreign.personId, "Linked", inDays(2)),
+    "a reminder about another workspace's person",
+  );
   const repository = new PostgresTodayRemindersRepository(connection.db);
 
   const today = await repository.get({ ...actorOf(reader), now: NOW });
@@ -353,17 +359,26 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today reminders never name a foreign p
 
 Deno.test("[TODAY-001] GAP-037 PostgreSQL Today tasks and interactions never name a foreign person", async () => {
   const { foreign, reader } = await twoWorkspaces("today-foreign-links");
-  const task = await addTask(
-    reader,
-    "Linked task",
-    inDays(1),
-    foreign.personId,
+  // Neither link can be stored (ADR 0008): a task about another workspace's
+  // person, and that person as an activity participant.
+  await assertCrossWorkspaceRefused(
+    () => addTask(reader, "Linked task", inDays(1), foreign.personId),
+    "a task about another workspace's person",
   );
+  const task = await addTask(reader, "Local task", inDays(1));
   const activity = await addActivity(
     reader,
     "Linked activity",
     "2026-06-10T12:00:00.000Z",
-    [reader.personId, foreign.personId],
+    [reader.personId],
+  );
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.activity_participants (activity_id, person_id, workspace_id)
+        values (${activity}::uuid, ${foreign.personId}::uuid, ${reader.workspaceId}::uuid)
+      `,
+    "another workspace's person as an activity participant",
   );
   const actor = actorOf(reader);
 
@@ -379,8 +394,7 @@ Deno.test("[TODAY-001] GAP-037 PostgreSQL Today tasks and interactions never nam
   const linkedActivity = recent.items[0];
   assert(
     tasks.items.length === 1 && linkedTask?.id === task &&
-      linkedTask.person?.unavailable === true &&
-      linkedTask.person.name === "Deleted/Unavailable person" &&
+      linkedTask.person === undefined &&
       linkedActivity?.id === activity &&
       JSON.stringify(linkedActivity.participants.map((person) => person.id)) ===
         JSON.stringify([reader.personId]) &&
@@ -458,14 +472,15 @@ async function addDelivery(
   await sql`
     insert into crm.reminder_occurrences (id, reminder_id, member_id,
       occurs_on, deliver_at, channel, status, title_snapshot, sent_at,
-      provider_result_state, provider_receipt, provider_effect_at, visible_at)
+      provider_result_state, provider_receipt, provider_effect_at, visible_at, workspace_id)
     select ${id}, source.reminder_id, ${actor.memberId}, source.occurs_on,
       source.deliver_at, ${channel}, ${status}, source.title_snapshot,
       case when ${sent} then source.deliver_at end,
       ${result},
       case when ${sent} then 'receipt' end,
       case when ${sent} then source.deliver_at end,
-      case when ${sent} then source.deliver_at end
+      case when ${sent} then source.deliver_at end,
+        (select scope.workspace_id from crm.reminders scope where scope.id = source.reminder_id)
     from crm.reminder_occurrences source where source.id = ${occurrenceId}
   `;
   return id;
@@ -610,9 +625,9 @@ Deno.test("[TODAY-001] AUD-Q1 each attention arm takes only what its buckets can
   for (let index = 0; index < most + 3; index++) {
     const person = await addPerson(reader, `Birthday ${index}`);
     await sql`
-      insert into crm.person_dates (person_id, kind, month, day, precision)
+      insert into crm.person_dates (person_id, kind, month, day, precision, workspace_id)
       values (${person}, 'birthday', ${birthday.getUTCMonth() + 1},
-        ${birthday.getUTCDate()}, 'month_day')
+        ${birthday.getUTCDate()}, 'month_day', (select scope.workspace_id from crm.people scope where scope.id = ${person}::uuid))
     `;
     await addCadence(person, inDays(2 + index / 100));
     await addPersonReminder(reader, person, `Check in ${index}`, inDays(3));
@@ -630,9 +645,11 @@ Deno.test("[TODAY-001] AUD-Q1 each attention arm takes only what its buckets can
   `;
   await sql`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, status, title_snapshot)
+      deliver_at, channel, status, title_snapshot, workspace_id)
     values (${reminderId}, ${reader.memberId}, ${inDays(1).slice(0, 10)}::date,
-      ${inDays(1)}, 'in_app', 'pending', 'Send the photos')
+      ${
+    inDays(1)
+  }, 'in_app', 'pending', 'Send the photos', (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
   `;
   const command = {
     ...actorOf(reader),
@@ -723,8 +740,9 @@ Deno.test("[TODAY-001] AUD-Q1 Today's recent activity and recent people read the
       ), numbered as (
         select id, row_number() over (order by happened_at) as n from created
       )
-      insert into crm.activity_participants (activity_id, person_id)
-      select numbered.id, person.id
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      select numbered.id, person.id,
+        ${workspaceId}::uuid
       from numbered
       join plan_people person
         on person.n in (1 + numbered.n % ${SCALED.people},
@@ -857,12 +875,13 @@ Deno.test("[TODAY-001] AUD-V1 attention reads a member's open occurrences, not t
       )
       insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
         deliver_at, channel, status, sent_at, provider_result_state,
-        provider_receipt, provider_effect_at, visible_at)
+        provider_receipt, provider_effect_at, visible_at, workspace_id)
       select reminder.id, member.id, current_date - months.n * 30,
         now() - months.n * interval '30 days', 'in_app', 'sent',
         now() - months.n * interval '30 days', 'confirmed', 'in-app',
         now() - months.n * interval '30 days',
-        now() - months.n * interval '30 days'
+        now() - months.n * interval '30 days',
+        ${workspaceId}::uuid
       from reminder
       cross join generate_series(1, 20) months(n)
       cross join (values (${memberId}::uuid), (${otherMemberId}::uuid))
@@ -870,9 +889,10 @@ Deno.test("[TODAY-001] AUD-V1 attention reads a member's open occurrences, not t
     `;
     await scratch`
       insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-        deliver_at, channel, status)
+        deliver_at, channel, status, workspace_id)
       select reminder.id, ${memberId}::uuid, ${inDays(10).slice(0, 10)}::date,
-        ${inDays(10)}::timestamptz, 'in_app', 'pending'
+        ${inDays(10)}::timestamptz, 'in_app', 'pending',
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder.id)
       from crm.reminders reminder
     `;
     await scratch`analyze`;

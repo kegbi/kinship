@@ -68,6 +68,7 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
           });
           return { debtId: deleted.debt.id, status: "deleted" as const };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
     createGift: async (
@@ -140,7 +141,7 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return { gift: representedGift, status: "created" as const };
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch (error) {
         return mutationFailure(error);
       }
@@ -203,7 +204,7 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return created;
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch (error) {
         return mutationFailure(error);
       }
@@ -258,7 +259,7 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return { gift: representedGift, status: "saved" as const };
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch (error) {
         return mutationFailure(error);
       }
@@ -324,7 +325,7 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           return saved;
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch (error) {
         return mutationFailure(error);
       }

@@ -88,9 +88,10 @@ Deno.test({
       join capacity_people person on person.n = 1 + (i::bigint * 104729) % ${LARGE_PEOPLE}
     `;
     await sql`
-      insert into crm.messages (conversation_id, content, written_at, direction)
+      insert into crm.messages (conversation_id, content, written_at, direction, workspace_id)
       select thread.id, 'Hello', thread.happened_at + (i || ' minutes')::interval,
-        'inbound'
+        'inbound',
+        (select scope.workspace_id from crm.conversation_threads scope where scope.id = thread.id)
       from crm.conversation_threads thread
       cross join generate_series(1, ${LARGE_MESSAGES / LARGE_THREADS}) i
       where thread.workspace_id = ${workspace}::uuid

@@ -75,6 +75,7 @@ export function createStorageSettings(
             transaction,
           });
         },
+        { workspaceId: actor.workspaceId },
       );
       if (result.status !== "ready") return result;
       const health = await dependencies.providerHealth().catch(() =>

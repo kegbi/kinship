@@ -128,8 +128,13 @@ export function createSettingsManagement(
     });
   return {
     getProfile: (actor: SettingsActor) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.identity.getProfile({ transaction, userId: actor.userId })
+      dependencies.transaction.run(
+        (transaction) =>
+          dependencies.identity.getProfile({
+            transaction,
+            userId: actor.userId,
+          }),
+        { workspaceId: actor.workspaceId },
       ),
     updateProfile: (actor: SettingsActor, input: {
       readonly firstName: string;
@@ -150,18 +155,21 @@ export function createSettingsManagement(
           actor.userId,
         );
         return { profile, status: "ready" as const };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     getPreferences: (actor: SettingsActor) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.workspace.getPreferences({ ...actor, transaction })
+      dependencies.transaction.run(
+        (transaction) =>
+          dependencies.workspace.getPreferences({ ...actor, transaction }),
+        { workspaceId: actor.workspaceId },
       ),
     /**
      * The currency codes a preference or workspace default may name, which is
      * what the settings forms offer to choose from.
      */
-    listCurrencies: (_actor: SettingsActor) =>
-      dependencies.transaction.run((transaction) =>
-        dependencies.currencies.listSupported({ transaction })
+    listCurrencies: (actor: SettingsActor) =>
+      dependencies.transaction.run(
+        (transaction) => dependencies.currencies.listSupported({ transaction }),
+        { workspaceId: actor.workspaceId },
       ),
     updatePreferences: (
       actor: SettingsActor,
@@ -206,19 +214,21 @@ export function createSettingsManagement(
           );
         }
         return { preferences, status: "ready" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     listSessions: async (
       actor: SettingsActor,
       currentToken: string,
     ): Promise<readonly MemberSessionSummary[]> => {
-      const sessions = await dependencies.transaction.run((transaction) =>
-        dependencies.identity.listSessions({
-          currentToken,
-          now: dependencies.clock.now(),
-          transaction,
-          userId: actor.userId,
-        })
+      const sessions = await dependencies.transaction.run(
+        (transaction) =>
+          dependencies.identity.listSessions({
+            currentToken,
+            now: dependencies.clock.now(),
+            transaction,
+            userId: actor.userId,
+          }),
+        { workspaceId: actor.workspaceId },
       );
       return sessions.map(memberSession);
     },
@@ -245,14 +255,16 @@ export function createSettingsManagement(
           { current: result.current },
         );
         return result;
-      }),
+      }, { workspaceId: actor.workspaceId }),
     // The four administrative reads and writes decide the role before their
     // first read (AUD-K5); the repository's own membership check stays as the
     // race-safe backstop.
     getWorkspace: (actor: SettingsActor) =>
       privileged(actor)
-        ? dependencies.transaction.run((transaction) =>
-          dependencies.workspace.getWorkspace({ ...actor, transaction })
+        ? dependencies.transaction.run(
+          (transaction) =>
+            dependencies.workspace.getWorkspace({ ...actor, transaction }),
+          { workspaceId: actor.workspaceId },
         )
         : Promise.resolve("forbidden" as const),
     updateWorkspace: (actor: SettingsActor, input: WorkspaceConfiguration) => {
@@ -292,7 +304,7 @@ export function createSettingsManagement(
           );
         }
         return result;
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     listMembers: (actor: SettingsActor) =>
       privileged(actor)
@@ -303,7 +315,7 @@ export function createSettingsManagement(
           });
           if (typeof memberships === "string") return memberships;
           return await composeMembers(transaction, memberships);
-        })
+        }, { workspaceId: actor.workspaceId })
         : Promise.resolve("forbidden" as const),
     updateMember: (
       actor: SettingsActor,
@@ -342,7 +354,7 @@ export function createSettingsManagement(
             { role: input.role, status: input.status },
           );
           return member;
-        })
+        }, { workspaceId: actor.workspaceId })
         : Promise.resolve("forbidden" as const),
   };
 }

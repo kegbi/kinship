@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { PeopleActor } from "../../../modules/people/public.ts";
@@ -30,6 +31,7 @@ export function createTodayTasks(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
   readonly clock: Clock;

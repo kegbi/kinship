@@ -111,8 +111,8 @@ Deno.test("[EXPORT-001] PostgreSQL export is portable, private, and tenant-safe"
     values (${personId}::uuid, ${primary.workspaceId}::uuid, ${primary.memberId}::uuid, 'Ada', 'Lovelace', true)`;
   await sql`insert into crm.contact_method_types (id, workspace_id, name, kind)
     values (${typeId}::uuid, ${primary.workspaceId}::uuid, 'Work', 'email')`;
-  await sql`insert into crm.person_contact_methods (person_id, type_id, value, normalized_value, is_primary)
-    values (${personId}::uuid, ${typeId}::uuid, 'ada@example.test', 'ada@example.test', true)`;
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value, normalized_value, is_primary, workspace_id)
+    values (${personId}::uuid, ${typeId}::uuid, 'ada@example.test', 'ada@example.test', true, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))`;
 
   const created = await request(primary, "/api/v1/exports", "POST");
   const body = await created.json() as {

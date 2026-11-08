@@ -67,13 +67,19 @@ export async function actorStands(
   }) !== "revoked";
 }
 
-/** Runs the work in the caller's transaction, or in one of its own. */
+/**
+ * Runs the work in the caller's transaction, or in one of its own in the
+ * actor's workspace.
+ */
 export function inTransaction<T>(
   dependencies: Pick<TaskManagementDependencies, "transaction">,
+  actor: Pick<PlanningActor, "workspaceId">,
   existing: PlanningTransaction | undefined,
   work: (transaction: PlanningTransaction) => Promise<T>,
 ): Promise<T> {
-  return existing ? work(existing) : dependencies.transaction.run(work);
+  return existing
+    ? work(existing)
+    : dependencies.transaction.run(work, { workspaceId: actor.workspaceId });
 }
 
 /** The stored tasks with the person each one names resolved for the reader. */

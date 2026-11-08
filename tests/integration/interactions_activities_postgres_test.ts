@@ -16,6 +16,7 @@ import {
   tamperCursorId,
 } from "./interactions.test-helper.ts";
 import { closeResources } from "./interactions.test-helper.ts";
+import { assertCrossWorkspaceRefused } from "../support/database.ts";
 
 Deno.test("INTERACTION-001 PostgreSQL persists atomic participants, note favorite, audit, and projections", async () => {
   const suffix = crypto.randomUUID();
@@ -443,8 +444,11 @@ Deno.test("INTERACTION-001 PostgreSQL persists atomic participants, note favorit
     returning id::text
   `;
   await sql`
-    insert into crm.activity_participants (activity_id, person_id)
-    select id, ${ada}::uuid from unnest(${tied.map((row) => row.id)}::uuid[]) id
+    insert into crm.activity_participants (activity_id, person_id, workspace_id)
+    select id, ${ada}::uuid,
+        ${primary.workspaceId}::uuid from unnest(${
+    tied.map((row) => row.id)
+  }::uuid[]) id
   `;
   const pagedIds: string[] = [];
   let reportCursor: string | undefined;
@@ -586,19 +590,33 @@ Deno.test("INTERACTION-001 PostgreSQL projections and replay conceal malformed c
       'Foreign secret terminology', 1
     )
   `;
-  await sql`
-    update crm.activities set activity_type_id = ${foreignType}::uuid
-    where id = ${activityId}::uuid
-  `;
-  await sql`
-    insert into crm.activity_participants (activity_id, person_id)
-    values
-      (${activityId}::uuid, ${foreignPerson}::uuid)
-  `;
-  await sql`
-    update crm.notes set person_id = ${foreignPerson}::uuid
-    where id = ${noteId}::uuid
-  `;
+  // The links a malformed import once left behind cannot be stored at all:
+  // each is a composite key the database refuses (ADR 0008). The replays and
+  // projections below still name the foreign rows, and still disclose none.
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        update crm.activities set activity_type_id = ${foreignType}::uuid
+        where id = ${activityId}::uuid
+      `,
+    "an activity typed by another workspace's vocabulary",
+  );
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.activity_participants (activity_id, person_id, workspace_id)
+        values (${activityId}::uuid, ${foreignPerson}::uuid, ${primary.workspaceId}::uuid)
+      `,
+    "an activity participant from another workspace",
+  );
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        update crm.notes set person_id = ${foreignPerson}::uuid
+        where id = ${noteId}::uuid
+      `,
+    "a note about another workspace's person",
+  );
 
   const report = await request(
     primary,
@@ -636,12 +654,17 @@ Deno.test("INTERACTION-001 PostgreSQL projections and replay conceal malformed c
     await todayRecent.text(),
   ].join("\n");
   assert(report.status === 200, "local activity report remained available");
+  // The stored activity never took the foreign type or attendee, so a replay
+  // that names them differs from it and conflicts, disclosing neither (it
+  // answered 201 when a forged row matched the replay).
   assert(
-    activityReplay.status === 201,
+    activityReplay.status === 409,
     `malformed activity replay returned ${activityReplay.status}`,
   );
+  // Likewise the note kept its own person: a replay naming the foreign one
+  // conflicts with what was stored.
   assert(
-    noteReplay.status === 404,
+    noteReplay.status === 409,
     `malformed note replay returned ${noteReplay.status}`,
   );
   assert(
@@ -654,7 +677,8 @@ Deno.test("INTERACTION-001 PostgreSQL projections and replay conceal malformed c
       foreignType,
       "Foreign secret person",
       "Foreign secret terminology",
-      "Foreign linked note body",
+      // The note's body is the reader's own now that its forged person was
+      // refused, so Today may show it.
     ]
   ) {
     assert(

@@ -28,6 +28,7 @@ import {
   deliveryConnection,
   deliveryRepository,
   deliveryTransaction,
+  inApiWorkspace,
   register,
   request,
   sql,
@@ -423,16 +424,18 @@ Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across tim
     "member identity timezone changed",
   );
   await Promise.all([
-    deliveryTransaction.run((transaction) =>
-      managementRepository.regenerateForTimezone({
-        memberId: fixture.memberId,
-        now: new Date(),
-        role: fixture.role,
-        timezone: futureZone,
-        transaction,
-        userId: fixture.userId,
-        workspaceId: fixture.workspaceId,
-      })
+    deliveryTransaction.run(
+      (transaction) =>
+        managementRepository.regenerateForTimezone({
+          memberId: fixture.memberId,
+          now: new Date(),
+          role: fixture.role,
+          timezone: futureZone,
+          transaction,
+          userId: fixture.userId,
+          workspaceId: fixture.workspaceId,
+        }),
+      { workspaceId: fixture.workspaceId },
     ),
     deliveryRepository.replenish({ now: new Date() }),
   ]);
@@ -481,13 +484,15 @@ Deno.test("PLANNING-002 PostgreSQL keeps one stable calendar identity across tim
     "workspace identity timezone changed",
   );
   await Promise.all([
-    deliveryTransaction.run((transaction) =>
-      managementRepository.regenerateForWorkspaceTimezone({
-        now: new Date(),
-        timezone: futureZone,
-        transaction,
-        workspaceId: fixture.workspaceId,
-      })
+    deliveryTransaction.run(
+      (transaction) =>
+        managementRepository.regenerateForWorkspaceTimezone({
+          now: new Date(),
+          timezone: futureZone,
+          transaction,
+          workspaceId: fixture.workspaceId,
+        }),
+      { workspaceId: fixture.workspaceId },
     ),
     deliveryRepository.replenish({ now: new Date() }),
   ]);
@@ -881,14 +886,18 @@ Deno.test("[AUD-W3] a person merge takes a duplicate's last contact only from it
     return row?.contacted;
   };
   const merge = (duplicate: string) =>
-    mergeStayInTouchCadences({
-      duplicateId: duplicate,
-      memberId: fixture.memberId,
-      occurredAt: new Date("2026-07-01T00:00:00Z"),
-      primaryId,
-      transaction: { opaque: deliveryConnection.db },
-      workspaceId: fixture.workspaceId,
-    });
+    inApiWorkspace(
+      fixture.workspaceId,
+      (transaction) =>
+        mergeStayInTouchCadences({
+          duplicateId: duplicate,
+          memberId: fixture.memberId,
+          occurredAt: new Date("2026-07-01T00:00:00Z"),
+          primaryId,
+          transaction,
+          workspaceId: fixture.workspaceId,
+        }),
+    );
   await merge(foreignId);
   const afterForeign = await lastContact();
   await merge(duplicateId);

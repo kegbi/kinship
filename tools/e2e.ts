@@ -54,8 +54,11 @@ export function e2eEnvironment(
     COMPOSE_PROJECT_NAME: project,
     E2E_GATEWAY_PORT: String(gatewayPort),
     POSTGRES_DB: "kinship_e2e",
+    POSTGRES_APP_PASSWORD: `e2e-app@:/%${project}`,
+    POSTGRES_MIGRATOR_PASSWORD: `e2e-migrator@:/%${project}`,
     POSTGRES_PASSWORD: `e2e@:/%${project}`,
     POSTGRES_USER: "kinship_e2e",
+    POSTGRES_WORKER_PASSWORD: `e2e-worker@:/%${project}`,
     PUBLIC_WEB_ORIGIN: webOrigin,
     TEST_WEB_ORIGIN: webOrigin,
   };

@@ -1869,15 +1869,19 @@ const acceptInTransaction = (
     },
   );
 
-/** The statements updateMember runs to suspend a member, then `between`. */
+/**
+ * The statements updateMember runs to suspend a member, then `between`, in a
+ * transaction scoped to the member's workspace as the API's is (ADR 0008).
+ */
 const suspendInviter = (
   connection: ReturnType<typeof connectDatabase>,
-  memberId: string,
+  member: { readonly id: string; readonly workspaceId: string },
   between: () => Promise<void>,
   name?: string,
 ) =>
   new PostgresRegistrationTransaction(connection.db).run(
     async (transaction) => {
+      const memberId = member.id;
       if (name) await nameTransaction(transaction, name);
       const database = databaseFromSession(transaction);
       await kyselySql`
@@ -1892,6 +1896,7 @@ const suspendInviter = (
       await between();
       await revokeInvitationsOfInviters(transaction, { memberId });
     },
+    { workspaceId: member.workspaceId },
   );
 
 Deno.test({
@@ -1909,7 +1914,7 @@ Deno.test({
     try {
       const suspension = suspendInviter(
         suspender,
-        fixture.adminMemberId,
+        { id: fixture.adminMemberId, workspaceId: fixture.owner.workspaceId },
         async () => {
           suspendedUncommitted.open();
           await revokeNow.opened;
@@ -1979,7 +1984,7 @@ Deno.test({
       await acceptedUncommitted.opened;
       const suspension = suspendInviter(
         suspender,
-        fixture.adminMemberId,
+        { id: fixture.adminMemberId, workspaceId: fixture.owner.workspaceId },
         () => Promise.resolve(),
         "sect04-suspension-waits",
       );
@@ -2054,6 +2059,7 @@ Deno.test({
             memberId: fixture.adminMemberId,
           });
         },
+        { workspaceId: fixture.owner.workspaceId },
       );
       await workspaceLocked.opened;
       const acceptance = acceptInTransaction(acceptor, {

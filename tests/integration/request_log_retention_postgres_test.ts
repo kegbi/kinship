@@ -15,6 +15,7 @@ import { recordingLogger } from "../../packages/backend/testing/fakes.ts";
 import {
   openSql,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
   resetDatabase,
 } from "../support/database.ts";
 
@@ -51,8 +52,10 @@ Deno.test({
       `;
     }
 
+    // The worker's own role, whose purge policy is all it may delete
+    // (ADR 0008).
     const worker = createConfiguredReminderWorker(
-      databaseUrl,
+      requireWorkerDatabaseUrl(),
       recordingLogger(),
       { get: (name) => name === "APP_ENV" ? "test" : undefined },
     );

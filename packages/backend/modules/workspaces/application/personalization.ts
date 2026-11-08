@@ -46,8 +46,10 @@ export function createPersonalizationManagement(
       if (!privileged(actor)) {
         return Promise.resolve({ status: "forbidden" as const });
       }
-      return dependencies.transaction.run((transaction) =>
-        dependencies.repository.list({ ...actor, section, transaction })
+      return dependencies.transaction.run(
+        (transaction) =>
+          dependencies.repository.list({ ...actor, section, transaction }),
+        { workspaceId: actor.workspaceId },
       );
     },
     mutate(
@@ -98,7 +100,7 @@ export function createPersonalizationManagement(
           transaction,
         });
         return result;
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

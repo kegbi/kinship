@@ -21,6 +21,9 @@ function validEnvironment(): Map<string, string> {
     ["APP_ENV", "production"],
     ["POSTGRES_DB", "kinship"],
     ["POSTGRES_PASSWORD", "database-private-value"],
+    ["POSTGRES_APP_PASSWORD", "database-private-app-role"],
+    ["POSTGRES_MIGRATOR_PASSWORD", "database-private-migrator-role"],
+    ["POSTGRES_WORKER_PASSWORD", "database-private-worker-role"],
     ["POSTGRES_USER", "kinship"],
     ["PUBLIC_WEB_ORIGIN", "https://crm.example"],
     ["GATEWAY_TLS_CERTIFICATE_PATH", "/run/secrets/tls-certificate"],
@@ -139,6 +142,54 @@ Deno.test("OPS-001D preflight fails closed with redacted actionable issue codes"
     "issue output is redacted",
   );
   assert(!rendered.includes(KEY), "key material is redacted");
+});
+
+Deno.test("[AUD-V2] preflight refuses missing, published, or shared database role passwords", async () => {
+  const profile = await loadProfile();
+  const roles = [
+    ["POSTGRES_APP_PASSWORD", "replace-with-a-local-app-role-password"],
+    [
+      "POSTGRES_MIGRATOR_PASSWORD",
+      "replace-with-a-local-migrator-role-password",
+    ],
+    ["POSTGRES_WORKER_PASSWORD", "replace-with-a-local-worker-role-password"],
+  ] as const;
+  const blocked = (change: (environment: Map<string, string>) => void) => {
+    const environment = validEnvironment();
+    change(environment);
+    const result = runPrivateProductionPreflight(profile, {
+      get: (name) => environment.get(name),
+    });
+    return result.state === "blocked" &&
+      result.issues.some((issue) => issue.code === "database-configuration") &&
+      !JSON.stringify(result).includes("database-private");
+  };
+  for (const [name, placeholder] of roles) {
+    assert(
+      blocked((environment) => environment.set(name, placeholder)),
+      `${name}'s published .env.example value is refused`,
+    );
+    assert(
+      blocked((environment) => environment.delete(name)),
+      `a missing ${name} is refused`,
+    );
+    assert(
+      blocked((environment) => environment.set(name, "database-private-value")),
+      `${name} equal to POSTGRES_PASSWORD is refused`,
+    );
+  }
+  assert(
+    blocked((environment) =>
+      environment.set("POSTGRES_WORKER_PASSWORD", "database-private-app-role")
+    ),
+    "two roles sharing one password are refused",
+  );
+  assert(
+    blocked((environment) =>
+      environment.set("POSTGRES_APP_PASSWORD", "too-short-15-ch")
+    ),
+    "a role password the bootstrap step would refuse (under 16) is refused",
+  );
 });
 
 Deno.test("OPS-001D preflight allows an explicitly disabled DAV module without its key", async () => {

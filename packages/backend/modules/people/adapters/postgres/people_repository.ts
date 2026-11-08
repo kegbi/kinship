@@ -39,11 +39,11 @@ export class PostgresPeopleRepository implements PeopleRepository {
       where workspace_id = ${command.workspaceId}::uuid
         and archived_at is null
         and deleted_at is null
-        and lower(btrim(given_name)) = lower(btrim(${command.givenName}))
-        and lower(btrim(coalesce(family_name, ''))) =
-          lower(btrim(${command.familyName ?? ""}))
-        and lower(btrim(coalesce(nickname, ''))) =
-          lower(btrim(${command.nickname ?? ""}))
+        -- The stored v14 keys, so the check seeks
+        -- people_active_duplicate_name_idx under row-level security (Q4).
+        and duplicate_given_name = lower(btrim(${command.givenName}))
+        and duplicate_family_name = lower(btrim(${command.familyName ?? ""}))
+        and duplicate_nickname = lower(btrim(${command.nickname ?? ""}))
       order by created_at asc, id asc
       limit 5
     `.execute(databaseFromSession(command.transaction));

@@ -66,10 +66,16 @@ test(
         values (${sqlLiteral(workspaceId)}::uuid, 'Family', 'family')
         returning id
       )
-      insert into crm.person_tags (person_id, tag_id)
-      select ${sqlLiteral(ada)}::uuid, id from friends
-      union all select ${sqlLiteral(grace)}::uuid, id from friends
-      union all select ${sqlLiteral(alan)}::uuid, id from family;
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      select ${sqlLiteral(ada)}::uuid, id, ${
+      sqlLiteral(workspaceId)
+    }::uuid from friends
+      union all select ${sqlLiteral(grace)}::uuid, id, ${
+      sqlLiteral(workspaceId)
+    }::uuid from friends
+      union all select ${sqlLiteral(alan)}::uuid, id, ${
+      sqlLiteral(workspaceId)
+    }::uuid from family;
       insert into crm.calls (workspace_id, person_id, called_at) values
         (${sqlLiteral(workspaceId)}::uuid, ${sqlLiteral(grace)}::uuid,
           now() - interval '1 day'),

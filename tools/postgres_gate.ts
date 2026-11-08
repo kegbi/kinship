@@ -113,13 +113,15 @@ async function assertProjectAbsent(
 /**
  * The environment one disposable project and its suites run under. The suites
  * compose the API and worker, so they state `APP_ENV=test`: an unset `APP_ENV`
- * is production (AUD-K6).
+ * is production (AUD-K6). It carries the role passwords too, which Compose
+ * requires before it renders any service (ADR 0008).
  */
 export function disposablePostgresEnvironment(
   project: string,
   password: string,
 ): Record<string, string> {
   return {
+    ...disposableRolePasswords(password),
     API_TEST_PORT: "0",
     APP_ENV: "test",
     COMPOSE_PROJECT_NAME: project,
@@ -127,6 +129,22 @@ export function disposablePostgresEnvironment(
     POSTGRES_PASSWORD: password,
     POSTGRES_TEST_PORT: "0",
     PUBLIC_WEB_ORIGIN: "http://127.0.0.1:4321",
+  };
+}
+
+/**
+ * The login-role passwords of one disposable project, derived from its
+ * run-scoped superuser password so each run's are distinct and unguessable.
+ */
+export function disposableRolePasswords(password: string): {
+  readonly POSTGRES_APP_PASSWORD: string;
+  readonly POSTGRES_MIGRATOR_PASSWORD: string;
+  readonly POSTGRES_WORKER_PASSWORD: string;
+} {
+  return {
+    POSTGRES_APP_PASSWORD: `${password}-app`,
+    POSTGRES_MIGRATOR_PASSWORD: `${password}-migrator`,
+    POSTGRES_WORKER_PASSWORD: `${password}-worker`,
   };
 }
 
@@ -164,13 +182,37 @@ export async function withDisposablePostgres(
       if (!port) {
         throw new Error("Could not resolve disposable PostgreSQL port.");
       }
+      const url = (user: string, secret: string) =>
+        `postgres://${user}:${
+          encodeURIComponent(secret)
+        }@127.0.0.1:${port}/kinship`;
+      const roles = disposableRolePasswords(password);
+      // The bootstrap step alone connects as the superuser; the migrate job
+      // runs as the schema owner, as in production (ADR 0008).
+      await execute("deno", ["task", "ops", "bootstrap"], {
+        ...environment,
+        ...roles,
+        DATABASE_URL: url("kinship", password),
+      });
+      await execute("deno", ["task", "migration:apply"], {
+        ...environment,
+        DATABASE_URL: url(
+          "kinship_migrator",
+          roles.POSTGRES_MIGRATOR_PASSWORD,
+        ),
+      });
+      // Suites compose the API as `kinship_app`, so every integration test
+      // runs under forced row-level security; fixtures seed and inspect as
+      // the superuser, and the worker's own suites connect as its role.
       const suiteEnvironment = {
         ...environment,
-        DATABASE_URL: `postgres://kinship:${
-          encodeURIComponent(password)
-        }@127.0.0.1:${port}/kinship`,
+        DATABASE_ADMIN_URL: url("kinship", password),
+        DATABASE_URL: url("kinship_app", roles.POSTGRES_APP_PASSWORD),
+        DATABASE_WORKER_URL: url(
+          "kinship_worker",
+          roles.POSTGRES_WORKER_PASSWORD,
+        ),
       };
-      await execute("deno", ["task", "migration:apply"], suiteEnvironment);
       await suite(suiteEnvironment);
     },
     down: () =>

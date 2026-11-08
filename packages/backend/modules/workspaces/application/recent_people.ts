@@ -69,7 +69,7 @@ export function createRecentPeopleManagement(
           })
           ? { status: "recorded" as const }
           : { status: "forbidden" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

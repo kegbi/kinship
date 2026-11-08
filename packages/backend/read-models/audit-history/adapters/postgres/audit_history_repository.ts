@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -71,7 +72,11 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
   async list(
     command: Parameters<AuditHistoryRepository["list"]>[0],
   ): Promise<Awaited<ReturnType<AuditHistoryRepository["list"]>>> {
-    const context = await sql<ContextRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const context = await sql<ContextRow>`
       select exists (
         select 1 from crm.workspace_members member
         join crm.workspaces workspace on workspace.id = member.workspace_id
@@ -92,24 +97,26 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
         on person.id = ${command.personId ?? null}::uuid
         and person.workspace_id = ${command.workspaceId}::uuid
         and person.deleted_at is null
-    `.execute(this.database);
-    const resolved = context.rows[0];
-    if (!resolved?.valid_actor) return { status: "forbidden" };
-    if (command.personId && (!resolved.person_id || !resolved.person_name)) {
-      return { status: "not-found" };
-    }
+    `.execute(database);
+        const resolved = context.rows[0];
+        if (!resolved?.valid_actor) return { status: "forbidden" };
+        if (
+          command.personId && (!resolved.person_id || !resolved.person_name)
+        ) {
+          return { status: "not-found" };
+        }
 
-    if (command.actorMemberId) {
-      const actorScope = await sql<{ readonly valid: boolean }>`
+        if (command.actorMemberId) {
+          const actorScope = await sql<{ readonly valid: boolean }>`
         select exists (select 1 from crm.workspace_members
           where id = ${command.actorMemberId}::uuid
             and workspace_id = ${command.workspaceId}::uuid) as valid
-      `.execute(this.database);
-      if (!actorScope.rows[0]?.valid) return { status: "not-found" };
-    }
+      `.execute(database);
+          if (!actorScope.rows[0]?.valid) return { status: "not-found" };
+        }
 
-    if (command.after) {
-      const anchor = await sql<{ readonly valid: boolean }>`
+        if (command.after) {
+          const anchor = await sql<{ readonly valid: boolean }>`
         select exists (select 1 from crm.audit_events event
           where event.id = ${command.after.id}::uuid
             and event.workspace_id = ${command.workspaceId}::uuid
@@ -125,11 +132,11 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
             and (${command.to ?? null}::timestamptz is null
               or event.occurred_at < ${command.to ?? null}::timestamptz)
         ) as valid
-      `.execute(this.database);
-      if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
-    }
+      `.execute(database);
+          if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
+        }
 
-    const result = await sql<AuditRow>`
+        const result = await sql<AuditRow>`
       select event.id::text, event.action, event.payload,
         ${instantColumn("event.occurred_at")} as occurred_at,
         event.actor_member_id::text as actor_id,
@@ -158,25 +165,27 @@ export class PostgresAuditHistoryRepository implements AuditHistoryRepository {
         and (${command.to ?? null}::timestamptz is null
           or event.occurred_at < ${command.to ?? null}::timestamptz)
         ${
-      command.after
-        ? sql`and (event.occurred_at, event.id) <
+          command.after
+            ? sql`and (event.occurred_at, event.id) <
           (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
-        : sql``
-    }
+            : sql``
+        }
       order by event.occurred_at desc, event.id desc
       limit ${command.limit + 1}
-    `.execute(this.database);
-    const visible = result.rows.slice(0, command.limit);
-    const final = visible.at(-1);
-    return {
-      items: visible.map(mapItem),
-      ...(result.rows.length > command.limit && final
-        ? { next: { id: final.id, timestamp: final.occurred_at } }
-        : {}),
-      ...(resolved.person_id && resolved.person_name
-        ? { person: { id: resolved.person_id, name: resolved.person_name } }
-        : {}),
-      status: resolved.person_archived_at ? "archived" : "ready",
-    };
+    `.execute(database);
+        const visible = result.rows.slice(0, command.limit);
+        const final = visible.at(-1);
+        return {
+          items: visible.map(mapItem),
+          ...(result.rows.length > command.limit && final
+            ? { next: { id: final.id, timestamp: final.occurred_at } }
+            : {}),
+          ...(resolved.person_id && resolved.person_name
+            ? { person: { id: resolved.person_id, name: resolved.person_name } }
+            : {}),
+          status: resolved.person_archived_at ? "archived" : "ready",
+        };
+      },
+    );
   }
 }

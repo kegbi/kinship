@@ -336,7 +336,7 @@ export function createImportCommit(dependencies: ImportManagementDependencies) {
           choices,
         );
         return { importId, ...counts, status: "completed" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

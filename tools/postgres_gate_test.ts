@@ -83,3 +83,18 @@ Deno.test("[AUD-K6] the integration harness runs its suites as APP_ENV=test", ()
     "the project and its password stay run-scoped",
   );
 });
+
+Deno.test("[AUD-V2] the integration harness gives each database role its own run-scoped password", () => {
+  const environment = disposablePostgresEnvironment("kinship-pg-1-2", "p");
+  const secrets = [
+    environment.POSTGRES_PASSWORD,
+    environment.POSTGRES_APP_PASSWORD,
+    environment.POSTGRES_MIGRATOR_PASSWORD,
+    environment.POSTGRES_WORKER_PASSWORD,
+  ];
+  assert(
+    secrets.every((secret) => secret?.startsWith("p")) &&
+      new Set(secrets).size === 4,
+    "the superuser and the three roles each have a distinct run-scoped secret",
+  );
+});

@@ -144,10 +144,10 @@ Deno.test("interaction capture token preserves four kinds, retries, bounded voca
     (${secondChannelId}, ${own.workspaceId}, 'Connector chat'),
     (${foreignChannelId}, ${foreign.workspaceId}, 'Foreign secret channel')`;
   await sql`insert into crm.contact_method_types (id, workspace_id, name, is_archived) values (${inactiveChannelId}, ${own.workspaceId}, 'Retired channel', true)`;
-  await sql`insert into crm.person_contact_methods (id, person_id, type_id, value) values
-    (${contactMethodId}, ${personId}, ${channelTypeId}, 'ada@example.test'),
-    (${otherContactId}, ${otherPersonId}, ${channelTypeId}, 'grace@example.test'),
-    (${foreignContactId}, ${foreignPersonId}, ${foreignChannelId}, 'foreign-secret@example.test')`;
+  await sql`insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id) values
+    (${contactMethodId}, ${personId}, ${channelTypeId}, 'ada@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)),
+    (${otherContactId}, ${otherPersonId}, ${channelTypeId}, 'grace@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${otherPersonId}::uuid)),
+    (${foreignContactId}, ${foreignPersonId}, ${foreignChannelId}, 'foreign-secret@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))`;
   await sql`insert into crm.emotion_options (id, name) values (${emotionId}, ${
     search + " joy"
   })`;
@@ -1029,15 +1029,16 @@ Deno.test("scoped person tokens preserve projections, parent boundaries, lookups
     values (${typeId}, ${own.workspaceId}, 'Connector email', 'email'),
       (${foreignTypeId}, ${foreign.workspaceId}, 'Foreign secret type', 'email')`;
   // Stable whole-second revisions match the owning profile-fact paging fixture.
-  await sql`insert into crm.person_contact_methods (person_id, type_id, value, updated_at)
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value, updated_at, workspace_id)
     select ${sourceId}::uuid, ${typeId}::uuid, 'contact-' || n || '@example.test',
-      '2026-01-01T00:00:00Z'::timestamptz + n * interval '1 second'
+      '2026-01-01T00:00:00Z'::timestamptz + n * interval '1 second',
+        (select scope.workspace_id from crm.people scope where scope.id = ${sourceId}::uuid)
     from generate_series(1, 51) n`;
-  await sql`insert into crm.person_contact_methods (person_id, type_id, value)
-    values (${targetId}, ${typeId}, 'other-parent@example.test'),
-      (${foreignId}, ${foreignTypeId}, 'foreign-secret@example.test')`;
-  await sql`insert into crm.person_dates (person_id, kind, precision, month, day)
-    values (${sourceId}, 'birthday', 'month_day', 12, 10), (${foreignId}, 'birthday', 'month_day', 1, 1)`;
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value, workspace_id)
+    values (${targetId}, ${typeId}, 'other-parent@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${targetId}::uuid)),
+      (${foreignId}, ${foreignTypeId}, 'foreign-secret@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${foreignId}::uuid))`;
+  await sql`insert into crm.person_dates (person_id, kind, precision, month, day, workspace_id)
+    values (${sourceId}, 'birthday', 'month_day', 12, 10, (select scope.workspace_id from crm.people scope where scope.id = ${sourceId}::uuid)), (${foreignId}, 'birthday', 'month_day', 1, 1, (select scope.workspace_id from crm.people scope where scope.id = ${foreignId}::uuid))`;
   await sql`insert into crm.relationship_types (id, workspace_id, forward_label, reverse_label)
     values (${relationshipTypeId}, ${own.workspaceId}, 'Connector parent', 'Connector child'),
       (${foreignRelationshipTypeId}, ${foreign.workspaceId}, 'Foreign secret relation', 'Foreign secret inverse')`;

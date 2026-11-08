@@ -423,25 +423,32 @@ async function seedWorkspace(page: Page): Promise<Seeded> {
     where id = ${richId}::uuid;
     insert into crm.contact_method_types (id, workspace_id, name, kind)
     values ('${typeId}'::uuid, ${workspace}::uuid, 'PERF-002 email', 'email');
-    insert into crm.person_contact_methods (person_id, type_id, value, is_primary)
-    values (${richId}::uuid, '${typeId}'::uuid, 'abigail@example.test', true),
-      (${richId}::uuid, '${typeId}'::uuid, 'abigail.work@example.test', false);
+    insert into crm.person_contact_methods (person_id, type_id, value, is_primary,
+      workspace_id)
+    values (${richId}::uuid, '${typeId}'::uuid, 'abigail@example.test', true,
+        ${workspace}::uuid),
+      (${richId}::uuid, '${typeId}'::uuid, 'abigail.work@example.test', false,
+        ${workspace}::uuid);
     with places as (
       insert into crm.locations (workspace_id, street, city, country)
       values (${workspace}::uuid, '1 Harbour Row', 'Lisbon', 'PT'),
         (${workspace}::uuid, '9 Mill Lane', 'York', 'GB')
       returning id
     )
-    insert into crm.person_addresses (person_id, location_id, display_name)
-    select ${richId}::uuid, id, 'Home' from places;
-    insert into crm.person_first_meetings (person_id, place_text, notes)
-    values (${richId}::uuid, 'The harbour book fair', 'Introduced over tea');
+    insert into crm.person_addresses (person_id, location_id, display_name,
+      workspace_id)
+    select ${richId}::uuid, id, 'Home', ${workspace}::uuid from places;
+    insert into crm.person_first_meetings (person_id, place_text, notes,
+      workspace_id)
+    values (${richId}::uuid, 'The harbour book fair', 'Introduced over tea',
+      ${workspace}::uuid);
     with employer as (
       insert into crm.organizations (workspace_id, name)
       values (${workspace}::uuid, 'Harbour Press') returning id
     )
-    insert into crm.person_occupations (person_id, organization_id, title, is_current)
-    select ${richId}::uuid, id, 'Editor', true from employer;
+    insert into crm.person_occupations (person_id, organization_id, title,
+      is_current, workspace_id)
+    select ${richId}::uuid, id, 'Editor', true, ${workspace}::uuid from employer;
     insert into crm.pets (person_id, name) values (${richId}::uuid, 'Biscuit'),
       (${richId}::uuid, 'Juniper');
     with labels as (
@@ -450,8 +457,8 @@ async function seedWorkspace(page: Page): Promise<Seeded> {
         (${workspace}::uuid, 'Book club', 'perf-book-club')
       returning id
     )
-    insert into crm.person_tags (person_id, tag_id)
-    select ${richId}::uuid, id from labels;
+    insert into crm.person_tags (person_id, tag_id, workspace_id)
+    select ${richId}::uuid, id, ${workspace}::uuid from labels;
     insert into crm.relationship_types (id, workspace_id, forward_label, reverse_label)
     values ('${relationshipTypeId}'::uuid, ${workspace}::uuid, 'sibling of', 'sibling of');
     insert into crm.relationships (workspace_id, from_person_id, to_person_id,

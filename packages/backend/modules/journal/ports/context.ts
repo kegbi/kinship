@@ -9,6 +9,7 @@
  * directory depend on nothing outside journal.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -32,5 +33,8 @@ export interface JournalActor extends Correlation {
 
 /** The transaction a journal use case runs its work in. */
 export interface JournalTransactionRunner {
-  run<T>(work: (transaction: JournalTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: JournalTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

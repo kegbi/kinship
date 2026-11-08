@@ -186,6 +186,7 @@ function setup(options: {
         Promise.resolve([...pending].map(([recordId, objectKeys]) => ({
           objectKeys,
           recordId,
+          workspaceId: "00000000-0000-4000-8000-0000000000aa",
         }))),
       resetWorkspace: ({ recordId, objectKeys }) => {
         effects.push("reset");

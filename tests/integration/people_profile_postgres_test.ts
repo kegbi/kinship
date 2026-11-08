@@ -31,7 +31,7 @@ import {
   sql,
 } from "./people.test-helper.ts";
 import { closeResources } from "./people.test-helper.ts";
-import { truncate } from "../support/database.ts";
+import { assertCrossWorkspaceRefused, truncate } from "../support/database.ts";
 
 Deno.test({
   name:
@@ -104,8 +104,9 @@ Deno.test({
         from generate_series(1, 10) sequence
       `;
       await transaction`
-        insert into crm.person_tags (person_id, tag_id)
-        select ${personId}, tag.id from crm.tags tag
+        insert into crm.person_tags (person_id, tag_id, workspace_id)
+        select ${personId}, tag.id,
+        (select scope.workspace_id from crm.people scope where scope.id = ${personId}) from crm.tags tag
         where tag.workspace_id = ${owner.workspaceId}
       `;
       await transaction`
@@ -120,10 +121,17 @@ Deno.test({
         insert into crm.tags (id, workspace_id, name, slug)
         values (${foreignTagId}, ${foreign.workspaceId}, 'Private', 'private')
       `;
-      await transaction`
-        insert into crm.person_tags (person_id, tag_id)
-        values (${personId}, ${foreignTagId})
-      `;
+      // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+      await assertCrossWorkspaceRefused(
+        () =>
+          transaction.savepoint((step) =>
+            step`
+        insert into crm.person_tags (person_id, tag_id, workspace_id)
+        values (${personId}, ${foreignTagId}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
+      `
+          ),
+        "a tag link to another workspace's tag",
+      );
       await transaction`
         insert into crm.contact_method_types (
           id, workspace_id, name, kind, protocol, sort_order
@@ -140,11 +148,19 @@ Deno.test({
       await transaction`
         insert into crm.person_contact_methods (
           person_id, type_id, value, is_primary, sort_order
-        ) values
-          (${personId}, ${contactTypeIds[0]}, 'ada@example.test', true, 1),
-          (${personId}, ${contactTypeIds[1]}, '+381111111', true, 2),
-          (${personId}, ${contactTypeIds[2]}, '@ada', true, 3),
-          (${personId}, ${contactTypeIds[3]}, 'fourth', true, 4)
+        , workspace_id) values
+          (${personId}, ${
+        contactTypeIds[0]
+      }, 'ada@example.test', true, 1, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)),
+          (${personId}, ${
+        contactTypeIds[1]
+      }, '+381111111', true, 2, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)),
+          (${personId}, ${
+        contactTypeIds[2]
+      }, '@ada', true, 3, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)),
+          (${personId}, ${
+        contactTypeIds[3]
+      }, 'fourth', true, 4, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
       `;
       await transaction`
         insert into crm.relationship_types (
@@ -188,8 +204,8 @@ Deno.test({
         )
       `;
       await transaction`
-        insert into crm.activity_participants (activity_id, person_id)
-        values (${activityId}, ${personId})
+        insert into crm.activity_participants (activity_id, person_id, workspace_id)
+        values (${activityId}, ${personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid))
       `;
       await transaction`
         insert into crm.tasks (
@@ -211,15 +227,15 @@ Deno.test({
       await transaction`
         insert into crm.reminder_occurrences (
           reminder_id, member_id, occurs_on, deliver_at, title_snapshot
-        ) values (
+        , workspace_id) values (
           ${reminderId}, ${owner.memberId}, '2026-08-20',
           '2026-08-20T09:00:00.000Z', 'Write to Ada'
-        )
+        , (select scope.workspace_id from crm.reminders scope where scope.id = ${reminderId}::uuid))
       `;
       await transaction`
         insert into crm.stay_in_touch_cadences (
           person_id, interval_count, interval_unit, next_due_at
-        ) values (${personId}, 1, 'month', '2026-08-21T09:00:00.000Z')
+        , workspace_id) values (${personId}, 1, 'month', '2026-08-21T09:00:00.000Z', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
       `;
       await transaction`
         insert into crm.life_events (
@@ -371,8 +387,12 @@ Deno.test({
         { includeSummary: true },
       );
       assert(
-        observedSummary.status === "ready" && summaryQueryCount === 4,
-        "the complete summary is resolved by the actor revalidation and one tenant-safe SQL statement",
+        // The actor revalidation's transaction (begin with the workspace's
+        // `set local`, one select, commit) and the summary's own read in the
+        // same bracket around one statement (ADR 0008): 6, measured
+        // 2026-11-08 (4 before schema v14).
+        observedSummary.status === "ready" && summaryQueryCount === 6,
+        `the complete summary is resolved by the actor revalidation and one tenant-safe SQL statement (${summaryQueryCount} sent)`,
       );
     } finally {
       await observedDatabase.destroy();
@@ -559,9 +579,9 @@ Deno.test({
         values (${channelTypeId}, ${owner.workspaceId}, 'Email')
       `;
       await transaction`
-        insert into crm.person_contact_methods (id, person_id, type_id, value)
+        insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
         values (${contactMethodId}, ${personId}, ${channelTypeId},
-          'ada@example.test')
+          'ada@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
       `;
       await transaction`
         insert into crm.activities (
@@ -574,8 +594,8 @@ Deno.test({
         )
       `;
       await transaction`
-        insert into crm.activity_participants (activity_id, person_id)
-        values (${activityId}, ${personId}), (${activityId}, ${participantId})
+        insert into crm.activity_participants (activity_id, person_id, workspace_id)
+        values (${activityId}, ${personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid)), (${activityId}, ${participantId}, (select scope.workspace_id from crm.activities scope where scope.id = ${activityId}::uuid))
       `;
       await transaction`
         insert into crm.activity_emotions (activity_id, emotion_id)
@@ -618,13 +638,13 @@ Deno.test({
         insert into crm.messages (
           id, conversation_id, content, written_at, direction, author_member_id,
           created_at, updated_at
-        ) values
+        , workspace_id) values
           (${secondMessageId}, ${conversationId}, 'Yes, at noon.',
             '2026-08-23T11:01:00.000Z', 'inbound', null,
-            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z'),
+            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z', (select scope.workspace_id from crm.conversation_threads scope where scope.id = ${conversationId}::uuid)),
           (${firstMessageId}, ${conversationId}, 'Shall we meet?',
             '2026-08-23T11:00:00.000Z', 'outbound', ${owner.memberId},
-            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z')
+            '2026-08-23T12:00:00.000Z', '2026-08-23T12:00:00.000Z', (select scope.workspace_id from crm.conversation_threads scope where scope.id = ${conversationId}::uuid))
       `;
       await transaction`
         insert into crm.life_event_types (id, workspace_id, name)

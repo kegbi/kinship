@@ -17,6 +17,7 @@
  * current body is answered without the events being read.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { ImportantDateKind } from "../../../modules/people/public.ts";
@@ -83,6 +84,7 @@ export function createCalendarFeed(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
 }) {
@@ -90,8 +92,10 @@ export function createCalendarFeed(dependencies: {
   const criteria = async (
     actor: CalendarFeedActor,
   ): Promise<CalendarFeedCriteria | undefined> => {
-    const standing = await dependencies.transaction.run((transaction) =>
-      dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+    const standing = await dependencies.transaction.run(
+      (transaction) =>
+        dependencies.actors.revalidate({ ...actor, lock: false, transaction }),
+      { workspaceId: actor.workspaceId },
     );
     if (standing !== "active") return undefined;
     return {

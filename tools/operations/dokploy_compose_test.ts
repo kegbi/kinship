@@ -7,6 +7,9 @@ function assert(condition: unknown, message: string): asserts condition {
 function renderCompose(overrides: Record<string, string | undefined> = {}) {
   const env: Record<string, string | undefined> = {
     POSTGRES_PASSWORD: "compose-validation-only",
+    POSTGRES_APP_PASSWORD: "compose-validation-app",
+    POSTGRES_MIGRATOR_PASSWORD: "compose-validation-migrator",
+    POSTGRES_WORKER_PASSWORD: "compose-validation-worker",
     POSTGRES_DB: "kinship",
     POSTGRES_USER: "kinship",
     PUBLIC_WEB_ORIGIN: "https://kinship.example.test",
@@ -69,6 +72,60 @@ Deno.test("OPS-001E Dokploy requires explicit SMTP settings shared by preflight 
   }
 });
 
+Deno.test("[AUD-V2] Dokploy gives each service its own database role, and only bootstrap the superuser", async () => {
+  for (
+    const name of [
+      "POSTGRES_APP_PASSWORD",
+      "POSTGRES_MIGRATOR_PASSWORD",
+      "POSTGRES_WORKER_PASSWORD",
+    ]
+  ) {
+    const output = await renderCompose({ [name]: undefined });
+    assert(!output.success, `${name} must be set before deployment`);
+    assert(
+      new TextDecoder().decode(output.stderr).includes(name),
+      `${name} refusal identifies the missing setting`,
+    );
+  }
+  const output = await renderCompose();
+  assert(output.success, "Dokploy Compose must render with the role secrets");
+  const { services } = JSON.parse(new TextDecoder().decode(output.stdout));
+  const roles: Record<string, [string, string]> = {
+    api: ["kinship_app", "compose-validation-app"],
+    worker: ["kinship_worker", "compose-validation-worker"],
+    migrate: ["kinship_migrator", "compose-validation-migrator"],
+    bootstrap: ["kinship", "compose-validation-only"],
+  };
+  for (const [name, [user, password]] of Object.entries(roles)) {
+    assert(
+      services[name]?.environment?.PGUSER === user &&
+        services[name].environment.PGPASSWORD === password,
+      `${name} connects as ${user}, got ${services[name]?.environment?.PGUSER}`,
+    );
+  }
+  assert(
+    services.migrate.depends_on?.bootstrap?.condition ===
+      "service_completed_successfully",
+    "the migrate job runs after the role bootstrap",
+  );
+  // The preflight checks the role passwords before anything starts, so it
+  // receives and may read each of them.
+  const preflightCommand = (services.preflight.command as string[]).join(" ");
+  for (
+    const [name, value] of [
+      ["POSTGRES_APP_PASSWORD", "compose-validation-app"],
+      ["POSTGRES_MIGRATOR_PASSWORD", "compose-validation-migrator"],
+      ["POSTGRES_WORKER_PASSWORD", "compose-validation-worker"],
+    ] as const
+  ) {
+    assert(
+      services.preflight.environment?.[name] === value &&
+        new RegExp(`--allow-env=[^ ]*\\b${name}\\b`).test(preflightCommand),
+      `the preflight receives and may read ${name}`,
+    );
+  }
+});
+
 Deno.test("OPS-001E Dokploy keeps storage private and gates application startup on scoped initialization", async () => {
   const output = await renderCompose();
   assert(output.success, "Dokploy Compose must render successfully");
@@ -83,8 +140,8 @@ Deno.test("OPS-001E Dokploy keeps storage private and gates application startup 
     );
   }
   assert(
-    Object.keys(services).length === 9,
-    "six application services plus storage, initialization and preflight",
+    Object.keys(services).length === 10,
+    "six application services plus storage, initialization, preflight, and the role bootstrap (ADR 0008)",
   );
   for (
     const [name, service] of Object.entries(services) as [

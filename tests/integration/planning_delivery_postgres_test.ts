@@ -28,12 +28,12 @@ import {
   scansOf,
   withScratchCrm,
 } from "../support/query_plan.ts";
+import { requireWorkerDatabaseUrl } from "../support/database.ts";
 import {
   configured,
   type CreatedReminder,
   createPerson,
   createReminder,
-  databaseUrl,
   deliveryConnection,
   deliveryRepository,
   deliveryTransaction,
@@ -867,9 +867,10 @@ async function seedClaimQueue(
   // Twenty dates ahead for every reminder: the queue's long, not-yet-due tail.
   await scratch`
     insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-      deliver_at, channel, title_snapshot)
+      deliver_at, channel, title_snapshot, workspace_id)
     select reminder.id, ${memberId}::uuid, ${at}::date + day,
-      ${at}::timestamptz + make_interval(days => day), 'in_app', reminder.title
+      ${at}::timestamptz + make_interval(days => day), 'in_app', reminder.title,
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder.id)
     from crm.reminders reminder cross join generate_series(1, 20) day
   `;
   const due = 15;
@@ -885,14 +886,16 @@ async function seedClaimQueue(
     await scratch`
       insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
         deliver_at, channel, title_snapshot, status, claim_token, claim_owner,
-        lease_expires_at, attempt_count)
+        lease_expires_at, attempt_count, workspace_id)
       values (${reminder.id}::uuid, ${memberId}::uuid, ${at}::date - 1,
         ${at}::timestamptz - make_interval(mins => ${60 - index}), 'in_app',
         'Due', ${claimed ? "claimed" : "pending"},
         ${claimed ? crypto.randomUUID() : null}::uuid,
         ${claimed ? "crashed-worker" : null},
         ${claimed ? at : null}::timestamptz - interval '1 minute',
-        ${claimed ? 1 : 0})
+        ${
+      claimed ? 1 : 0
+    }, (select scope.workspace_id from crm.reminders scope where scope.id = ${reminder.id}::uuid))
     `;
   }
   // The archived person's past dates are due before anything else and must
@@ -900,10 +903,11 @@ async function seedClaimQueue(
   const [archived] = await scratch<{ readonly count: number }[]>`
     with inserted as (
       insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
-        deliver_at, channel, title_snapshot)
+        deliver_at, channel, title_snapshot, workspace_id)
       select reminder.id, ${memberId}::uuid, ${at}::date - 100 + day,
         ${at}::timestamptz - make_interval(days => 100 - day), 'in_app',
-        'Archived'
+        'Archived',
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder.id)
       from crm.reminders reminder
       join crm.people person on person.id = reminder.person_id
       cross join generate_series(1, 8) day
@@ -927,130 +931,138 @@ function scratchDeliveryRepository(
 }
 
 Deno.test("[AUD-W2] the claim reads due work through the due and lease indexes", async () => {
-  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
-    const now = new Date();
-    await seedClaimQueue(scratch, now);
-    const explaining = connectDatabase(url);
-    try {
-      const plan = await explainedPlan(
-        explaining.db,
-        (text) => text.includes("update crm.reminder_occurrences"),
-        (database) =>
-          scratchDeliveryRepository(database).claimDue({
-            channels: ["in_app"],
-            leaseExpiresAt: new Date(now.getTime() + 60_000),
-            limit: 10,
-            now,
-            owner: "plan-owner",
-          }),
-      );
-      const scans = scansOf(plan, "reminder_occurrences");
-      // A bitmap index scan names its index but not its table.
-      const indexes = new Set(
-        planNodes(plan).map((node) => node["Index Name"]),
-      );
-      assert(
-        indexes.has("reminder_occurrences_due_idx"),
-        `the claim does not read the due index: ${describePlan(plan)}`,
-      );
-      assert(
-        indexes.has("reminder_occurrences_lease_idx"),
-        `the claim does not read the lease index: ${describePlan(plan)}`,
-      );
-      assert(
-        !scans.some((node) => node["Node Type"] === "Seq Scan"),
-        `the claim scans every occurrence: ${describePlan(plan)}`,
-      );
-      // The members asked about first (BEQ-08) are read the same way.
-      const candidates = await explainedPlan(
-        explaining.db,
-        (text) =>
-          text.includes("select occurrence.member_id::text as member_id") &&
-          text.includes("union"),
-        (database) =>
-          scratchDeliveryRepository(database).claimDue({
-            channels: ["in_app"],
-            leaseExpiresAt: new Date(now.getTime() + 60_000),
-            limit: 10,
-            now,
-            owner: "plan-owner",
-          }),
-      );
-      const candidateIndexes = new Set(
-        planNodes(candidates).map((node) => node["Index Name"]),
-      );
-      assert(
-        candidateIndexes.has("reminder_occurrences_due_idx"),
-        `the candidate members do not read the due index: ${
-          describePlan(candidates)
-        }`,
-      );
-      assert(
-        candidateIndexes.has("reminder_occurrences_lease_idx"),
-        `the candidate members do not read the lease index: ${
-          describePlan(candidates)
-        }`,
-      );
-      assert(
-        !scansOf(candidates, "reminder_occurrences").some((node) =>
-          node["Node Type"] === "Seq Scan"
-        ),
-        `the candidate members scan every occurrence: ${
-          describePlan(candidates)
-        }`,
-      );
-    } finally {
-      await explaining.destroy();
-    }
-  });
+  await withScratchCrm(
+    sql,
+    requireWorkerDatabaseUrl(),
+    async ({ sql: scratch, url }) => {
+      const now = new Date();
+      await seedClaimQueue(scratch, now);
+      const explaining = connectDatabase(url);
+      try {
+        const plan = await explainedPlan(
+          explaining.db,
+          (text) => text.includes("update crm.reminder_occurrences"),
+          (database) =>
+            scratchDeliveryRepository(database).claimDue({
+              channels: ["in_app"],
+              leaseExpiresAt: new Date(now.getTime() + 60_000),
+              limit: 10,
+              now,
+              owner: "plan-owner",
+            }),
+        );
+        const scans = scansOf(plan, "reminder_occurrences");
+        // A bitmap index scan names its index but not its table.
+        const indexes = new Set(
+          planNodes(plan).map((node) => node["Index Name"]),
+        );
+        assert(
+          indexes.has("reminder_occurrences_due_idx"),
+          `the claim does not read the due index: ${describePlan(plan)}`,
+        );
+        assert(
+          indexes.has("reminder_occurrences_lease_idx"),
+          `the claim does not read the lease index: ${describePlan(plan)}`,
+        );
+        assert(
+          !scans.some((node) => node["Node Type"] === "Seq Scan"),
+          `the claim scans every occurrence: ${describePlan(plan)}`,
+        );
+        // The members asked about first (BEQ-08) are read the same way.
+        const candidates = await explainedPlan(
+          explaining.db,
+          (text) =>
+            text.includes("select occurrence.member_id::text as member_id") &&
+            text.includes("union"),
+          (database) =>
+            scratchDeliveryRepository(database).claimDue({
+              channels: ["in_app"],
+              leaseExpiresAt: new Date(now.getTime() + 60_000),
+              limit: 10,
+              now,
+              owner: "plan-owner",
+            }),
+        );
+        const candidateIndexes = new Set(
+          planNodes(candidates).map((node) => node["Index Name"]),
+        );
+        assert(
+          candidateIndexes.has("reminder_occurrences_due_idx"),
+          `the candidate members do not read the due index: ${
+            describePlan(candidates)
+          }`,
+        );
+        assert(
+          candidateIndexes.has("reminder_occurrences_lease_idx"),
+          `the candidate members do not read the lease index: ${
+            describePlan(candidates)
+          }`,
+        );
+        assert(
+          !scansOf(candidates, "reminder_occurrences").some((node) =>
+            node["Node Type"] === "Seq Scan"
+          ),
+          `the candidate members scan every occurrence: ${
+            describePlan(candidates)
+          }`,
+        );
+      } finally {
+        await explaining.destroy();
+      }
+    },
+  );
 });
 
 Deno.test("[AUD-W2] concurrent claims take every eligible due row once and skip the archived", async () => {
-  await withScratchCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
-    const now = new Date();
-    const { archivedDue, due, expired } = await seedClaimQueue(scratch, now);
-    const claiming = connectDatabase(url);
-    try {
-      const repository = scratchDeliveryRepository(claiming.db);
-      const claim = (owner: string) =>
-        repository.claimDue({
-          channels: ["in_app"],
-          leaseExpiresAt: new Date(now.getTime() + 60_000),
-          limit: 10,
-          now,
-          owner,
-        });
-      const concurrent = await Promise.all([claim("first"), claim("second")]);
-      const rest = await claim("third");
-      const ids = [...concurrent.flat(), ...rest].map((row) => row.id);
-      assertEquals(
-        new Set(ids).size,
-        ids.length,
-        "an occurrence was claimed twice",
-      );
-      assertEquals(ids.length, due + expired, "an eligible due row was lost");
-      assert(
-        concurrent.every((batch) => batch.length <= 10),
-        "a claim took more than its limit",
-      );
-      const [archived] = await scratch<
-        { readonly claimed: number; readonly pending: number }[]
-      >`
+  await withScratchCrm(
+    sql,
+    requireWorkerDatabaseUrl(),
+    async ({ sql: scratch, url }) => {
+      const now = new Date();
+      const { archivedDue, due, expired } = await seedClaimQueue(scratch, now);
+      const claiming = connectDatabase(url);
+      try {
+        const repository = scratchDeliveryRepository(claiming.db);
+        const claim = (owner: string) =>
+          repository.claimDue({
+            channels: ["in_app"],
+            leaseExpiresAt: new Date(now.getTime() + 60_000),
+            limit: 10,
+            now,
+            owner,
+          });
+        const concurrent = await Promise.all([claim("first"), claim("second")]);
+        const rest = await claim("third");
+        const ids = [...concurrent.flat(), ...rest].map((row) => row.id);
+        assertEquals(
+          new Set(ids).size,
+          ids.length,
+          "an occurrence was claimed twice",
+        );
+        assertEquals(ids.length, due + expired, "an eligible due row was lost");
+        assert(
+          concurrent.every((batch) => batch.length <= 10),
+          "a claim took more than its limit",
+        );
+        const [archived] = await scratch<
+          { readonly claimed: number; readonly pending: number }[]
+        >`
         select count(*) filter (where status = 'pending'
             and attempt_count = 0)::int as pending,
           count(*) filter (where status = 'claimed')::int as claimed
         from crm.reminder_occurrences
         where title_snapshot = 'Archived'
       `;
-      assertEquals(
-        { claimed: archived?.claimed, pending: archived?.pending },
-        { claimed: 0, pending: archivedDue },
-        "an archived person's due occurrence was claimed",
-      );
-    } finally {
-      await claiming.destroy();
-    }
-  });
+        assertEquals(
+          { claimed: archived?.claimed, pending: archived?.pending },
+          { claimed: 0, pending: archivedDue },
+          "an archived person's due occurrence was claimed",
+        );
+      } finally {
+        await claiming.destroy();
+      }
+    },
+  );
 });
 
 Deno.test({

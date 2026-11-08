@@ -71,30 +71,30 @@ export class PostgresOutboundMailBudget implements OutboundMailBudget {
           select pg_advisory_xact_lock(hashtextextended(${key}, 0))
         `.execute(transaction);
       }
+      // The per-recipient cap counts across every workspace on purpose, and
+      // the budget rows mostly belong to none: both are read through the
+      // budget functions (ADR 0008).
       const recipientCount = await this.#count(
         transaction,
-        sql`log.path = ${path} and log.authentication_subject_digest in (${
-          sql.join(digests.map((digest) => sql`${digest}`))
-        })`,
-        since,
+        sql`(select count(*)::int from crm.request_budget_attempts(
+          ${path}, ${[...digests]}::text[], ${since}
+        ))`,
       );
       if (recipientCount >= reservation.recipientCeiling) return "exhausted";
       if (sender) {
         const workspaceCount = await this.#count(
           transaction,
-          sql`log.path = ${path} and log.workspace_id = ${sender.workspaceId}::uuid`,
-          since,
+          sql`crm.request_budget_workspace_count(
+            ${path}, ${sender.workspaceId}::uuid, ${since}
+          )`,
         );
         if (workspaceCount >= sender.ceiling) return "exhausted";
       }
       await sql`
-        insert into crm.api_request_logs (
-          workspace_id, user_id, member_id, method, path,
-          authentication_subject_digest, status_code, occurred_at, created_at
-        ) values (
+        select crm.record_request_budget(
+          ${path}, ${activeDigest}, null, 202, ${reservation.occurredAt},
           ${sender?.workspaceId ?? null}::uuid, ${sender?.userId ?? null}::uuid,
-          ${sender?.memberId ?? null}::uuid, 'POST', ${path}, ${activeDigest},
-          202, ${reservation.occurredAt}, ${reservation.occurredAt}
+          ${sender?.memberId ?? null}::uuid
         )
       `.execute(transaction);
       return "admitted";
@@ -103,12 +103,10 @@ export class PostgresOutboundMailBudget implements OutboundMailBudget {
 
   async #count(
     transaction: Transaction<ApplicationDatabase>,
-    key: ReturnType<typeof sql>,
-    since: Date,
+    count: ReturnType<typeof sql>,
   ): Promise<number> {
     const result = await sql<{ readonly count: number }>`
-      select count(*)::int count from crm.api_request_logs log
-      where log.method = 'POST' and ${key} and log.occurred_at > ${since}
+      select ${count} as count
     `.execute(transaction);
     return result.rows[0]?.count ?? 0;
   }

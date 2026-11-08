@@ -19,6 +19,7 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   addMembership,
+  assertCrossWorkspaceRefused,
   openSql,
   requireDatabaseUrl,
   revokeMembership,
@@ -138,7 +139,7 @@ async function occurrence(
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       sent_at, title_snapshot, provider_result_state, provider_receipt,
       provider_effect_at, visible_at
-    ) values (
+    , workspace_id) values (
       ${reminder!.id}, ${memberId}, ${options.at.slice(0, 10)}::date,
       ${options.at}::timestamptz, ${options.channel ?? "in_app"}, ${status},
       ${status === "sent" ? options.at : null}::timestamptz,
@@ -153,7 +154,9 @@ async function occurrence(
       ${status === "sent" ? "receipt" : null},
       ${status === "sent" ? options.at : null}::timestamptz,
       ${status === "sent" ? options.at : null}::timestamptz
-    ) returning id::text
+    , (select scope.workspace_id from crm.reminders scope where scope.id = ${
+    reminder!.id
+  }::uuid)) returning id::text
   `;
   return row!.id;
 }
@@ -312,9 +315,19 @@ Deno.test("[TODAY-002] a member sees only their own notifications, newest first"
     subjectId: colleagueEmail,
     subjectType: "reminder_occurrence",
   });
-  // Another workspace's rows name this member and this person: still out.
+  // Another workspace's row cannot name this member at all (ADR 0008); one
+  // it may store, an export no member started, stays out of this feed.
+  await assertCrossWorkspaceRefused(
+    () =>
+      audit(other.workspaceId, "export.completed", {
+        actorMemberId: owner.memberId,
+        at: "2026-09-28T13:00:00Z",
+        subjectId: crypto.randomUUID(),
+        subjectType: "data_export",
+      }),
+    "another workspace's audit event naming this member",
+  );
   await audit(other.workspaceId, "export.completed", {
-    actorMemberId: owner.memberId,
     at: "2026-09-28T13:00:00Z",
     subjectId: crypto.randomUUID(),
     subjectType: "data_export",
@@ -690,12 +703,13 @@ Deno.test("[TODAY-002] AUD-V1 the reminder arm reads the member's newest deliver
       )
       insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on,
         deliver_at, channel, status, sent_at, provider_result_state,
-        provider_receipt, provider_effect_at, visible_at)
+        provider_receipt, provider_effect_at, visible_at, workspace_id)
       select reminder.id, member.id, current_date - months.n * 30,
         now() - months.n * interval '30 days', 'in_app', 'sent',
         now() - months.n * interval '30 days', 'confirmed', 'in-app',
         now() - months.n * interval '30 days',
-        now() - months.n * interval '30 days' - random() * interval '1 day'
+        now() - months.n * interval '30 days' - random() * interval '1 day',
+        ${workspaceId}::uuid
       from reminder
       cross join generate_series(1, 20) months(n)
       cross join (values (${memberId}::uuid), (${otherMemberId}::uuid))

@@ -30,7 +30,10 @@ import {
   planNodes,
   withScratchCrm as withPlanCrm,
 } from "../support/query_plan.ts";
-import { openSql, revokeMembership, type Sql } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  revokeMembership,
+} from "../support/database.ts";
 import {
   connectDatabase,
   DATABASE_POOL_MAX,
@@ -160,25 +163,29 @@ Deno.test("[SEARCH-001] each kind is found in the reader's workspace and never i
   );
   const foreignPost = await addJournalPost(foreign, shared, "Foreign post");
   const foreignTask = await addTask(foreign, `Foreign ${shared}`, null);
-  // Rows that cross the tenant boundary: a reader's activity attended only by
-  // the foreign person, a reader's note on the foreign person, and a reader's
-  // task naming the foreign person. None may surface or name that person.
-  const crossActivity = await addActivity(
-    reader,
-    `${shared} crossing`,
-    "2026-02-05T09:00:00Z",
-    [foreign.personId],
+  // Rows that would cross the tenant boundary — the foreign person attending
+  // a reader's activity, a reader's note on the foreign person, a reader's
+  // task naming them — cannot be stored at all (ADR 0008).
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.activity_participants (activity_id, person_id, workspace_id)
+        values (${activity}::uuid, ${foreign.personId}::uuid, ${reader.workspaceId}::uuid)
+      `,
+    "another workspace's person attending the reader's activity",
   );
-  const crossNote = crypto.randomUUID();
-  await sql`
-    insert into crm.notes (id, workspace_id, person_id, body)
-    values (${crossNote}, ${reader.workspaceId}, ${foreign.personId},
-      ${`${shared} across`})
-  `;
-  const crossTask = await addTask(
-    reader,
-    `${shared} crossed`,
-    foreign.personId,
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.notes (id, workspace_id, person_id, body)
+        values (${crypto.randomUUID()}, ${reader.workspaceId}, ${foreign.personId},
+          ${`${shared} across`})
+      `,
+    "a note about another workspace's person",
+  );
+  await assertCrossWorkspaceRefused(
+    () => addTask(reader, `${shared} crossed`, foreign.personId),
+    "a task about another workspace's person",
   );
 
   const found = ready(
@@ -188,7 +195,7 @@ Deno.test("[SEARCH-001] each kind is found in the reader's workspace and never i
   assertEquals(ids(found.notes), [note]);
   assertEquals(ids(found.activities), [activity]);
   assertEquals(ids(found.journalPosts), [post.postId]);
-  assertEquals(ids(found.tasks).sort(), [crossTask, task].sort());
+  assertEquals(ids(found.tasks), [task]);
   const serialized = JSON.stringify(found);
   for (
     const hidden of [
@@ -198,8 +205,6 @@ Deno.test("[SEARCH-001] each kind is found in the reader's workspace and never i
       foreignActivity,
       foreignPost.postId,
       foreignTask,
-      crossActivity,
-      crossNote,
       "Foreign",
     ]
   ) {
@@ -229,8 +234,6 @@ Deno.test("[SEARCH-001] each kind is found in the reader's workspace and never i
     id: reader.personId,
     name: "Reader subject",
   });
-  assertEquals(tasks.get(crossTask)?.href, "/app/tasks");
-  assertEquals(tasks.get(crossTask)?.person, undefined);
 
   const member = await memberOf(reader, "member");
   const asMember = ready(
@@ -761,17 +764,6 @@ Deno.test("[SEARCH-001] a statement that fails for another reason is not a timeo
   }
 });
 
-/** Every index a plan node scans, at any depth. */
-function scannedIndexes(plan: unknown): readonly string[] {
-  if (Array.isArray(plan)) return plan.flatMap(scannedIndexes);
-  if (typeof plan !== "object" || plan === null) return [];
-  const node = plan as Record<string, unknown>;
-  return [
-    ...(typeof node["Index Name"] === "string" ? [node["Index Name"]] : []),
-    ...Object.values(node).flatMap(scannedIndexes),
-  ];
-}
-
 /**
  * The plan PostgreSQL chooses for the text statement the repository sends,
  * captured by explaining that exact statement instead of running it.
@@ -810,34 +802,8 @@ async function textStatementPlan(
   return plan;
 }
 
-/**
- * Runs `work` on a scratch database holding the canonical v10 DDL and nothing
- * else, dropped afterwards. The statistics a plan is costed from are then this
- * suite's own rows, never whatever the other suites left in the shared one.
- */
-async function withScratchCrm(
-  work: (scratch: { readonly sql: Sql; readonly url: string }) => Promise<void>,
-): Promise<void> {
-  const name = `kinship_search_${crypto.randomUUID().replaceAll("-", "")}`;
-  await sql.unsafe(`create database ${name}`);
-  const url = new URL(databaseUrl);
-  url.pathname = `/${name}`;
-  const scratch = openSql(url.toString(), { max: 1, prepare: false });
-  try {
-    await scratch.unsafe(
-      await Deno.readTextFile(
-        "personal-crm-schema/v10/personal_crm_schema_v10.sql",
-      ),
-    );
-    await work({ sql: scratch, url: url.toString() });
-  } finally {
-    await scratch.end();
-    await sql.unsafe(`drop database if exists ${name} with (force)`);
-  }
-}
-
-Deno.test("[REL-061] each text group of a large workspace matches through its full-text index", async () => {
-  await withScratchCrm(async ({ sql: scratch, url }) => {
+Deno.test("[REL-061] each text group of a large workspace reads only that workspace under row-level security", async () => {
+  await withPlanCrm(sql, databaseUrl, async ({ sql: scratch, url }) => {
     // REL-061's shape at a smaller scale: one workspace whose text is spread
     // over many people, beside a small one. Every row is written here and
     // each table is below ANALYZE's sample size, so the statistics, and so
@@ -874,8 +840,8 @@ Deno.test("[REL-061] each text group of a large workspace matches through its fu
         cross join generate_series(1, ${rows / people}) n
         returning id, workspace_id, split_part(summary, ' ', 1) as person_id
       )
-      insert into crm.activity_participants (activity_id, person_id)
-      select id, person_id::uuid from created
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      select id, person_id::uuid, workspace_id from created
     `;
     await scratch`
       with created as (
@@ -899,31 +865,52 @@ Deno.test("[REL-061] each text group of a large workspace matches through its fu
     const explaining = connectDatabase(url);
     try {
       const shared = word();
-      const indexes = scannedIndexes(
-        await textStatementPlan(explaining.db, {
-          limit: 5,
-          nameFold: [],
-          nameForms: [],
-          memberId: crypto.randomUUID(),
-          query: shared,
-          role: "owner",
-          sort: "given-name",
-          terms: [shared],
-          userId: owner,
-          workspaceId: large,
-        }),
-      );
+      const probePlan = await textStatementPlan(explaining.db, {
+        limit: 5,
+        nameFold: [],
+        nameForms: [],
+        memberId: crypto.randomUUID(),
+        query: shared,
+        role: "owner",
+        sort: "given-name",
+        terms: [shared],
+        userId: owner,
+        workspaceId: large,
+      });
+      // Schema v14 forces row-level security (ADR 0008). PostgreSQL uses a
+      // condition as an index condition under a security qual only when its
+      // functions are leakproof, and `to_tsvector` and `@@` are not, so no
+      // text arm can seek its GIN index any more: each reads its workspace's
+      // rows and filters them. Q4 (2026-11-08, approved) keeps that
+      // workspace-bounded scan as a measured cost (a note arm on 10,000
+      // people and 30,000 notes: 1.3 ms bypassing RLS, 28.9 ms under it);
+      // AUD-P1 puts a ceiling on it. What this pins is the bound.
+      const scans = (relation: string): Record<string, unknown>[] => {
+        const found: Record<string, unknown>[] = [];
+        const visit = (node: unknown): void => {
+          if (Array.isArray(node)) return node.forEach(visit);
+          if (typeof node !== "object" || node === null) return;
+          const record = node as Record<string, unknown>;
+          if (record["Relation Name"] === relation) found.push(record);
+          Object.values(record).forEach(visit);
+        };
+        visit(probePlan);
+        return found;
+      };
       for (
-        const index of [
-          "notes_search_idx",
-          "activities_search_idx",
-          "journal_posts_search_idx",
-          "tasks_search_idx",
-        ]
+        const relation of ["notes", "activities", "journal_posts", "tasks"]
       ) {
+        const read = scans(relation);
         assert(
-          indexes.includes(index),
-          `the text statement does not scan ${index}: ${indexes.join(", ")}`,
+          read.length > 0 &&
+            read.every((scan) =>
+              `${scan["Index Cond"] ?? ""} ${scan["Filter"] ?? ""}`.includes(
+                `workspace_id = '${large}'::uuid`,
+              )
+            ),
+          `the text statement reads ${relation} beyond its workspace: ${
+            JSON.stringify(read.map((scan) => scan["Node Type"]))
+          }`,
         );
       }
     } finally {
@@ -959,10 +946,10 @@ Deno.test("[SEARCH-001] AUD-Q1 a common word names and cuts only the rows shown,
           now() - (n || ' minutes')::interval
         from crm.people person
         cross join generate_series(1, ${matches / people}) n
-        returning id, split_part(summary, ' ', 1) as person_id
+        returning id, workspace_id, split_part(summary, ' ', 1) as person_id
       )
-      insert into crm.activity_participants (activity_id, person_id)
-      select id, person_id::uuid from created
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      select id, person_id::uuid, workspace_id from created
     `;
     await scratch`
       with created as (
@@ -1050,8 +1037,8 @@ Deno.test("[FEQ-05] a blank query answers the member's recent people in their wo
       'King', 'Lovelace', 'Countess')
   `;
   await sql`
-    insert into crm.person_avatars (person_id, background_color)
-    values (${friend}, '#123456')
+    insert into crm.person_avatars (person_id, background_color, workspace_id)
+    values (${friend}, '#123456', ${reader.workspaceId})
   `;
   const archived = await addPerson(reader, "Archived");
   await sql`update crm.people set archived_at = now() where id = ${archived}`;

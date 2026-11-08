@@ -133,8 +133,10 @@ export function createRelationshipWrites(
       | MutationFailure
       | (RelationshipMutation & { readonly status: "created" | "existing" })
     > =>
-      await dependencies.transaction.run((transaction) =>
-        createInTransaction(actor, sourcePersonId, input, transaction)
+      await dependencies.transaction.run(
+        (transaction) =>
+          createInTransaction(actor, sourcePersonId, input, transaction),
+        { workspaceId: actor.workspaceId },
       ),
     createRelatedPerson: async (
       actor: RelationshipActor,
@@ -175,7 +177,7 @@ export function createRelationshipWrites(
             person: person.person,
             status: "created" as const,
           };
-        });
+        }, { workspaceId: actor.workspaceId });
       } catch (error) {
         if (error instanceof RelatedPersonAbort) return error.result;
         throw error;
@@ -245,7 +247,7 @@ export function createRelationshipWrites(
           record,
         );
         return success(record, "updated");
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     delete: async (
       actor: RelationshipActor,
@@ -313,7 +315,7 @@ export function createRelationshipWrites(
           relationshipId,
           status: "deleted" as const,
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

@@ -432,9 +432,12 @@ async function runPostgresTool(
   const child = new Deno.Command(command.executable, {
     args: [
       ...command.argsPrefix,
-      ...(kind === "pg_dump"
-        ? ["--format=custom", "--no-owner", "--no-privileges"]
-        : ["--exit-on-error", "--no-owner", "--no-privileges"]),
+      // Owners and privileges travel with the archive: schema v14's grants,
+      // row-level security roles, and SECURITY DEFINER function owners are
+      // part of the canonical catalog (ADR 0008). A restore without them
+      // would hand the definer functions to the restoring superuser. The
+      // target must therefore hold the roles first (`deno task ops bootstrap`).
+      ...(kind === "pg_dump" ? ["--format=custom"] : ["--exit-on-error"]),
       "--username",
       connection.user,
       "--dbname",
@@ -540,7 +543,7 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
           as present
       `;
       if (!row?.present) {
-        throw new Error("Database is not the canonical schema v13.");
+        throw new Error("Database is not the canonical schema v14.");
       }
     } finally {
       await sql.end();
@@ -549,8 +552,8 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
       this.databaseUrl,
       await readCanonicalArtifacts(),
     );
-    if (action !== "verify-v13") {
-      throw new Error("Database is not the canonical schema v13.");
+    if (action !== "verify-v14") {
+      throw new Error("Database is not the canonical schema v14.");
     }
   }
 }

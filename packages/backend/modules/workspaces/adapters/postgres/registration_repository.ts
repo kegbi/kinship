@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { enterWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import type {
   RegistrationTransaction,
@@ -22,13 +23,19 @@ async function deletePendingWorkspaces(command: {
   readonly userIds: readonly string[];
 }): Promise<void> {
   if (command.userIds.length === 0) return;
+  // Whether anybody else belongs to a workspace is a question across
+  // workspaces, so the registration function answers it for each user (ADR
+  // 0008); the cascade from each workspace row is not bound by row-level
+  // security.
   await sql`
     delete from crm.workspaces w
-    where w.created_by_user_id = any(${[...command.userIds]}::uuid[])
-      and not exists (
-        select 1 from crm.workspace_members m
-        where m.workspace_id = w.id and m.user_id <> w.created_by_user_id
-      )
+    where w.id in (
+      select unshared.id
+      from unnest(${[...command.userIds]}::uuid[]) as candidate(user_id)
+      cross join lateral crm.unshared_registration_workspaces(
+        candidate.user_id
+      ) as unshared(id)
+    )
   `.execute(databaseFromSession(command.transaction));
 }
 
@@ -46,6 +53,7 @@ export class PostgresWorkspaceRegistration
     readonly transaction: RegistrationTransaction;
     readonly workspaceId: string;
   }): Promise<{ readonly workspaceId: string }> {
+    const database = databaseFromSession(command.transaction);
     await sql`
       insert into crm.workspaces (
         id, name, status, created_by_user_id, created_at, updated_at
@@ -53,7 +61,10 @@ export class PostgresWorkspaceRegistration
         ${command.workspaceId}::uuid, ${command.name}, 'active',
         ${command.createdByUserId}::uuid, now(), now()
       )
-    `.execute(databaseFromSession(command.transaction));
+    `.execute(database);
+    // Everything registration writes next belongs to the new workspace, so
+    // the transaction works there from now on (ADR 0008).
+    await enterWorkspace(database, command.workspaceId);
     return { workspaceId: command.workspaceId };
   }
 

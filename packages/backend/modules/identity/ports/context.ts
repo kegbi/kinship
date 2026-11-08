@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 /**
  * The context every identity port is invoked in.
  *
@@ -20,5 +21,8 @@ export interface IdentityTransaction {
 
 /** The transaction an identity use case runs its work in. */
 export interface IdentityTransactionRunner {
-  run<T>(work: (transaction: IdentityTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: IdentityTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

@@ -99,6 +99,13 @@ function fixture(options: {
       },
     },
     memberships: {
+      // Records the workspace each step runs in (ADR 0008).
+      async inMembershipWorkspace(command, work) {
+        effects.push(`enter:${command.workspaceId}`);
+        const result = await work();
+        effects.push(`leave:${command.workspaceId}`);
+        return result;
+      },
       inspect(command) {
         effects.push(command.lock ? "memberships-locked" : "memberships-read");
         return Promise.resolve({ memberships });
@@ -149,7 +156,9 @@ Deno.test("personal lifecycle protects and audits a final owner before deleting 
   assertEquals(effects, [
     "password-verified",
     "memberships-locked",
+    `enter:${current.workspaceId}`,
     "audit:identity.deletion-attempted:blocked-final-owner",
+    `leave:${current.workspaceId}`,
   ], "no destructive effects");
 });
 
@@ -198,10 +207,15 @@ Deno.test("personal lifecycle deletes all memberships and identity in one ordere
   assertEquals(effects, [
     "password-verified",
     "memberships-locked",
-    "audit:identity.deletion-attempted:completed",
+    // Each workspace's audit and revocation are written from inside it.
+    `enter:${current.workspaceId}`,
     "audit:identity.deletion-attempted:completed",
     `credentials-revoked:${current.workspaceId}:${current.memberId}:true`,
+    `leave:${current.workspaceId}`,
+    `enter:${next.workspaceId}`,
+    "audit:identity.deletion-attempted:completed",
     `credentials-revoked:${next.workspaceId}:${next.memberId}:true`,
+    `leave:${next.workspaceId}`,
     "leave-all",
     "identity-delete",
   ], "deletion effects");
@@ -359,6 +373,7 @@ Deno.test("personal lifecycle step-up reports the throttle and releases a reserv
       },
       memberCredentials: { revokeMemberCredentials: () => Promise.resolve() },
       memberships: {
+        inMembershipWorkspace: (_command, work) => work(),
         inspect() {
           if (options.inspectThrows) {
             throw new Error("the memberships table is unavailable");

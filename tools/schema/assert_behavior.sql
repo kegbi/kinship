@@ -63,6 +63,10 @@ BEGIN
   VALUES (workspace_b, user_b, 'owner', now())
   RETURNING id INTO member_b;
 
+  -- v14's link tables take their workspace from the transaction's scope
+  -- (ADR 0008); every link row below belongs to workspace A.
+  PERFORM set_config('app.workspace_id', workspace_a::text, true);
+
   INSERT INTO people (workspace_id, created_by_member_id, given_name)
   VALUES (workspace_a, member_a, 'Person A')
   RETURNING id INTO person_a;

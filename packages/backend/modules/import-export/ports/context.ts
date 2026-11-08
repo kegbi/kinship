@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 /**
  * The context every import-export port is invoked in.
  *
@@ -30,7 +31,10 @@ export interface ImportActor {
 
 /** The transaction an import use case runs its work in. */
 export interface ImportTransactionRunner {
-  run<T>(work: (transaction: ImportTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: ImportTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }
 
 /** The unit of work an export port runs inside. */
@@ -48,5 +52,8 @@ export interface ExportActor {
 
 /** The transaction an export use case runs its work in. */
 export interface ExportTransactionRunner {
-  run<T>(work: (transaction: ExportTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: ExportTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

@@ -95,6 +95,7 @@ export function createPersonDuplicateDismissals(
             status: "dismissed" as const,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
   };

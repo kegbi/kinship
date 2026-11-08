@@ -1,3 +1,4 @@
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -355,14 +356,18 @@ Deno.test("[INTEGRATION-001] PostgreSQL DAV checkpoints isolate tenants and reco
   );
   const lifecycleEntered = deferred();
   const lifecycleRelease = deferred();
-  const lifecycle = boundary.db.transaction().execute(async (transaction) => {
-    await kyselySql`select id from crm.workspace_members
+  const lifecycle = writeWithinWorkspace(
+    boundary.db,
+    actor.workspaceId,
+    async (transaction) => {
+      await kyselySql`select id from crm.workspace_members
       where id=${actor.memberId}::uuid for update`.execute(transaction);
-    lifecycleEntered.resolve();
-    await lifecycleRelease.promise;
-    await kyselySql`update crm.dav_address_book_subscriptions set is_active=false
+      lifecycleEntered.resolve();
+      await lifecycleRelease.promise;
+      await kyselySql`update crm.dav_address_book_subscriptions set is_active=false
       where id=${raceId}::uuid`.execute(transaction);
-  });
+    },
+  );
   await lifecycleEntered.promise;
   const lifecycleClaim = davRepository.claim(
     actor,

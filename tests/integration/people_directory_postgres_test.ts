@@ -45,13 +45,18 @@ import {
   sql,
 } from "./people.test-helper.ts";
 import { closeResources } from "./people.test-helper.ts";
-import { resetDatabase, truncate } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  resetDatabase,
+  truncate,
+} from "../support/database.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { readWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import { apiSupport } from "../support/api.ts";
 import {
   describePlan,
@@ -290,19 +295,26 @@ Deno.test({
         from generate_series(1, 25) sequence
       `;
       await transaction`
-        insert into crm.person_tags (person_id, tag_id) values
-          (${adaId}, ${friendsTagId}),
-          (${adaId}, ${foreignTagId}),
-          (${foreignPersonId}, ${foreignTagId})
+        insert into crm.person_tags (person_id, tag_id, workspace_id) values
+          (${adaId}, ${friendsTagId}, ${owner.workspaceId}::uuid),
+          (${foreignPersonId}, ${foreignTagId}, ${foreign.workspaceId}::uuid)
       `;
       await transaction`
-        insert into crm.person_tags (person_id, tag_id)
-        select ${adaId}, tag.id
+        insert into crm.person_tags (person_id, tag_id, workspace_id)
+        select ${adaId}, tag.id, ${owner.workspaceId}::uuid
         from crm.tags tag
         where tag.workspace_id = ${owner.workspaceId}
           and tag.slug between 'bulk-01' and 'bulk-07'
       `;
     });
+    // Schema v14 refuses a link from Ada to another workspace's tag outright
+    // (ADR 0008), so the listing below can only meet links that can exist.
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`insert into crm.person_tags (person_id, tag_id, workspace_id)
+          values (${adaId}, ${foreignTagId}, ${owner.workspaceId}::uuid)`,
+      "a tag link to another workspace's tag",
+    );
 
     const searched = await listPeople(
       owner,
@@ -502,9 +514,12 @@ Deno.test({
       });
       assert(
         budgetFirst.status === "ready" && budgetFirst.nextCursor &&
-          queryCount === 4,
-        // The actor revalidation runs in its own read transaction: begin,
-        // one select, commit. The page itself is one statement.
+          queryCount === 6,
+        // The actor revalidation runs in its own transaction: begin with the
+        // workspace's `set local` in one message, one select, commit. Schema
+        // v14 reads the page inside its workspace too (ADR 0008), so it is
+        // the same bracket around one statement: 6, measured 2026-11-08
+        // (4 before v14).
         "first directory page stays within the actor revalidation and one statement",
       );
       const beforeContinuation = queryCount;
@@ -514,7 +529,7 @@ Deno.test({
         sort: "given-name",
       });
       assert(
-        queryCount - beforeContinuation === 5,
+        queryCount - beforeContinuation === 7,
         "cursor anchor validation keeps continuation within the actor revalidation and two statements without tag lookup",
       );
       const beforeTags = queryCount;
@@ -526,7 +541,7 @@ Deno.test({
           tagBudgetFirst.options.length === 20 &&
           tagBudgetFirst.nextCursor &&
           tagBudgetFirst.selected?.id === friendsTagId &&
-          queryCount - beforeTags === 5,
+          queryCount - beforeTags === 7,
         "bounded tag options use the actor revalidation, one limited page, and one selected lookup",
       );
       const beforeTagContinuation = queryCount;
@@ -534,7 +549,7 @@ Deno.test({
         cursor: tagBudgetFirst.nextCursor,
       });
       assert(
-        queryCount - beforeTagContinuation === 4,
+        queryCount - beforeTagContinuation === 6,
         "tag continuation stays within the actor revalidation and one limited seek query",
       );
     } finally {
@@ -1233,9 +1248,13 @@ Deno.test({
  * What `GET /api/v1/session` sends, measured with this harness on 2026-11-08:
  * 4 statements before AUD-F3 (the session, the membership, the legal
  * requirements, the UI state) and 4 after it, because the preferences are
- * read by the UI-state statement.
+ * read by the UI-state statement. Schema v14 (ADR 0008) reads the legal
+ * requirements and the UI state inside the member's workspace, each in a
+ * read-only transaction whose `begin` carries the `set local` in one message
+ * and ends with a `commit`: 8, measured the same day. The preferences still
+ * add no statement of their own.
  */
-const SESSION_STATEMENTS = 4;
+const SESSION_STATEMENTS = 8;
 
 Deno.test({
   name:
@@ -1440,16 +1459,23 @@ Deno.test({
 
         const duplicates = await explainedPlan(
           explaining.db,
-          (statement) => statement.includes("lower(btrim(given_name))"),
+          (statement) => statement.includes("duplicate_given_name ="),
+          // In the actor's workspace, as the people runner opens it (ADR
+          // 0008): the stored keys are what the index seeks under RLS (Q4).
           (database) =>
-            new PostgresPeopleRepository().findPossibleDuplicates({
-              ...actor,
-              familyName: "Family 3",
-              givenName: "Given 00003",
-              isPartial: false,
-              nickname: "Nick 3",
-              transaction: { opaque: database },
-            }),
+            readWithinWorkspace(
+              database,
+              workspaceId,
+              (transaction) =>
+                new PostgresPeopleRepository().findPossibleDuplicates({
+                  ...actor,
+                  familyName: "Family 3",
+                  givenName: "Given 00003",
+                  isPartial: false,
+                  nickname: "Nick 3",
+                  transaction: { opaque: transaction },
+                }),
+            ),
         );
         const duplicateScans = scansOf(duplicates, "people");
         assert(

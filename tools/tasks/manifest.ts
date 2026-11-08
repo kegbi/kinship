@@ -180,6 +180,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v11",
   "personal-crm-schema/v12",
   "personal-crm-schema/v13",
+  "personal-crm-schema/v14",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -190,6 +191,16 @@ export const APPLICATION_DATABASE_ENV = [
   "DATABASE_URL",
   ...OBJECT_STORAGE_ENV,
   ...POSTGRES_ENV,
+] as const;
+
+/**
+ * The fixture and worker connections a PostgreSQL-backed suite opens beside
+ * the API's (ADR 0008): fixtures seed as the project's superuser, and the
+ * worker suites connect as the worker's own role.
+ */
+export const FIXTURE_DATABASE_ENV = [
+  "DATABASE_ADMIN_URL",
+  "DATABASE_WORKER_URL",
 ] as const;
 
 /**
@@ -282,6 +293,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "personal-crm-schema/v11",
     "personal-crm-schema/v12",
     "personal-crm-schema/v13",
+    "personal-crm-schema/v14",
     "tools",
   ],
 };
@@ -330,6 +342,23 @@ export interface OperatorScript {
 }
 
 export const OPERATOR_SCRIPTS: readonly OperatorScript[] = [
+  {
+    // The only step that connects as the database superuser: it creates or
+    // corrects the roles schema v14 relies on (ADR 0008). Compose runs the
+    // same script in its `bootstrap` service.
+    id: "bootstrap",
+    script: "tools/migrations/bootstrap.ts",
+    permissions: {
+      env: [
+        "DATABASE_URL",
+        ...POSTGRES_ENV,
+        "POSTGRES_APP_PASSWORD",
+        "POSTGRES_MIGRATOR_PASSWORD",
+        "POSTGRES_WORKER_PASSWORD",
+      ],
+      net: "all",
+    },
+  },
   {
     id: "probe",
     script: "tools/operations/private_production_probe.ts",
@@ -381,7 +410,10 @@ export const OPERATOR_SCRIPTS: readonly OperatorScript[] = [
         "INTEGRATIONS_ENCRYPTION_KEYSET",
         ...OBJECT_STORAGE_ENV,
         "POSTGRES_DB",
+        "POSTGRES_APP_PASSWORD",
+        "POSTGRES_MIGRATOR_PASSWORD",
         "POSTGRES_PASSWORD",
+        "POSTGRES_WORKER_PASSWORD",
         "POSTGRES_USER",
         "PRIVATE_PRODUCTION_ARCHIVE_ENCRYPTED_AT_REST",
         "PRIVATE_PRODUCTION_ARCHIVE_KEY_RECOVERY_VERIFIED",
@@ -412,7 +444,9 @@ export const INTEGRATION_PERMISSIONS: Permissions = {
     ...SCHEMA_READS,
     "packages/backend/modules/import-export/domain/formats/fixtures/monica.sql",
   ],
-  env: [...APPLICATION_DATABASE_ENV],
+  // Suites compose the API as the application role and seed as the
+  // superuser of their disposable project (ADR 0008).
+  env: [...APPLICATION_DATABASE_ENV, ...FIXTURE_DATABASE_ENV],
   net: "all",
   run: ["docker"],
 };
@@ -620,8 +654,8 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v13/personal_crm_schema_spec_v13.md",
-          "personal-crm-schema/v13/personal_crm_schema_v13.sql",
+          "personal-crm-schema/v14/personal_crm_schema_spec_v14.md",
+          "personal-crm-schema/v14/personal_crm_schema_v14.sql",
           "packages/contracts",
           // The role table reads the matrix it executes (AUD-K5).
           "docs/architecture/authorization-matrix.yaml",
@@ -702,6 +736,7 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/settings_personalization_postgres_test.ts",
       "tests/integration/time_preferences_postgres_test.ts",
       "tests/integration/migrations_postgres_test.ts",
+      "tests/integration/workspace_isolation_postgres_test.ts",
       "tests/integration/read_models_reports_postgres_test.ts",
       "tests/integration/read_models_today_postgres_test.ts",
     ],
@@ -739,7 +774,12 @@ export const MODULES: readonly TaskModule[] = [
         // As in the unit set: `tools/e2e_test.ts` runs here too (REL-040).
         run: E2E_PROCESS_BINARIES,
         // The worker composition suite configures reminder email.
-        env: ["CI", ...APPLICATION_DATABASE_ENV, ...REMINDER_MAIL_ENV],
+        env: [
+          "CI",
+          ...APPLICATION_DATABASE_ENV,
+          ...FIXTURE_DATABASE_ENV,
+          ...REMINDER_MAIL_ENV,
+        ],
         net: "all",
       },
       tests: [
@@ -1034,6 +1074,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/settings_personalization_postgres_test.ts",
         "tests/integration/time_preferences_postgres_test.ts",
         "tests/integration/migrations_postgres_test.ts",
+        "tests/integration/workspace_isolation_postgres_test.ts",
         "tests/integration/read_models_reports_postgres_test.ts",
         "tests/integration/read_models_today_postgres_test.ts",
         "tests/integration/search_postgres_test.ts",
@@ -1230,7 +1271,7 @@ export const MODULES: readonly TaskModule[] = [
       postgres: true,
       permissions: {
         read: [...SCHEMA_READS],
-        env: [...APPLICATION_DATABASE_ENV],
+        env: [...APPLICATION_DATABASE_ENV, ...FIXTURE_DATABASE_ENV],
         net: "all",
         // The reminder email suite starts, and removes, its own Mailpit.
         run: ["docker"],
@@ -1610,7 +1651,7 @@ export const MODULES: readonly TaskModule[] = [
       postgres: true,
       permissions: {
         read: [...SCHEMA_READS, "packages/contracts"],
-        env: [...APPLICATION_DATABASE_ENV],
+        env: [...APPLICATION_DATABASE_ENV, ...FIXTURE_DATABASE_ENV],
         net: "all",
       },
       tests: [
@@ -1687,7 +1728,7 @@ export const MODULES: readonly TaskModule[] = [
       postgres: true,
       permissions: {
         read: [...SCHEMA_READS, "packages/contracts"],
-        env: [...APPLICATION_DATABASE_ENV],
+        env: [...APPLICATION_DATABASE_ENV, ...FIXTURE_DATABASE_ENV],
         net: "all",
       },
       tests: [
@@ -1924,7 +1965,7 @@ export const MODULES: readonly TaskModule[] = [
       directory: "lifecycle",
       postgres: true,
       permissions: {
-        env: [...APPLICATION_DATABASE_ENV],
+        env: [...APPLICATION_DATABASE_ENV, ...FIXTURE_DATABASE_ENV],
         net: "all",
       },
       tests: [
@@ -2172,6 +2213,7 @@ export const MODULES: readonly TaskModule[] = [
           "personal-crm-schema/v11",
           "personal-crm-schema/v12",
           "personal-crm-schema/v13",
+          "personal-crm-schema/v14",
           "apps",
           "packages",
           "tools",

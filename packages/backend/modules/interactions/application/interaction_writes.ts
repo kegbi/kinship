@@ -195,7 +195,7 @@ export function createInteractionWrites(dependencies: InteractionDependencies) {
           });
         }
         return { record, status: "created" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

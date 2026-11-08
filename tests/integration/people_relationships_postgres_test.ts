@@ -6,6 +6,7 @@
  * `people.test-helper.ts`.
  */
 
+import { assertCrossWorkspaceRefused } from "../support/database.ts";
 import {
   createPeopleManagement,
   type PeopleActor,
@@ -298,14 +299,19 @@ Deno.test({
       "inverse person workspace is inconsistent",
     );
     const malformedRelationshipId = crypto.randomUUID();
-    await sql`
+    // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
       insert into crm.relationships (
         id, workspace_id, from_person_id, to_person_id, relationship_type_id
       ) values (
         ${malformedRelationshipId}::uuid, ${own.workspaceId}::uuid,
         ${sourceId}::uuid, ${foreignId}::uuid, ${parentTypeId}::uuid
       )
-    `;
+    `,
+      "a relationship to another workspace's person",
+    );
     const concealedMalformed = await relationshipRequest(
       own,
       sourceId,

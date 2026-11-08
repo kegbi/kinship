@@ -547,21 +547,23 @@ Deno.test("[IMPORT-001] a re-import leaves a deleted person deleted, reuses an a
   const connection = connectDatabase(databaseUrl);
   try {
     const presence = (fixture: Fixture, personId: string) =>
-      new PostgresImportTransaction(connection.db).run((transaction) =>
-        new PostgresPeopleImportBoundary(
-          monicaDates,
-          new PostgresContactMethodTypeCatalog(),
-          avatarFiles,
-        ).presence({
-          actor: {
-            memberId: fixture.memberId,
-            role: "owner",
-            userId: fixture.userId,
-            workspaceId: fixture.workspaceId,
-          },
-          personId,
-          transaction,
-        })
+      new PostgresImportTransaction(connection.db).run(
+        (transaction) =>
+          new PostgresPeopleImportBoundary(
+            monicaDates,
+            new PostgresContactMethodTypeCatalog(),
+            avatarFiles,
+          ).presence({
+            actor: {
+              memberId: fixture.memberId,
+              role: "owner",
+              userId: fixture.userId,
+              workspaceId: fixture.workspaceId,
+            },
+            personId,
+            transaction,
+          }),
+        { workspaceId: fixture.workspaceId },
       );
     assertEquals(await presence(primary, ada.id), "deleted");
     assertEquals(await presence(primary, grace.id), "active");
@@ -612,6 +614,8 @@ Deno.test({
             personId: owner.personId,
             transaction,
           }),
+        // The actor's workspace, as the import commit's runner opens it.
+        { workspaceId: owner.workspaceId },
       ).then(() => "linked", () => "refused");
       assertEquals(linked, "refused", "another workspace's file was linked");
     } finally {

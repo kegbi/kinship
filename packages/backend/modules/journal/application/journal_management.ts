@@ -62,6 +62,7 @@ export function createJournalManagement(
         if (standing === "revoked") return { status: "forbidden" as const };
         return await work(transaction, now);
       },
+      { workspaceId: actor.workspaceId },
     );
   };
 

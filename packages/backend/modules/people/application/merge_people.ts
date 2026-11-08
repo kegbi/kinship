@@ -408,8 +408,10 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
       input: MergePeopleInput,
     ): Promise<MergePeopleResult> => {
       if (primaryId === input.duplicateId) return { status: "self-merge" };
-      const result = await dependencies.transaction.run((transaction) =>
-        mergeInTransaction(actor, primaryId, input, transaction)
+      const result = await dependencies.transaction.run(
+        (transaction) =>
+          mergeInTransaction(actor, primaryId, input, transaction),
+        { workspaceId: actor.workspaceId },
       );
       if (result.status !== "committing") return result;
       if (result.unusedAvatar) {
@@ -458,7 +460,7 @@ export function createPersonMerge(dependencies: PersonMergeDependencies) {
           primary: inspected.primary,
           status: "ready",
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

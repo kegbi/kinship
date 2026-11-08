@@ -28,7 +28,7 @@ const ROOT = new URL("../../", import.meta.url);
 const MANIFEST_PATH = "docs/architecture/module-boundaries.yaml";
 const SCHEMA_PATH = "docs/architecture/module-boundaries.schema.json";
 const CANONICAL_SCHEMA_PATH =
-  "personal-crm-schema/v13/personal_crm_schema_v13.sql";
+  "personal-crm-schema/v14/personal_crm_schema_v14.sql";
 const BASELINE_PATH = "tools/architecture/boundary-baseline.json";
 
 // --- Fixtures ------------------------------------------------------------
@@ -393,6 +393,58 @@ Deno.test("[GAP-005] every canonical table has exactly one owner", async () => {
       violation.detail.includes("gifts owns crm.wishlists")
     ),
     `expected an unknown owned table, got ${render(invented)}`,
+  );
+});
+
+// Schema v14's narrow cross-workspace functions (ADR 0008) are owned like
+// tables: only the owning module, or one that declares it as a dependency,
+// calls one, and every function the DDL creates has exactly one owner.
+Deno.test("[AUD-V2] a SQL function is owned and called like a table", async () => {
+  const sql = `${SQL}CREATE FUNCTION enter_gift_workspace(p_id uuid)\n`;
+  const manifestText = MANIFEST.replace(
+    "    ownsTables: [gifts]\n",
+    "    ownsTables: [gifts]\n    ownsFunctions: [enter_gift_workspace]\n",
+  );
+  const call = "sql`select crm.enter_gift_workspace(${id})`";
+
+  const owner = await fixture([{
+    path: "packages/backend/modules/gifts/adapters/postgres/scope.ts",
+    text: call,
+  }], { manifestText, canonicalSchemaSql: sql });
+  assert(
+    owner.length === 0,
+    `the owner's call must be clean, got ${render(owner)}`,
+  );
+
+  const stranger = await fixture([{
+    path: "packages/backend/modules/people/adapters/postgres/scope.ts",
+    text: call,
+  }], { manifestText, canonicalSchemaSql: sql });
+  assert(
+    stranger.length === 1 && stranger[0]?.rule === "table-access" &&
+      stranger[0].detail.includes("crm.enter_gift_workspace") &&
+      stranger[0].detail.includes("owned by gifts"),
+    `a module that cannot reach gifts must not call its function, got ${
+      render(stranger)
+    }`,
+  );
+
+  const unowned = await fixture([], { canonicalSchemaSql: sql });
+  assert(
+    unowned.some((violation) =>
+      violation.rule === "table-ownership" &&
+      violation.detail === "no module owns crm.enter_gift_workspace"
+    ),
+    `expected an unowned function, got ${render(unowned)}`,
+  );
+
+  const invented = await fixture([], { manifestText });
+  assert(
+    invented.some((violation) =>
+      violation.rule === "table-ownership" &&
+      violation.detail.includes("gifts owns crm.enter_gift_workspace")
+    ),
+    `expected an unknown owned function, got ${render(invented)}`,
   );
 });
 

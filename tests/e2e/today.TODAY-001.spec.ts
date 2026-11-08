@@ -29,10 +29,13 @@ test(
     const snapshot = await response.json() as { date: string };
     const base = sqlLiteral(snapshot.date);
     databaseSql(`
-      insert into crm.person_dates (person_id, kind, label, month, day, precision)
+      insert into crm.person_dates (person_id, kind, label, month, day, precision, workspace_id)
       select ${sqlLiteral(personId)}::uuid, 'custom', label,
         extract(month from ${base}::date + days),
-        extract(day from ${base}::date + days), 'month_day'
+        extract(day from ${base}::date + days), 'month_day',
+        (select scope.workspace_id from crm.people scope where scope.id = ${
+      sqlLiteral(personId)
+    }::uuid)
       from (values (7, 'Birthday next week'), (9, 'Birthday upcoming'),
         (34, 'Birthday next month')) as dates(days, label);
     `);
@@ -581,7 +584,7 @@ test(
       }::uuid, 'person', ${sqlLiteral(undeliveredTitle)}, '${
         undeliveredAt.slice(0, 10)
       }', ${sqlLiteral(session.member.id)}::uuid);
-    insert into crm.reminder_occurrences (id, reminder_id, member_id, occurs_on, deliver_at, channel, status, attempt_count, title_snapshot) values (${
+    insert into crm.reminder_occurrences (id, reminder_id, member_id, occurs_on, deliver_at, channel, status, attempt_count, title_snapshot, workspace_id) values (${
         sqlLiteral(undeliveredId)
       }::uuid, ${sqlLiteral(undeliveredReminderId)}::uuid, ${
         sqlLiteral(session.member.id)
@@ -589,7 +592,9 @@ test(
         undeliveredAt.slice(0, 10)
       }', '${undeliveredAt}', 'email', 'failed', 1, ${
         sqlLiteral(undeliveredTitle)
-      });`,
+      }, (select scope.workspace_id from crm.reminders scope where scope.id = ${
+        sqlLiteral(undeliveredReminderId)
+      }::uuid));`,
     );
     await page.reload();
     const undelivered = page.locator("#today-overdue-list li", {

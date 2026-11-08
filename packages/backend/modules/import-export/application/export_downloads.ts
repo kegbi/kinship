@@ -65,6 +65,7 @@ export function createExportDownloads(
           });
           return { bytes, person };
         },
+        { workspaceId: actor.workspaceId },
       );
       if (!prepared) return { status: "not-found" as const };
       return {
@@ -101,6 +102,7 @@ export function createExportDownloads(
           }
           return people;
         },
+        { workspaceId: actor.workspaceId },
       );
       if (!prepared) return { status: "forbidden" as const };
       if (prepared.length === 0) return { status: "not-found" as const };
@@ -114,13 +116,15 @@ export function createExportDownloads(
     },
     list: async (actor: ExportActor) => {
       if (actor.role === "member") return { status: "forbidden" as const };
-      return await dependencies.transaction.run(async (transaction) =>
-        (await active(dependencies, actor, transaction))
-          ? {
-            exports: await dependencies.repository.list(actor, transaction),
-            status: "ready" as const,
-          }
-          : { status: "forbidden" as const }
+      return await dependencies.transaction.run(
+        async (transaction) =>
+          (await active(dependencies, actor, transaction))
+            ? {
+              exports: await dependencies.repository.list(actor, transaction),
+              status: "ready" as const,
+            }
+            : { status: "forbidden" as const },
+        { workspaceId: actor.workspaceId },
       );
     },
     createDownload: async (actor: ExportActor, exportId: string) => {
@@ -130,15 +134,17 @@ export function createExportDownloads(
         dependencies.clock.now().getTime() + EXPORT_WINDOWS.downloadMs,
       );
       const digest = await sha256Hex(token);
-      const issued = await dependencies.transaction.run(async (transaction) =>
-        await active(dependencies, actor, transaction) &&
-        await dependencies.repository.issueDownload({
-          actor,
-          digest,
-          expiresAt,
-          exportId,
-          transaction,
-        })
+      const issued = await dependencies.transaction.run(
+        async (transaction) =>
+          await active(dependencies, actor, transaction) &&
+          await dependencies.repository.issueDownload({
+            actor,
+            digest,
+            expiresAt,
+            exportId,
+            transaction,
+          }),
+        { workspaceId: actor.workspaceId },
       );
       return issued
         ? {
@@ -170,6 +176,7 @@ export function createExportDownloads(
             }),
           };
         },
+        { workspaceId: actor.workspaceId },
       );
       if (!attempt.authorized) return { status: "not-found" as const };
       if (attempt.consumed.status !== "consumed") return attempt.consumed;
@@ -178,15 +185,17 @@ export function createExportDownloads(
         fileId: attempt.consumed.fileId,
       });
       if (file.status !== "ready") return file;
-      await dependencies.transaction.run((transaction) =>
-        dependencies.audit.record({
-          action: "downloaded",
-          actor,
-          exportId,
-          occurredAt: now,
-          payload: {},
-          transaction,
-        })
+      await dependencies.transaction.run(
+        (transaction) =>
+          dependencies.audit.record({
+            action: "downloaded",
+            actor,
+            exportId,
+            occurredAt: now,
+            payload: {},
+            transaction,
+          }),
+        { workspaceId: actor.workspaceId },
       );
       return file;
     },

@@ -1,6 +1,6 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v13/personal_crm_schema_v13.sql
+schemaSource: personal-crm-schema/v14/personal_crm_schema_v14.sql
 
 # Beside the categories below, reviewed tickets placed four contracts in the
 # kernel: text and value validation (`validation.ts`, GAP-006), the transaction
@@ -154,6 +154,15 @@ modules:
       - relationship_types
       - pet_categories
       - workspace_lifecycle_records
+    # Schema v14's narrow cross-workspace means for session resolution,
+    # invitation acceptance, registration, and lifecycle (ADR 0008).
+    ownsFunctions:
+      - session_workspace_contexts
+      - session_audit_context
+      - enter_invitation_workspace
+      - unshared_registration_workspaces
+      - account_lifecycle_memberships
+      - workspace_sole_member_user_ids
     publicEntryPoints: [packages/backend/modules/workspaces/public.ts]
     allowedModuleDependencies: [identity]
     publishes: [
@@ -248,6 +257,8 @@ modules:
       - reminder_occurrences
       - stay_in_touch_cadences
       - stay_in_touch_cadence_requests
+    # Planner statistics after a bulk load (REL-116, ADR 0008).
+    ownsFunctions: [analyze_planning_tables]
     publicEntryPoints: [packages/backend/modules/planning/public.ts]
     allowedModuleDependencies: [people, workspaces]
     publishes: [
@@ -349,6 +360,14 @@ modules:
       - oauth_authorization_codes
       - oauth_access_tokens
       - oauth_refresh_tokens
+    # Schema v14's narrow means for bearer-token login, the calendar feed,
+    # and the durable throttles and mail budgets (ADR 0008).
+    ownsFunctions:
+      - enter_api_token_workspace
+      - request_budget_attempts
+      - request_budget_workspace_count
+      - record_request_budget
+      - finalize_request_budget
     publicEntryPoints: [packages/backend/modules/api-access/public.ts]
     allowedModuleDependencies: [governance, identity, workspaces]
     publishes: [api-access.token-revoked]

@@ -15,6 +15,7 @@
  * translating it.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -38,5 +39,8 @@ export interface InteractionActor extends Correlation {
 
 /** The transaction an interactions use case runs its work in. */
 export interface InteractionTransactionRunner {
-  run<T>(work: (transaction: InteractionTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: InteractionTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

@@ -124,6 +124,18 @@ Deno.test("Compose and root development pass PostgreSQL credentials as fields", 
     example.includes("INTEGRATIONS_DAV_ENABLED=true"),
     "the environment example must document DAV module enablement",
   );
+  for (
+    const name of [
+      "POSTGRES_APP_PASSWORD",
+      "POSTGRES_MIGRATOR_PASSWORD",
+      "POSTGRES_WORKER_PASSWORD",
+    ]
+  ) {
+    assert(
+      example.includes(`${name}=`),
+      `the environment example must document the ${name} role secret (ADR 0008)`,
+    );
+  }
 
   const developmentTool = await Deno.readTextFile(
     new URL("./dev.ts", import.meta.url),
@@ -311,6 +323,10 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
       "OBJECT_STORAGE_PORT",
       "OBJECT_STORAGE_REQUEST_TIMEOUT_MS",
       "OBJECT_STORAGE_SECRET_KEY",
+      // The per-service database role passwords (ADR 0008).
+      "POSTGRES_APP_PASSWORD",
+      "POSTGRES_MIGRATOR_PASSWORD",
+      "POSTGRES_WORKER_PASSWORD",
     ]
   ) {
     assert(

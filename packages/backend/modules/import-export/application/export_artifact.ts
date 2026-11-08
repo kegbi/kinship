@@ -106,6 +106,7 @@ export function createExportArtifact(
           }
           return claim;
         },
+        { workspaceId: actor.workspaceId },
       );
       if (!claimed) return { status: "forbidden" as const };
       return await runOrUnavailable(
@@ -222,6 +223,7 @@ export function createExportArtifact(
           });
           return summary;
         },
+        { workspaceId: actor.workspaceId },
       );
     },
   };

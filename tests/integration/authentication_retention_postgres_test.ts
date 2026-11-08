@@ -25,6 +25,7 @@ import { apiSupport, ORIGIN, originHeaders } from "../support/api.ts";
 import {
   openSql,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
   resetDatabase,
 } from "../support/database.ts";
 import {
@@ -46,8 +47,9 @@ const api = apiSupport(configured.app, capturedMail, sql);
 
 /** One run of the configured worker, as the deployed process runs it. */
 async function runWorkerOnce(): Promise<void> {
+  // The worker's own role, as Compose runs it (ADR 0008).
   const worker = createConfiguredReminderWorker(
-    databaseUrl,
+    requireWorkerDatabaseUrl(),
     recordingLogger(),
     { get: (name) => name === "APP_ENV" ? "test" : undefined },
   );

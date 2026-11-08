@@ -1,6 +1,7 @@
 import { type Kysely, type RawBuilder, sql, type Transaction } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { writeWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import type {
   WorkspaceLifecycleCounts,
   WorkspaceLifecycleSnapshot,
@@ -42,17 +43,11 @@ async function impactToken(
  * use there; only someone left with no workspace at all is signed out.
  */
 function soleMembers(workspaceId: string): RawBuilder<unknown> {
-  return sql`select member.user_id from crm.workspace_members member
-    where member.workspace_id = ${workspaceId}::uuid
-      and member.status = 'active' and member.left_at is null
-      and not exists (
-        select 1 from crm.workspace_members other
-        join crm.workspaces elsewhere on elsewhere.id = other.workspace_id
-        where other.user_id = member.user_id
-          and other.workspace_id <> member.workspace_id
-          and other.status = 'active' and other.left_at is null
-          and elsewhere.status = 'active' and elsewhere.deleted_at is null
-      )`;
+  // Whether a member belongs to another active workspace is a question across
+  // workspaces: the workspace-lifecycle function answers it (ADR 0008).
+  return sql`select sole.user_id
+    from crm.workspace_sole_member_user_ids(${workspaceId}::uuid)
+      as sole(user_id)`;
 }
 
 async function revokeSoleMemberSessions(
@@ -241,12 +236,17 @@ export class PostgresWorkspaceLifecycleRepository
     readonly {
       readonly objectKeys: readonly string[];
       readonly recordId: string;
+      readonly workspaceId: string;
     }[]
   > {
+    // The worker's cleanup scan reads every workspace's records through its
+    // own policy (ADR 0008).
     const result = await sql<{
       readonly objectKeys: unknown;
       readonly recordId: string;
-    }>`select id::text as "recordId", object_keys as "objectKeys"
+      readonly workspaceId: string;
+    }>`select id::text as "recordId", object_keys as "objectKeys",
+        workspace_id::text as "workspaceId"
       from crm.workspace_lifecycle_records where cleanup_status = 'pending'
       order by created_at, id limit ${command.limit}`.execute(this.database);
     return result.rows.map((row) => ({
@@ -254,16 +254,24 @@ export class PostgresWorkspaceLifecycleRepository
         ? row.objectKeys.filter((key): key is string => typeof key === "string")
         : [],
       recordId: row.recordId,
+      workspaceId: row.workspaceId,
     }));
   }
 
   async completeCleanup(
     command: Parameters<WorkspaceLifecycleRepository["completeCleanup"]>[0],
   ): Promise<void> {
-    await sql`update crm.workspace_lifecycle_records set cleanup_status = 'complete',
-      cleanup_completed_at = ${command.completedAt}, object_keys = '[]'::jsonb
-      where id = ${command.recordId}::uuid and cleanup_status = 'pending'`
-      .execute(this.database);
+    await writeWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      (database) =>
+        sql`update crm.workspace_lifecycle_records
+          set cleanup_status = 'complete',
+            cleanup_completed_at = ${command.completedAt},
+            object_keys = '[]'::jsonb
+          where id = ${command.recordId}::uuid
+            and cleanup_status = 'pending'`.execute(database),
+    );
   }
 }
 

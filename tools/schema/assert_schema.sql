@@ -19,7 +19,7 @@ CREATE TEMP TABLE expected_field_catalog (
   change_reason text
 );
 
-\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v13.csv' WITH (FORMAT csv, HEADER true)
+\copy expected_field_catalog FROM '/tmp/personal_crm_field_catalog_v14.csv' WITH (FORMAT csv, HEADER true)
 
 DO $$
 DECLARE
@@ -33,8 +33,8 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM expected_field_catalog;
-  IF actual_count <> 877 THEN
-    RAISE EXCEPTION 'field catalog row count: expected 877, got %', actual_count;
+  IF actual_count <> 897 THEN
+    RAISE EXCEPTION 'field catalog row count: expected 897, got %', actual_count;
   END IF;
 
   IF (
@@ -238,10 +238,12 @@ BEGIN
         'CREATE INDEX reminder_occurrences_member_feed_idx ON crm.reminder_occurrences USING btree (member_id, date_trunc(''milliseconds''::text, (visible_at AT TIME ZONE ''UTC''::text)) DESC, id DESC) WHERE ((channel = ''in_app''::text) AND (status = ''sent''::text) AND (visible_at IS NOT NULL))'),
       ('reminder_occurrences_member_open_idx',
         'CREATE INDEX reminder_occurrences_member_open_idx ON crm.reminder_occurrences USING btree (member_id, ( CASE WHEN (status = ''retry''::text) THEN next_attempt_at ELSE deliver_at END)) WHERE (status = ANY (ARRAY[''pending''::text, ''retry''::text, ''failed''::text, ''manual_attention''::text]))'),
+      -- v14 (ADR 0008, Q4) rebuilds both on stored keys with v13's exact
+      -- expressions, so they are sought under row-level security.
       ('people_active_given_name_idx',
-        'CREATE INDEX people_active_given_name_idx ON crm.people USING btree (workspace_id, lower(COALESCE(NULLIF(btrim(given_name), ''''::text), NULLIF(btrim(nickname), ''''::text), NULLIF(btrim(family_name), ''''::text), ''''::text)), lower(COALESCE(family_name, ''''::text)), id) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
+        'CREATE INDEX people_active_given_name_idx ON crm.people USING btree (workspace_id, sort_given_name, sort_family_name, id) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
       ('people_active_duplicate_name_idx',
-        'CREATE INDEX people_active_duplicate_name_idx ON crm.people USING btree (workspace_id, lower(btrim(given_name)), lower(btrim(COALESCE(family_name, ''''::text))), lower(btrim(COALESCE(nickname, ''''::text)))) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
+        'CREATE INDEX people_active_duplicate_name_idx ON crm.people USING btree (workspace_id, duplicate_given_name, duplicate_family_name, duplicate_nickname) WHERE ((archived_at IS NULL) AND (deleted_at IS NULL))'),
       ('reminders_person_date_idx',
         'CREATE INDEX reminders_person_date_idx ON crm.reminders USING btree (person_date_id) WHERE (person_date_id IS NOT NULL)'),
       ('reminders_life_event_idx',

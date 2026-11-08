@@ -19,6 +19,7 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { type PeopleActor } from "../../packages/backend/modules/people/public.ts";
 import { type ReminderDeliveryProvider } from "../../packages/backend/modules/planning/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import { PostgresReminderDeliveryRepository } from "../../packages/backend/modules/planning/adapters/postgres/reminder_repository.ts";
@@ -26,6 +27,7 @@ import { assert } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
   requireDatabaseUrl,
+  requireWorkerDatabaseUrl,
   revocableActor as revocableActorFor,
 } from "../support/database.ts";
 import {
@@ -44,7 +46,25 @@ export const configured = createConfiguredApiApp(
   mail,
   browserSecurityPolicy("test", "http://localhost"),
 );
-export const deliveryConnection = connectDatabase(databaseUrl);
+// The delivery repository is the worker's: it reads due work across workspaces
+// through the worker role's own scan policies (ADR 0008).
+export const deliveryConnection = connectDatabase(requireWorkerDatabaseUrl());
+/**
+ * The API's own pool, as `kinship_app`, for a test that drives a planning
+ * adapter directly; `inApiWorkspace` runs the work scoped to one workspace as
+ * the API's transaction runners do (ADR 0008).
+ */
+export const apiConnection = connectDatabase(databaseUrl);
+export function inApiWorkspace<T>(
+  workspaceId: string,
+  work: (transaction: { readonly opaque: unknown }) => Promise<T>,
+): Promise<T> {
+  return writeWithinWorkspace(
+    apiConnection.db,
+    workspaceId,
+    (database) => work({ opaque: database }),
+  );
+}
 export const deliveryRepository = new PostgresReminderDeliveryRepository(
   deliveryConnection.db,
   new PostgresActorRevalidation(),
@@ -236,4 +256,5 @@ export async function closeResources(): Promise<void> {
   await sql.end();
   await configured.close();
   await deliveryConnection.destroy();
+  await apiConnection.destroy();
 }

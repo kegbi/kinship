@@ -9,7 +9,10 @@
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
 import { PostgresProfileFactRepository } from "../../packages/backend/modules/people/adapters/postgres/profile_fact_repository.ts";
-import { revocableActor } from "../support/database.ts";
+import {
+  assertCrossWorkspaceRefused,
+  revocableActor,
+} from "../support/database.ts";
 import {
   configured,
   createPerson,
@@ -498,23 +501,49 @@ Deno.test({
       "public facade rejects blank food without row, revision, or audit change",
     );
     const malformedContactId = crypto.randomUUID();
-    await sql`
-      insert into crm.person_contact_methods (id, person_id, type_id, value)
-      values (${malformedContactId}, ${personId}, ${foreignTypeId}, 'concealed')
-    `;
-    await sql`
-      insert into crm.person_contact_method_labels (contact_method_id, label_id)
-      values (${factIds.get("contact-methods")!}, ${foreignLabelId})
-    `;
-    await sql`
-      insert into crm.person_address_labels (address_id, label_id)
-      values (${factIds.get("addresses")!}, ${foreignLabelId})
-    `;
-    await sql`
+    // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
+      insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
+      values (${malformedContactId}, ${personId}, ${foreignTypeId}, 'concealed', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
+    `,
+      "a contact method of another workspace's type",
+    );
+    // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
+      insert into crm.person_contact_method_labels (contact_method_id, label_id, workspace_id)
+      values (${factIds.get(
+          "contact-methods",
+        )!}, ${foreignLabelId}, (select scope.workspace_id from crm.person_contact_methods scope where scope.id = ${factIds
+          .get("contact-methods")!}::uuid))
+    `,
+      "a contact label of another workspace",
+    );
+    // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
+      insert into crm.person_address_labels (address_id, label_id, workspace_id)
+      values (${factIds.get(
+          "addresses",
+        )!}, ${foreignLabelId}, (select scope.workspace_id from crm.person_addresses scope where scope.id = ${factIds
+          .get("addresses")!}::uuid))
+    `,
+      "an address label of another workspace",
+    );
+    // Schema v14 refuses this cross-workspace reference outright (ADR 0008).
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
       update crm.person_first_meetings
       set introduced_by_person_id = ${foreignPersonId}
       where person_id = ${personId}
-    `;
+    `,
+      "a first meeting introduced by another workspace's person",
+    );
     const scopedContact = await request("contact-methods", "GET");
     const scopedAddress = await request("addresses", "GET");
     const scopedMeeting = await request("first-meeting", "GET");
@@ -544,7 +573,9 @@ Deno.test({
         scopedAddressBody.records.every((record) =>
           !record.value.labelIds.includes(foreignLabelId)
         ) &&
-        scopedMeetingBody.records[0]?.value.introducedByPersonId === undefined,
+        // The refused update left the meeting's own introducer in place.
+        scopedMeetingBody.records[0]?.value.introducedByPersonId !==
+          foreignPersonId,
       "foreign type, labels, and introducer references are concealed on reads",
     );
 
@@ -554,20 +585,20 @@ Deno.test({
     const foreignWorkId = crypto.randomUUID();
     const foreignPetId = crypto.randomUUID();
     await sql`
-      insert into crm.person_contact_methods (id, person_id, type_id, value)
-      values (${foreignContactId}, ${foreignPersonId}, ${foreignTypeId}, 'private')
+      insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
+      values (${foreignContactId}, ${foreignPersonId}, ${foreignTypeId}, 'private', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))
     `;
     await sql`
       insert into crm.locations (id, workspace_id, city)
       values (${foreignLocationId}, ${foreign.workspaceId}, 'Private')
     `;
     await sql`
-      insert into crm.person_addresses (id, person_id, location_id)
-      values (${foreignAddressId}, ${foreignPersonId}, ${foreignLocationId})
+      insert into crm.person_addresses (id, person_id, location_id, workspace_id)
+      values (${foreignAddressId}, ${foreignPersonId}, ${foreignLocationId}, (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))
     `;
     await sql`
-      insert into crm.person_occupations (id, person_id, title)
-      values (${foreignWorkId}, ${foreignPersonId}, 'Private')
+      insert into crm.person_occupations (id, person_id, title, workspace_id)
+      values (${foreignWorkId}, ${foreignPersonId}, 'Private', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))
     `;
     await sql`
       insert into crm.pets (id, person_id, name)
@@ -861,19 +892,21 @@ Deno.test({
       insert into crm.person_contact_methods (
         person_id, type_id, value, is_primary, sort_order, created_at,
         updated_at
-      )
+      , workspace_id)
       select ${personId}::uuid, method_type.id,
         'bounded-' || series || '@example.test', false, series,
         '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
-        '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second'
+        '2026-01-01T00:00:00Z'::timestamptz + series * interval '1 second',
+        (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)
       from generate_series(1, 120) series
       join crm.contact_method_types method_type
         on method_type.workspace_id = ${owner.workspaceId}::uuid
         and method_type.name = 'Bounded type ' || series
     `;
     await sql`
-      insert into crm.person_contact_method_labels (contact_method_id, label_id)
-      select method.id, label.id
+      insert into crm.person_contact_method_labels (contact_method_id, label_id, workspace_id)
+      select method.id, label.id,
+        (select scope.workspace_id from crm.person_contact_methods scope where scope.id = method.id)
       from crm.person_contact_methods method
       join crm.contact_labels label
         on label.workspace_id = ${owner.workspaceId}::uuid
@@ -1402,18 +1435,21 @@ Deno.test({
     await sql`
       insert into crm.person_contact_methods (
         id, person_id, type_id, value, updated_at
-      )
-      select id, person_id, ${typeId}::uuid, name, updated_at
+      , workspace_id)
+      select id, person_id, ${typeId}::uuid, name, updated_at,
+        (select scope.workspace_id from crm.people scope where scope.id = person_id)
       from crm.pets where person_id = ${personId}::uuid
     `;
     await sql`
-      insert into crm.person_addresses (id, person_id, display_name, updated_at)
-      select id, person_id, name, updated_at
+      insert into crm.person_addresses (id, person_id, display_name, updated_at, workspace_id)
+      select id, person_id, name, updated_at,
+        (select scope.workspace_id from crm.people scope where scope.id = person_id)
       from crm.pets where person_id = ${personId}::uuid
     `;
     await sql`
-      insert into crm.person_occupations (id, person_id, title, updated_at)
-      select id, person_id, name, updated_at
+      insert into crm.person_occupations (id, person_id, title, updated_at, workspace_id)
+      select id, person_id, name, updated_at,
+        (select scope.workspace_id from crm.people scope where scope.id = person_id)
       from crm.pets where person_id = ${personId}::uuid
     `;
     const expected = ids.map((id, index) => ({
@@ -1551,8 +1587,7 @@ Deno.test({
         personId: foreign.personId,
         section: "food-preferences",
         transaction: session,
-      })
-    );
+      }), { workspaceId: actor.workspaceId });
     assertEquals(listed, [], "another workspace's food preferences were read");
     const tags = await transaction.run((session) =>
       repository.list({
@@ -1560,8 +1595,7 @@ Deno.test({
         personId: foreign.personId,
         section: "tags",
         transaction: session,
-      })
-    );
+      }), { workspaceId: actor.workspaceId });
     assertEquals(tags, [], "another workspace's person was read as tags");
 
     const saved = await transaction.run((session) =>
@@ -1573,8 +1607,10 @@ Deno.test({
         section: "food-preferences",
         transaction: session,
         value: { foodPreferences: "Forged" },
-      })
-    ).then(() => "saved", () => "refused");
+      }), { workspaceId: actor.workspaceId }).then(
+        () => "saved",
+        () => "refused",
+      );
     assertEquals(saved, "refused", "a forged person id was written");
     const [after] = await sql<
       { readonly food_preferences: string; readonly updated_at: string }[]

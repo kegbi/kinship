@@ -52,6 +52,11 @@ export async function lockInvitationAuthority(
   tokenHash: string,
 ): Promise<void> {
   const database = databaseFromSession(transaction);
+  // The invitee belongs to no workspace yet. The invitation function scopes
+  // this transaction to the workspace the token hash names (ADR 0008), so
+  // every later statement of the inspection or acceptance runs there.
+  await sql`select crm.enter_invitation_workspace(${tokenHash})`
+    .execute(database);
   const invitation = await sql<{
     readonly invitedByMemberId: string | null;
     readonly workspaceId: string;

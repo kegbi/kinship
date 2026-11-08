@@ -48,9 +48,17 @@ const SECRET_NAMES = [
   "GATEWAY_TLS_PRIVATE_KEY_PATH",
   "INTEGRATIONS_ENCRYPTION_KEYSET",
   "OBJECT_STORAGE_ACCESS_KEY+OBJECT_STORAGE_SECRET_KEY",
+  "POSTGRES_APP_PASSWORD+POSTGRES_MIGRATOR_PASSWORD+POSTGRES_WORKER_PASSWORD",
   "POSTGRES_PASSWORD",
   "PRIVATE_PRODUCTION_ARCHIVE_KEY",
   "SMTP_USERNAME+SMTP_PASSWORD",
+] as const;
+
+/** Each service role's password and the placeholder `.env.example` publishes. */
+const DATABASE_ROLE_PASSWORDS = [
+  ["POSTGRES_APP_PASSWORD", "replace-with-a-local-app-role-password"],
+  ["POSTGRES_MIGRATOR_PASSWORD", "replace-with-a-local-migrator-role-password"],
+  ["POSTGRES_WORKER_PASSWORD", "replace-with-a-local-worker-role-password"],
 ] as const;
 
 function required(environment: EnvironmentReader, name: string): string {
@@ -162,6 +170,22 @@ export function runPrivateProductionPreflight(
         if (password === "replace-with-a-local-development-password") {
           throw new Error("local placeholder");
         }
+        // ADR 0008: the migrate job, the API, and the worker each sign in
+        // with their own role. Each password is set, is not the value
+        // .env.example publishes, meets the bootstrap step's 16 characters,
+        // and is shared with no other role, the superuser included.
+        const rolePasswords = DATABASE_ROLE_PASSWORDS.map(
+          ([name, placeholder]) => {
+            const value = required(environment, name);
+            if (value === placeholder || value.length < 16) {
+              throw new Error("published or short role password");
+            }
+            return value;
+          },
+        );
+        if (new Set([password, ...rolePasswords]).size !== 4) {
+          throw new Error("shared database password");
+        }
         buildPostgresUrl({
           database: required(environment, "POSTGRES_DB"),
           host: "postgres",
@@ -173,7 +197,7 @@ export function runPrivateProductionPreflight(
       issue: {
         code: "database-configuration",
         action:
-          "Provide POSTGRES_DB, POSTGRES_USER, and POSTGRES_PASSWORD only through the deployment secret boundary; remove DATABASE_URL from Compose input.",
+          "Provide POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, and four distinct passwords of at least 16 characters (POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD, POSTGRES_MIGRATOR_PASSWORD, POSTGRES_WORKER_PASSWORD, none the .env.example value) only through the deployment secret boundary; remove DATABASE_URL from Compose input.",
       },
     },
     {

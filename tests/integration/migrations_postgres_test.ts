@@ -17,9 +17,15 @@ import {
   runMigration,
 } from "../../tools/migrations/main.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
-import { openSql, requireDatabaseUrl, type Sql } from "../support/database.ts";
+import {
+  openSql,
+  requireAdminDatabaseUrl,
+  type Sql,
+} from "../support/database.ts";
 
-const databaseUrl = requireDatabaseUrl();
+// Scratch databases are created, seeded, and migrated as the project superuser;
+// the gate itself proves the migrate job as kinship_migrator (ADR 0008).
+const databaseUrl = requireAdminDatabaseUrl();
 const artifacts = await readCanonicalArtifacts();
 
 /** Runs `work` against a fresh, empty database that is dropped afterwards. */
@@ -79,10 +85,11 @@ const priorBaselines = [
   ["v10", artifacts.v10Sql],
   ["v11", artifacts.v11Sql],
   ["v12", artifacts.v12Sql],
+  ["v13", artifacts.v13Sql],
 ] as const;
 
 for (const [version, baselineSql] of priorBaselines) {
-  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v13 catalog`, async () => {
+  Deno.test(`[REL-061] the migration runner upgrades an exact ${version} database to the v14 catalog`, async () => {
     await withScratchDatabase(async ({ sql, url }) => {
       await sql.unsafe(baselineSql);
       const userId = crypto.randomUUID();
@@ -92,16 +99,16 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v13`,
+        await runMigration(environment(url)) === `upgrade-${version}-to-v14`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
       const upgraded = await crmTables(sql);
-      const expected = canonicalTableNames(artifacts.v13Sql);
+      const expected = canonicalTableNames(artifacts.v14Sql);
       assert(
         JSON.stringify(upgraded) === JSON.stringify(expected) &&
           upgraded.length === 92,
-        `the upgraded catalog is not v13: ${
+        `the upgraded catalog is not v14: ${
           expected.filter((name) => !upgraded.includes(name)).join(", ")
         }`,
       );
@@ -112,11 +119,11 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v13 catalog
+      // The runner verified the structure against a freshly built v14 catalog
       // before it committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v13",
-        `an upgraded ${version} database is not recognised as exact v13`,
+        await runMigration(environment(url)) === "verify-v14",
+        `an upgraded ${version} database is not recognised as exact v14`,
       );
     });
   });
@@ -139,8 +146,8 @@ Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery col
     );
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v11-to-v13",
-      "an exact v11 database was not classified for the v11-to-v13 upgrade",
+      await runMigration(environment(url)) === "upgrade-v11-to-v14",
+      "an exact v11 database was not classified for the v11-to-v14 upgrade",
     );
     const [after] = await columnComment(sql);
     assert(
@@ -150,13 +157,13 @@ Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery col
     );
     assert(
       JSON.stringify(await crmTables(sql)) ===
-        JSON.stringify(canonicalTableNames(artifacts.v13Sql)),
+        JSON.stringify(canonicalTableNames(artifacts.v14Sql)),
       "the comment-only upgrade changed the table catalog",
     );
   });
 });
 
-Deno.test("[REL-061] the v12-to-v13 upgrade keeps imported catalog rows, seeds the rest, and admits an MFA challenge", async () => {
+Deno.test("[REL-061] the v12-to-v14 upgrade keeps imported catalog rows, seeds the rest, and admits an MFA challenge", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v12Sql);
     const [userId, emotionId, petId] = [
@@ -176,8 +183,8 @@ Deno.test("[REL-061] the v12-to-v13 upgrade keeps imported catalog rows, seeds t
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v12-to-v13",
-      "an exact v12 database was not classified for the v12-to-v13 upgrade",
+      await runMigration(environment(url)) === "upgrade-v12-to-v14",
+      "an exact v12 database was not classified for the v12-to-v14 upgrade",
     );
     const [catalogs] = await sql<{
       readonly emotions: number;
@@ -205,8 +212,8 @@ Deno.test("[REL-061] the v12-to-v13 upgrade keeps imported catalog rows, seeds t
         now() + interval '5 minutes')
     `;
     assert(
-      await runMigration(environment(url)) === "verify-v13",
-      "an upgraded v12 database is not recognised as exact v13",
+      await runMigration(environment(url)) === "verify-v14",
+      "an upgraded v12 database is not recognised as exact v14",
     );
   });
 });
@@ -234,7 +241,7 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v13",
+      await runMigration(environment(url)) === "upgrade-v7-to-v14",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -294,7 +301,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v13",
+      await runMigration(environment(url)) === "upgrade-v8-to-v14",
       "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
@@ -324,7 +331,7 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
   });
 });
 
-Deno.test("[GIFTS-001] the v9-to-v13 upgrade keeps hand-recorded debts and charges a period once", async () => {
+Deno.test("[GIFTS-001] the v9-to-v14 upgrade keeps hand-recorded debts and charges a period once", async () => {
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v9Sql);
     const [userId, workspaceId, otherWorkspaceId] = [
@@ -353,8 +360,8 @@ Deno.test("[GIFTS-001] the v9-to-v13 upgrade keeps hand-recorded debts and charg
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v9-to-v13",
-      "an exact v9 database was not classified for the v9-to-v13 upgrade",
+      await runMigration(environment(url)) === "upgrade-v9-to-v14",
+      "an exact v9 database was not classified for the v9-to-v14 upgrade",
     );
     const [kept] = await sql<
       { readonly amount: string; readonly rule: string | null }[]

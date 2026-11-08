@@ -207,6 +207,7 @@ export function createLifeEventManagement(
           await record("created", actor, personId, event.id, now, transaction);
           return { event: { ...event, ...type }, status: "created" };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
     update: async (
@@ -257,6 +258,7 @@ export function createLifeEventManagement(
           await record("updated", actor, personId, event.id, now, transaction);
           return { event: { ...event, ...type }, status: "updated" };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
     delete: async (
@@ -303,6 +305,7 @@ export function createLifeEventManagement(
           );
           return { lifeEventId, status: "deleted" };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
   };

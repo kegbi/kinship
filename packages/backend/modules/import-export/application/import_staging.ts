@@ -345,7 +345,7 @@ export function createImportStaging(
           transaction,
         });
         return run;
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

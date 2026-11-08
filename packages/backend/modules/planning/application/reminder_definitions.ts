@@ -143,7 +143,7 @@ export function createReminderDefinitions(
           ),
           status: "created",
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     setActive: async (actor: PlanningActor, id: string, active: boolean) =>
       await dependencies.transaction.run(async (transaction) => {
@@ -198,7 +198,7 @@ export function createReminderDefinitions(
           };
         }
         return { reminder, status: "saved" as const };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     listPerson: async (
       actor: PlanningActor,
       personId: string,
@@ -246,7 +246,7 @@ export function createReminderDefinitions(
             : {}),
           status: "ready" as const,
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     timezoneChanged: async (
       actor: PlanningActor,

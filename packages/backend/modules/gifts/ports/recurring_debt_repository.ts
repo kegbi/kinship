@@ -91,13 +91,16 @@ export interface RecurringDebtRepository {
   ): Promise<boolean>;
   /**
    * Rules in any workspace that are active, whose person is live and not
-   * archived, and whose next period falls due on or before `through`.
+   * archived, and whose next period falls due on or before `through`, each
+   * with its workspace, which its charge then runs in (ADR 0008).
    */
   listDue(command: {
     readonly limit: number;
     readonly through: string;
     readonly transaction: GiftTransaction;
-  }): Promise<readonly string[]>;
+  }): Promise<
+    readonly { readonly id: string; readonly workspaceId: string }[]
+  >;
   /**
    * The rule locked for charging, or nothing when another worker holds it or
    * it is no longer an active rule of a live, unarchived person.

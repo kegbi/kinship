@@ -1,3 +1,4 @@
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import { personBoundary } from "../../packages/backend/modules/people/composition.ts";
 import { journalActivityBoundary } from "../../packages/backend/modules/interactions/composition.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
@@ -42,7 +43,7 @@ Deno.test({
     const get = (table: string, key: string) =>
       identities.get(`${table}:${key}`)!;
     const instant = "2020-01-02 03:04:05";
-    await sql`insert into crm.person_avatars (person_id,source) values (${owner.personId}::uuid,'default')`;
+    await sql`insert into crm.person_avatars (person_id,source, workspace_id) values (${owner.personId}::uuid,'default', (select scope.workspace_id from crm.people scope where scope.id = ${owner.personId}::uuid))`;
 
     const parsed = monicaExtra({
       contacts: [{
@@ -153,44 +154,48 @@ Deno.test({
     }, { sourceProfile: "sql_export" });
     assert(typeof parsed !== "string", "fixture parses");
     try {
-      await connection.db.transaction().execute(async (tx) => {
-        const pending = [...parsed.entities];
-        while (pending.length) {
-          const index = pending.findIndex((entity) =>
-            Object.values(entity.references ?? {}).every((r) =>
-              identities.has(`${r.table}:${r.key}`)
-            )
-          );
-          assert(index >= 0, "unresolved fixture references");
-          const entity = pending.splice(index, 1)[0]!;
-          const id = crypto.randomUUID();
-          const refs = Object.fromEntries(
-            Object.entries(entity.references ?? {}).map((
-              [key, r],
-            ) => [key, get(r.table, r.key)]),
-          );
-          const boundary = {
-            people,
-            gifts,
-            journal,
-            files,
-            workspaces: workspace,
-          }[entity.owner];
-          const result = await boundary.importRecords({
-            actor: owner,
-            transaction: { opaque: tx },
-            records: [{
-              id,
-              data: { ...entity.data, preserveTimestamps: true },
-              references: refs,
-            }],
-          });
-          identities.set(
-            `${entity.sourceTable}:${entity.sourcePrimaryKey}`,
-            result?.[id] ?? id,
-          );
-        }
-      });
+      await writeWithinWorkspace(
+        connection.db,
+        owner.workspaceId,
+        async (tx) => {
+          const pending = [...parsed.entities];
+          while (pending.length) {
+            const index = pending.findIndex((entity) =>
+              Object.values(entity.references ?? {}).every((r) =>
+                identities.has(`${r.table}:${r.key}`)
+              )
+            );
+            assert(index >= 0, "unresolved fixture references");
+            const entity = pending.splice(index, 1)[0]!;
+            const id = crypto.randomUUID();
+            const refs = Object.fromEntries(
+              Object.entries(entity.references ?? {}).map((
+                [key, r],
+              ) => [key, get(r.table, r.key)]),
+            );
+            const boundary = {
+              people,
+              gifts,
+              journal,
+              files,
+              workspaces: workspace,
+            }[entity.owner];
+            const result = await boundary.importRecords({
+              actor: owner,
+              transaction: { opaque: tx },
+              records: [{
+                id,
+                data: { ...entity.data, preserveTimestamps: true },
+                references: refs,
+              }],
+            });
+            identities.set(
+              `${entity.sourceTable}:${entity.sourcePrimaryKey}`,
+              result?.[id] ?? id,
+            );
+          }
+        },
+      );
       const [debt] =
         await sql`select amount::text,currency_code,direction,status,settled_at,created_at from crm.debts where id=${
           get("debts", "7")
@@ -226,15 +231,20 @@ Deno.test({
         }::uuid`;
       assertEquals(toggle?.is_active, false);
       // Natural catalog conflicts return the existing ID, without renaming it.
-      const reused = await workspace.importRecords({
-        actor: owner,
-        transaction: { opaque: connection.db },
-        records: [{
-          id: crypto.randomUUID(),
-          data: { kind: "pet_category", name: "cat" },
-          references: {},
-        }],
-      });
+      const reused = await writeWithinWorkspace(
+        connection.db,
+        owner.workspaceId,
+        (db) =>
+          workspace.importRecords({
+            actor: owner,
+            transaction: { opaque: db },
+            records: [{
+              id: crypto.randomUUID(),
+              data: { kind: "pet_category", name: "cat" },
+              references: {},
+            }],
+          }),
+      );
       assert(
         Object.values(reused).includes(get("pet_categories", "3")),
         "global category reused",
@@ -243,33 +253,37 @@ Deno.test({
       const rollbackId = crypto.randomUUID();
       let rejected = false;
       try {
-        await connection.db.transaction().execute(async (tx) => {
-          await gifts.importRecords({
-            actor: owner,
-            transaction: { opaque: tx },
-            records: [{
-              id: rollbackId,
-              data: {
-                kind: "debt",
-                amount: "1.00",
-                currencyCode: "USD",
-                direction: "they_owe",
-                status: "open",
-              },
-              references: { personId: owner.personId },
-            }, {
-              id: crypto.randomUUID(),
-              data: {
-                kind: "debt",
-                amount: "2.00",
-                currencyCode: "USD",
-                direction: "they_owe",
-                status: "open",
-              },
-              references: { personId: foreign.personId },
-            }],
-          });
-        });
+        await writeWithinWorkspace(
+          connection.db,
+          owner.workspaceId,
+          async (tx) => {
+            await gifts.importRecords({
+              actor: owner,
+              transaction: { opaque: tx },
+              records: [{
+                id: rollbackId,
+                data: {
+                  kind: "debt",
+                  amount: "1.00",
+                  currencyCode: "USD",
+                  direction: "they_owe",
+                  status: "open",
+                },
+                references: { personId: owner.personId },
+              }, {
+                id: crypto.randomUUID(),
+                data: {
+                  kind: "debt",
+                  amount: "2.00",
+                  currencyCode: "USD",
+                  direction: "they_owe",
+                  status: "open",
+                },
+                references: { personId: foreign.personId },
+              }],
+            });
+          },
+        );
       } catch {
         rejected = true;
       }
@@ -279,15 +293,20 @@ Deno.test({
           .length,
         0,
       );
-      const retained = await people.importRecords({
-        actor: owner,
-        transaction: { opaque: connection.db },
-        records: [{
-          id: crypto.randomUUID(),
-          data: { kind: "profile", createdAt: "1999-01-01T00:00:00Z" },
-          references: { personId: owner.personId },
-        }],
-      });
+      const retained = await writeWithinWorkspace(
+        connection.db,
+        owner.workspaceId,
+        (db) =>
+          people.importRecords({
+            actor: owner,
+            transaction: { opaque: db },
+            records: [{
+              id: crypto.randomUUID(),
+              data: { kind: "profile", createdAt: "1999-01-01T00:00:00Z" },
+              references: { personId: owner.personId },
+            }],
+          }),
+      );
       assertEquals(Object.values(retained), [owner.personId]);
       const [unchanged] =
         await sql`select created_at from crm.people where id=${owner.personId}::uuid`;

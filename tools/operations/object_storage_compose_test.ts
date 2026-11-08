@@ -19,7 +19,13 @@ function composeCommand(
       projectName,
       ...args,
     ],
-    env: { POSTGRES_PASSWORD: "compose-validation-only" },
+    env: {
+      POSTGRES_PASSWORD: "compose-validation-only",
+      // The per-service role passwords Compose requires (ADR 0008).
+      POSTGRES_APP_PASSWORD: "compose-validation-app",
+      POSTGRES_MIGRATOR_PASSWORD: "compose-validation-migrator",
+      POSTGRES_WORKER_PASSWORD: "compose-validation-worker",
+    },
     stderr: "piped",
     stdout: "piped",
   });

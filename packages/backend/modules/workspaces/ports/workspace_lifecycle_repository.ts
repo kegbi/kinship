@@ -147,10 +147,13 @@ export interface WorkspaceLifecycleRepository {
     readonly {
       readonly objectKeys: readonly string[];
       readonly recordId: string;
+      readonly workspaceId: string;
     }[]
   >;
+  /** Marks one record's cleanup done, in the workspace it records. */
   completeCleanup(command: {
     readonly completedAt: Date;
     readonly recordId: string;
+    readonly workspaceId: string;
   }): Promise<void>;
 }

@@ -344,12 +344,14 @@ export function createWorkspaceInvitationCoordinator(
     async create(command) {
       if (!privileged(command.actor)) return "forbidden";
       const now = dependencies.clock.now();
-      const established = await dependencies.transaction.run((transaction) =>
-        dependencies.identity.isAddressVerifiedBy({
-          transaction,
-          userId: command.actor.userId,
-          verifiedBy: inviterVerifiedBy(now),
-        })
+      const established = await dependencies.transaction.run(
+        (transaction) =>
+          dependencies.identity.isAddressVerifiedBy({
+            transaction,
+            userId: command.actor.userId,
+            verifiedBy: inviterVerifiedBy(now),
+          }),
+        { workspaceId: command.actor.workspaceId },
       );
       if (!established) return "inviter-not-established";
       const budget = await dependencies.mailBudget.reserve({
@@ -381,7 +383,7 @@ export function createWorkspaceInvitationCoordinator(
           tokenHash: token.hash,
           transaction,
         });
-      });
+      }, { workspaceId: command.actor.workspaceId });
       if (result !== "created") return result;
       try {
         await dependencies.mail.sendInvitation({
@@ -425,14 +427,16 @@ export function createWorkspaceInvitationCoordinator(
           members: memberDirectory(listed.members, identities),
           status: "ready",
         };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     async revoke(actor, invitationId) {
       // Decided before the first read, like `list`; the repository re-checks
       // the actor's membership under lock.
       if (!privileged(actor)) return "forbidden";
-      return await dependencies.transaction.run((transaction) =>
-        dependencies.repository.revoke({ actor, invitationId, transaction })
+      return await dependencies.transaction.run(
+        (transaction) =>
+          dependencies.repository.revoke({ actor, invitationId, transaction }),
+        { workspaceId: actor.workspaceId },
       );
     },
     async inspect(token) {

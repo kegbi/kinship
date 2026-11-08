@@ -195,7 +195,7 @@ export function createCommunicationWrites(
           workspaceId: canonical.workspaceId,
         });
         return { record, status: "created" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

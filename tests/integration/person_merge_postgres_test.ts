@@ -35,6 +35,7 @@ import { connectDatabase } from "../../packages/backend/platform/postgres/databa
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import {
   addMembership,
+  assertCrossWorkspaceRefused,
   openSql,
   requireDatabaseUrl,
   revokeMembership,
@@ -263,7 +264,7 @@ async function contactMethod(
   await sql`
     insert into crm.person_contact_methods (
       id, person_id, type_id, value, is_primary
-    ) values (${id}, ${personId}, ${typeId}, ${value}, ${isPrimary})
+    , workspace_id) values (${id}, ${personId}, ${typeId}, ${value}, ${isPrimary}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
   `;
   return id;
 }
@@ -289,52 +290,52 @@ async function seedEveryReference(
   const importId = crypto.randomUUID();
   await sql.begin(async (transaction) => {
     await transaction`
-      insert into crm.person_avatars (person_id, source, background_color)
-      values (${personId}, 'generated', '#b3d5fe')
+      insert into crm.person_avatars (person_id, source, background_color, workspace_id)
+      values (${personId}, 'generated', '#b3d5fe', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.person_dates (person_id, kind, month, day, precision)
-      values (${personId}, 'custom', 5, 4, 'month_day')
+      insert into crm.person_dates (person_id, kind, month, day, precision, workspace_id)
+      values (${personId}, 'custom', 5, 4, 'month_day', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.person_first_meetings (person_id, place_text)
-      values (${personId}, 'At the Analytical Society')
+      insert into crm.person_first_meetings (person_id, place_text, workspace_id)
+      values (${personId}, 'At the Analytical Society', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
       insert into crm.person_first_meetings (
         person_id, introduced_by_person_id, place_text
-      ) values (${thirdId}, ${personId}, 'Introduced at a salon')
+      , workspace_id) values (${thirdId}, ${personId}, 'Introduced at a salon', (select scope.workspace_id from crm.people scope where scope.id = ${thirdId}::uuid))
     `;
     await transaction`
-      insert into crm.person_contact_methods (person_id, type_id, value)
-      values (${personId}, ${email}, 'countess@example.test')
+      insert into crm.person_contact_methods (person_id, type_id, value, workspace_id)
+      values (${personId}, ${email}, 'countess@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
       insert into crm.locations (id, workspace_id, city)
       values (${location}, ${workspaceId}, 'London')
     `;
     await transaction`
-      insert into crm.person_addresses (person_id, location_id, display_name)
-      values (${personId}, ${location}, 'Home')
+      insert into crm.person_addresses (person_id, location_id, display_name, workspace_id)
+      values (${personId}, ${location}, 'Home', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.person_occupations (person_id, title)
-      values (${personId}, 'Mathematician')
+      insert into crm.person_occupations (person_id, title, workspace_id)
+      values (${personId}, 'Mathematician', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.person_tags (person_id, tag_id)
-      values (${personId}, ${colleague})
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values (${personId}, ${colleague}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
       insert into crm.pets (person_id, name) values (${personId}, 'Puff')
     `;
     await transaction`
-      insert into crm.person_file_links (person_id, file_id, kind)
-      values (${personId}, ${document}, 'document')
+      insert into crm.person_file_links (person_id, file_id, kind, workspace_id)
+      values (${personId}, ${document}, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
-      insert into crm.activity_participants (activity_id, person_id)
-      values (${tea}, ${personId})
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      values (${tea}, ${personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${tea}::uuid))
     `;
     await transaction`
       insert into crm.calls (workspace_id, person_id, called_at)
@@ -364,8 +365,8 @@ async function seedEveryReference(
       )
     `;
     await transaction`
-      insert into crm.stay_in_touch_cadences (person_id, interval_count)
-      values (${personId}, 30)
+      insert into crm.stay_in_touch_cadences (person_id, interval_count, workspace_id)
+      values (${personId}, 30, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     await transaction`
       insert into crm.relationships (
@@ -643,8 +644,8 @@ Deno.test("[PEOPLE-008] colliding rows keep the primary's and drop the duplicate
   const place = crypto.randomUUID();
   await sql.begin(async (transaction) => {
     await transaction`
-      insert into crm.person_avatars (person_id, source) values
-        (${primary}, 'generated'), (${duplicate}, 'external')
+      insert into crm.person_avatars (person_id, source, workspace_id) values
+        (${primary}, 'generated', (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)), (${duplicate}, 'external', (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
     `;
     await transaction`
       insert into crm.locations (id, workspace_id, label)
@@ -653,21 +654,21 @@ Deno.test("[PEOPLE-008] colliding rows keep the primary's and drop the duplicate
     await transaction`
       insert into crm.person_first_meetings (
         person_id, introduced_by_person_id, location_id, place_text
-      ) values
-        (${primary}, ${duplicate}, null, 'Harvard'),
-        (${duplicate}, ${third}, ${place}, 'Vassar')
+      , workspace_id) values
+        (${primary}, ${duplicate}, null, 'Harvard', (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)),
+        (${duplicate}, ${third}, ${place}, 'Vassar', (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
     `;
     await transaction`
-      insert into crm.person_tags (person_id, tag_id) values
-        (${primary}, ${shared}), (${duplicate}, ${shared})
+      insert into crm.person_tags (person_id, tag_id, workspace_id) values
+        (${primary}, ${shared}, (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)), (${duplicate}, ${shared}, (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
     `;
     await transaction`
-      insert into crm.activity_participants (activity_id, person_id) values
-        (${tea}, ${primary}), (${tea}, ${duplicate})
+      insert into crm.activity_participants (activity_id, person_id, workspace_id) values
+        (${tea}, ${primary}, (select scope.workspace_id from crm.activities scope where scope.id = ${tea}::uuid)), (${tea}, ${duplicate}, (select scope.workspace_id from crm.activities scope where scope.id = ${tea}::uuid))
     `;
     await transaction`
-      insert into crm.person_file_links (person_id, file_id, kind) values
-        (${primary}, ${letter}, 'document'), (${duplicate}, ${letter}, 'document')
+      insert into crm.person_file_links (person_id, file_id, kind, workspace_id) values
+        (${primary}, ${letter}, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)), (${duplicate}, ${letter}, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
     `;
     await transaction`
       insert into crm.relationships (
@@ -683,9 +684,9 @@ Deno.test("[PEOPLE-008] colliding rows keep the primary's and drop the duplicate
     await transaction`
       insert into crm.stay_in_touch_cadences (
         person_id, interval_count, last_contacted_at
-      ) values
-        (${primary}, 7, '2026-01-01T00:00:00Z'),
-        (${duplicate}, 30, '2026-06-01T00:00:00Z')
+      , workspace_id) values
+        (${primary}, 7, '2026-01-01T00:00:00Z', (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)),
+        (${duplicate}, 30, '2026-06-01T00:00:00Z', (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
     `;
     await transaction`
       update crm.workspace_members set self_person_id = ${duplicate}
@@ -1515,8 +1516,8 @@ Deno.test("[PEOPLE-008] a merge whose conflicts changed after its preview is ref
   }).date;
   // The same interval on both is nothing to discard.
   await sql`
-    insert into crm.stay_in_touch_cadences (person_id, interval_count)
-    values (${primary}, 14), (${duplicate}, 14)
+    insert into crm.stay_in_touch_cadences (person_id, interval_count, workspace_id)
+    values (${primary}, 14, (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid)), (${duplicate}, 14, (select scope.workspace_id from crm.people scope where scope.id = ${duplicate}::uuid))
   `;
 
   const read = async () => {
@@ -1601,26 +1602,48 @@ Deno.test("[PEOPLE-008] AUD-T1 merge facts and address copies ignore another wor
       (${ownPlace}::uuid, ${owner.workspaceId}::uuid, 'Hampton'),
       (${foreignPlace}::uuid, ${foreign.workspaceId}::uuid, 'Hampton')
   `;
-  // Forged rows: the duplicate's first meeting names the other workspace's
-  // person and place, and its address points at the other workspace's place.
+  // Forged rows — the duplicate's first meeting naming the other workspace's
+  // person and place, its address pointing at the other workspace's place —
+  // are refused by the database itself since schema v14 (ADR 0008). The
+  // duplicate keeps what can exist: a meeting place and an unlocated address.
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.person_first_meetings (
+          person_id, introduced_by_person_id, location_id, place_text,
+          workspace_id
+        ) values (
+          ${duplicate}::uuid, ${outsider}::uuid, ${foreignPlace}::uuid,
+          'Langley', ${owner.workspaceId}::uuid
+        )
+      `,
+    "a first meeting naming another workspace's person and place",
+  );
   await sql`
-    insert into crm.person_first_meetings (
-      person_id, introduced_by_person_id, location_id, place_text
-    ) values (
-      ${duplicate}::uuid, ${outsider}::uuid, ${foreignPlace}::uuid, 'Langley'
-    )
+    insert into crm.person_first_meetings (person_id, place_text, workspace_id)
+    values (${duplicate}::uuid, 'Langley', ${owner.workspaceId}::uuid)
   `;
   await sql`
-    insert into crm.person_first_meetings (person_id, place_text)
-    values (${outsider}::uuid, 'Outsider meeting')
+    insert into crm.person_first_meetings (person_id, place_text, workspace_id)
+    values (${outsider}::uuid, 'Outsider meeting', (select scope.workspace_id from crm.people scope where scope.id = ${outsider}::uuid))
   `;
   await sql`
-    insert into crm.person_addresses (person_id, location_id, display_name)
-    values (${primary}::uuid, ${ownPlace}::uuid, 'Home')
+    insert into crm.person_addresses (person_id, location_id, display_name, workspace_id)
+    values (${primary}::uuid, ${ownPlace}::uuid, 'Home', (select scope.workspace_id from crm.people scope where scope.id = ${primary}::uuid))
   `;
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`
+        insert into crm.person_addresses (person_id, location_id, display_name,
+          workspace_id)
+        values (${duplicate}::uuid, ${foreignPlace}::uuid, 'Home',
+          ${owner.workspaceId}::uuid)
+      `,
+    "an address at another workspace's place",
+  );
   const [forgedAddress] = await sql<{ readonly id: string }[]>`
-    insert into crm.person_addresses (person_id, location_id, display_name)
-    values (${duplicate}::uuid, ${foreignPlace}::uuid, 'Home')
+    insert into crm.person_addresses (person_id, display_name, workspace_id)
+    values (${duplicate}::uuid, 'Home', ${owner.workspaceId}::uuid)
     returning id::text
   `;
   const connection = connectDatabase(databaseUrl);
@@ -1632,19 +1655,20 @@ Deno.test("[PEOPLE-008] AUD-T1 merge facts and address copies ignore another wor
         personId: duplicate,
         transaction: session,
         workspaceId: owner.workspaceId,
-      })
-    );
+      }), { workspaceId: owner.workspaceId });
     assertEquals(
       facts.firstMeeting,
       { placeText: "Langley" },
       "another workspace's introducer or place was read",
     );
-    const outsiderFacts = await transaction.run((session) =>
-      repository.listFacts({
-        personId: outsider,
-        transaction: session,
-        workspaceId: owner.workspaceId,
-      })
+    const outsiderFacts = await transaction.run(
+      (session) =>
+        repository.listFacts({
+          personId: outsider,
+          transaction: session,
+          workspaceId: owner.workspaceId,
+        }),
+      { workspaceId: owner.workspaceId },
     );
     assertEquals(
       outsiderFacts,
@@ -1661,8 +1685,7 @@ Deno.test("[PEOPLE-008] AUD-T1 merge facts and address copies ignore another wor
         removedDateIds: [],
         transaction: session,
         workspaceId: owner.workspaceId,
-      })
-    );
+      }), { workspaceId: owner.workspaceId });
   } finally {
     await connection.destroy();
   }

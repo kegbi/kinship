@@ -146,12 +146,13 @@ export class PostgresAuthenticationAttemptBudget
     if (command.statusCode !== 200 && command.userId) {
       throw new Error("Pre-authentication request log cannot identify a user.");
     }
-    const finalized = await sql<{ readonly id: string }>`
-      update crm.api_request_logs
-      set status_code = ${command.statusCode},
-        user_id = ${command.statusCode === 200 ? command.userId! : null}::uuid
-      where id = ${command.reservationId}::uuid and status_code is null
-      returning id::text
+    // The reservation belongs to no workspace; the budget function settles
+    // it whatever the caller's transaction is scoped to (ADR 0008).
+    const finalized = await sql<{ readonly id: string | null }>`
+      select crm.finalize_request_budget(
+        ${command.reservationId}::uuid, ${command.statusCode}::integer,
+        ${command.statusCode === 200 ? command.userId! : null}::uuid
+      )::text as id
     `.execute(
       command.transaction
         ? databaseFromSession(command.transaction)
@@ -176,7 +177,6 @@ export class PostgresAuthenticationAttemptBudget
     const accountWindowStart = new Date(
       occurredAt.getTime() - ACCOUNT_WINDOW_MILLISECONDS,
     );
-    const candidates = sql.join(digests.map((digest) => sql`${digest}`));
     // Only a fully established HTTP 200 authentication resets prior failures:
     // one from this address resets the address budget, and one from any
     // address resets the account ceiling. Outstanding reservations always
@@ -191,11 +191,10 @@ export class PostgresAuthenticationAttemptBudget
       with attempts as (
         select log.client_ip = ${clientAddress}::inet same_address,
           log.status_code, log.occurred_at
-        from crm.api_request_logs log
-        where log.method = 'POST' and log.path = ${path}
-          and log.authentication_subject_digest in (${candidates})
-          and log.occurred_at > ${accountWindowStart}
-          and (log.status_code is null or log.status_code in (200, 401))
+        from crm.request_budget_attempts(
+          ${path}, ${[...digests]}::text[], ${accountWindowStart}
+        ) log
+        where log.status_code is null or log.status_code in (200, 401)
       ), latest_success as (
         select
           max(occurred_at) filter (where same_address) address_succeeded_at,
@@ -244,14 +243,10 @@ export class PostgresAuthenticationAttemptBudget
     occurredAt: Date,
   ): Promise<string> {
     const inserted = await sql<{ readonly id: string }>`
-      insert into crm.api_request_logs (
-        user_id, method, path, client_ip, authentication_subject_digest,
-        status_code, occurred_at, created_at
-      ) values (
-        null, 'POST', ${path}, ${clientAddress}::inet,
-        ${digest}, ${statusCode}, ${occurredAt}, ${occurredAt}
-      )
-      returning id::text
+      select crm.record_request_budget(
+        ${path}, ${digest}, ${clientAddress}::inet, ${statusCode}::integer,
+        ${occurredAt}::timestamptz, null, null, null
+      )::text as id
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) throw new Error("Authentication request was not recorded.");

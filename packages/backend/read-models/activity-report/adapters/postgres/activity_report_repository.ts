@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -67,7 +68,11 @@ export class PostgresActivityReportRepository
   async list(
     command: Parameters<ActivityReportRepository["list"]>[0],
   ): Promise<Awaited<ReturnType<ActivityReportRepository["list"]>>> {
-    const context = await sql<ContextRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const context = await sql<ContextRow>`
       select person.id::text,
         ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))} as name,
         person.archived_at
@@ -75,11 +80,11 @@ export class PostgresActivityReportRepository
       where person.id = ${command.personId}::uuid
         and person.workspace_id = ${command.workspaceId}::uuid
         and person.deleted_at is null
-    `.execute(this.database);
-    const resolved = context.rows[0];
-    if (!resolved?.id || !resolved.name) return { status: "not-found" };
-    if (command.after) {
-      const anchor = await sql<{ readonly valid: boolean }>`
+    `.execute(database);
+        const resolved = context.rows[0];
+        if (!resolved?.id || !resolved.name) return { status: "not-found" };
+        if (command.after) {
+          const anchor = await sql<{ readonly valid: boolean }>`
         select exists (
           select 1 from crm.activities activity
           join crm.activity_participants participant
@@ -91,14 +96,14 @@ export class PostgresActivityReportRepository
           where activity.id = ${command.after.id}::uuid
             and activity.workspace_id = ${command.workspaceId}::uuid
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'activity')
+            command.kind ?? null
+          }::text = 'activity')
             and activity.happened_at = ${command.after.timestamp}::timestamptz
             and (${
-        command.year ?? null
-      }::integer is null or extract(year from activity.happened_at at time zone 'UTC') = ${
-        command.year ?? null
-      })
+            command.year ?? null
+          }::integer is null or extract(year from activity.happened_at at time zone 'UTC') = ${
+            command.year ?? null
+          })
           union all
           select 1 from crm.notes note
           join crm.people note_person on note_person.id = note.person_id
@@ -106,20 +111,20 @@ export class PostgresActivityReportRepository
           where note.id = ${command.after.id}::uuid
             and note.workspace_id = ${command.workspaceId}::uuid
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'note')
+            command.kind ?? null
+          }::text = 'note')
             and note.person_id = ${command.personId}::uuid
             and note.created_at = ${command.after.timestamp}::timestamptz
             and (${
-        command.year ?? null
-      }::integer is null or extract(year from note.created_at at time zone 'UTC') = ${
-        command.year ?? null
-      })
+            command.year ?? null
+          }::integer is null or extract(year from note.created_at at time zone 'UTC') = ${
+            command.year ?? null
+          })
         ) as valid
-      `.execute(this.database);
-      if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
-    }
-    const result = await sql<ProjectionRow>`
+      `.execute(database);
+          if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
+        }
+        const result = await sql<ProjectionRow>`
       with projection as (
         select activity.id, 'activity'::text as kind, activity.summary,
           activity.description, null::text as body,
@@ -133,8 +138,8 @@ export class PostgresActivityReportRepository
           and subject_person.workspace_id = activity.workspace_id
         where activity.workspace_id = ${command.workspaceId}::uuid
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'activity')
+          command.kind ?? null
+        }::text = 'activity')
         union all
         select note.id, 'note'::text, null::text, null::text, note.body,
           note.is_favorited, note.created_at, null::uuid, note.workspace_id
@@ -143,20 +148,20 @@ export class PostgresActivityReportRepository
           and note_person.workspace_id = note.workspace_id
         where note.workspace_id = ${command.workspaceId}::uuid
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'note')
+          command.kind ?? null
+        }::text = 'note')
           and note.person_id = ${command.personId}::uuid
       ), page as (
         select * from projection
         where (${command.year ?? null}::integer is null
           or extract(year from timestamp_at at time zone 'UTC') = ${
-      command.year ?? null
-    })
+          command.year ?? null
+        })
           ${
-      command.after
-        ? sql`and (timestamp_at, id) < (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
-        : sql``
-    }
+          command.after
+            ? sql`and (timestamp_at, id) < (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
+            : sql``
+        }
         order by timestamp_at desc, id desc
         limit ${command.limit + 1}
       )
@@ -175,8 +180,8 @@ export class PostgresActivityReportRepository
           'name', selected.name) order by lower(selected.name), selected.id) as value
         from (
           select person.id, ${
-      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-    } as name
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        } as name
           from crm.activity_participants link
           join crm.people person on person.id = link.person_id
             and person.workspace_id = page.workspace_id
@@ -184,8 +189,8 @@ export class PostgresActivityReportRepository
           where page.kind = 'activity' and link.activity_id = page.id
           union all
           select person.id, ${
-      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-    }
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        }
           from crm.notes note
           join crm.people person on person.id = note.person_id
             and person.workspace_id = note.workspace_id
@@ -203,19 +208,21 @@ export class PostgresActivityReportRepository
         where page.kind = 'activity' and link.activity_id = page.id
       ) emotions on true
       order by page.timestamp_at desc, page.id desc
-    `.execute(this.database);
-    const visible = result.rows.slice(0, command.limit);
-    const final = visible.at(-1);
-    return {
-      items: visible.flatMap((row) => {
-        const mapped = item(row);
-        return mapped ? [mapped] : [];
-      }),
-      ...(result.rows.length > command.limit && final
-        ? { next: { id: final.id, timestamp: final.timestamp_at } }
-        : {}),
-      person: { id: resolved.id, name: resolved.name },
-      status: resolved.archived_at ? "archived" : "ready",
-    };
+    `.execute(database);
+        const visible = result.rows.slice(0, command.limit);
+        const final = visible.at(-1);
+        return {
+          items: visible.flatMap((row) => {
+            const mapped = item(row);
+            return mapped ? [mapped] : [];
+          }),
+          ...(result.rows.length > command.limit && final
+            ? { next: { id: final.id, timestamp: final.timestamp_at } }
+            : {}),
+          person: { id: resolved.id, name: resolved.name },
+          status: resolved.archived_at ? "archived" : "ready",
+        };
+      },
+    );
   }
 }

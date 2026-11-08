@@ -13,6 +13,7 @@
  * hands out, so the application passes what it was given without translating.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -36,5 +37,8 @@ export interface PlanningActor extends Correlation {
 
 /** The transaction a planning use case runs its work in. */
 export interface PlanningTransactionRunner {
-  run<T>(work: (transaction: PlanningTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: PlanningTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

@@ -265,25 +265,25 @@ async function seedEverything(
       (workspace_id, person_low_id, person_high_id, dismissed_by_member_id)
       values (${w}, ${low}, ${high}, ${m})`;
     const method = await id(tx`insert into crm.person_contact_methods
-      (person_id, type_id, value) values (${ada}, ${methodType}, '555-0101')
+      (person_id, type_id, value, workspace_id) values (${ada}, ${methodType}, '555-0101', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))
       returning id::text`);
     await tx`insert into crm.person_contact_method_labels
-      (contact_method_id, label_id) values (${method}, ${label})`;
+      (contact_method_id, label_id, workspace_id) values (${method}, ${label}, (select scope.workspace_id from crm.person_contact_methods scope where scope.id = ${method}::uuid))`;
     const address = await id(tx`insert into crm.person_addresses
-      (person_id, location_id) values (${ada}, ${location}) returning id::text`);
-    await tx`insert into crm.person_address_labels (address_id, label_id)
-      values (${address}, ${label})`;
+      (person_id, location_id, workspace_id) values (${ada}, ${location}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid)) returning id::text`);
+    await tx`insert into crm.person_address_labels (address_id, label_id, workspace_id)
+      values (${address}, ${label}, (select scope.workspace_id from crm.person_addresses scope where scope.id = ${address}::uuid))`;
     const birthday = await id(tx`insert into crm.person_dates
-      (person_id, kind, year, month, day, precision)
-      values (${ada}, 'birthday', 1815, 12, 10, 'full') returning id::text`);
+      (person_id, kind, year, month, day, precision, workspace_id)
+      values (${ada}, 'birthday', 1815, 12, 10, 'full', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid)) returning id::text`);
     await tx`insert into crm.person_first_meetings
-      (person_id, introduced_by_person_id, location_id)
-      values (${ada}, ${grace}, ${location})`;
+      (person_id, introduced_by_person_id, location_id, workspace_id)
+      values (${ada}, ${grace}, ${location}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
     await tx`insert into crm.person_occupations
-      (person_id, organization_id, title)
-      values (${ada}, ${organization}, 'Analyst')`;
-    await tx`insert into crm.person_tags (person_id, tag_id)
-      values (${ada}, ${tag})`;
+      (person_id, organization_id, title, workspace_id)
+      values (${ada}, ${organization}, 'Analyst', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
+    await tx`insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values (${ada}, ${tag}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
     await tx`insert into crm.pets (person_id, category_id, name)
       values (${ada}, ${catalogs.petCategoryId}, 'Tabby')`;
 
@@ -299,17 +299,17 @@ async function seedEverything(
       (workspace_id, uploaded_by_member_id, storage_key, original_filename)
       values (${w}, ${m}, ${`workspaces/${w}/erasure.png`}, 'erasure.png')
       returning id::text`);
-    await tx`insert into crm.person_avatars (person_id, source, file_id)
-      values (${ada}, 'file', ${file})`;
-    await tx`insert into crm.person_file_links (person_id, file_id, kind)
-      values (${ada}, ${file}, 'document')`;
+    await tx`insert into crm.person_avatars (person_id, source, file_id, workspace_id)
+      values (${ada}, 'file', ${file}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
+    await tx`insert into crm.person_file_links (person_id, file_id, kind, workspace_id)
+      values (${ada}, ${file}, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
 
     // Interactions.
     const activity = await id(tx`insert into crm.activities
       (workspace_id, activity_type_id, summary, happened_at, created_by_member_id)
       values (${w}, ${activityType}, 'Walk', now(), ${m}) returning id::text`);
-    await tx`insert into crm.activity_participants (activity_id, person_id)
-      values (${activity}, ${ada})`;
+    await tx`insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      values (${activity}, ${ada}, (select scope.workspace_id from crm.activities scope where scope.id = ${activity}::uuid))`;
     await tx`insert into crm.activity_emotions (activity_id, emotion_id)
       values (${activity}, ${catalogs.emotionId})`;
     const call = await id(tx`insert into crm.calls
@@ -321,8 +321,8 @@ async function seedEverything(
       (workspace_id, person_id, channel_type_id, contact_method_id, happened_at)
       values (${w}, ${ada}, ${methodType}, ${method}, now()) returning id::text`);
     await tx`insert into crm.messages
-      (conversation_id, author_member_id, content, written_at, direction)
-      values (${thread}, ${m}, 'Hello', now(), 'outbound')`;
+      (conversation_id, author_member_id, content, written_at, direction, workspace_id)
+      values (${thread}, ${m}, 'Hello', now(), 'outbound', (select scope.workspace_id from crm.conversation_threads scope where scope.id = ${thread}::uuid))`;
     await tx`insert into crm.notes (workspace_id, person_id, body, created_by_member_id)
       values (${w}, ${ada}, 'A note', ${m})`;
 
@@ -360,11 +360,11 @@ async function seedEverything(
       (workspace_id, task_id, target_kind, title, anchor_on)
       values (${w}, ${task}, 'task', 'Task due', current_date)`;
     await tx`insert into crm.reminder_occurrences
-      (reminder_id, member_id, occurs_on, deliver_at)
-      values (${reminder}, ${m}, current_date, now())`;
+      (reminder_id, member_id, occurs_on, deliver_at, workspace_id)
+      values (${reminder}, ${m}, current_date, now(), (select scope.workspace_id from crm.reminders scope where scope.id = ${reminder}::uuid))`;
     const cadence = await id(tx`insert into crm.stay_in_touch_cadences
-      (person_id, interval_count, reminder_id)
-      values (${ada}, 2, ${reminder}) returning id::text`);
+      (person_id, interval_count, reminder_id, workspace_id)
+      values (${ada}, 2, ${reminder}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid)) returning id::text`);
     await tx`insert into crm.stay_in_touch_cadence_requests
       (workspace_id, request_id, cadence_id, request_fingerprint)
       values (${w}, ${crypto.randomUUID()}, ${cadence}, ${"a".repeat(64)})`;
@@ -373,8 +373,8 @@ async function seedEverything(
     const gift = await id(tx`insert into crm.gifts
       (workspace_id, person_id, recipient_person_id, name)
       values (${w}, ${ada}, ${grace}, 'Book') returning id::text`);
-    await tx`insert into crm.gift_file_links (gift_id, file_id)
-      values (${gift}, ${file})`;
+    await tx`insert into crm.gift_file_links (gift_id, file_id, workspace_id)
+      values (${gift}, ${file}, (select scope.workspace_id from crm.gifts scope where scope.id = ${gift}::uuid))`;
     const recurring = await id(tx`insert into crm.recurring_debts
       (workspace_id, person_id, direction, amount, currency_code,
         day_of_month, starts_on, created_by_member_id)
@@ -678,14 +678,16 @@ Deno.test({
         insert into crm.reminder_occurrences (reminder_id, member_id,
           occurs_on, deliver_at, channel, status, sent_at,
           provider_result_state, provider_receipt, provider_effect_at,
-          visible_at)
+          visible_at, workspace_id)
         select md5('reminder' || p)::uuid,
           md5('member' || 2 * ((p - 1) / 50) + 1 + k)::uuid,
           current_date - months.n * 30,
           now() - months.n * interval '30 days', 'in_app', 'sent',
           now() - months.n * interval '30 days', 'confirmed', 'in-app',
           now() - months.n * interval '30 days',
-          now() - months.n * interval '30 days'
+          now() - months.n * interval '30 days',
+          (select scope.workspace_id from crm.reminders scope
+            where scope.id = md5('reminder' || p)::uuid)
         from generate_series(1, 2000) p
         cross join (values (0), (1)) member(k)
         cross join generate_series(1, 24) months(n)

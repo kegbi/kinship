@@ -107,7 +107,11 @@ export function createWorkspaceCleanupReconciler(
     "clock" | "repository" | "storage"
   >,
 ) {
-  const cleanup = async (recordId: string, objectKeys: readonly string[]) => {
+  const cleanup = async (
+    recordId: string,
+    workspaceId: string,
+    objectKeys: readonly string[],
+  ) => {
     let failed = false;
     for (const key of objectKeys) {
       try {
@@ -121,6 +125,7 @@ export function createWorkspaceCleanupReconciler(
         await dependencies.repository.completeCleanup({
           completedAt: dependencies.clock.now(),
           recordId,
+          workspaceId,
         });
       } catch {
         failed = true;
@@ -136,7 +141,12 @@ export function createWorkspaceCleanupReconciler(
       });
       let completed = 0;
       for (const item of pending) {
-        if (await cleanup(item.recordId, item.objectKeys) === "complete") {
+        const done = await cleanup(
+          item.recordId,
+          item.workspaceId,
+          item.objectKeys,
+        );
+        if (done === "complete") {
           completed++;
         }
       }

@@ -75,6 +75,7 @@ export function createPersonFileWrites(
         });
         return { status: "discarded" as const };
       },
+      { workspaceId: actor.workspaceId },
     );
     if (discarded.status !== "discarded") {
       dependencies.logger.log(fileCleanupFailed("upload-refused", actor));
@@ -103,6 +104,7 @@ export function createPersonFileWrites(
             transaction,
           });
         },
+        { workspaceId: actor.workspaceId },
       );
       if (authorization.status !== "authorized") return authorization;
 
@@ -143,6 +145,7 @@ export function createPersonFileWrites(
             transaction,
           });
         },
+        { workspaceId: actor.workspaceId },
       );
       if (reserved.status !== "reserved") return reserved;
 
@@ -166,6 +169,7 @@ export function createPersonFileWrites(
               transaction,
             });
           },
+          { workspaceId: actor.workspaceId },
         );
         return { status: "unavailable" };
       }
@@ -194,6 +198,7 @@ export function createPersonFileWrites(
           });
           return finalized;
         },
+        { workspaceId: actor.workspaceId },
       );
       if (result.status === "created") {
         return { file: publicFile(result.file), status: "created" };
@@ -241,6 +246,7 @@ export function createPersonFileWrites(
           });
           return result;
         },
+        { workspaceId: actor.workspaceId },
       );
       return removed.status === "removed"
         ? { fileId, status: "removed" }

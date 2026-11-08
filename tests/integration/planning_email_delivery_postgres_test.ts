@@ -965,9 +965,10 @@ Deno.test("[PLANNING-003] a re-channel never leaves a date without a live notice
     insert into crm.reminder_occurrences (
       reminder_id, member_id, occurs_on, deliver_at, channel, status,
       title_snapshot, created_at, updated_at
-    )
+    , workspace_id)
     select reminder_id, member_id, occurs_on, deliver_at, 'email',
-      'cancelled', title_snapshot, now(), now()
+      'cancelled', title_snapshot, now(), now(),
+        (select scope.workspace_id from crm.reminders scope where scope.id = reminder_id)
     from crm.reminder_occurrences where id = ${cancelledDate.id}::uuid
   `;
   // A notice already attempted is the provider's to settle, not the choice's.

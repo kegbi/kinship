@@ -13,10 +13,21 @@
 
 import type { Failure } from "./result.ts";
 
+/**
+ * The workspace a transaction works in (ADR 0008). Every statement of a
+ * transaction run with a scope sees and writes only that workspace's tenant
+ * rows; one run without a scope sees none, so only account-level work and the
+ * few narrow cross-workspace paths run unscoped.
+ */
+export interface TransactionScope {
+  readonly workspaceId: string;
+}
+
 /** The transaction runner a use case depends on. */
 export interface TransactionRunner<Transaction> {
   run<Result>(
     work: (transaction: Transaction) => Promise<Result>,
+    scope?: TransactionScope,
   ): Promise<Result>;
 }
 
@@ -32,9 +43,10 @@ export interface TransactionRunner<Transaction> {
 export async function runOrUnavailable<Transaction, Result>(
   transaction: TransactionRunner<Transaction>,
   work: (transaction: Transaction) => Promise<Result>,
+  scope?: TransactionScope,
 ): Promise<Result | Failure<"unavailable">> {
   try {
-    return await transaction.run(work);
+    return await transaction.run(work, scope);
   } catch {
     return { status: "unavailable" };
   }

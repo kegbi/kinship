@@ -47,6 +47,6 @@ export function createInteractionListing(
           limit: Math.max(1, Math.min(20, Math.trunc(input.limit ?? 20))),
           transaction,
         });
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }

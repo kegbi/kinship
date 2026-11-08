@@ -9,6 +9,7 @@
  * directory depend on nothing outside gifts.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -32,5 +33,8 @@ export interface GiftActor extends Correlation {
 
 /** The transaction a gifts use case runs its work in. */
 export interface GiftTransactionRunner {
-  run<T>(work: (transaction: GiftTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: GiftTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

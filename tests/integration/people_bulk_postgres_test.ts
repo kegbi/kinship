@@ -189,8 +189,8 @@ Deno.test("[PEOPLE-009] bulk tagging goes through the tags profile fact and refu
   const ada = await person(owner, "Ada Lovelace");
   const grace = await person(owner, "Grace Hopper");
   const alan = await person(owner, "Alan Turing");
-  await sql`insert into crm.person_tags (person_id, tag_id)
-    values (${grace}, ${friends}), (${ada}, ${family})`;
+  await sql`insert into crm.person_tags (person_id, tag_id, workspace_id)
+    values (${grace}, ${friends}, (select scope.workspace_id from crm.people scope where scope.id = ${grace}::uuid)), (${ada}, ${family}, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
   await answered(owner, { action: "archive", personIds: [alan] });
 
   const tagged = await answered(owner, {

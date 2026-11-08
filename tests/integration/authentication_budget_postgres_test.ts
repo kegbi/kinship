@@ -49,7 +49,7 @@ import { closeResources } from "./authentication.test-helper.ts";
 import { resetDatabase } from "../support/database.ts";
 import {
   describePlan,
-  explainedPlan,
+  explainedFunctionBody,
   planNodes,
   scansOf,
   withScratchCrm,
@@ -985,7 +985,7 @@ Deno.test({
         log(event) {
           const statement = event.query.sql.trim();
           if (
-            event.level === "query" && statement !== "begin" &&
+            event.level === "query" && !statement.startsWith("begin") &&
             statement !== "commit"
           ) {
             statements.push(event.query.sql.replaceAll(/\$\d+/g, "$"));
@@ -1010,7 +1010,9 @@ Deno.test({
             transaction: session,
           });
           return { ...(id ? { id } : {}), statements };
-        });
+          // Both run in the context's workspace, as a failure audited under
+          // a resolved context does (ADR 0008); the anonymous one writes none.
+        }, { workspaceId: context.workspaceId });
       } finally {
         await tracked.destroy();
       }
@@ -1154,13 +1156,13 @@ Deno.test({
           await committed;
           await verify(session, id);
           return id;
-        });
+        }, { workspaceId: context.workspaceId });
         await inserted;
         const secondId = await transaction.run(async (session) => {
           const id = await record(session);
           await verify(session, id);
           return id;
-        });
+        }, { workspaceId: context.workspaceId });
         secondCommitted();
         const firstId = await first;
         assert(firstId !== secondId, "concurrent audits have unique exact ids");
@@ -1600,54 +1602,60 @@ Deno.test({
           activeVersion: 1,
           keys: new Map([[1, new Uint8Array(32).fill(0x52)]]),
         });
+        // Both budgets read their subject's rows through the budget function
+        // (ADR 0008); an EXPLAIN of the call shows one Function Scan, so the
+        // function's own query is explained, as its owner, under its policy.
         const explaining = connectDatabase(url);
         try {
-          const signIn = await explainedPlan(
-            explaining.db,
-            (statement) => statement.includes("with attempts as"),
-            (db) =>
-              new PostgresAuthenticationAttemptBudget(db, digester).reserve({
-                clientAddress: "203.0.113.7",
-                occurredAt: now,
-                scope: "password",
-                subject: "budget-plan@example.test",
-              }),
+          assert(
+            await new PostgresAuthenticationAttemptBudget(
+                  explaining.db,
+                  digester,
+                ).reserve({
+                  clientAddress: "203.0.113.7",
+                  occurredAt: now,
+                  scope: "password",
+                  subject: "budget-plan@example.test",
+                }).then((admission) => admission.status) === "admitted" &&
+              await new PostgresOutboundMailBudget(explaining.db, digester)
+                  .reserve({
+                    occurredAt: now,
+                    recipient: "budget-plan@example.test",
+                    recipientCeiling: 10,
+                    scope: "registration",
+                    windowMilliseconds: 24 * 60 * 60_000,
+                  }) === "admitted",
+            "both budgets answer through the budget functions as the API role",
           );
-          const recipient = await explainedPlan(
-            explaining.db,
-            (statement) =>
-              statement.includes(
-                "select count(*)::int count from crm.api_request_logs",
-              ),
-            (db) =>
-              new PostgresOutboundMailBudget(db, digester).reserve({
-                occurredAt: now,
-                recipient: "budget-plan@example.test",
-                recipientCeiling: 10,
-                scope: "registration",
-                windowMilliseconds: 24 * 60 * 60_000,
-              }),
-          );
-          for (
-            const [budget, plan] of [["sign-in", signIn], [
-              "mail",
-              recipient,
-            ]] as const
-          ) {
-            assert(
-              planNodes(plan).some((node) =>
-                node["Index Name"] === "api_request_logs_post_subject_idx"
-              ) &&
-                scansOf(plan, "api_request_logs").every((scan) =>
-                  scan["Node Type"] !== "Seq Scan"
-                ),
-              `the ${budget} budget does not seek one subject: ${
-                describePlan(plan)
-              }`,
-            );
-          }
         } finally {
           await explaining.destroy();
+        }
+        const [seeded] = await scratch<{ readonly digest: string }[]>`
+          select 'hmac-sha256:v1:' || encode(sha256(convert_to('7', 'UTF8')), 'hex')
+            as digest
+        `;
+        for (
+          const [budget, path, window] of [
+            ["sign-in", "/api/v1/sessions", 15 * 60_000],
+            ["mail", "mail-budget/registration", 24 * 60 * 60_000],
+          ] as const
+        ) {
+          const plan = await explainedFunctionBody(
+            scratch,
+            "crm.request_budget_attempts(text, text[], timestamptz)",
+            [path, [seeded?.digest], new Date(now.getTime() - window)],
+          );
+          assert(
+            planNodes(plan).some((node) =>
+              node["Index Name"] === "api_request_logs_post_subject_idx"
+            ) &&
+              scansOf(plan, "api_request_logs").every((scan) =>
+                scan["Node Type"] !== "Seq Scan"
+              ),
+            `the ${budget} budget does not seek one subject: ${
+              describePlan(plan)
+            }`,
+          );
         }
       },
     );

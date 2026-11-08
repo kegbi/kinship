@@ -1,3 +1,4 @@
+import { readCanonicalArtifacts } from "../../tools/migrations/main.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -22,6 +23,7 @@ import {
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
   openSql,
+  requireAdminDatabaseUrl,
   requireDatabaseUrl,
   resetDatabase,
 } from "../support/database.ts";
@@ -277,7 +279,7 @@ Deno.test({
         version: DEFAULT_RELATIONSHIP_TYPE_VOCABULARY.version,
         workspaceId: ownerWorkspace.workspace_id,
       });
-    });
+    }, { workspaceId: ownerWorkspace.workspace_id });
     const [replayedDefaults] = await sql<{ count: number }[]>`
       select count(*)::int count from crm.relationship_types
       where workspace_id = ${ownerWorkspace.workspace_id}::uuid
@@ -686,104 +688,12 @@ Deno.test({
       assert(rejected, "each module rejects a wrong exact postcondition link");
     }
 
-    const v1Sql = await Deno.readTextFile(
-      "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
-    );
-    const v2Sql = await Deno.readTextFile(
-      "personal-crm-schema/v2/personal_crm_schema_v2.sql",
-    );
-    const migrationV1ToV2 = await Deno.readTextFile(
-      "personal-crm-schema/v2/migrations/0002_add_authentication_subject_digest.sql",
-    );
-    const v3Sql = await Deno.readTextFile(
-      "personal-crm-schema/v3/personal_crm_schema_v3.sql",
-    );
-    const migrationV2ToV3 = await Deno.readTextFile(
-      "personal-crm-schema/v3/migrations/0003_add_user_session_purpose.sql",
-    );
-    const v4Sql = await Deno.readTextFile(
-      "personal-crm-schema/v4/personal_crm_schema_v4.sql",
-    );
-    const migrationV3ToV4 = await Deno.readTextFile(
-      "personal-crm-schema/v4/migrations/0004_seed_iso_4217_currencies.sql",
-    );
-    const v5Sql = await Deno.readTextFile(
-      "personal-crm-schema/v5/personal_crm_schema_v5.sql",
-    );
-    const migrationV4ToV5 = await Deno.readTextFile(
-      "personal-crm-schema/v5/migrations/0005_add_person_date_year_approximation.sql",
-    );
-    const v6Sql = await Deno.readTextFile(
-      "personal-crm-schema/v6/personal_crm_schema_v6.sql",
-    );
-    const migrationV5ToV6 = await Deno.readTextFile(
-      "personal-crm-schema/v6/migrations/0006_add_durable_reminder_delivery.sql",
-    );
-    const v7Sql = await Deno.readTextFile(
-      "personal-crm-schema/v7/personal_crm_schema_v7.sql",
-    );
-    const migrationV6ToV7 = await Deno.readTextFile(
-      "personal-crm-schema/v7/migrations/0007_add_workspace_deletion_records.sql",
-    );
-    const v8Sql = await Deno.readTextFile(
-      "personal-crm-schema/v8/personal_crm_schema_v8.sql",
-    );
-    const migrationV7ToV8 = await Deno.readTextFile(
-      "personal-crm-schema/v8/migrations/0008_add_member_reminder_delivery.sql",
-    );
-    const v9Sql = await Deno.readTextFile(
-      "personal-crm-schema/v9/personal_crm_schema_v9.sql",
-    );
-    const migrationV8ToV9 = await Deno.readTextFile(
-      "personal-crm-schema/v9/migrations/0009_add_search_indexes_and_duplicate_dismissals.sql",
-    );
-    const v10Sql = await Deno.readTextFile(
-      "personal-crm-schema/v10/personal_crm_schema_v10.sql",
-    );
-    const migrationV9ToV10 = await Deno.readTextFile(
-      "personal-crm-schema/v10/migrations/0010_add_recurring_debts.sql",
-    );
-    const artifacts = {
-      v13Sql: await Deno.readTextFile(
-        "personal-crm-schema/v13/personal_crm_schema_v13.sql",
-      ),
-      migrationV12ToV13: await Deno.readTextFile(
-        "personal-crm-schema/v13/migrations/0013_index_queries_and_seed_catalogs.sql",
-      ),
-      v12Sql: await Deno.readTextFile(
-        "personal-crm-schema/v12/personal_crm_schema_v12.sql",
-      ),
-      migrationV11ToV12: await Deno.readTextFile(
-        "personal-crm-schema/v12/migrations/0012_reword_member_reminder_delivery_comment.sql",
-      ),
-      v11Sql: await Deno.readTextFile(
-        "personal-crm-schema/v11/personal_crm_schema_v11.sql",
-      ),
-      migrationV10ToV11: await Deno.readTextFile(
-        "personal-crm-schema/v11/migrations/0011_add_debt_settlements.sql",
-      ),
-      migrationV1ToV2,
-      migrationV2ToV3,
-      migrationV3ToV4,
-      migrationV4ToV5,
-      migrationV5ToV6,
-      migrationV6ToV7,
-      migrationV7ToV8,
-      migrationV8ToV9,
-      migrationV9ToV10,
-      v1Sql,
-      v2Sql,
-      v3Sql,
-      v4Sql,
-      v5Sql,
-      v6Sql,
-      v7Sql,
-      v8Sql,
-      v9Sql,
-      v10Sql,
-    };
+    // The runner as the migrate job runs it, over every canonical artifact;
+    // the scratch catalog is inspected as the project superuser.
+    const artifacts = await readCanonicalArtifacts();
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v13",
+      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+        "verify-v14",
       "unmodified canonical catalog verifies",
     );
     await sql`
@@ -793,7 +703,7 @@ Deno.test({
     try {
       let driftRejected = false;
       try {
-        await applyCanonicalSchema(databaseUrl, artifacts);
+        await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts);
       } catch {
         driftRejected = true;
       }
@@ -816,7 +726,7 @@ Deno.test({
       try {
         let rejected = false;
         try {
-          await applyCanonicalSchema(databaseUrl, artifacts);
+          await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts);
         } catch {
           rejected = true;
         }
@@ -945,15 +855,15 @@ Deno.test({
     );
 
     await sql`drop schema crm cascade`;
-    await sql.unsafe(v1Sql);
+    await sql.unsafe(artifacts.v1Sql);
     await sql`
       insert into crm.api_request_logs (method, path, client_ip, status_code)
       values ('GET', '/upgrade-fixture', '127.0.0.1'::inet, 200)
     `;
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) ===
-        "upgrade-v1-to-v13",
-      "exact repository v1 upgrades transactionally to v13",
+      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+        "upgrade-v1-to-v14",
+      "exact repository v1 upgrades transactionally to v14",
     );
     const [upgraded] = await sql<{
       readonly digest_column: boolean;
@@ -971,8 +881,9 @@ Deno.test({
       "v1 upgrade preserves rows and adds the v2 field",
     );
     assert(
-      await applyCanonicalSchema(databaseUrl, artifacts) === "verify-v13",
-      "upgraded repository v13 verifies idempotently",
+      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+        "verify-v14",
+      "upgraded repository v14 verifies idempotently",
     );
     await expectStructuralDrift(
       () =>

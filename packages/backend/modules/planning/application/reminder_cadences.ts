@@ -109,7 +109,7 @@ export function createReminderCadences(
           transaction,
         });
         return { cadence, status: "created" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     interactionRecorded: async (
       event: InteractionRecordedEvent,

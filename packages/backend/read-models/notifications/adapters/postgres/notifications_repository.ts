@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, type RawBuilder, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
@@ -260,12 +261,16 @@ export class PostgresNotificationsRepository
   async list(
     command: Parameters<NotificationsRepository["list"]>[0],
   ): Promise<readonly NotificationRecord[]> {
-    const window: FeedWindow = {
-      ...(command.after ? { after: command.after } : {}),
-      kind: "page",
-      limit: command.limit,
-    };
-    const result = await sql<FeedRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const window: FeedWindow = {
+          ...(command.after ? { after: command.after } : {}),
+          kind: "page",
+          limit: command.limit,
+        };
+        const result = await sql<FeedRow>`
       select item.kind, item.id::text,
         to_char(item.at, ${sql.lit(MILLISECOND_INSTANT_FORMAT)})
           as occurred_at,
@@ -282,33 +287,41 @@ export class PostgresNotificationsRepository
       left join crm.people person on person.id = item.person_id
         and person.workspace_id = ${command.workspaceId}::uuid
       order by item.at desc, item.id desc
-    `.execute(this.database);
-    return result.rows.map(record);
+    `.execute(database);
+        return result.rows.map(record);
+      },
+    );
   }
 
   async countUnread(
     command: Parameters<NotificationsRepository["countUnread"]>[0],
   ): ReturnType<NotificationsRepository["countUnread"]> {
-    const window: FeedWindow = {
-      kind: "count",
-      limit: command.cap,
-      since: sql`(select since from watermark)`,
-    };
-    const result = await sql<{
-      readonly count: number;
-      readonly read_through: string | null;
-    }>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const window: FeedWindow = {
+          kind: "count",
+          limit: command.cap,
+          since: sql`(select since from watermark)`,
+        };
+        const result = await sql<{
+          readonly count: number;
+          readonly read_through: string | null;
+        }>`
       with watermark as (${storedWatermark(command)})
       select (select read_through from watermark) as read_through,
         (select count(*)::int from (
           select 1 from (${feed(command, window)}) unread
           limit ${command.cap}
         ) unread) as count
-    `.execute(this.database);
-    const row = result.rows[0];
-    return {
-      count: row?.count ?? 0,
-      ...(row?.read_through ? { readThrough: row.read_through } : {}),
-    };
+    `.execute(database);
+        const row = result.rows[0];
+        return {
+          count: row?.count ?? 0,
+          ...(row?.read_through ? { readThrough: row.read_through } : {}),
+        };
+      },
+    );
   }
 }

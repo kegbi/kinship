@@ -74,8 +74,8 @@ Deno.test({
     const personId = crypto.randomUUID();
     await sql`insert into crm.people (id, workspace_id, given_name)
       values (${personId}, ${owner.workspaceId}, 'Tagged')`;
-    await sql`insert into crm.person_tags (person_id, tag_id)
-      values (${personId}, ${createdBody.entry.id})`;
+    await sql`insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values (${personId}, ${createdBody.entry.id}, (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))`;
     const impact = await settingsRequest(
       owner.cookie,
       "/api/v1/settings/personalization/tags",
@@ -257,8 +257,8 @@ Deno.test({
       releaseAssignment = resolve;
     });
     const assignmentTransaction = sql.begin(async (transaction) => {
-      await transaction`insert into crm.person_tags (person_id, tag_id)
-        values (${assignmentFirstPerson}, ${assignmentFirstSource.id})`;
+      await transaction`insert into crm.person_tags (person_id, tag_id, workspace_id)
+        values (${assignmentFirstPerson}, ${assignmentFirstSource.id}, (select scope.workspace_id from crm.people scope where scope.id = ${assignmentFirstPerson}::uuid))`;
       assignmentInserted();
       await assignmentRelease;
     });
@@ -335,11 +335,12 @@ Deno.test({
     );
     await waitForBlockedOperation("replacement-first replacement");
     const replacementFirstAssignment = sql`insert into crm.person_tags
-      (person_id, tag_id) values
-      (${replacementFirstPerson}, ${replacementFirstSource.id})`.then(
-      () => "inserted" as const,
-      () => "rejected" as const,
-    );
+      (person_id, tag_id, workspace_id) values
+      (${replacementFirstPerson}, ${replacementFirstSource.id}, (select scope.workspace_id from crm.people scope where scope.id = ${replacementFirstPerson}::uuid))`
+      .then(
+        () => "inserted" as const,
+        () => "rejected" as const,
+      );
     await waitForBlockedOperation("replacement-first assignment", 2);
     releaseTagRows();
     const [replacementFirstResponse, replacementFirstAssignmentOutcome] =
@@ -1078,11 +1079,11 @@ Deno.test({
     const [method] = await sql<
       { readonly id: string }[]
     >`insert into crm.person_contact_methods
-      (person_id, type_id, value) values (${personId}, ${contactType.id}, 'pager-value')
+      (person_id, type_id, value, workspace_id) values (${personId}, ${contactType.id}, 'pager-value', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
       returning id::text`;
     assert(method, "contact method reference creates");
-    await sql`insert into crm.person_contact_method_labels (contact_method_id, label_id)
-      values (${method.id}, ${contactLabel.id})`;
+    await sql`insert into crm.person_contact_method_labels (contact_method_id, label_id, workspace_id)
+      values (${method.id}, ${contactLabel.id}, (select scope.workspace_id from crm.person_contact_methods scope where scope.id = ${method.id}::uuid))`;
     const [activity] = await sql<
       { readonly id: string }[]
     >`insert into crm.activities
@@ -1140,9 +1141,9 @@ Deno.test({
     await sql`insert into crm.people (id, workspace_id, given_name)
       values (${primaryCollisionPersonId}, ${owner.workspaceId}, 'Primary collision')`;
     await sql`insert into crm.person_contact_methods
-      (person_id, type_id, value, is_primary) values
-      (${primaryCollisionPersonId}, ${primaryCollisionSource.id}, 'source', true),
-      (${primaryCollisionPersonId}, ${primaryCollisionTarget.id}, 'target', true)`;
+      (person_id, type_id, value, is_primary, workspace_id) values
+      (${primaryCollisionPersonId}, ${primaryCollisionSource.id}, 'source', true, (select scope.workspace_id from crm.people scope where scope.id = ${primaryCollisionPersonId}::uuid)),
+      (${primaryCollisionPersonId}, ${primaryCollisionTarget.id}, 'target', true, (select scope.workspace_id from crm.people scope where scope.id = ${primaryCollisionPersonId}::uuid))`;
     const [auditBeforePrimaryCollision] = await sql<
       { readonly count: number }[]
     >`select count(*)::int as count from crm.audit_events
@@ -1313,8 +1314,8 @@ Deno.test({
       name: "Concurrent target",
     });
     const [racingMethod] = await sql<{ readonly id: string }[]>`
-      insert into crm.person_contact_methods (person_id, type_id, value)
-      values (${personId}, ${racingSource.id}, 'concurrent-value') returning id::text`;
+      insert into crm.person_contact_methods (person_id, type_id, value, workspace_id)
+      values (${personId}, ${racingSource.id}, 'concurrent-value', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid)) returning id::text`;
     assert(racingMethod, "concurrent reference creates");
     const [auditBeforeRace] = await sql<{ readonly count: number }[]>`
       select count(*)::int as count from crm.audit_events

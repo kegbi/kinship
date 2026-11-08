@@ -25,12 +25,38 @@ export function requireDatabaseUrl(): string {
   return databaseUrl;
 }
 
-/** A Postgres.js pool that keeps server notices out of the test output. */
+/**
+ * The disposable project's superuser, which fixtures seed and inspect as.
+ * Schema v14 forces row-level security on every tenant table (ADR 0008), and
+ * the suites compose the API as `kinship_app` through `DATABASE_URL`, so a
+ * fixture that writes rows directly needs a role the policies do not bind.
+ * Without a separate admin URL — a database a developer points the suite at by
+ * hand — it falls back to `DATABASE_URL`.
+ */
+export function requireAdminDatabaseUrl(): string {
+  return Deno.env.get("DATABASE_ADMIN_URL") ?? requireDatabaseUrl();
+}
+
+/** The worker's own role, which the worker suites compose the worker as. */
+export function requireWorkerDatabaseUrl(): string {
+  return Deno.env.get("DATABASE_WORKER_URL") ?? requireDatabaseUrl();
+}
+
+/**
+ * A Postgres.js pool that keeps server notices out of the test output.
+ *
+ * It is the fixture pool: asked for the suite's application URL, it connects
+ * as the project's superuser instead, so fixtures seed and assert across every
+ * workspace while the composed API still runs as the application role.
+ */
 export function openSql(
   databaseUrl: string,
   options: { readonly max?: number; readonly prepare?: boolean } = {},
 ): Sql {
-  return postgres(databaseUrl, {
+  const url = databaseUrl === Deno.env.get("DATABASE_URL")
+    ? requireAdminDatabaseUrl()
+    : databaseUrl;
+  return postgres(url, {
     max: options.max ?? 2,
     onnotice: () => undefined,
     ...(options.prepare === undefined ? {} : { prepare: options.prepare }),
@@ -158,4 +184,31 @@ export async function addMembership(
   `;
   await sql`insert into crm.member_preferences (member_id) values (${memberId})`;
   return memberId;
+}
+
+/**
+ * Asserts that the database itself refuses `write`, a row that would reference
+ * another workspace's row (schema v14, ADR 0008): every tenant reference is a
+ * composite `(workspace_id, …)` key, so even the superuser cannot store such a
+ * bridge. Suites that used to seed one to prove the application ignores it
+ * assert this instead, and the projection checks that follow keep working on
+ * the rows that can exist.
+ */
+export async function assertCrossWorkspaceRefused(
+  write: () => Promise<unknown>,
+  what: string,
+): Promise<void> {
+  let code: string | undefined;
+  try {
+    await write();
+  } catch (error) {
+    code = (error as { readonly code?: string }).code;
+  }
+  if (code !== "23503") {
+    throw new Error(
+      `${what} was not refused as a cross-workspace reference (${
+        code ?? "stored"
+      })`,
+    );
+  }
 }

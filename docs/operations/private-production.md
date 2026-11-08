@@ -201,7 +201,10 @@ telemetry or add CRM identifiers to labels.
    authorization headers, database URLs, object keys, mail content, or free-form
    CRM errors.
 5. Restore into an empty isolated database and object endpoint using the same
-   bucket name. Set `PRIVATE_PRODUCTION_ISOLATED_TARGET=true` only for:
+   bucket name. The archive keeps schema v14's owners and grants (ADR 0008), so
+   first create the roles on the target server with `deno task ops bootstrap`
+   (its superuser `DATABASE_URL` and the three `POSTGRES_*_PASSWORD` values).
+   Set `PRIVATE_PRODUCTION_ISOLATED_TARGET=true` only for:
 
    ```text
    deno task ops recovery restore <last-valid-archive-id>

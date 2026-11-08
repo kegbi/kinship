@@ -89,6 +89,13 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
   async findForAuthentication(
     command: Parameters<ApiTokenRepository["findForAuthentication"]>[0],
   ) {
+    // Before the token is accepted no workspace is known. The token-login
+    // function scopes this transaction to the workspace the row names (ADR
+    // 0008), so the row, the actor check, and the recorded use all run there;
+    // an unknown id leaves it unscoped and the read below finds nothing.
+    const database = databaseFromSession(command.transaction);
+    await sql`select crm.enter_api_token_workspace(${command.id}::uuid)`
+      .execute(database);
     // The lock only has to hold off a revocation or another writer until the
     // use is recorded; no key column changes, so a foreign key check against
     // the row need not wait (REL-073).
@@ -98,7 +105,7 @@ export class PostgresApiTokenRepository implements ApiTokenRepository {
       from crm.api_tokens token
       where token.id = ${command.id}::uuid
       for no key update of token
-    `.execute(databaseFromSession(command.transaction));
+    `.execute(database);
     const value = result.rows[0];
     return value
       ? {

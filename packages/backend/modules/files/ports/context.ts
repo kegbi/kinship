@@ -10,6 +10,7 @@
  * files.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -33,5 +34,8 @@ export interface PersonFileActor extends Correlation {
 
 /** The transaction a files use case runs its work in. */
 export interface PersonFileTransactionRunner {
-  run<T>(work: (transaction: PersonFileTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: PersonFileTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

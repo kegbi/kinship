@@ -17,6 +17,7 @@
  * directory depends on nothing outside workspaces.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { WorkspaceRole } from "../domain/roles.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
@@ -42,6 +43,7 @@ export interface RegistrationTransaction {
 export interface RegistrationTransactionRunner {
   run<T>(
     work: (transaction: RegistrationTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -53,6 +55,7 @@ export interface ProtectedSessionTransaction {
 export interface ProtectedSessionTransactionRunner {
   run<T>(
     work: (transaction: ProtectedSessionTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -78,7 +81,10 @@ export interface SettingsTransaction {
 }
 
 export interface SettingsTransactionRunner {
-  run<T>(work: (transaction: SettingsTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: SettingsTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }
 
 /** The unit of work a personalization change runs in. */
@@ -89,6 +95,7 @@ export interface PersonalizationTransaction {
 export interface PersonalizationTransactionRunner {
   run<T>(
     work: (transaction: PersonalizationTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -103,6 +110,7 @@ export interface PersonalLifecycleTransaction {
 export interface PersonalLifecycleTransactionRunner {
   run<T>(
     work: (transaction: PersonalLifecycleTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -117,6 +125,7 @@ export interface WorkspaceLifecycleTransaction {
 export interface WorkspaceLifecycleTransactionRunner {
   run<T>(
     work: (transaction: WorkspaceLifecycleTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -135,6 +144,7 @@ export interface RecentPeopleTransaction {
 export interface RecentPeopleTransactionRunner {
   run<T>(
     work: (transaction: RecentPeopleTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }
 
@@ -153,5 +163,6 @@ export interface MemberUiStateTransaction {
 export interface MemberUiStateTransactionRunner {
   run<T>(
     work: (transaction: MemberUiStateTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }

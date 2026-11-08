@@ -25,9 +25,9 @@ import {
 import { PostgresTaskRepository } from "../../packages/backend/modules/planning/adapters/postgres/task_repository.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  apiConnection,
   createPerson,
   createTask,
-  deliveryConnection,
   register,
   request,
   revocableActor,
@@ -804,7 +804,7 @@ Deno.test({
       `planning-revocation-${crypto.randomUUID()}`,
     );
     const actors = new PostgresActorRevalidation();
-    const transaction = new PostgresPeopleTransaction(deliveryConnection.db);
+    const transaction = new PostgresPeopleTransaction(apiConnection.db);
     const tasks = createTaskManagement({
       actors,
       audit: taskAuditFrom(new PostgresAuditEventRecorder()),

@@ -113,7 +113,7 @@ export function createRelationshipListing(
           selected: hydration.records,
           status: "ready" as const,
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     list: (
       actor: RelationshipActor,
       personId: string,
@@ -219,6 +219,6 @@ export function createRelationshipListing(
           relationships,
           status: subject.status,
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }

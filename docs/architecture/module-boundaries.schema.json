@@ -127,6 +127,7 @@
         "kind": { "enum": ["core", "optional", "runtime"] },
         "description": { "type": "string", "minLength": 1 },
         "ownsTables": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
+        "ownsFunctions": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
         "publicEntryPoints": { "$ref": "#/$defs/nonEmptyUniqueStrings" },
         "allowedModuleDependencies": { "$ref": "#/$defs/uniqueStrings" },
         "publishes": { "$ref": "#/$defs/uniqueStrings" },

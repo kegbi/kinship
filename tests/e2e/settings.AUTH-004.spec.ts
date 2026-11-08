@@ -241,11 +241,13 @@ test(
       }::uuid, ${sqlLiteral(workspaceId)}::uuid, ${
         sqlLiteral(personId)
       }::uuid, 'APR-009 reminder', '2026-09-05', ${sqlLiteral(memberId)}::uuid);
-    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, status) values (${
+    insert into crm.reminder_occurrences (reminder_id, member_id, occurs_on, deliver_at, status, workspace_id) values (${
         sqlLiteral(reminderId)
       }::uuid, ${
         sqlLiteral(memberId)
-      }::uuid, '2026-09-05', '${instant}', 'failed');
+      }::uuid, '2026-09-05', '${instant}', 'failed', (select scope.workspace_id from crm.reminders scope where scope.id = ${
+        sqlLiteral(reminderId)
+      }::uuid));
     insert into crm.audit_events (workspace_id, actor_member_id, actor_name_snapshot, person_id, subject_type, subject_id, action, occurred_at) values
       (${sqlLiteral(workspaceId)}::uuid, ${
         sqlLiteral(memberId)

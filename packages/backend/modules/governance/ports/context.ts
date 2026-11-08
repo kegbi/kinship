@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 /**
  * The context every governance port is invoked in.
  *
@@ -28,5 +29,8 @@ export interface LegalActor {
 
 /** The transaction a governance use case runs its work in. */
 export interface LegalTransactionRunner {
-  run<T>(work: (transaction: LegalTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: LegalTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

@@ -184,7 +184,7 @@ export function createImportantDateManagement(
           }),
           status: context.status,
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     create: async (
       actor: PeopleActor,
       personId: string,
@@ -218,7 +218,7 @@ export function createImportantDateManagement(
           date,
         );
         return { date, status: "created" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     update: async (
       actor: PeopleActor,
@@ -272,7 +272,7 @@ export function createImportantDateManagement(
           date,
         );
         return { date, status: "updated" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     delete: async (
       actor: PeopleActor,
@@ -326,7 +326,7 @@ export function createImportantDateManagement(
           false,
         );
         return { dateId, status: "deleted" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

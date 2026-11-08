@@ -9,11 +9,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v13 migration classifies only exact empty and v1-v13 states", () => {
+Deno.test("schema v14 migration classifies only exact empty and v1-v14 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v13",
-    "empty target applies the full v13 schema",
+      "apply-v14",
+    "empty target applies the full v14 schema",
   );
   for (
     const version of [
@@ -29,18 +29,19 @@ Deno.test("schema v13 migration classifies only exact empty and v1-v13 states", 
       "v10",
       "v11",
       "v12",
+      "v13",
     ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v13`,
+        `upgrade-${version}-to-v14`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v13" }) ===
-      "verify-v13",
-    "exact v13 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v14" }) ===
+      "verify-v14",
+    "exact v14 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -88,18 +89,18 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v13 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v14 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v13/personal_crm_schema_spec_v13.md",
+    "personal-crm-schema/v14/personal_crm_schema_spec_v14.md",
   );
   assert(
     specification.includes("SQL tables parsed: **92**") &&
-      specification.includes("SQL columns parsed: **877**") &&
-      specification.includes("Explicit indexes: **157**"),
-    "v13 specification metrics drifted from canonical SQL and validation JSON",
+      specification.includes("SQL columns parsed: **897**") &&
+      specification.includes("Explicit indexes: **158**"),
+    "v14 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v13/personal_crm_schema_v13.sql",
+    "personal-crm-schema/v14/personal_crm_schema_v14.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
@@ -119,7 +120,7 @@ Deno.test("schema v13 specification reports its exact canonical metrics", async 
   const deliveryComment =
     "Channels for every reminder occurrence not yet sent, including those already scheduled: in_app, email, or both; email requires a verified address.";
   const catalog = await Deno.readTextFile(
-    "personal-crm-schema/v13/personal_crm_field_catalog_v13.csv",
+    "personal-crm-schema/v14/personal_crm_field_catalog_v14.csv",
   );
   assert(
     sql.includes(
@@ -176,18 +177,20 @@ Deno.test("schema v13 specification reports its exact canonical metrics", async 
 
 Deno.test("schema v13 declares the query indexes, the MFA challenge purpose, and the catalog seeds", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v13/personal_crm_schema_spec_v13.md",
+    "personal-crm-schema/v14/personal_crm_schema_spec_v14.md",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v13/personal_crm_schema_v13.sql",
+    "personal-crm-schema/v14/personal_crm_schema_v14.sql",
   );
   for (
     const index of [
       "notes_workspace_created_idx ON notes (workspace_id, created_at DESC, id DESC)",
       "reminder_occurrences_member_feed_idx ON reminder_occurrences (member_id, date_trunc('milliseconds', visible_at AT TIME ZONE 'UTC') DESC, id DESC) WHERE channel = 'in_app' AND status = 'sent' AND visible_at IS NOT NULL",
       "reminder_occurrences_member_open_idx ON reminder_occurrences (member_id, (CASE WHEN status = 'retry' THEN next_attempt_at ELSE deliver_at END)) WHERE status IN ('pending', 'retry', 'failed', 'manual_attention')",
-      "people_active_given_name_idx ON people (workspace_id, lower(COALESCE(NULLIF(btrim(given_name), ''), NULLIF(btrim(nickname), ''), NULLIF(btrim(family_name), ''), '')), lower(COALESCE(family_name, '')), id) WHERE archived_at IS NULL AND deleted_at IS NULL",
-      "people_active_duplicate_name_idx ON people (workspace_id, lower(btrim(given_name)), lower(btrim(COALESCE(family_name, ''))), lower(btrim(COALESCE(nickname, '')))) WHERE archived_at IS NULL AND deleted_at IS NULL",
+      // v14 (ADR 0008, Q4) rebuilds both on stored keys with v13's exact
+      // expressions, so the directory and duplicate check seek them under RLS.
+      "people_active_given_name_idx ON people (workspace_id, sort_given_name, sort_family_name, id) WHERE archived_at IS NULL AND deleted_at IS NULL",
+      "people_active_duplicate_name_idx ON people (workspace_id, duplicate_given_name, duplicate_family_name, duplicate_nickname) WHERE archived_at IS NULL AND deleted_at IS NULL",
       "reminders_person_date_idx ON reminders (person_date_id) WHERE person_date_id IS NOT NULL",
       "reminders_life_event_idx ON reminders (life_event_id) WHERE life_event_id IS NOT NULL",
       "reminders_task_idx ON reminders (task_id) WHERE task_id IS NOT NULL",

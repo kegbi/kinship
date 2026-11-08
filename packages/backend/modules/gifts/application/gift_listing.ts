@@ -140,6 +140,7 @@ export function createGiftListing(dependencies: GiftManagementDependencies) {
             supportedCurrencyCodes,
           };
         },
+        { workspaceId: actor.workspaceId },
       );
     },
   };

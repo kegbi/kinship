@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -166,18 +167,22 @@ export class PostgresPersonProfileRepository
   async get(
     command: Parameters<PersonProfileRepository["get"]>[0],
   ): Promise<Awaited<ReturnType<PersonProfileRepository["get"]>>> {
-    const summaryColumns = command.includeSummary
-      ? sql`,
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const summaryColumns = command.includeSummary
+          ? sql`,
         coalesce(profile_summary.primary_contact_methods, '[]'::jsonb)
           as primary_contact_methods,
         coalesce(profile_summary.relationship_counts, '[]'::jsonb)
           as relationship_counts,
         coalesce(profile_summary.section_counts, '[]'::jsonb)
           as section_counts`
-      : sql`, null::jsonb as primary_contact_methods,
+          : sql`, null::jsonb as primary_contact_methods,
         null::jsonb as relationship_counts, null::jsonb as section_counts`;
-    const summaryJoin = command.includeSummary
-      ? sql`
+        const summaryJoin = command.includeSummary
+          ? sql`
       left join lateral (
         select
           (
@@ -307,8 +312,8 @@ export class PostgresPersonProfileRepository
             ) counted
           ) as section_counts
       ) profile_summary on true`
-      : sql``;
-    const result = await sql<PersonProfileRow>`
+          : sql``;
+        const result = await sql<PersonProfileRow>`
       select person.id::text, person.given_name, person.middle_name,
         person.family_name, person.nickname, person.description,
         gender.name as gender, gender.id::text as gender_option_id,
@@ -386,8 +391,8 @@ export class PostgresPersonProfileRepository
       -- tests/integration/people_favorites_postgres_test.ts checks they agree.
       left join lateral (
         select ${
-      millisecondInstantColumn("max(contact.contacted_at)")
-    } as last_contact_at
+          millisecondInstantColumn("max(contact.contacted_at)")
+        } as last_contact_at
         from (
           select max(call.called_at) as contacted_at from crm.calls call
           where call.workspace_id = ${command.workspaceId}::uuid
@@ -464,35 +469,41 @@ export class PostgresPersonProfileRepository
           ) as stay_in_touch_at
       ) due on true
       ${summaryJoin}
-    `.execute(this.database);
-    const row = result.rows[0]!;
-    const person = identity(row);
-    if (!person) return { status: "not-found" };
-    return {
-      dueInformation: {
-        ...pickDefined({ nextReminderAt: row.next_reminder_at }),
-        openTaskCount: row.open_task_count,
-        ...pickDefined({ stayInTouchAt: row.stay_in_touch_at }),
-      },
-      genderOptions: row.gender_options,
-      person,
-      status: row.archived_at ? "archived" : "ready",
-      ...(command.includeSummary
-        ? {
-          summary: {
-            primaryContactMethods: row.primary_contact_methods ?? [],
-            relationshipCounts: row.relationship_counts ?? [],
-            sectionCounts: row.section_counts ?? [],
+    `.execute(database);
+        const row = result.rows[0]!;
+        const person = identity(row);
+        if (!person) return { status: "not-found" };
+        return {
+          dueInformation: {
+            ...pickDefined({ nextReminderAt: row.next_reminder_at }),
+            openTaskCount: row.open_task_count,
+            ...pickDefined({ stayInTouchAt: row.stay_in_touch_at }),
           },
-        }
-        : {}),
-    };
+          genderOptions: row.gender_options,
+          person,
+          status: row.archived_at ? "archived" : "ready",
+          ...(command.includeSummary
+            ? {
+              summary: {
+                primaryContactMethods: row.primary_contact_methods ?? [],
+                relationshipCounts: row.relationship_counts ?? [],
+                sectionCounts: row.section_counts ?? [],
+              },
+            }
+            : {}),
+        };
+      },
+    );
   }
 
   async listLifeEvents(
     command: Parameters<PersonProfileRepository["listLifeEvents"]>[0],
   ): Promise<Awaited<ReturnType<PersonProfileRepository["listLifeEvents"]>>> {
-    const result = await sql<PersonLifeEventsRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const result = await sql<PersonLifeEventsRow>`
       select person.id::text as person_id,
         coalesce(profile_module.is_active, true) as module_is_active,
         coalesce(history.events, '[]'::jsonb) as events,
@@ -557,30 +568,36 @@ export class PostgresPersonProfileRepository
           limit 100
         ) choice
       ) vocabulary on true
-    `.execute(this.database);
-    const row = result.rows[0]!;
-    if (!row.person_id) return { status: "not-found" };
-    if (!row.module_is_active) {
-      return { events: [], status: "hidden", types: [] };
-    }
-    return { events: row.events, status: "ready", types: row.types };
+    `.execute(database);
+        const row = result.rows[0]!;
+        if (!row.person_id) return { status: "not-found" };
+        if (!row.module_is_active) {
+          return { events: [], status: "hidden", types: [] };
+        }
+        return { events: row.events, status: "ready", types: row.types };
+      },
+    );
   }
 
   async listTimeline(
     command: Parameters<PersonProfileRepository["listTimeline"]>[0],
   ): Promise<Awaited<ReturnType<PersonProfileRepository["listTimeline"]>>> {
-    const context = await sql<PersonTimelineContextRow>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const context = await sql<PersonTimelineContextRow>`
       select person.id::text, person.archived_at
       from crm.people person
       where person.id = ${command.personId}::uuid
         and person.workspace_id = ${command.workspaceId}::uuid
         and person.deleted_at is null
-    `.execute(this.database);
-    const resolved = context.rows[0];
-    if (!resolved) return { status: "not-found" };
+    `.execute(database);
+        const resolved = context.rows[0];
+        if (!resolved) return { status: "not-found" };
 
-    if (command.after) {
-      const anchor = await sql<{ readonly valid: boolean }>`
+        if (command.after) {
+          const anchor = await sql<{ readonly valid: boolean }>`
         select exists (
           select 1 from crm.activities activity
           join crm.activity_participants participant
@@ -596,8 +613,8 @@ export class PostgresPersonProfileRepository
             and activity.workspace_id = ${command.workspaceId}::uuid
             and coalesce(profile_module.is_active, true)
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'activity')
+            command.kind ?? null
+          }::text = 'activity')
             and activity.happened_at = ${command.after.timestamp}::timestamptz
           union all
           select 1 from crm.notes note
@@ -611,8 +628,8 @@ export class PostgresPersonProfileRepository
             and note.person_id = ${command.personId}::uuid
             and coalesce(profile_module.is_active, true)
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'note')
+            command.kind ?? null
+          }::text = 'note')
             and note.created_at = ${command.after.timestamp}::timestamptz
           union all
           select 1 from crm.calls call
@@ -626,8 +643,8 @@ export class PostgresPersonProfileRepository
             and call.person_id = ${command.personId}::uuid
             and coalesce(profile_module.is_active, true)
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'call')
+            command.kind ?? null
+          }::text = 'call')
             and call.called_at = ${command.after.timestamp}::timestamptz
           union all
           select 1 from crm.conversation_threads thread
@@ -641,8 +658,8 @@ export class PostgresPersonProfileRepository
             and thread.person_id = ${command.personId}::uuid
             and coalesce(profile_module.is_active, true)
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'conversation')
+            command.kind ?? null
+          }::text = 'conversation')
             and thread.happened_at = ${command.after.timestamp}::timestamptz
           union all
           select 1 from crm.life_events event
@@ -666,15 +683,15 @@ export class PostgresPersonProfileRepository
             and event.person_id = ${command.personId}::uuid
             and coalesce(profile_module.is_active, true)
             and (${command.kind ?? null}::text is null or ${
-        command.kind ?? null
-      }::text = 'life-event')
+            command.kind ?? null
+          }::text = 'life-event')
             and resolved_event.occurred_at = ${command.after.timestamp}::timestamptz
         ) as valid
-      `.execute(this.database);
-      if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
-    }
+      `.execute(database);
+          if (!anchor.rows[0]?.valid) return { status: "stale-cursor" };
+        }
 
-    const result = await sql<PersonTimelineRow>`
+        const result = await sql<PersonTimelineRow>`
       with projection as (
         select activity.id, 'activity'::text as kind,
           activity.happened_at as occurred_at, activity.summary as title,
@@ -692,8 +709,8 @@ export class PostgresPersonProfileRepository
         where activity.workspace_id = ${command.workspaceId}::uuid
           and coalesce(profile_module.is_active, true)
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'activity')
+          command.kind ?? null
+        }::text = 'activity')
         union all
         select note.id, 'note'::text, note.created_at, null::text, note.body,
           'full'::text
@@ -707,8 +724,8 @@ export class PostgresPersonProfileRepository
           and note.person_id = ${command.personId}::uuid
           and coalesce(profile_module.is_active, true)
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'note')
+          command.kind ?? null
+        }::text = 'note')
         union all
         select call.id, 'call'::text, call.called_at, null::text, call.content,
           'full'::text
@@ -722,8 +739,8 @@ export class PostgresPersonProfileRepository
           and call.person_id = ${command.personId}::uuid
           and coalesce(profile_module.is_active, true)
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'call')
+          command.kind ?? null
+        }::text = 'call')
         union all
         select thread.id, 'conversation'::text, thread.happened_at,
           thread.title, null::text, 'full'::text
@@ -737,8 +754,8 @@ export class PostgresPersonProfileRepository
           and thread.person_id = ${command.personId}::uuid
           and coalesce(profile_module.is_active, true)
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'conversation')
+          command.kind ?? null
+        }::text = 'conversation')
         union all
         select event.id, 'life-event'::text, resolved_event.occurred_at,
           coalesce(event.name, event_type.name), event.note,
@@ -769,15 +786,15 @@ export class PostgresPersonProfileRepository
           and event.person_id = ${command.personId}::uuid
           and coalesce(profile_module.is_active, true)
           and (${command.kind ?? null}::text is null or ${
-      command.kind ?? null
-    }::text = 'life-event')
+          command.kind ?? null
+        }::text = 'life-event')
       ), page as (
         select * from projection
         ${
-      command.after
-        ? sql`where (occurred_at, id) < (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
-        : sql``
-    }
+          command.after
+            ? sql`where (occurred_at, id) < (${command.after.timestamp}::timestamptz, ${command.after.id}::uuid)`
+            : sql``
+        }
         order by occurred_at desc, id desc
         limit ${command.limit + 1}
       )
@@ -810,10 +827,10 @@ export class PostgresPersonProfileRepository
       left join lateral (
         select jsonb_agg(jsonb_build_object('id', person.id::text,
           'name', ${
-      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-    }) order by lower(${
-      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
-    }), person.id) as value
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        }) order by lower(${
+          sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+        }), person.id) as value
         from crm.activity_participants link
         join crm.activities activity on activity.id = link.activity_id
           and activity.workspace_id = ${command.workspaceId}::uuid
@@ -878,15 +895,17 @@ export class PostgresPersonProfileRepository
         where page.kind = 'conversation' and thread.id = page.id
       ) conversation_messages on true
       order by page.occurred_at desc, page.id desc
-    `.execute(this.database);
-    const visible = result.rows.slice(0, command.limit);
-    const final = visible.at(-1);
-    return {
-      items: visible.map(timelineItem),
-      ...(result.rows.length > command.limit && final
-        ? { next: { id: final.id, timestamp: final.occurred_at } }
-        : {}),
-      status: resolved.archived_at ? "archived" : "ready",
-    };
+    `.execute(database);
+        const visible = result.rows.slice(0, command.limit);
+        const final = visible.at(-1);
+        return {
+          items: visible.map(timelineItem),
+          ...(result.rows.length > command.limit && final
+            ? { next: { id: final.id, timestamp: final.occurred_at } }
+            : {}),
+          status: resolved.archived_at ? "archived" : "ready",
+        };
+      },
+    );
   }
 }

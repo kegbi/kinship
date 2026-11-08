@@ -368,7 +368,10 @@ function readManifest(document: JsonObject): Manifest {
     modules: modules.filter(isJsonObject).map((entry) => ({
       id: text(entry["id"]),
       path: text(entry["path"]),
-      ownsTables: strings(entry["ownsTables"]),
+      ownsTables: [
+        ...strings(entry["ownsTables"]),
+        ...strings(entry["ownsFunctions"]),
+      ],
       publicEntryPoints: strings(entry["publicEntryPoints"]),
       allowedModuleDependencies: strings(entry["allowedModuleDependencies"]),
     })),
@@ -399,6 +402,22 @@ export function canonicalTables(sql: string): readonly string[] {
     if (unqualified.length > 0) tables.push(unqualified);
   }
   return tables;
+}
+
+/**
+ * Every function the canonical DDL creates, without its schema qualifier.
+ * Schema v14's narrow cross-workspace functions (ADR 0008) are owned and
+ * called like tables: `ownsFunctions` in the manifest names each one's module.
+ */
+export function canonicalFunctions(sql: string): readonly string[] {
+  const functions: string[] = [];
+  const pattern = /create\s+(?:or\s+replace\s+)?function\s+([a-z0-9_."]+)/gi;
+  for (const match of sql.matchAll(pattern)) {
+    const name = (match[1] ?? "").replaceAll('"', "");
+    const unqualified = name.slice(name.lastIndexOf(".") + 1);
+    if (unqualified.length > 0) functions.push(unqualified);
+  }
+  return functions;
 }
 
 // --- Imports -------------------------------------------------------------
@@ -533,7 +552,10 @@ function tableOwnershipViolations(
       owners.set(table, [...(owners.get(table) ?? []), module.id]);
     }
   }
-  const declared = new Set(canonicalTables(input.canonicalSchemaSql));
+  const declared = new Set([
+    ...canonicalTables(input.canonicalSchemaSql),
+    ...canonicalFunctions(input.canonicalSchemaSql),
+  ]);
   for (const table of [...declared].sort()) {
     const claimed = owners.get(table) ?? [];
     if (claimed.length === 0) {
@@ -1253,7 +1275,7 @@ const ROOT = new URL("../../", import.meta.url);
 const MANIFEST_PATH = "docs/architecture/module-boundaries.yaml";
 const SCHEMA_PATH = "docs/architecture/module-boundaries.schema.json";
 const CANONICAL_SCHEMA_PATH =
-  "personal-crm-schema/v13/personal_crm_schema_v13.sql";
+  "personal-crm-schema/v14/personal_crm_schema_v14.sql";
 const BASELINE_PATH = "tools/architecture/boundary-baseline.json";
 const SOURCE_ROOTS = ["apps", "packages", "tools"];
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".astro"];

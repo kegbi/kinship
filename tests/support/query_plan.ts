@@ -14,14 +14,17 @@
  */
 
 import { type Kysely, type KyselyPlugin, RawNode } from "kysely";
-import { openSql, type Sql } from "./database.ts";
+import { openSql, requireAdminDatabaseUrl, type Sql } from "./database.ts";
 
 /** The canonical DDL the scratch databases are created from. */
-const CANONICAL_SCHEMA = "personal-crm-schema/v13/personal_crm_schema_v13.sql";
+const CANONICAL_SCHEMA = "personal-crm-schema/v14/personal_crm_schema_v14.sql";
 
 /**
  * Runs `work` on a scratch database holding the canonical DDL, created
- * through `admin` and dropped afterwards, however `work` ends.
+ * through `admin` and dropped afterwards, however `work` ends. The DDL is
+ * applied, and `sql` seeds, as the project's superuser; `url` names the
+ * scratch database as `databaseUrl`'s role, so a repository explained there
+ * runs under the same row-level security as in production (ADR 0008).
  */
 export async function withScratchCrm(
   admin: Sql,
@@ -32,7 +35,9 @@ export async function withScratchCrm(
   await admin.unsafe(`create database ${name}`);
   const url = new URL(databaseUrl);
   url.pathname = `/${name}`;
-  const scratch = openSql(url.toString(), { max: 1, prepare: false });
+  const adminUrl = new URL(requireAdminDatabaseUrl());
+  adminUrl.pathname = `/${name}`;
+  const scratch = openSql(adminUrl.toString(), { max: 1, prepare: false });
   try {
     await scratch.unsafe(await Deno.readTextFile(CANONICAL_SCHEMA));
     await work({ sql: scratch, url: url.toString() });
@@ -158,4 +163,58 @@ export async function explainedPlan<Database>(
     throw new Error("No statement matched; nothing was explained.");
   }
   return plan;
+}
+
+/**
+ * The executed plan of the query a `SECURITY DEFINER` function runs, which an
+ * `EXPLAIN` of the call hides behind one Function Scan (ADR 0008). The body is
+ * read from the catalog — its `RETURN QUERY` statement, or the expression of a
+ * scalar `RETURN (…)` — with each argument bound in its declared type, and
+ * explained as the function's owner, under the owner's own policies, so the
+ * plan is the one the function executes.
+ */
+export async function explainedFunctionBody(
+  sql: Sql,
+  signature: string,
+  args: readonly unknown[],
+): Promise<PlanNode> {
+  const [definition] = await sql<{
+    readonly source: string;
+    readonly owner: string;
+    readonly names: readonly string[];
+    readonly types: readonly string[];
+  }[]>`
+    select p.prosrc as source, quote_ident(pg_get_userbyid(p.proowner)) as owner,
+      p.proargnames as names,
+      array(select format_type(t, null) from unnest(p.proargtypes) t) as types
+    from pg_proc p where p.oid = ${signature}::regprocedure
+  `;
+  if (definition === undefined) throw new Error(`${signature} is not defined`);
+  const body = definition.source.match(/RETURN QUERY\s+([\s\S]*?);\s*END/i)
+    ?.[1] ??
+    definition.source.match(/RETURN \(\s*([\s\S]*?)\s*\);\s*END/i)?.[1];
+  if (body === undefined) {
+    throw new Error(`${signature} returns no single query to explain`);
+  }
+  const query = definition.types.reduce(
+    (text, type, index) =>
+      text.replace(
+        new RegExp(`\\b${definition.names[index]}\\b`, "g"),
+        () => `$${index + 1}::${type}`,
+      ),
+    body,
+  );
+  return await sql.begin(async (transaction) => {
+    await transaction.unsafe(`set local role ${definition.owner}`);
+    const rows = await transaction.unsafe(
+      `explain (analyze, format json) ${query}`,
+      args as never[],
+    );
+    const document = (rows[0] as Record<string, unknown>)["QUERY PLAN"] as
+      | readonly { readonly Plan: PlanNode }[]
+      | undefined;
+    const plan = document?.[0]?.Plan;
+    if (plan === undefined) throw new Error(`${signature} was not explained`);
+    return plan;
+  }) as PlanNode;
 }

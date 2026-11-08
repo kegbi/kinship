@@ -130,7 +130,11 @@ function memoryRepository(
         [...rules.values()].filter((entry) =>
           entry.rule.active && entry.rule.nextOccurrenceOn !== undefined &&
           entry.rule.nextOccurrenceOn <= command.through
-        ).map((entry) => entry.rule.id).slice(0, command.limit),
+        ).map((entry) => ({
+          id: entry.rule.id,
+          workspaceId: entry.workspaceId,
+        }))
+          .slice(0, command.limit),
       ),
     claim: (command) => {
       if (options.failingClaims?.has(command.id)) {

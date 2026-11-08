@@ -9,6 +9,7 @@
  * directory depend on nothing outside relationships.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
 /**
@@ -34,5 +35,6 @@ export interface RelationshipActor extends Correlation {
 export interface RelationshipTransactionRunner {
   run<T>(
     work: (transaction: RelationshipTransaction) => Promise<T>,
+    scope?: TransactionScope,
   ): Promise<T>;
 }

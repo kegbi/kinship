@@ -37,6 +37,7 @@ import {
 } from "../../packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
+  assertCrossWorkspaceRefused,
   openSql,
   requireDatabaseUrl,
   revocableActor,
@@ -228,14 +229,22 @@ Deno.test("[FILES-001] PostgreSQL and object effects stay tenant-safe and compen
       'application/pdf', 'available'
     )
   `;
-  await sql`
-    insert into crm.person_file_links (
-      person_id, file_id, kind, title
-    ) values (
-      ${outsider}::uuid, ${malformedFileId}::uuid, 'document',
-      'Foreign secret title'
-    )
-  `;
+  // A link from another workspace's person to this file is refused by the
+  // database itself (ADR 0008), whichever workspace the row claims.
+  for (const workspace of [foreign.workspaceId, primary.workspaceId]) {
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
+          insert into crm.person_file_links (
+            person_id, file_id, kind, title, workspace_id
+          ) values (
+            ${outsider}::uuid, ${malformedFileId}::uuid, 'document',
+            'Foreign secret title', ${workspace}::uuid
+          )
+        `,
+      "a person-file link across workspaces",
+    );
+  }
   const malformedLookup = await request(
     primary,
     "/api/v1/settings/storage?query=foreign-secret",
@@ -747,8 +756,7 @@ Deno.test({
           fileId: filed,
           occurredAt: new Date(),
           transaction: session,
-        })
-      );
+        }), { workspaceId: scope.workspaceId });
       assert(
         await state(filed) === "available:true",
         `a filed upload keeps its row and link: ${await state(filed)}`,
@@ -762,12 +770,14 @@ Deno.test({
       await sql`
         delete from crm.person_file_links where file_id = ${reserved}::uuid
       `;
-      const locked = await transaction.run((session) =>
-        repository.lockReservedUpload({
-          ...scope,
-          fileId: reserved,
-          transaction: session,
-        })
+      const locked = await transaction.run(
+        (session) =>
+          repository.lockReservedUpload({
+            ...scope,
+            fileId: reserved,
+            transaction: session,
+          }),
+        { workspaceId: scope.workspaceId },
       );
       assert(locked?.storageKey, "an unlinked reservation is not hidden");
       await transaction.run((session) =>
@@ -776,8 +786,7 @@ Deno.test({
           fileId: reserved,
           occurredAt: new Date(),
           transaction: session,
-        })
-      );
+        }), { workspaceId: scope.workspaceId });
       assert(
         await state(reserved) === "deleted:false",
         `the unlinked reservation is recorded deleted: ${await state(

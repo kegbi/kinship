@@ -10,6 +10,7 @@
  * save, never this read model, which only reads.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
   actorMayRead,
@@ -136,6 +137,7 @@ export function createNotifications(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
 }) {

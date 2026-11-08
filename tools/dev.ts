@@ -13,6 +13,9 @@ const configured = (name: string): string | undefined =>
   Deno.env.get(name) ?? localEnvironment[name];
 const postgresPassword = configured("POSTGRES_PASSWORD") ??
   "kinship-local-development-only";
+// ADR 0008: the migrator, API, and worker each sign in with their own role.
+const roleSecret = (name: string, role: string) =>
+  configured(name) ?? `kinship-local-development-only-${role}`;
 const postgresDatabase = configured("POSTGRES_DB") ?? "kinship";
 const postgresUser = configured("POSTGRES_USER") ?? "kinship";
 const postgresPort = configured("POSTGRES_PORT") ?? "5432";
@@ -41,8 +44,14 @@ const integrationsEncryptionKeyset = configured(
 const integrationsDavEnabled = configured("INTEGRATIONS_DAV_ENABLED");
 const composeEnvironment = {
   POSTGRES_DB: postgresDatabase,
+  POSTGRES_APP_PASSWORD: roleSecret("POSTGRES_APP_PASSWORD", "app"),
+  POSTGRES_MIGRATOR_PASSWORD: roleSecret(
+    "POSTGRES_MIGRATOR_PASSWORD",
+    "migrator",
+  ),
   POSTGRES_PASSWORD: postgresPassword,
   POSTGRES_PORT: postgresPort,
+  POSTGRES_WORKER_PASSWORD: roleSecret("POSTGRES_WORKER_PASSWORD", "worker"),
   POSTGRES_USER: postgresUser,
   API_PORT: apiPort,
   WEB_PORT: webPort,

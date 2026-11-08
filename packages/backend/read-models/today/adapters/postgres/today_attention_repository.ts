@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, type RawBuilder, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
@@ -39,10 +40,10 @@ export class PostgresTodayAttentionRepository
   async getSnapshot(
     command: Parameters<TodayAttentionRepository["getSnapshot"]>[0],
   ) {
-    return await this.database.transaction().setIsolationLevel(
-      "repeatable read",
-    )
-      .execute(async (transaction) => {
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (transaction) => {
         const context = await sql<{ readonly timezone: string }>`
       select coalesce(
         (select preference.timezone from crm.member_preferences preference
@@ -337,6 +338,8 @@ export class PostgresTodayAttentionRepository
             : [];
         });
         return { items, status: "ready" as const, timezone };
-      });
+      },
+      { isolation: "repeatable read" },
+    );
   }
 }

@@ -26,7 +26,7 @@ export function createCommunicationListing(
           ...actor,
           transaction,
         });
-      }),
+      }, { workspaceId: actor.workspaceId }),
     listCommunications: (actor: InteractionActor, personId: string) =>
       dependencies.transaction.run(async (transaction) => {
         if (!await active(dependencies, actor, transaction, false)) {
@@ -50,6 +50,6 @@ export function createCommunicationListing(
           items: await hydrateMany(dependencies, actor, stored, transaction),
           status: "ready" as const,
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }

@@ -104,8 +104,8 @@ export async function addActivity(
   `;
   for (const personId of participants) {
     await sql`
-      insert into crm.activity_participants (activity_id, person_id)
-      values (${id}, ${personId})
+      insert into crm.activity_participants (activity_id, person_id, workspace_id)
+      values (${id}, ${personId}, (select scope.workspace_id from crm.activities scope where scope.id = ${id}::uuid))
     `;
   }
   return id;

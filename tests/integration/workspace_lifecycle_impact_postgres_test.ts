@@ -11,6 +11,7 @@
  * workspace seeded through the owning modules so each join path carries a row.
  */
 
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -98,16 +99,20 @@ type Contributions = Readonly<
 
 /** Every participant, in one transaction, exactly as the use case asks them. */
 async function inspectAll(workspaceId: string): Promise<Contributions> {
-  return await connection.db.transaction().execute(async (transaction) => {
-    const seen: Record<string, WorkspaceLifecycleImpactContribution> = {};
-    for (const [name, participant] of Object.entries(impact)) {
-      seen[name] = await participant.inspectBeforeCascade({
-        transaction: { opaque: transaction },
-        workspaceId,
-      });
-    }
-    return seen;
-  });
+  return await writeWithinWorkspace(
+    connection.db,
+    workspaceId,
+    async (transaction) => {
+      const seen: Record<string, WorkspaceLifecycleImpactContribution> = {};
+      for (const [name, participant] of Object.entries(impact)) {
+        seen[name] = await participant.inspectBeforeCascade({
+          transaction: { opaque: transaction },
+          workspaceId,
+        });
+      }
+      return seen;
+    },
+  );
 }
 
 type Fixture = SignedInFixture;
@@ -290,8 +295,9 @@ Deno.test({
     // The label junction is the only two-step path: a label row is owned by a
     // contact method, which is owned by a person, which the workspace owns.
     await sql`
-      insert into crm.person_contact_method_labels (contact_method_id, label_id)
-      select method.id, ${label.id}::uuid from crm.person_contact_methods method
+      insert into crm.person_contact_method_labels (contact_method_id, label_id, workspace_id)
+      select method.id, ${label.id}::uuid,
+        (select scope.workspace_id from crm.person_contact_methods scope where scope.id = method.id) from crm.person_contact_methods method
       where method.person_id = ${person.id}::uuid`;
     const withLabel = await inspectAll(owner.workspaceId);
     assert(
@@ -346,8 +352,8 @@ Deno.test({
       withFile.files?.revision !== empty.files?.revision,
       "the stored object did not reach the files digest",
     );
-    await sql`insert into crm.person_file_links (person_id, file_id, kind)
-      values (${person.id}::uuid, ${file.id}::uuid, 'document')`;
+    await sql`insert into crm.person_file_links (person_id, file_id, kind, workspace_id)
+      values (${person.id}::uuid, ${file.id}::uuid, 'document', (select scope.workspace_id from crm.people scope where scope.id = ${person.id}::uuid))`;
     const withLink = await inspectAll(owner.workspaceId);
     assert(
       withLink.files?.revision !== withFile.files?.revision,
@@ -358,8 +364,8 @@ Deno.test({
       values (${owner.workspaceId}::uuid, ${person.id}::uuid, now())
       returning id::text as id`;
     assert(thread, "the conversation thread is recorded");
-    await sql`insert into crm.messages (conversation_id, content, written_at, direction)
-      values (${thread.id}::uuid, 'Hello', now(), 'inbound')`;
+    await sql`insert into crm.messages (conversation_id, content, written_at, direction, workspace_id)
+      values (${thread.id}::uuid, 'Hello', now(), 'inbound', (select scope.workspace_id from crm.conversation_threads scope where scope.id = ${thread.id}::uuid))`;
 
     const seeded = await inspectAll(owner.workspaceId);
     const counted = (module: string, name: string): number =>

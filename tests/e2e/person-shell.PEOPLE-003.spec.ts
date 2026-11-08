@@ -56,8 +56,9 @@ test(
         'Profile ' || lpad(sequence::text, 2, '0'),
         'profile-' || lpad(sequence::text, 2, '0')
       from generate_series(1, 10) sequence;
-      insert into crm.person_tags (person_id, tag_id)
-      select '${personId}'::uuid, tag.id from crm.tags tag
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      select '${personId}'::uuid, tag.id,
+        (select scope.workspace_id from crm.people scope where scope.id = '${personId}'::uuid) from crm.tags tag
       where tag.workspace_id = '${workspaceId}'::uuid;
       insert into crm.workspaces (id, name, status)
       values ('${foreignWorkspaceId}'::uuid, 'Foreign profile', 'active');

@@ -65,7 +65,7 @@ export function createReminderOccurrences(
           });
         }
         return { occurrenceId: id, status: "acknowledged" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
   };
 }

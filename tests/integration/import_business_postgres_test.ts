@@ -1,3 +1,4 @@
+import { writeWithinWorkspace } from "../../packages/backend/platform/postgres/transactions.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -81,11 +82,13 @@ Deno.test({
       }::uuid,'Same body',${actor.memberId}::uuid)`;
       const [legacyFile] =
         await sql`insert into crm.files(workspace_id,uploaded_by_member_id,original_filename,storage_provider,byte_size,status,visibility) values(${actor.workspaceId}::uuid,${actor.memberId}::uuid,'portrait.png','import-manifest',10,'missing','private') returning id`;
-      await sql`insert into crm.person_avatars(person_id,source,file_id) values(${
+      await sql`insert into crm.person_avatars(person_id,source,file_id, workspace_id) values(${
         person!.id
       }::uuid,'file',${
         legacyFile!.id
-      }::uuid) on conflict(person_id) do update set source='file',file_id=excluded.file_id`;
+      }::uuid, (select scope.workspace_id from crm.people scope where scope.id = ${
+        person!.id
+      }::uuid)) on conflict(person_id) do update set source='file',file_id=excluded.file_id`;
       await sql`insert into crm.data_import_entities(import_id,source_table,source_primary_key,target_table,target_key,status,warnings,raw_snapshot) values(${baseline.importId}::uuid,'photos','contact:1:avatar','files',${
         legacyFile!.id
       },'warning','[]'::jsonb,'{"personSourcePrimaryKey":"1","originalFilename":"portrait.png","byteSize":10}'::jsonb)`;
@@ -95,9 +98,11 @@ Deno.test({
         }::uuid,${
           personDate!.id
         }::uuid,'person_date','Birthday','1990-04-05','year',false) returning id`;
-      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status) values(${
+      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status, workspace_id) values(${
         legacyReminder!.id
-      }::uuid,${actor.memberId}::uuid,'2099-04-05','2099-04-05T12:00:00Z','pending')`;
+      }::uuid,${actor.memberId}::uuid,'2099-04-05','2099-04-05T12:00:00Z','pending', (select scope.workspace_id from crm.reminders scope where scope.id = ${
+        legacyReminder!.id
+      }::uuid))`;
       await sql`update crm.data_import_entities set raw_snapshot=jsonb_set(raw_snapshot,'{notes}','["Same body","Same body"]'::jsonb) where import_id=${baseline.importId}::uuid and source_table='contacts'`;
       await sql`update crm.data_imports set completed_at=now(),stats=jsonb_set(stats,'{fingerprint}','"old-importer-fingerprint"'::jsonb) where id=${baseline.importId}::uuid`;
       const tables = {
@@ -296,29 +301,33 @@ Deno.test({
         const id = crypto.randomUUID();
         let rejected = false;
         try {
-          await connection.db.transaction().execute(async (tx) => {
-            await boundary.importRecords({
-              actor,
-              transaction: { opaque: tx },
-              records: [{
-                id,
-                data: {
-                  kind: "relationship_group",
-                  name: "Rolled back",
-                  canDelete: true,
-                  createdAt: null,
-                  updatedAt: null,
-                },
-                references: {},
-              }, {
-                id: crypto.randomUUID(),
-                data: { kind },
-                references: kind === "relationship_type"
-                  ? { groupId: group!.id }
-                  : { categoryId: category!.id },
-              }],
-            });
-          });
+          await writeWithinWorkspace(
+            connection.db,
+            actor.workspaceId,
+            async (tx) => {
+              await boundary.importRecords({
+                actor,
+                transaction: { opaque: tx },
+                records: [{
+                  id,
+                  data: {
+                    kind: "relationship_group",
+                    name: "Rolled back",
+                    canDelete: true,
+                    createdAt: null,
+                    updatedAt: null,
+                  },
+                  references: {},
+                }, {
+                  id: crypto.randomUUID(),
+                  data: { kind },
+                  references: kind === "relationship_type"
+                    ? { groupId: group!.id }
+                    : { categoryId: category!.id },
+                }],
+              });
+            },
+          );
         } catch {
           rejected = true;
         }
@@ -331,15 +340,20 @@ Deno.test({
       }
       let rejected = false;
       try {
-        await new PostgresWorkspaceBusinessImportBoundary().importRecords({
-          actor,
-          transaction: { opaque: connection.db },
-          records: [{
-            id: crypto.randomUUID(),
-            data: { kind: "pet_category", name: "Private category" },
-            references: {},
-          }],
-        });
+        await writeWithinWorkspace(
+          connection.db,
+          actor.workspaceId,
+          (db) =>
+            new PostgresWorkspaceBusinessImportBoundary().importRecords({
+              actor,
+              transaction: { opaque: db },
+              records: [{
+                id: crypto.randomUUID(),
+                data: { kind: "pet_category", name: "Private category" },
+                references: {},
+              }],
+            }),
+        );
       } catch {
         rejected = true;
       }
@@ -403,7 +417,7 @@ Deno.test({
       const [type] =
         await sql`insert into crm.relationship_types(workspace_id,forward_label,reverse_label) values(${foreign.workspaceId}::uuid,'Foreign','Foreign') returning id`;
       const [date] =
-        await sql`insert into crm.person_dates(person_id,kind,precision,year,month,day) values(${foreign.personId}::uuid,'birthday','full',1990,1,1) returning id`;
+        await sql`insert into crm.person_dates(person_id,kind,precision,year,month,day, workspace_id) values(${foreign.personId}::uuid,'birthday','full',1990,1,1, (select scope.workspace_id from crm.people scope where scope.id = ${foreign.personId}::uuid)) returning id`;
       // AUD-T1 (SECT-09): an activity emotion is inserted under `parentId`,
       // so naming the actor's own activity as `activityId` beside it must not
       // pass the check for another workspace's parent.
@@ -512,25 +526,29 @@ Deno.test({
         const marker = crypto.randomUUID();
         let reason = "";
         try {
-          await connection.db.transaction().execute(async (tx) => {
-            await interactions.importRecords({
-              actor,
-              transaction: { opaque: tx },
-              records: [{
-                id: marker,
-                data: {
-                  kind: "note",
-                  body: "Rollback marker",
-                  isFavorited: false,
-                  favoritedAt: null,
-                  createdAt: null,
-                  updatedAt: null,
-                },
-                references: { personId: actor.personId },
-              }],
-            });
-            await command({ opaque: tx });
-          });
+          await writeWithinWorkspace(
+            connection.db,
+            actor.workspaceId,
+            async (tx) => {
+              await interactions.importRecords({
+                actor,
+                transaction: { opaque: tx },
+                records: [{
+                  id: marker,
+                  data: {
+                    kind: "note",
+                    body: "Rollback marker",
+                    isFavorited: false,
+                    favoritedAt: null,
+                    createdAt: null,
+                    updatedAt: null,
+                  },
+                  references: { personId: actor.personId },
+                }],
+              });
+              await command({ opaque: tx });
+            },
+          );
         } catch (error) {
           reason = String(error);
         }
@@ -553,37 +571,40 @@ Deno.test({
       await sql`update crm.people set deleted_at=now() where id=${actor.personId}::uuid`;
       const historicalNote = crypto.randomUUID(),
         historicalCall = crypto.randomUUID();
-      await connection.db.transaction().execute((tx) =>
-        interactions.importRecords({
-          actor,
-          transaction: { opaque: tx },
-          records: [
-            {
-              id: historicalNote,
-              data: {
-                kind: "note",
-                body: "Source-deleted history",
-                isFavorited: false,
-                favoritedAt: null,
-                createdAt: null,
-                updatedAt: null,
+      await writeWithinWorkspace(
+        connection.db,
+        actor.workspaceId,
+        (tx) =>
+          interactions.importRecords({
+            actor,
+            transaction: { opaque: tx },
+            records: [
+              {
+                id: historicalNote,
+                data: {
+                  kind: "note",
+                  body: "Source-deleted history",
+                  isFavorited: false,
+                  favoritedAt: null,
+                  createdAt: null,
+                  updatedAt: null,
+                },
+                references: { personId: actor.personId },
               },
-              references: { personId: actor.personId },
-            },
-            {
-              id: historicalCall,
-              data: {
-                kind: "call",
-                calledAt: "2020-01-01T00:00:00Z",
-                content: null,
-                contactWasCaller: false,
-                createdAt: null,
-                updatedAt: null,
+              {
+                id: historicalCall,
+                data: {
+                  kind: "call",
+                  calledAt: "2020-01-01T00:00:00Z",
+                  content: null,
+                  contactWasCaller: false,
+                  createdAt: null,
+                  updatedAt: null,
+                },
+                references: { personId: actor.personId },
               },
-              references: { personId: actor.personId },
-            },
-          ],
-        })
+            ],
+          }),
       );
       assertEquals(
         (await sql`select id from crm.notes where id=${historicalNote}::uuid`)
@@ -643,21 +664,27 @@ Deno.test({
     );
     try {
       const [date] =
-        await sql`insert into crm.person_dates(person_id,kind,precision,year,month,day) values(${actor.personId}::uuid,'birthday','full',1990,1,1) returning id`;
+        await sql`insert into crm.person_dates(person_id,kind,precision,year,month,day, workspace_id) values(${actor.personId}::uuid,'birthday','full',1990,1,1, (select scope.workspace_id from crm.people scope where scope.id = ${actor.personId}::uuid)) returning id`;
       const [reminder] =
         await sql`insert into crm.reminders(workspace_id,person_id,person_date_id,target_kind,title,anchor_on,recurrence_unit,send_time) values(${actor.workspaceId}::uuid,${actor.personId}::uuid,${
           date!.id
         }::uuid,'person_date','Old title','1990-01-01','year','12:00') returning id`;
-      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,title_snapshot) values(${
+      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,title_snapshot, workspace_id) values(${
         reminder!.id
-      }::uuid,${actor.memberId}::uuid,'2099-01-01','2099-01-01T12:00:00Z','pending','Old title')`;
-      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,title_snapshot) values(${
+      }::uuid,${actor.memberId}::uuid,'2099-01-01','2099-01-01T12:00:00Z','pending','Old title', (select scope.workspace_id from crm.reminders scope where scope.id = ${
         reminder!.id
-      }::uuid,${secondMemberId}::uuid,'2099-01-01','2099-01-01T03:00:00Z','pending','Old title')`;
+      }::uuid))`;
+      await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,title_snapshot, workspace_id) values(${
+        reminder!.id
+      }::uuid,${secondMemberId}::uuid,'2099-01-01','2099-01-01T03:00:00Z','pending','Old title', (select scope.workspace_id from crm.reminders scope where scope.id = ${
+        reminder!.id
+      }::uuid))`;
       const [sent] =
-        await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,sent_at,provider_result_state,provider_receipt,provider_effect_at,visible_at) values(${
+        await sql`insert into crm.reminder_occurrences(reminder_id,member_id,occurs_on,deliver_at,status,sent_at,provider_result_state,provider_receipt,provider_effect_at,visible_at, workspace_id) values(${
           reminder!.id
-        }::uuid,${actor.memberId}::uuid,'2020-01-01','2020-01-01T12:00:00Z','sent','2020-01-01T12:00:00Z','confirmed','historical','2020-01-01T12:00:00Z','2020-01-01T12:00:00Z') returning id`;
+        }::uuid,${actor.memberId}::uuid,'2020-01-01','2020-01-01T12:00:00Z','sent','2020-01-01T12:00:00Z','confirmed','historical','2020-01-01T12:00:00Z','2020-01-01T12:00:00Z', (select scope.workspace_id from crm.reminders scope where scope.id = ${
+          reminder!.id
+        }::uuid)) returning id`;
       for (let round = 0; round < 2; round++) {
         if (round) {
           await sql`insert into crm.reminder_rules(workspace_id,days_before,is_active) values(${actor.workspaceId}::uuid,7,true),(${actor.workspaceId}::uuid,3650,true),(${actor.workspaceId}::uuid,21,false)`;
@@ -665,29 +692,32 @@ Deno.test({
             reminder!.id
           }::uuid and status='pending'`;
         }
-        await connection.db.transaction().execute((tx) =>
-          planning.importRecords({
-            actor,
-            transaction: { opaque: tx },
-            records: [{
-              id: crypto.randomUUID(),
-              data: {
-                kind: "reminder",
-                title: "Imported title",
-                description: null,
-                anchorOn: "2020-01-01",
-                recurrenceUnit: "month",
-                recurrenceInterval: 2,
-                sendTime: "09:00",
-                isActive: true,
-                canDelete: false,
-                deletedAt: null,
-                createdAt: null,
-                updatedAt: null,
-              },
-              references: { personId: actor.personId, dateId: date!.id },
-            }],
-          })
+        await writeWithinWorkspace(
+          connection.db,
+          actor.workspaceId,
+          (tx) =>
+            planning.importRecords({
+              actor,
+              transaction: { opaque: tx },
+              records: [{
+                id: crypto.randomUUID(),
+                data: {
+                  kind: "reminder",
+                  title: "Imported title",
+                  description: null,
+                  anchorOn: "2020-01-01",
+                  recurrenceUnit: "month",
+                  recurrenceInterval: 2,
+                  sendTime: "09:00",
+                  isActive: true,
+                  canDelete: false,
+                  deletedAt: null,
+                  createdAt: null,
+                  updatedAt: null,
+                },
+                references: { personId: actor.personId, dateId: date!.id },
+              }],
+            }),
         );
         const pending =
           await sql`select member_id,occurs_on::text,lead_time_days,deliver_at,title_snapshot from crm.reminder_occurrences where reminder_id=${

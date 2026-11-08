@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
@@ -35,17 +36,21 @@ export class PostgresTodayRemindersRepository
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
   async get(command: Parameters<TodayRemindersRepository["get"]>[0]) {
-    const context = await sql<{ readonly timezone: string }>`
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (database) => {
+        const context = await sql<{ readonly timezone: string }>`
       select coalesce(
         (select preference.timezone from crm.member_preferences preference
           where preference.member_id = ${command.memberId}::uuid),
         (select setting.default_timezone from crm.workspace_settings setting
           where setting.workspace_id = ${command.workspaceId}::uuid),
         'UTC') as timezone
-    `.execute(this.database);
-    const timezone = context.rows[0]!.timezone;
-    const [reminders, cadences] = await Promise.all([
-      sql<ReminderRow>`
+    `.execute(database);
+        const timezone = context.rows[0]!.timezone;
+        const [reminders, cadences] = await Promise.all([
+          sql<ReminderRow>`
         with ranked as (
           select occurrence.id, occurrence.attempt_count,
             occurrence.deliver_at, occurrence.next_attempt_at,
@@ -101,8 +106,8 @@ export class PostgresTodayRemindersRepository
           case when occurrence.status = 'retry' then occurrence.next_attempt_at
             else occurrence.deliver_at end,
           occurrence.person_id, occurrence.id limit 100
-      `.execute(this.database),
-      sql<CadenceRow>`
+      `.execute(database),
+          sql<CadenceRow>`
         select cadence.id::text, person.id::text as person_id,
           person.archived_at is not null as person_archived,
           coalesce(nullif(person.nickname, ''), nullif(concat_ws(' ', person.given_name, person.family_name), ''), 'Person') as person_name,
@@ -115,38 +120,44 @@ export class PostgresTodayRemindersRepository
           and cadence.next_due_at <= ${command.now}::timestamptz + interval '30 days'
         order by cadence.next_due_at, lower(coalesce(person.nickname, person.given_name, person.family_name, '')), person.id
         limit 100
-      `.execute(this.database),
-    ]);
-    return {
-      cadences: cadences.rows.map((row): TodayCadenceItem => ({
-        dueAt: row.due_at,
-        id: row.id,
-        ...pickDefined({ lastContactedAt: row.last_contacted_at }),
-        person: {
-          archived: row.person_archived,
-          id: row.person_id,
-          name: row.person_name,
-        },
-      })),
-      reminders: reminders.rows.map((row): TodayReminderItem => {
-        const item = {
-          attemptCount: row.attempt_count,
-          deliverAt: row.deliver_at,
-          id: row.id,
-          person: {
-            archived: row.person_archived,
-            id: row.person_id,
-            name: row.person_name,
-          },
-          title: row.title,
-          ...pickDefined({ visibleAt: row.visible_at }),
+      `.execute(database),
+        ]);
+        return {
+          cadences: cadences.rows.map((row): TodayCadenceItem => ({
+            dueAt: row.due_at,
+            id: row.id,
+            ...pickDefined({ lastContactedAt: row.last_contacted_at }),
+            person: {
+              archived: row.person_archived,
+              id: row.person_id,
+              name: row.person_name,
+            },
+          })),
+          reminders: reminders.rows.map((row): TodayReminderItem => {
+            const item = {
+              attemptCount: row.attempt_count,
+              deliverAt: row.deliver_at,
+              id: row.id,
+              person: {
+                archived: row.person_archived,
+                id: row.person_id,
+                name: row.person_name,
+              },
+              title: row.title,
+              ...pickDefined({ visibleAt: row.visible_at }),
+            };
+            return row.status === "retry"
+              ? {
+                ...item,
+                nextAttemptAt: row.next_attempt_at!,
+                status: row.status,
+              }
+              : { ...item, status: row.status };
+          }),
+          status: "ready" as const,
+          timezone,
         };
-        return row.status === "retry"
-          ? { ...item, nextAttemptAt: row.next_attempt_at!, status: row.status }
-          : { ...item, status: row.status };
-      }),
-      status: "ready" as const,
-      timezone,
-    };
+      },
+    );
   }
 }

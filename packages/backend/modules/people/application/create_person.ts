@@ -183,8 +183,10 @@ export function createPeopleManagement(
       requestId: string,
       rawInput: CreatePersonInput,
     ): Promise<EnsurePersonResult> => {
-      return await dependencies.transaction.run((transaction) =>
-        ensureInTransaction(actor, requestId, rawInput, transaction)
+      return await dependencies.transaction.run(
+        (transaction) =>
+          ensureInTransaction(actor, requestId, rawInput, transaction),
+        { workspaceId: actor.workspaceId },
       );
     },
     create: async (
@@ -196,8 +198,9 @@ export function createPeopleManagement(
       if (Object.keys(errors).length > 0) {
         return { errors, status: "validation-error" };
       }
-      return await dependencies.transaction.run((transaction) =>
-        createInTransaction(actor, input, transaction)
+      return await dependencies.transaction.run(
+        (transaction) => createInTransaction(actor, input, transaction),
+        { workspaceId: actor.workspaceId },
       );
     },
     get: (
@@ -216,7 +219,7 @@ export function createPeopleManagement(
           personId,
           transaction,
         });
-      }),
+      }, { workspaceId: actor.workspaceId }),
   };
 }
 

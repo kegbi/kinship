@@ -1,21 +1,22 @@
 import postgres from "postgres";
 
 export type SchemaAction =
-  | "apply-v13"
+  | "apply-v14"
   | "reject"
-  | "upgrade-v1-to-v13"
-  | "upgrade-v2-to-v13"
-  | "upgrade-v3-to-v13"
-  | "upgrade-v4-to-v13"
-  | "upgrade-v5-to-v13"
-  | "upgrade-v6-to-v13"
-  | "upgrade-v7-to-v13"
-  | "upgrade-v8-to-v13"
-  | "upgrade-v9-to-v13"
-  | "upgrade-v10-to-v13"
-  | "upgrade-v11-to-v13"
-  | "upgrade-v12-to-v13"
-  | "verify-v13";
+  | "upgrade-v1-to-v14"
+  | "upgrade-v2-to-v14"
+  | "upgrade-v3-to-v14"
+  | "upgrade-v4-to-v14"
+  | "upgrade-v5-to-v14"
+  | "upgrade-v6-to-v14"
+  | "upgrade-v7-to-v14"
+  | "upgrade-v8-to-v14"
+  | "upgrade-v9-to-v14"
+  | "upgrade-v10-to-v14"
+  | "upgrade-v11-to-v14"
+  | "upgrade-v12-to-v14"
+  | "upgrade-v13-to-v14"
+  | "verify-v14";
 
 export const V1_SQL_SHA256 =
   "3d082df6641ddeea9706adee39b41b90656709979a5f980cc93a7d98d1a79e91";
@@ -49,6 +50,10 @@ export const V13_SQL_SHA256 =
   "5c1f1041ff031d9b046e9b314d0ba2c537524fa6ae08a78c107930567ebeb53f";
 export const V12_TO_V13_MIGRATION_SHA256 =
   "7ae2931b2dcb462d4186a1ab8eca77402ec802d865b1d590fbabb28582f49cde";
+export const V14_SQL_SHA256 =
+  "b4bc6c5898519d598ccc2f8a0dbcbd964a73f0def8773988a9884d73d5dc76cd";
+export const V13_TO_V14_MIGRATION_SHA256 =
+  "f8482b75c9a743b31e79db2b4afaac1c7b138a59064473aa5cfb8cef17cb9d3e";
 
 export const V1_TO_V2_MIGRATION_SHA256 =
   "6483b51b4d432a265087ccc8e7045dfb42b22b2d0dc5b0e5da548b1966a3cef5";
@@ -71,20 +76,21 @@ export const V9_TO_V10_MIGRATION_SHA256 =
 
 /** The index of the first migration each exact-baseline upgrade applies. */
 const UPGRADE_FROM: Readonly<
-  Record<Exclude<SchemaAction, "apply-v13" | "reject" | "verify-v13">, number>
+  Record<Exclude<SchemaAction, "apply-v14" | "reject" | "verify-v14">, number>
 > = {
-  "upgrade-v1-to-v13": 0,
-  "upgrade-v2-to-v13": 1,
-  "upgrade-v3-to-v13": 2,
-  "upgrade-v4-to-v13": 3,
-  "upgrade-v5-to-v13": 4,
-  "upgrade-v6-to-v13": 5,
-  "upgrade-v7-to-v13": 6,
-  "upgrade-v8-to-v13": 7,
-  "upgrade-v9-to-v13": 8,
-  "upgrade-v10-to-v13": 9,
-  "upgrade-v11-to-v13": 10,
-  "upgrade-v12-to-v13": 11,
+  "upgrade-v1-to-v14": 0,
+  "upgrade-v2-to-v14": 1,
+  "upgrade-v3-to-v14": 2,
+  "upgrade-v4-to-v14": 3,
+  "upgrade-v5-to-v14": 4,
+  "upgrade-v6-to-v14": 5,
+  "upgrade-v7-to-v14": 6,
+  "upgrade-v8-to-v14": 7,
+  "upgrade-v9-to-v14": 8,
+  "upgrade-v10-to-v14": 9,
+  "upgrade-v11-to-v14": 10,
+  "upgrade-v12-to-v14": 11,
+  "upgrade-v13-to-v14": 12,
 };
 
 export function canonicalTableNames(sqlText: string): string[] {
@@ -113,36 +119,40 @@ export function decideSchemaAction(state: {
     | "v10"
     | "v11"
     | "v12"
-    | "v13";
+    | "v13"
+    | "v14";
 }): SchemaAction {
-  if (!state.crmSchemaExists && state.state === "empty") return "apply-v13";
+  if (!state.crmSchemaExists && state.state === "empty") return "apply-v14";
   if (state.crmSchemaExists && state.state === "v1") {
-    return "upgrade-v1-to-v13";
+    return "upgrade-v1-to-v14";
   }
   if (state.crmSchemaExists && state.state === "v2") {
-    return "upgrade-v2-to-v13";
+    return "upgrade-v2-to-v14";
   }
   if (state.crmSchemaExists && state.state === "v3") {
-    return "upgrade-v3-to-v13";
+    return "upgrade-v3-to-v14";
   }
-  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v13";
-  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v13";
-  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v13";
-  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v13";
-  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v13";
+  if (state.crmSchemaExists && state.state === "v4") return "upgrade-v4-to-v14";
+  if (state.crmSchemaExists && state.state === "v5") return "upgrade-v5-to-v14";
+  if (state.crmSchemaExists && state.state === "v6") return "upgrade-v6-to-v14";
+  if (state.crmSchemaExists && state.state === "v7") return "upgrade-v7-to-v14";
+  if (state.crmSchemaExists && state.state === "v8") return "upgrade-v8-to-v14";
   if (state.crmSchemaExists && state.state === "v9") {
-    return "upgrade-v9-to-v13";
+    return "upgrade-v9-to-v14";
   }
   if (state.crmSchemaExists && state.state === "v10") {
-    return "upgrade-v10-to-v13";
+    return "upgrade-v10-to-v14";
   }
   if (state.crmSchemaExists && state.state === "v11") {
-    return "upgrade-v11-to-v13";
+    return "upgrade-v11-to-v14";
   }
   if (state.crmSchemaExists && state.state === "v12") {
-    return "upgrade-v12-to-v13";
+    return "upgrade-v12-to-v14";
   }
-  if (state.crmSchemaExists && state.state === "v13") return "verify-v13";
+  if (state.crmSchemaExists && state.state === "v13") {
+    return "upgrade-v13-to-v14";
+  }
+  if (state.crmSchemaExists && state.state === "v14") return "verify-v14";
   return "reject";
 }
 
@@ -213,10 +223,16 @@ function normalizeDefinition(value: string | null, schema: string): string {
   return (value ?? "")
     .replaceAll(`\"${schema}\".`, "<schema>.")
     .replaceAll(`${schema}.`, "<schema>.")
+    // A v14 SECURITY DEFINER function names every relation as crm.<name>,
+    // also when the canonical DDL is applied into a scratch schema.
+    .replaceAll("crm.", "<schema>.")
     .replaceAll(/\s+/g, " ")
     .trim();
 }
 
+// Grants compare as grantee and privilege, without the owner's own entry or
+// the grantor (aclexplode), so the same schema applied by the migrator in
+// production or by a superuser in a test compares equal (ADR 0008).
 async function catalogStructure(
   transaction: postgres.TransactionSql,
   schema: string,
@@ -224,7 +240,8 @@ async function catalogStructure(
   const namespaces = await transaction<CatalogRow[]>`
     select 'namespace'::text kind, ''::text table_name,
       0::int position, '<schema>'::text name,
-      coalesce(obj_description(n.oid, 'pg_namespace'), '')::text definition
+      (coalesce(obj_description(n.oid, 'pg_namespace'), '') ||
+        '|acl=' || coalesce((select string_agg(case when grant_row.grantee = 0 then 'public' else grant_row.grantee::regrole::text end || '=' || grant_row.privilege_type || case when grant_row.is_grantable then '*' else '' end, ',' order by 1) from aclexplode(n.nspacl) grant_row where grant_row.grantee <> n.nspowner), ''))::text definition
     from pg_namespace n
     where n.nspname = ${schema}
   `;
@@ -250,7 +267,10 @@ async function catalogStructure(
           join pg_foreign_server fs on fs.oid = ft.ftserver
           where ft.ftrelid = c.oid
         ), '') ||
-        '|comment=' || coalesce(obj_description(c.oid, 'pg_class'), '')
+        '|comment=' || coalesce(obj_description(c.oid, 'pg_class'), '') ||
+        '|rls=' || c.relrowsecurity::text ||
+        '|force_rls=' || c.relforcerowsecurity::text ||
+        '|acl=' || coalesce((select string_agg(case when grant_row.grantee = 0 then 'public' else grant_row.grantee::regrole::text end || '=' || grant_row.privilege_type || case when grant_row.is_grantable then '*' else '' end, ',' order by 1) from aclexplode(c.relacl) grant_row where grant_row.grantee <> c.relowner), '')
       )::text definition
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
@@ -264,7 +284,8 @@ async function catalogStructure(
         '|default=' || coalesce(pg_get_expr(d.adbin, d.adrelid), '') ||
         '|identity=' || a.attidentity::text ||
         '|generated=' || a.attgenerated::text ||
-        '|comment=' || coalesce(col_description(c.oid, a.attnum), ''))::text definition
+        '|comment=' || coalesce(col_description(c.oid, a.attnum), '') ||
+        '|acl=' || coalesce((select string_agg(case when grant_row.grantee = 0 then 'public' else grant_row.grantee::regrole::text end || '=' || grant_row.privilege_type || case when grant_row.is_grantable then '*' else '' end, ',' order by 1) from aclexplode(a.attacl) grant_row where grant_row.grantee <> c.relowner), ''))::text definition
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
@@ -299,7 +320,10 @@ async function catalogStructure(
     select 'routine'::text kind, p.prokind::text table_name,
       0::int position,
       (p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')')::text name,
-      pg_get_functiondef(p.oid)::text definition
+      (pg_get_functiondef(p.oid) ||
+        '|owner=' || p.proowner::regrole::text ||
+        '|acl=' || coalesce((select string_agg(case when grant_row.grantee = 0 then 'public' else grant_row.grantee::regrole::text end || '=' || grant_row.privilege_type || case when grant_row.is_grantable then '*' else '' end, ',' order by 1) from aclexplode(p.proacl) grant_row where grant_row.grantee <> p.proowner), '') ||
+        '|comment=' || coalesce(obj_description(p.oid, 'pg_proc'), ''))::text definition
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = ${schema}
@@ -447,6 +471,8 @@ export interface CanonicalSchemaArtifacts {
   readonly migrationV11ToV12: string;
   readonly v13Sql: string;
   readonly migrationV12ToV13: string;
+  readonly v14Sql: string;
+  readonly migrationV13ToV14: string;
 }
 
 export async function applyCanonicalSchema(
@@ -540,10 +566,20 @@ export async function applyCanonicalSchema(
     V12_TO_V13_MIGRATION_SHA256,
     "Schema v12-to-v13 migration",
   );
-  const expectedTables = canonicalTableNames(artifacts.v13Sql);
+  await verifyArtifactChecksum(
+    artifacts.v14Sql,
+    V14_SQL_SHA256,
+    "Schema v14 SQL",
+  );
+  await verifyArtifactChecksum(
+    artifacts.migrationV13ToV14,
+    V13_TO_V14_MIGRATION_SHA256,
+    "Schema v13-to-v14 migration",
+  );
+  const expectedTables = canonicalTableNames(artifacts.v14Sql);
   if (expectedTables.length !== 92) {
     throw new Error(
-      "Canonical schema v13 does not contain the accepted table catalog.",
+      "Canonical schema v14 does not contain the accepted table catalog.",
     );
   }
   const client = postgres(databaseUrl, {
@@ -583,6 +619,7 @@ export async function applyCanonicalSchema(
     const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
     const expectedV12 = await expectedCatalog(artifacts.v12Sql, "v12");
     const expectedV13 = await expectedCatalog(artifacts.v13Sql, "v13");
+    const expectedV14 = await expectedCatalog(artifacts.v14Sql, "v14");
     return await client.begin(async (transaction) => {
       await transaction`set local lock_timeout = '5s'`;
       await transaction`set local statement_timeout = '120s'`;
@@ -625,6 +662,8 @@ export async function applyCanonicalSchema(
         ? "v12"
         : structuresMatch(actual, expectedV13.structure)
         ? "v13"
+        : structuresMatch(actual, expectedV14.structure)
+        ? "v14"
         : "drift";
       const action = decideSchemaAction({
         crmSchemaExists: state.crm_schema_exists,
@@ -646,10 +685,11 @@ export async function applyCanonicalSchema(
         artifacts.migrationV10ToV11,
         artifacts.migrationV11ToV12,
         artifacts.migrationV12ToV13,
+        artifacts.migrationV13ToV14,
       ];
-      if (action === "apply-v13") {
-        await transaction.unsafe(artifacts.v13Sql);
-      } else if (action !== "verify-v13") {
+      if (action === "apply-v14") {
+        await transaction.unsafe(artifacts.v14Sql);
+      } else if (action !== "verify-v14") {
         // An exact vN target applies every immutable migration from vN onward.
         for (const migration of migrations.slice(UPGRADE_FROM[action])) {
           await transaction.unsafe(migration);
@@ -657,20 +697,20 @@ export async function applyCanonicalSchema(
       }
       await transaction`set local search_path = public`;
       const finalStructure = await catalogStructure(transaction, "crm");
-      if (!structuresMatch(finalStructure, expectedV13.structure)) {
+      if (!structuresMatch(finalStructure, expectedV14.structure)) {
         const mismatch = finalStructure.findIndex((item, index) =>
-          item !== expectedV13.structure[index]
+          item !== expectedV14.structure[index]
         );
         throw new Error(
-          `Canonical schema v13 structural verification failed at ${mismatch}: actual=${
+          `Canonical schema v14 structural verification failed at ${mismatch}: actual=${
             finalStructure[mismatch] ?? "<missing>"
-          }; expected=${expectedV13.structure[mismatch] ?? "<missing>"}.`,
+          }; expected=${expectedV14.structure[mismatch] ?? "<missing>"}.`,
         );
       }
       const actualCurrencies = await currencyCatalog(transaction, "crm");
-      if (!currencyCatalogMatches(actualCurrencies, expectedV13.currencies)) {
+      if (!currencyCatalogMatches(actualCurrencies, expectedV14.currencies)) {
         throw new Error(
-          "Canonical schema v13 currency reference-data verification failed.",
+          "Canonical schema v14 currency reference-data verification failed.",
         );
       }
       return action;

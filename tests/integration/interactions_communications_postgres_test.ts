@@ -7,6 +7,7 @@
  */
 
 import { assert } from "../../packages/backend/testing/assert.ts";
+import { assertCrossWorkspaceRefused } from "../support/database.ts";
 import {
   configured,
   createPerson,
@@ -43,10 +44,10 @@ Deno.test("INTERACTION-002 PostgreSQL atomically persists tenant-safe calls and 
       values (${channelTypeId}::uuid, ${primary.workspaceId}::uuid, 'Email')`;
     await transaction`insert into crm.contact_method_types (id, workspace_id, name)
       values (${foreignChannelTypeId}::uuid, ${foreign.workspaceId}::uuid, 'Foreign email')`;
-    await transaction`insert into crm.person_contact_methods (id, person_id, type_id, value)
-      values (${contactMethodId}::uuid, ${personId}::uuid, ${channelTypeId}::uuid, 'ada@example.test')`;
-    await transaction`insert into crm.person_contact_methods (id, person_id, type_id, value)
-      values (${foreignContactMethodId}::uuid, ${foreignPersonId}::uuid, ${foreignChannelTypeId}::uuid, 'foreign@example.test')`;
+    await transaction`insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
+      values (${contactMethodId}::uuid, ${personId}::uuid, ${channelTypeId}::uuid, 'ada@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))`;
+    await transaction`insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
+      values (${foreignContactMethodId}::uuid, ${foreignPersonId}::uuid, ${foreignChannelTypeId}::uuid, 'foreign@example.test', (select scope.workspace_id from crm.people scope where scope.id = ${foreignPersonId}::uuid))`;
   });
   const actor = {
     memberId: primary.memberId,
@@ -117,14 +118,34 @@ Deno.test("INTERACTION-002 PostgreSQL atomically persists tenant-safe calls and 
   );
   const malformedThreadId = crypto.randomUUID();
   const noContentCallId = crypto.randomUUID();
+  // Another workspace's contact method cannot be stored on a thread at all
+  // (ADR 0008); another person's in the same workspace still can, and the
+  // projection must not disclose it.
+  await assertCrossWorkspaceRefused(
+    () =>
+      sql`insert into crm.conversation_threads (
+        id, workspace_id, person_id, channel_type_id, contact_method_id,
+        happened_at, title
+      ) values (
+        ${crypto.randomUUID()}::uuid, ${primary.workspaceId}::uuid,
+        ${personId}::uuid, ${channelTypeId}::uuid,
+        ${foreignContactMethodId}::uuid,
+        '2026-08-16T17:15:00.000Z'::timestamptz, 'Foreign contact method'
+      )`,
+    "a thread on another workspace's contact method",
+  );
+  const otherPersonId = await createPerson(primary, "Other communication");
+  const otherContactMethodId = crypto.randomUUID();
   await sql.begin(async (transaction) => {
+    await transaction`insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id)
+      values (${otherContactMethodId}::uuid, ${otherPersonId}::uuid, ${channelTypeId}::uuid, 'other@example.test', ${primary.workspaceId}::uuid)`;
     await transaction`insert into crm.conversation_threads (
       id, workspace_id, person_id, channel_type_id, contact_method_id,
       happened_at, title
     ) values (
       ${malformedThreadId}::uuid, ${primary.workspaceId}::uuid,
       ${personId}::uuid, ${channelTypeId}::uuid,
-      ${foreignContactMethodId}::uuid,
+      ${otherContactMethodId}::uuid,
       '2026-08-16T17:15:00.000Z'::timestamptz,
       'Malformed persisted contact method'
     )`;
@@ -156,7 +177,7 @@ Deno.test("INTERACTION-002 PostgreSQL atomically persists tenant-safe calls and 
   );
   assert(
     !("contactMethod" in malformedThread) &&
-      !JSON.stringify(malformedThread).includes("foreign@example.test"),
+      !JSON.stringify(malformedThread).includes("other@example.test"),
     `malformed cross-person contact method leaked: ${
       JSON.stringify(malformedThread)
     }`,

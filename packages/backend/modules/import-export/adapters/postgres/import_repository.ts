@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import type { BusinessEntity } from "../../domain/business_entities.ts";
 import { sql } from "kysely";
 import type { Kysely } from "kysely";
@@ -667,24 +668,36 @@ export class PostgresImportRepository implements ImportRepository {
     actor: ImportActor,
     importId: string,
   ): Promise<ImportSummary | undefined> {
-    const result = await sql<ImportRow>`
+    return await readWithinWorkspace(
+      this.database,
+      actor.workspaceId,
+      async (database) => {
+        const result = await sql<ImportRow>`
       select ${summaryColumns}
       from crm.data_imports run
       where run.id = ${importId}::uuid
         and run.workspace_id = ${actor.workspaceId}::uuid
-    `.execute(this.database);
-    return result.rows[0] ? summary(result.rows[0]) : undefined;
+    `.execute(database);
+        return result.rows[0] ? summary(result.rows[0]) : undefined;
+      },
+    );
   }
 
   async list(actor: ImportActor): Promise<readonly ImportSummary[]> {
-    const result = await sql<ImportRow>`
+    return await readWithinWorkspace(
+      this.database,
+      actor.workspaceId,
+      async (database) => {
+        const result = await sql<ImportRow>`
       select ${summaryColumns}
       from crm.data_imports run
       where run.workspace_id = ${actor.workspaceId}::uuid
       order by run.created_at desc, run.id desc
       limit 50
-    `.execute(this.database);
-    return result.rows.map(summary);
+    `.execute(database);
+        return result.rows.map(summary);
+      },
+    );
   }
 
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}

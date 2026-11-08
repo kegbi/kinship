@@ -35,8 +35,8 @@ test("[INTERACTION-002] logs calls and conversations in the person workspace", {
   database(`
     insert into crm.contact_method_types (id, workspace_id, name, kind)
       values ('${channelTypeId}'::uuid, '${workspaceId}'::uuid, 'Email', 'email');
-    insert into crm.person_contact_methods (id, person_id, type_id, value, is_primary)
-      values ('${contactMethodId}'::uuid, '${personId}'::uuid, '${channelTypeId}'::uuid, 'ada@example.test', true);
+    insert into crm.person_contact_methods (id, person_id, type_id, value, is_primary, workspace_id)
+      values ('${contactMethodId}'::uuid, '${personId}'::uuid, '${channelTypeId}'::uuid, 'ada@example.test', true, (select scope.workspace_id from crm.people scope where scope.id = '${personId}'::uuid));
     insert into crm.emotion_options (id, name) values ('${emotionId}'::uuid, 'Grateful ${emotionId}');
   `);
 

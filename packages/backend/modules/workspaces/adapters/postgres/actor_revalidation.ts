@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { enterWorkspace } from "../../../../platform/postgres/transactions.ts";
 import type {
   ActorContext,
   ActorRecipients,
@@ -150,6 +151,20 @@ export class PostgresActorRevalidation
 }
 
 /**
+ * Every active membership a verified user may enter, first joined first, as
+ * the session-resolution function answers them (ADR 0008).
+ */
+function sessionContexts(userId: string) {
+  return sql`
+    select context.member_id::text as "memberId", context.role,
+      context.user_id::text as "userId",
+      context.workspace_id::text as "workspaceId",
+      context.workspace_name as "workspaceName"
+    from crm.session_workspace_contexts(${userId}::uuid) context
+  `;
+}
+
+/**
  * The other half of the same question: which workspaces may an authenticated
  * user enter at all? Sign-in asks this before any actor context exists, so it
  * cannot use `revalidate`, and it reads the same three tables under the same
@@ -171,48 +186,52 @@ export class PostgresActiveWorkspaceResolver
     >[0]["transaction"];
     readonly userId: string;
   }): Promise<readonly ActiveWorkspaceContext[]> {
+    // Before a workspace is chosen, a user's memberships are read through the
+    // session-resolution function, the one means this path has (ADR 0008).
     const result = await sql<ActiveWorkspaceContext>`
-      select wm.id::text as "memberId", wm.role, u.id::text as "userId",
-        w.id::text as "workspaceId", w.name as "workspaceName"
-      from crm.users u
-      join crm.workspace_members wm on wm.user_id = u.id
-      join crm.workspaces w on w.id = wm.workspace_id
-      where u.id = ${command.userId}::uuid and u.status = 'active'
-        and u.deleted_at is null and u.email_verified_at is not null
-        and wm.status = 'active' and wm.left_at is null
-        and w.status = 'active' and w.deleted_at is null
-      order by wm.joined_at asc nulls last, wm.id asc
+      ${sessionContexts(command.userId)}
     `.execute(databaseFromSession(command.transaction));
     return result.rows;
   }
 
+  /**
+   * The membership an account-level security event is recorded under. The
+   * transaction then works in that workspace, where the event is written, and
+   * holds the membership's rows `for share` there until it commits.
+   */
   async resolveAuditContext(command: {
     readonly transaction: Parameters<
       ActiveWorkspaceResolver["resolveAuditContext"]
     >[0]["transaction"];
     readonly userId: string;
   }): Promise<ActiveWorkspaceContext | undefined> {
-    const result = await sql<ActiveWorkspaceContext>`
-      select wm.id::text as "memberId", wm.role, u.id::text as "userId",
-        w.id::text as "workspaceId", w.name as "workspaceName"
-      from crm.users u
+    const database = databaseFromSession(command.transaction);
+    const found = await sql<ActiveWorkspaceContext>`
+      select member_id::text as "memberId", role, user_id::text as "userId",
+        workspace_id::text as "workspaceId", workspace_name as "workspaceName"
+      from crm.session_audit_context(${command.userId}::uuid)
+    `.execute(database);
+    const context = found.rows[0];
+    if (!context) return undefined;
+    await enterWorkspace(database, context.workspaceId);
+    await sql`
+      select 1 from crm.users u
       join crm.workspace_members wm on wm.user_id = u.id
       join crm.workspaces w on w.id = wm.workspace_id
-      where u.id = ${command.userId}::uuid
-      order by (wm.status = 'active' and wm.left_at is null) desc,
-        wm.joined_at asc nulls last, wm.id asc
-      limit 1
+      where wm.id = ${context.memberId}::uuid
       for share of u, wm, w
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0];
+    `.execute(database);
+    return context;
   }
 
   /**
    * A read resolves without row locks, so parallel requests under one session
    * do not serialize on its membership (AUD-K2). Issuing a session passes
-   * `lock`, which holds the rows `for share` until it commits, so a concurrent
-   * suspension, removal, or password reset cannot slip between this answer and
-   * the new session.
+   * `lock`: the transaction then works in the chosen workspace, where the
+   * sign-in is audited, and re-reads that membership there under the same
+   * predicate, holding it `for share` until it commits, so a concurrent
+   * suspension, removal, or password reset cannot slip between this answer
+   * and the new session.
    */
   async resolveActiveContext(command: {
     readonly lock?: boolean;
@@ -222,23 +241,30 @@ export class PostgresActiveWorkspaceResolver
     >[0]["transaction"];
     readonly userId: string;
   }): Promise<ActiveWorkspaceContext | undefined> {
+    const database = databaseFromSession(command.transaction);
     const result = await sql<ActiveWorkspaceContext>`
-      select wm.id::text as "memberId", wm.role, u.id::text as "userId",
-        w.id::text as "workspaceId", w.name as "workspaceName"
+      ${sessionContexts(command.userId)}
+      where (${command.requestedWorkspaceId ?? null}::uuid is null
+        or context.workspace_id = ${command.requestedWorkspaceId ?? null}::uuid)
+      limit 1
+    `.execute(database);
+    const context = result.rows[0];
+    if (!context || !command.lock) return context;
+    await enterWorkspace(database, context.workspaceId);
+    const held = await sql<{ readonly held: boolean }>`
+      select true as held
       from crm.users u
       join crm.workspace_members wm on wm.user_id = u.id
       join crm.workspaces w on w.id = wm.workspace_id
       where u.id = ${command.userId}::uuid and u.status = 'active'
         and u.deleted_at is null and u.email_verified_at is not null
+        and wm.id = ${context.memberId}::uuid and wm.role = ${context.role}
         and wm.status = 'active' and wm.left_at is null
+        and w.id = ${context.workspaceId}::uuid
         and w.status = 'active' and w.deleted_at is null
-        and (${command.requestedWorkspaceId ?? null}::uuid is null
-          or w.id = ${command.requestedWorkspaceId ?? null}::uuid)
-      order by wm.joined_at asc nulls last, wm.id asc
-      limit 1
-      ${command.lock ? sql`for share of u, wm, w` : sql``}
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0];
+      for share of u, wm, w
+    `.execute(database);
+    return held.rows[0]?.held === true ? context : undefined;
   }
 
   async assertActiveContextPostcondition(

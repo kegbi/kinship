@@ -110,10 +110,10 @@ async function seed(fixture: SignedInFixture) {
       (${deleted}::uuid, ${fixture.workspaceId}::uuid, ${fixture.memberId}::uuid, 'Deleted', null, null, now())`;
   await sql`insert into crm.contact_method_types (id, workspace_id, name, kind)
     values (${email}::uuid, ${fixture.workspaceId}::uuid, 'Email', 'email')`;
-  await sql`insert into crm.person_contact_methods (person_id, type_id, value, is_primary)
-    values (${ada}::uuid, ${email}::uuid, 'ada@example.test', true)`;
-  await sql`insert into crm.person_dates (person_id, kind, month, day, precision)
-    values (${ada}::uuid, 'birthday', 12, 10, 'month_day')`;
+  await sql`insert into crm.person_contact_methods (person_id, type_id, value, is_primary, workspace_id)
+    values (${ada}::uuid, ${email}::uuid, 'ada@example.test', true, (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
+  await sql`insert into crm.person_dates (person_id, kind, month, day, precision, workspace_id)
+    values (${ada}::uuid, 'birthday', 12, 10, 'month_day', (select scope.workspace_id from crm.people scope where scope.id = ${ada}::uuid))`;
   return { ada, archived, deleted, hostile };
 }
 

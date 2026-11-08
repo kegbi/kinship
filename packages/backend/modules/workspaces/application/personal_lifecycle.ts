@@ -84,6 +84,17 @@ export function createPersonalLifecycle(
       transaction,
     });
 
+  /** Runs `work` inside one of the account's workspaces (ADR 0008). */
+  const inMembership = <T>(
+    transaction: PersonalLifecycleTransaction,
+    membership: Pick<PersonalLifecycleMembership, "workspaceId">,
+    work: () => Promise<T>,
+  ) =>
+    dependencies.memberships.inMembershipWorkspace(
+      { transaction, workspaceId: membership.workspaceId },
+      work,
+    );
+
   const withStepUp = async <T>(
     actor: PersonalLifecycleActor,
     password: string,
@@ -157,7 +168,7 @@ export function createPersonalLifecycle(
           userId: actor.userId,
         });
         return await work(transaction);
-      });
+      }, { workspaceId: actor.workspaceId });
     } catch (error) {
       if (reservationId) {
         await dependencies.attemptBudget.finalize({
@@ -192,7 +203,7 @@ export function createPersonalLifecycle(
           retainedLegalRecords: true,
           status: "ready" as const,
         };
-      }),
+      }, { workspaceId: actor.workspaceId }),
     leaveWorkspace: (
       actor: PersonalLifecycleActor,
       input: { readonly confirmation: string; readonly password: string },
@@ -290,16 +301,17 @@ export function createPersonalLifecycle(
               item.finalOwner
             )
           ) {
-            await dependencies.audit.record({
-              action: "identity.deletion-attempted",
-              actorMemberId: membership.memberId,
-              occurredAt,
-              payload: { outcome: "blocked-final-owner" },
-              subjectId: actor.userId,
-              subjectType: "user",
-              transaction,
-              workspaceId: membership.workspaceId,
-            });
+            await inMembership(transaction, membership, () =>
+              dependencies.audit.record({
+                action: "identity.deletion-attempted",
+                actorMemberId: membership.memberId,
+                occurredAt,
+                payload: { outcome: "blocked-final-owner" },
+                subjectId: actor.userId,
+                subjectType: "user",
+                transaction,
+                workspaceId: membership.workspaceId,
+              }));
           }
           return {
             blockingWorkspaces: blocking,
@@ -308,24 +320,24 @@ export function createPersonalLifecycle(
         }
         const occurredAt = dependencies.clock.now();
         for (const membership of snapshot.memberships) {
-          await dependencies.audit.record({
-            action: "identity.deletion-attempted",
-            actorMemberId: membership.memberId,
-            occurredAt,
-            payload: { outcome: "completed" },
-            subjectId: actor.userId,
-            subjectType: "user",
-            transaction,
-            workspaceId: membership.workspaceId,
+          await inMembership(transaction, membership, async () => {
+            await dependencies.audit.record({
+              action: "identity.deletion-attempted",
+              actorMemberId: membership.memberId,
+              occurredAt,
+              payload: { outcome: "completed" },
+              subjectId: actor.userId,
+              subjectType: "user",
+              transaction,
+              workspaceId: membership.workspaceId,
+            });
+            await revokeCredentials(
+              actor.userId,
+              membership,
+              occurredAt,
+              transaction,
+            );
           });
-        }
-        for (const membership of snapshot.memberships) {
-          await revokeCredentials(
-            actor.userId,
-            membership,
-            occurredAt,
-            transaction,
-          );
         }
         await dependencies.memberships.leaveAll({
           leftAt: occurredAt,

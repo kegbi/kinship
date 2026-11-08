@@ -295,6 +295,8 @@ export function createReminderDeliveryWorker(
       answer.kind === "answered" || answer.recordedIds.has(occurrence.id);
     const finalizedAt = dependencies.clock.now();
     try {
+      // One unit is one member's, so one workspace's: its outcome and audit
+      // are written there (ADR 0008).
       return await dependencies.transaction.run(async (transaction) => {
         const statuses: string[] = [];
         for (const occurrence of occurrences) {
@@ -341,7 +343,7 @@ export function createReminderDeliveryWorker(
           statuses.push(updated ? terminal.status : "stale-claim");
         }
         return statuses;
-      });
+      }, { workspaceId: occurrences[0]!.workspaceId });
     } catch {
       return occurrences.map(() => "processing-error");
     }

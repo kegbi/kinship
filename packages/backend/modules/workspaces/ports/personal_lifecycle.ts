@@ -38,6 +38,19 @@ export interface PersonalLifecycleMemberships {
     readonly transaction: PersonalLifecycleTransaction;
     readonly userId: string;
   }): Promise<void>;
+  /**
+   * Runs `work` with the transaction in one of the account's own workspaces,
+   * then returns it to the workspace it was in. Deleting an account audits and
+   * revokes credentials in every workspace it belongs to, in one transaction,
+   * and each workspace's rows are written only from inside it (ADR 0008).
+   */
+  inMembershipWorkspace<T>(
+    command: {
+      readonly transaction: PersonalLifecycleTransaction;
+      readonly workspaceId: string;
+    },
+    work: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface PersonalLifecycleAudit {

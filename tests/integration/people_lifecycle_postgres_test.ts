@@ -77,8 +77,8 @@ Deno.test({
       readonly person: { readonly id: string };
     }).person.id;
     await sql`
-      insert into crm.person_dates (person_id, kind, precision)
-      values (${personId}, 'custom', 'unknown')
+      insert into crm.person_dates (person_id, kind, precision, workspace_id)
+      values (${personId}, 'custom', 'unknown', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     const headers = {
       "content-type": "application/json",
@@ -432,8 +432,8 @@ Deno.test({
       readonly person: { readonly id: string };
     }).person.id;
     await sql`
-      insert into crm.person_dates (person_id, kind, precision)
-      values (${personId}, 'custom', 'unknown')
+      insert into crm.person_dates (person_id, kind, precision, workspace_id)
+      values (${personId}, 'custom', 'unknown', (select scope.workspace_id from crm.people scope where scope.id = ${personId}::uuid))
     `;
     const headers = {
       "content-type": "application/json",

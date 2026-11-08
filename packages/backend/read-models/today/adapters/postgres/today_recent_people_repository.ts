@@ -1,3 +1,4 @@
+import { readWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
@@ -38,10 +39,10 @@ export class PostgresTodayRecentPeopleRepository
   constructor(private readonly database: Kysely<ApplicationDatabase>) {}
 
   async list(command: Parameters<TodayRecentPeopleRepository["list"]>[0]) {
-    return await this.database.transaction().setIsolationLevel(
-      "repeatable read",
-    )
-      .execute(async (transaction) => {
+    return await readWithinWorkspace(
+      this.database,
+      command.workspaceId,
+      async (transaction) => {
         const context = await sql<{ readonly uiState: unknown }>`
           select preference.ui_state as "uiState"
           from crm.member_preferences preference
@@ -69,6 +70,8 @@ export class PostgresTodayRecentPeopleRepository
           limit ${command.limit}
         `.execute(transaction);
         return { people: result.rows, status: "ready" as const };
-      });
+      },
+      { isolation: "repeatable read" },
+    );
   }
 }

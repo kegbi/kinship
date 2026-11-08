@@ -16,7 +16,7 @@ import {
   sql,
 } from "./people.test-helper.ts";
 import { closeResources } from "./people.test-helper.ts";
-import { truncate } from "../support/database.ts";
+import { assertCrossWorkspaceRefused, truncate } from "../support/database.ts";
 
 Deno.test({
   name:
@@ -651,41 +651,33 @@ Deno.test({
     const date = (await created.json() as {
       readonly date: { readonly id: string; readonly updatedAt: string };
     }).date;
-    // A forged definition: the other workspace's reminder names this date.
-    // v12 has no composite key that refuses it, so only the statements can.
-    const [forged] = await sql<{ readonly id: string }[]>`
-      insert into crm.reminders (
-        workspace_id, person_id, person_date_id, target_kind, title,
-        anchor_on, recurrence_unit, recurrence_interval, is_active,
-        can_delete, created_at, updated_at
-      ) values (
-        ${foreign.workspaceId}::uuid, ${foreignPersonId}::uuid,
-        ${date.id}::uuid, 'person_date', 'Foreign definition',
-        '2031-01-01', 'year', 1, true, false,
-        '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
-      ) returning id::text
-    `;
-    assert(forged, "the forged foreign reminder is stored");
-    await sql`
-      insert into crm.reminder_occurrences (
-        reminder_id, member_id, occurs_on, deliver_at, channel, status,
-        title_snapshot, created_at, updated_at
-      ) values (
-        ${forged.id}::uuid, ${foreign.memberId}::uuid, '2031-01-01',
-        '2031-01-01T09:00:00Z', 'in_app', 'pending', 'Foreign definition',
-        now(), now()
-      )
-    `;
+    // A forged definition, the other workspace's reminder naming this date,
+    // is refused by the database itself since schema v14 (ADR 0008); the
+    // date's own changes must still never reach the other workspace.
+    await assertCrossWorkspaceRefused(
+      () =>
+        sql`
+          insert into crm.reminders (
+            workspace_id, person_id, person_date_id, target_kind, title,
+            anchor_on, recurrence_unit, recurrence_interval, is_active,
+            can_delete, created_at, updated_at
+          ) values (
+            ${foreign.workspaceId}::uuid, ${foreignPersonId}::uuid,
+            ${date.id}::uuid, 'person_date', 'Foreign definition',
+            '2031-01-01', 'year', 1, true, false,
+            '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+          )
+        `,
+      "another workspace's reminder naming this date",
+    );
     const foreignState = async () =>
       JSON.stringify(
         await sql`
-          select reminder.person_id::text, reminder.person_date_id::text,
-            reminder.title, reminder.anchor_on::text, reminder.is_active,
-            reminder.deleted_at, reminder.updated_at,
-            (select count(*)::int from crm.reminder_occurrences occurrence
-              where occurrence.reminder_id = reminder.id
-                and occurrence.status = 'pending') as pending
-          from crm.reminders reminder where reminder.id = ${forged.id}::uuid
+          select reminder.id::text, reminder.person_date_id::text,
+            reminder.updated_at
+          from crm.reminders reminder
+          where reminder.workspace_id = ${foreign.workspaceId}::uuid
+          order by reminder.id
         `,
       );
     const before = await foreignState();

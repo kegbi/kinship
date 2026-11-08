@@ -7,6 +7,7 @@
  * on nothing outside api-access.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { ApiTokenRole } from "../domain/token_rules.ts";
 import type { Correlation } from "../../../shared-kernel/telemetry.ts";
 
@@ -31,5 +32,8 @@ export interface ApiTokenActor extends Correlation {
 
 /** The transaction an api-access use case runs its work in. */
 export interface ApiTokenTransactionRunner {
-  run<T>(work: (transaction: ApiTokenTransaction) => Promise<T>): Promise<T>;
+  run<T>(
+    work: (transaction: ApiTokenTransaction) => Promise<T>,
+    scope?: TransactionScope,
+  ): Promise<T>;
 }

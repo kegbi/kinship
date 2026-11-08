@@ -36,7 +36,7 @@ export function createImportReads(dependencies: ImportManagementDependencies) {
         return found
           ? { import: found, status: "ready" }
           : { status: "not-found" };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
     list: async (actor: ImportActor): Promise<ImportListResult> => {
       if (!mayImport(actor.role)) return { status: "forbidden" };
@@ -45,7 +45,7 @@ export function createImportReads(dependencies: ImportManagementDependencies) {
           ? await dependencies.repository.list(actor)
           : [],
         status: "ready",
-      }));
+      }), { workspaceId: actor.workspaceId });
     },
   };
 }

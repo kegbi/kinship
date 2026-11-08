@@ -66,6 +66,45 @@ keyset holding one of them, as the active key or a retained one. The denylist in
 and `deno task ops preflight`; a new secret joins it by listing its published
 fill there.
 
+## Database Roles And Credentials
+
+Schema v14 enforces workspace isolation in the database
+([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md)), so each
+process connects as its own role and only the bootstrap step holds the
+superuser's credentials. Each password is a deployment secret with no default:
+Compose refuses to render a service whose credential is unset, and the bootstrap
+step refuses one shorter than 16 characters or shared with another role.
+
+| Variable                             | Role                | Consumed by                        |
+| ------------------------------------ | ------------------- | ---------------------------------- |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD` | bootstrap superuser | `postgres` image, `bootstrap` only |
+| `POSTGRES_MIGRATOR_PASSWORD`         | `kinship_migrator`  | `bootstrap` (sets it), `migrate`   |
+| `POSTGRES_APP_PASSWORD`              | `kinship_app`       | `bootstrap` (sets it), `api`       |
+| `POSTGRES_WORKER_PASSWORD`           | `kinship_worker`    | `bootstrap` (sets it), `worker`    |
+
+- The role names are fixed; the canonical DDL grants to them by name and refuses
+  to apply when one is missing. No service sets `PGUSER` to the superuser any
+  more.
+- `kinship_app` and `kinship_worker` are neither superusers nor `BYPASSRLS`; a
+  request sees only the workspace its transaction sets with
+  `set local app.workspace_id`. `kinship_migrator` owns schema `crm` and
+  bypasses row-level security, and only the migrate job uses it.
+- Rotation: change the secret in the deployment's secret store and rerun the
+  stack; `bootstrap` resets the three passwords on every run, and the services
+  pick theirs up when they restart. Rotating `POSTGRES_PASSWORD` itself is the
+  `postgres` image's procedure (`ALTER ROLE` as that superuser).
+- Upgrading a v13 deployment needs only the three new secrets: `bootstrap` hands
+  the existing schema to the migrator, which then applies migration 0014.
+  `.env.example` names all three for a local `.env`. Outside Compose, the same
+  step is `deno task ops bootstrap` (a superuser `DATABASE_URL` and the three
+  passwords); a recovery target runs it before a restore, because an archive
+  keeps the roles' owners and grants.
+- `deno task dev` and the test harnesses (`tools/postgres_gate.ts`,
+  `tools/e2e.ts`) supply run-scoped role passwords of their own; integration
+  suites compose the API as `kinship_app` (`DATABASE_URL`) and seed fixtures as
+  the disposable project's superuser (`DATABASE_ADMIN_URL`), and the worker
+  suites connect as `kinship_worker` (`DATABASE_WORKER_URL`).
+
 ## Gateway Trusted Proxy
 
 `GATEWAY_TRUSTED_PROXY` (Dokploy gateway and preflight only; AUD-G4, SECA-06) is
@@ -184,7 +223,7 @@ midnight is involved.
   is answered exactly as one that sent a link. A reset link carried by an
   "account exists" notice is a request too.
 
-`crm.api_request_logs` has no scope column in schema v13, so a mail budget is a
+`crm.api_request_logs` has no scope column in schema v14, so a mail budget is a
 distinct `path` that no HTTP route has (`mail-budget/invitation`,
 `mail-budget/registration`), with `method = 'POST'` and `status_code = 202`, as
 the sign-in throttle separates its scopes by path (AUD-A3). The address is kept
@@ -192,6 +231,13 @@ only as its versioned HMAC under `AUTH_THROTTLE_SUBJECT_KEYSET`, labelled
 `kinship.authentication.mail.v1`; every retained key's digest is counted, so a
 rotation does not reset a budget. The retention job keeps these rows for 48
 hours, past the 24-hour window ("Authentication Data Retention").
+
+Budget rows mostly belong to no workspace, and the per-recipient cap counts
+across workspaces on purpose, so under schema v14's row-level security the
+budgets read and write them only through the `kinship_request_budget` functions
+(`request_budget_attempts`, `request_budget_workspace_count`,
+`record_request_budget`, `finalize_request_budget`), whose role sees only rows
+that carry a subject digest (ADR 0008).
 
 A per-address ceiling can be spent by somebody else: anyone may exhaust an
 address's registration mail for the day, or invite it three times. That delays

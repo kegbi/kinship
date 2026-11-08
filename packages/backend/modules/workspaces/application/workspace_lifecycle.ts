@@ -207,7 +207,7 @@ export function createWorkspaceLifecycle(
           recordId,
           status: action === "reset" ? "reset" as const : "deleted" as const,
         };
-      });
+      }, { workspaceId: actor.workspaceId });
       primaryCommitted = true;
       if (!("recordId" in result)) {
         return result;
@@ -215,6 +215,7 @@ export function createWorkspaceLifecycle(
       return {
         cleanupStatus: await reconciler.cleanup(
           result.recordId,
+          actor.workspaceId,
           result.objectKeys,
         ),
         status: result.status,
@@ -237,8 +238,7 @@ export function createWorkspaceLifecycle(
               "transactional-failure",
               dependencies.clock.now(),
               transaction,
-            )
-          );
+            ), { workspaceId: actor.workspaceId });
         } catch {
           // The redacted fallback is best-effort when the database is unavailable.
         }
@@ -266,7 +266,7 @@ export function createWorkspaceLifecycle(
             status: "ready" as const,
           }
           : { status: "forbidden" as const };
-      });
+      }, { workspaceId: actor.workspaceId });
     },
 
     resetWorkspace: (

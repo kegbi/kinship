@@ -80,9 +80,9 @@ test(
     database(`
       insert into crm.contact_method_types (id, workspace_id, name, kind)
         values ('${emailType}'::uuid, '${workspaceId}'::uuid, 'Email', 'email');
-      insert into crm.person_contact_methods (person_id, type_id, value, is_primary)
-        values ('${primary}'::uuid, '${emailType}'::uuid, 'ada@example.test', true),
-          ('${duplicate}'::uuid, '${emailType}'::uuid, 'ADA@example.test', true);
+      insert into crm.person_contact_methods (person_id, type_id, value, is_primary, workspace_id)
+        values ('${primary}'::uuid, '${emailType}'::uuid, 'ada@example.test', true, (select scope.workspace_id from crm.people scope where scope.id = '${primary}'::uuid)),
+          ('${duplicate}'::uuid, '${emailType}'::uuid, 'ADA@example.test', true, (select scope.workspace_id from crm.people scope where scope.id = '${duplicate}'::uuid));
     `);
     for (
       const [personId, note, date, related] of [

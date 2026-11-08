@@ -105,7 +105,7 @@ export function createBulkPeopleActions(dependencies: BulkPeopleDependencies) {
       return result.status === "archived" || result.status === "restored"
         ? DONE
         : failed(result.status);
-    });
+    }, { workspaceId: actor.workspaceId });
 
   const tag = async (
     actor: PeopleActor,
@@ -172,6 +172,7 @@ export function createBulkPeopleActions(dependencies: BulkPeopleDependencies) {
           ) return "tag-unavailable" as const;
           return undefined;
         },
+        { workspaceId: actor.workspaceId },
       );
       if (refusal) return { status: refusal };
       const results: BulkItemResult[] = [];

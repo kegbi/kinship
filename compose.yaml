@@ -50,6 +50,40 @@ services:
     # caps at 64 MB. It is charged to the 2 GiB limit only as it is used.
     shm_size: 256m
 
+  # ADR 0008: the one step that connects as the bootstrap superuser. It
+  # creates or corrects the migrator, API, and worker roles and the owners of
+  # the narrow cross-workspace functions, gives the login roles their
+  # passwords, and hands an existing schema to the migrator. Idempotent.
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: [
+      "deno",
+      "run",
+      "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS,POSTGRES_APP_PASSWORD,POSTGRES_MIGRATOR_PASSWORD,POSTGRES_WORKER_PASSWORD",
+      "--allow-net=postgres:5432",
+      "tools/migrations/bootstrap.ts",
+    ]
+    environment:
+      PGDATABASE: ${POSTGRES_DB:-kinship}
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-kinship}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?Set POSTGRES_MIGRATOR_PASSWORD}
+      POSTGRES_WORKER_PASSWORD: ${POSTGRES_WORKER_PASSWORD:?Set POSTGRES_WORKER_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    restart: "no"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    pids_limit: 128
+
   migrate:
     build:
       context: .
@@ -59,18 +93,19 @@ services:
       "run",
       "--allow-env=DATABASE_URL,PGHOST,PGPORT,PGUSERNAME,PGUSER,PGDATABASE,PGPASSWORD,PGMAX,PGSSL,PGSSLNEGOTIATION,PGIDLE_TIMEOUT,PGCONNECT_TIMEOUT,PGMAX_LIFETIME,PGMAX_PIPELINE,PGBACKOFF,PGKEEP_ALIVE,PGPREPARE,PGDEBUG,PGFETCH_TYPES,PGPUBLICATIONS,PGAPPNAME,PGTARGETSESSIONATTRS,PGTARGET_SESSION_ATTRS",
       "--allow-net=postgres:5432",
-      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5,/app/personal-crm-schema/v6,/app/personal-crm-schema/v7,/app/personal-crm-schema/v8,/app/personal-crm-schema/v9,/app/personal-crm-schema/v10,/app/personal-crm-schema/v11,/app/personal-crm-schema/v12,/app/personal-crm-schema/v13",
+      "--allow-read=/app/personal-crm-schema/v1,/app/personal-crm-schema/v2,/app/personal-crm-schema/v3,/app/personal-crm-schema/v4,/app/personal-crm-schema/v5,/app/personal-crm-schema/v6,/app/personal-crm-schema/v7,/app/personal-crm-schema/v8,/app/personal-crm-schema/v9,/app/personal-crm-schema/v10,/app/personal-crm-schema/v11,/app/personal-crm-schema/v12,/app/personal-crm-schema/v13,/app/personal-crm-schema/v14",
       "tools/migrations/main.ts",
     ]
+    # The schema owner, which runs only this job (ADR 0008).
     environment:
       PGDATABASE: ${POSTGRES_DB:-kinship}
       PGHOST: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?Set POSTGRES_MIGRATOR_PASSWORD}
       PGPORT: "5432"
-      PGUSER: ${POSTGRES_USER:-kinship}
+      PGUSER: kinship_migrator
     depends_on:
-      postgres:
-        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
     read_only: true
     restart: "no"
     security_opt: [no-new-privileges:true]
@@ -94,11 +129,13 @@ services:
       INTEGRATIONS_ENCRYPTION_KEYSET: ${INTEGRATIONS_ENCRYPTION_KEYSET:-}
       INTEGRATIONS_DAV_ENABLED: ${INTEGRATIONS_DAV_ENABLED:-true}
       HOST: 0.0.0.0
+      # Not a superuser, NOBYPASSRLS: every tenant row it reads or writes is
+      # bound by forced row-level security (ADR 0008).
       PGDATABASE: ${POSTGRES_DB:-kinship}
       PGHOST: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD}
       PGPORT: "5432"
-      PGUSER: ${POSTGRES_USER:-kinship}
+      PGUSER: kinship_app
       OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
       OBJECT_STORAGE_HOST: ${OBJECT_STORAGE_HOST:-}
@@ -155,11 +192,12 @@ services:
       OBJECT_STORAGE_REQUEST_TIMEOUT_MS: ${OBJECT_STORAGE_REQUEST_TIMEOUT_MS:-30000}
       OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-}
       OBJECT_STORAGE_USE_SSL: ${OBJECT_STORAGE_USE_SSL:-true}
+      # Only the tables the worker's jobs need, NOBYPASSRLS (ADR 0008).
       PGDATABASE: ${POSTGRES_DB:-kinship}
       PGHOST: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_WORKER_PASSWORD:?Set POSTGRES_WORKER_PASSWORD}
       PGPORT: "5432"
-      PGUSER: ${POSTGRES_USER:-kinship}
+      PGUSER: kinship_worker
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://127.0.0.1:4321}
       SMTP_FROM: ${SMTP_FROM:-hello@kinship.local}
       SMTP_HOST: ${SMTP_HOST:-mailpit}

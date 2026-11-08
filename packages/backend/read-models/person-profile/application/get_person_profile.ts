@@ -1,3 +1,4 @@
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type { DatePrecision } from "../../../shared-kernel/partial_date.ts";
 import {
@@ -276,6 +277,7 @@ export function createPersonProfile(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
   readonly repository: PersonProfileRepository;

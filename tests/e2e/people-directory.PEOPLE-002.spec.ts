@@ -108,10 +108,11 @@ test(
         'Bulk ' || lpad(sequence::text, 2, '0'),
         'bulk-' || lpad(sequence::text, 2, '0')
       from generate_series(1, 25) sequence;
-      insert into crm.person_tags (person_id, tag_id)
-      values ('${adaId}'::uuid, '${friendsTagId}'::uuid);
-      insert into crm.person_tags (person_id, tag_id)
-      select '${adaId}'::uuid, tag.id
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values ('${adaId}'::uuid, '${friendsTagId}'::uuid, (select scope.workspace_id from crm.people scope where scope.id = '${adaId}'::uuid));
+      insert into crm.person_tags (person_id, tag_id, workspace_id)
+      select '${adaId}'::uuid, tag.id,
+        (select scope.workspace_id from crm.people scope where scope.id = '${adaId}'::uuid)
       from crm.tags tag
       where tag.workspace_id = '${workspaceId}'::uuid
         and tag.slug between 'bulk-01' and 'bulk-07';
@@ -121,9 +122,10 @@ test(
       values ('${foreignPersonId}'::uuid, '${foreignWorkspaceId}'::uuid, 'Foreign', 'Person');
       insert into crm.tags (id, workspace_id, name, slug)
       values ('${foreignTagId}'::uuid, '${foreignWorkspaceId}'::uuid, 'Private', 'private');
-      insert into crm.person_tags (person_id, tag_id)
-      values ('${adaId}'::uuid, '${foreignTagId}'::uuid);
     `);
+    // Tagging Ada with the foreign tag is refused by the database itself
+    // (ADR 0008; tests/integration/workspace_isolation_postgres_test.ts), so
+    // the foreign tag exists only in its own workspace.
 
     await activateGlobalSearch(page);
     const globalSearch = page.getByRole("combobox", {

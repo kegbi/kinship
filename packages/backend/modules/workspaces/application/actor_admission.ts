@@ -26,6 +26,7 @@
  *   transaction; nothing here is consulted for one.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type {
   ActorRevalidation,
   ActorRevalidationTransaction,
@@ -81,6 +82,7 @@ export interface ActorReadDependencies<
   readonly transaction: {
     run<Result>(
       work: (transaction: Transaction) => Promise<Result>,
+      scope?: TransactionScope,
     ): Promise<Result>;
   };
 }
@@ -97,7 +99,9 @@ export async function actorMayRead<
   actor: RevalidatedActor,
 ): Promise<boolean> {
   if (isAdmitted(actor)) return true;
-  return await dependencies.transaction.run((transaction) =>
-    dependencies.actors.revalidate({ ...actor, lock: false, transaction })
+  return await dependencies.transaction.run(
+    (transaction) =>
+      dependencies.actors.revalidate({ ...actor, lock: false, transaction }),
+    { workspaceId: actor.workspaceId },
   ) === "active";
 }

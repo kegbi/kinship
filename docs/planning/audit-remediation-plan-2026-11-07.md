@@ -1711,7 +1711,7 @@ these:
     project 79 passed with only IMPORT-002 (REL-108); it also found AUD-G5's and
     AUD-K7's regressions (AUD-G5-fix, AUD-K7-fix).
 
-- [ ] **AUD-V2 — Schema v14: the database backstops tenancy.** L. Low. Depends:
+- [x] **AUD-V2 — Schema v14: the database backstops tenancy.** L. Low. Depends:
       AUD-V1, AUD-G4, AUD-T1, AUD-W3. Closes: SECT-01, SECT-02.
   - Scope, implementing
     [ADR 0008](../architecture/decisions/0008-database-enforced-workspace-isolation.md)
@@ -1749,6 +1749,29 @@ these:
     - A cross-workspace composite-key insert fails at the database.
   - Verify: `test:schema:matrix`; the full `test:integration`; `test:coverage`;
     the all-browser E2E (RLS touches every path); image builds.
+  - Delivered 2026-11-08: schema v14 (ADR 0008 with its Q1 to Q4 amendment).
+    `kinship_migrator` owns the schema and runs only the migrate job after a
+    one-time `deno task ops bootstrap`; the API runs as `kinship_app` and the
+    worker as `kinship_worker`, neither superuser and both `NOBYPASSRLS`;
+    `CREATE` on `public` is revoked. 95 of the 96 tenant references in the
+    foreign-key catalog are composite `(workspace_id, …)` keys (the plain one is
+    `api_request_logs.member_id`, as a log outlives its workspace), with 26 new
+    `UNIQUE (workspace_id, id)` parents and 15 link tables gaining
+    `workspace_id`. 64 tables force row-level security with the `nullif` policy,
+    set by `SET LOCAL` in the transaction of every runner and read path; the
+    cross-workspace paths use 12 `SECURITY DEFINER` functions under 8 `NOLOGIN`
+    owner roles, and no request path bypasses RLS. Eleven tenant-owned tables
+    without a `workspace_id` keep relying on their parent's predicate and are
+    documented (REL-120). Generated keys keep the directory order and duplicate
+    check on their index under RLS; full-text search scans its workspace (62 ms
+    at the large profile). `GET /api/v1/people` and `GET /api/v1/session` send 8
+    statements (K3's budget). The negative cross-workspace list is generated
+    from the catalog, and guards refuse an unlisted reference into or out of an
+    unforced tenant table. The preflight refuses published role passwords.
+    Schema matrix on 18.4 and 17.10; the full integration, coverage, unit,
+    build, image, and all-browser E2E runs show only REL-095 to REL-108 and
+    REL-119 (241 E2E passed), and PERF-002 and the `last-contacted` capacity
+    test pass under v14.
 
 ### Lane P — Proof
 

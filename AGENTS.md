@@ -137,13 +137,22 @@ internals.
 
 [ADR 0007](docs/architecture/decisions/0007-on-demand-rendering-only-for-request-time-content.md),
 from the 2026-11-07 audit, is implemented: pages are prerendered by default, and
-only `/privacy` and `/terms` render on demand. One accepted decision from that
-audit is not implemented yet.
-[ADR 0008](docs/architecture/decisions/0008-database-enforced-workspace-isolation.md)
-adds database-enforced workspace isolation in schema v14: least-privilege roles,
-workspace-bound foreign keys, and forced row-level security. It does not replace
-application authorization. Until that ticket lands, the rules above describe the
-running system. Do not add code that depends on a superuser database connection.
+only `/privacy` and `/terms` render on demand.
+[ADR 0008](docs/architecture/decisions/0008-database-enforced-workspace-isolation.md),
+amended 2026-11-08, is implemented by schema v14: the API and worker connect as
+least-privilege roles without `BYPASSRLS`, every tenant-to-tenant reference is a
+workspace-bound composite key, and every table with a `workspace_id` forces
+row-level security. Eleven workspace-owned tables without a `workspace_id` have
+no row-level security backstop: the root `workspaces` table, nine single-parent
+children (`pets`, `romantic_relationship_details`, `activity_emotions`,
+`call_emotions`, `data_import_entities`, `data_import_reports`,
+`member_preferences`, `billing_subscriptions`, `location_weather_cache`), and
+`billing_subscription_items` below `billing_subscriptions`. Reach them only
+through the actor's workspace predicate on their parent chain. Every tenant
+statement runs in a transaction scoped with `set local app.workspace_id`,
+through the transaction runners' scope; the few cross-workspace paths use only
+the narrow means the ADR lists. It does not replace application authorization.
+Do not add code that depends on a superuser or `BYPASSRLS` database connection.
 
 The selected implementation stack includes Hono, Zod, Kysely with Postgres.js,
 and Lefthook. A bounded Better Auth compatibility spike is approved, but Better
@@ -247,26 +256,26 @@ silently resolve it by violating an accepted constraint.
 
 ## Canonical Personal CRM Schema
 
-- [personal-crm-schema/v13/README.md](personal-crm-schema/v13/README.md) is the
+- [personal-crm-schema/v14/README.md](personal-crm-schema/v14/README.md) is the
   starting point and current repository database baseline.
-- [personal-crm-schema/v13/personal_crm_schema_v13.sql](personal-crm-schema/v13/personal_crm_schema_v13.sql)
+- [personal-crm-schema/v14/personal_crm_schema_v14.sql](personal-crm-schema/v14/personal_crm_schema_v14.sql)
   is the canonical PostgreSQL DDL.
-- [personal-crm-schema/v13/personal_crm_schema_spec_v13.md](personal-crm-schema/v13/personal_crm_schema_spec_v13.md)
+- [personal-crm-schema/v14/personal_crm_schema_spec_v14.md](personal-crm-schema/v14/personal_crm_schema_spec_v14.md)
   is the human-readable schema and behavioral contract.
-- [personal-crm-schema/v13/personal_crm_field_catalog_v13.csv](personal-crm-schema/v13/personal_crm_field_catalog_v13.csv)
+- [personal-crm-schema/v14/personal_crm_field_catalog_v14.csv](personal-crm-schema/v14/personal_crm_field_catalog_v14.csv)
   is the field-level catalog.
-- [personal-crm-schema/v13/monica_table_mapping_v13.csv](personal-crm-schema/v13/monica_table_mapping_v13.csv)
+- [personal-crm-schema/v14/monica_table_mapping_v14.csv](personal-crm-schema/v14/monica_table_mapping_v14.csv)
   and
-  [personal-crm-schema/v13/monica_column_mapping_v13.csv](personal-crm-schema/v13/monica_column_mapping_v13.csv)
+  [personal-crm-schema/v14/monica_column_mapping_v14.csv](personal-crm-schema/v14/monica_column_mapping_v14.csv)
   are the complete Monica import mappings.
-- [personal-crm-schema/v13/personal_crm_schema_v13_changes.md](personal-crm-schema/v13/personal_crm_schema_v13_changes.md)
+- [personal-crm-schema/v14/personal_crm_schema_v14_changes.md](personal-crm-schema/v14/personal_crm_schema_v14_changes.md)
   and
-  [personal-crm-schema/v13/personal_crm_schema_v13_validation.json](personal-crm-schema/v13/personal_crm_schema_v13_validation.json)
+  [personal-crm-schema/v14/personal_crm_schema_v14_validation.json](personal-crm-schema/v14/personal_crm_schema_v14_validation.json)
   contain the change rationale and machine validation.
 
-Treat `personal-crm-schema/v13` as one synchronized, versioned unit. Repository
-v1 through v12 remain immutable prior baselines; the external audit does not
-cover the repository-reviewed v2 through v13 deltas. Do not update the SQL,
+Treat `personal-crm-schema/v14` as one synchronized, versioned unit. Repository
+v1 through v13 remain immutable prior baselines; the external audit does not
+cover the repository-reviewed v2 through v14 deltas. Do not update the SQL,
 specification, catalogs, mappings, migration, or validation independently.
 
 The canonical Personal CRM schema is the application's own data model. The

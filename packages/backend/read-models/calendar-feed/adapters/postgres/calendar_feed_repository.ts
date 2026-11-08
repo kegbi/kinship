@@ -39,6 +39,7 @@
  * ordering, or sending a row.
  */
 
+import { readOnlyWithin } from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, sql } from "kysely";
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
@@ -167,7 +168,7 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
   }
 
   async revision(criteria: CalendarFeedCriteria) {
-    return await this.bounded(async (transaction) => {
+    return await this.bounded(criteria.workspaceId, async (transaction) => {
       const result = await sql<RevisionRow>`
         with ${feedContext(criteria)}, reminder_days as (
           select count(*)::int as count,
@@ -226,7 +227,7 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
   }
 
   async read(criteria: CalendarFeedCriteria) {
-    return await this.bounded(async (transaction) => {
+    return await this.bounded(criteria.workspaceId, async (transaction) => {
       const result = await sql<FeedRow>`
           with ${feedContext(criteria)}, reminder_days as (
             select distinct on (reminder.id, occurrence.occurs_on)
@@ -284,19 +285,21 @@ export class PostgresCalendarFeedRepository implements CalendarFeedRepository {
   }
 
   /**
-   * One read-only transaction under the feed's statement timeout; a
-   * cancelled statement answers `timed-out`.
+   * One read-only transaction in the feed's workspace, under the feed's
+   * statement timeout, opened in one round trip; a cancelled statement
+   * answers `timed-out`.
    */
   private async bounded<T>(
+    workspaceId: string,
     work: (transaction: Kysely<ApplicationDatabase>) => Promise<T>,
   ): Promise<T | { readonly status: "timed-out" }> {
     try {
-      return await this.database.transaction().execute(async (transaction) => {
-        await sql`set transaction read only`.execute(transaction);
-        await sql`select set_config('statement_timeout',
-          ${String(this.statementTimeoutMs)}, true)`.execute(transaction);
-        return await work(transaction);
-      });
+      return await readOnlyWithin(
+        this.database,
+        this.statementTimeoutMs,
+        work,
+        workspaceId,
+      );
     } catch (error) {
       if (postgresErrorCode(error) === QUERY_CANCELED) {
         return { status: "timed-out" as const };

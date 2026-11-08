@@ -12,6 +12,7 @@
  * post's own item page, or the tasks page for a task with no person to open.
  */
 
+import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import {
   actorMayRead,
@@ -210,6 +211,7 @@ export function createWorkspaceSearch(dependencies: {
   readonly transaction: {
     run<T>(
       work: (transaction: ReadModelTransaction) => Promise<T>,
+      scope?: TransactionScope,
     ): Promise<T>;
   };
 }) {

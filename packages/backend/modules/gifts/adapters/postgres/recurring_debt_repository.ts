@@ -230,10 +230,19 @@ export class PostgresRecurringDebtRepository
 
   async listDue(
     command: Parameters<RecurringDebtRepository["listDue"]>[0],
-  ): Promise<readonly string[]> {
+  ): Promise<
+    readonly { readonly id: string; readonly workspaceId: string }[]
+  > {
+    // The worker's scan reads every workspace's rules through its own policy
+    // (ADR 0008); each charge then runs in the rule's workspace.
     const rows = await schemaDatabaseFromSession(command.transaction)
       .selectFrom("crm.recurring_debts as rule")
-      .select((eb) => eb.cast<string>(eb.ref("rule.id"), "text").as("id"))
+      .select((eb) => [
+        eb.cast<string>(eb.ref("rule.id"), "text").as("id"),
+        eb.cast<string>(eb.ref("rule.workspace_id"), "text").as(
+          "workspace_id",
+        ),
+      ])
       .where("rule.is_active", "=", true)
       .where("rule.next_occurrence_on", "is not", null)
       .where(
@@ -246,7 +255,7 @@ export class PostgresRecurringDebtRepository
       .orderBy("rule.id")
       .limit(command.limit)
       .execute();
-    return rows.map((row) => row.id);
+    return rows.map((row) => ({ id: row.id, workspaceId: row.workspace_id }));
   }
 
   async claim(
