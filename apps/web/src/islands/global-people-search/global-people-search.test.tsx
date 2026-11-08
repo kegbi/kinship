@@ -8,7 +8,6 @@ import {
   jsonResponse,
   stubApi,
   type StubbedApi,
-  unreachable,
 } from "../../testing/api.ts";
 import { ids, preferences, workspaceSession } from "../../testing/fixtures.ts";
 import {
@@ -77,12 +76,26 @@ const SESSION = "GET /api/v1/session";
 const NOTHING_MATCHES = "Nothing in this workspace matches";
 
 type Person = ReturnType<typeof directoryPerson> & {
+  readonly archived?: boolean;
   readonly avatar?: { readonly color: string };
 };
 
+/** A person the member viewed recently, as a blank search answers them. */
+function recentPerson(
+  id: string,
+  givenName: string,
+  familyName: string,
+  archived = false,
+): Person {
+  return { ...directoryPerson(id, givenName, familyName), archived };
+}
+
 /** A directory person as the search route answers it. */
-function searchPerson({ avatar, familyName, givenName, id, nickname }: Person) {
+function searchPerson(
+  { archived, avatar, familyName, givenName, id, nickname }: Person,
+) {
   return {
+    ...(archived === undefined ? {} : { archived }),
     ...(avatar ? { avatar } : {}),
     familyName,
     givenName,
@@ -126,32 +139,24 @@ function searchBody(
   };
 }
 
-/** The API behind the palette: a session, recent people, and a search. */
+/**
+ * The API behind the palette: a session and a search, which answers a blank
+ * query with the recent people (FEQ-05).
+ */
 function stubPeople(
   people: readonly Person[] = [],
-  recent: readonly { archived: boolean; id: string; name: string }[] = [],
+  recent: readonly Person[] = [],
   sessionAnswer: Response | Promise<Response> = jsonResponse(session),
   groups: EntityGroups = {},
 ): StubbedApi {
   return stubApi({
     [SESSION]: sessionAnswer,
-    "GET /api/v1/today/recent-people": jsonResponse({
-      people: recent,
-      status: "ready",
-    }),
-    "GET /api/v1/people/:personId?include=summary": ({ params }) => {
-      const isAda = params["personId"] === adaId;
-      return jsonResponse({
-        status: isAda ? "ready" : "archived",
-        person: directoryPerson(
-          isAda ? adaId : graceId,
-          isAda ? "Ada" : "Grace",
-          isAda ? "Lovelace" : "Hopper",
-        ),
-      });
+    "GET /api/v1/search": ({ url }) => {
+      const query = url.searchParams.get("q") ?? "";
+      return jsonResponse(
+        query ? searchBody(query, people, groups) : searchBody("", recent),
+      );
     },
-    "GET /api/v1/search": ({ url }) =>
-      jsonResponse(searchBody(url.searchParams.get("q") ?? "", people, groups)),
   });
 }
 
@@ -285,53 +290,64 @@ describe("UXD-004 global people search", () => {
     },
   );
 
-  it.each([403, 404, "transport"] as const)(
-    "APR-008 omits an unavailable recent identity (%s) without exposing its stale name",
-    async (failure) => {
-      markup();
-      stubPeople([], [
-        { id: adaId, name: "Old Ada", archived: false },
-        { id: graceId, name: "Do not expose this stale name", archived: false },
-      ]).route(
-        `GET /api/v1/people/${graceId}`,
-        failure === "transport"
-          ? unreachable
-          : jsonResponse({ status: failure }, failure),
-      );
-      await mount();
-      fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
-      await waitFor(() =>
-        expect(statusLine()).toBe("Some recent people are unavailable")
-      );
-      expect(optionNames()).toEqual(["Ada Lovelace"]);
-      expect(document.body.textContent).not.toContain("stale name");
-    },
-  );
-
-  it("APR-008 ignores a late recent identity after a newer search", async () => {
+  it("FEQ-05 opens the empty palette with one request and keeps its answer for the document", async () => {
     markup();
-    const pending = deferred<Response>();
-    const api = stubPeople([directoryPerson(graceId, "Grace", "Hopper")], [{
-      id: adaId,
-      name: "Old Ada",
-      archived: false,
-    }]);
-    api.route(`GET /api/v1/people/${adaId}`, pending.promise);
+    const api = stubPeople([], [
+      {
+        ...recentPerson(adaId, "Ada", "Lovelace"),
+        avatar: { color: "#1f6f5c" },
+      },
+      recentPerson(graceId, "Grace", "Hopper", true),
+    ]);
     await mount();
+    const before = api.calls().length;
     fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
     await waitFor(() =>
-      expect(api.fetch).toHaveBeenCalledWith(
-        `/api/v1/people/${adaId}?include=summary`,
-        expect.anything(),
-      )
+      expect(optionNames()).toEqual(["Ada Lovelace", "Grace Hopper"])
     );
+    expect(api.calls().slice(before)).toEqual([
+      "GET /api/v1/search?q=&limit=8&sort=given-name",
+    ]);
+    const [ada, grace] = screen.getAllByRole("option");
+    expect(
+      ada!.querySelector<HTMLElement>("[data-slot=avatar]")!.style
+        .backgroundColor,
+    ).toBe("#1f6f5c");
+    expect(grace!.textContent).toContain("Archived");
+    expect(statusLine()).toBe("2 people found");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(palette()).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
+    expect(optionNames()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    await search("Ada");
+    type("");
+    expect(optionNames()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    expect(
+      api.calls().slice(before).filter((call) => call.includes("?q=&")),
+    ).toHaveLength(1);
+  });
+
+  it("FEQ-05 aborts a superseded search and never shows its late answer", async () => {
+    markup();
+    const late = deferred<Response>();
+    const api = stubPeople([directoryPerson(graceId, "Grace", "Hopper")]);
+    api.route("GET /api/v1/search?q=", late.promise);
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Find a person" }));
+    await waitFor(() => expect(peopleRequests(api)).toHaveLength(1));
+    await search("Gr");
     await search("Grace");
     await waitFor(() => expect(optionNames()[0]).toBe("Grace Hopper"));
+    const [recent, superseded, current] = peopleRequests(api);
+    expect(recent?.init?.signal?.aborted).toBe(true);
+    expect(superseded?.url.searchParams.get("q")).toBe("Gr");
+    expect(superseded?.init?.signal?.aborted).toBe(true);
+    expect(current?.init?.signal?.aborted).toBe(false);
     await act(async () => {
-      pending.resolve(jsonResponse({
-        status: "ready",
-        person: directoryPerson(adaId, "Ada", "Lovelace"),
-      }));
+      late.resolve(jsonResponse(searchBody("", [
+        recentPerson(adaId, "Ada", "Lovelace"),
+      ])));
       await Promise.resolve();
     });
     expect(optionNames()).toEqual([
@@ -344,7 +360,7 @@ describe("UXD-004 global people search", () => {
     markup();
     const api = stubPeople(
       [directoryPerson(adaId, "Ada", "Lovelace")],
-      [{ id: adaId, name: "Do not parse this label", archived: false }],
+      [recentPerson(adaId, "Ada", "Lovelace")],
       sessionWith({ contactNameOrder: "family_given_nickname" }),
     );
     await mount();
@@ -384,10 +400,7 @@ describe("UXD-004 global people search", () => {
     expect(optionNames()[0]).toBe("Log interaction");
     expect(statusLine()).toBe("11 commands found");
     expect(
-      api.calls().filter((call) =>
-        call.startsWith("GET /api/v1/search?") ||
-        call === "GET /api/v1/today/recent-people"
-      ),
+      api.calls().filter((call) => call.startsWith("GET /api/v1/search?")),
     ).toHaveLength(0);
   });
 
@@ -480,8 +493,8 @@ describe("UXD-004 global people search", () => {
   it("opens from Ctrl/Cmd+K, renders recent people, and returns the focus", async () => {
     markup();
     const api = stubPeople([], [
-      { archived: false, id: adaId, name: "Ada Lovelace" },
-      { archived: true, id: graceId, name: "Grace Hopper" },
+      recentPerson(adaId, "Ada", "Lovelace"),
+      recentPerson(graceId, "Grace", "Hopper", true),
     ]);
     await mount();
     const opener = element("#shortcut-opener");
@@ -499,7 +512,7 @@ describe("UXD-004 global people search", () => {
     expect(field().getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(field());
     expect(api.fetch).toHaveBeenCalledWith(
-      "/api/v1/today/recent-people",
+      "/api/v1/search?q=&limit=8&sort=given-name",
       expect.objectContaining({
         headers: expect.objectContaining({ "X-Workspace-Id": workspaceId }),
       }),
@@ -533,7 +546,7 @@ describe("UXD-004 global people search", () => {
     "FER-01 opens at once for a Ctrl+K pressed before it mounted, and returns the focus to %s",
     async (_label, fromElement) => {
       markup();
-      stubPeople([], [{ archived: false, id: adaId, name: "Ada Lovelace" }]);
+      stubPeople([], [recentPerson(adaId, "Ada", "Lovelace")]);
       const opener = element("#shortcut-opener");
       opener.focus();
       await mountSettled(() =>
@@ -565,7 +578,7 @@ describe("UXD-004 global people search", () => {
     "APR-008 returns the focus to the mounted %s after a Ctrl+K pressed on the static one before it mounted",
     async (_label, role) => {
       markup();
-      stubPeople([], [{ archived: false, id: adaId, name: "Ada Lovelace" }]);
+      stubPeople([], [recentPerson(adaId, "Ada", "Lovelace")]);
       const staticOpener = screen.getByRole(role, { name: "Find a person" });
       staticOpener.focus();
       await mountSettled(() =>
@@ -605,11 +618,13 @@ describe("UXD-004 global people search", () => {
       directoryPerson(adaId, "Ada", "Lovelace", "Countess"),
     ]);
     await mount();
+    // FEQ-05: a query typed at a steady pace is one search, not one per key.
+    expect(SEARCH_DEBOUNCE_MS).toBe(300);
     vi.useFakeTimers();
     type("A");
     expect(statusLine()).toBe("Searching");
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(199);
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 1);
     });
     expect(peopleRequests(api)).toHaveLength(0);
     await act(async () => {
@@ -621,7 +636,7 @@ describe("UXD-004 global people search", () => {
     type("Ad");
     type("Ada");
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
     });
     expect(peopleRequests(api)).toHaveLength(2);
     expect(peopleRequests(api).at(-1)?.url.searchParams.get("q")).toBe(
@@ -789,7 +804,7 @@ describe("REL-039 global people search before its startup reads", () => {
     const { answer, release } = gatedSession();
     stubPeople(
       [],
-      [{ archived: false, id: adaId, name: "Ada Lovelace" }],
+      [recentPerson(adaId, "Ada", "Lovelace")],
       answer,
     );
     mountNow();

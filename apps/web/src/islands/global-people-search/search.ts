@@ -2,7 +2,7 @@
  * What the palette shows, without the DOM (GAP-027, GAP-048).
  *
  * The palette answers three kinds of query: nothing typed shows the people
- * the member viewed recently, `>` lists the commands the member may run, and
+ * the member viewed recently (a blank search's people group, FEQ-05), `>` lists the commands the member may run, and
  * anything else searches the workspace: its people, notes, activities,
  * journal posts, and tasks, each under its own heading. These functions turn
  * each answer into the groups of rows the list renders; the island only
@@ -248,6 +248,7 @@ export { nameInitials as initials } from "../../lib/person-name.ts";
 /** A person the search found, named in the member's order. */
 export function resultPerson(
   person: {
+    readonly archived?: boolean;
     readonly avatar?: PersonAvatar;
     readonly familyName?: string;
     readonly givenName: string;
@@ -258,8 +259,9 @@ export function resultPerson(
   nameOrder: PersonNameOrder,
 ): SearchPerson {
   return {
-    // The search lists people as the active directory does.
-    archived: false,
+    // A search lists people as the active directory does; only a recent
+    // person may be archived.
+    archived: person.archived ?? false,
     ...(person.avatar ? { avatar: person.avatar } : {}),
     formalNames: [
       displayPersonName({ ...person, nickname: "" }, "given_family_nickname"),
@@ -330,11 +332,28 @@ function peopleRows(
   return rows;
 }
 
-/** The answer for the people the member viewed recently. */
-export function peopleAnswer(
-  people: readonly SearchPerson[],
+/** The people group of a search's answer, named in the member's order. */
+function foundPeople(
+  results: SearchResults,
+  nameOrder: PersonNameOrder,
+): readonly SearchPerson[] {
+  return results.groups.flatMap((group) =>
+    group.kind === "people"
+      ? group.results.map((person) => resultPerson(person, nameOrder))
+      : []
+  );
+}
+
+/**
+ * The answer for the people the member viewed recently: what a blank search
+ * answers in its people group (FEQ-05), named in the member's order.
+ */
+export function recentAnswer(
+  results: SearchResults,
   commands: readonly PaletteCommand[],
+  nameOrder: PersonNameOrder,
 ): PaletteAnswer {
+  const people = foundPeople(results, nameOrder);
   return {
     groups: [{ id: "people", rows: peopleRows(people, commands) }],
     problem: false,
@@ -395,11 +414,7 @@ export function searchAnswer(
   nameOrder: PersonNameOrder,
   query: string,
 ): PaletteAnswer {
-  const people = results.groups.flatMap((group) =>
-    group.kind === "people"
-      ? group.results.map((person) => resultPerson(person, nameOrder))
-      : []
-  );
+  const people = foundPeople(results, nameOrder);
   const groups: PaletteGroup[] = [{
     heading: "People",
     id: "people",

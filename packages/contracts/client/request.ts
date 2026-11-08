@@ -34,6 +34,9 @@ const inFlight = new Map<string, Promise<ApiResult<unknown>>>();
  * its answer cannot change another's. The entry leaves when the read settles,
  * so a later read is always a new request.
  *
+ * A read that carries an `AbortSignal`, or any header beside the workspace,
+ * is never shared: its caller cancels exactly its own request.
+ *
  * Writes are never shared, and a write forgets every read on the wire both
  * when it is sent and when it settles: a read asked for after a write may be
  * the refresh that write calls for, and must not receive an answer the server
@@ -51,7 +54,14 @@ export async function request<T>(
       inFlight.clear();
     }
   }
-  const workspace = new Headers(init?.headers).get("X-Workspace-Id") ?? "";
+  const headers = new Headers(init?.headers);
+  const workspace = headers.get("X-Workspace-Id") ?? "";
+  if (init?.signal || [...headers.keys()].length > (workspace ? 1 : 0)) {
+    // A read its caller may cancel, or one carrying more than the workspace,
+    // is its own: sharing it would let one caller's abort, or its headers,
+    // reach another caller's answer (FEQ-05).
+    return await send<T>(path, init);
+  }
   const key = `${path} ${workspace}`;
   let shared = inFlight.get(key);
   if (!shared) {

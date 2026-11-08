@@ -19,10 +19,10 @@ import {
  * What `searchWorkspace` accepts in the query string: the query, trimmed
  * before it is measured, a bounded size for each group, and the order people
  * are listed in — the member's contact sort preference, as the directory
- * takes it.
+ * takes it. A blank query asks for the member's recent people (FEQ-05).
  */
 export const searchWorkspaceQuery = z.strictObject({
-  q: z.string().trim().min(1).max(200),
+  q: z.string().trim().max(200),
   limit: z.coerce.number().int().min(1).max(SEARCH_GROUP_LIMIT_MAXIMUM)
     .default(SEARCH_GROUP_LIMIT_DEFAULT),
   sort: z.enum(["given-name", "family-name"]).default("given-name"),
@@ -33,7 +33,7 @@ export const searchWorkspace = defineRoute({
   path: "/api/v1/search",
   operationId: "searchWorkspace",
   description:
-    "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer.",
+    "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty.",
   security: [{ kinship_session: [] }],
   request: {
     query: searchWorkspaceQuery,

@@ -16,6 +16,7 @@ function answering(
 ): SearchRepository {
   const { people, ...text } = found;
   return {
+    recentPeople: () => Promise.reject(new Error("must not read recent")),
     searchPeople: (command) => {
       seen.push(command);
       return Promise.resolve({ people, status: "ready" });
@@ -25,6 +26,7 @@ function answering(
 }
 
 const failing = (error: Error): SearchRepository => ({
+  recentPeople: () => Promise.reject(error),
   searchPeople: () => Promise.reject(error),
   searchText: () => Promise.reject(error),
 });
@@ -134,6 +136,7 @@ Deno.test("[SEARCH-001] HTTP answers the resolved workspace's groups with avatar
 
 Deno.test("[SEARCH-001] HTTP answers people with the text groups marked unavailable", async () => {
   const app = routes({
+    recentPeople: () => Promise.reject(new Error("unused")),
     searchPeople: () =>
       Promise.resolve({
         people: [{ givenName: "Ada", id: personId }],
@@ -162,6 +165,7 @@ Deno.test("[SEARCH-001] HTTP answers people with the text groups marked unavaila
     ],
   );
   const timedOut = await routes({
+    recentPeople: () => Promise.reject(new Error("unused")),
     searchPeople: () => Promise.resolve({ status: "timed-out" }),
     searchText: () => Promise.reject(new Error("unused")),
   }).request("http://localhost/api/v1/search?q=ada", { headers });
@@ -169,13 +173,63 @@ Deno.test("[SEARCH-001] HTTP answers people with the text groups marked unavaila
   assertEquals(await problemCode(timedOut), "search_unavailable");
 });
 
-Deno.test("[SEARCH-001] HTTP refuses a blank, overlong, or unbounded query", async () => {
+Deno.test("[FEQ-05] HTTP answers a blank query with the member's recent people", async () => {
+  const seen: Parameters<SearchRepository["recentPeople"]>[0][] = [];
+  const app = routes({
+    recentPeople: (command) => {
+      seen.push(command);
+      return Promise.resolve({
+        people: [{
+          archived: true,
+          avatar: { backgroundColor: "#123456", fileId },
+          familyName: "Lovelace",
+          givenName: "Ada",
+          id: personId,
+        }],
+        status: "ready",
+      });
+    },
+    searchPeople: () => Promise.reject(new Error("must not search")),
+    searchText: () => Promise.reject(new Error("must not search")),
+  });
+  for (const query of ["?q=&limit=8", "?q=%20%20&limit=8"]) {
+    const response = await app.request(
+      `http://localhost/api/v1/search${query}`,
+      { headers },
+    );
+    assertStatus(response, 200, `query ${query}`);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
+    const body = searchResults.parse(await response.json());
+    assertEquals(body.query, "");
+    const people = body.groups[0]!;
+    assert(people.kind === "people", "people lead");
+    assertEquals(people.results, [{
+      archived: true,
+      avatar: {
+        color: "#123456",
+        imageUrl: `/api/v1/people/${personId}/files/${fileId}/content`,
+      },
+      familyName: "Lovelace",
+      givenName: "Ada",
+      href: `/app/people/${personId}`,
+      id: personId,
+      kind: "person",
+    }]);
+    assertEquals(
+      body.groups.slice(1).map((group) => group.results.length),
+      [0, 0, 0, 0],
+    );
+  }
+  assertEquals(seen.map((command) => command.limit), [8, 8]);
+  assertEquals(seen[0]?.workspaceId, actor.workspaceId);
+  assertEquals(seen[0]?.memberId, actor.memberId);
+});
+
+Deno.test("[SEARCH-001] HTTP refuses a missing, overlong, or unbounded query", async () => {
   const app = routes(failing(new Error("must not search")));
   for (
     const query of [
       "",
-      "?q=",
-      "?q=%20%20",
       `?q=${"x".repeat(201)}`,
       "?q=ada&limit=0",
       "?q=ada&limit=11",

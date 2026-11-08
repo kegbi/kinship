@@ -13,10 +13,14 @@
  * query, the member's commands after `>`, and otherwise a workspace search
  * whose people, notes, activities, journal posts, and tasks each sit under
  * their own heading. cmdk's one list moves the active option across every
- * group. One request slot answers the latest query: a newer one aborts the
- * one before, so a late answer never replaces a newer one. The field is bound
- * before the session and preferences load (REL-039): the palette opens at
- * once and fills in when they arrive.
+ * group. Every remote answer is one search request (FEQ-05): the recent
+ * people are the answer to a blank query, kept for the rest of the document,
+ * because the list changes only when the member opens a person, which is
+ * another document. One request slot answers the latest query: a newer one
+ * aborts the one before on the wire, so a late answer never replaces a newer
+ * one and the server stops working on it. The field is bound before the
+ * session and preferences load (REL-039): the palette opens at once and fills
+ * in when they arrive.
  */
 
 import {
@@ -37,11 +41,7 @@ import {
   SquareCheck,
   StickyNote,
 } from "lucide-react";
-import {
-  getPerson,
-  getTodayRecentPeople,
-  searchWorkspace,
-} from "../../../../../packages/contracts/generated/auth-client.ts";
+import { searchWorkspace } from "../../../../../packages/contracts/generated/auth-client.ts";
 import { Avatar } from "@/components/ui/avatar.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import {
@@ -57,10 +57,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.tsx";
 import { buttonVariants } from "@/components/ui/variants.ts";
-import {
-  displayPersonName,
-  type PersonNameOrder,
-} from "../../lib/person-name.ts";
+import type { PersonNameOrder } from "../../lib/person-name.ts";
 import { resolveWorkspaceSession } from "../../lib/workspace-context.ts";
 import { settle, useDocumentEvent } from "../core/index.ts";
 import {
@@ -73,15 +70,15 @@ import {
   type PaletteAnswer,
   type PaletteCommand,
   type PaletteRow,
-  peopleAnswer,
+  recentAnswer,
   searchAnswer,
-  type SearchPerson,
   UNAVAILABLE_ANSWER,
 } from "./search.ts";
 import { searchShortcut } from "./shortcuts.ts";
 
-export const SEARCH_DEBOUNCE_MS = 200;
-/** The results each group of a search answers. */
+/** How long the field stays still before its query is searched (FEQ-05). */
+export const SEARCH_DEBOUNCE_MS = 300;
+/** The results each group of a search answers, and the recent people shown. */
 export const SEARCH_GROUP_LIMIT = 8;
 const DIALOG_ID = "global-people-search-dialog";
 const INPUT_ID = "global-people-search-input";
@@ -127,43 +124,12 @@ export interface GlobalPeopleSearchProps {
   readonly navigate: (path: string) => void;
 }
 
-async function recentAnswer(
-  { commands, nameOrder, workspaceId }: SearchContext,
-  signal: AbortSignal,
-): Promise<PaletteAnswer> {
-  const recent = await settle(
-    () => getTodayRecentPeople(workspaceId),
-    signal,
-  );
-  if (recent.status !== "ready") return UNAVAILABLE_ANSWER;
-  const identities = await Promise.all(
-    recent.data!.people.map(
-      async (person): Promise<SearchPerson | undefined> => {
-        const identity = await settle(
-          () => getPerson(person.id, workspaceId, "summary"),
-          signal,
-        );
-        return identity.status === "ready"
-          ? {
-            archived: identity.data!.status === "archived",
-            ...(identity.data!.person.avatar
-              ? { avatar: identity.data!.person.avatar }
-              : {}),
-            id: person.id,
-            name: displayPersonName(identity.data!.person, nameOrder),
-          }
-          : undefined;
-      },
-    ),
-  );
-  const found = identities.filter((person) => person !== undefined);
-  const answer = peopleAnswer(found, commands);
-  return found.length < identities.length
-    ? { ...answer, problem: true, status: "Some recent people are unavailable" }
-    : answer;
-}
-
-async function workspaceAnswer(
+/**
+ * The answer to `query`: the member's recent people for a blank one, and
+ * otherwise the workspace search. Either is one request, which `signal`
+ * cancels when a newer query supersedes it.
+ */
+async function remoteAnswer(
   { commands, nameOrder, peopleSort, workspaceId }: SearchContext,
   query: string,
   signal: AbortSignal,
@@ -173,11 +139,14 @@ async function workspaceAnswer(
       searchWorkspace(
         { limit: SEARCH_GROUP_LIMIT, query, sort: peopleSort },
         workspaceId,
+        signal,
       ),
     signal,
   );
   if (result.status !== "ready") return UNAVAILABLE_ANSWER;
-  return searchAnswer(result.data!, commands, nameOrder, query);
+  return query
+    ? searchAnswer(result.data!, commands, nameOrder, query)
+    : recentAnswer(result.data!, commands, nameOrder);
 }
 
 /**
@@ -435,18 +404,29 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
   const [remote, setRemote] = useState<
     { readonly answer: PaletteAnswer; readonly request: Request }
   >();
+  // The recent people, once answered, serve every later blank query of the
+  // document without another request.
+  const [recent, setRecent] = useState<
+    { readonly answer: PaletteAnswer; readonly context: SearchContext }
+  >();
+  const keptRecent = request && !request.query &&
+      recent?.context === request.context
+    ? recent.answer
+    : undefined;
   useEffect(() => {
-    if (!request || request.query.startsWith(">")) return;
+    if (!request || request.query.startsWith(">") || keptRecent) return;
     const controller = new AbortController();
     const load = async () => {
-      const answer = request.query
-        ? await workspaceAnswer(
-          request.context,
-          request.query,
-          controller.signal,
-        )
-        : await recentAnswer(request.context, controller.signal);
-      if (!controller.signal.aborted) setRemote({ answer, request });
+      const answer = await remoteAnswer(
+        request.context,
+        request.query,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      setRemote({ answer, request });
+      if (!request.query && !answer.problem) {
+        setRecent({ answer, context: request.context });
+      }
     };
     const timer = request.query
       ? setTimeout(() => void load(), SEARCH_DEBOUNCE_MS)
@@ -456,16 +436,16 @@ export function GlobalPeopleSearch(props: GlobalPeopleSearchProps) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [request]);
+  }, [keptRecent, request]);
   const answer = useMemo<PaletteAnswer>(
     () =>
-      commandsAnswer ??
+      commandsAnswer ?? keptRecent ??
         (remote && remote.request === request ? remote.answer : {
           groups: [],
           problem: false,
           status: request?.query ? "Searching" : "",
         }),
-    [commandsAnswer, remote, request],
+    [commandsAnswer, keptRecent, remote, request],
   );
   const rows = useMemo(() => answerRows(answer), [answer]);
 

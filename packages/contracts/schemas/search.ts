@@ -3,7 +3,8 @@
  * notes, activities, journal posts, and tasks answers with.
  *
  * Every group is always present, in one fixed order, so a reader can draw the
- * group headings without deciding which exist. A snippet is plain text cut
+ * group headings without deciding which exist. A blank query answers the
+ * member's recent people in the people group (FEQ-05). A snippet is plain text cut
  * from what the member wrote; nothing in it is markup to be interpreted.
  */
 
@@ -22,8 +23,13 @@ export const searchPersonReference = z.strictObject({
   name: z.string(),
 }).meta({ id: "SearchPersonReference" });
 
-/** A person the active directory lists for the query. */
+/**
+ * A person the active directory lists for the query, or, for a blank query,
+ * one the member viewed recently. Only a recent person says whether it is
+ * archived, because a search lists active people alone.
+ */
 export const searchPersonResult = z.strictObject({
+  archived: z.boolean().optional(),
   avatar: personAvatar.optional(),
   familyName: z.string().optional(),
   givenName: z.string(),

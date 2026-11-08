@@ -132,6 +132,10 @@ test(
     await expect(notes.nth(1)).toHaveAttribute("aria-selected", "true");
     await field.press("ArrowUp");
     await expect(notes.first()).toHaveAttribute("aria-selected", "true");
+    const viewed = page.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith(`/api/v1/people/${adaId}/view`)
+    );
     await field.press("Enter");
     await expect(page).toHaveURL(
       new RegExp(`/app/people/${adaId}\\?section=notes$`),
@@ -140,6 +144,37 @@ test(
     await expect(page.locator("#person-timeline")).toContainText(
       "Met at the lighthouse café",
     );
+    await viewed;
+
+    // FEQ-05: the empty palette lists the people just viewed, avatar and
+    // name order included, from one request.
+    await activateGlobalSearch(page);
+    const reads: string[] = [];
+    const record = (sent: { method(): string; url(): string }) => {
+      const url = new URL(sent.url());
+      if (
+        sent.method() === "GET" && url.pathname.startsWith("/api/v1/") &&
+        url.pathname !== "/api/v1/notifications"
+      ) reads.push(`${url.pathname}${url.search}`);
+    };
+    page.on("request", record);
+    await page.getByRole("combobox", { name: "Find a person" }).press(
+      "ArrowDown",
+    );
+    const recent = page.locator("#global-people-search-results")
+      .getByRole("option");
+    await expect(recent).toHaveCount(1);
+    await expect(recent.first()).toContainText("Ada Lighthouse");
+    await expect(page.locator("#global-people-search-status")).toHaveText(
+      "1 person found",
+    );
+    page.off("request", record);
+    expect(reads).toEqual([
+      "/api/v1/search?q=&limit=8&sort=given-name",
+    ]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Find a person" }))
+      .toBeHidden();
 
     await activateGlobalSearch(page);
     await page.getByRole("combobox", { name: "Find a person" }).fill(

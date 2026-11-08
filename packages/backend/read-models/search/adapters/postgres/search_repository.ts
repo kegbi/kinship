@@ -14,6 +14,10 @@
  * planner still chooses by cost, so a workspace with few rows may read them
  * through its workspace index instead.
  *
+ * An empty query reads the member's recent people instead (FEQ-05): the ids
+ * their interface state lists, each probed by key in the workspace, with the
+ * same avatar join as a search.
+ *
  * The text groups are still their own statement, after people: people search
  * is the directory's own case-insensitive substring match on the
  * workspace-indexed people rows, widened to the query's spellings across
@@ -42,6 +46,7 @@
 
 import { type Kysely, type RawBuilder, sql } from "kysely";
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
+import { storedRecentPersonIds } from "../../../../modules/workspaces/public.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { postgresErrorCode } from "../../../../platform/postgres/errors.ts";
 import { nameMatchSql } from "../../../../platform/postgres/name_match.ts";
@@ -53,6 +58,7 @@ import type {
   SearchPersonEntityRecord,
   SearchPersonRecord,
   SearchPersonReference,
+  SearchRecentPersonRecord,
   SearchRepository,
   SearchTaskRecord,
 } from "../../ports/search_repository.ts";
@@ -69,6 +75,7 @@ const SNIPPET_SOURCE_LIMIT = 2000;
 const SNIPPET_SOURCE_LEAD = 500;
 
 interface PersonRow {
+  readonly archived?: boolean;
   readonly avatar_background_color: string | null;
   readonly avatar_file_id: string | null;
   readonly family_name: string | null;
@@ -124,6 +131,37 @@ function clipped(
   )`;
 }
 
+/**
+ * A person's stored avatar colour, and its image file only while that file
+ * can be drawn, as the directory offers it.
+ */
+const avatarColumns = sql`avatar.background_color as avatar_background_color,
+  case when avatar.source = 'file' then avatar_file.id::text end
+    as avatar_file_id`;
+const avatarJoins = sql`left join crm.person_avatars avatar
+    on avatar.person_id = person.id
+  left join crm.files avatar_file on avatar_file.id = avatar.file_id
+    and avatar_file.workspace_id = person.workspace_id
+    and avatar_file.status = 'available'
+    and avatar_file.deleted_at is null`;
+
+/** A person row as the people group answers it. */
+function personRecord(found: PersonRow): SearchPersonRecord {
+  return {
+    avatar: pickDefined({
+      backgroundColor: found.avatar_background_color,
+      fileId: found.avatar_file_id,
+    }),
+    ...pickDefined({ familyName: found.family_name }),
+    givenName: found.given_name,
+    id: found.id,
+    ...pickDefined({
+      middleName: found.middle_name,
+      nickname: found.nickname,
+    }),
+  };
+}
+
 const displayName = (alias: string) =>
   sql.raw(personDisplayNameSql(UNNAMED_PERSON, alias));
 
@@ -168,6 +206,50 @@ export class PostgresSearchRepository implements SearchRepository {
     }
   }
 
+  /**
+   * The member's recent people (FEQ-05), read as Today's recent people reads
+   * them: the ids the member's interface state lists, then each person by
+   * key in this workspace, not deleted, archived ones included, in the order
+   * the member viewed them, with the avatar and name parts a search answers.
+   */
+  recentPeople(
+    command: Parameters<SearchRepository["recentPeople"]>[0],
+  ): ReturnType<SearchRepository["recentPeople"]> {
+    return this.bounded(async (transaction) => {
+      const stored = await sql<{ readonly ui_state: unknown }>`
+        select preference.ui_state
+        from crm.member_preferences preference
+        where preference.member_id = ${command.memberId}::uuid
+      `.execute(transaction);
+      const ids = storedRecentPersonIds(stored.rows[0]?.ui_state);
+      if (ids.length === 0) return { people: [], status: "ready" as const };
+      // The ids are typed, not the column, so each is one probe of the
+      // people key (BEQ-13).
+      const result = await sql<PersonRow>`
+        select person.id::text as id, person.given_name, person.middle_name,
+          person.family_name, person.nickname,
+          person.archived_at is not null as archived,
+          ${avatarColumns}
+        from unnest(array[${
+        sql.join(ids.map((id) => sql`${id}`))
+      }]::uuid[]) with ordinality as recent(person_id, position)
+        join crm.people person on person.id = recent.person_id
+          and person.workspace_id = ${command.workspaceId}::uuid
+        ${avatarJoins}
+        where person.deleted_at is null
+        order by recent.position
+        limit ${command.limit}
+      `.execute(transaction);
+      return {
+        people: result.rows.map((found): SearchRecentPersonRecord => ({
+          archived: found.archived === true,
+          ...personRecord(found),
+        })),
+        status: "ready" as const,
+      };
+    });
+  }
+
   searchPeople(
     command: Parameters<SearchRepository["searchPeople"]>[0],
   ): ReturnType<SearchRepository["searchPeople"]> {
@@ -184,16 +266,9 @@ export class PostgresSearchRepository implements SearchRepository {
     return this.bounded(async (transaction) => {
       const result = await sql<PersonRow>`
         select person.id::text as id, person.given_name, person.middle_name,
-          person.family_name, person.nickname,
-          avatar.background_color as avatar_background_color,
-          case when avatar.source = 'file' then avatar_file.id::text end
-            as avatar_file_id
+          person.family_name, person.nickname, ${avatarColumns}
         from crm.people person
-        left join crm.person_avatars avatar on avatar.person_id = person.id
-        left join crm.files avatar_file on avatar_file.id = avatar.file_id
-          and avatar_file.workspace_id = person.workspace_id
-          and avatar_file.status = 'available'
-          and avatar_file.deleted_at is null
+        ${avatarJoins}
         where person.workspace_id = ${command.workspaceId}::uuid
           and person.deleted_at is null
           and person.archived_at is null
@@ -210,19 +285,7 @@ export class PostgresSearchRepository implements SearchRepository {
         limit ${command.limit}
       `.execute(transaction);
       return {
-        people: result.rows.map((found): SearchPersonRecord => ({
-          avatar: pickDefined({
-            backgroundColor: found.avatar_background_color,
-            fileId: found.avatar_file_id,
-          }),
-          ...pickDefined({ familyName: found.family_name }),
-          givenName: found.given_name,
-          id: found.id,
-          ...pickDefined({
-            middleName: found.middle_name,
-            nickname: found.nickname,
-          }),
-        })),
+        people: result.rows.map(personRecord),
         status: "ready" as const,
       };
     });

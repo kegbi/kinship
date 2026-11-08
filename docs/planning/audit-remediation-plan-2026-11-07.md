@@ -989,7 +989,7 @@ these:
     results; AUD-V1 indexes the feed's UTC-millisecond sort expression and
     tightens the notes plan assertion.
 
-- [ ] **AUD-Q2 — The search palette opens with one request.** M. Normal.
+- [x] **AUD-Q2 — The search palette opens with one request.** M. Normal.
       Depends: AUD-Q1, AUD-F2, AUD-F3. Closes: FEQ-05.
   - Scope:
     - The `search` read model answers the empty query with recent people,
@@ -1002,6 +1002,19 @@ these:
     a superseded query is aborted.
   - Verify: `test:unit --module=web`; `test:integration --module=search`;
     contracts; E2E `search.SEARCH-001`.
+  - Delivered 2026-11-08: a blank query is one `GET /api/v1/search` that answers
+    the member's recent people (the cleaned, capped stored list joined to this
+    workspace's people, deleted excluded, archived flagged, after the same
+    `actorMayRead` check as Today), with avatar and name parts; the palette
+    keeps that answer for the document, opens with one request (was 9), passes
+    an `AbortSignal` so a superseded search is cancelled, and debounces at 300
+    ms; a GET with a signal or any header other than `X-Workspace-Id` bypasses
+    AUD-F1's single-flight, so one caller's abort never cancels another's. Web
+    unit 1777 (only REL-107), search unit 18, search integration 16, workspaces
+    unit 194, api unit 503 with the client tests (only REL-106); changed search
+    files 100% and palette files at least 94.8% branches; contracts current;
+    fmt, eslint, architecture, and lint (only REL-096). E2E SEARCH-001 2 passed
+    on Chromium.
 
 - [ ] **AUD-Q3 — The person rail arrives in one composed read.** L. Normal.
       Depends: AUD-F5, AUD-K3. Closes: FEQ-04 (step 4).

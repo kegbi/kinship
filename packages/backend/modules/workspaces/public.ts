@@ -243,6 +243,11 @@ export { createMemberUiStateManagement } from "./application/member_ui_state.ts"
  * notifications read model reads the stored value with.
  */
 export { readThroughInstant } from "./domain/ui_state_rules.ts";
+/**
+ * The member's recent people, as the stored interface state lists them,
+ * which the search read model answers an empty query with (FEQ-05).
+ */
+export { storedRecentPersonIds } from "./domain/ui_state_rules.ts";
 export type { MemberUiStateManagement } from "./application/member_ui_state.ts";
 export type {
   MemberUiState,

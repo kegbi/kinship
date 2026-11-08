@@ -5,6 +5,7 @@ import {
   projection,
   RECENT_PEOPLE_LIMIT,
   recentPersonIds,
+  storedRecentPersonIds,
   storedUiState,
   validMemberUiState,
   withRecentPerson,
@@ -110,6 +111,20 @@ Deno.test("[GAP-018] the stored list is cleaned before it is read", () => {
     ).length,
     RECENT_PEOPLE_LIMIT,
   );
+});
+
+Deno.test("[FEQ-05] the recent list is read from the stored column, whatever it holds", () => {
+  const stored = {
+    recentPersonIds: [PERSON(1).toUpperCase(), "nope", PERSON(1), PERSON(2)],
+    theme: "dark",
+  };
+  assertEquals(storedRecentPersonIds(stored), [PERSON(1), PERSON(2)]);
+  assertEquals(storedRecentPersonIds(JSON.stringify(stored)), [
+    PERSON(1),
+    PERSON(2),
+  ]);
+  assertEquals(storedRecentPersonIds(undefined), []);
+  assertEquals(storedRecentPersonIds({ recentPersonIds: "nope" }), []);
 });
 
 Deno.test("[GAP-018] recording a person moves them to the front and keeps eight", () => {

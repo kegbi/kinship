@@ -1,6 +1,9 @@
 /**
  * Workspace search (GAP-048, `SEARCH-001`): one query over the people, notes,
- * activities, journal posts, and tasks the member may read.
+ * activities, journal posts, and tasks the member may read. An empty query
+ * answers the member's recent people in the people group, with the avatar
+ * and name parts a search answers, so the palette opens with one request
+ * (FEQ-05).
  *
  * The repository decides which rows are visible, by the rules each owning
  * module lists its own rows with. This file bounds the request, revalidates
@@ -53,6 +56,8 @@ export interface SearchInput {
 export type SearchEntityKind = "activity" | "journal-post" | "note" | "task";
 
 export interface SearchPersonResult {
+  /** Present on a recent person, who may be archived; a search finds none. */
+  readonly archived?: boolean;
   readonly avatar?: PersonAvatarRecord;
   readonly familyName?: string;
   readonly givenName: string;
@@ -218,7 +223,32 @@ export function createWorkspaceSearch(dependencies: {
     ): Promise<SearchResult> => {
       if (!await readable(actor)) return { status: "forbidden" };
       const query = input.query.trim().slice(0, SEARCH_QUERY_MAXIMUM).trim();
-      if (!query) return { groups: EMPTY_GROUPS, query, status: "ready" };
+      if (!query) {
+        const recent = await dependencies.repository.recentPeople({
+          memberId: actor.memberId,
+          role: actor.role,
+          userId: actor.userId,
+          workspaceId: actor.workspaceId,
+          limit: limitOf(input.limit),
+        });
+        if (recent.status === "timed-out") return { status: "unavailable" };
+        const [, ...text] = EMPTY_GROUPS;
+        return {
+          groups: [
+            {
+              kind: "people",
+              results: recent.people.map((person) => ({
+                ...person,
+                href: personHref(person.id),
+                kind: "person" as const,
+              })),
+            },
+            ...text,
+          ],
+          query,
+          status: "ready",
+        };
+      }
       const command = {
         memberId: actor.memberId,
         role: actor.role,

@@ -1034,6 +1034,82 @@ Deno.test("[SEARCH-001] AUD-Q1 a common word names and cuts only the rows shown,
   });
 });
 
+Deno.test("[FEQ-05] a blank query answers the member's recent people in their workspace", async () => {
+  const { foreign, reader } = await twoWorkspaces("search-recent");
+  const actor = actorOf(reader);
+  const empty = ready(await search.search(actor, { limit: 8, query: "" }));
+  assertEquals(ids(empty.people), []);
+
+  const friend = crypto.randomUUID();
+  await sql`
+    insert into crm.people (id, workspace_id, created_by_member_id,
+      given_name, middle_name, family_name, nickname)
+    values (${friend}, ${reader.workspaceId}, ${reader.memberId}, 'Ada',
+      'King', 'Lovelace', 'Countess')
+  `;
+  await sql`
+    insert into crm.person_avatars (person_id, background_color)
+    values (${friend}, '#123456')
+  `;
+  const archived = await addPerson(reader, "Archived");
+  await sql`update crm.people set archived_at = now() where id = ${archived}`;
+  const gone = await addPerson(reader, "Gone");
+  await sql`update crm.people set deleted_at = now() where id = ${gone}`;
+  await sql`
+    insert into crm.member_preferences (member_id, ui_state)
+    values (${reader.memberId}, ${
+    sql.json({
+      recentPersonIds: [
+        foreign.personId,
+        friend.toUpperCase(),
+        "not-a-uuid",
+        friend,
+        gone,
+        archived,
+        reader.personId,
+      ],
+    })
+  })
+  `;
+  const recent = ready(await search.search(actor, { limit: 8, query: "  " }));
+  assertEquals(ids(recent.people), [friend, archived, reader.personId]);
+  assertEquals(recent.people.results[0], {
+    archived: false,
+    avatar: { backgroundColor: "#123456" },
+    familyName: "Lovelace",
+    givenName: "Ada",
+    id: friend,
+    middleName: "King",
+    nickname: "Countess",
+    href: `/app/people/${friend}`,
+    kind: "person",
+  });
+  assertEquals(
+    recent.people.results.map((person) => person.archived),
+    [false, true, false],
+  );
+  assertEquals(
+    [recent.notes, recent.activities, recent.journalPosts, recent.tasks]
+      .map((group) => group.results.length),
+    [0, 0, 0, 0],
+  );
+  const bounded = ready(await search.search(actor, { limit: 2, query: "" }));
+  assertEquals(ids(bounded.people), [friend, archived]);
+
+  // Another member of the workspace keeps their own recent list.
+  const colleague = await memberOf(reader, "member");
+  const theirs = ready(
+    await search.search(actorOf(colleague), { limit: 8, query: "" }),
+  );
+  assertEquals(ids(theirs.people), []);
+
+  await revokeMembership(sql, reader.memberId);
+  assertEquals(
+    (await search.search(actor, { limit: 8, query: "" })).status,
+    "forbidden",
+  );
+});
+
 Deno.test("[SEARCH-001] closes its connections", async () => {
   await closeResources();
 });

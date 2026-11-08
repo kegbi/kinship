@@ -34,6 +34,14 @@ export interface SearchPersonRecord {
   readonly nickname?: string;
 }
 
+/**
+ * A person the member viewed recently (FEQ-05): what an empty query answers,
+ * in the order the member viewed them. Unlike a search, it may be archived.
+ */
+export interface SearchRecentPersonRecord extends SearchPersonRecord {
+  readonly archived: boolean;
+}
+
 /** What every matched note, activity, journal post, and task carries. */
 export interface SearchEntityRecord {
   readonly id: string;
@@ -118,8 +126,22 @@ export interface SearchTimedOut {
 /**
  * Two statements, so a slow text scan never holds up people search: people
  * on the directory's own indexed pattern first, then the four text groups.
+ * An empty query reads the member's recent people instead, in one statement.
  */
 export interface SearchRepository {
+  /**
+   * The people in the member's recent list, as Today's recent people reads
+   * it: in this workspace, not deleted, archived ones included.
+   */
+  recentPeople(
+    command: SearchActor & { readonly limit: number },
+  ): Promise<
+    | {
+      readonly people: readonly SearchRecentPersonRecord[];
+      readonly status: "ready";
+    }
+    | SearchTimedOut
+  >;
   searchPeople(
     command: SearchActor & SearchCriteria,
   ): Promise<

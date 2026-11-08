@@ -14,6 +14,7 @@
  */
 
 import * as client from "./generated/auth-client.ts";
+import { request } from "./client/request.ts";
 import document from "./openapi/openapi.json" with { type: "json" };
 import { assert } from "../backend/testing/assert.ts";
 
@@ -840,4 +841,57 @@ Deno.test("[FEQ-01] a read sent after a write never joins one sent before it", a
     JSON.stringify(sent) === JSON.stringify(expected),
     `the requests were ${JSON.stringify(sent)}`,
   );
+});
+
+Deno.test("[FEQ-05] a search carries its own signal and is never shared", async () => {
+  const original = globalThis.fetch;
+  const sent: { readonly init: RequestInit; readonly url: string }[] = [];
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ init: init ?? {}, url: String(input) });
+    const signal = init?.signal;
+    return new Promise<Response>((resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason));
+      setTimeout(() => resolve(Response.json({ status: "ready" })), 0);
+    });
+  }) as typeof fetch;
+  try {
+    const superseded = new AbortController();
+    const current = new AbortController();
+    const input = { limit: 8, query: "" } as const;
+    const first = client.searchWorkspace(input, UUID, superseded.signal);
+    const second = client.searchWorkspace(input, UUID, current.signal);
+    const unsignalled = client.searchWorkspace(input, UUID);
+    assert(sent.length === 3, `${sent.length} fetches were sent, not three`);
+    assert(
+      sent[0]?.init.signal === superseded.signal &&
+        sent[1]?.init.signal === current.signal,
+      "each search hands fetch its own signal",
+    );
+    assert(
+      sent[0]?.url === "/api/v1/search?q=&limit=8",
+      `the empty query is spelled as an empty q: ${sent[0]?.url}`,
+    );
+    superseded.abort();
+    const [aborted, kept, plain] = await Promise.allSettled([
+      first,
+      second,
+      unsignalled,
+    ]);
+    assert(aborted.status === "rejected", "the superseded search is aborted");
+    assert(
+      kept.status === "fulfilled" && kept.value.ok &&
+        plain.status === "fulfilled" && plain.value.ok,
+      "aborting one search never cancels another",
+    );
+    // A read carrying a header beside the workspace is its own request too.
+    const headers = { "Accept-Language": "fr", "X-Workspace-Id": UUID };
+    await Promise.all([
+      request("/api/v1/session", { headers }),
+      request("/api/v1/session", { headers }),
+    ]);
+    const headed = sent.slice(3);
+    assert(headed.length === 2, `${headed.length} fetches were sent, not two`);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

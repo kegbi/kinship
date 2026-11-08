@@ -1281,7 +1281,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** @description Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. */
+        /** @description Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. */
         readonly get: operations["searchWorkspace"];
         readonly put?: never;
         readonly post?: never;
@@ -4444,6 +4444,7 @@ export interface components {
             readonly name: string;
         };
         readonly SearchPersonResult: {
+            readonly archived?: boolean;
             readonly avatar?: components["schemas"]["PersonAvatar"];
             readonly familyName?: string;
             readonly givenName: string;

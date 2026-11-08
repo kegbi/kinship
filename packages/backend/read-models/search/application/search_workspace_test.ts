@@ -29,6 +29,7 @@ function answering(
 ): SearchRepository {
   const { people, ...text } = found;
   return {
+    recentPeople: () => Promise.reject(new Error("must not read recent")),
     searchPeople: (command) => {
       seen.push(command);
       return Promise.resolve({ people, status: "ready" });
@@ -180,24 +181,83 @@ Deno.test("[SEARCH-001] search hands the repository the name forms and fold it w
   assertEquals(seen[1]?.nameFold, []);
 });
 
-Deno.test("[SEARCH-001] a blank query reads nothing and a revoked member is refused", async () => {
+Deno.test("[FEQ-05] a blank query answers the member's recent people alone", async () => {
+  const seen: Parameters<SearchRepository["recentPeople"]>[0][] = [];
   const repository: SearchRepository = {
+    recentPeople: (command) => {
+      seen.push(command);
+      return Promise.resolve({
+        people: [
+          {
+            archived: false,
+            avatar: { backgroundColor: "#123456" },
+            familyName: "Lovelace",
+            givenName: "Ada",
+            id: personId,
+          },
+          { archived: true, givenName: "Grace", id: itemId },
+        ],
+        status: "ready",
+      });
+    },
     searchPeople: () => Promise.reject(new Error("must not search")),
     searchText: () => Promise.reject(new Error("must not search")),
   };
-  const blank = await search(repository).search(actor, { query: "   " });
-  assert(blank.status === "ready", "a blank query is an empty answer");
+  const blank = await search(repository).search(actor, {
+    limit: 8,
+    query: "   ",
+  });
+  assert(blank.status === "ready", "a blank query answers");
+  assertEquals(blank.query, "");
   assertEquals(blank.groups.map((group) => group.results.length), [
-    0,
+    2,
     0,
     0,
     0,
     0,
   ]);
+  assertEquals(blank.groups[0].results, [
+    {
+      archived: false,
+      avatar: { backgroundColor: "#123456" },
+      familyName: "Lovelace",
+      givenName: "Ada",
+      id: personId,
+      href: `/app/people/${personId}`,
+      kind: "person",
+    },
+    {
+      archived: true,
+      givenName: "Grace",
+      id: itemId,
+      href: `/app/people/${itemId}`,
+      kind: "person",
+    },
+  ]);
+  assertEquals(seen.length, 1);
+  assertEquals(seen[0]?.workspaceId, actor.workspaceId);
+  assertEquals(seen[0]?.memberId, actor.memberId);
+  assertEquals(seen[0]?.limit, 8);
+});
+
+Deno.test("[FEQ-05] recent people that time out are unavailable, and a revoked member is refused", async () => {
+  const repository: SearchRepository = {
+    recentPeople: () => Promise.resolve({ status: "timed-out" }),
+    searchPeople: () => Promise.reject(new Error("must not search")),
+    searchText: () => Promise.reject(new Error("must not search")),
+  };
+  assertEquals(
+    (await search(repository).search(actor, { query: "" })).status,
+    "unavailable",
+  );
   const refused = await search(repository, "revoked").search(actor, {
-    query: "ada",
+    query: "",
   });
   assertEquals(refused.status, "forbidden");
+  const named = await search(repository, "revoked").search(actor, {
+    query: "ada",
+  });
+  assertEquals(named.status, "forbidden");
 });
 
 Deno.test("[SEARCH-001] snippets are plain text cut around the first match", () => {
@@ -239,6 +299,7 @@ Deno.test("[SEARCH-001] a failed or timed-out text statement still answers peopl
     ]
   ) {
     const result = await search({
+      recentPeople: () => Promise.reject(new Error("must not read recent")),
       searchPeople: () => Promise.resolve({ people, status: "ready" }),
       searchText,
     }).search(actor, { query: "ada" });
@@ -261,6 +322,7 @@ Deno.test("[SEARCH-001] a failed or timed-out text statement still answers peopl
     );
   }
   const timedOut = await search({
+    recentPeople: () => Promise.reject(new Error("must not read recent")),
     searchPeople: () => Promise.resolve({ status: "timed-out" }),
     searchText: () => Promise.reject(new Error("must not search text")),
   }).search(actor, { query: "ada" });

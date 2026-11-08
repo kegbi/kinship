@@ -26,6 +26,7 @@ export type {
   SearchPersonEntityRecord,
   SearchPersonRecord,
   SearchPersonReference,
+  SearchRecentPersonRecord,
   SearchRecords,
   SearchRepository,
   SearchTaskRecord,

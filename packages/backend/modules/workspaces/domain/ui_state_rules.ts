@@ -197,6 +197,14 @@ export function recentPersonIds(value: unknown): readonly string[] {
   return ids;
 }
 
+/**
+ * The recent list a stored column holds, cleaned as {@link recentPersonIds}
+ * cleans it: what the search read model answers an empty query with (FEQ-05).
+ */
+export function storedRecentPersonIds(stored: unknown): readonly string[] {
+  return recentPersonIds(storedUiState(stored).recentPersonIds);
+}
+
 /** The column as it will be written back with one person moved to the front. */
 export function withRecentPerson(
   stored: unknown,
