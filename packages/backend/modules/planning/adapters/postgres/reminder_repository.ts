@@ -40,7 +40,11 @@ import type {
   ReminderWorkspaceBoundary,
 } from "../../ports/reminder_repository.ts";
 import type { PlanningTransaction } from "../../ports/context.ts";
-import type { PersonRestorePublisher } from "../../../people/public.ts";
+import {
+  type PersonRestorePublisher,
+  UNNAMED_PERSON,
+} from "../../../people/public.ts";
+import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 
 interface ReminderRow {
   readonly anchor_on: string;
@@ -998,6 +1002,7 @@ interface ClaimRow {
   readonly member_id: string;
   readonly occurs_on: string;
   readonly person_id: string | null;
+  readonly person_name: string | null;
   readonly provider_idempotency_key: string;
   readonly provider_result_state:
     | "ambiguous"
@@ -1628,9 +1633,13 @@ export class PostgresReminderDeliveryRepository
         last_attempt_at = ${command.now}, next_attempt_at = null,
         updated_at = ${command.now}
       from claimable, crm.reminders reminder
+        left join crm.people person on person.id = reminder.person_id
       where occurrence.id = claimable.id and reminder.id = occurrence.reminder_id
       returning occurrence.id::text, occurrence.member_id::text,
         reminder.person_id::text, reminder.workspace_id::text,
+        case when person.id is not null then ${
+      sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))
+    } end as person_name,
         occurrence.channel, occurrence.claim_token::text,
         occurrence.attempt_count, occurrence.provider_idempotency_key,
         occurrence.provider_result_state, occurrence.title_snapshot as title,
@@ -1663,6 +1672,7 @@ export class PostgresReminderDeliveryRepository
         memberId: row.member_id,
         occursOn: row.occurs_on,
         ...(row.person_id ? { personId: row.person_id } : {}),
+        ...(row.person_name ? { personName: row.person_name } : {}),
         providerIdempotencyKey: row.provider_idempotency_key,
         providerResultState: row.provider_result_state,
         ...(recipientEmail ? { recipientEmail } : {}),

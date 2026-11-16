@@ -738,9 +738,13 @@ Deno.test("[PLANNING-003] an immediate email is recorded as attempted, sent once
   );
 });
 
-Deno.test("[PLANNING-003] an email names the date its reminder is for and how far ahead it was sent", async () => {
+Deno.test("[PLANNING-003] an email names its person, the date its reminder is for, and how far ahead it was sent", async () => {
   const harness = emailHarness([
-    emailClaim("ada", { leadTimeDays: 30, occursOn: "2026-12-02" }),
+    emailClaim("ada", {
+      leadTimeDays: 30,
+      occursOn: "2026-12-02",
+      personName: "Ada Lovelace",
+    }),
   ]);
   await emailWorker(harness).tick({ owner: "email" });
   assertEquals(harness.sent[0]?.items, [{
@@ -748,6 +752,7 @@ Deno.test("[PLANNING-003] an email names the date its reminder is for and how fa
     leadDays: 30,
     occursOn: "2026-12-02",
     personId: "person-ada",
+    personName: "Ada Lovelace",
     title: "Call ada",
   }]);
 });

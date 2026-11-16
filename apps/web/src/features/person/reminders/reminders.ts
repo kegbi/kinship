@@ -62,6 +62,26 @@ export function reminderStateText(
   return reminder.isActive ? "No future occurrence" : "Disabled";
 }
 
+/**
+ * The date a reminder is anchored on and how it repeats from there: "Every
+ * year from Nov 16, 2025". The next-occurrence line only says when the next
+ * notification goes out, so without this the reminder's own date is nowhere.
+ */
+export function reminderScheduleText(
+  reminder: Reminder,
+  preferences: TimePreferences | undefined,
+): string {
+  const anchor = formatCalendarDate(
+    reminder.anchorOn,
+    preferences?.locale ?? "en",
+  );
+  if (reminder.recurrenceUnit === "none") return `Once on ${anchor}`;
+  const every = reminder.recurrenceInterval === 1
+    ? `Every ${reminder.recurrenceUnit}`
+    : intervalText(reminder.recurrenceInterval, reminder.recurrenceUnit);
+  return `${every} from ${anchor}`;
+}
+
 /** "Every 2 weeks": a cadence's interval. */
 export function intervalText(count: number, unit: string): string {
   return `Every ${count} ${unit}${count === 1 ? "" : "s"}`;

@@ -51,6 +51,8 @@ export interface ReminderEmailItem {
   readonly occursOn?: string;
   /** The reminder's person, whose workspace the email links to. */
   readonly personId?: string;
+  /** The reminder's person by name, so the email says who it is about. */
+  readonly personName?: string;
   readonly title: string;
 }
 

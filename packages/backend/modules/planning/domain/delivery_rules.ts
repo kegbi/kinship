@@ -54,6 +54,8 @@ export interface ClaimedReminderOccurrence {
   readonly occursOn?: string;
   /** The reminder's person, when the reminder names one. */
   readonly personId?: string;
+  /** That person's display name, as an email names them. */
+  readonly personName?: string;
   readonly providerIdempotencyKey: string;
   readonly providerResultState: ProviderResultState;
   /** The member's verified address, absent when they have none. */

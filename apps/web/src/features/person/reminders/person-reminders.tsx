@@ -79,6 +79,7 @@ import {
   REMINDERS_FAILED,
   REMINDERS_FORBIDDEN,
   REMINDERS_LOADING,
+  reminderScheduleText,
   remindersReducer,
   type RemindersStatus,
   reminderStateText,
@@ -535,6 +536,7 @@ export function PersonReminders(props: PersonRemindersProps) {
         {state.reminders.map((reminder) => (
           <li className="reminder-item" key={reminder.id}>
             <h3>{reminder.title}</h3>
+            <p>{reminderScheduleText(reminder, timePreferences)}</p>
             <p>{reminderStateText(reminder, timePreferences)}</p>
             {!archived && reminder.isActive
               ? (

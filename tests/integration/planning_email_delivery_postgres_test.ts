@@ -257,10 +257,13 @@ Deno.test("[PLANNING-003] an immediate reminder email arrives once with a link t
   );
   const messages = await messagesTo(email);
   assertEquals(messages.length, 1, "one email");
-  assertEquals(messages[0]?.Subject, "Reminder: Call Ada by email - today");
+  assertEquals(
+    messages[0]?.Subject,
+    "Reminder for Ada: Call Ada by email - today",
+  );
   const text = await messageText(messages[0]!.ID);
   assert(
-    text.includes("Call Ada by email") &&
+    text.includes("Call Ada by email") && text.includes("For: Ada") &&
       text.includes(`${WEB_ORIGIN}/app/people/${personId}`),
     text,
   );

@@ -132,6 +132,7 @@ function emailItem(occurrence: ClaimedReminderOccurrence) {
       : {}),
     ...(occurrence.occursOn ? { occursOn: occurrence.occursOn } : {}),
     ...(occurrence.personId ? { personId: occurrence.personId } : {}),
+    ...(occurrence.personName ? { personName: occurrence.personName } : {}),
     title: occurrence.title,
   };
 }

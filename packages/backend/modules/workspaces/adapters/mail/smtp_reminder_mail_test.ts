@@ -60,6 +60,43 @@ Deno.test("[PLANNING-003] a reminder email carries its title, body, and an absol
   assert(!/token|password/i.test(text), "no secret material");
 });
 
+Deno.test("[PLANNING-003] a reminder email names the person it is about", () => {
+  const item = {
+    body: "",
+    leadDays: 0,
+    occursOn: "2026-11-16",
+    personId: "11111111-1111-4111-8111-111111111111",
+    personName: "Ada\r\nLovelace",
+    title: "Congratulate on the birth",
+  };
+  const message = buildReminderMessage(options, {
+    idempotencyKey: "reminder-occurrence:named",
+    items: [item],
+    to: "owner@example.test",
+  });
+  assert(
+    message.includes(
+      "Subject: Reminder for Ada Lovelace: Congratulate on the birth - today\r\n",
+    ),
+    message,
+  );
+  const text = decodedParts(message);
+  assert(text.includes("For: Ada Lovelace\r\nWhen: Monday,"), text);
+  assert(text.includes("<br>For: Ada Lovelace<br>When:"), text);
+  const digest = decodedParts(buildReminderMessage(options, {
+    digestDate: "2026-11-16",
+    idempotencyKey: "digest:named",
+    items: [item, { body: "", title: "No person" }, {
+      ...item,
+      personName: "<Grace>",
+    }],
+    to: "owner@example.test",
+  }));
+  assert(digest.includes("For: Ada Lovelace"), digest);
+  assert(digest.includes("For: &lt;Grace&gt;"), digest);
+  assertEquals(digest.split("For: ").length - 1, 4, "one line per named part");
+});
+
 Deno.test("[PLANNING-003] an advance notice says how far ahead it is, when the date falls, and why", () => {
   const message = buildReminderMessage(options, {
     idempotencyKey: "reminder-occurrence:lead",

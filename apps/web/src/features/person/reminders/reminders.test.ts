@@ -9,6 +9,7 @@ import {
   initialRemindersState,
   intervalText,
   nextReminderText,
+  reminderScheduleText,
   remindersReducer,
   reminderStateText,
   reminderSummary,
@@ -73,6 +74,23 @@ describe("PLANNING-002 reminder presentation", () => {
     expect(reminderStateText(reminder, undefined)).toBe(
       "manual attention · Time unavailable",
     );
+  });
+
+  it("says the date a reminder is anchored on and how it repeats", () => {
+    expect(reminderScheduleText(reminder, utc)).toBe(
+      "Every month from Aug 20, 2026",
+    );
+    expect(
+      reminderScheduleText({
+        ...reminder,
+        anchorOn: "2025-11-16",
+        recurrenceInterval: 2,
+        recurrenceUnit: "year",
+      }, utc),
+    ).toBe("Every 2 years from Nov 16, 2025");
+    expect(
+      reminderScheduleText({ ...reminder, recurrenceUnit: "none" }, undefined),
+    ).toBe("Once on Aug 20, 2026");
   });
 
   it("names the date an advance notice is for, in the member's time zone", () => {

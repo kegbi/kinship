@@ -10,7 +10,9 @@
  * the worker never sends it again.
  *
  * Every email names the reminder, its body snapshot, and an absolute link to
- * the person's workspace built from the configured public origin. When the
+ * the person's workspace built from the configured public origin, and names
+ * that person when the reminder has one, since a title alone ("Birthday")
+ * rarely says whom it is about. When the
  * reminder's date is known, the email names it and says how far ahead it is,
  * so an advance notice never reads as the day itself, and points at the
  * workspace reminder rules that set advance notices. It carries no token,
@@ -32,6 +34,8 @@ export interface ReminderMailItem {
   /** The reminder's own date (`YYYY-MM-DD`), when known. */
   readonly occursOn?: string;
   readonly personId?: string;
+  /** The reminder's person by name, when it has one. */
+  readonly personName?: string;
   readonly title: string;
 }
 
@@ -185,9 +189,12 @@ export function buildReminderMessage(
 ): string {
   const items = message.items.map((item) => {
     const when = whenOf(item);
+    const person = line(item.personName ?? "");
     return {
       body: line(item.body),
+      forLine: person ? `For: ${person}` : undefined,
       link: personLink(options, item),
+      person,
       title: line(item.title) || "Reminder",
       when,
       whenLine: when ? `When: ${when.long} (${when.relative})` : undefined,
@@ -197,7 +204,9 @@ export function buildReminderMessage(
   const first = items[0];
   const subject = digest
     ? `Your Kinship reminders for ${message.digestDate}`
-    : `Reminder: ${first?.title ?? "Reminder"}${
+    : `${first?.person ? `Reminder for ${first.person}` : "Reminder"}: ${
+      first?.title ?? "Reminder"
+    }${
       first?.when
         ? first.when.ahead
           ? ` - ${first.when.relative}, on ${first.when.short}`
@@ -224,6 +233,7 @@ export function buildReminderMessage(
     "",
     ...items.flatMap((item) => [
       digest ? `- ${item.title}` : item.title,
+      ...(item.forLine ? [item.forLine] : []),
       ...(item.whenLine ? [item.whenLine] : []),
       ...(item.body ? [item.body] : []),
       ...(item.link ? [`Open in Kinship: ${item.link}`] : []),
@@ -236,8 +246,10 @@ export function buildReminderMessage(
     `<html><body><p>${escapeHtml(intro)}</p><ul>`,
     ...items.map((item) =>
       `<li><strong>${escapeHtml(item.title)}</strong>${
-        item.whenLine ? `<br>${escapeHtml(item.whenLine)}` : ""
-      }${item.body ? `<br>${escapeHtml(item.body)}` : ""}${
+        item.forLine ? `<br>${escapeHtml(item.forLine)}` : ""
+      }${item.whenLine ? `<br>${escapeHtml(item.whenLine)}` : ""}${
+        item.body ? `<br>${escapeHtml(item.body)}` : ""
+      }${
         item.link
           ? `<br><a href="${escapeHtml(item.link)}">Open in Kinship</a>`
           : ""
