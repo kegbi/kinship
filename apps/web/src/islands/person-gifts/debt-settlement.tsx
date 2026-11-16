@@ -42,6 +42,7 @@ export function DebtSettlementDialog(props: {
         </DialogDescription>
         <form
           className="profile-fact-form"
+          method="post"
           onSubmit={(event) => {
             event.preventDefault();
             props.onSave(reason.trim(), photo);

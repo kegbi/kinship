@@ -1621,26 +1621,31 @@ Playwright test carrying its stable flow ID.
       moved from five passed/one failed to six passed, with affected lint and
       formatting passing; the compatibility guard is retained.
 
-- [ ] **REL-095 — Directory capacity fixture no longer satisfies its read
+- [x] **REL-095 — Directory capacity fixture no longer satisfies its read
       criteria.** The 2026-10-25 integration checkpoint reports TS2379 at
       `people_directory_capacity_postgres_test.ts:116`: `nameFold` and
       `nameForms` are missing. The fixture and criteria are unchanged from the
       pre-API-plan baseline. A bounded direct type-check reproduces the error;
       it blocks root `check` and the API coverage set. Repair the owning fixture
-      separately rather than relaxing type checks.
+      separately rather than relaxing type checks. Repaired 2026-11-16: the
+      fixture passes empty `nameFold` and `nameForms`, matching its empty
+      search.
 
-- [ ] **REL-096 — Existing UI tests fail Deno's require-await lint rule.** Three
+- [x] **REL-096 — Existing UI tests fail Deno's require-await lint rule.** Three
       callbacks each in `person-gifts.test.tsx` and `theme-toggle.test.ts` are
       async without awaiting. Both files are unchanged from the pre-API-plan
       baseline; the two-file lint reproduction reports the same six failures.
-      The remaining Deno lint and frontend ESLint checks pass.
+      The remaining Deno lint and frontend ESLint checks pass. Repaired
+      2026-11-16: the six callbacks await or return a promise without `async`.
 
-- [ ] **REL-097 — Runtime pin assertion disagrees with the pinned images.** Root
+- [x] **REL-097 — Runtime pin assertion disagrees with the pinned images.** Root
       `test` stops after 73 passing tests because GAP-041 expects Node 24.15.0
       from `.tool-versions`, while the Dockerfiles pin Node 24.22.1 by digest.
       The Dockerfiles, runtime file, and assertion are unchanged from the
       pre-API-plan baseline; the filtered assertion reproduces the failure.
       Resolve the accepted runtime pin together in a separate candidate.
+      Repaired 2026-11-16: `.tool-versions` pins Node 24.22.1, the version the
+      images and production already run.
 
 - [ ] **REL-098 — Frontend build-output assertions have baseline drift.** Astro
       emits the frontend, but its output suite reports ten passes and four
@@ -1744,7 +1749,14 @@ Playwright test carrying its stable flow ID.
       another way (for example a response file, a config `include`, or
       chunking).
 
-- [ ] **REL-106 — The `api` unit manifest lacks a schema catalog read
+      Partly repaired 2026-11-16, enough for the push hook to run on that host:
+      the task runner splits a long file list across command lines
+      (`argumentBatches`) for `check` and the unit sets, and the relationships
+      dependency test spawns `deno` by the name its permission grants. Still
+      open: `test:coverage` (its `--clean` forbids batching), `tools/dev.ts`,
+      and `tools/dependency_audit_gate.ts`.
+
+- [x] **REL-106 — The `api` unit manifest lacks a schema catalog read
       permission.** Observed during the 2026-11-07 audit-remediation run on the
       REL-105 Windows host; unrelated to the remediation tickets.
       `tools/migrations/baseline_test.ts:90` ("schema v12 specification reports
@@ -1753,9 +1765,10 @@ Playwright test carrying its stable flow ID.
       The failure is present since `8b3d2c7b` and reproduces on `b387d1cf`.
       Grant that read path in the manifest set that runs the test rather than
       skipping or narrowing the assertion. REL-010 (closed) repaired the same
-      kind of permission gap for the v7 schema files.
+      kind of permission gap for the v7 schema files. Repaired 2026-11-16 for
+      the current schema: the `api` unit set may read the v15 field catalog.
 
-- [ ] **REL-107 — Four web unit tests fail at the baseline.** Observed during
+- [x] **REL-107 — Four web unit tests fail at the baseline.** Observed during
       the 2026-11-07 audit-remediation run on the REL-105 Windows host;
       unrelated to the remediation tickets. The failing cases are
       `apps/web/src/lib/application-controls.test.ts` ("keeps application
@@ -1767,7 +1780,10 @@ Playwright test carrying its stable flow ID.
       and `api-reference.css`. All four reproduce on `b387d1cf` before any
       remediation change, and they also block `test:coverage --module=web`.
       Repair the owning contracts or sources separately; do not relax the
-      contracts to pass.
+      contracts to pass. Repaired 2026-11-16: the dead `.sr-status` rules are
+      removed, the settlement form has a method, `api-reference.css` has a
+      documented owner, and the plus glyph's optical offset is a recorded
+      spacing exception.
 
 - [ ] **REL-108 — The IMPORT-002 status assertion matches two elements.**
       Observed during the 2026-11-07 audit-remediation run on the REL-105

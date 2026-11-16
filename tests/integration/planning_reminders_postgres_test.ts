@@ -517,8 +517,12 @@ Deno.test("PLANNING-002 PostgreSQL replenishes ninth occurrence and enforces del
     })).status === 200,
     "rolling fixture timezone saved",
   );
+  // Anchored tomorrow in the workspace's zone, so the eight dates the window
+  // holds never depend on the day the suite runs.
+  const anchorOn = Temporal.Now.plainDateISO("Europe/Belgrade").add({ days: 1 })
+    .toString();
   const created = await request(fixture, "/api/v1/reminders", "POST", {
-    anchorOn: "2026-10-20",
+    anchorOn,
     personId,
     recurrenceInterval: 1,
     recurrenceUnit: "day",
@@ -533,11 +537,20 @@ Deno.test("PLANNING-002 PostgreSQL replenishes ninth occurrence and enforces del
     update crm.reminder_occurrences set status = 'sent', sent_at = deliver_at,
       provider_receipt = 'seed-receipt', provider_result_state = 'confirmed',
       provider_effect_at = deliver_at, visible_at = deliver_at
-    where reminder_id = ${reminderId}::uuid and occurs_on = '2026-10-20'::date
+    where reminder_id = ${reminderId}::uuid and occurs_on = ${anchorOn}::date
   `;
+  const deliveryOn = (days: number) =>
+    Temporal.PlainDate.from(anchorOn).add({ days }).toZonedDateTime({
+      plainTime: Temporal.PlainTime.from("02:30"),
+      timeZone: "Europe/Belgrade",
+    }).epochMilliseconds;
+  // The worker's clock stands just after the first delivery, so seven dates
+  // are ahead and the window owes exactly a ninth.
+  const afterFirstDelivery = new Date(deliveryOn(0) + 150 * 60_000);
+  const ninthAt = deliveryOn(8);
   const rollingWorker = createReminderDeliveryWorker({
     audit: reminderDeliveryAuditFrom(new PostgresAuditEventRecorder()),
-    clock: { now: () => new Date("2026-10-20T03:00:00Z") },
+    clock: { now: () => afterFirstDelivery },
     provider: new DurableFakeProvider(),
     repository: deliveryRepository,
     transaction: deliveryTransaction,
@@ -560,7 +573,7 @@ Deno.test("PLANNING-002 PostgreSQL replenishes ninth occurrence and enforces del
   assert(
     rolling?.count === 9 && rolling.distinct_count === 9 &&
       rolling.ninth_at !== null &&
-      Date.parse(rolling.ninth_at) === Date.parse("2026-10-28T01:30:00Z"),
+      Date.parse(rolling.ninth_at) === ninthAt,
     `rolling generation stopped or duplicated: ${JSON.stringify(rolling)}`,
   );
 });
@@ -832,24 +845,43 @@ Deno.test("PLANNING-002 PostgreSQL important dates publish one deliverable in-ap
     from crm.reminder_occurrences where id = ${occurrence.id}::uuid
   `;
   const attention = await request(fixture, "/api/v1/today/attention");
+  interface AttentionItem {
+    readonly id: string;
+    readonly kind: string;
+  }
   const attentionBody = await attention.json() as {
     readonly attention: {
-      readonly overdue: readonly {
-        readonly id: string;
-        readonly kind: string;
-      }[];
+      readonly nextSevenDays: readonly AttentionItem[];
+      readonly overdue: readonly AttentionItem[];
+      readonly today: readonly AttentionItem[];
     };
+    readonly upcoming: readonly AttentionItem[];
   };
+  const [personDate] = await sql<{ readonly id: string }[]>`
+    select person_date_id::text as id from crm.reminders
+    where person_id = ${personId}::uuid and target_kind = 'person_date'
+  `;
+  // Today lists an important date once, from the calendar and under the
+  // date's own id; its delivery schedule never becomes an attention item,
+  // however overdue a notice is. A direct reminder is listed by occurrence.
+  const everyItem = [
+    ...Object.values(attentionBody.attention).flat(),
+    ...attentionBody.upcoming,
+  ];
+  const importantDates = everyItem.filter((item) =>
+    item.kind === "important-date"
+  );
   assert(
     attention.status === 200 &&
-      attentionBody.attention.overdue.filter((item) =>
-          item.kind === "important-date" && item.id === occurrence.id
-        ).length === 1 &&
+      importantDates.length === 1 && importantDates[0]?.id === personDate?.id &&
+      !everyItem.some((item) => item.id === occurrence.id) &&
       attentionBody.attention.overdue.filter((item) =>
           item.kind === "reminder" &&
           item.id === directReminder.nextOccurrence!.id
         ).length === 1,
-    "direct and important-date reminders were conflated, missing, or duplicated",
+    `direct and important-date reminders were conflated, missing, or duplicated: ${
+      JSON.stringify(everyItem)
+    }`,
   );
   await sql`
     update crm.reminder_occurrences set deliver_at = now() + interval '1 day'

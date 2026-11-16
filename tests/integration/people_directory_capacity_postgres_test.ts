@@ -119,6 +119,8 @@ Deno.test({
               ...(after ? { after } : {}),
               lifecycle: "active",
               limit: 20,
+              nameFold: [],
+              nameForms: [],
               search: "",
               sort,
               starred: false,

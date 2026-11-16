@@ -120,8 +120,9 @@ async function runUnitSet(
     return;
   }
   const tests = await resolveTests(set);
-  await deno(
-    ["test", ...permissionFlags(set.permissions), ...tests],
+  await denoOver(
+    ["test", ...permissionFlags(set.permissions)],
+    tests,
     environment,
   );
 }
@@ -296,6 +297,53 @@ export async function checkTargets(): Promise<string[]> {
   return [...targets].sort();
 }
 
+/**
+ * The longest argument list one spawned `deno` command carries (REL-105). On
+ * a Windows host whose `deno` is a version-manager shim, the shim refuses a
+ * command line beyond roughly 8,000 characters, far below the operating
+ * system's own limit, so the check gate and the largest unit set could not
+ * run there at all.
+ */
+export const COMMAND_LINE_CHARACTERS = 7_000;
+
+/**
+ * A file list split, in order, so that each batch fits one command line
+ * together with the `fixed` arguments every batch repeats. Every file lands
+ * in exactly one batch; one too long for the budget gets a batch of its own
+ * rather than being dropped.
+ */
+export function argumentBatches(
+  fixed: readonly string[],
+  files: readonly string[],
+  limit: number = COMMAND_LINE_CHARACTERS,
+): string[][] {
+  const budget = limit - fixed.join(" ").length;
+  const batches: string[][] = [];
+  let length = 0;
+  for (const file of files) {
+    const current = batches.at(-1);
+    if (current && length + 1 + file.length <= budget) {
+      current.push(file);
+      length += 1 + file.length;
+    } else {
+      batches.push([file]);
+      length = file.length;
+    }
+  }
+  return batches;
+}
+
+/** Runs one `deno` subcommand over a file list, in as few commands as fit. */
+async function denoOver(
+  fixed: readonly string[],
+  files: readonly string[],
+  environment: Readonly<Record<string, string>> = {},
+): Promise<void> {
+  for (const batch of argumentBatches(fixed, files)) {
+    await deno([...fixed, ...batch], environment);
+  }
+}
+
 /** Every module the `build` gate compiles before it emits artifacts. */
 export function buildTargets(): readonly string[] {
   return [...PRODUCTION_ENTRYPOINTS];
@@ -312,7 +360,7 @@ function runArchitecture(): Promise<void> {
 
 async function runCheck(): Promise<void> {
   await runArchitecture();
-  await deno(["check", ...await checkTargets()]);
+  await denoOver(["check"], await checkTargets());
   await pnpm(["exec", "astro", "check", "--root", "apps/web"]);
 }
 

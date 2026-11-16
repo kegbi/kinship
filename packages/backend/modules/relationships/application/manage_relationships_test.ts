@@ -45,7 +45,11 @@ Deno.test("relationship adapter reads and writes only relationships-owned storag
 });
 
 async function directDependencies(target: string) {
-  const output = await new Deno.Command(Deno.execPath(), {
+  // The name the manifest's run permission grants, exactly as the task runner
+  // spawns it: where `deno` on PATH is a version-manager shim, the path of the
+  // running executable is a different binary that permission does not cover
+  // (REL-105).
+  const output = await new Deno.Command("deno", {
     args: ["info", "--json", target],
     env: { DENO_NO_PACKAGE_JSON: "1" },
   }).output();

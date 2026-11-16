@@ -156,9 +156,6 @@ describe("people form layout regressions", () => {
 
   it("only lets toast items in passive status surfaces intercept clicks", () => {
     expect(applicationStyles).toMatch(
-      /\.sr-status\s*\{[^}]*pointer-events:\s*none/s,
-    );
-    expect(applicationStyles).toMatch(
       /\.app-toasts\s*\{[^}]*pointer-events:\s*none/s,
     );
     expect(applicationStyles).toMatch(

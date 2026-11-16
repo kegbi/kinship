@@ -1243,7 +1243,9 @@ Deno.test("[IMPORT-001] Monica choices enforce complete live selections, save on
     await sql`select id,amount::text,currency_code,reason from crm.debts where workspace_id=${owner.workspaceId}::uuid order by reason`;
   assertEquals(debts.map((d) => [d.reason, d.amount, d.currency_code]), [[
     "Lunch",
-    "0.5550",
+    // A debt without a source currency has no known scale: the chosen
+    // currency labels the reviewed number and never divides it (2513e093).
+    "555.0000",
     "KWD",
   ], ["Train", "12345.0000", "JPY"]]);
   const people =

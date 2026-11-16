@@ -76,8 +76,8 @@ describe("header theme toggle", () => {
 
   it("cycles system, light, and dark, saving each choice", async () => {
     mocks.resolveWorkspaceSession.mockResolvedValue(ready());
-    mocks.saveMemberUiState.mockImplementation(async (input) =>
-      saved(input.theme)
+    mocks.saveMemberUiState.mockImplementation((input) =>
+      Promise.resolve(saved(input.theme))
     );
     const { mountThemeToggle } = await import("./theme-toggle.ts");
     await mountThemeToggle();
@@ -133,8 +133,8 @@ describe("header theme toggle", () => {
     mocks.onSessionRevalidated.mockImplementation((handler) => {
       revalidate = handler;
     });
-    mocks.saveMemberUiState.mockImplementation(async (input) =>
-      saved(input.theme)
+    mocks.saveMemberUiState.mockImplementation((input) =>
+      Promise.resolve(saved(input.theme))
     );
     const { mountThemeToggle } = await import("./theme-toggle.ts");
     const { mountThemeSync } = await import("../../../lib/theme.ts");
@@ -173,8 +173,8 @@ describe("header theme toggle", () => {
       </select><p id="theme-status"></p>`,
     );
     mocks.resolveWorkspaceSession.mockResolvedValue(ready("system"));
-    mocks.saveMemberUiState.mockImplementation(async (input) =>
-      saved(input.theme)
+    mocks.saveMemberUiState.mockImplementation((input) =>
+      Promise.resolve(saved(input.theme))
     );
     const { mountThemeToggle } = await import("./theme-toggle.ts");
     const { mountThemePreferenceControl } = await import(

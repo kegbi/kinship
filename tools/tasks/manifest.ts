@@ -663,6 +663,7 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
+          "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
           "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
           "personal-crm-schema/v15/personal_crm_schema_v15.sql",
           "packages/contracts",

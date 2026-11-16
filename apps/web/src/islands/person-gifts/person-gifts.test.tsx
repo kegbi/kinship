@@ -131,10 +131,12 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
     ).toBe(true);
     await act(async () => {
       reopening.resolve(jsonResponse({ status: "saved" }));
+      await Promise.resolve();
     });
     expect(historyButton().hasAttribute("disabled")).toBe(true);
     await act(async () => {
       refreshing.resolve(page({ debts: [lunch] }));
+      await Promise.resolve();
     });
     await waitFor(() =>
       expect(historyButton().hasAttribute("disabled")).toBe(false)
@@ -268,6 +270,7 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
     });
     await act(async () => {
       pending.resolve(jsonResponse({ status: "saved" }));
+      await Promise.resolve();
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(stateLine("debt")).toBe(

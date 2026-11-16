@@ -451,16 +451,20 @@ Deno has no Git-hook manager. Use Lefthook only to invoke repository tasks:
 
 - pre-commit: the non-mutating formatter check and lint, filtered to the staged
   files (`deno fmt --check`, `deno lint`, and ESLint for Astro templates);
-- pre-push: `deno task test:unit` and `deno task test:contract`;
+- pre-push: the whole-repository `deno task fmt:check`, `deno task lint`, and
+  `deno task check`, then `deno task test:unit` and `deno task test:contract`;
 - CI: the authoritative full suite, including all E2E browsers and
   security/dependency gates.
 
 Pre-commit must not format, fix, stage, or restage files. `deno task fix` is an
 explicit developer action. Target less than 15 seconds for pre-commit and less
 than three minutes for pre-push; measured checks that exceed those budgets move
-to CI rather than being silently skipped, which is why the type check, the
-integration, schema, and E2E suites, and the architecture checks are CI-only.
-The pre-commit staged-file filter mirrors the formatter's and the linter's own
+to CI rather than being silently skipped, which is why the integration, schema,
+and E2E suites are CI-only. The static gates are the exception to the budget:
+pre-commit sees only staged files, and lint, type, and runtime-pin errors in
+untouched files reached `main` and stayed red there for weeks, so the push hook
+runs them over the whole repository and accepts about ninety seconds more. The
+pre-commit staged-file filter mirrors the formatter's and the linter's own
 include and exclude lists in `deno.json`, so a hook never reports a file the
 repository gate ignores. Pre-commit measures about five seconds over every
 tracked file; pre-push measures about four minutes, just over its budget,

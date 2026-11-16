@@ -250,6 +250,13 @@ const spacingExceptions = [
     // The visually hidden legend uses the standard clipping offset.
   },
   {
+    path: "apps/web/src/styles/person-rail.css",
+    selector: ".profile-rail-add > span",
+    property: "padding-bottom",
+    value: ".15em",
+    // Optically centers the plus glyph in its circle; it scales with the glyph.
+  },
+  {
     path: "apps/web/src/styles/shell.css",
     selector: ".primary-nav",
     property: "margin",

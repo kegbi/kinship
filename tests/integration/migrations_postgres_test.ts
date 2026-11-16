@@ -699,7 +699,7 @@ Deno.test("[GAP-037] the migration runner refuses a changed immutable artifact b
       })
     );
     assert(
-      message.startsWith("Schema v9-to-v11 migration checksum mismatch"),
+      message.startsWith("Schema v9-to-v10 migration checksum mismatch"),
       `a changed migration was not refused by checksum: ${message}`,
     );
     const [table] = await sql<{ readonly present: boolean }[]>`

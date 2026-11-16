@@ -716,7 +716,11 @@ Deno.test("[GAP-004] Lefthook runs the fast gates on commit and push", async () 
 
   const prePush = hookStage(document, "pre-push");
   const pushed = new Set(taskNames(prePush.map((job) => job.run)));
-  for (const task of ["test:unit", "test:contract"]) {
+  // The whole-repository static gates run here too: pre-commit sees only the
+  // staged files, so a lint, format, or type error elsewhere reached CI.
+  for (
+    const task of ["fmt:check", "lint", "check", "test:unit", "test:contract"]
+  ) {
     assert(pushed.has(task), `pre-push must run deno task ${task}`);
   }
 });

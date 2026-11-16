@@ -13,7 +13,7 @@ no_auto_install: true
 glob_matcher: doublestar
 
 # Formatting and lint only: the type check and the test suites exceed the
-# fifteen-second pre-commit budget, so they run on push or in CI.
+# fifteen-second pre-commit budget, so they run on push.
 pre-commit:
   parallel: true
   jobs:
@@ -58,10 +58,19 @@ pre-commit:
         - "apps/web/src/**/*.astro"
       run: node_modules/.bin/eslint {staged_files}
 
-# The fast repository suites, unchanged from their `deno task` spelling.
+# The whole-repository static gates, then the fast suites, each unchanged from
+# its `deno task` spelling. Pre-commit sees only the staged files, so a lint,
+# format, or type error in a file a commit did not touch is caught here rather
+# than in CI. Cheapest first, so a push fails as early as it can.
 pre-push:
   parallel: false
   jobs:
+    - name: fmt
+      run: deno task fmt:check
+    - name: lint
+      run: deno task lint
+    - name: check
+      run: deno task check
     - name: unit
       run: deno task test:unit
     - name: contract

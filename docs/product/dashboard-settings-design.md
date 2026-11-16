@@ -365,6 +365,8 @@ Every style has one owner (GAP-032). Paths are under `apps/web/src/`.
   every component stylesheet.
 - `styles/public.css` and `styles/auth.css`: the public pages and the
   authentication pages; each is its layout's only stylesheet.
+- `styles/api-reference.css`: the public API reference page, which imports it
+  itself on top of the public layout's stylesheet.
 
 New styles go, in order of preference, into Tailwind utilities written in the
 island or Astro markup; into `components/ui/variants.ts` when they belong to a
