@@ -747,6 +747,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/people_relationships_postgres_test.ts",
       "tests/integration/settings_preferences_postgres_test.ts",
       "tests/integration/settings_personalization_postgres_test.ts",
+      // Personal tokens on the personalization routes (MCP-B9).
+      "tests/integration/api_tokens_vocabularies_postgres_test.ts",
       "tests/integration/time_preferences_postgres_test.ts",
       "tests/integration/migrations_postgres_test.ts",
       "tests/integration/workspace_isolation_postgres_test.ts",

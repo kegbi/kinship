@@ -7269,6 +7269,474 @@
         }
       }
     },
+    "/api/v1/settings/personalization/{section}": {
+      "get": {
+        "operationId": "listPersonalizationEntries",
+        "description": "Personal tokens require vocabularies:read. Lists one section's entries with their ids, for use wherever a record names a type, label, tag, or rule: profile-modules, gender-options, contact-method-types, contact-labels, activity-types, emotion-options, life-event-types, relationship-types, pet-categories, reminder-rules, or tags. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. The section's capabilities say whether it takes new entries; each entry's capabilities and referenceCount say whether it may be renamed, reordered, disabled (archived), made the default, deleted, or deleted only with a replacement. emotion-options and pet-categories are read-only. Grants are independent; vocabularies:write does not imply read access.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "vocabularies:read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/PersonalizationSection"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active-workspace personalization section",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPersonalizationEntry",
+        "description": "Personal tokens require vocabularies:write. Adds an entry to one section; the body differs by section: tags and contact-labels take name; relationship-types take forwardLabel and reverseLabel; reminder-rules take daysBefore; contact-method-types take name and an optional contactKind; the other sections take name and an optional sortOrder. emotion-options and pet-categories take no new entries. A name already used in the section conflicts. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "vocabularies:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/PersonalizationSection"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalizationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Personalization entry created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/personalization/{section}/{id}": {
+      "delete": {
+        "operationId": "deletePersonalizationEntry",
+        "description": "Personal tokens require vocabularies:write. Deletes one entry; send expectedUpdatedAt, and an optional replacementId, in the query string. While records still refer to the entry, the answer is replacement required with the count, and the delete succeeds only with a replacementId of another entry of the same section in the same workspace, to which those records move. Required or seeded entries cannot be deleted. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "vocabularies:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/PersonalizationSection"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "expectedUpdatedAt",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "replacementId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Personalization entry deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updatePersonalizationEntry",
+        "description": "Personal tokens require vocabularies:write. Changes one entry; send expectedUpdatedAt from the entry as last read, and a stale revision conflicts. The fields differ by section and are allowed only where the entry's capabilities say so: a name or labels, sortOrder, daysBefore, contactKind, isActive to disable (archive) or re-enable it, and isDefault to make it the default. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "vocabularies:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/PersonalizationSection"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalizationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Personalization entry updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/stay-in-touch-cadences": {
       "post": {
         "operationId": "createStayInTouchCadence",
@@ -9398,6 +9866,18 @@
           "section"
         ],
         "additionalProperties": false
+      },
+      "ContactMethodKind": {
+        "type": "string",
+        "enum": [
+          "email",
+          "phone",
+          "url",
+          "social",
+          "im",
+          "username",
+          "custom"
+        ]
       },
       "ConversationInteraction": {
         "type": "object",
@@ -12621,6 +13101,622 @@
           "expectedUpdatedAt"
         ],
         "additionalProperties": false
+      },
+      "PersonalizationContactTypeCreate": {
+        "type": "object",
+        "properties": {
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationContactTypeUpdate": {
+        "type": "object",
+        "properties": {
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "contactKind"
+            ]
+          },
+          {
+            "required": [
+              "isActive"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "sortOrder"
+            ]
+          }
+        ]
+      },
+      "PersonalizationCreate": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PersonalizationContactTypeCreate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationNamedCreate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationNameOnlyCreate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationRelationshipCreate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationReminderCreate"
+          }
+        ],
+        "x-sectionSchemas": {
+          "profile-modules": "#/components/schemas/PersonalizationNamedCreate",
+          "gender-options": "#/components/schemas/PersonalizationNamedCreate",
+          "contact-method-types": "#/components/schemas/PersonalizationContactTypeCreate",
+          "contact-labels": "#/components/schemas/PersonalizationNameOnlyCreate",
+          "activity-types": "#/components/schemas/PersonalizationNamedCreate",
+          "emotion-options": null,
+          "life-event-types": "#/components/schemas/PersonalizationNamedCreate",
+          "relationship-types": "#/components/schemas/PersonalizationRelationshipCreate",
+          "pet-categories": null,
+          "reminder-rules": "#/components/schemas/PersonalizationReminderCreate",
+          "tags": "#/components/schemas/PersonalizationNameOnlyCreate"
+        }
+      },
+      "PersonalizationDeleted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationEntry": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "delete": {
+                "type": "boolean"
+              },
+              "disable": {
+                "type": "boolean"
+              },
+              "editValue": {
+                "type": "boolean"
+              },
+              "rename": {
+                "type": "boolean"
+              },
+              "reorder": {
+                "type": "boolean"
+              },
+              "replace": {
+                "type": "boolean"
+              },
+              "setDefault": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "delete",
+              "disable",
+              "editValue",
+              "rename",
+              "reorder",
+              "replace",
+              "setDefault"
+            ],
+            "additionalProperties": false
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "contactKind": {
+            "$ref": "#/components/schemas/ContactMethodKind"
+          },
+          "daysBefore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3650
+          },
+          "forwardLabel": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "named",
+              "relationship-type",
+              "reminder-rule"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "referenceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reverseLabel": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "capabilities",
+          "canDelete",
+          "id",
+          "isActive",
+          "isDefault",
+          "kind",
+          "name",
+          "readOnly",
+          "referenceCount",
+          "sortOrder",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationGenderUpdate": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isDefault": {
+            "const": true
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "isActive"
+            ]
+          },
+          {
+            "required": [
+              "isDefault"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "sortOrder"
+            ]
+          }
+        ]
+      },
+      "PersonalizationList": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "create": {
+                "type": "boolean"
+              },
+              "editValue": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "create",
+              "editValue"
+            ],
+            "additionalProperties": false
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalizationEntry"
+            }
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "section": {
+            "$ref": "#/components/schemas/PersonalizationSection"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "capabilities",
+          "entries",
+          "readOnly",
+          "section",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationNameOnlyCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationNameOnlyUpdate": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "expectedUpdatedAt",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationNamedCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationNamedUpdate": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "isActive"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "sortOrder"
+            ]
+          }
+        ]
+      },
+      "PersonalizationRelationshipCreate": {
+        "type": "object",
+        "properties": {
+          "forwardLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "reverseLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "forwardLabel",
+          "reverseLabel"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationRelationshipUpdate": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "forwardLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "reverseLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "dependentRequired": {
+          "forwardLabel": [
+            "reverseLabel"
+          ],
+          "reverseLabel": [
+            "forwardLabel"
+          ]
+        },
+        "anyOf": [
+          {
+            "required": [
+              "forwardLabel",
+              "reverseLabel"
+            ]
+          },
+          {
+            "required": [
+              "isActive"
+            ]
+          },
+          {
+            "required": [
+              "sortOrder"
+            ]
+          }
+        ]
+      },
+      "PersonalizationReminderCreate": {
+        "type": "object",
+        "properties": {
+          "daysBefore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3650
+          }
+        },
+        "required": [
+          "daysBefore"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationReminderUpdate": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "daysBefore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3650
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "daysBefore"
+            ]
+          },
+          {
+            "required": [
+              "isActive"
+            ]
+          }
+        ]
+      },
+      "PersonalizationSaved": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/PersonalizationEntry"
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "required": [
+          "entry",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonalizationSection": {
+        "type": "string",
+        "enum": [
+          "profile-modules",
+          "gender-options",
+          "contact-method-types",
+          "contact-labels",
+          "activity-types",
+          "emotion-options",
+          "life-event-types",
+          "relationship-types",
+          "pet-categories",
+          "reminder-rules",
+          "tags"
+        ]
+      },
+      "PersonalizationUpdate": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PersonalizationContactTypeUpdate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationNamedUpdate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationGenderUpdate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationNameOnlyUpdate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationRelationshipUpdate"
+          },
+          {
+            "$ref": "#/components/schemas/PersonalizationReminderUpdate"
+          }
+        ],
+        "x-sectionSchemas": {
+          "profile-modules": "#/components/schemas/PersonalizationNamedUpdate",
+          "gender-options": "#/components/schemas/PersonalizationGenderUpdate",
+          "contact-method-types": "#/components/schemas/PersonalizationContactTypeUpdate",
+          "contact-labels": "#/components/schemas/PersonalizationNameOnlyUpdate",
+          "activity-types": "#/components/schemas/PersonalizationNamedUpdate",
+          "emotion-options": null,
+          "life-event-types": "#/components/schemas/PersonalizationNamedUpdate",
+          "relationship-types": "#/components/schemas/PersonalizationRelationshipUpdate",
+          "pet-categories": null,
+          "reminder-rules": "#/components/schemas/PersonalizationReminderUpdate",
+          "tags": "#/components/schemas/PersonalizationNameOnlyUpdate"
+        }
       },
       "PetFact": {
         "type": "object",

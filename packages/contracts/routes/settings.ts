@@ -12,6 +12,7 @@ import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
   originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -132,7 +133,10 @@ export const listPersonalizationEntries = defineRoute({
   method: "get",
   path: "/api/v1/settings/personalization/{section}",
   operationId: "listPersonalizationEntries",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require vocabularies:read. Lists one section's entries with their ids, for use wherever a record names a type, label, tag, or rule: profile-modules, gender-options, contact-method-types, contact-labels, activity-types, emotion-options, life-event-types, relationship-types, pet-categories, reminder-rules, or tags. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. The section's capabilities say whether it takes new entries; each entry's capabilities and referenceCount say whether it may be renamed, reordered, disabled (archived), made the default, deleted, or deleted only with a replacement. emotion-options and pet-categories are read-only. Grants are independent; vocabularies:write does not imply read access.",
+  tokenScope: "vocabularies:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       section: personalizationSection,
@@ -154,12 +158,15 @@ export const createPersonalizationEntry = defineRoute({
   method: "post",
   path: "/api/v1/settings/personalization/{section}",
   operationId: "createPersonalizationEntry",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require vocabularies:write. Adds an entry to one section; the body differs by section: tags and contact-labels take name; relationship-types take forwardLabel and reverseLabel; reminder-rules take daysBefore; contact-method-types take name and an optional contactKind; the other sections take name and an optional sortOrder. emotion-options and pet-categories take no new entries. A name already used in the section conflicts. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "vocabularies:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       section: personalizationSection,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -194,14 +201,17 @@ export const deletePersonalizationEntry = defineRoute({
   method: "delete",
   path: "/api/v1/settings/personalization/{section}/{id}",
   operationId: "deletePersonalizationEntry",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require vocabularies:write. Deletes one entry; send expectedUpdatedAt, and an optional replacementId, in the query string. While records still refer to the entry, the answer is replacement required with the count, and the delete succeeds only with a replacementId of another entry of the same section in the same workspace, to which those records move. Required or seeded entries cannot be deleted. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "vocabularies:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       section: personalizationSection,
       id: uuid,
     }),
     query: deletePersonalizationEntryQuery,
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
   },
   responses: {
     200: {
@@ -218,13 +228,16 @@ export const updatePersonalizationEntry = defineRoute({
   method: "patch",
   path: "/api/v1/settings/personalization/{section}/{id}",
   operationId: "updatePersonalizationEntry",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require vocabularies:write. Changes one entry; send expectedUpdatedAt from the entry as last read, and a stale revision conflicts. The fields differ by section and are allowed only where the entry's capabilities say so: a name or labels, sortOrder, daysBefore, contactKind, isActive to disable (archive) or re-enable it, and isDefault to make it the default. These are administrative vocabularies: the token's issuer must currently be an owner or admin of the token's workspace, and is otherwise forbidden. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "vocabularies:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       section: personalizationSection,
       id: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

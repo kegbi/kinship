@@ -12,9 +12,18 @@
  * Deleting an option that records still point at is the one refusal that
  * counts: it names how many, so the page can offer a replacement rather than
  * a dead end.
+ *
+ * MCP-B9 opened the four routes to personal tokens: `vocabularies:read` lists
+ * and `vocabularies:write` changes. A cookie request is still answered in the
+ * order it always was — a foreign `Origin`, a malformed workspace header, the
+ * section and the input, and only then the session — while a bearer request is
+ * admitted or refused before any of them, so a refused token never learns
+ * whether its input was valid. The owner/admin rule stays in the use case, and
+ * a token answers to its issuer's current role there like a cookie does.
  */
 
-import { type Context, Hono } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
+import type { RouteDescriptor } from "../../../../../../contracts/registry.ts";
 import type {
   ContactMethodKind,
   PersonalizationSection,
@@ -37,9 +46,10 @@ import {
   type ProblemDefinition,
 } from "../../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
-  requireActor,
+  type SessionActor,
   sessionActor,
 } from "../../../../../../http-kit/session.ts";
 import {
@@ -55,7 +65,7 @@ import { privateJson, type SettingsHttpServices } from "./shared.ts";
 /** What a workspace's configurable vocabularies are served from. */
 export type PersonalizationHttpServices = Pick<
   SettingsHttpServices,
-  "browserSecurity" | "personalization" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "personalization" | "protectedSessions"
 >;
 
 /** What a refused personalization change says. */
@@ -154,12 +164,66 @@ export const PERSONALIZATION_DELETE_INVALID: ProblemDefinition = {
   title: "Invalid personalization deletion",
 };
 
+/** One route's gate and the actor its handler asks for (MCP-B9). */
+interface RouteAdmission {
+  readonly actor: (
+    context: Context<ActorEnv>,
+  ) => Promise<SessionActor | Response>;
+  /**
+   * Mounted where the origin check always was: a cookie request still meets
+   * that check there, and a bearer request is admitted or refused there.
+   */
+  readonly gate: MiddlewareHandler<ActorEnv>;
+}
+
+/**
+ * The descriptor's admission, resolved once per request: the gate and the
+ * handler read the same answer, so a token is authenticated, and the legal
+ * guard asked about it, exactly once.
+ */
+function routeAdmission(
+  route: RouteDescriptor,
+  services: PersonalizationHttpServices,
+): RouteAdmission {
+  const resolve = scopedRouteActor(route, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
+  const origin = requireMatchingOrigin(services.browserSecurity);
+  const admitted = new WeakMap<
+    Context<ActorEnv>,
+    Promise<SessionActor | Response>
+  >();
+  const actor = (context: Context<ActorEnv>) => {
+    let answer = admitted.get(context);
+    if (!answer) {
+      answer = resolve(context);
+      admitted.set(context, answer);
+    }
+    return answer;
+  };
+  return {
+    actor,
+    gate: async (context, next) => {
+      if (context.req.header("Authorization") === undefined) {
+        return await origin(context, next);
+      }
+      const answer = await actor(context);
+      if (answer instanceof Response) return answer;
+      await next();
+    },
+  };
+}
+
 export function createPersonalizationRoutes(
   services: PersonalizationHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const list = routeAdmission(listPersonalizationEntries, services);
+  const create = routeAdmission(createPersonalizationEntry, services);
+  const update = routeAdmission(updatePersonalizationEntry, services);
+  const remove = routeAdmission(deletePersonalizationEntry, services);
 
   const section = (context: Context): PersonalizationSection | undefined => {
     const value = context.req.param("section");
@@ -181,11 +245,12 @@ export function createPersonalizationRoutes(
   mount(
     routes,
     listPersonalizationEntries,
+    list.gate,
     session,
     async (context) => {
       const selected = section(context);
       if (!selected) return definedProblem(context, SECTION_NOT_FOUND);
-      const actor = await requireActor(context);
+      const actor = await list.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.personalization.list(actor, selected)
         .catch(() => undefined);
@@ -204,7 +269,7 @@ export function createPersonalizationRoutes(
   mount(
     routes,
     createPersonalizationEntry,
-    origin,
+    create.gate,
     session,
     async (context) => {
       const selected = section(context);
@@ -214,7 +279,7 @@ export function createPersonalizationRoutes(
       if (!selected || !parsed || "errors" in parsed) {
         return definedProblem(context, PERSONALIZATION_CREATE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await create.actor(context);
       if (actor instanceof Response) return actor;
       const data = parsed.data as {
         readonly contactKind?: ContactMethodKind;
@@ -250,7 +315,7 @@ export function createPersonalizationRoutes(
   mount(
     routes,
     updatePersonalizationEntry,
-    origin,
+    update.gate,
     session,
     async (context) => {
       const selected = section(context);
@@ -261,7 +326,7 @@ export function createPersonalizationRoutes(
       if (!selected || "errors" in id || !parsed || "errors" in parsed) {
         return definedProblem(context, PERSONALIZATION_UPDATE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await update.actor(context);
       if (actor instanceof Response) return actor;
       const data = parsed.data as {
         readonly contactKind?: ContactMethodKind;
@@ -304,7 +369,7 @@ export function createPersonalizationRoutes(
   mount(
     routes,
     deletePersonalizationEntry,
-    origin,
+    remove.gate,
     session,
     async (context) => {
       const selected = section(context);
@@ -316,7 +381,7 @@ export function createPersonalizationRoutes(
       if (!selected || "errors" in id || "errors" in parsed) {
         return definedProblem(context, PERSONALIZATION_DELETE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await remove.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.personalization.mutate(actor, selected, {
         action: "delete",
