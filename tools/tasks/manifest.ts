@@ -579,6 +579,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/http-kit/origin_test.ts",
         "packages/http-kit/problem_test.ts",
         "packages/http-kit/request_id_test.ts",
+        "packages/http-kit/route_admission_test.ts",
         "packages/http-kit/route_test.ts",
         "packages/http-kit/secure_headers_test.ts",
         "packages/http-kit/session_test.ts",
@@ -833,6 +834,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/http-kit/origin_test.ts",
         "packages/http-kit/problem_test.ts",
         "packages/http-kit/request_id_test.ts",
+        "packages/http-kit/route_admission_test.ts",
         "packages/http-kit/route_test.ts",
         "packages/http-kit/secure_headers_test.ts",
         "packages/http-kit/session_test.ts",
@@ -1682,7 +1684,6 @@ export const MODULES: readonly TaskModule[] = [
       include: [
         "packages/backend/modules/journal/transport/http/routes.ts",
         "packages/backend/modules/journal/transport/http/life_events.ts",
-        "packages/backend/modules/journal/transport/http/admission.ts",
         "packages/backend/modules/journal/application/journal_management.ts",
         "packages/backend/modules/journal/application/life_events.ts",
         "packages/backend/modules/journal/domain",

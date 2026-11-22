@@ -22,8 +22,7 @@
  * a token answers to its issuer's current role there like a cookie does.
  */
 
-import { type Context, Hono, type MiddlewareHandler } from "hono";
-import type { RouteDescriptor } from "../../../../../../contracts/registry.ts";
+import { type Context, Hono } from "hono";
 import type {
   ContactMethodKind,
   PersonalizationSection,
@@ -40,16 +39,14 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../../http-kit/route.ts";
-import { scopedRouteActor } from "../../../../../../http-kit/scoped_actor.ts";
+import { routeAdmission } from "../../../../../../http-kit/route_admission.ts";
 import {
   type ActorEnv,
-  type SessionActor,
   sessionActor,
 } from "../../../../../../http-kit/session.ts";
 import {
@@ -164,66 +161,19 @@ export const PERSONALIZATION_DELETE_INVALID: ProblemDefinition = {
   title: "Invalid personalization deletion",
 };
 
-/** One route's gate and the actor its handler asks for (MCP-B9). */
-interface RouteAdmission {
-  readonly actor: (
-    context: Context<ActorEnv>,
-  ) => Promise<SessionActor | Response>;
-  /**
-   * Mounted where the origin check always was: a cookie request still meets
-   * that check there, and a bearer request is admitted or refused there.
-   */
-  readonly gate: MiddlewareHandler<ActorEnv>;
-}
-
-/**
- * The descriptor's admission, resolved once per request: the gate and the
- * handler read the same answer, so a token is authenticated, and the legal
- * guard asked about it, exactly once.
- */
-function routeAdmission(
-  route: RouteDescriptor,
-  services: PersonalizationHttpServices,
-): RouteAdmission {
-  const resolve = scopedRouteActor(route, {
-    browserSecurity: services.browserSecurity,
-    tokens: services.apiTokens,
-  });
-  const origin = requireMatchingOrigin(services.browserSecurity);
-  const admitted = new WeakMap<
-    Context<ActorEnv>,
-    Promise<SessionActor | Response>
-  >();
-  const actor = (context: Context<ActorEnv>) => {
-    let answer = admitted.get(context);
-    if (!answer) {
-      answer = resolve(context);
-      admitted.set(context, answer);
-    }
-    return answer;
-  };
-  return {
-    actor,
-    gate: async (context, next) => {
-      if (context.req.header("Authorization") === undefined) {
-        return await origin(context, next);
-      }
-      const answer = await actor(context);
-      if (answer instanceof Response) return answer;
-      await next();
-    },
-  };
-}
-
 export function createPersonalizationRoutes(
   services: PersonalizationHttpServices,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const list = routeAdmission(listPersonalizationEntries, services);
-  const create = routeAdmission(createPersonalizationEntry, services);
-  const update = routeAdmission(updatePersonalizationEntry, services);
-  const remove = routeAdmission(deletePersonalizationEntry, services);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const list = routeAdmission(listPersonalizationEntries, tokens);
+  const create = routeAdmission(createPersonalizationEntry, tokens);
+  const update = routeAdmission(updatePersonalizationEntry, tokens);
+  const remove = routeAdmission(deletePersonalizationEntry, tokens);
 
   const section = (context: Context): PersonalizationSection | undefined => {
     const value = context.req.param("section");

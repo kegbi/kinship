@@ -206,6 +206,11 @@ is a separate decision.
 - [x] **MCP-C3 Public MCP guide.** A static `/docs/mcp` page with its own
       page-catalog id: connecting a client, the scope-to-tool table, and the
       tool reference rendered from the generated catalog.
+- [x] **MCP-R1 One shared token-route admission.** The gate-and-actor pair the
+      journal, gift, file, and personalization lanes each copied is one
+      `routeAdmission` in `packages/http-kit/route_admission.ts`, and one
+      `presentsAuthorization` predicate decides token admission everywhere; no
+      route's answers or check order change.
 - [ ] **MCP-C4 Flow and checkpoint.** Flow `API-003` in the catalogs with its
       Playwright test (mint a token in settings, call tools through the
       endpoint, see the change in the app); the authorization-matrix invariants,

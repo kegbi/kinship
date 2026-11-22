@@ -52,7 +52,7 @@ import {
   parseQuery,
   parseValue,
 } from "../../../../../http-kit/validate.ts";
-import { routeAdmission } from "./admission.ts";
+import { routeAdmission } from "../../../../../http-kit/route_admission.ts";
 import { createLifeEventRoutes } from "./life_events.ts";
 
 export { LIFE_EVENT_FAILURES } from "./life_events.ts";

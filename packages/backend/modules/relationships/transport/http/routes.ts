@@ -18,7 +18,7 @@
  * between two people, and the page shows them in different places.
  */
 
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { RelationshipManagement } from "../../public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import {
@@ -43,7 +43,10 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
+import {
+  requireCookieWriteOrigin,
+  requireMatchingOrigin,
+} from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -254,10 +257,7 @@ export function createRelationshipRoutes(
   const deleteActor = scopedRouteActor(deleteRelationship, tokens);
   // A cookie write is refused for its Origin before its body is read; a
   // request that carries `Authorization` is the token admission's to judge.
-  const cookieOrigin: MiddlewareHandler = async (context, next) => {
-    if (context.req.header("Authorization") !== undefined) return await next();
-    return await origin(context, next);
-  };
+  const cookieOrigin = requireCookieWriteOrigin(services.browserSecurity);
 
   mount(routes, listRelationshipTypes, session, async (context) => {
     // `selected` travels as one comma-separated value, which is what

@@ -255,6 +255,16 @@ policy shape. It depends on Hono, Zod, the shared kernel, `packages/contracts`,
 and the session types and actor admission on the workspaces facade. It never
 depends on an app.
 
+A route that also admits a personal token (ADR 0009) names its scope on its
+descriptor and takes its admission from `scoped_actor.ts` or
+`route_admission.ts`. `routeAdmission(descriptor, services)` returns a `gate`,
+mounted where the route's Origin check stood, and the `actor(context)` its
+handler asks for: a cookie request meets only its Origin check at the gate and
+is authenticated by the handler, so its checks answer in their old order, while
+a request presenting `Authorization` is admitted or refused at the gate, once,
+and the handler reads that same answer. `presentsAuthorization` in `session.ts`
+is the one test for committing a request to token admission.
+
 ### The MCP kit
 
 `packages/mcp-kit/` serves `POST /api/v1/mcp` (ADR 0009): it authenticates the

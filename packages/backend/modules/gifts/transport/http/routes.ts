@@ -56,7 +56,7 @@ import {
   parseQuery,
   parseValue,
 } from "../../../../../http-kit/validate.ts";
-import { routeAdmission } from "./admission.ts";
+import { routeAdmission } from "../../../../../http-kit/route_admission.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 

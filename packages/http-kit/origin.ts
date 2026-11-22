@@ -18,6 +18,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { BrowserSecurityPolicy } from "./security_policy.ts";
 import { definedProblem, type ProblemDefinition } from "./problem.ts";
+import { presentsAuthorization } from "./session.ts";
 
 /** The methods that change something and therefore need an origin. */
 export const UNSAFE_METHODS: ReadonlySet<string> = new Set([
@@ -82,7 +83,7 @@ export function requireCookieWriteOrigin(
 ): MiddlewareHandler {
   const origin = requireMatchingOrigin(policy);
   return async (context, next) => {
-    if (context.req.header("Authorization") !== undefined) return await next();
+    if (presentsAuthorization(context)) return await next();
     return await origin(context, next);
   };
 }

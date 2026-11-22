@@ -91,6 +91,7 @@ import {
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
+  presentsAuthorization,
   requireActor,
   type SessionActor,
   sessionActor,
@@ -459,7 +460,7 @@ export function createPlanningRoutes(
     context: Context<ActorEnv>,
     admit: (context: Context<ActorEnv>) => Promise<SessionActor | Response>,
   ): Promise<SessionActor | Response | undefined> =>
-    context.req.header("Authorization") === undefined
+    !presentsAuthorization(context)
       ? rejectForeignOrigin(context, services.browserSecurity)
       : await admit(context);
   /**

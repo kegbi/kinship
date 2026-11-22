@@ -405,6 +405,17 @@ export type TokenAcceptance =
   }
   | { readonly status: "invalid" };
 
+/**
+ * Whether this request presents an `Authorization` header, with any value at
+ * all. Presenting one commits a token-enabled route to token admission: it is
+ * never answered from the cookie session, and it owes no `Origin`. Every reader
+ * that makes that choice asks here, so none can disagree about an empty or a
+ * non-bearer header.
+ */
+export function presentsAuthorization(context: Context): boolean {
+  return context.req.header("Authorization") !== undefined;
+}
+
 /** The bearer token this request carries, if it carries one at all. */
 export function bearerToken(context: Context): string | undefined {
   return /^Bearer ([^\s]+)$/i.exec(context.req.header("Authorization") ?? "")
@@ -429,7 +440,7 @@ export async function requireTokenOrSessionActor<Scope extends string>(
     readonly tokens?: ScopedTokenAuthority<NoInfer<Scope>>;
   },
 ): Promise<SessionActor | Response> {
-  if (context.req.header("Authorization") === undefined) {
+  if (!presentsAuthorization(context)) {
     return await requireActor(context);
   }
   const tokens = options.tokens;

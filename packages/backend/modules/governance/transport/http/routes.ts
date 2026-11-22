@@ -51,6 +51,7 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   installSession,
+  presentsAuthorization,
   readActorOf,
   requireActor,
   type SessionActor,
@@ -254,7 +255,7 @@ export function createLegalRequirementGuard(
       return next();
     }
     installSession(context, services);
-    if (context.req.header("Authorization") !== undefined) {
+    if (presentsAuthorization(context)) {
       // SECA-05: the token's member owes the same documents a cookie's does.
       context.set(
         "tokenAdmission",

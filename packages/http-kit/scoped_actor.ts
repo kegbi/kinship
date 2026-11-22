@@ -16,6 +16,7 @@ import { rejectForeignOrigin, UNSAFE_METHODS } from "./origin.ts";
 import type { BrowserSecurityPolicy } from "./security_policy.ts";
 import {
   type ActorEnv,
+  presentsAuthorization,
   requireTokenOrSessionActor,
   type ScopedTokenAuthority,
   type SessionActor,
@@ -65,7 +66,7 @@ export function scopedRouteActor(
   const scope = requiredScope(route);
   return async (context) => {
     if (
-      context.req.header("Authorization") === undefined &&
+      !presentsAuthorization(context) &&
       UNSAFE_METHODS.has(context.req.method)
     ) {
       const refused = rejectForeignOrigin(context, services.browserSecurity);
