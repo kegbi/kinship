@@ -339,3 +339,70 @@ Deno.test("PEOPLE-001 HTTP rejects forged origin and malformed identity before u
   assertStatus(malformed, 400, "unknown body fields rejected");
   assert(calls === 0, "invalid requests do not invoke application behavior");
 });
+
+Deno.test("MCP-D4 createPerson forwards a requestId, refuses a malformed one, and maps a reused one to 409", async () => {
+  const received: unknown[] = [];
+  let answer: Awaited<ReturnType<PeopleManagement["create"]>> = {
+    person: {
+      givenName: "Ada",
+      id: "00000000-0000-4000-8000-000000000100",
+      isPartial: false,
+    },
+    status: "created",
+  };
+  const app = createPeopleRoutes(services({
+    create: (_resolved, input) => {
+      received.push(input);
+      return Promise.resolve(answer);
+    },
+  }));
+  const post = (body: Record<string, unknown>) =>
+    app.request("http://localhost/api/v1/people", {
+      body: JSON.stringify(body),
+      headers,
+      method: "POST",
+    });
+  const requestId = "0f9e8d7c-6b5a-4c3d-8e2f-1a0b9c8d7e6f";
+
+  assertStatus(
+    await post({ givenName: "Ada", isPartial: false, requestId }),
+    201,
+    "a request identifier creates",
+  );
+  assertStatus(
+    await post({ givenName: "Ada", isPartial: false }),
+    201,
+    "no request identifier creates as before",
+  );
+  assert(
+    JSON.stringify(received) ===
+      JSON.stringify([
+        { givenName: "Ada", isPartial: false, requestId },
+        { givenName: "Ada", isPartial: false },
+      ]),
+    `the request identifier is forwarded only when sent: ${
+      JSON.stringify(received)
+    }`,
+  );
+
+  const malformed = await post({
+    givenName: "Ada",
+    isPartial: false,
+    requestId: "retry-1",
+  });
+  assertStatus(malformed, 400, "a request identifier is a UUID");
+  assert(received.length === 2, "a malformed identifier reaches no use case");
+
+  answer = { status: "idempotency-conflict" };
+  const conflict = await post({
+    givenName: "Eve",
+    isPartial: false,
+    requestId,
+  });
+  assertStatus(conflict, 409, "a reused request identifier conflicts");
+  const problem = await conflict.json() as { readonly code: string };
+  assert(
+    problem.code === "person_request_conflict",
+    `the conflict names itself: ${problem.code}`,
+  );
+});

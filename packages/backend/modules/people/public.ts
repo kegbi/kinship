@@ -183,6 +183,8 @@ export type {
   ImportantDateUpdateResult,
 } from "./application/important_dates.ts";
 export type {
+  CreatePersonRequest,
+  CreatePersonRequestResult,
   CreatePersonResult,
   GetPersonResult,
   PeopleManagement,

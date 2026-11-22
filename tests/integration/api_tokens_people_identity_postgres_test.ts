@@ -734,6 +734,266 @@ Deno.test("[MCP-B1] PostgreSQL people:read lookups, search:read, and today:read 
   );
 });
 
+/** The rows a workspace holds under one identifier, deleted or not. */
+async function peopleRows(
+  workspaceId: string,
+  personId: string,
+): Promise<readonly { deleted: boolean; given_name: string }[]> {
+  return await sql<{ deleted: boolean; given_name: string }[]>`
+    select given_name, deleted_at is not null as deleted from crm.people
+    where workspace_id = ${workspaceId}::uuid and id = ${personId}::uuid`;
+}
+
+async function peopleNamed(
+  workspaceId: string,
+  givenName: string,
+): Promise<number> {
+  const [row] = await sql<{ count: number }[]>`
+    select count(*)::int as count from crm.people
+    where workspace_id = ${workspaceId}::uuid and given_name = ${givenName}`;
+  return row?.count ?? 0;
+}
+
+Deno.test("[MCP-D4] PostgreSQL createPerson with a requestId is retry-safe by token and by cookie", async () => {
+  const own = await owner("Retrier");
+  const writer = await tokens.mint(own, ["people:write"]);
+  const grace = {
+    familyName: "Hopper",
+    givenName: "Grace",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const created = expect(
+    await bearer(writer, "/api/v1/people", "POST", grace),
+    201,
+    "a bearer creates with a request identifier",
+  );
+  const personId = created.body.person.id as string;
+  const replay = expect(
+    await bearer(writer, "/api/v1/people", "POST", grace),
+    201,
+    "a bearer retry answers as the create did",
+  );
+  assertEquals(replay.body, created.body, "the retry returns the same person");
+  assertEquals(
+    await peopleNamed(own.workspaceId, "Grace"),
+    1,
+    "a retry creates no second person",
+  );
+  assertEquals(
+    await peopleRows(own.workspaceId, personId),
+    [{ given_name: "Grace", deleted: false }],
+    "the one person is the one the request named",
+  );
+  const conflict = expect(
+    await bearer(writer, "/api/v1/people", "POST", {
+      ...grace,
+      familyName: "Brewster",
+    }),
+    409,
+    "the same request identifier with other names conflicts",
+  );
+  assertEquals(conflict.body.code, "person_request_conflict", "conflict code");
+
+  const cookieRequest = {
+    givenName: "Katherine",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const byCookie = expect(
+    await browser(own, "/api/v1/people", "POST", cookieRequest),
+    201,
+    "a browser creates with a request identifier",
+  );
+  const cookieReplay = expect(
+    await browser(own, "/api/v1/people", "POST", cookieRequest),
+    201,
+    "a browser retry answers as the create did",
+  );
+  assertEquals(
+    cookieReplay.body.person.id,
+    byCookie.body.person.id,
+    "the browser retry returns the same person",
+  );
+  expect(
+    await browser(own, "/api/v1/people", "POST", {
+      ...cookieRequest,
+      nickname: "Kat",
+    }),
+    409,
+    "a browser reuse with other names conflicts",
+  );
+
+  const plain = { givenName: "Dorothy", isPartial: false };
+  expect(
+    await bearer(writer, "/api/v1/people", "POST", plain),
+    201,
+    "a create without a request identifier works as before",
+  );
+  expect(
+    await bearer(writer, "/api/v1/people", "POST", plain),
+    409,
+    "and its repeat still meets the duplicate warning",
+  );
+  expect(
+    await bearer(writer, "/api/v1/people", "POST", {
+      ...plain,
+      duplicateOverride: true,
+    }),
+    201,
+    "and an override still creates a second person",
+  );
+  assertEquals(
+    await peopleNamed(own.workspaceId, "Dorothy"),
+    2,
+    "without a request identifier each create is a new person",
+  );
+});
+
+Deno.test("[MCP-D4] PostgreSQL concurrent retries of one person request create one person", async () => {
+  const own = await owner("Racer");
+  const writer = await tokens.mint(own, ["people:write"]);
+  const body = {
+    givenName: "Annie",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const answers = await Promise.all(
+    Array.from(
+      { length: 6 },
+      () => bearer(writer, "/api/v1/people", "POST", body),
+    ),
+  );
+  assertEquals(
+    answers.map((result) => result.status),
+    [201, 201, 201, 201, 201, 201],
+    "every concurrent retry succeeds without a server error",
+  );
+  assertEquals(
+    new Set(answers.map((result) => result.body.person.id)).size,
+    1,
+    "every concurrent retry names the same person",
+  );
+  assertEquals(
+    await peopleNamed(own.workspaceId, "Annie"),
+    1,
+    "concurrent retries create one person",
+  );
+});
+
+Deno.test("[MCP-D4] PostgreSQL a duplicate warning creates nothing and its override retry creates once", async () => {
+  const own = await owner("Overrider");
+  const writer = await tokens.mint(own, ["people:write"]);
+  await person(own, "Mary", "Jackson");
+  const request = {
+    familyName: "Jackson",
+    givenName: "Mary",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const warned = expect(
+    await bearer(writer, "/api/v1/people", "POST", request),
+    409,
+    "a requested create still meets the duplicate warning",
+  );
+  assertEquals(warned.body.code, "possible_duplicate", "warning code");
+  assertEquals(
+    await peopleNamed(own.workspaceId, "Mary"),
+    1,
+    "the warning created nothing",
+  );
+  const overridden = expect(
+    await bearer(writer, "/api/v1/people", "POST", {
+      ...request,
+      duplicateOverride: true,
+    }),
+    201,
+    "the override retry with the same request identifier creates",
+  );
+  const retried = expect(
+    await bearer(writer, "/api/v1/people", "POST", request),
+    201,
+    "the original request retried after the override returns its person",
+  );
+  assertEquals(
+    retried.body.person.id,
+    overridden.body.person.id,
+    "duplicateOverride is not part of what a retry compares",
+  );
+  assertEquals(
+    await peopleNamed(own.workspaceId, "Mary"),
+    2,
+    "the warned request created exactly one person",
+  );
+});
+
+Deno.test("[MCP-D4] PostgreSQL a deleted person is never resurrected by a replay, and another workspace's request is its own", async () => {
+  const own = await owner("Replayer");
+  const foreign = await owner("Foreign replayer");
+  const writer = await tokens.mint(own, ["people:write"]);
+  const deleter = await tokens.mint(own, ["people:delete"]);
+  const foreignWriter = await tokens.mint(foreign, ["people:write"]);
+  const request = {
+    givenName: "Hedy",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const created = expect(
+    await bearer(writer, "/api/v1/people", "POST", request),
+    201,
+    "the request creates its person",
+  );
+  const personId = created.body.person.id as string;
+
+  const foreignCreated = expect(
+    await bearer(foreignWriter, "/api/v1/people", "POST", request),
+    201,
+    "another workspace's identical request creates its own person",
+  );
+  const foreignId = foreignCreated.body.person.id as string;
+  assert(foreignId !== personId, "request identifiers are workspace-scoped");
+  assertEquals(
+    await peopleRows(foreign.workspaceId, foreignId),
+    [{ given_name: "Hedy", deleted: false }],
+    "the foreign person belongs to the foreign workspace",
+  );
+  assertEquals(
+    await peopleRows(foreign.workspaceId, personId),
+    [],
+    "the foreign request never touched this workspace's person",
+  );
+
+  const impact = expect(
+    await bearer(deleter, `/api/v1/people/${personId}/deletion-impact`),
+    200,
+    "the person's deletion is previewed",
+  );
+  expect(
+    await bearer(deleter, `/api/v1/people/${personId}`, "DELETE", {
+      confirmation: impact.body.impact.confirmation,
+      expectedUpdatedAt: impact.body.impact.person.updatedAt,
+    }),
+    200,
+    "the person is deleted",
+  );
+  const replay = expect(
+    await bearer(writer, "/api/v1/people", "POST", request),
+    409,
+    "a replay after deletion is refused rather than recreating the person",
+  );
+  assertEquals(replay.body.code, "person_request_conflict", "replay code");
+  assertEquals(
+    await peopleRows(own.workspaceId, personId),
+    [{ given_name: "Hedy", deleted: true }],
+    "the deleted person stays deleted and is not duplicated",
+  );
+  expect(
+    await bearer(foreignWriter, "/api/v1/people", "POST", request),
+    201,
+    "the foreign workspace's replay still returns its own person",
+  );
+});
+
 Deno.test({
   name: "close the people-identity token fixture",
   sanitizeOps: false,

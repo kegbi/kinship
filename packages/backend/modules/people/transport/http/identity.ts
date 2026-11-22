@@ -6,6 +6,10 @@
  * in the workspace comes back as a possible duplicate the person may override
  * with `duplicateOverride`, because two people really can share a name.
  *
+ * Creation accepts an optional `requestId` (MCP-D4): a retry with the same one
+ * answers 201 with the person the first call created, so a client cannot tell
+ * a replay from a fresh create, exactly as the task create behaves.
+ *
  * An edit carries the version it was decided against, and a refused edit
  * answers from the identity-and-lifecycle table in `shared.ts`, which the
  * lifecycle transitions answer from too.
@@ -85,6 +89,14 @@ export const PERSON_CREATE_FORBIDDEN: ProblemDefinition = {
   detail: "Your active workspace membership no longer permits this change.",
   status: 403,
   title: "Person could not be created",
+};
+
+export const PERSON_REQUEST_CONFLICT: ProblemDefinition = {
+  code: "person_request_conflict",
+  detail:
+    "This requestId already created a person with other names, or that person was deleted. Use a new requestId for a new person.",
+  status: 409,
+  title: "Request identifier already used",
 };
 
 /** The duplicate warning, named for the person it matched. */
@@ -192,8 +204,12 @@ export function createIdentityRoutes(
       isPartial: parsed.data.isPartial,
       ...(parsed.data.middleName ? { middleName: parsed.data.middleName } : {}),
       ...(parsed.data.nickname ? { nickname: parsed.data.nickname } : {}),
+      ...(parsed.data.requestId ? { requestId: parsed.data.requestId } : {}),
     }).catch(() => undefined);
     if (!result) return definedProblem(context, PERSON_NOT_CREATED);
+    if (result.status === "idempotency-conflict") {
+      return definedProblem(context, PERSON_REQUEST_CONFLICT);
+    }
     if (result.status === "validation-error") {
       return definedProblem(context, PERSON_CREATE_REJECTED, result.errors);
     }

@@ -175,8 +175,10 @@ Deno.test("[GAP-019] the journal failure table is what journal.ts answered", () 
     pinned(JOURNAL_FAILURES),
     [
       "forbidden | 403 | journal_forbidden | Journal unavailable | Your active workspace membership no longer permits this action.",
+      "idempotency-conflict | 409 | journal_request_conflict | Request identifier already used | This requestId already created a different post. Use a new requestId for a new post.",
       "not-found | 404 | journal_item_not_found | Journal item unavailable | This item does not exist in the active workspace.",
       "query-invalid | 400 | journal_query_invalid | Invalid journal query | Reload the first page of the journal before continuing.",
+      "stale | 409 | journal_post_stale | Journal post changed | The post changed since it was read. Refresh it and edit again.",
       "validation-error | 400 | journal_invalid | Invalid journal item | Review the date, rating, title, and content.",
       "(fallback) | 503 | journal_unavailable | Journal unavailable | The journal is temporarily unavailable.",
     ].join("\n"),

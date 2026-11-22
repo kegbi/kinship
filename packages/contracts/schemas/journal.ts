@@ -134,11 +134,30 @@ export const journalPostCreated = z.strictObject({
   status: z.literal("created"),
 }).meta({ id: "JournalPostCreated" });
 
+/** What creating a post accepts; `requestId` makes the create retry-safe. */
 export const journalPostInput = z.strictObject({
   body: z.string().trim().min(1).max(50000),
   occurredAt: z.iso.datetime({ offset: true }),
+  requestId: z.uuid().optional().meta({
+    description:
+      "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different post.",
+  }),
   title: z.string().trim().min(1).max(500).optional(),
 }).meta({ id: "JournalPostInput" });
+
+/**
+ * What replacing a post accepts; `expectedUpdatedAt` makes the replacement
+ * refuse a concurrent edit instead of overwriting it.
+ */
+export const journalPostUpdateInput = z.strictObject({
+  body: z.string().trim().min(1).max(50000),
+  expectedUpdatedAt: z.iso.datetime({ offset: true }).optional().meta({
+    description:
+      "Optional revision check: the post's updatedAt exactly as a read returned it. When it is no longer the post's revision the edit is refused (409) and nothing changes.",
+  }),
+  occurredAt: z.iso.datetime({ offset: true }),
+  title: z.string().trim().min(1).max(500).optional(),
+}).meta({ id: "JournalPostUpdateInput" });
 
 export const journalPostUpdated = z.strictObject({
   post: journalStoredPost,

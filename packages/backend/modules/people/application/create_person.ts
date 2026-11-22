@@ -9,6 +9,17 @@
  * the request instead of generating one, locks that identifier, and returns
  * the person the first attempt created rather than a second copy.
  *
+ * `create` given a `requestId` (MCP-D4) is both at once: it takes the same
+ * `replayRequest` step `ensure` does, which derives, locks, and looks up the
+ * identifier first, so a retry of a creation that already happened returns
+ * that person before duplicate detection could warn about them, and only a
+ * request that created nothing yet reaches the warning.
+ * `duplicateOverride` is therefore not part of what a retry is compared on: a
+ * warned request retried with the override creates, and either spelling
+ * retried after that returns the person it created. A derived identifier whose
+ * person was since deleted answers `idempotency-conflict` rather than writing
+ * a second row under the identifier the deleted one still holds.
+ *
  * Every rule about the names themselves lives in `domain/person_identity.ts`.
  * What is left here is the order of the steps: normalize, validate,
  * revalidate the actor under lock, write, audit, and read both back before the
@@ -17,6 +28,7 @@
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../shared-kernel/ids.ts";
+import { uuid } from "../../../shared-kernel/validation.ts";
 import type {
   Failure,
   ValidationFailure,
@@ -74,6 +86,21 @@ export type EnsurePersonResult =
   | ValidationFailure
   | Failure<"forbidden", "idempotency-conflict">
   | { readonly person: PersonIdentity; readonly status: "ready" };
+
+/** A member's creation, optionally named by a retry-safe request identifier. */
+export interface CreatePersonRequest extends CreatePersonInput {
+  readonly requestId?: string;
+}
+
+/** What `create` answers; a request identifier adds the conflict. */
+export type CreatePersonRequestResult =
+  | CreatePersonResult
+  | Failure<never, "idempotency-conflict">;
+
+/** What a stored row says about a retried request identifier. */
+type RequestReplay =
+  | Failure<"forbidden", "idempotency-conflict">
+  | { readonly person: PersonIdentity; readonly status: "replayed" };
 
 export type GetPersonResult = PersonIdentityLookup;
 
@@ -136,6 +163,85 @@ export function createPeopleManagement(
       ? { person: created, status: "created" }
       : { status: "forbidden" };
   };
+  /**
+   * The first half of a creation a request identifier names: derive the
+   * identifier, revalidate the actor, lock the identifier, and answer from the
+   * row a previous attempt left, if there is one. `fresh` hands the identifier
+   * back to the caller, whose own rules decide whether to write it.
+   */
+  const replayRequest = async (
+    actor: PeopleActor,
+    requestId: string,
+    input: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<
+    | RequestReplay
+    | { readonly id: string; readonly status: "fresh" }
+  > => {
+    const id = await derivePersonId(actor.workspaceId, requestId);
+    const standing = await dependencies.actors.revalidate({
+      ...actor,
+      lock: true,
+      transaction,
+    });
+    if (standing === "revoked") return { status: "forbidden" };
+    await dependencies.repository.lockRequest({ id, transaction });
+    const existing = await dependencies.repository.getRequestedIdentity({
+      ...actor,
+      personId: id,
+      transaction,
+    });
+    if (existing.status === "ready" || existing.status === "archived") {
+      return sameIdentity(existing.person, input)
+        ? { person: existing.person, status: "replayed" }
+        : { status: "idempotency-conflict" };
+    }
+    if (existing.status === "not-found") return { id, status: "fresh" };
+    return existing.status === "deleted"
+      ? { status: "idempotency-conflict" }
+      : { status: "forbidden" };
+  };
+  /** Writes the person a fresh request names, or answers why it could not. */
+  const persistRequested = async (
+    actor: PeopleActor,
+    id: string,
+    input: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<PersonIdentity | Failure<"forbidden">> =>
+    await persist(actor, personIdentityFrom(id, input), transaction) ??
+      { status: "forbidden" };
+  /** A member's creation named by a request identifier. */
+  const createRequested = async (
+    actor: PeopleActor,
+    requestId: string,
+    input: CreatePersonInput,
+    transaction: PeopleTransaction,
+  ): Promise<CreatePersonRequestResult> => {
+    const replay = await replayRequest(actor, requestId, input, transaction);
+    if (replay.status === "replayed") {
+      return { person: replay.person, status: "created" };
+    }
+    if (replay.status !== "fresh") return replay;
+    if (!input.duplicateOverride) {
+      const duplicates = await dependencies.repository.findPossibleDuplicates({
+        ...actor,
+        ...input,
+        transaction,
+      });
+      if (duplicates.length > 0) {
+        return { duplicates, status: "possible-duplicate" };
+      }
+    }
+    const created = await persistRequested(
+      actor,
+      replay.id,
+      input,
+      transaction,
+    );
+    return "status" in created
+      ? created
+      : { person: created, status: "created" };
+  };
   const ensureInTransaction = async (
     actor: PeopleActor,
     requestId: string,
@@ -147,33 +253,18 @@ export function createPeopleManagement(
     if (Object.keys(errors).length > 0) {
       return { errors, status: "validation-error" };
     }
-    const id = await derivePersonId(actor.workspaceId, requestId);
-    const standing = await dependencies.actors.revalidate({
-      ...actor,
-      lock: true,
-      transaction,
-    });
-    if (standing === "revoked") return { status: "forbidden" };
-    await dependencies.repository.lockRequest({ id, transaction });
-    const existing = await dependencies.repository.getIdentity({
-      ...actor,
-      personId: id,
-      transaction,
-    });
-    if (existing.status === "ready" || existing.status === "archived") {
-      return sameIdentity(existing.person, input)
-        ? { person: existing.person, status: "ready" }
-        : { status: "idempotency-conflict" };
+    const replay = await replayRequest(actor, requestId, input, transaction);
+    if (replay.status === "replayed") {
+      return { person: replay.person, status: "ready" };
     }
-    if (existing.status === "forbidden") return { status: "forbidden" };
-    const created = await persist(
+    if (replay.status !== "fresh") return replay;
+    const created = await persistRequested(
       actor,
-      personIdentityFrom(id, input),
+      replay.id,
+      input,
       transaction,
     );
-    return created
-      ? { person: created, status: "ready" }
-      : { status: "forbidden" };
+    return "status" in created ? created : { person: created, status: "ready" };
   };
   return {
     createInTransaction,
@@ -191,15 +282,31 @@ export function createPeopleManagement(
     },
     create: async (
       actor: PeopleActor,
-      rawInput: CreatePersonInput,
-    ): Promise<CreatePersonResult> => {
-      const input = normalizeCreatePersonInput(rawInput);
+      rawInput: CreatePersonRequest,
+    ): Promise<CreatePersonRequestResult> => {
+      const { requestId: rawRequestId, ...identity } = rawInput;
+      const input = normalizeCreatePersonInput(identity);
       const errors = validateCreatePersonInput(input);
+      const requestId = rawRequestId === undefined
+        ? undefined
+        : uuid(rawRequestId);
+      if (rawRequestId !== undefined && requestId === undefined) {
+        return {
+          errors: {
+            ...errors,
+            requestId: "Use a canonical request identifier.",
+          },
+          status: "validation-error",
+        };
+      }
       if (Object.keys(errors).length > 0) {
         return { errors, status: "validation-error" };
       }
       return await dependencies.transaction.run(
-        (transaction) => createInTransaction(actor, input, transaction),
+        (transaction) =>
+          requestId === undefined
+            ? createInTransaction(actor, input, transaction)
+            : createRequested(actor, requestId, input, transaction),
         { workspaceId: actor.workspaceId },
       );
     },

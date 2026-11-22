@@ -12,6 +12,7 @@ import type {
   JournalItemType,
   JournalLinkableActivity,
   JournalPostInput,
+  JournalPostUpdateInput,
   JournalStoredDayRating,
   JournalStoredPost,
   JournalTimelineItem,
@@ -68,7 +69,7 @@ export function createJournalPost(
 
 export function updateJournalPost(
   postId: string,
-  input: JournalPostInput,
+  input: JournalPostUpdateInput,
   workspaceId?: string,
 ): Promise<
   ApiResult<{ readonly post: JournalStoredPost; readonly status: "updated" }>

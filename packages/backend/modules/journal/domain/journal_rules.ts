@@ -14,7 +14,11 @@
  */
 
 import type { Instant } from "../../../shared-kernel/clock.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
 import { boundedText, isInstant } from "../../../shared-kernel/validation.ts";
+
+/** The namespace that makes a post creation idempotent across retries. */
+export const JOURNAL_POST_ID_NAMESPACE = "kinship.journal.post-id.v1";
 
 export interface StoredJournalPost {
   readonly body: string;
@@ -39,6 +43,16 @@ export interface JournalPostInput {
   readonly body: string;
   readonly occurredAt: string;
   readonly title?: string;
+}
+
+/** A post creation, optionally named by a retry-safe request identifier. */
+export interface JournalPostCreateInput extends JournalPostInput {
+  readonly requestId?: string;
+}
+
+/** A post edit, optionally checked against the revision it was made from. */
+export interface JournalPostUpdateInput extends JournalPostInput {
+  readonly expectedUpdatedAt?: string;
 }
 
 /** What a member writes when they rate a day. */
@@ -116,4 +130,31 @@ export function validateDayRating(
     (input.comment !== undefined && !comment)
   ) return undefined;
   return { ...(comment ? { comment } : {}), ratedOn, rating: input.rating };
+}
+
+/**
+ * The post identifier a request identifier names inside a workspace (MCP-D4).
+ *
+ * Two retries of one creation derive the same identifier, so the second finds
+ * the row the first wrote; another workspace's identical request identifier
+ * derives a different one.
+ */
+export function deriveJournalPostId(
+  workspaceId: string,
+  requestId: string,
+): Promise<string> {
+  return deterministicId(JOURNAL_POST_ID_NAMESPACE, [workspaceId, requestId]);
+}
+
+/**
+ * True when a stored post is the one a retried creation describes: the same
+ * body, the same title or none, and the same moment however its offset was
+ * spelled.
+ */
+export function postMatches(
+  stored: StoredJournalPost,
+  values: JournalPostValues,
+): boolean {
+  return stored.body === values.body && stored.title === values.title &&
+    Date.parse(stored.occurredAt) === values.occurredAt.valueOf();
 }

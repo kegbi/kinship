@@ -121,7 +121,7 @@ export const createPerson = defineRoute({
   path: "/api/v1/people",
   operationId: "createPerson",
   description:
-    "Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
+    "Creates a person in the workspace. Personal tokens require the people:write grant. Send a client-generated requestId and reuse it when retrying: the same requestId and names return the person it created (201), and the same requestId with different names, or after that person was deleted, is refused (409). duplicateOverride is not compared, so a create warned as a possible duplicate may be retried with duplicateOverride and the same requestId. Without a requestId every call creates a new person. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
   tokenScope: "people:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -135,7 +135,8 @@ export const createPerson = defineRoute({
   },
   responses: {
     201: {
-      description: "Workspace-owned person created",
+      description:
+        "Workspace-owned person created, or the person an earlier call with the same requestId created",
       content: {
         "application/json": personCreated,
       },

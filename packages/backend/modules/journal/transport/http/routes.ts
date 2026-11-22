@@ -10,6 +10,9 @@
  * the post update reads `itemId`: the document names that parameter on both
  * `/journal/items/{itemId}` and `/journal/posts/{itemId}`, and this file used
  * to write `:postId` out by hand on one of them.
+ *
+ * A post create may carry `requestId` and a post update `expectedUpdatedAt`
+ * (MCP-D4); each is forwarded only when sent, and their refusals answer 409.
  */
 
 import { Hono } from "hono";
@@ -30,6 +33,7 @@ import {
   journalActivityInput,
   journalDayRatingInput,
   journalPostInput,
+  journalPostUpdateInput,
 } from "../../../../../contracts/schemas/journal.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
@@ -84,6 +88,13 @@ export const JOURNAL_FAILURES: FailureTable = {
       detail: "Your active workspace membership no longer permits this action.",
       title: "Journal unavailable",
     },
+    "idempotency-conflict": {
+      code: "journal_request_conflict",
+      detail:
+        "This requestId already created a different post. Use a new requestId for a new post.",
+      status: 409,
+      title: "Request identifier already used",
+    },
     "not-found": {
       code: "journal_item_not_found",
       detail: "This item does not exist in the active workspace.",
@@ -94,6 +105,12 @@ export const JOURNAL_FAILURES: FailureTable = {
       detail: "Reload the first page of the journal before continuing.",
       status: 400,
       title: "Invalid journal query",
+    },
+    stale: {
+      code: "journal_post_stale",
+      detail: "The post changed since it was read. Refresh it and edit again.",
+      status: 409,
+      title: "Journal post changed",
     },
     "validation-error": {
       code: "journal_invalid",
@@ -161,6 +178,7 @@ export function createJournalRoutes(
       const result = await services.journal.createPost(actor, {
         body: body.data.body,
         occurredAt: body.data.occurredAt,
+        ...(body.data.requestId ? { requestId: body.data.requestId } : {}),
         ...(body.data.title ? { title: body.data.title } : {}),
       });
       if (result.status !== "created") return failure(context, result.status);
@@ -174,7 +192,7 @@ export function createJournalRoutes(
     session,
     async (context) => {
       const postId = parseValue(uuid, context.req.param("itemId"));
-      const body = await parseJsonBody(context, journalPostInput);
+      const body = await parseJsonBody(context, journalPostUpdateInput);
       if ("errors" in postId || "errors" in body) {
         return failure(context, "validation-error");
       }
@@ -182,6 +200,9 @@ export function createJournalRoutes(
       if (actor instanceof Response) return actor;
       const result = await services.journal.updatePost(actor, postId.data, {
         body: body.data.body,
+        ...(body.data.expectedUpdatedAt
+          ? { expectedUpdatedAt: body.data.expectedUpdatedAt }
+          : {}),
         occurredAt: body.data.occurredAt,
         ...(body.data.title ? { title: body.data.title } : {}),
       });

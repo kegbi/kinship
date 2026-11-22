@@ -569,6 +569,226 @@ Deno.test("[MCP-B6] PostgreSQL journal and life-event tokens stay in their works
   );
 });
 
+async function postRows(
+  workspaceId: string,
+  body: string,
+): Promise<readonly { id: string }[]> {
+  return await sql<{ id: string }[]>`
+    select id::text from crm.journal_posts
+    where workspace_id = ${workspaceId}::uuid and body = ${body}`;
+}
+
+async function browserJson(
+  owner: SignedInFixture,
+  call: Call,
+  expected: number,
+): Promise<Record<string, unknown>> {
+  const response = await api.request(owner, call.path, call.method, call.body);
+  const text = await response.text();
+  assert(
+    response.status === expected,
+    `browser ${call.method} ${call.path}: ${response.status} ${text}`,
+  );
+  return JSON.parse(text);
+}
+
+Deno.test("[MCP-D4] PostgreSQL journal post creates are retry-safe by token and by cookie, and scoped to the workspace", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`journal-retry-${suffix}@example.test`, "Retry");
+  const foreign = await register(
+    `journal-retry-foreign-${suffix}@example.test`,
+    "Foreign retry",
+  );
+  const writer = await tokens.mint(owner, ["journal:write"]);
+  const foreignWriter = await tokens.mint(foreign, ["journal:write"]);
+  const create = (body: Record<string, unknown>): Call => ({
+    body,
+    method: "POST",
+    path: "/api/v1/journal/posts",
+  });
+  const post = {
+    body: `Retried entry ${suffix}`,
+    occurredAt,
+    requestId: crypto.randomUUID(),
+    title: "Retry",
+  };
+  const created = await json(writer.secret, create(post), 201);
+  const replay = await json(writer.secret, create(post), 201);
+  assert(
+    JSON.stringify(replay) === JSON.stringify(created),
+    `a retry returns the post it created: ${JSON.stringify(replay)}`,
+  );
+  assert(
+    (await postRows(owner.workspaceId, post.body)).length === 1,
+    "a retry creates no second post",
+  );
+  const conflict = await json(
+    writer.secret,
+    create({ ...post, title: "Another title" }),
+    409,
+  );
+  assert(
+    conflict.code === "journal_request_conflict",
+    `conflict code: ${JSON.stringify(conflict)}`,
+  );
+
+  const cookiePost = {
+    body: `Browser entry ${suffix}`,
+    occurredAt,
+    requestId: crypto.randomUUID(),
+  };
+  const byCookie = await browserJson(owner, create(cookiePost), 201);
+  const cookieReplay = await browserJson(owner, create(cookiePost), 201);
+  assert(
+    (cookieReplay.post as { id: string }).id ===
+      (byCookie.post as { id: string }).id,
+    "a browser retry returns the post it created",
+  );
+  await browserJson(owner, create({ ...cookiePost, body: "Changed" }), 409);
+
+  const concurrent = {
+    body: `Concurrent entry ${suffix}`,
+    occurredAt,
+    requestId: crypto.randomUUID(),
+  };
+  const statuses = await Promise.all(
+    Array.from(
+      { length: 6 },
+      () => status(writer.secret, create(concurrent)),
+    ),
+  );
+  assert(
+    statuses.every((value) => value === 201),
+    `concurrent retries all succeed: ${statuses}`,
+  );
+  assert(
+    (await postRows(owner.workspaceId, concurrent.body)).length === 1,
+    "concurrent retries create one post",
+  );
+
+  const createdId = (created.post as { id: string }).id;
+  const foreignCreated = await json(foreignWriter.secret, create(post), 201);
+  const foreignId = (foreignCreated.post as { id: string }).id;
+  assert(foreignId !== createdId, "request identifiers are workspace-scoped");
+  const foreignRows = await postRows(foreign.workspaceId, post.body);
+  assert(
+    foreignRows.length === 1 && foreignRows[0]?.id === foreignId,
+    "the foreign request created the foreign workspace's own post",
+  );
+  const ownRows = await postRows(owner.workspaceId, post.body);
+  assert(
+    ownRows.length === 1 && ownRows[0]?.id === createdId,
+    "the foreign request never touched this workspace's post",
+  );
+
+  const plain = { body: `Plain entry ${suffix}`, occurredAt };
+  await json(writer.secret, create(plain), 201);
+  await json(writer.secret, create(plain), 201);
+  assert(
+    (await postRows(owner.workspaceId, plain.body)).length === 2,
+    "without a request identifier each create is a new post",
+  );
+
+  // Schema v15 deletes a post outright and keeps nothing of it, so a retry
+  // after the deletion finds no row and writes the post again, under the same
+  // identifier and never as a second copy (documented on the route).
+  await json(writer.secret, {
+    method: "DELETE",
+    path: `/api/v1/journal/items/${createdId}`,
+  }, 200);
+  const recreated = await json(writer.secret, create(post), 201);
+  assert(
+    (recreated.post as { id: string }).id === createdId &&
+      (await postRows(owner.workspaceId, post.body)).length === 1,
+    "a retry after deletion writes the post once, under the same identifier",
+  );
+});
+
+Deno.test("[MCP-D4] PostgreSQL journal post updates refuse a stale expectedUpdatedAt by token and by cookie", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`journal-stale-${suffix}@example.test`, "Stale");
+  const reader = await tokens.mint(owner, ["journal:read"]);
+  const writer = await tokens.mint(owner, ["journal:write"]);
+  const created = await json(writer.secret, {
+    body: { body: "Draft", occurredAt },
+    method: "POST",
+    path: "/api/v1/journal/posts",
+  }, 201);
+  const postId = (created.post as { id: string }).id;
+  const readRevision = async (): Promise<string> => {
+    const item = await json(reader.secret, {
+      method: "GET",
+      path: `/api/v1/journal/items/${postId}`,
+    }, 200);
+    return (item.item as { post: { updatedAt: string } }).post.updatedAt;
+  };
+  const listed = await json(reader.secret, {
+    method: "GET",
+    path: "/api/v1/journal",
+  }, 200);
+  const listedPost = (listed.items as {
+    post?: { id: string; updatedAt: string };
+  }[]).find((item) => item.post?.id === postId);
+  const revision = await readRevision();
+  assert(
+    listedPost?.post?.updatedAt === revision &&
+      revision === (created.post as { updatedAt: string }).updatedAt,
+    "the list, the item, and the create all expose one revision",
+  );
+  const put = (body: Record<string, unknown>): Call => ({
+    body,
+    method: "PUT",
+    path: `/api/v1/journal/posts/${postId}`,
+  });
+
+  const fresh = await json(
+    writer.secret,
+    put({ body: "First edit", expectedUpdatedAt: revision, occurredAt }),
+    200,
+  );
+  const next = (fresh.post as { updatedAt: string }).updatedAt;
+  assert(next !== revision, "an edit issues a new revision");
+  const stale = await json(
+    writer.secret,
+    put({ body: "Lost edit", expectedUpdatedAt: revision, occurredAt }),
+    409,
+  );
+  assert(
+    stale.code === "journal_post_stale",
+    `stale: ${JSON.stringify(stale)}`,
+  );
+  await browserJson(
+    owner,
+    put({ body: "Lost by cookie", expectedUpdatedAt: revision, occurredAt }),
+    409,
+  );
+  assert(await readRevision() === next, "a stale edit changes nothing");
+
+  await browserJson(
+    owner,
+    put({ body: "Browser edit", expectedUpdatedAt: next, occurredAt }),
+    200,
+  );
+  const unchecked = await json(
+    writer.secret,
+    put({ body: "Unchecked edit", occurredAt }),
+    200,
+  );
+  assert(
+    (unchecked.post as { body: string }).body === "Unchecked edit",
+    "without expectedUpdatedAt the edit overwrites as before",
+  );
+  const missing = await json(writer.secret, {
+    body: { body: "Nobody", expectedUpdatedAt: revision, occurredAt },
+    method: "PUT",
+    path: `/api/v1/journal/posts/${crypto.randomUUID()}`,
+  }, 404);
+  assert(
+    missing.code === "journal_item_not_found",
+    `a missing post is not stale: ${JSON.stringify(missing)}`,
+  );
+});
+
 Deno.test({
   name: "close journal token PostgreSQL fixture",
   sanitizeOps: false,

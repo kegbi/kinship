@@ -2,10 +2,12 @@ import {
   createPeopleManagement,
   type PeopleManagementDependencies,
   type PeopleTransaction,
+  type PersonIdentity,
 } from "../public.ts";
 import { assert, assertRejects } from "../../../testing/assert.ts";
 import * as fixtures from "../../../testing/fixtures.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
+import { derivePersonId } from "../domain/person_identity.ts";
 
 function dependencies(options: {
   readonly authorize?: boolean;
@@ -81,6 +83,9 @@ function dependencies(options: {
             },
             status: "ready",
           });
+        },
+        getRequestedIdentity(command) {
+          return this.getIdentity(command);
         },
         create(command) {
           effects.push("people.create");
@@ -259,4 +264,285 @@ Deno.test("DAV person ensure reuses the exact deterministic identity and ignores
     !bound.effects.includes("transaction.begin"),
     "existing DAV transaction is used without opening another owner",
   );
+});
+
+/**
+ * A people store that remembers what it was asked to write, so a retry meets
+ * the row the first attempt left behind (MCP-D4).
+ */
+function storedPeople() {
+  const effects: string[] = [];
+  const rows = new Map<
+    string,
+    { readonly person: PersonIdentity; state: "archived" | "deleted" | "ready" }
+  >();
+  let fresh = 0;
+  const transaction: PeopleTransaction = { opaque: "people-request-test" };
+  const dependencies: PeopleManagementDependencies = {
+    actors: { revalidate: () => Promise.resolve("active") },
+    audit: {
+      record() {
+        effects.push("audit.record");
+        return Promise.resolve();
+      },
+      assertPostcondition: () => Promise.resolve(),
+    },
+    clock: fixedClock("2026-11-22T12:00:00.000Z"),
+    ids: {
+      create: () =>
+        `00000000-0000-4000-8000-${String(++fresh).padStart(12, "0")}`,
+    },
+    repository: {
+      lockRequest(command) {
+        effects.push(`request.lock:${command.id}`);
+        return Promise.resolve();
+      },
+      findPossibleDuplicates(command) {
+        effects.push("duplicates");
+        return Promise.resolve(
+          [...rows.values()].filter((row) =>
+            row.state === "ready" &&
+            row.person.givenName === command.givenName &&
+            row.person.familyName === command.familyName
+          ).map((row) => ({
+            displayName: row.person.givenName,
+            id: row.person.id,
+          })),
+        );
+      },
+      getIdentity(command) {
+        const row = rows.get(command.personId);
+        if (!row || row.state === "deleted") {
+          return Promise.resolve({ status: "not-found" });
+        }
+        return Promise.resolve({ person: row.person, status: row.state });
+      },
+      getRequestedIdentity(command) {
+        effects.push(`people.requested:${command.personId}`);
+        const row = rows.get(command.personId);
+        if (!row) return Promise.resolve({ status: "not-found" });
+        if (row.state === "deleted") {
+          return Promise.resolve({ status: "deleted" });
+        }
+        return Promise.resolve({ person: row.person, status: row.state });
+      },
+      create(command) {
+        effects.push(`people.create:${command.id}`);
+        if (rows.has(command.id)) {
+          return Promise.reject(new Error("duplicate primary key"));
+        }
+        const person = {
+          ...(command.familyName ? { familyName: command.familyName } : {}),
+          givenName: command.givenName,
+          id: command.id,
+          isPartial: command.isPartial,
+          ...(command.middleName ? { middleName: command.middleName } : {}),
+          ...(command.nickname ? { nickname: command.nickname } : {}),
+        };
+        rows.set(command.id, { person, state: "ready" });
+        return Promise.resolve(person);
+      },
+      assertCreatedPostcondition: () => Promise.resolve(),
+    },
+    transaction: { run: (work) => work(transaction) },
+  };
+  return { dependencies, effects, rows };
+}
+
+const REQUEST = "0f9e8d7c-6b5a-4c3d-8e2f-1a0b9c8d7e6f";
+
+/** How many people the store holds, read fresh at every call. */
+function stored(store: ReturnType<typeof storedPeople>): number {
+  return store.rows.size;
+}
+
+Deno.test("MCP-D4 a person created with a requestId is created once and replayed by id", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  const derived = await derivePersonId(actor.workspaceId, REQUEST);
+  const input = {
+    familyName: "Lovelace",
+    givenName: "Ada",
+    isPartial: false,
+    requestId: REQUEST,
+  };
+
+  const first = await people.create(actor, input);
+  assert(first.status === "created", `first create: ${first.status}`);
+  assert(first.person.id === derived, "the request names the person");
+
+  const replay = await people.create(actor, {
+    ...input,
+    familyName: "  Lovelace ",
+    requestId: REQUEST.toUpperCase(),
+  });
+  assert(replay.status === "created", `replay: ${replay.status}`);
+  assert(replay.person.id === derived, "the replay returns the same person");
+  assert(store.rows.size === 1, "a replay creates no second person");
+  assert(
+    store.effects.filter((effect) => effect === "audit.record").length === 1,
+    "a replay audits nothing new",
+  );
+  assert(
+    store.effects.filter((effect) => effect === "duplicates").length === 1,
+    "a replay is answered before duplicate detection",
+  );
+});
+
+Deno.test("MCP-D4 the same requestId with other names is an idempotency conflict", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  await people.create(actor, {
+    givenName: "Ada",
+    isPartial: false,
+    requestId: REQUEST,
+  });
+  const changes = [
+    { familyName: "Byron" },
+    { nickname: "Countess" },
+    { middleName: "Augusta" },
+    { givenName: "Augusta" },
+    { isPartial: true },
+  ];
+  for (const changed of changes) {
+    const result = await people.create(actor, {
+      givenName: "Ada",
+      isPartial: false,
+      requestId: REQUEST,
+      ...changed,
+    });
+    assert(
+      result.status === "idempotency-conflict",
+      `${JSON.stringify(changed)} conflicts: ${result.status}`,
+    );
+  }
+  assert(store.rows.size === 1, "a conflict writes nothing");
+});
+
+Deno.test("MCP-D4 a malformed requestId is refused before any transaction", async () => {
+  const store = storedPeople();
+  const result = await createPeopleManagement(store.dependencies).create(
+    actor,
+    { givenName: "Ada", isPartial: false, requestId: "not-a-request" },
+  );
+  assert(
+    result.status === "validation-error" &&
+      result.errors.requestId !== undefined,
+    "the request identifier must be canonical",
+  );
+  assert(store.effects.length === 0, "nothing was read or written");
+});
+
+Deno.test("MCP-D4 without a requestId every create is a new person, as before", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  const first = await people.create(actor, {
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const second = await people.create(actor, {
+    duplicateOverride: true,
+    givenName: "Ada",
+    isPartial: false,
+  });
+  assert(
+    first.status === "created" && second.status === "created" &&
+      first.person.id !== second.person.id,
+    "two creates without a request identifier are two people",
+  );
+  assert(
+    !store.effects.some((effect) => effect.startsWith("request.lock")),
+    "no request lock without a request identifier",
+  );
+});
+
+Deno.test("MCP-D4 a possible duplicate creates nothing, and the override retry with the same requestId creates it", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  await people.create(actor, {
+    familyName: "Lovelace",
+    givenName: "Ada",
+    isPartial: false,
+  });
+  const input = {
+    familyName: "Lovelace",
+    givenName: "Ada",
+    isPartial: false,
+    requestId: REQUEST,
+  };
+  const warned = await people.create(actor, input);
+  assert(warned.status === "possible-duplicate", `warned: ${warned.status}`);
+  assert(stored(store) === 1, "the warning created nothing");
+
+  const overridden = await people.create(actor, {
+    ...input,
+    duplicateOverride: true,
+  });
+  assert(overridden.status === "created", `override: ${overridden.status}`);
+  const derived = await derivePersonId(actor.workspaceId, REQUEST);
+  assert(overridden.person.id === derived, "the override uses the request id");
+
+  const overrideRetry = await people.create(actor, {
+    ...input,
+    duplicateOverride: true,
+  });
+  const originalRetry = await people.create(actor, input);
+  assert(
+    overrideRetry.status === "created" &&
+      overrideRetry.person.id === derived &&
+      originalRetry.status === "created" &&
+      originalRetry.person.id === derived,
+    "duplicateOverride is not part of the compared payload",
+  );
+  assert(stored(store) === 2, "the retries created no third person");
+});
+
+Deno.test("MCP-D4 a replay never resurrects a deleted person, and an archived one is returned as stored", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  const input = { givenName: "Ada", isPartial: false, requestId: REQUEST };
+  const created = await people.create(actor, input);
+  if (created.status !== "created") throw new Error(created.status);
+
+  store.rows.get(created.person.id)!.state = "archived";
+  const archived = await people.create(actor, input);
+  assert(
+    archived.status === "created" && archived.person.id === created.person.id,
+    "an archived person is the person the request created",
+  );
+
+  store.rows.get(created.person.id)!.state = "deleted";
+  const deleted = await people.create(actor, input);
+  assert(
+    deleted.status === "idempotency-conflict",
+    `a deleted person is not recreated: ${deleted.status}`,
+  );
+  const ensured = await people.ensure(actor, REQUEST, {
+    givenName: "Ada",
+    isPartial: false,
+  });
+  assert(
+    ensured.status === "idempotency-conflict",
+    `ensure does not recreate a deleted person: ${ensured.status}`,
+  );
+  assert(
+    store.rows.get(created.person.id)!.state === "deleted" &&
+      store.rows.size === 1,
+    "nothing was resurrected or duplicated",
+  );
+});
+
+Deno.test("MCP-D4 a revoked member's request is refused before the request is read", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement({
+    ...store.dependencies,
+    actors: { revalidate: () => Promise.resolve("revoked") },
+  });
+  const result = await people.create(actor, {
+    givenName: "Ada",
+    isPartial: false,
+    requestId: REQUEST,
+  });
+  assert(result.status === "forbidden", `revoked: ${result.status}`);
+  assert(store.effects.length === 0, "nothing was locked, read, or written");
 });

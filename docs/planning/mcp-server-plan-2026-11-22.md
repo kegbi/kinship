@@ -194,7 +194,7 @@ is a separate decision.
       cadence.
 - [ ] **MCP-D3 Gifts and debts.** Edit a gift's and a debt's values, delete a
       gift, retry-safe creates (`requestId`), and revision checks on updates.
-- [ ] **MCP-D4 People and journal retries.** `requestId` on `createPerson` (the
+- [x] **MCP-D4 People and journal retries.** `requestId` on `createPerson` (the
       existing `ensure` use case) and `createJournalPost`, and a revision check
       on `updateJournalPost`.
 

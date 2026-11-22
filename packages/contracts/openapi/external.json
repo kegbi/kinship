@@ -849,7 +849,7 @@
     "/api/v1/journal/posts": {
       "post": {
         "operationId": "createJournalPost",
-        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Send a client-generated requestId and reuse it when retrying: the same requestId and post return the post it created (201), and the same requestId with a different body, title, or occurredAt is refused (409). A deleted post leaves no record, so a retry after its deletion writes it again. Without a requestId every call creates a new post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_api_token": []
@@ -880,7 +880,7 @@
         },
         "responses": {
           "201": {
-            "description": "Journal post created",
+            "description": "Journal post created, or the post an earlier call with the same requestId created",
             "content": {
               "application/json": {
                 "schema": {
@@ -919,6 +919,16 @@
               }
             }
           },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "415": {
             "description": "RFC 9457 problem details",
             "content": {
@@ -945,7 +955,7 @@
     "/api/v1/journal/posts/{itemId}": {
       "put": {
         "operationId": "updateJournalPost",
-        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared. Send expectedUpdatedAt, the post's updatedAt as listJournal or getJournalItem returned it, to refuse a concurrent edit: a revision that is no longer current answers 409 and changes nothing. Without expectedUpdatedAt the post is overwritten unchecked. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_api_token": []
@@ -978,7 +988,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JournalPostInput"
+                "$ref": "#/components/schemas/JournalPostUpdateInput"
               }
             }
           }
@@ -1025,6 +1035,16 @@
             }
           },
           "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -1413,7 +1433,7 @@
       },
       "post": {
         "operationId": "createPerson",
-        "description": "Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
+        "description": "Creates a person in the workspace. Personal tokens require the people:write grant. Send a client-generated requestId and reuse it when retrying: the same requestId and names return the person it created (201), and the same requestId with different names, or after that person was deleted, is refused (409). duplicateOverride is not compared, so a create warned as a possible duplicate may be retried with duplicateOverride and the same requestId. Without a requestId every call creates a new person. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
         "security": [
           {
             "kinship_api_token": []
@@ -1444,7 +1464,7 @@
         },
         "responses": {
           "201": {
-            "description": "Workspace-owned person created",
+            "description": "Workspace-owned person created, or the person an earlier call with the same requestId created",
             "content": {
               "application/json": {
                 "schema": {
@@ -11992,6 +12012,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "requestId": {
+            "description": "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different post.",
+            "type": "string",
+            "format": "uuid"
+          },
           "title": {
             "type": "string",
             "minLength": 1,
@@ -12049,6 +12074,35 @@
           "occurredAt",
           "post",
           "type"
+        ],
+        "additionalProperties": false
+      },
+      "JournalPostUpdateInput": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50000
+          },
+          "expectedUpdatedAt": {
+            "description": "Optional revision check: the post's updatedAt exactly as a read returned it. When it is no longer the post's revision the edit is refused (409) and nothing changes.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "body",
+          "occurredAt"
         ],
         "additionalProperties": false
       },
@@ -13249,6 +13303,11 @@
           "nickname": {
             "type": "string",
             "maxLength": 200
+          },
+          "requestId": {
+            "description": "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different person.",
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [

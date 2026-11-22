@@ -27,6 +27,8 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
         status: "created",
       }),
     deleteItem: () => Promise.resolve({ itemType: "post", status: "deleted" }),
+    findPost: () => Promise.resolve(undefined),
+    lockRequest: () => Promise.resolve(),
     linkActivity: (command) =>
       Promise.resolve({
         activityId: command.activityId,
@@ -176,7 +178,9 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
   const repository: JournalRepository = {
     createPost: () => Promise.resolve({ status: "forbidden" }),
     deleteItem: () => Promise.resolve({ status: "not-found" }),
+    findPost: () => Promise.resolve(undefined),
     linkActivity: () => Promise.resolve({ status: "not-found" }),
+    lockRequest: () => Promise.resolve(),
     saveDayRating: () => Promise.resolve({ status: "forbidden" }),
     updatePost: () => Promise.resolve({ status: "not-found" }),
   };
@@ -658,5 +662,121 @@ Deno.test("[MCP-B6] cookie journal writes keep their check order", async () => {
   );
   if (malformedQuery.status !== 400) {
     throw new Error("a malformed query now asks for a session first");
+  }
+});
+
+Deno.test("[MCP-D4] journal HTTP forwards requestId and expectedUpdatedAt and maps their refusals to 409", async () => {
+  const received: Record<string, unknown>[] = [];
+  let createAnswer: { readonly status: string; readonly post?: unknown } = {
+    post: { id },
+    status: "created",
+  };
+  let updateAnswer: { readonly status: string; readonly post?: unknown } = {
+    post: { id },
+    status: "updated",
+  };
+  const session = { ...actor, workspaceName: "Journal" };
+  const app = createJournalRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {
+      createPost: (_actor: unknown, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve(createAnswer);
+      },
+      updatePost: (_actor: unknown, _postId: string, input: unknown) => {
+        received.push(input as Record<string, unknown>);
+        return Promise.resolve(updateAnswer);
+      },
+    } as never,
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({ ...session, accessibleWorkspaces: [session] }),
+    },
+    timeline: {} as never,
+  });
+  const headers = {
+    cookie: "kinship_session=valid",
+    "content-type": "application/json",
+    origin: "http://localhost",
+  };
+  const send = (method: "POST" | "PUT", body: Record<string, unknown>) =>
+    app.request(
+      method === "POST"
+        ? "http://localhost/api/v1/journal/posts"
+        : `http://localhost/api/v1/journal/posts/${id}`,
+      { body: JSON.stringify(body), headers, method },
+    );
+  const requestId = "5b8a3c1d-2e4f-4a6b-9c8d-7e6f5a4b3c2d";
+  const revision = "2026-08-23T10:00:00.000000Z";
+  const statuses = [
+    (await send("POST", { body: "Entry", occurredAt: now, requestId })).status,
+    (await send("POST", { body: "Entry", occurredAt: now })).status,
+    (await send("PUT", {
+      body: "Edited",
+      expectedUpdatedAt: revision,
+      occurredAt: now,
+    })).status,
+    (await send("PUT", { body: "Edited", occurredAt: now })).status,
+  ];
+  if (JSON.stringify(statuses) !== JSON.stringify([201, 201, 200, 200])) {
+    throw new Error(`accepted inputs: ${statuses}`);
+  }
+  const expected = [
+    { body: "Entry", occurredAt: now, requestId },
+    { body: "Entry", occurredAt: now },
+    { body: "Edited", expectedUpdatedAt: revision, occurredAt: now },
+    { body: "Edited", occurredAt: now },
+  ];
+  if (JSON.stringify(received) !== JSON.stringify(expected)) {
+    throw new Error(`forwarded: ${JSON.stringify(received)}`);
+  }
+
+  const refused = [
+    await send("POST", { body: "Entry", occurredAt: now, requestId: "r-1" }),
+    await send("PUT", {
+      body: "Edited",
+      expectedUpdatedAt: "yesterday",
+      occurredAt: now,
+    }),
+    await send("PUT", { body: "Edited", occurredAt: now, requestId }),
+    await send("POST", {
+      body: "Entry",
+      expectedUpdatedAt: revision,
+      occurredAt: now,
+    }),
+  ];
+  if (refused.some((response) => response.status !== 400)) {
+    throw new Error(`malformed: ${refused.map((response) => response.status)}`);
+  }
+  if (received.length !== 4) throw new Error("a malformed body was forwarded");
+
+  createAnswer = { status: "idempotency-conflict" };
+  updateAnswer = { status: "stale" };
+  const conflict = await send("POST", {
+    body: "Other",
+    occurredAt: now,
+    requestId,
+  });
+  const stale = await send("PUT", {
+    body: "Edited",
+    expectedUpdatedAt: revision,
+    occurredAt: now,
+  });
+  const codes = [
+    conflict.status,
+    ((await conflict.json()) as { code: string }).code,
+    stale.status,
+    ((await stale.json()) as { code: string }).code,
+  ];
+  if (
+    JSON.stringify(codes) !==
+      JSON.stringify([
+        409,
+        "journal_request_conflict",
+        409,
+        "journal_post_stale",
+      ])
+  ) {
+    throw new Error(`refusals: ${JSON.stringify(codes)}`);
   }
 });

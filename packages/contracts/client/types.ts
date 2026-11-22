@@ -830,6 +830,9 @@ export type JournalItemType = JournalTimelineItem["type"];
 
 export type JournalPostInput = components["schemas"]["JournalPostInput"];
 
+export type JournalPostUpdateInput =
+  components["schemas"]["JournalPostUpdateInput"];
+
 export type JournalDayRatingInput =
   components["schemas"]["JournalDayRatingInput"];
 

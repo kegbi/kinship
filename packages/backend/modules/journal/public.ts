@@ -1,7 +1,9 @@
 export type { JournalPersonalizationReferences } from "./application/personalization_references.ts";
 export type {
   DayRatingInput,
+  JournalPostCreateInput,
   JournalPostInput,
+  JournalPostUpdateInput,
   StoredDayRating,
   StoredJournalPost,
 } from "./domain/journal_rules.ts";

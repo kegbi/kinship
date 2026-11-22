@@ -321,6 +321,7 @@ export function racingPeople(
     findPossibleDuplicates: (command) =>
       delegate.findPossibleDuplicates(command),
     getIdentity: (command) => delegate.getIdentity(command),
+    getRequestedIdentity: (command) => delegate.getRequestedIdentity(command),
   };
   const racingActors: ActorRevalidation = {
     async revalidate(command) {

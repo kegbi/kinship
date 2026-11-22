@@ -7,6 +7,11 @@
  * kind of item it removed rather than with nothing, because the audit event
  * has to name what went away and the row is gone by the time it is written.
  *
+ * `lockRequest` and `findPost` are the retry and revision gates (MCP-D4): the
+ * advisory lock a derived post identifier names serializes two retries of one
+ * creation, and `findPost` reads the row a retry or a checked edit is judged
+ * against, under a row lock when the edit is about to follow.
+ *
  * `saveDayRating` is the one upsert: a workspace keeps one rating per day, so
  * the answer says whether the row was created or changed and the audit event
  * follows it.
@@ -48,6 +53,13 @@ export interface JournalRepository {
     }
     | Failure<"forbidden" | "not-found">
   >;
+  findPost(
+    command: JournalActor & {
+      readonly id: string;
+      readonly lock: boolean;
+      readonly transaction: JournalTransaction;
+    },
+  ): Promise<StoredJournalPost | undefined>;
   linkActivity(
     command: JournalActor & {
       readonly activityId: string;
@@ -63,6 +75,10 @@ export interface JournalRepository {
       readonly status: "created";
     } | Failure<"forbidden" | "not-found">
   >;
+  lockRequest(command: {
+    readonly id: string;
+    readonly transaction: JournalTransaction;
+  }): Promise<void>;
   saveDayRating(
     command: JournalActor & {
       readonly comment?: string;

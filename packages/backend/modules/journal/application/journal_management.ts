@@ -6,15 +6,27 @@
  * work, and record the audit event beside it. What the member wrote is judged
  * by `domain/journal_rules.ts` and the work itself is the repository's, so
  * what is left in this file is the order of those steps and nothing else.
+ *
+ * Two of those steps are optional and only run when the caller asks (MCP-D4).
+ * A post created with a `requestId` derives its identifier from it, the way a
+ * task does: the identifier is locked, a post already stored under it is
+ * returned when it is the same post and refused as `idempotency-conflict`
+ * when it is not. A post edited with `expectedUpdatedAt` is read under lock
+ * first and refused as `stale` when that is no longer its revision. Without
+ * either field both writes are exactly what they were.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
+import { isInstant, uuid } from "../../../shared-kernel/validation.ts";
 import {
   type DayRatingInput,
+  deriveJournalPostId,
   instant,
-  type JournalPostInput,
+  type JournalPostCreateInput,
+  type JournalPostUpdateInput,
+  postMatches,
   validateDayRating,
   validateJournalPost,
 } from "../domain/journal_rules.ts";
@@ -67,14 +79,36 @@ export function createJournalManagement(
   };
 
   return {
-    createPost: async (actor: JournalActor, input: JournalPostInput) => {
+    createPost: async (actor: JournalActor, input: JournalPostCreateInput) => {
       const values = validateJournalPost(input);
-      if (!values) return { status: "validation-error" as const };
+      const requestId = input.requestId === undefined
+        ? undefined
+        : uuid(input.requestId);
+      if (!values || (input.requestId !== undefined && !requestId)) {
+        return { status: "validation-error" as const };
+      }
       return await execute(actor, async (transaction, now) => {
+        const id = requestId
+          ? await deriveJournalPostId(actor.workspaceId, requestId)
+          : dependencies.ids.next();
+        if (requestId) {
+          await dependencies.repository.lockRequest({ id, transaction });
+          const replay = await dependencies.repository.findPost({
+            ...actor,
+            id,
+            lock: false,
+            transaction,
+          });
+          if (replay) {
+            return postMatches(replay, values)
+              ? { post: replay, status: "created" as const }
+              : { status: "idempotency-conflict" as const };
+          }
+        }
         const result = await dependencies.repository.createPost({
           ...actor,
           ...values,
-          id: dependencies.ids.next(),
+          id,
           now,
           transaction,
         });
@@ -169,11 +203,27 @@ export function createJournalManagement(
     updatePost: async (
       actor: JournalActor,
       postId: string,
-      input: JournalPostInput,
+      input: JournalPostUpdateInput,
     ) => {
       const values = validateJournalPost(input);
-      if (!values) return { status: "validation-error" as const };
+      const expected = input.expectedUpdatedAt;
+      if (!values || (expected !== undefined && !isInstant(expected))) {
+        return { status: "validation-error" as const };
+      }
       return await execute(actor, async (transaction, now) => {
+        if (expected !== undefined) {
+          const current = await dependencies.repository.findPost({
+            ...actor,
+            id: postId,
+            lock: true,
+            transaction,
+          });
+          if (!current) return { status: "not-found" as const };
+          // A revision is compared exactly as the database issued it.
+          if (current.updatedAt !== expected) {
+            return { status: "stale" as const };
+          }
+        }
         const result = await dependencies.repository.updatePost({
           ...actor,
           ...values,

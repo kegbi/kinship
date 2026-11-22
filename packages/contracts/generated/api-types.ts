@@ -341,7 +341,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Send a client-generated requestId and reuse it when retrying: the same requestId and post return the post it created (201), and the same requestId with a different body, title, or occurredAt is refused (409). A deleted post leaves no record, so a retry after its deletion writes it again. Without a requestId every call creates a new post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createJournalPost"];
         readonly delete?: never;
         readonly options?: never;
@@ -357,7 +357,7 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
-        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared. Send expectedUpdatedAt, the post's updatedAt as listJournal or getJournalItem returned it, to refuse a concurrent edit: a revision that is no longer current answers 409 and changes nothing. Without expectedUpdatedAt the post is overwritten unchecked. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly put: operations["updateJournalPost"];
         readonly post?: never;
         readonly delete?: never;
@@ -539,7 +539,7 @@ export interface paths {
         /** @description Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates. */
         readonly get: operations["listPeople"];
         readonly put?: never;
-        /** @description Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride. */
+        /** @description Creates a person in the workspace. Personal tokens require the people:write grant. Send a client-generated requestId and reuse it when retrying: the same requestId and names return the person it created (201), and the same requestId with different names, or after that person was deleted, is refused (409). duplicateOverride is not compared, so a create warned as a possible duplicate may be retried with duplicateOverride and the same requestId. Without a requestId every call creates a new person. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride. */
         readonly post: operations["createPerson"];
         readonly delete?: never;
         readonly options?: never;
@@ -3193,6 +3193,11 @@ export interface components {
             readonly body: string;
             /** Format: date-time */
             readonly occurredAt: string;
+            /**
+             * Format: uuid
+             * @description Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different post.
+             */
+            readonly requestId?: string;
             readonly title?: string;
         };
         readonly JournalPostItem: {
@@ -3213,6 +3218,17 @@ export interface components {
              * @enum {string}
              */
             readonly type: "post";
+        };
+        readonly JournalPostUpdateInput: {
+            readonly body: string;
+            /**
+             * Format: date-time
+             * @description Optional revision check: the post's updatedAt exactly as a read returned it. When it is no longer the post's revision the edit is refused (409) and nothing changes.
+             */
+            readonly expectedUpdatedAt?: string;
+            /** Format: date-time */
+            readonly occurredAt: string;
+            readonly title?: string;
         };
         readonly JournalPostUpdated: {
             readonly post: components["schemas"]["JournalStoredPost"];
@@ -3707,6 +3723,11 @@ export interface components {
             readonly isPartial: boolean;
             readonly middleName?: string;
             readonly nickname?: string;
+            /**
+             * Format: uuid
+             * @description Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different person.
+             */
+            readonly requestId?: string;
         };
         readonly PersonLifeEvent: {
             readonly date: components["schemas"]["PersonLifeEventDate"];
@@ -6825,7 +6846,7 @@ export interface operations {
             };
         };
         readonly responses: {
-            /** @description Journal post created */
+            /** @description Journal post created, or the post an earlier call with the same requestId created */
             readonly 201: {
                 headers: {
                     readonly [name: string]: unknown;
@@ -6854,6 +6875,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -6897,7 +6927,7 @@ export interface operations {
         };
         readonly requestBody: {
             readonly content: {
-                readonly "application/json": components["schemas"]["JournalPostInput"];
+                readonly "application/json": components["schemas"]["JournalPostUpdateInput"];
             };
         };
         readonly responses: {
@@ -6939,6 +6969,15 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -7788,7 +7827,7 @@ export interface operations {
             };
         };
         readonly responses: {
-            /** @description Workspace-owned person created */
+            /** @description Workspace-owned person created, or the person an earlier call with the same requestId created */
             readonly 201: {
                 headers: {
                     readonly [name: string]: unknown;

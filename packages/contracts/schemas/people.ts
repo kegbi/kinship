@@ -641,6 +641,10 @@ export const personInput = z.strictObject({
   isPartial: z.boolean(),
   middleName: z.string().trim().max(200).optional(),
   nickname: z.string().trim().max(200).optional(),
+  requestId: z.uuid().optional().meta({
+    description:
+      "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different person.",
+  }),
 }).meta({ id: "PersonInput" });
 
 export const personLifeEventDate = z.strictObject({

@@ -104,6 +104,25 @@ export class PostgresJournalRepository implements JournalRepository {
     return { itemType, status: "deleted" };
   }
 
+  async findPost(
+    command: Parameters<JournalRepository["findPost"]>[0],
+  ): Promise<Awaited<ReturnType<JournalRepository["findPost"]>>> {
+    const result = await sql<PostRow>`
+      select ${postColumns} from crm.journal_posts post
+      where post.id = ${command.id}::uuid
+        and post.workspace_id = ${command.workspaceId}::uuid
+      ${command.lock ? sql`for update` : sql``}
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0] ? post(result.rows[0]) : undefined;
+  }
+
+  async lockRequest(
+    command: Parameters<JournalRepository["lockRequest"]>[0],
+  ): Promise<void> {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${command.id}, 0))`
+      .execute(databaseFromSession(command.transaction));
+  }
+
   async linkActivity(
     command: Parameters<JournalRepository["linkActivity"]>[0],
   ): Promise<Awaited<ReturnType<JournalRepository["linkActivity"]>>> {
@@ -151,7 +170,10 @@ export class PostgresJournalRepository implements JournalRepository {
     const result = await sql<PostRow>`with updated as (
       update crm.journal_posts set title = ${
       command.title ?? null
-    }, body = ${command.body}, occurred_at = ${command.occurredAt}, updated_at = ${command.now}
+    }, body = ${command.body}, occurred_at = ${command.occurredAt},
+        -- Strictly later than the revision it replaces, so two edits inside one
+        -- clock tick still leave expectedUpdatedAt something to tell apart.
+        updated_at = greatest(${command.now}::timestamptz, updated_at + interval '1 microsecond')
       where id = ${command.postId}::uuid and workspace_id = ${command.workspaceId}::uuid returning *
     ), indexed as (
       update crm.journal_items set occurred_at = ${command.occurredAt}, updated_at = ${command.now}

@@ -24,6 +24,7 @@ import {
   journalPostCreated,
   journalPostInput,
   journalPostUpdated,
+  journalPostUpdateInput,
   journalTimelineList,
 } from "../schemas/journal.ts";
 import { pageQuery, uuid } from "../schemas/shared.ts";
@@ -171,7 +172,7 @@ export const createJournalPost = defineRoute({
   path: "/api/v1/journal/posts",
   operationId: "createJournalPost",
   description:
-    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Send a client-generated requestId and reuse it when retrying: the same requestId and post return the post it created (201), and the same requestId with a different body, title, or occurredAt is refused (409). A deleted post leaves no record, so a retry after its deletion writes it again. Without a requestId every call creates a new post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
   tokenScope: "journal:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -185,12 +186,13 @@ export const createJournalPost = defineRoute({
   },
   responses: {
     201: {
-      description: "Journal post created",
+      description:
+        "Journal post created, or the post an earlier call with the same requestId created",
       content: {
         "application/json": journalPostCreated,
       },
     },
-    ...problemResponses(400, 401, 403, 503),
+    ...problemResponses(400, 401, 403, 409, 503),
   },
 });
 
@@ -199,7 +201,7 @@ export const updateJournalPost = defineRoute({
   path: "/api/v1/journal/posts/{itemId}",
   operationId: "updateJournalPost",
   description:
-    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared. Send expectedUpdatedAt, the post's updatedAt as listJournal or getJournalItem returned it, to refuse a concurrent edit: a revision that is no longer current answers 409 and changes nothing. Without expectedUpdatedAt the post is overwritten unchecked. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
   tokenScope: "journal:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -210,7 +212,7 @@ export const updateJournalPost = defineRoute({
     body: {
       required: true,
       content: {
-        "application/json": journalPostInput,
+        "application/json": journalPostUpdateInput,
       },
     },
   },
@@ -221,7 +223,7 @@ export const updateJournalPost = defineRoute({
         "application/json": journalPostUpdated,
       },
     },
-    ...problemResponses(400, 401, 403, 404, 503),
+    ...problemResponses(400, 401, 403, 404, 409, 503),
   },
 });
 

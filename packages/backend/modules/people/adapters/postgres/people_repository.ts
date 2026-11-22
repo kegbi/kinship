@@ -11,6 +11,7 @@ import type { PeopleTransaction } from "../../ports/context.ts";
 import type {
   PeopleRepository,
   PersonIdentityLookup,
+  RequestedPersonLookup,
 } from "../../ports/person_repository.ts";
 
 interface DuplicateRow {
@@ -18,6 +19,48 @@ interface DuplicateRow {
   readonly given_name: string;
   readonly id: string;
   readonly nickname: string | null;
+}
+
+interface IdentityRow {
+  readonly archived_at: Date | null;
+  readonly deleted_at: Date | null;
+  readonly family_name: string | null;
+  readonly given_name: string;
+  readonly id: string;
+  readonly is_partial: boolean;
+  readonly middle_name: string | null;
+  readonly nickname: string | null;
+}
+
+/**
+ * One person by identifier, deleted or not; each lookup decides what a
+ * soft-deleted row means to its caller.
+ */
+async function identityRow(
+  command: Parameters<PeopleRepository["getIdentity"]>[0],
+): Promise<IdentityRow | undefined> {
+  const result = await sql<IdentityRow>`
+    select person.id::text, person.given_name, person.middle_name,
+      person.family_name, person.nickname, person.is_partial,
+      person.archived_at, person.deleted_at
+    from crm.people person
+    where person.id = ${command.personId}::uuid
+      and person.workspace_id = ${command.workspaceId}::uuid
+  `.execute(databaseFromSession(command.transaction));
+  return result.rows[0];
+}
+
+function identityLookup(row: IdentityRow): PersonIdentityLookup {
+  return {
+    person: {
+      ...pickDefined({ familyName: row.family_name }),
+      givenName: row.given_name,
+      id: row.id,
+      isPartial: row.is_partial,
+      ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
+    },
+    status: row.archived_at ? "archived" : "ready",
+  };
 }
 
 export class PostgresPeopleTransaction
@@ -60,35 +103,17 @@ export class PostgresPeopleRepository implements PeopleRepository {
   async getIdentity(
     command: Parameters<PeopleRepository["getIdentity"]>[0],
   ): Promise<PersonIdentityLookup> {
-    const result = await sql<{
-      readonly archived_at: Date | null;
-      readonly family_name: string | null;
-      readonly given_name: string;
-      readonly id: string;
-      readonly is_partial: boolean;
-      readonly middle_name: string | null;
-      readonly nickname: string | null;
-    }>`
-      select person.id::text, person.given_name, person.middle_name,
-        person.family_name, person.nickname, person.is_partial,
-        person.archived_at
-      from crm.people person
-      where person.id = ${command.personId}::uuid
-        and person.workspace_id = ${command.workspaceId}::uuid
-        and person.deleted_at is null
-    `.execute(databaseFromSession(command.transaction));
-    const row = result.rows[0];
-    if (!row) return { status: "not-found" };
-    return {
-      person: {
-        ...pickDefined({ familyName: row.family_name }),
-        givenName: row.given_name,
-        id: row.id,
-        isPartial: row.is_partial,
-        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-      },
-      status: row.archived_at ? "archived" : "ready",
-    };
+    const found = await identityRow(command);
+    if (!found || found.deleted_at) return { status: "not-found" };
+    return identityLookup(found);
+  }
+
+  async getRequestedIdentity(
+    command: Parameters<PeopleRepository["getRequestedIdentity"]>[0],
+  ): Promise<RequestedPersonLookup> {
+    const found = await identityRow(command);
+    if (!found) return { status: "not-found" };
+    return found.deleted_at ? { status: "deleted" } : identityLookup(found);
   }
 
   async create(
