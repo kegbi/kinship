@@ -408,6 +408,24 @@ Deno.test("RELATIONSHIP-001 HTTP exposes strict directional create, update, list
     related.status === 201 && (await related.json()).person.id === targetId,
     "atomic related-person route failed",
   );
+  // The route creates its person in the relationship's own transaction and
+  // keeps no request receipt, so it refuses a retry key it could not honor.
+  const keyed = await app.request(
+    `http://localhost/api/v1/people/${sourceId}/relationships/related-person`,
+    {
+      body: JSON.stringify({
+        person: {
+          givenName: "Grace",
+          isPartial: false,
+          requestId: "5f0c8a52-3d1e-4b7a-9c56-2f1e0d9b8a77",
+        },
+        relationshipTypeId: typeId,
+      }),
+      headers,
+      method: "POST",
+    },
+  );
+  assertStatus(keyed, 400, "a related person takes no requestId");
   const listed = await app.request(
     `http://localhost/api/v1/people/${targetId}/relationships?limit=7&cursor=opaque`,
     { headers },

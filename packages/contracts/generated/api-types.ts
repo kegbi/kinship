@@ -4420,6 +4420,14 @@ export interface components {
             readonly password: string;
             readonly workspaceName: string;
         };
+        readonly RelatedPersonInput: {
+            readonly duplicateOverride?: boolean;
+            readonly familyName?: string;
+            readonly givenName: string;
+            readonly isPartial: boolean;
+            readonly middleName?: string;
+            readonly nickname?: string;
+        };
         readonly RelatedPersonRelationshipChanged: {
             readonly affectedPersonIds: readonly string[];
             readonly forward: components["schemas"]["RelationshipDisplay"];
@@ -4430,7 +4438,7 @@ export interface components {
             readonly status: "created";
         };
         readonly RelatedPersonRelationshipInput: {
-            readonly person: components["schemas"]["PersonInput"];
+            readonly person: components["schemas"]["RelatedPersonInput"];
             /** Format: uuid */
             readonly relationshipTypeId: string;
         };

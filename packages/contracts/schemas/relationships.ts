@@ -45,8 +45,18 @@ export const relatedPersonRelationshipChanged = z.strictObject({
   status: z.literal("created"),
 }).meta({ id: "RelatedPersonRelationshipChanged" });
 
+/**
+ * The person a related-person write creates. It is the person-create input
+ * without `requestId`: this route creates the person and the edge in one
+ * transaction and keeps no request receipt, so it refuses a retry key rather
+ * than accept one it would not honor.
+ */
+const relatedPersonInput = personInput.omit({ requestId: true }).meta({
+  id: "RelatedPersonInput",
+});
+
 export const relatedPersonRelationshipInput = z.strictObject({
-  person: personInput,
+  person: relatedPersonInput,
   relationshipTypeId: z.uuid(),
 }).meta({ id: "RelatedPersonRelationshipInput" });
 

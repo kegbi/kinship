@@ -26984,6 +26984,38 @@
         ],
         "additionalProperties": false
       },
+      "RelatedPersonInput": {
+        "type": "object",
+        "properties": {
+          "duplicateOverride": {
+            "type": "boolean"
+          },
+          "familyName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "givenName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPartial": {
+            "type": "boolean"
+          },
+          "middleName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "nickname": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "givenName",
+          "isPartial"
+        ],
+        "additionalProperties": false
+      },
       "RelatedPersonRelationshipChanged": {
         "type": "object",
         "properties": {
@@ -27026,7 +27058,7 @@
         "type": "object",
         "properties": {
           "person": {
-            "$ref": "#/components/schemas/PersonInput"
+            "$ref": "#/components/schemas/RelatedPersonInput"
           },
           "relationshipTypeId": {
             "type": "string",
