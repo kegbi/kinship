@@ -174,7 +174,7 @@ const SCOPES = {
   "people:write": {
     access: "write",
     detail:
-      "Create, rename, archive, restore, and star people, and change their profile facts, important dates, and life events; no deleting or merging.",
+      "Create, rename, archive, restore, and star people, and add, change, and delete their profile facts, important dates, and life events; no deleting or merging people.",
     group: "people",
     label: "Edit people",
   },
@@ -283,7 +283,7 @@ const SCOPES = {
     access: "write",
     caution: "financial",
     detail:
-      "Create and change gifts, debts, and recurring debts, and record settlements.",
+      "Create and change gifts, debts, and recurring debts, record settlements, and delete debts and recurring debts.",
     group: "gifts",
     label: "Edit gifts and debts",
   },
