@@ -11,12 +11,19 @@
  * case decide every call, and the argument schema is only what lets an agent
  * correct itself before it asks.
  *
- * Two declarations change the derived shape:
+ * Five declarations change the derived shape:
  *
  * - `body` and `fixed` serve a union body one member at a time. MCP requires
  *   an argument schema whose root is a plain object, so a tool names the
  *   member it sends and fixes its discriminator (`record_note` is the note
- *   member of `recordInteraction` with `kind` fixed to `note`).
+ *   member of `recordInteraction` with `kind` fixed to `note`). A fixed value
+ *   may also be a path parameter, and then serves the path and any body member
+ *   of the same name (`add_pet` fixes `section` to `pets` in both).
+ * - `aliases` sends one argument again under a second name, where a route
+ *   repeats a path value in its body under another one (`update_pet` sends
+ *   `factId` as the body's `id`).
+ * - `omit` leaves out an optional body member this tool never sends
+ *   (`archive_people` names no tag).
  * - `minted` names arguments the endpoint fills in when the agent leaves them
  *   out — today only a `requestId` retry key. The description tells the agent
  *   to pass its own and reuse it, because a minted key cannot be retried.
@@ -68,8 +75,19 @@ export interface ToolSpec {
   readonly annotations?: Partial<ToolHints>;
   /** The member of a union JSON body this tool sends. */
   readonly body?: z.ZodObject;
-  /** Body members this tool sends with a value of its own. */
+  /**
+   * Request members this tool sends with a value of its own: a union body's
+   * discriminator, or a path parameter together with any body member of the
+   * same name.
+   */
   readonly fixed?: Readonly<Record<string, ToolValue>>;
+  /**
+   * Request members that carry another argument's value, keyed by the member:
+   * `{ id: "factId" }` sends the `factId` argument as the body's `id` too.
+   */
+  readonly aliases?: Readonly<Record<string, string>>;
+  /** Optional body members this tool never sends. */
+  readonly omit?: readonly string[];
   /** Arguments the endpoint mints when the agent leaves them out. */
   readonly minted?: Readonly<Record<string, MintedInput>>;
   /**
@@ -90,9 +108,14 @@ export interface AgentTool {
   readonly scope: string | undefined;
   /** The agent's flat argument object. */
   readonly input: z.ZodObject;
-  /** Where each argument goes; a shared one goes everywhere it is listed. */
+  /**
+   * Where each request member goes — an argument, a fixed value, or an alias —
+   * listing every part of the request that takes it.
+   */
   readonly locations: Readonly<Record<string, readonly ToolLocation[]>>;
   readonly fixed: Readonly<Record<string, ToolValue>>;
+  /** Request members sent with another argument's value, keyed by member. */
+  readonly aliases: Readonly<Record<string, string>>;
   readonly minted: Readonly<Record<string, MintedInput>>;
 }
 
@@ -180,8 +203,10 @@ function bodyObject(
  * The refusals are the ones a tool can earn on its own: a name that is not a
  * `verb_noun`, no title or description, a route that admits no personal
  * token, a body that is not JSON, the endpoint itself, an argument two parts
- * of the request take without being declared the same value, and a fixed or
- * minted argument the request does not take.
+ * of the request take without being declared the same value, a fixed value a
+ * part of the request refuses, an alias of something that is not an argument,
+ * an omitted member the body requires, and a fixed, aliased, omitted, or
+ * minted member the request does not take.
  */
 export function defineTool(spec: ToolSpec): AgentTool {
   const { name, route } = spec;
@@ -198,14 +223,14 @@ export function defineTool(spec: ToolSpec): AgentTool {
   }
 
   const body = bodyObject(spec, fail);
-  const fixed = spec.fixed ?? {};
-  for (const [field, value] of Object.entries(fixed)) {
+  const omitted = new Set(spec.omit ?? []);
+  for (const field of omitted) {
     const member = body?.shape[field] as z.ZodType | undefined;
     if (member === undefined) {
-      fail(`fixes ${field}, which its body never takes`);
+      fail(`omits ${field}, which its body never takes`);
     }
-    if (!member.safeParse(value).success) {
-      fail(`fixes ${field} to a value its body refuses`);
+    if (!member.safeParse(undefined).success) {
+      fail(`omits ${field}, which its body requires`);
     }
   }
 
@@ -215,17 +240,41 @@ export function defineTool(spec: ToolSpec): AgentTool {
     ["body", body?.shape ?? {}],
   ];
   const locations: Record<string, ToolLocation[]> = {};
-  const members: Record<string, z.ZodType> = {};
+  const schemas: Record<string, z.ZodType[]> = {};
   for (const [location, shape] of parts) {
     for (const [field, member] of Object.entries(shape)) {
-      if (location === "body" && field in fixed) continue;
+      if (location === "body" && omitted.has(field)) continue;
       (locations[field] ??= []).push(location);
-      members[field] ??= member as z.ZodType;
+      (schemas[field] ??= []).push(member as z.ZodType);
+    }
+  }
+
+  const fixed = spec.fixed ?? {};
+  for (const [field, value] of Object.entries(fixed)) {
+    const taken = schemas[field];
+    if (taken === undefined) {
+      fail(`fixes ${field}, which its request never takes`);
+    }
+    if (!taken.every((member) => member.safeParse(value).success)) {
+      fail(`fixes ${field} to a value its request refuses`);
+    }
+  }
+
+  const aliases = spec.aliases ?? {};
+  const derived = new Set([...Object.keys(fixed), ...Object.keys(aliases)]);
+  for (const [member, source] of Object.entries(aliases)) {
+    if (!(member in locations)) {
+      fail(`aliases ${member}, which its request never takes`);
+    }
+    if (member in fixed) fail(`both fixes and aliases ${member}`);
+    if (!(source in locations) || derived.has(source)) {
+      fail(`aliases ${member} to ${source}, which is not an argument`);
     }
   }
 
   const shared = new Set(spec.shared ?? []);
   for (const [field, taken] of Object.entries(locations)) {
+    if (derived.has(field)) continue;
     if (taken.length > 1 && !shared.has(field)) {
       fail(
         `takes ${field} in both the ${
@@ -235,11 +284,15 @@ export function defineTool(spec: ToolSpec): AgentTool {
     }
   }
   for (const field of shared) {
-    if ((locations[field]?.length ?? 0) < 2) {
+    if ((locations[field]?.length ?? 0) < 2 || derived.has(field)) {
       fail(`declares ${field} shared, but one part of the request takes it`);
     }
   }
 
+  const members: Record<string, z.ZodType> = {};
+  for (const [field, taken] of Object.entries(schemas)) {
+    if (!derived.has(field)) members[field] = taken[0]!;
+  }
   const minted = spec.minted ?? {};
   for (const [field, kind] of Object.entries(minted)) {
     const member = members[field];
@@ -259,6 +312,19 @@ export function defineTool(spec: ToolSpec): AgentTool {
     input: z.strictObject(members),
     locations,
     fixed,
+    aliases,
     minted,
   };
+}
+
+/**
+ * A tool's arguments as the JSON Schema an MCP client lists: the one
+ * conversion the endpoint and the generated catalog both use, so the two
+ * cannot describe a tool differently.
+ */
+export function inputJsonSchema(input: z.ZodObject): Record<string, unknown> {
+  return z.toJSONSchema(input, {
+    io: "input",
+    unrepresentable: "any",
+  }) as Record<string, unknown>;
 }

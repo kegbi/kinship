@@ -322,6 +322,232 @@ Deno.test("[MCP-C1] PostgreSQL the legal guard refuses a token whose member owes
   );
 });
 
+/** Calls a tool and returns its structured content, failing on an error. */
+async function use(
+  secret: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Json> {
+  const result = await resultOf(await callTool(secret, name, args));
+  assert(result.isError !== true, `${name}: ${JSON.stringify(result)}`);
+  return result.structuredContent;
+}
+
+Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every area and reads it back", async () => {
+  const owner = await ownerOf("agent");
+  const agent = await tokens.mint(owner, [
+    "people:read",
+    "people:write",
+    "people:profile:read",
+    "relationships:read",
+    "relationships:write",
+    "interactions:create",
+    "interactions:read",
+    "tasks:create",
+    "tasks:read",
+    "tasks:write",
+    "reminders:read",
+    "reminders:write",
+    "journal:read",
+    "journal:write",
+    "gifts:read",
+    "gifts:write",
+    "vocabularies:write",
+  ], { name: "Full CRM agent" });
+  const s = agent.secret;
+
+  const ada = (await use(s, "create_person", {
+    givenName: "Ada",
+    familyName: "Lovelace",
+    isPartial: false,
+  })).person.id as string;
+  const grace = (await use(s, "create_person", {
+    givenName: "Grace",
+    familyName: "Hopper",
+    isPartial: false,
+  })).person.id as string;
+
+  // A new workspace has no contact types yet; the agent makes one.
+  await use(s, "create_contact_method_type", {
+    name: "Email",
+    contactKind: "email",
+  });
+  const contactSection = await use(s, "list_profile_facts", {
+    personId: ada,
+    section: "contact-methods",
+    includeOptions: "true",
+  });
+  const contactType = (contactSection.options as Json[]).find((option) =>
+    option.kind === "contact-type" && option.name === "Email"
+  );
+  assert(
+    contactType !== undefined,
+    `the new contact type is offered: ${JSON.stringify(contactSection)}`,
+  );
+  const added = await use(s, "add_contact_method", {
+    personId: ada,
+    expectedPersonUpdatedAt: contactSection.personUpdatedAt,
+    isPrimary: true,
+    labelIds: [],
+    typeId: contactType.id,
+    value: "ada@example.test",
+  });
+
+  assertEquals(added.record.section, "contact-methods");
+  const tag = (await use(s, "create_tag", { name: "Family" })).entry.id;
+  const tagsSection = await use(s, "list_profile_facts", {
+    personId: ada,
+    section: "tags",
+  });
+  await use(s, "update_person_tags", {
+    personId: ada,
+    tagIds: [tag],
+    expectedPersonUpdatedAt: tagsSection.personUpdatedAt,
+    expectedUpdatedAt: tagsSection.records[0].updatedAt,
+  });
+
+  await use(s, "record_note", { personId: ada, body: "Prefers tea." });
+  const task = (await use(s, "create_task", {
+    title: "Send the notes",
+    personId: ada,
+  })).task;
+  await use(s, "create_reminder", {
+    personId: ada,
+    title: "Birthday card",
+    anchorOn: "2027-12-10",
+    sendTime: "09:00",
+    recurrenceUnit: "year",
+    recurrenceInterval: 1,
+  });
+  await use(s, "create_relationship_type", {
+    forwardLabel: "mentor of",
+    reverseLabel: "mentee of",
+  });
+  const types = await use(s, "list_relationship_types", { search: "mentor" });
+  const relationshipType = (types.options as Json[]).find((type) =>
+    type.forwardLabel === "mentor of"
+  );
+  assert(
+    relationshipType !== undefined,
+    `the new type is offered: ${JSON.stringify(types)}`,
+  );
+  await use(s, "create_relationship", {
+    personId: ada,
+    relationshipTypeId: relationshipType.id,
+    targetPersonId: grace,
+  });
+  const post = (await use(s, "create_journal_post", {
+    body: "Met Ada about the engine.",
+    occurredAt: "2026-11-20T10:00:00.000Z",
+  })).post;
+  await use(s, "create_gift", {
+    personId: ada,
+    name: "A teapot",
+    status: "idea",
+  });
+
+  const contacts = await use(s, "list_profile_facts", {
+    personId: ada,
+    section: "contact-methods",
+  });
+  assertEquals(
+    (contacts.records as Json[]).map((record) => record.value.value),
+    ["ada@example.test"],
+  );
+  const tagged = await use(s, "list_profile_facts", {
+    personId: ada,
+    section: "tags",
+  });
+  assertEquals(tagged.records[0].value.tagIds, [tag]);
+  const notes = await use(s, "list_notes_and_activities", {
+    personId: ada,
+    kind: "note",
+  });
+  assertEquals(
+    (notes.items as Json[]).map((item) => item.body),
+    ["Prefers tea."],
+  );
+  assertEquals(
+    (await use(s, "get_task", { taskId: task.id })).task.title,
+    "Send the notes",
+  );
+  const reminders = await use(s, "list_reminders", { personId: ada });
+  assertEquals(
+    (reminders.reminders as Json[]).map((each) => each.title),
+    ["Birthday card"],
+  );
+  const relationships = await use(s, "list_relationships", { personId: grace });
+  assertEquals(relationships.relationships.length, 1, "seen from both ends");
+  const journal = await use(s, "get_journal_item", { itemId: post.id });
+  assertEquals(journal.item.post.body, "Met Ada about the engine.");
+  const gifts = await use(s, "list_gifts_and_debts", { personId: ada });
+  assertEquals((gifts.gifts as Json[]).map((gift) => gift.name), ["A teapot"]);
+
+  const record = contacts.records[0];
+  const edited = await use(s, "update_contact_method", {
+    personId: ada,
+    factId: record.id,
+    expectedPersonUpdatedAt: contacts.personUpdatedAt,
+    expectedUpdatedAt: record.updatedAt,
+    isPrimary: true,
+    labelIds: [],
+    typeId: contactType.id,
+    value: "ada@engine.example",
+  });
+  assertEquals(edited.record.value.value, "ada@engine.example");
+  const renamed = await use(s, "update_person", {
+    personId: ada,
+    expectedUpdatedAt: edited.personUpdatedAt,
+    givenName: "Augusta Ada",
+    familyName: "King",
+    isPartial: false,
+  });
+  assertEquals(renamed.person.givenName, "Augusta Ada");
+  const stale = await resultOf(
+    await callTool(s, "update_person", {
+      personId: ada,
+      expectedUpdatedAt: edited.personUpdatedAt,
+      givenName: "Ada",
+      isPartial: false,
+    }),
+  );
+  assert(stale.isError === true, "a stale revision is refused");
+
+  const edge = relationships.relationships[0];
+  await use(s, "delete_relationship", {
+    personId: grace,
+    relationshipId: edge.id,
+    expectedUpdatedAt: edge.updatedAt,
+  });
+  assertEquals(
+    (await use(s, "list_relationships", { personId: ada })).relationships,
+    [],
+    "the relationship is gone in both directions",
+  );
+
+  const narrow = await tokens.mint(owner, ["people:read"]);
+  const listed = await listedNames(narrow.secret, "legacy");
+  assertEquals(listed, [
+    "get_context",
+    "list_people",
+    "list_tag_counts",
+    "list_tags",
+  ]);
+  const refused = await (await callTool(narrow.secret, "create_gift", {
+    personId: ada,
+    name: "Must not exist",
+    status: "idea",
+  })).json() as Json;
+  assert(
+    refused.error !== undefined || refused.result?.isError === true,
+    `create_gift is not callable with people:read: ${JSON.stringify(refused)}`,
+  );
+  const [row] = await sql<{ count: string }[]>`
+    select count(*)::text as count from crm.gifts
+    where workspace_id = ${owner.workspaceId}::uuid`;
+  assertEquals(row?.count, "1", "only the agent's own gift exists");
+});
+
 Deno.test({
   name: "close MCP PostgreSQL fixture",
   sanitizeOps: false,

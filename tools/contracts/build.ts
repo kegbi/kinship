@@ -27,6 +27,7 @@ import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
 import { buildOpenApiDocument } from "./document.ts";
 import { buildExternalOpenApiDocument } from "./external.ts";
 import { readClientModules, renderClientBarrel } from "./client.ts";
+import { renderToolCatalog } from "./tool_catalog.ts";
 import {
   API_ROUTES,
   DOCUMENTED_ROUTES,
@@ -67,6 +68,7 @@ export async function buildArtefacts(): Promise<readonly Artefact[]> {
         JSON.stringify(buildExternalOpenApiDocument(document), null, 2)
       }\n`,
     },
+    { path: "mcp/tools.json", contents: renderToolCatalog() },
   ];
 }
 
@@ -130,10 +132,9 @@ async function main(): Promise<void> {
 
   if (!checking) {
     for (const artefact of artefacts) {
-      await Deno.writeTextFile(
-        new URL(artefact.path, CONTRACTS),
-        artefact.contents,
-      );
+      const target = new URL(artefact.path, CONTRACTS);
+      await Deno.mkdir(new URL(".", target), { recursive: true });
+      await Deno.writeTextFile(target, artefact.contents);
     }
   } else {
     for (const artefact of artefacts) {

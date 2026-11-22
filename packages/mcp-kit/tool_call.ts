@@ -4,9 +4,10 @@
  *
  * `toolRequest` rebuilds the request a REST client holding the same token
  * would have sent: the route's method and path with each path argument
- * URL-encoded, the query arguments, the JSON body with the tool's fixed
- * members and any retry key it minted, and the caller's bearer token, request
- * id, and client address. It never carries a cookie or an `Origin`, so the
+ * URL-encoded, the query arguments, the JSON body with the tool's fixed and
+ * aliased members and any retry key it minted, and the caller's bearer token,
+ * request id, and client address. A fixed value or an alias may fill a path
+ * parameter as well as a body member. It never carries a cookie or an `Origin`, so the
  * route admits the token or refuses the call, and a browser credential cannot
  * be borrowed.
  *
@@ -52,15 +53,20 @@ export function toolRequest(
   for (const field of Object.keys(tool.minted)) {
     values[field] ??= crypto.randomUUID();
   }
+  Object.assign(values, tool.fixed);
+  for (const [member, source] of Object.entries(tool.aliases)) {
+    values[member] = values[source];
+  }
   const path = tool.route.path.replace(
     PATH_PARAMETER,
     (_match, name: string) => encodeURIComponent(String(values[name] ?? "")),
   );
   const query = new URLSearchParams();
-  const body: Record<string, unknown> = { ...tool.fixed };
-  for (const [field, value] of Object.entries(values)) {
+  const body: Record<string, unknown> = {};
+  for (const [field, locations] of Object.entries(tool.locations)) {
+    const value = values[field];
     if (value === undefined) continue;
-    for (const location of tool.locations[field] ?? []) {
+    for (const location of locations) {
       if (location === "query") query.set(field, queryValue(value));
       if (location === "body") body[field] = value;
     }

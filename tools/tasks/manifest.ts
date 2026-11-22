@@ -1176,6 +1176,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/mcp-kit/endpoint_test.ts",
         "packages/mcp-kit/tool_call_test.ts",
+        "packages/mcp-kit/catalog_request_test.ts",
         "packages/contracts/tools/define_test.ts",
         "packages/contracts/tools/mod_test.ts",
       ],
@@ -1186,6 +1187,7 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/mcp-kit/endpoint_test.ts",
         "packages/mcp-kit/tool_call_test.ts",
+        "packages/mcp-kit/catalog_request_test.ts",
         "packages/contracts/tools/define_test.ts",
         "packages/contracts/tools/mod_test.ts",
       ],
@@ -2202,7 +2204,10 @@ export const MODULES: readonly TaskModule[] = [
   {
     id: "contracts-build",
     unit: {
-      tests: ["tools/contracts/api_reference_test.ts"],
+      tests: [
+        "tools/contracts/api_reference_test.ts",
+        "tools/contracts/tool_catalog_test.ts",
+      ],
       // Same permissions as contracts:check: debug enumerates process.env and
       // Redocly discovers local configuration. Keep these out of API unit tests.
       permissions: { env: "all", read: "all" },
@@ -2210,8 +2215,14 @@ export const MODULES: readonly TaskModule[] = [
     contract: ["tools/contracts/api_reference_test.ts"],
     coverage: {
       directory: "contracts-build",
-      tests: ["tools/contracts/api_reference_test.ts"],
-      include: ["tools/contracts/external.ts"],
+      tests: [
+        "tools/contracts/api_reference_test.ts",
+        "tools/contracts/tool_catalog_test.ts",
+      ],
+      include: [
+        "tools/contracts/external.ts",
+        "tools/contracts/tool_catalog.ts",
+      ],
       permissions: { env: "all", read: "all" },
     },
   },

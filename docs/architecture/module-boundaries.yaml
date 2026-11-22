@@ -82,7 +82,9 @@ layerRules:
   # other code imports. Only a composition root mounts it; no module layer,
   # read model, or `apps/web` imports it. Its tool catalog,
   # `packages/contracts/tools`, is contract data importing only the contracts
-  # and Zod, and `apps/web` never imports it either.
+  # and Zod, and `apps/web` never imports it either; the web reads only the
+  # generated `packages/contracts/mcp/tools.json`, through
+  # `contracts-mcp-catalog` (MCP-C2).
   # `source-read-model-public` is a read model's facade when that read model
   # names the module among its `sourceModules`.
   transportMayImport: [
@@ -108,6 +110,7 @@ layerRules:
     contracts-generated,
     contracts-schemas,
     contracts-external-openapi,
+    contracts-mcp-catalog,
     frontend-code,
   ]
   forbiddenCrossModuleTargets: [domain, application, ports, adapters, transport]

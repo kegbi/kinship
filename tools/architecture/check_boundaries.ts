@@ -598,6 +598,9 @@ function tableOwnershipViolations(
  * `apps/web`. `contracts-generated` is the generated client barrel;
  * `contracts-schemas` is the pure Zod schemas an island's form validates with
  * (GAP-026), which carry no I/O and import only Zod and each other.
+ * `contracts-external-openapi` and `contracts-mcp-catalog` each open exactly
+ * one generated document: the bearer OpenAPI projection, and the agent tool
+ * catalog (MCP-C2) — never the tool definitions it is generated from.
  */
 const FRONTEND_IMPORT_SURFACES: ReadonlyArray<
   { readonly token: string; readonly path: string }
@@ -608,6 +611,10 @@ const FRONTEND_IMPORT_SURFACES: ReadonlyArray<
     token: "contracts-external-openapi",
     path: "packages/contracts/openapi/external.json",
   },
+  {
+    token: "contracts-mcp-catalog",
+    path: "packages/contracts/mcp/tools.json",
+  },
 ];
 
 /**
@@ -617,6 +624,7 @@ const FRONTEND_IMPORT_SURFACES: ReadonlyArray<
  */
 const FRONTEND_FORBIDDEN_PATHS = [
   "packages/contracts/client/",
+  "packages/contracts/mcp/",
   "packages/contracts/openapi/",
   "packages/contracts/registry.ts",
   "packages/contracts/routes/",

@@ -72,6 +72,7 @@ packages/
     client/               source of the generated client
     openapi/              checked-in internal and bearer-only external OpenAPI
     generated/            generated client and API types
+    mcp/                  checked-in generated agent tool catalog (tools.json)
     tools/                the MCP tool catalog: defineTool, one file per area
     registry.ts           defineRoute and the route registry
   http-kit/               shared HTTP machinery for module routes
@@ -300,6 +301,12 @@ enforces these rules.
   route descriptors and `packages/contracts/client/`. They are checked in, and
   `deno task contracts:check` fails on drift. Only `apps/web` and `tests/e2e`
   consume the generated client.
+- The same build writes `packages/contracts/mcp/tools.json` from the tool
+  catalog in `packages/contracts/tools/` (MCP-C2): the server instructions and,
+  per tool, its area, name, description, token scope, annotations, route, and
+  argument JSON Schema. `contracts:check` fails on drift. `apps/web` may import
+  that one file through the `contracts-mcp-catalog` token, never the tool
+  definitions.
 - The external OpenAPI projects only bearer-enabled operations from the full
   executable contract, with bearer security and complete transitive component
   references. `/docs/api` renders that artifact at build time and prerenders its

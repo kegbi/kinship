@@ -666,6 +666,38 @@ Deno.test("public documentation consumes only the generated external OpenAPI con
   }
 });
 
+Deno.test("[MCP-C2] the web reads the generated tool catalog, never the tool definitions", async () => {
+  const manifestText = MANIFEST.replace(
+    "frontendMayImport: [contracts-generated]",
+    "frontendMayImport: [contracts-generated, contracts-mcp-catalog]",
+  );
+  const importing = (target: string) => [{
+    path: "apps/web/src/features/mcp-guide.ts",
+    text: `import catalog from "../../../../packages/contracts/${target}";`,
+  }];
+  const allowed = await fixture(importing("mcp/tools.json"), { manifestText });
+  assert(
+    allowed.length === 0,
+    `the generated catalog refused: ${render(allowed)}`,
+  );
+  for (
+    const [target, manifest] of [
+      ["mcp/tools.json", MANIFEST],
+      ["mcp/other.json", manifestText],
+      ["tools/mod.ts", manifestText],
+      ["tools/define.ts", manifestText],
+    ] as const
+  ) {
+    const refused = await fixture(importing(target), {
+      manifestText: manifest,
+    });
+    assert(
+      refused.some((violation) => violation.rule === "layer"),
+      `${target} needs its exact file and token`,
+    );
+  }
+});
+
 Deno.test("[GAP-026] an island validates with the published contract schemas", async () => {
   const violations = await fixture([{
     path: "apps/web/src/islands/person-gifts/gift-form.tsx",

@@ -22,16 +22,16 @@ import {
   type StandardSchemaWithJSON,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import type { AgentTool } from "../contracts/tools/define.ts";
+import { type AgentTool, inputJsonSchema } from "../contracts/tools/define.ts";
+import { AGENT_INSTRUCTIONS } from "../contracts/tools/instructions.ts";
 import { API_VERSION } from "../contracts/version.ts";
 import { type ToolCaller, toolRequest, toolResult } from "./tool_call.ts";
 
 /** Answers one route request in process; the API's own `fetch`. */
 export type Dispatch = (request: Request) => Response | Promise<Response>;
 
-/** What the server tells an agent about using it. */
-export const SERVER_INSTRUCTIONS =
-  "Kinship is a personal relationship manager. Call get_context first: it names the workspace, role, and scopes this connection acts with, and only the tools those scopes allow are listed. Find a person's id with list_people before reading or writing about them. Each tool calls the same API route a REST client would; a refused call returns isError with the route's problem code and field messages, so correct the arguments rather than retrying unchanged.";
+/** What the server tells an agent about using it: the catalog's own words. */
+export const SERVER_INSTRUCTIONS = AGENT_INSTRUCTIONS;
 
 type Arguments = Record<string, unknown>;
 
@@ -42,10 +42,7 @@ type Arguments = Record<string, unknown>;
 export function argumentSchema(
   input: z.ZodObject,
 ): StandardSchemaWithJSON<Arguments, Arguments> {
-  const json = z.toJSONSchema(input, {
-    io: "input",
-    unrepresentable: "any",
-  }) as Record<string, unknown>;
+  const json = inputJsonSchema(input);
   return {
     "~standard": {
       version: 1,

@@ -330,3 +330,152 @@ Deno.test("[MCP-C1] tool names are unique and every tool's route is registered",
   );
   assertEquals(collectTools([[tool]], [listThings]).length, 1);
 });
+
+const petBody = z.strictObject({
+  id: z.uuid(),
+  name: z.string(),
+  notes: z.string().optional(),
+  section: z.literal("pets"),
+});
+const replaceFact = defineRoute({
+  method: "put",
+  path: "/api/v1/people/{personId}/facts/{section}/{factId}",
+  operationId: "replaceFactFixture",
+  tokenScope: "people:write",
+  security: both,
+  request: {
+    params: z.object({
+      personId: z.uuid(),
+      section: z.enum(["pets", "tags"]),
+      factId: z.uuid(),
+    }),
+    body: {
+      required: true,
+      content: {
+        "application/json": z.union([
+          petBody,
+          z.strictObject({
+            id: z.uuid(),
+            section: z.literal("tags"),
+            tagIds: z.array(z.uuid()),
+          }),
+        ]),
+      },
+    },
+  },
+  responses: answered,
+});
+
+Deno.test("[MCP-C2] a fixed value may serve a path parameter and the body member it repeats", () => {
+  const tool = defineTool({
+    ...base,
+    name: "update_pet",
+    route: replaceFact,
+    body: petBody,
+    fixed: { section: "pets" },
+    aliases: { id: "factId" },
+  });
+  assertEquals(Object.keys(tool.input.shape).sort(), [
+    "factId",
+    "name",
+    "notes",
+    "personId",
+  ]);
+  assertEquals(tool.locations.section, ["path", "body"]);
+  assertEquals(tool.fixed, { section: "pets" });
+  assertEquals(tool.aliases, { id: "factId" });
+  assertThrows(
+    () =>
+      defineTool({
+        ...base,
+        name: "update_pet",
+        route: replaceFact,
+        body: petBody,
+        fixed: { section: "tags" },
+        aliases: { id: "factId" },
+      }),
+    "a fixed value one part of the request refuses is refused",
+  );
+});
+
+Deno.test("[MCP-C2] an alias sends one argument as a second request member", () => {
+  const declare = (aliases: Record<string, string>) => () =>
+    defineTool({
+      ...base,
+      name: "update_pet",
+      route: replaceFact,
+      body: petBody,
+      fixed: { section: "pets" },
+      aliases,
+    });
+  assertEquals(
+    Object.keys(declare({})().input.shape).sort(),
+    ["factId", "id", "name", "notes", "personId"],
+    "without the alias the agent would send the same id twice",
+  );
+  assertThrows(declare({ colour: "factId" }), "an alias the request lacks");
+  assertThrows(declare({ id: "colour" }), "an alias of no argument");
+  assertThrows(declare({ id: "section" }), "an alias of a fixed value");
+  assertThrows(
+    declare({ id: "factId", factId: "personId" }),
+    "an alias of an alias",
+  );
+  const single = declare({ id: "personId", factId: "personId" })();
+  assertEquals(Object.keys(single.input.shape).sort(), [
+    "name",
+    "notes",
+    "personId",
+  ]);
+});
+
+Deno.test("[MCP-C2] an omitted body member is neither an argument nor sent", () => {
+  const bulk = defineRoute({
+    method: "post",
+    path: "/api/v1/bulk-fixture",
+    operationId: "bulkFixture",
+    tokenScope: "people:write",
+    security: both,
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": z.strictObject({
+            action: z.enum(["archive", "tag"]),
+            personIds: z.array(z.uuid()),
+            tagId: z.uuid().optional(),
+          }),
+        },
+      },
+    },
+    responses: answered,
+  });
+  const archive = defineTool({
+    ...base,
+    name: "archive_things",
+    route: bulk,
+    fixed: { action: "archive" },
+    omit: ["tagId"],
+  });
+  assertEquals(Object.keys(archive.input.shape), ["personIds"]);
+  assert(!("tagId" in archive.locations), "an omitted member goes nowhere");
+  assertThrows(
+    () =>
+      defineTool({
+        ...base,
+        name: "archive_things",
+        route: bulk,
+        omit: ["personIds"],
+      }),
+    "a required member cannot be omitted",
+  );
+  assertThrows(
+    () =>
+      defineTool({
+        ...base,
+        name: "archive_things",
+        route: bulk,
+        omit: ["colour"],
+      }),
+    "an omitted member the body lacks",
+  );
+});
