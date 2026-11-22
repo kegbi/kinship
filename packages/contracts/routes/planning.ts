@@ -45,7 +45,10 @@ export const listPersonReminders = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/reminders",
   operationId: "listPersonReminders",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require reminders:read. Lists one person's calendar reminders, each with its next occurrence, and the person's stay-in-touch cadence, a page at a time. A person outside the token's workspace is not found. Grants are independent; reminders:write does not imply read access.",
+  tokenScope: "reminders:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -68,9 +71,12 @@ export const createReminder = defineRoute({
   method: "post",
   path: "/api/v1/reminders",
   operationId: "createReminder",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require reminders:write. Creates a calendar reminder for one person and schedules its future occurrences. Retry the same requestId and payload to receive the original reminder, so the call is retry-safe; a changed payload under the same requestId conflicts. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -93,12 +99,15 @@ export const setReminderActive = defineRoute({
   method: "put",
   path: "/api/v1/reminders/{reminderId}/active",
   operationId: "setReminderActive",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require reminders:write. Disables or re-enables one reminder with active false or true; setting the current state again changes nothing. Disabling cancels its unattempted future occurrences and re-enabling regenerates them. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       reminderId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -146,9 +155,12 @@ export const createStayInTouchCadence = defineRoute({
   method: "post",
   path: "/api/v1/stay-in-touch-cadences",
   operationId: "createStayInTouchCadence",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require reminders:write. Sets how often to stay in touch with one person. A person has one cadence, so calling this again with a new requestId replaces it and restarts its due date. Retry the same requestId and payload to receive the original answer, so the call is retry-safe; a changed payload under the same requestId conflicts. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -318,7 +330,10 @@ export const getTodayAttention = defineRoute({
   method: "get",
   path: "/api/v1/today/attention",
   operationId: "getTodayAttention",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require today:read. A read-only dashboard projection in the member's time zone: overdue, today, and next-seven-days groups plus an upcoming list of open tasks, undelivered or failing reminders, important dates, life events, and stay-in-touch cadences, each with its person. today:read is a deliberate Today grant: it reads these items here without tasks:read, reminders:read, or people grants, and grants no other route.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -338,7 +353,10 @@ export const getTodayReminders = defineRoute({
   method: "get",
   path: "/api/v1/today/reminders",
   operationId: "getTodayReminders",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require today:read. A read-only dashboard projection: reminder occurrences that are due within thirty days, being retried, failed, or need attention, recently sent ones, and stay-in-touch cadences due within thirty days, each with its person. today:read is a deliberate Today grant: it reads these items here without reminders:read, and grants no other route.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -357,7 +375,10 @@ export const getTodayTasks = defineRoute({
   method: "get",
   path: "/api/v1/today/tasks",
   operationId: "getTodayTasks",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require today:read. A read-only dashboard projection: up to twenty open tasks due within thirty days, overdue ones included, earliest first. today:read is a deliberate Today grant: it reads these tasks here without tasks:read, and grants no other route.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },

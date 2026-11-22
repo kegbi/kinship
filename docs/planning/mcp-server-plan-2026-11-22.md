@@ -161,7 +161,7 @@ matrix or architecture prose; MCP-C4 does that once.
 - [ ] **MCP-B3 Relationships.** `relationships:write`.
 - [x] **MCP-B4 Interactions.** `interactions:read` and the two interaction Today
       regions.
-- [ ] **MCP-B5 Planning.** `reminders:read`, `reminders:write`, and the three
+- [x] **MCP-B5 Planning.** `reminders:read`, `reminders:write`, and the three
       planning Today regions.
 - [x] **MCP-B6 Journal.** `journal:read`, `journal:write`, and the life-event
       writes under `people:write`.

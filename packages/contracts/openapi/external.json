@@ -2416,6 +2416,121 @@
         }
       }
     },
+    "/api/v1/people/{personId}/reminders": {
+      "get": {
+        "operationId": "listPersonReminders",
+        "description": "Personal tokens require reminders:read. Lists one person's calendar reminders, each with its next occurrence, and the person's stay-in-touch cadence, a page at a time. A person outside the token's workspace is not found. Grants are independent; reminders:write does not imply read access.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Person reminder and cadence section",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonReminders"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/relationship-types": {
       "get": {
         "operationId": "listRelationshipTypes",
@@ -2513,6 +2628,372 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reminders": {
+      "post": {
+        "operationId": "createReminder",
+        "description": "Personal tokens require reminders:write. Creates a calendar reminder for one person and schedules its future occurrences. Retry the same requestId and payload to receive the original reminder, so the call is retry-safe; a changed payload under the same requestId conflicts. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Calendar reminder created with unique future occurrences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reminders/{reminderId}/active": {
+      "put": {
+        "operationId": "setReminderActive",
+        "description": "Personal tokens require reminders:write. Disables or re-enables one reminder with active false or true; setting the current state again changes nothing. Disabling cancels its unattempted future occurrences and re-enabling regenerates them. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reminderId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reminder active state changed; safe unattempted work is cancelled when disabled, in-flight delivery is preserved, and future work is regenerated when re-enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stay-in-touch-cadences": {
+      "post": {
+        "operationId": "createStayInTouchCadence",
+        "description": "Personal tokens require reminders:write. Sets how often to stay in touch with one person. A person has one cadence, so calling this again with a new requestId replaces it and restarts its due date. Retry the same requestId and payload to receive the original answer, so the call is retry-safe; a changed payload under the same requestId conflicts. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CadenceCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stay-in-touch cadence created or changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadenceCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -3129,6 +3610,82 @@
         }
       }
     },
+    "/api/v1/today/attention": {
+      "get": {
+        "operationId": "getTodayAttention",
+        "description": "Personal tokens require today:read. A read-only dashboard projection in the member's time zone: overdue, today, and next-seven-days groups plus an upcoming list of open tasks, undelivered or failing reminders, important dates, life events, and stay-in-touch cadences, each with its person. today:read is a deliberate Today grant: it reads these items here without tasks:read, reminders:read, or people grants, and grants no other route.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unified member-local Today attention and upcoming projection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayAttention"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/today/favorite-notes": {
       "get": {
         "operationId": "getTodayFavoriteNotes",
@@ -3234,6 +3791,158 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TodayRecentActivity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/today/reminders": {
+      "get": {
+        "operationId": "getTodayReminders",
+        "description": "Personal tokens require today:read. A read-only dashboard projection: reminder occurrences that are due within thirty days, being retried, failed, or need attention, recently sent ones, and stay-in-touch cadences due within thirty days, each with its person. today:read is a deliberate Today grant: it reads these items here without reminders:read, and grants no other route.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Independent Today reminder and cadence regions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayReminders"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/today/tasks": {
+      "get": {
+        "operationId": "getTodayTasks",
+        "description": "Personal tokens require today:read. A read-only dashboard projection: up to twenty open tasks due within thirty days, overdue ones included, earliest first. today:read is a deliberate Today grant: it reads these tasks here without tasks:read, and grants no other route.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read-only due-task Today region",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayTasks"
                 }
               }
             }
@@ -3590,6 +4299,56 @@
         "required": [
           "id",
           "name"
+        ],
+        "additionalProperties": false
+      },
+      "CadenceCreateInput": {
+        "type": "object",
+        "properties": {
+          "intervalCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "intervalUnit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "intervalCount",
+          "intervalUnit",
+          "personId",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "CadenceCreated": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/StayInTouchCadence"
+          },
+          "status": {
+            "const": "created"
+          }
+        },
+        "required": [
+          "cadence",
+          "status"
         ],
         "additionalProperties": false
       },
@@ -5209,6 +5968,37 @@
         ],
         "additionalProperties": false
       },
+      "PersonReminders": {
+        "type": "object",
+        "properties": {
+          "cadences": {
+            "maxItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StayInTouchCadence"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "reminders": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reminder"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "cadences",
+          "reminders",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "PersonTransitionInput": {
         "type": "object",
         "properties": {
@@ -5614,6 +6404,263 @@
         ],
         "additionalProperties": false
       },
+      "Reminder": {
+        "type": "object",
+        "properties": {
+          "anchorOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "nextOccurrence": {
+            "$ref": "#/components/schemas/ReminderOccurrence"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "type": "string",
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "sendTime": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "anchorOn",
+          "createdAt",
+          "id",
+          "isActive",
+          "personId",
+          "recurrenceInterval",
+          "recurrenceUnit",
+          "sendTime",
+          "title",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderCreateInput": {
+        "type": "object",
+        "properties": {
+          "anchorOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "type": "string",
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sendTime": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "anchorOn",
+          "personId",
+          "recurrenceInterval",
+          "recurrenceUnit",
+          "requestId",
+          "sendTime",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderCreated": {
+        "type": "object",
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/Reminder"
+          },
+          "status": {
+            "const": "created"
+          }
+        },
+        "required": [
+          "reminder",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderOccurrence": {
+        "type": "object",
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deliverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "providerEffectAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "claimed",
+              "retry",
+              "sent",
+              "skipped",
+              "failed",
+              "cancelled",
+              "manual_attention"
+            ]
+          },
+          "visibleAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "attemptCount",
+          "deliverAt",
+          "id",
+          "occursOn",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderSaved": {
+        "type": "object",
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/Reminder"
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "required": [
+          "reminder",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "StayInTouchCadence": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intervalCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "intervalUnit": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "intervalCount",
+          "intervalUnit",
+          "isActive",
+          "nextDueAt",
+          "personId",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
       "TagsFact": {
         "type": "object",
         "properties": {
@@ -5899,6 +6946,175 @@
         ],
         "additionalProperties": false
       },
+      "TodayAttention": {
+        "type": "object",
+        "properties": {
+          "attention": {
+            "$ref": "#/components/schemas/TodayAttentionGroup"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1
+          },
+          "upcoming": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          }
+        },
+        "required": [
+          "attention",
+          "date",
+          "status",
+          "timezone",
+          "upcoming"
+        ],
+        "additionalProperties": false
+      },
+      "TodayAttentionGroup": {
+        "type": "object",
+        "properties": {
+          "nextSevenDays": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          },
+          "overdue": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          },
+          "today": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayAttentionItem"
+            }
+          }
+        },
+        "required": [
+          "nextSevenDays",
+          "overdue",
+          "today"
+        ],
+        "additionalProperties": false
+      },
+      "TodayAttentionItem": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TodayTaskAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayReminderAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayImportantDateAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayLifeEventAttentionItem"
+          },
+          {
+            "$ref": "#/components/schemas/TodayCadenceAttentionItem"
+          }
+        ]
+      },
+      "TodayAttentionPerson": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "TodayCadenceAttentionItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "cadence"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "person",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "TodayCadenceItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastContactedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayReminderPerson"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "person"
+        ],
+        "additionalProperties": false
+      },
       "TodayFavoriteNotes": {
         "type": "object",
         "properties": {
@@ -5919,6 +7135,74 @@
         ],
         "additionalProperties": false
       },
+      "TodayImportantDateAttentionItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "important-date"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "TodayLifeEventAttentionItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "life-event"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "title"
+        ],
+        "additionalProperties": false
+      },
       "TodayRecentActivity": {
         "type": "object",
         "properties": {
@@ -5927,6 +7211,241 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityOrNoteInteraction"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "items",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "TodayReminderAttentionItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "reminder"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "occursOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "in_app"
+            ]
+          },
+          "reminderStatus": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "manual_attention",
+              "pending",
+              "retry"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "occursOn",
+          "channel",
+          "reminderStatus",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "TodayReminderItem": {
+        "type": "object",
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deliverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nextAttemptAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayReminderPerson"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "claimed",
+              "retry",
+              "sent",
+              "failed",
+              "manual_attention"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibleAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "attemptCount",
+          "deliverAt",
+          "id",
+          "person",
+          "status",
+          "title"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "nextAttemptAt"
+            ],
+            "properties": {
+              "status": {
+                "const": "retry"
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "nextAttemptAt"
+              ]
+            },
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "claimed",
+                  "sent",
+                  "failed",
+                  "manual_attention"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "TodayReminderPerson": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "TodayReminders": {
+        "type": "object",
+        "properties": {
+          "cadences": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayCadenceItem"
+            }
+          },
+          "reminders": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayReminderItem"
+            }
+          },
+          "status": {
+            "const": "ready"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cadences",
+          "reminders",
+          "status",
+          "timezone"
+        ],
+        "additionalProperties": false
+      },
+      "TodayTaskAttentionItem": {
+        "type": "object",
+        "properties": {
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "task"
+          },
+          "person": {
+            "$ref": "#/components/schemas/TodayAttentionPerson"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueAt",
+          "id",
+          "kind",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "TodayTasks": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
             }
           },
           "status": {

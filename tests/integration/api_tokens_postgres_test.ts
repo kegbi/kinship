@@ -936,8 +936,6 @@ Deno.test("task automation tokens keep independent grants, retry safety, revisio
   }
   for (
     const path of [
-      "/api/v1/today/tasks",
-      "/api/v1/today/attention",
       "/api/v1/settings/api-tokens",
     ]
   ) {

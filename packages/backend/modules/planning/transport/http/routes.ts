@@ -13,9 +13,16 @@
  * origin check inside the handler rather than taking the middleware, because
  * a deployment without the reminders service answers "reminders unavailable"
  * before it looks at anything else, and that order is observable.
+ *
+ * MCP-B5 admits personal tokens on the reminder routes and the three planning
+ * Today regions through `scopedRouteActor`. A reminder write still answers
+ * the outage first. Then a cookie write answers its Origin, its body, and
+ * only then its session, exactly the order it always had, while a bearer
+ * write is admitted or refused before its body is read, as every token write
+ * is: a refused token learns nothing about the payload it sent.
  */
 
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type {
   ChangeTaskInput,
   ReminderManagement,
@@ -73,6 +80,7 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  type SessionActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -347,9 +355,28 @@ export function createPlanningRoutes(
   const createTaskActor = scopedRouteActor(createTask, tokens);
   const changeTaskActor = scopedRouteActor(changeTask, tokens);
   const completionActor = scopedRouteActor(setTaskCompletion, tokens);
+  const personRemindersActor = scopedRouteActor(listPersonReminders, tokens);
+  const createReminderActor = scopedRouteActor(createReminder, tokens);
+  const reminderActiveActor = scopedRouteActor(setReminderActive, tokens);
+  const cadenceActor = scopedRouteActor(createStayInTouchCadence, tokens);
+  const attentionActor = scopedRouteActor(getTodayAttention, tokens);
+  const todayRemindersActor = scopedRouteActor(getTodayReminders, tokens);
+  const todayTasksActor = scopedRouteActor(getTodayTasks, tokens);
+  /**
+   * What a reminder write answers before its body: a bearer's admission, or
+   * a cookie write's Origin refusal. Nothing means a cookie write that is
+   * resolved after its body, where it always was.
+   */
+  const beforeBody = async (
+    context: Context<ActorEnv>,
+    admit: (context: Context<ActorEnv>) => Promise<SessionActor | Response>,
+  ): Promise<SessionActor | Response | undefined> =>
+    context.req.header("Authorization") === undefined
+      ? rejectForeignOrigin(context, services.browserSecurity)
+      : await admit(context);
 
   mount(routes, getTodayAttention, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await attentionActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayAttention?.get(actor).catch(() =>
       undefined
@@ -376,7 +403,7 @@ export function createPlanningRoutes(
       if ("errors" in personId || "errors" in query) {
         return definedProblem(context, REMINDER_QUERY_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await personRemindersActor(context);
       if (actor instanceof Response) return actor;
       const result = await reminders.listPerson(actor, personId.data, {
         ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
@@ -402,13 +429,13 @@ export function createPlanningRoutes(
     if (!reminders) {
       return definedProblem(context, REMINDERS_NOTHING_SAVED);
     }
-    const foreign = rejectForeignOrigin(context, services.browserSecurity);
-    if (foreign) return foreign;
+    const early = await beforeBody(context, createReminderActor);
+    if (early instanceof Response) return early;
     const input = await parseJsonBody(context, reminderCreateInput);
     if ("errors" in input) {
       return definedProblem(context, REMINDER_CALENDAR_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = early ?? await createReminderActor(context);
     if (actor instanceof Response) return actor;
     const result = await reminders.createReminder(actor, input.data)
       .catch(() => undefined);
@@ -425,13 +452,13 @@ export function createPlanningRoutes(
     if (!reminders) {
       return definedProblem(context, REMINDERS_NOTHING_SAVED);
     }
-    const foreign = rejectForeignOrigin(context, services.browserSecurity);
-    if (foreign) return foreign;
+    const early = await beforeBody(context, cadenceActor);
+    if (early instanceof Response) return early;
     const input = await parseJsonBody(context, cadenceCreateInput);
     if ("errors" in input) {
       return definedProblem(context, CADENCE_REQUEST_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = early ?? await cadenceActor(context);
     if (actor instanceof Response) return actor;
     const result = await reminders.createCadence(actor, input.data)
       .catch(() => undefined);
@@ -452,14 +479,14 @@ export function createPlanningRoutes(
       if (!reminders) {
         return definedProblem(context, REMINDERS_NOTHING_CHANGED);
       }
-      const foreign = rejectForeignOrigin(context, services.browserSecurity);
-      if (foreign) return foreign;
+      const early = await beforeBody(context, reminderActiveActor);
+      if (early instanceof Response) return early;
       const reminderId = parseValue(uuid, context.req.param("reminderId"));
       const input = await parseJsonBody(context, reminderActiveInput);
       if ("errors" in reminderId || "errors" in input) {
         return definedProblem(context, REMINDER_ACTIVE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = early ?? await reminderActiveActor(context);
       if (actor instanceof Response) return actor;
       const result = await reminders.setActive(
         actor,
@@ -515,7 +542,7 @@ export function createPlanningRoutes(
     if (!todayReminders) {
       return definedProblem(context, TODAY_REMINDERS_UNAVAILABLE);
     }
-    const actor = await requireActor(context);
+    const actor = await todayRemindersActor(context);
     if (actor instanceof Response) return actor;
     const result = await todayReminders.get(actor).catch(() => undefined);
     if (!result) {
@@ -638,7 +665,7 @@ export function createPlanningRoutes(
   );
 
   mount(routes, getTodayTasks, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await todayTasksActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayTasks.getDueTasks(actor).catch(() =>
       undefined

@@ -184,19 +184,227 @@ Deno.test("task automation grants independently admit token-only reads, creates 
     401,
     "token outage cannot borrow cookie",
   );
-  for (
-    const path of [
-      "/api/v1/today/tasks",
-      "/api/v1/today/attention",
-      `/api/v1/people/${personId}/reminders`,
-    ]
-  ) {
-    const response = await app.request(`http://localhost${path}`, {
-      headers: { authorization: "Bearer tasks:read" },
-    });
+});
+
+Deno.test("[MCP-B5] reminder and Today grants independently admit their own planning routes", async () => {
+  const reminderId = "00000000-0000-4000-8000-000000000901";
+  const reminder = {
+    anchorOn: "2026-10-25",
+    createdAt: "2026-08-18T10:00:00.000000Z",
+    id: reminderId,
+    isActive: true,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "year" as const,
+    sendTime: "02:30:00",
+    title: "Birthday call",
+    updatedAt: "2026-08-18T10:00:00.000000Z",
+  };
+  const cadence = {
+    id: crypto.randomUUID(),
+    intervalCount: 1,
+    intervalUnit: "month" as const,
+    isActive: true,
+    nextDueAt: "2026-09-18T10:00:00.000000Z",
+    personId,
+    updatedAt: "2026-08-18T10:00:00.000000Z",
+  };
+  const actors: { readonly apiTokenId?: string }[] = [];
+  const seen = <T>(value: T) => (who: { readonly apiTokenId?: string }) => {
+    actors.push(who);
+    return Promise.resolve(value);
+  };
+  const reminders = {
+    acknowledgeOccurrence: seen({ status: "not-found" as const }),
+    createCadence: seen({ cadence, status: "created" as const }),
+    createReminder: seen({ reminder, status: "created" as const }),
+    listPerson: seen({
+      cadences: [cadence],
+      reminders: [reminder],
+      status: "ready" as const,
+    }),
+    setActive: seen({
+      reminder: { ...reminder, isActive: false },
+      status: "saved" as const,
+    }),
+  } as unknown as ReminderManagement;
+  const tokenId = "00000000-0000-4000-8000-0000000000bb";
+  const current = {
+    ...services(),
+    apiTokens: {
+      authenticate: (token: string, scope: string) =>
+        Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        ),
+    },
+    reminders,
+    todayAttention: {
+      get: seen({
+        attention: { nextSevenDays: [], overdue: [], today: [] },
+        date: "2026-08-18",
+        status: "ready" as const,
+        timezone: "Europe/Belgrade",
+        upcoming: [],
+      }),
+    } as unknown as TodayAttention,
+    todayReminders: {
+      get: seen({
+        cadences: [],
+        reminders: [],
+        status: "ready" as const,
+        timezone: "Europe/Belgrade",
+      }),
+    } as unknown as TodayReminders,
+    todayTasks: {
+      getDueTasks: seen({ items: [task], status: "ready" as const }),
+    } as unknown as TodayTasks,
+  };
+  const app = createPlanningRoutes(current);
+  const createBody = {
+    anchorOn: reminder.anchorOn,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "year",
+    requestId: crypto.randomUUID(),
+    sendTime: "02:30",
+    title: reminder.title,
+  };
+  const cadenceBody = {
+    intervalCount: 1,
+    intervalUnit: "month",
+    personId,
+    requestId: crypto.randomUUID(),
+  };
+  const requests = [
+    ["GET", `/api/v1/people/${personId}/reminders`, "reminders:read", 200],
+    ["POST", "/api/v1/reminders", "reminders:write", 201, createBody],
+    ["PUT", `/api/v1/reminders/${reminderId}/active`, "reminders:write", 200, {
+      active: false,
+    }],
+    ["POST", "/api/v1/stay-in-touch-cadences", "reminders:write", 201, {
+      ...cadenceBody,
+    }],
+    ["GET", "/api/v1/today/attention", "today:read", 200],
+    ["GET", "/api/v1/today/reminders", "today:read", 200],
+    ["GET", "/api/v1/today/tasks", "today:read", 200],
+  ] as const;
+  const grants = [
+    "reminders:read",
+    "reminders:write",
+    "today:read",
+    "tasks:read",
+    "tasks:create",
+    "tasks:write",
+    "people:read",
+  ];
+  for (const [method, path, grant, status, body] of requests) {
+    const send = (
+      authorization: string,
+      extra: Readonly<Record<string, string>> = {},
+    ) =>
+      app.request(`http://localhost${path}`, {
+        method,
+        headers: {
+          authorization,
+          "content-type": "application/json",
+          ...extra,
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const before = actors.length;
+    const accepted = await send(`Bearer ${grant}`);
+    assertStatus(accepted, status, `${method} ${path} bearer-only`);
     assert(
-      response.status !== 200,
-      "unrelated planning routes remain session-only",
+      accepted.headers.get("cache-control") === "private, no-store",
+      `${method} ${path} answers privately`,
+    );
+    assert(
+      actors.length === before + 1 && actors.at(-1)?.apiTokenId === tokenId,
+      `${method} ${path} acts as the token`,
+    );
+    for (const wrong of grants.filter((scope) => scope !== grant)) {
+      assertStatus(
+        await send(`Bearer ${wrong}`, { cookie: headers.cookie }),
+        401,
+        `${method} ${path} refuses ${wrong} and never borrows the cookie`,
+      );
+    }
+    if (method === "GET") continue;
+    const unread = actors.length;
+    for (const refused of ["Bearer people:read", "Bearer revoked"]) {
+      assertStatus(
+        await app.request(`http://localhost${path}`, {
+          method,
+          headers: {
+            authorization: refused,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+        401,
+        `${method} ${path} refuses a bearer before reading its body`,
+      );
+    }
+    assert(actors.length === unread, `${method} ${path} wrote nothing`);
+    assertStatus(
+      await send(`Bearer ${grant}`, { origin: "http://attacker.test" }),
+      status,
+      `${method} ${path} bearer writes ignore Origin`,
+    );
+    for (const origin of [undefined, "http://attacker.test"]) {
+      assertStatus(
+        await app.request(`http://localhost${path}`, {
+          method,
+          headers: {
+            cookie: headers.cookie,
+            "content-type": "application/json",
+            ...(origin ? { origin } : {}),
+          },
+          body: JSON.stringify(body),
+        }),
+        403,
+        `${method} ${path} cookie writes require the exact Origin`,
+      );
+    }
+    assertStatus(
+      await app.request(`http://localhost${path}`, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+      }),
+      status,
+      `${method} ${path} same-origin cookie writes still work`,
+    );
+    const { reminders: _absent, ...withoutReminders } = current;
+    const unavailable = await createPlanningRoutes(withoutReminders).request(
+      `http://localhost${path}`,
+      {
+        method,
+        headers: {
+          authorization: "Bearer revoked",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    assertStatus(unavailable, 503, `${method} ${path} outage before admission`);
+  }
+  for (const grant of grants) {
+    assertStatus(
+      await app.request(
+        `http://localhost/api/v1/reminder-occurrences/${reminderId}/acknowledgement`,
+        {
+          method: "PUT",
+          headers: {
+            authorization: `Bearer ${grant}`,
+            origin: headers.origin,
+          },
+        },
+      ),
+      401,
+      `acknowledging an occurrence stays session-only for ${grant}`,
     );
   }
 });

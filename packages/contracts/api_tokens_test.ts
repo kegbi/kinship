@@ -108,13 +108,10 @@ Deno.test("routes that are not token-enabled keep session admission", () => {
   const sessionOnly = (path: string, method = "get") =>
     JSON.stringify(document.paths[path]?.[method]?.security) ===
       JSON.stringify([{ kinship_session: [] }]);
-  for (const path of ["/api/v1/today/tasks", "/api/v1/today/reminders"]) {
-    assert(sessionOnly(path), `${path}: Today stays session-only`);
-  }
   assert(
-    document.paths["/api/v1/reminders"]?.post?.parameters?.find((p) =>
-      p.name === "Origin"
-    )?.required === true,
+    document
+      .paths["/api/v1/reminder-occurrences/{occurrenceId}/acknowledgement"]
+      ?.put?.parameters?.find((p) => p.name === "Origin")?.required === true,
     "unrelated cookie write Origin remains required",
   );
   assert(
