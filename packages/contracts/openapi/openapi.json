@@ -9942,11 +9942,16 @@
       },
       "post": {
         "operationId": "createRelationship",
+        "description": "Personal tokens require relationships:write. Links two active people of the bound workspace with a relationship type of that workspace. One stored edge supplies both directions, so never create the reverse edge as well; creating an edge that already exists answers the existing one with 200 rather than a duplicate. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "relationships:write",
         "parameters": [
           {
             "in": "path",
@@ -9964,8 +9969,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -10218,11 +10223,16 @@
     "/api/v1/people/{personId}/relationships/{relationshipId}": {
       "delete": {
         "operationId": "deleteRelationship",
+        "description": "Personal tokens require relationships:write. Unlinks one relationship between two active people of the bound workspace without deleting either person; the JSON body must carry the edge's expectedUpdatedAt, and a stale one conflicts. Removing the one stored edge removes both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "relationships:write",
         "parameters": [
           {
             "in": "path",
@@ -10249,8 +10259,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -10358,11 +10368,16 @@
       },
       "patch": {
         "operationId": "updateRelationship",
+        "description": "Personal tokens require relationships:write. Changes only the relationship type of one edge between two active people of the bound workspace, using the edge's expectedUpdatedAt; a stale one conflicts. One stored edge supplies both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "relationships:write",
         "parameters": [
           {
             "in": "path",
@@ -10389,8 +10404,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",

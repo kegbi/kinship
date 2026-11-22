@@ -12,6 +12,7 @@ import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
   originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import { personTransitionInput } from "../schemas/people.ts";
@@ -65,12 +66,15 @@ export const createRelationship = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/relationships",
   operationId: "createRelationship",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require relationships:write. Links two active people of the bound workspace with a relationship type of that workspace. One stored edge supplies both directions, so never create the reverse edge as well; creating an edge that already exists answers the existing one with 200 rather than a duplicate. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "relationships:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -127,13 +131,16 @@ export const deleteRelationship = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}/relationships/{relationshipId}",
   operationId: "deleteRelationship",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require relationships:write. Unlinks one relationship between two active people of the bound workspace without deleting either person; the JSON body must carry the edge's expectedUpdatedAt, and a stale one conflicts. Removing the one stored edge removes both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "relationships:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       relationshipId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -156,13 +163,16 @@ export const updateRelationship = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}/relationships/{relationshipId}",
   operationId: "updateRelationship",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require relationships:write. Changes only the relationship type of one edge between two active people of the bound workspace, using the edge's expectedUpdatedAt; a stale one conflicts. One stored edge supplies both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "relationships:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       relationshipId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

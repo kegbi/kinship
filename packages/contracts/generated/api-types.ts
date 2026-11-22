@@ -1088,6 +1088,7 @@ export interface paths {
         /** @description Personal tokens require relationships:read. Returns one person's directional relationships and authorized endpoint names in the bound workspace, including archived people. Hidden sections return no relationships; existing cursor checks apply. */
         readonly get: operations["listRelationships"];
         readonly put?: never;
+        /** @description Personal tokens require relationships:write. Links two active people of the bound workspace with a relationship type of that workspace. One stored edge supplies both directions, so never create the reverse edge as well; creating an edge that already exists answers the existing one with 200 rather than a duplicate. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createRelationship"];
         readonly delete?: never;
         readonly options?: never;
@@ -1121,9 +1122,11 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post?: never;
+        /** @description Personal tokens require relationships:write. Unlinks one relationship between two active people of the bound workspace without deleting either person; the JSON body must carry the edge's expectedUpdatedAt, and a stale one conflicts. Removing the one stored edge removes both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly delete: operations["deleteRelationship"];
         readonly options?: never;
         readonly head?: never;
+        /** @description Personal tokens require relationships:write. Changes only the relationship type of one edge between two active people of the bound workspace, using the edge's expectedUpdatedAt; a stale one conflicts. One stored edge supplies both directions. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly patch: operations["updateRelationship"];
         readonly trace?: never;
     };
@@ -11617,9 +11620,9 @@ export interface operations {
     readonly createRelationship: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11814,9 +11817,9 @@ export interface operations {
     readonly deleteRelationship: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11909,9 +11912,9 @@ export interface operations {
     readonly updateRelationship: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

@@ -5,6 +5,8 @@ import {
 } from "./routes.ts";
 import { assert, assertStatus } from "../../../../testing/assert.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
+import type { RouteDescriptor } from "../../../../../contracts/registry.ts";
+import { createRelatedPersonRelationship } from "../../../../../contracts/routes/relationships.ts";
 
 const sourceId = "00000000-0000-4000-8000-000000000100";
 const targetId = "00000000-0000-4000-8000-000000000101";
@@ -68,6 +70,204 @@ Deno.test("relationship bearer reads require relationships:read without cookie f
     }
   }
   assert(sessions === 0, "bearer reads never resolve a cookie");
+});
+
+Deno.test("relationship bearer writes require relationships:write, need no Origin, and never borrow the cookie", async () => {
+  let sessions = 0;
+  const tokenId = "00000000-0000-4000-8000-0000000000ab";
+  const actors: (string | undefined)[] = [];
+  const base = services();
+  const app = createRelationshipRoutes({
+    ...base,
+    apiTokens: {
+      authenticate: (token: string, scope: string) =>
+        Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        ),
+    },
+    protectedSessions: {
+      resolve: () => {
+        sessions++;
+        return Promise.resolve(actor);
+      },
+    },
+    relationships: {
+      ...base.relationships,
+      create: (current, ...rest) => {
+        actors.push(current.apiTokenId);
+        return base.relationships.create(current, ...rest);
+      },
+      delete: (current, ...rest) => {
+        actors.push(current.apiTokenId);
+        return base.relationships.delete(current, ...rest);
+      },
+      update: (current, ...rest) => {
+        actors.push(current.apiTokenId);
+        return base.relationships.update(current, ...rest);
+      },
+    },
+  });
+  const edge =
+    `http://localhost/api/v1/people/${sourceId}/relationships/${relationshipId}`;
+  const writes = [
+    {
+      body: { relationshipTypeId: typeId, targetPersonId: targetId },
+      expected: 201,
+      method: "POST",
+      url: `http://localhost/api/v1/people/${sourceId}/relationships`,
+    },
+    {
+      body: { expectedUpdatedAt: updatedAt, relationshipTypeId: typeId },
+      expected: 200,
+      method: "PATCH",
+      url: edge,
+    },
+    {
+      body: { expectedUpdatedAt: updatedAt },
+      expected: 200,
+      method: "DELETE",
+      url: edge,
+    },
+  ] as const;
+  for (const write of writes) {
+    const send = (extra: Record<string, string>) =>
+      app.request(write.url, {
+        body: JSON.stringify(write.body),
+        headers: { "content-type": "application/json", ...extra },
+        method: write.method,
+      });
+    assertStatus(
+      await send({ authorization: "Bearer relationships:write" }),
+      write.expected,
+      `${write.method} bearer write without Origin or cookie`,
+    );
+    for (
+      const authorization of [
+        "Bearer relationships:read",
+        "Bearer people:write",
+        "Bearer revoked",
+        "Basic relationships:write",
+      ]
+    ) {
+      assertStatus(
+        await send({
+          authorization,
+          cookie: "kinship_session=current-token",
+          origin: "http://localhost",
+        }),
+        401,
+        `${write.method} ${authorization} cannot fall back to the cookie`,
+      );
+    }
+    assertStatus(
+      await send({ cookie: "kinship_session=current-token" }),
+      403,
+      `${write.method} cookie write without Origin`,
+    );
+    assertStatus(
+      await send({
+        cookie: "kinship_session=current-token",
+        origin: "http://attacker.test",
+      }),
+      403,
+      `${write.method} cookie write from a foreign Origin`,
+    );
+  }
+  assert(sessions === 0, "bearer and refused cookie writes resolve no session");
+  assert(
+    actors.join(",") === [tokenId, tokenId, tokenId].join(","),
+    "the token's id reaches every write's actor",
+  );
+});
+
+Deno.test("relationship cookie writes keep their Origin, body, then session order", async () => {
+  const app = createRelationshipRoutes({
+    ...services(),
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+  });
+  const edge =
+    `http://localhost/api/v1/people/${sourceId}/relationships/${relationshipId}`;
+  for (
+    const [method, url] of [
+      ["POST", `http://localhost/api/v1/people/${sourceId}/relationships`],
+      ["PATCH", edge],
+      ["DELETE", edge],
+    ] as const
+  ) {
+    const send = (origin: string) =>
+      app.request(url, {
+        body: "{}",
+        headers: {
+          "content-type": "application/json",
+          cookie: "kinship_session=expired",
+          origin,
+        },
+        method,
+      });
+    assertStatus(
+      await send("http://attacker.test"),
+      403,
+      `${method} Origin before body`,
+    );
+    assertStatus(
+      await send("http://localhost"),
+      400,
+      `${method} body before session`,
+    );
+  }
+});
+
+Deno.test("the related-person relationship stays session-only", async () => {
+  const related: RouteDescriptor = createRelatedPersonRelationship;
+  assert(
+    related.tokenScope === undefined &&
+      JSON.stringify(createRelatedPersonRelationship.security) ===
+        JSON.stringify([{ kinship_session: [] }]),
+    "related-person creation needs two grants, so it accepts no token",
+  );
+  let created = 0;
+  const app = createRelationshipRoutes({
+    ...services({
+      createRelatedPerson: () => {
+        created++;
+        return Promise.reject(new Error("never reached"));
+      },
+    }),
+    apiTokens: {
+      authenticate: () =>
+        Promise.resolve({
+          actor,
+          status: "authenticated" as const,
+          tokenId: "00000000-0000-4000-8000-0000000000ac",
+        }),
+    },
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+  });
+  for (const origin of [undefined, "http://localhost"]) {
+    const response = await app.request(
+      `http://localhost/api/v1/people/${sourceId}/relationships/related-person`,
+      {
+        body: JSON.stringify({
+          person: { givenName: "Grace", isPartial: false },
+          relationshipTypeId: typeId,
+        }),
+        headers: {
+          authorization: "Bearer relationships:write",
+          "content-type": "application/json",
+          ...(origin ? { origin } : {}),
+        },
+        method: "POST",
+      },
+    );
+    assertStatus(
+      response,
+      origin ? 401 : 403,
+      "a bearer never admits a related-person write",
+    );
+  }
+  assert(created === 0, "no related person was created for a bearer");
 });
 
 function services(

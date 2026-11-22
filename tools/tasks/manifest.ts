@@ -1405,6 +1405,10 @@ export const MODULES: readonly TaskModule[] = [
         run: ["deno"],
       },
     },
+    // Relationship writes under a personal token (MCP-B3).
+    integration: [
+      "tests/integration/api_tokens_relationships_postgres_test.ts",
+    ],
     coverage: {
       directory: "relationships-domain",
       threshold: 95,

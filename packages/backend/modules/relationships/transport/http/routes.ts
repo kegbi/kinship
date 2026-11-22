@@ -5,13 +5,20 @@
  * origin check, and the kernel status map came from `packages/http-kit` (GAP-019,
  * GAP-020).
  *
+ * Both reads and three of the writes also admit a personal token (MCP-B3). A
+ * cookie write still answers its Origin first, its body second, and its session
+ * last, as it always has; a bearer write skips the Origin, and its token is
+ * admitted where the cookie's session would have been. The related-person
+ * write creates a person too, which would need a second grant, so it stays
+ * session-only.
+ *
  * The type list keeps its own refusals rather than sharing the relationship
  * ones: a workspace that cannot offer relationship types is a different
  * outage, on a different part of the form, from one that cannot save a link
  * between two people, and the page shows them in different places.
  */
 
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import type { RelationshipManagement } from "../../public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import {
@@ -242,6 +249,15 @@ export function createRelationshipRoutes(
   };
   const typesActor = scopedRouteActor(listRelationshipTypes, tokens);
   const relationshipsActor = scopedRouteActor(listRelationships, tokens);
+  const createActor = scopedRouteActor(createRelationship, tokens);
+  const updateActor = scopedRouteActor(updateRelationship, tokens);
+  const deleteActor = scopedRouteActor(deleteRelationship, tokens);
+  // A cookie write is refused for its Origin before its body is read; a
+  // request that carries `Authorization` is the token admission's to judge.
+  const cookieOrigin: MiddlewareHandler = async (context, next) => {
+    if (context.req.header("Authorization") !== undefined) return await next();
+    return await origin(context, next);
+  };
 
   mount(routes, listRelationshipTypes, session, async (context) => {
     // `selected` travels as one comma-separated value, which is what
@@ -303,7 +319,7 @@ export function createRelationshipRoutes(
   mount(
     routes,
     createRelationship,
-    origin,
+    cookieOrigin,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -311,7 +327,7 @@ export function createRelationshipRoutes(
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, CREATE_REQUEST_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await createActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.relationships.create(
         actor,
@@ -375,7 +391,7 @@ export function createRelationshipRoutes(
   mount(
     routes,
     updateRelationship,
-    origin,
+    cookieOrigin,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -387,7 +403,7 @@ export function createRelationshipRoutes(
       if (
         "errors" in personId || "errors" in relationshipId || "errors" in input
       ) return definedProblem(context, VERSIONED_REQUEST_INVALID);
-      const actor = await requireActor(context);
+      const actor = await updateActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.relationships.update(
         actor,
@@ -405,7 +421,7 @@ export function createRelationshipRoutes(
   mount(
     routes,
     deleteRelationship,
-    origin,
+    cookieOrigin,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -417,7 +433,7 @@ export function createRelationshipRoutes(
       if (
         "errors" in personId || "errors" in relationshipId || "errors" in input
       ) return definedProblem(context, VERSIONED_REQUEST_INVALID);
-      const actor = await requireActor(context);
+      const actor = await deleteActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.relationships.delete(
         actor,
