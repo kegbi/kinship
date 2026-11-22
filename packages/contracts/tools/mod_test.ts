@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { acceptsToken } from "../registry.ts";
+import { inputJsonSchema } from "./define.ts";
 import { ANY_TOKEN_OPERATIONS, API_ROUTES } from "../routes/mod.ts";
 import {
   AGENT_INSTRUCTIONS,
@@ -102,6 +103,59 @@ Deno.test("[MCP-C2] every tool's arguments are one plain object that converts to
       tool.description.length >= 80 && tool.description.length <= 1200,
       `${tool.name} has an agent-sized description`,
     );
+  }
+});
+
+/** One argument of a tool's input JSON Schema, as far as these rules read it. */
+interface Property {
+  readonly $ref?: string;
+  readonly enum?: unknown;
+  readonly format?: unknown;
+}
+
+Deno.test("[MCP-C5] every tool's input is strict, its path arguments are closed, and nothing derived is asked for", () => {
+  for (const tool of AGENT_TOOLS) {
+    const json = inputJsonSchema(tool.input) as {
+      $defs?: Record<string, Property>;
+      additionalProperties?: unknown;
+      properties?: Record<string, Property>;
+    };
+    const resolved = (property: Property | undefined) =>
+      property?.$ref?.startsWith("#/$defs/")
+        ? json.$defs?.[property.$ref.slice("#/$defs/".length)]
+        : property;
+    assertEquals(
+      json.additionalProperties,
+      false,
+      `${tool.name} refuses arguments it does not name`,
+    );
+    const properties = json.properties ?? {};
+    for (const [member, taken] of Object.entries(tool.locations)) {
+      if (!taken.includes("path") || member in tool.fixed) continue;
+      const argument = tool.aliases[member] ?? member;
+      const property = resolved(properties[argument]);
+      assert(
+        property !== undefined &&
+          (property.format === "uuid" || Array.isArray(property.enum)),
+        `${tool.name}'s ${argument} fills the path, so it is a uuid or a closed enum`,
+      );
+    }
+    for (const derived of [tool.fixed, tool.aliases]) {
+      for (const member of Object.keys(derived)) {
+        assert(
+          !(member in tool.input.shape),
+          `${tool.name} derives ${member}, so it does not ask for it`,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("[MCP-C5] tagging and untagging people require the tag", () => {
+  for (const name of ["add_tag_to_people", "remove_tag_from_people"]) {
+    const tool = AGENT_TOOLS.find((each) => each.name === name)!;
+    const json = inputJsonSchema(tool.input) as { required?: string[] };
+    assert(json.required?.includes("tagId"), `${name} requires tagId`);
   }
 });
 

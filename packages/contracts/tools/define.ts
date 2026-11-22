@@ -11,7 +11,7 @@
  * case decide every call, and the argument schema is only what lets an agent
  * correct itself before it asks.
  *
- * Five declarations change the derived shape:
+ * Six declarations change the derived shape:
  *
  * - `body` and `fixed` serve a union body one member at a time. MCP requires
  *   an argument schema whose root is a plain object, so a tool names the
@@ -24,6 +24,10 @@
  *   `factId` as the body's `id`).
  * - `omit` leaves out an optional body member this tool never sends
  *   (`archive_people` names no tag).
+ * - `require` makes an optional member required where this tool always sends
+ *   it, because the route demands it for this tool's fixed values
+ *   (`add_tag_to_people` must name the tag the route makes optional only for
+ *   archiving and restoring).
  * - `minted` names arguments the endpoint fills in when the agent leaves them
  *   out — today only a `requestId` retry key. The description tells the agent
  *   to pass its own and reuse it, because a minted key cannot be retried.
@@ -88,6 +92,12 @@ export interface ToolSpec {
   readonly aliases?: Readonly<Record<string, string>>;
   /** Optional body members this tool never sends. */
   readonly omit?: readonly string[];
+  /**
+   * Optional arguments this tool always sends, so its input requires them:
+   * the route accepts them as optional because another tool of the same route
+   * leaves them out.
+   */
+  readonly require?: readonly string[];
   /** Arguments the endpoint mints when the agent leaves them out. */
   readonly minted?: Readonly<Record<string, MintedInput>>;
   /**
@@ -163,6 +173,19 @@ export const MINTED_DESCRIPTIONS: Readonly<Record<MintedInput, string>> = {
 
 const TOOL_NAME = /^[a-z]+(?:_[a-z]+)+$/;
 
+/**
+ * The JSON type and format a member is sent as, which an alias's source must
+ * share with its target: a uuid argument cannot fill a member that takes a
+ * name, and a free string cannot fill a uuid.
+ */
+function wireKind(member: z.ZodType): string {
+  const json = z.toJSONSchema(member, {
+    io: "input",
+    unrepresentable: "any",
+  }) as { type?: unknown; format?: unknown };
+  return `${String(json.type)}:${String(json.format ?? "")}`;
+}
+
 /** The object a tool's body is built from, or nothing when it sends none. */
 function bodyObject(
   spec: ToolSpec,
@@ -205,8 +228,10 @@ function bodyObject(
  * token, a body that is not JSON, the endpoint itself, an argument two parts
  * of the request take without being declared the same value, a fixed value a
  * part of the request refuses, an alias of something that is not an argument,
- * an omitted member the body requires, and a fixed, aliased, omitted, or
- * minted member the request does not take.
+ * an alias whose source is sent as another type or format than its target,
+ * an omitted member the body requires, a required member that is fixed,
+ * aliased, minted, or already required, and a fixed, aliased, omitted,
+ * required, or minted member the request does not take.
  */
 export function defineTool(spec: ToolSpec): AgentTool {
   const { name, route } = spec;
@@ -270,6 +295,10 @@ export function defineTool(spec: ToolSpec): AgentTool {
     if (!(source in locations) || derived.has(source)) {
       fail(`aliases ${member} to ${source}, which is not an argument`);
     }
+    const kind = wireKind(schemas[source]![0]!);
+    if (!schemas[member]!.every((target) => wireKind(target) === kind)) {
+      fail(`aliases ${member} to ${source}, which is sent as another type`);
+    }
   }
 
   const shared = new Set(spec.shared ?? []);
@@ -294,6 +323,17 @@ export function defineTool(spec: ToolSpec): AgentTool {
     if (!derived.has(field)) members[field] = taken[0]!;
   }
   const minted = spec.minted ?? {};
+  for (const field of spec.require ?? []) {
+    if (derived.has(field) || field in minted) {
+      fail(`requires ${field}, which it fixes, aliases, or mints`);
+    }
+    const member = members[field];
+    if (member === undefined) fail(`requires ${field}, which it never sends`);
+    if (!member.safeParse(undefined).success) {
+      fail(`requires ${field}, which is already required`);
+    }
+    members[field] = member.nonoptional();
+  }
   for (const [field, kind] of Object.entries(minted)) {
     const member = members[field];
     if (member === undefined) fail(`mints ${field}, which it never sends`);

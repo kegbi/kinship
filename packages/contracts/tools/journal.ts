@@ -21,6 +21,9 @@ import { type AgentTool, defineTool } from "./define.ts";
 const SHARED =
   "The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.";
 
+const JOURNAL_READ =
+  "list_journal_items and get_journal_item require journal:read; a token without it cannot obtain one.";
+
 export const JOURNAL_TOOLS: readonly AgentTool[] = [
   defineTool({
     name: "list_journal_items",
@@ -40,14 +43,15 @@ export const JOURNAL_TOOLS: readonly AgentTool[] = [
     name: "create_journal_post",
     title: "Write a journal post",
     description:
-      `Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. ${SHARED} There is no retry key: repeating it creates a second post.`,
+      `Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. ${SHARED} Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. A deleted post leaves no record, so the same requestId after delete_journal_item writes it again.`,
     route: createJournalPost,
+    minted: { requestId: "uuid" },
   }),
   defineTool({
     name: "update_journal_post",
     title: "Update a journal post",
     description:
-      `Replaces a post's body, occurredAt, and title with the values sent; a title left out is cleared. itemId is the post's id from create_journal_post or list_journal_items. There is no revision check, so it overwrites any edit made since you read the post: read it with get_journal_item first. ${SHARED}`,
+      `Replaces a post's body, occurredAt, and title with the values sent; a title left out is cleared. itemId is the post's id from create_journal_post or list_journal_items. Send expectedUpdatedAt as the post's updatedAt from get_journal_item or list_journal_items to refuse a concurrent edit as a conflict; left out, the post is overwritten unchecked, losing any edit made since you read it. ${JOURNAL_READ} ${SHARED}`,
     route: updateJournalPost,
   }),
   defineTool({
@@ -61,14 +65,14 @@ export const JOURNAL_TOOLS: readonly AgentTool[] = [
     name: "add_activity_to_journal",
     title: "Put an activity on the journal",
     description:
-      `Puts an existing activity (activityId from record_activity or from the activities list_journal_items offers) on the journal timeline and returns its journal item id. An activity already on the journal, or outside the workspace, is refused as not found. ${SHARED}`,
+      `Puts an existing activity (activityId from record_activity, or from the activities list_journal_items offers, which requires journal:read) on the journal timeline and returns its journal item id. An activity already on the journal, or outside the workspace, is refused as not found. ${SHARED}`,
     route: linkJournalActivity,
   }),
   defineTool({
     name: "delete_journal_item",
     title: "Delete a journal item",
     description:
-      `Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. ${SHARED}`,
+      `Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. There is no revision check. ${JOURNAL_READ} ${SHARED}`,
     route: deleteJournalItem,
   }),
 ];

@@ -248,14 +248,14 @@ const SCOPES = {
   "tasks:write": {
     access: "write",
     detail:
-      "Edit, complete, and reopen existing tasks; no reading or creating.",
+      "Edit, complete, and reopen existing tasks, and delete them; no reading or creating.",
     group: "planning",
     label: "Edit and complete tasks",
   },
   "reminders:write": {
     access: "write",
     detail:
-      "Create, pause, resume, and change reminders and stay-in-touch cadences.",
+      "Create, pause, resume, edit, and delete reminders, and set and delete stay-in-touch cadences.",
     group: "planning",
     label: "Edit reminders",
   },
@@ -283,7 +283,7 @@ const SCOPES = {
     access: "write",
     caution: "financial",
     detail:
-      "Create and change gifts, debts, and recurring debts, record settlements, and delete debts and recurring debts.",
+      "Create, change, and delete gifts, debts, and recurring debts, and record settlements.",
     group: "gifts",
     label: "Edit gifts and debts",
   },
@@ -295,7 +295,7 @@ const SCOPES = {
   },
   "files:write": {
     access: "write",
-    detail: "Upload files to a person and remove them.",
+    detail: "Upload files to a person and delete them, stored bytes included.",
     group: "files",
     label: "Edit files",
   },

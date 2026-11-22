@@ -211,6 +211,10 @@ is a separate decision.
       `routeAdmission` in `packages/http-kit/route_admission.ts`, and one
       `presentsAuthorization` predicate decides token admission everywhere; no
       route's answers or check order change.
+- [x] **MCP-C5 Tool catalog follow-up.** Tools for the edit, delete, and file
+      routes the D lanes merged after MCP-C2, the retry keys and revision checks
+      those lanes added, revision-source and grant notes in every description,
+      `defineTool`'s `require`, and the updated grant details.
 - [ ] **MCP-C4 Flow and checkpoint.** Flow `API-003` in the catalogs with its
       Playwright test (mint a token in settings, call tools through the
       endpoint, see the change in the app); the authorization-matrix invariants,

@@ -32,7 +32,7 @@ import { type AgentTool, defineTool } from "./define.ts";
 
 /** Where a person's revision comes from, for every tool that checks it. */
 export const PERSON_REVISION =
-  "expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. A stale revision is refused as a conflict; read it again.";
+  "expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.";
 
 const BULK =
   "Names 1 to 100 distinct people (personIds from list_people). Each person is changed on their own and answered in request order as done, unchanged, skipped, or failed with a code, so one refusal does not undo the others; only a malformed request or lost access refuses them all. No revision is needed.";
@@ -63,21 +63,22 @@ export const PEOPLE_TOOLS: readonly AgentTool[] = [
     name: "get_person",
     title: "Get a person's name",
     description:
-      "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
+      "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived, but not their revision: list_profile_facts answers that as personUpdatedAt. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
     route: getPersonIdentity,
   }),
   defineTool({
     name: "create_person",
     title: "Create a person",
     description:
-      "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else. There is no retry key, so repeating a successful call creates a second person.",
+      "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
     route: createPerson,
+    minted: { requestId: "uuid" },
   }),
   defineTool({
     name: "update_person",
     title: "Update a person",
     description:
-      `Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId (from list_vocabulary_entries, section gender-options), and isDeceased are kept when left out, and an empty string clears the description or the gender. ${PERSON_REVISION} An archived person cannot be edited until restore_person.`,
+      `Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId, and isDeceased are kept when left out, and an empty string clears the description or the gender. genderOptionId comes from list_vocabulary_entries (section gender-options), which requires vocabularies:read and an owner or admin; a token or member without them cannot obtain one. ${PERSON_REVISION} An archived person cannot be edited until restore_person.`,
     route: editPerson,
   }),
   defineTool({
@@ -139,6 +140,7 @@ export const PEOPLE_TOOLS: readonly AgentTool[] = [
     route: bulkPeople,
     body: peopleBulkInput,
     fixed: { action: "tag" },
+    require: ["tagId"],
     annotations: { idempotentHint: true },
   }),
   defineTool({
@@ -149,6 +151,7 @@ export const PEOPLE_TOOLS: readonly AgentTool[] = [
     route: bulkPeople,
     body: peopleBulkInput,
     fixed: { action: "untag" },
+    require: ["tagId"],
     annotations: { idempotentHint: true },
   }),
   defineTool({

@@ -39,7 +39,7 @@ const ADMIN =
 const CONFLICT = "A name already used in the section is refused as a conflict.";
 
 const REVISION =
-  "id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field.";
+  "id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field.";
 
 /** A create tool for one vocabulary section. */
 function createEntry(
@@ -53,7 +53,7 @@ function createEntry(
     name,
     title,
     description:
-      `${what} Returns the new entry with its id. ${CONFLICT} ${ADMIN}`,
+      `${what} Returns the new entry with its id. There is no retry key. ${CONFLICT} ${ADMIN}`,
     route: createPersonalizationEntry,
     body,
     fixed: { section },
@@ -212,7 +212,7 @@ export const VOCABULARY_TOOLS: readonly AgentTool[] = [
     name: "delete_vocabulary_entry",
     title: "Delete a vocabulary entry",
     description:
-      `Permanently deletes one entry; id and expectedUpdatedAt are its id and updatedAt from list_vocabulary_entries. While records still use the entry the call is refused as replacement required, and succeeds only with replacementId, another entry of the same section, to which those records move. Required and seeded entries, emotions, and pet categories cannot be deleted. ${ADMIN}`,
+      `Permanently deletes one entry; id and expectedUpdatedAt are its id and updatedAt from list_vocabulary_entries, which requires vocabularies:read; a token without it cannot obtain one. While records still use the entry the call is refused as replacement required, and succeeds only with replacementId, another entry of the same section, to which those records move. Required and seeded entries, emotions, and pet categories cannot be deleted. ${ADMIN}`,
     route: deletePersonalizationEntry,
   }),
 ];

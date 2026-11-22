@@ -420,6 +420,14 @@ Deno.test("[MCP-C2] an alias sends one argument as a second request member", () 
     declare({ id: "factId", factId: "personId" }),
     "an alias of an alias",
   );
+  assertThrows(
+    declare({ id: "name" }),
+    "a free-text argument cannot fill a uuid member",
+  );
+  assertThrows(
+    declare({ name: "factId" }),
+    "a uuid argument cannot fill a free-text member",
+  );
   const single = declare({ id: "personId", factId: "personId" })();
   assertEquals(Object.keys(single.input.shape).sort(), [
     "name",
@@ -477,5 +485,70 @@ Deno.test("[MCP-C2] an omitted body member is neither an argument nor sent", () 
         omit: ["colour"],
       }),
     "an omitted member the body lacks",
+  );
+});
+
+Deno.test("[MCP-C5] a required member is one the route makes optional and this tool always sends", () => {
+  const bulk = defineRoute({
+    method: "post",
+    path: "/api/v1/bulk-required-fixture",
+    operationId: "bulkRequiredFixture",
+    tokenScope: "people:write",
+    security: both,
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": z.strictObject({
+            action: z.enum(["archive", "tag"]),
+            personIds: z.array(z.uuid()),
+            requestId: z.uuid().optional(),
+            tagId: z.uuid().optional().meta({ description: "The tag." }),
+          }),
+        },
+      },
+    },
+    responses: answered,
+  });
+  const declare = (require: readonly string[], extra: object = {}) => () =>
+    defineTool({
+      ...base,
+      name: "tag_things",
+      route: bulk,
+      fixed: { action: "tag" },
+      require,
+      ...extra,
+    });
+  const tag = declare(["tagId"])();
+  const personIds = [crypto.randomUUID()];
+  assert(
+    !tag.input.safeParse({ personIds }).success,
+    "the tool's input requires the member",
+  );
+  assert(
+    tag.input.safeParse({ personIds, tagId: crypto.randomUUID() }).success,
+    "the member, sent, is accepted",
+  );
+  const json = z.toJSONSchema(tag.input, { io: "input" }) as {
+    properties: Record<string, { description?: string }>;
+    required: string[];
+  };
+  assertEquals(json.required.sort(), ["personIds", "tagId"]);
+  assertEquals(json.properties.tagId?.description, "The tag.");
+  assertEquals(tag.locations.tagId, ["body"]);
+  assertThrows(declare(["colour"]), "a member the request lacks");
+  assertThrows(declare(["personIds"]), "a member already required");
+  assertThrows(declare(["action"]), "a fixed member");
+  assertThrows(
+    declare(["requestId"], { minted: { requestId: "uuid" } }),
+    "a minted member, which the endpoint fills in",
+  );
+  assertThrows(
+    declare(["tagId"], { omit: ["tagId"] }),
+    "an omitted member, which is never sent",
+  );
+  assertThrows(
+    declare(["requestId"], { aliases: { requestId: "tagId" } }),
+    "an aliased member",
   );
 });

@@ -5,7 +5,7 @@
     "method": "POST",
     "path": "/api/v1/mcp"
   },
-  "instructions": "Kinship is a personal relationship manager: people and their profiles, relationships, notes and activities, tasks, reminders, a journal, and gifts and debts, in one workspace. Only the tools this token's scopes allow are listed, and the member's role can still refuse a call. Call get_context first to see the workspace, role, and scopes. Find a person's id with list_people or search_workspace before reading or writing about them. Read before you update: updates and deletes take expectedUpdatedAt or another revision from the matching list or get tool, and a stale one is refused as a conflict, so read again. On creates that take a requestId, pass your own UUID and reuse it when you retry. A refused call returns isError with the problem code and field messages; correct the arguments rather than retrying unchanged.",
+  "instructions": "Kinship is a personal relationship manager: people and their profiles, relationships, notes and activities, tasks, reminders, a journal, and gifts and debts, in one workspace. Only the tools this token's scopes allow are listed, and the member's role can still refuse a call. Call get_context first to see the workspace, role, and scopes. Find a person's id with list_people or search_workspace before reading or writing about them. Read before you update: updates and deletes take expectedUpdatedAt or another revision from the matching list or get tool, and a stale one is refused as a conflict, so read again. On creates that take a requestId, pass your own UUID and reuse it when you retry, but never replay a create after deleting what it made. A refused call returns isError with the problem code and field messages; correct the arguments rather than retrying unchanged.",
   "areas": [
     {
       "id": "context",
@@ -104,7 +104,15 @@
         "record_call",
         "record_conversation",
         "list_notes_and_activities",
-        "list_calls_and_conversations"
+        "list_calls_and_conversations",
+        "update_note",
+        "delete_note",
+        "update_activity",
+        "delete_activity",
+        "update_call",
+        "delete_call",
+        "update_conversation",
+        "delete_conversation"
       ]
     },
     {
@@ -119,7 +127,11 @@
         "list_reminders",
         "create_reminder",
         "set_reminder_active",
-        "set_stay_in_touch_cadence"
+        "set_stay_in_touch_cadence",
+        "delete_task",
+        "update_reminder",
+        "delete_reminder",
+        "delete_stay_in_touch_cadence"
       ]
     },
     {
@@ -148,7 +160,18 @@
         "delete_debt",
         "create_recurring_debt",
         "update_recurring_debt",
-        "delete_recurring_debt"
+        "delete_recurring_debt",
+        "update_gift",
+        "delete_gift",
+        "update_debt"
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files",
+      "tools": [
+        "list_files",
+        "delete_file"
       ]
     },
     {
@@ -556,7 +579,7 @@
       "name": "get_person",
       "area": "people",
       "title": "Get a person's name",
-      "description": "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
+      "description": "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived, but not their revision: list_profile_facts answers that as personUpdatedAt. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
       "scope": "people:profile:read",
       "annotations": {
         "readOnlyHint": true,
@@ -589,7 +612,7 @@
       "name": "create_person",
       "area": "people",
       "title": "Create a person",
-      "description": "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else. There is no retry key, so repeating a successful call creates a second person.",
+      "description": "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -629,7 +652,7 @@
             "maxLength": 200
           },
           "requestId": {
-            "description": "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different person.",
+            "description": "Retry key, a UUID v4 you generate. Pass your own and reuse the same value when you retry this exact call, so a retry returns the original record instead of creating a second one; a changed payload under the same key is refused as a conflict. Left out, the server mints one and the call cannot be safely retried.",
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -646,7 +669,7 @@
       "name": "update_person",
       "area": "people",
       "title": "Update a person",
-      "description": "Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId (from list_vocabulary_entries, section gender-options), and isDeceased are kept when left out, and an empty string clears the description or the gender. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. A stale revision is refused as a conflict; read it again. An archived person cannot be edited until restore_person.",
+      "description": "Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId, and isDeceased are kept when left out, and an empty string clears the description or the gender. genderOptionId comes from list_vocabulary_entries (section gender-options), which requires vocabularies:read and an owner or admin; a token or member without them cannot obtain one. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again. An archived person cannot be edited until restore_person.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -726,7 +749,7 @@
       "name": "archive_person",
       "area": "people",
       "title": "Archive a person",
-      "description": "Archives a person: they leave the active directory and their profile becomes read-only until restore_person. Nothing is deleted. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. A stale revision is refused as a conflict; read it again.",
+      "description": "Archives a person: they leave the active directory and their profile becomes read-only until restore_person. Nothing is deleted. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -765,7 +788,7 @@
       "name": "restore_person",
       "area": "people",
       "title": "Restore an archived person",
-      "description": "Returns an archived person to the active directory and makes their profile writable again. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. A stale revision is refused as a conflict; read it again.",
+      "description": "Returns an archived person to the active directory and makes their profile writable again. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -984,7 +1007,8 @@
           }
         },
         "required": [
-          "personIds"
+          "personIds",
+          "tagId"
         ],
         "additionalProperties": false
       }
@@ -1029,7 +1053,8 @@
           }
         },
         "required": [
-          "personIds"
+          "personIds",
+          "tagId"
         ],
         "additionalProperties": false
       }
@@ -1398,7 +1423,7 @@
       "name": "update_important_date",
       "area": "profile",
       "title": "Update an important date",
-      "description": "Replaces an important date with the value sent (fields left out are cleared). dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. precision says which of year, month, and day the date has — full (all three), year_month, month_day, year, month, day, or unknown (none) — and exactly those must be sent. Archived people are read-only.",
+      "description": "Replaces an important date with the value sent (fields left out are cleared). dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. That read requires people:profile:read; a token without it cannot obtain one. precision says which of year, month, and day the date has — full (all three), year_month, month_day, year, month, day, or unknown (none) — and exactly those must be sent. Archived people are read-only.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1497,7 +1522,7 @@
       "name": "delete_important_date",
       "area": "profile",
       "title": "Delete an important date",
-      "description": "Permanently removes one important date. dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. Archived people are read-only.",
+      "description": "Permanently removes one important date. dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. That read requires people:profile:read; a token without it cannot obtain one. Archived people are read-only.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1610,7 +1635,7 @@
       "name": "add_contact_method",
       "area": "profile",
       "title": "Add a contact method",
-      "description": "Adds a contact method — an email address, phone number, website, social or messaging handle — to a person. typeId and labelIds come from list_profile_facts with section contact-methods and includeOptions \"true\"; isPrimary makes it the person's main one. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
+      "description": "Adds a contact method — an email address, phone number, website, social or messaging handle — to a person. typeId and labelIds come from list_profile_facts with section contact-methods and includeOptions \"true\"; isPrimary makes it the person's main one. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1680,7 +1705,7 @@
       "name": "update_contact_method",
       "area": "profile",
       "title": "Update a contact method",
-      "description": "Replaces one of a person's contact methods with the value sent; notes left out are cleared. factId is the record's id from list_profile_facts (section contact-methods). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces one of a person's contact methods with the value sent; notes left out are cleared. factId is the record's id from list_profile_facts (section contact-methods). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1762,7 +1787,7 @@
       "name": "add_address",
       "area": "profile",
       "title": "Add an address",
-      "description": "Adds a postal address to a person; send at least one of street, city, region, postalCode, country, or displayName. labelIds come from list_profile_facts with section addresses and includeOptions \"true\"; isPrimary makes it the main address. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
+      "description": "Adds a postal address to a person; send at least one of street, city, region, postalCode, country, or displayName. labelIds come from list_profile_facts with section addresses and includeOptions \"true\"; isPrimary makes it the main address. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1839,7 +1864,7 @@
       "name": "update_address",
       "area": "profile",
       "title": "Update an address",
-      "description": "Replaces one of a person's addresses with the value sent; parts left out are cleared, and at least one must remain. factId is the record's id from list_profile_facts (section addresses). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces one of a person's addresses with the value sent; parts left out are cleared, and at least one must remain. factId is the record's id from list_profile_facts (section addresses). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -1928,7 +1953,7 @@
       "name": "add_job",
       "area": "profile",
       "title": "Add a job",
-      "description": "Adds a job to a person's work history: a title, and optionally an organization (organizationId from list_profile_facts with section work and includeOptions \"true\", or organizationName), dates, and whether it is current. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
+      "description": "Adds a job to a person's work history: a title, and optionally an organization (organizationId from list_profile_facts with section work and includeOptions \"true\", or organizationName), dates, and whether it is current. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2001,7 +2026,7 @@
       "name": "update_job",
       "area": "profile",
       "title": "Update a job",
-      "description": "Replaces one job in a person's work history with the value sent; optional fields left out are cleared. factId is the record's id from list_profile_facts (section work). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces one job in a person's work history with the value sent; optional fields left out are cleared. factId is the record's id from list_profile_facts (section work). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2086,7 +2111,7 @@
       "name": "add_pet",
       "area": "profile",
       "title": "Add a pet",
-      "description": "Adds a pet to a person: a name, a category (categoryId from list_profile_facts with section pets and includeOptions \"true\"), or both, and optional notes. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
+      "description": "Adds a pet to a person: a name, a category (categoryId from list_profile_facts with section pets and includeOptions \"true\"), or both, and optional notes. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused. There is no retry key: repeating it adds a second record.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2138,7 +2163,7 @@
       "name": "update_pet",
       "area": "profile",
       "title": "Update a pet",
-      "description": "Replaces one of a person's pets with the value sent; fields left out are cleared, and a name or category must remain. factId is the record's id from list_profile_facts (section pets). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces one of a person's pets with the value sent; fields left out are cleared, and a name or category must remain. factId is the record's id from list_profile_facts (section pets). expectedUpdatedAt is the record's updatedAt from list_profile_facts. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2202,7 +2227,7 @@
       "name": "add_first_meeting",
       "area": "profile",
       "title": "Record how you first met",
-      "description": "Records how a person was first met: where (placeText), notes, and who introduced you (introducedByPersonId, another person from list_people); send at least one. A person holds one first meeting, so when one exists this is refused as stale; change it with update_first_meeting. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Records how a person was first met: where (placeText), notes, and who introduced you (introducedByPersonId, another person from list_people); send at least one. A person holds one first meeting, so when one exists this is refused as stale; change it with update_first_meeting. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2254,7 +2279,7 @@
       "name": "update_first_meeting",
       "area": "profile",
       "title": "Update how you first met",
-      "description": "Replaces a person's first meeting with the value sent; fields left out are cleared, and at least one must remain. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section first-meeting). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces a person's first meeting with the value sent; fields left out are cleared, and at least one must remain. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section first-meeting). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2312,7 +2337,7 @@
       "name": "add_food_preferences",
       "area": "profile",
       "title": "Record food preferences",
-      "description": "Records a person's food preferences as free text. A person holds one such record, so when one exists this is refused as stale; change it with update_food_preferences. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Records a person's food preferences as free text. A person holds one such record, so when one exists this is refused as stale; change it with update_food_preferences. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2358,7 +2383,7 @@
       "name": "update_food_preferences",
       "area": "profile",
       "title": "Update food preferences",
-      "description": "Replaces a person's food preferences text. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section food-preferences). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces a person's food preferences text. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section food-preferences). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2410,7 +2435,7 @@
       "name": "update_person_tags",
       "area": "profile",
       "title": "Set a person's tags",
-      "description": "Replaces a person's whole set of tags with tagIds (from list_tags); an empty list removes every tag. To add or remove one tag across people without replacing the rest, use add_tag_to_people or remove_tag_from_people. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section tags). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Replaces a person's whole set of tags with tagIds (from list_tags); an empty list removes every tag. To add or remove one tag across people without replacing the rest, use add_tag_to_people or remove_tag_from_people. The person holds one such record; expectedUpdatedAt is its updatedAt from list_profile_facts (section tags). expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2465,7 +2490,7 @@
       "name": "delete_profile_fact",
       "area": "profile",
       "title": "Delete a profile fact",
-      "description": "Permanently removes one profile-fact record — a contact method, address, job, or pet — or clears a person's first meeting or food preferences. factId and expectedUpdatedAt are the record's id and updatedAt from list_profile_facts in the same section; for first-meeting and food-preferences the id is the person's. Tags cannot be deleted here: clear them with update_person_tags and an empty list. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. Archived people and sections the workspace hides are refused.",
+      "description": "Permanently removes one profile-fact record — a contact method, address, job, or pet — or clears a person's first meeting or food preferences. factId and expectedUpdatedAt are the record's id and updatedAt from list_profile_facts in the same section; for first-meeting and food-preferences the id is the person's. Tags cannot be deleted here: clear them with update_person_tags and an empty list. expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one. Archived people and sections the workspace hides are refused.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2641,7 +2666,7 @@
       "name": "update_life_event",
       "area": "profile",
       "title": "Update a life event",
-      "description": "Replaces a life event with the value sent (fields left out are cleared). lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. precision says which of year, month, and day the date has — full (all three), year_month, month_day, year, month, day, or unknown (none) — and exactly those must be sent. Archived people are read-only.",
+      "description": "Replaces a life event with the value sent (fields left out are cleared). lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. That read requires people:profile:read; a token without it cannot obtain one. precision says which of year, month, and day the date has — full (all three), year_month, month_day, year, month, day, or unknown (none) — and exactly those must be sent. Archived people are read-only.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2727,7 +2752,7 @@
       "name": "delete_life_event",
       "area": "profile",
       "title": "Delete a life event",
-      "description": "Permanently removes a life event. lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. Archived people are read-only.",
+      "description": "Permanently removes a life event. lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. That read requires people:profile:read; a token without it cannot obtain one. Archived people are read-only.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2861,7 +2886,7 @@
       "name": "create_relationship",
       "area": "relationships",
       "title": "Relate two people",
-      "description": "Relates personId to targetPersonId with a relationship type (relationshipTypeId from list_relationship_types). personId is the edge's from person, so the type's forward label reads from personId to targetPersonId and its reverse label back. Both people must be active. One edge supplies both directions, so never create the reverse as well. Safe to repeat: an edge that already exists is answered as existing rather than duplicated.",
+      "description": "Relates personId to targetPersonId with a relationship type (relationshipTypeId from list_relationship_types, which requires relationships:read). personId is the edge's from person, so the type's forward label reads from personId to targetPersonId and its reverse label back. Both people must be active. One edge supplies both directions, so never create the reverse as well. Safe to repeat: an edge that already exists is answered as existing rather than duplicated.",
       "scope": "relationships:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2906,7 +2931,7 @@
       "name": "update_relationship",
       "area": "relationships",
       "title": "Change a relationship's type",
-      "description": "Changes only the relationship type of one edge (relationshipTypeId from list_relationship_types). relationshipId and expectedUpdatedAt are the edge's id and updatedAt from list_relationships for personId, either person of the edge; a stale revision is refused as a conflict. Both people must be active.",
+      "description": "Changes only the relationship type of one edge (relationshipTypeId from list_relationship_types). relationshipId and expectedUpdatedAt are the edge's id and updatedAt from list_relationships for personId, either person of the edge; a stale revision is refused as a conflict. list_relationships requires relationships:read; a token without it cannot obtain one. Both people must be active.",
       "scope": "relationships:write",
       "annotations": {
         "readOnlyHint": false,
@@ -2957,7 +2982,7 @@
       "name": "delete_relationship",
       "area": "relationships",
       "title": "Remove a relationship",
-      "description": "Permanently removes one relationship between two people, in both directions, without deleting either person. relationshipId and expectedUpdatedAt are the edge's id and updatedAt from list_relationships; a stale revision is refused as a conflict. Both people must be active.",
+      "description": "Permanently removes one relationship between two people, in both directions, without deleting either person. relationshipId and expectedUpdatedAt are the edge's id and updatedAt from list_relationships; a stale revision is refused as a conflict. list_relationships requires relationships:read; a token without it cannot obtain one. Both people must be active.",
       "scope": "relationships:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3073,7 +3098,7 @@
       "name": "record_note",
       "area": "interactions",
       "title": "Record a note",
-      "description": "Adds a note to one person's profile and returns it with its id. isFavorited pins it to the Today page's favourite notes. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. No tool edits or deletes a note yet.",
+      "description": "Adds a note to one person's profile and returns it with its id. isFavorited pins it to the Today page's favourite notes. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again. update_note and delete_note change it under interactions:write.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3121,7 +3146,7 @@
       "name": "record_activity",
       "area": "interactions",
       "title": "Record an activity",
-      "description": "Records something done together with one or more people (participantIds from list_people): when it happened (an ISO instant with offset), a short summary, and optionally a description, an activity type, and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one.",
+      "description": "Records something done together with one or more people (participantIds from list_people): when it happened (an ISO instant with offset), a short summary, and optionally a description, an activity type, and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3196,7 +3221,7 @@
       "name": "record_call",
       "area": "interactions",
       "title": "Record a call",
-      "description": "Records a phone call with one person: when it happened (calledAt), whether they called you (contactWasCaller), and optionally what was said and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one.",
+      "description": "Records a phone call with one person: when it happened (calledAt), whether they called you (contactWasCaller), and optionally what was said and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3259,7 +3284,7 @@
       "name": "record_conversation",
       "area": "interactions",
       "title": "Record a conversation",
-      "description": "Records a written conversation with one person on a channel (channelTypeId from list_conversation_options), optionally with a title, the contact method used (an id from list_profile_facts, section contact-methods), and its messages in order. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one.",
+      "description": "Records a written conversation with one person on a channel (channelTypeId from list_conversation_options), optionally with a title, the contact method used (contactMethodId from list_profile_facts, section contact-methods, which requires people:profile:read), and its messages in order. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3352,7 +3377,7 @@
       "name": "list_notes_and_activities",
       "area": "interactions",
       "title": "List a person's notes and activities",
-      "description": "Lists one person's notes and activities, newest first, with their full content: note bodies, activity summaries and descriptions, and participants. kind narrows to note or activity and year to one calendar year; pages with limit and nextCursor, which stays bound to the person and filters.",
+      "description": "Lists one person's notes and activities, newest first, with their full content: note bodies, activity summaries and descriptions, and participants, each with the id and updatedAt its update and delete tools need. kind narrows to note or activity and year to one calendar year; pages with limit and nextCursor, which stays bound to the person and filters.",
       "scope": "interactions:read",
       "annotations": {
         "readOnlyHint": true,
@@ -3407,7 +3432,7 @@
       "name": "list_calls_and_conversations",
       "area": "interactions",
       "title": "List a person's calls and conversations",
-      "description": "Lists up to 50 of one person's calls and conversations with their full content: what was said on each call, and each conversation's messages.",
+      "description": "Lists up to 50 of one person's calls and conversations with their full content: what was said on each call, and each conversation's messages, each with the id and updatedAt its update and delete tools need.",
       "scope": "interactions:read",
       "annotations": {
         "readOnlyHint": true,
@@ -3432,6 +3457,484 @@
         },
         "required": [
           "personId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_note",
+      "area": "interactions",
+      "title": "Edit a note",
+      "description": "Edits one note's body or isFavorited (whether it is one of Today's favourite notes) and returns it at its new revision; interactionId is the note's id. Send only what changes: an omitted field stays as stored, null clears an optional field, a supplied list replaces the stored list whole, and at least one field besides expectedUpdatedAt is required. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity or get_today_favorite_notes, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateNote",
+        "method": "PATCH",
+        "path": "/api/v1/interactions/note/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "isFavorited": {
+            "description": "Whether the note is one of Today's favorite notes.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_note",
+      "area": "interactions",
+      "title": "Delete a note",
+      "description": "Permanently deletes one note: it leaves the person's notes, timeline, search, and Today's favourite notes. interactionId is the note's id. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity or get_today_favorite_notes, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteNote",
+        "method": "DELETE",
+        "path": "/api/v1/interactions/note/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_activity",
+      "area": "interactions",
+      "title": "Edit an activity",
+      "description": "Edits one activity — happenedAt, summary, description, activityTypeId and emotionIds (from list_activity_options), or participantIds (from list_people, every person active) — and returns it at its new revision. Send only what changes: an omitted field stays as stored, null clears an optional field, a supplied list replaces the stored list whole, and at least one field besides expectedUpdatedAt is required. Moving it later, or adding people, advances their stay-in-touch cadences as recording it would. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateActivity",
+        "method": "PATCH",
+        "path": "/api/v1/interactions/activity/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "activityTypeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "emotionIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "participantIds": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_activity",
+      "area": "interactions",
+      "title": "Delete an activity",
+      "description": "Permanently deletes one activity for every participant, not only the person you found it through, with its emotions and its journal entry: it leaves every participant's activities and timeline, search, the journal, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteActivity",
+        "method": "DELETE",
+        "path": "/api/v1/interactions/activity/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_call",
+      "area": "interactions",
+      "title": "Edit a call",
+      "description": "Edits one call — calledAt, contactWasCaller, content, or emotionIds (from list_activity_options) — and returns it at its new revision. Send only what changes: an omitted field stays as stored, null clears an optional field, a supplied list replaces the stored list whole, and at least one field besides expectedUpdatedAt is required. Moving it later advances the person's stay-in-touch cadence as recording it would. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateCall",
+        "method": "PATCH",
+        "path": "/api/v1/interactions/call/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "calledAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "contactWasCaller": {
+            "type": "boolean"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "emotionIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_call",
+      "area": "interactions",
+      "title": "Delete a call",
+      "description": "Permanently deletes one call and its emotions: it leaves the person's calls, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteCall",
+        "method": "DELETE",
+        "path": "/api/v1/interactions/call/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_conversation",
+      "area": "interactions",
+      "title": "Edit a conversation",
+      "description": "Edits one conversation — channelTypeId (from list_conversation_options), contactMethodId (one of the person's contact methods on that channel), happenedAt, title, or messages, which replace every message (an empty list removes them all) — and returns it at its new revision. Send only what changes: an omitted field stays as stored, null clears an optional field, a supplied list replaces the stored list whole, and at least one field besides expectedUpdatedAt is required. Moving it later advances the person's stay-in-touch cadence as recording it would. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateConversation",
+        "method": "PATCH",
+        "path": "/api/v1/interactions/conversation/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "channelTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "contactMethodId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "messages": {
+            "description": "Replaces every message of the conversation; an empty list removes them all.",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "inbound",
+                    "outbound"
+                  ]
+                },
+                "writtenAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                }
+              },
+              "required": [
+                "content",
+                "direction",
+                "writtenAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_conversation",
+      "area": "interactions",
+      "title": "Delete a conversation",
+      "description": "Permanently deletes one conversation and its messages: it leaves the person's conversations, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "scope": "interactions:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteConversation",
+        "method": "DELETE",
+        "path": "/api/v1/interactions/conversation/{interactionId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "interactionId",
+          "expectedUpdatedAt"
         ],
         "additionalProperties": false
       }
@@ -3526,7 +4029,7 @@
       "name": "create_task",
       "area": "planning",
       "title": "Create a task",
-      "description": "Creates an open task with a title and optionally a description, a due instant (dueAt), and a linked person (personId from list_people), and returns it with its id and updatedAt. Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict.",
+      "description": "Creates an open task with a title and optionally a description, a due instant (dueAt), and a linked person (personId from list_people), and returns it with its id and updatedAt. Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict. Once the task is deleted its requestId stays used: replaying the create is refused as a conflict (task_request_deleted) rather than recreating it.",
       "scope": "tasks:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3582,7 +4085,7 @@
       "name": "update_task",
       "area": "planning",
       "title": "Update a task",
-      "description": "Changes a task's title, description, due instant, linked person, or status (open or cancelled; use set_task_completion to complete it). Send expectedUpdatedAt as the updatedAt from get_task or list_tasks: if the task changed since, the call is refused as a conflict, so read it again. Send null to clear description, dueAt, or personId, and change at least one field.",
+      "description": "Changes a task's title, description, due instant, linked person, or status (open or cancelled; use set_task_completion to complete it). Send expectedUpdatedAt as the updatedAt from get_task or list_tasks: if the task changed since, the call is refused as a conflict, so read it again. get_task and list_tasks require tasks:read; a token without it cannot obtain a task's id or revision. Send null to clear description, dueAt, or personId, and change at least one field.",
       "scope": "tasks:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3671,7 +4174,7 @@
       "name": "set_task_completion",
       "area": "planning",
       "title": "Complete or reopen a task",
-      "description": "Marks a task completed (completed: true) or reopens it (completed: false); taskId comes from list_tasks. Safe to repeat: setting the state it already has changes nothing.",
+      "description": "Marks a task completed (completed: true) or reopens it (completed: false); taskId comes from list_tasks. get_task and list_tasks require tasks:read; a token without it cannot obtain a task's id or revision. Safe to repeat: setting the state it already has changes nothing.",
       "scope": "tasks:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3708,7 +4211,7 @@
       "name": "list_reminders",
       "area": "planning",
       "title": "List a person's reminders",
-      "description": "Lists one person's calendar reminders, each with its id, schedule, whether it is active, and its next occurrence, and the person's stay-in-touch cadence if they have one (interval, last contact, and next due instant). Pages reminders with limit and nextCursor.",
+      "description": "Lists one person's calendar reminders, each with its id, schedule, whether it is active, its next occurrence, and the updatedAt its changes need, and the person's stay-in-touch cadence if they have one (its id, interval, last contact, next due instant, and updatedAt). Pages reminders with limit and nextCursor.",
       "scope": "reminders:read",
       "annotations": {
         "readOnlyHint": true,
@@ -3751,7 +4254,7 @@
       "name": "create_reminder",
       "area": "planning",
       "title": "Create a reminder",
-      "description": "Creates a calendar reminder about one person (personId from list_people) and schedules its occurrences: a title, the date it starts from (anchorOn), a local time of day to send it (sendTime, HH:MM), and how it repeats (recurrenceUnit none for once, or every recurrenceInterval days, weeks, months, or years). Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict. Archived people are read-only.",
+      "description": "Creates a calendar reminder about one person (personId from list_people) and schedules its occurrences: a title, the date it starts from (anchorOn), a local time of day to send it (sendTime, HH:MM), and how it repeats (recurrenceUnit none for once, or every recurrenceInterval days, weeks, months, or years). Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict. Once the reminder is deleted its requestId stays used: replaying the create is refused as a conflict (reminder_request_deleted) rather than recreating it. Archived people are read-only.",
       "scope": "reminders:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3824,7 +4327,7 @@
       "name": "set_reminder_active",
       "area": "planning",
       "title": "Pause or resume a reminder",
-      "description": "Disables (active: false) or re-enables (active: true) a reminder; reminderId comes from list_reminders. Disabling cancels its future occurrences that have not been attempted, and re-enabling schedules them again. Safe to repeat: setting the current state changes nothing.",
+      "description": "Disables (active: false) or re-enables (active: true) a reminder; reminderId comes from list_reminders. list_reminders requires reminders:read; a token without it cannot obtain a reminder's or a cadence's id or revision. Disabling cancels its future occurrences that have not been attempted, for every member, and re-enabling schedules them again. Safe to repeat: setting the current state changes nothing.",
       "scope": "reminders:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3861,7 +4364,7 @@
       "name": "set_stay_in_touch_cadence",
       "area": "planning",
       "title": "Set a stay-in-touch cadence",
-      "description": "Sets how often to stay in touch with one person (every intervalCount days, weeks, months, or years). A person has one cadence: setting it again with a new requestId replaces it and restarts its due date. Recording a later activity, call, or conversation with the person moves its next due date on. Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict. Archived people are read-only.",
+      "description": "Sets how often to stay in touch with one person (every intervalCount days, weeks, months, or years). A person has one cadence: setting it again with a new requestId replaces it and restarts its due date. Recording a later activity, call, or conversation with the person moves its next due date on. Pass your own requestId (a UUID v4) and reuse it when you retry: the same requestId and payload return the original, and a changed payload under it is refused as a conflict. After delete_stay_in_touch_cadence an earlier requestId creates the cadence again. Archived people are read-only.",
       "scope": "reminders:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3908,6 +4411,191 @@
           "intervalCount",
           "intervalUnit",
           "personId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_task",
+      "area": "planning",
+      "title": "Delete a task",
+      "description": "Permanently deletes a task: get_task then answers not found, and it leaves list_tasks, Today, the attention queue, and search. Send expectedUpdatedAt as the task's updatedAt from get_task or list_tasks; a task changed since is refused as a conflict (task_stale), so read it again. get_task and list_tasks require tasks:read; a token without it cannot obtain a task's id or revision. The task's requestId stays used: replaying the create_task call that made it is refused as a conflict (task_request_deleted) rather than recreating it. Archived linked people are read-only.",
+      "scope": "tasks:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteTask",
+        "method": "DELETE",
+        "path": "/api/v1/tasks/{taskId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "taskId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_reminder",
+      "area": "planning",
+      "title": "Edit a reminder",
+      "description": "Edits a reminder's title, anchorOn, sendTime, recurrenceUnit, or recurrenceInterval, at least one of them; any member may edit any reminder about a workspace person. expectedUpdatedAt is the reminder's updatedAt from list_reminders (reminder_stale when it changed since). list_reminders requires reminders:read; a token without it cannot obtain a reminder's or a cadence's id or revision. Its unattempted future occurrences are replaced from the new schedule for every member who had them, each in their own time zone and channels; delivered and in-flight ones are kept, and a disabled reminder stays disabled. A reminder made from an important date is refused (reminder_managed_by_source): change the date with update_important_date instead. Archived people are read-only.",
+      "scope": "reminders:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateReminder",
+        "method": "PATCH",
+        "path": "/api/v1/reminders/{reminderId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reminderId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "anchorOn": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "type": "string",
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "sendTime": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reminderId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_reminder",
+      "area": "planning",
+      "title": "Delete a reminder",
+      "description": "Deletes a reminder about a person: its unattempted future occurrences stop as disabling stops them, delivered and in-flight ones are kept as evidence, and it leaves list_reminders and Today. expectedUpdatedAt is its updatedAt from list_reminders. A stale revision is refused as a conflict: read it again. list_reminders requires reminders:read; a token without it cannot obtain a reminder's or a cadence's id or revision. Its requestId stays used: replaying the create_reminder call that made it is refused as a conflict (reminder_request_deleted). A reminder made from an important date is refused (reminder_managed_by_source): change or delete the date instead. Archived people are read-only.",
+      "scope": "reminders:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteReminder",
+        "method": "DELETE",
+        "path": "/api/v1/reminders/{reminderId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "reminderId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "reminderId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_stay_in_touch_cadence",
+      "area": "planning",
+      "title": "Remove a stay-in-touch cadence",
+      "description": "Removes a person's stay-in-touch cadence. cadenceId is its id from list_reminders or set_stay_in_touch_cadence (replacing a cadence keeps its id), and expectedUpdatedAt its updatedAt from list_reminders; recording an interaction moves it, so read just before. A stale revision is refused as a conflict: read it again. list_reminders requires reminders:read; a token without it cannot obtain a reminder's or a cadence's id or revision. Its due item leaves Today and the attention queue, and later interactions do not bring it back. Deleting also removes its request receipts, so replaying an earlier set_stay_in_touch_cadence requestId creates the cadence again. Archived people are read-only.",
+      "scope": "reminders:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteStayInTouchCadence",
+        "method": "DELETE",
+        "path": "/api/v1/stay-in-touch-cadences/{cadenceId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cadenceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "cadenceId",
+          "expectedUpdatedAt"
         ],
         "additionalProperties": false
       }
@@ -3984,7 +4672,7 @@
       "name": "create_journal_post",
       "area": "journal",
       "title": "Write a journal post",
-      "description": "Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it. There is no retry key: repeating it creates a second post.",
+      "description": "Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it. Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. A deleted post leaves no record, so the same requestId after delete_journal_item writes it again.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4012,7 +4700,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "requestId": {
-            "description": "Optional client-generated UUID that makes the create safe to retry: reuse it when retrying the same create, and send a new one for a different post.",
+            "description": "Retry key, a UUID v4 you generate. Pass your own and reuse the same value when you retry this exact call, so a retry returns the original record instead of creating a second one; a changed payload under the same key is refused as a conflict. Left out, the server mints one and the call cannot be safely retried.",
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -4034,7 +4722,7 @@
       "name": "update_journal_post",
       "area": "journal",
       "title": "Update a journal post",
-      "description": "Replaces a post's body, occurredAt, and title with the values sent; a title left out is cleared. itemId is the post's id from create_journal_post or list_journal_items. There is no revision check, so it overwrites any edit made since you read the post: read it with get_journal_item first. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
+      "description": "Replaces a post's body, occurredAt, and title with the values sent; a title left out is cleared. itemId is the post's id from create_journal_post or list_journal_items. Send expectedUpdatedAt as the post's updatedAt from get_journal_item or list_journal_items to refuse a concurrent edit as a conflict; left out, the post is overwritten unchecked, losing any edit made since you read it. list_journal_items and get_journal_item require journal:read; a token without it cannot obtain one. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4134,7 +4822,7 @@
       "name": "add_activity_to_journal",
       "area": "journal",
       "title": "Put an activity on the journal",
-      "description": "Puts an existing activity (activityId from record_activity or from the activities list_journal_items offers) on the journal timeline and returns its journal item id. An activity already on the journal, or outside the workspace, is refused as not found. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
+      "description": "Puts an existing activity (activityId from record_activity, or from the activities list_journal_items offers, which requires journal:read) on the journal timeline and returns its journal item id. An activity already on the journal, or outside the workspace, is refused as not found. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4167,7 +4855,7 @@
       "name": "delete_journal_item",
       "area": "journal",
       "title": "Delete a journal item",
-      "description": "Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
+      "description": "Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. There is no revision check. list_journal_items and get_journal_item require journal:read; a token without it cannot obtain one. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4296,7 +4984,7 @@
       "name": "create_gift",
       "area": "gifts",
       "title": "Record a gift",
-      "description": "Records a gift on a person's profile — an idea, a plan, or one given or received — and returns it with its id. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. The amount is optional. recipientPersonId optionally names another person of the workspace who receives it; attachmentFileId optionally names an available file of the workspace. There is no retry key, so repeating it records a second gift. An archived person's gifts and debts are read-only.",
+      "description": "Records a gift on a person's profile — an idea, a plan, or one given or received — and returns it with its id. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. The amount is optional. recipientPersonId optionally names another person of the workspace who receives it; attachmentFileId optionally names an available file of the workspace that is not an avatar, from list_files (files:read). Pass your own requestId and reuse it when you retry: the same requestId and payload return the gift the first call wrote, a different payload or person under it is refused as a conflict (gift_request_conflict), and once that gift was deleted it is refused (gift_request_deleted) rather than recorded again. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4352,6 +5040,7 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           },
           "requestId": {
+            "description": "Retry key, a UUID v4 you generate. Pass your own and reuse the same value when you retry this exact call, so a retry returns the original record instead of creating a second one; a changed payload under the same key is refused as a conflict. Left out, the server mints one and the call cannot be safely retried.",
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -4384,7 +5073,7 @@
       "name": "set_gift_status",
       "area": "gifts",
       "title": "Change a gift's status",
-      "description": "Moves a gift along its statuses: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived, and archived is final — it cannot be moved again. A move that is not allowed is refused as a conflict; asking for the status it already has answers unchanged. giftId comes from list_gifts_and_debts. An archived person's gifts and debts are read-only.",
+      "description": "Moves a gift along its statuses: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived, and archived is final — it cannot be moved again. A move that is not allowed is refused as a conflict; asking for the status it already has answers unchanged. Send expectedUpdatedAt, the gift's updatedAt, to refuse the change as a conflict (gift_stale) when it changed since; left out, the change applies to whatever the gift is now. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4439,7 +5128,7 @@
       "name": "create_debt",
       "area": "gifts",
       "title": "Record a debt",
-      "description": "Records money the person owes you (direction they_owe) or you owe them (i_owe), with a status, an optional reason, and returns it with its id. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. A settlement may carry a reason and settlementPhotoFileId, the id of an available JPEG, PNG, or WebP photo of the same person. There is no retry key, so repeating it records a second debt. An archived person's gifts and debts are read-only.",
+      "description": "Records money the person owes you (direction they_owe) or you owe them (i_owe), with a status, an optional reason, and returns it with its id. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. A settlement may carry a reason and settlementPhotoFileId, the id of an available JPEG, PNG, or WebP photo of the same person. Pass your own requestId and reuse it when you retry: the same requestId and payload return the debt the first call wrote, a different payload or person under it is refused as a conflict (gift_request_conflict), and once that debt was deleted it is refused (gift_request_deleted) rather than recorded again. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4492,6 +5181,7 @@
             "maxLength": 10000
           },
           "requestId": {
+            "description": "Retry key, a UUID v4 you generate. Pass your own and reuse the same value when you retry this exact call, so a retry returns the original record instead of creating a second one; a changed payload under the same key is refused as a conflict. Left out, the server mints one and the call cannot be safely retried.",
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -4519,7 +5209,7 @@
       "name": "set_debt_status",
       "area": "gifts",
       "title": "Settle, reopen, or cancel a debt",
-      "description": "Moves a debt between open, settled, and cancelled: an open debt may be settled or cancelled, a settled debt may reopen, and cancelled is final. Settling adds an entry to the debt's permanent settlement history. A settlement may carry a reason and settlementPhotoFileId, the id of an available JPEG, PNG, or WebP photo of the same person. Asking for the status it already has answers unchanged. debtId comes from list_gifts_and_debts. An archived person's gifts and debts are read-only.",
+      "description": "Moves a debt between open, settled, and cancelled: an open debt may be settled or cancelled, a settled debt may reopen, and cancelled is final. Settling adds an entry to the debt's permanent settlement history. A settlement may carry a reason and settlementPhotoFileId, the id of an available JPEG, PNG, or WebP photo of the same person. Asking for the status it already has answers unchanged. Send expectedUpdatedAt, the debt's updatedAt, to refuse the change as a conflict (gift_stale) when it changed since; left out, the change applies to whatever the debt is now. A refused move records no settlement. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4582,7 +5272,7 @@
       "name": "delete_debt",
       "area": "gifts",
       "title": "Delete a debt",
-      "description": "Permanently deletes one debt together with its whole settlement history; nothing can restore it. A debt a recurring debt charged leaves the recurring rule and its other charges in place. debtId comes from list_gifts_and_debts. An archived person's gifts and debts are read-only.",
+      "description": "Permanently deletes one debt together with its whole settlement history; nothing can restore it. A debt a recurring debt charged leaves the recurring rule and its other charges in place. There is no revision check. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4621,7 +5311,7 @@
       "name": "create_recurring_debt",
       "area": "gifts",
       "title": "Create a recurring debt",
-      "description": "Creates a rule that charges the person the same debt every intervalMonths months on dayOfMonth, from startsOn until the optional endsOn. Every period already due is charged at once, one open debt per period. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. There is no retry key: repeating it creates a second rule and charges its due periods again. An archived person's gifts and debts are read-only.",
+      "description": "Creates a rule that charges the person the same debt every intervalMonths months on dayOfMonth, from startsOn until the optional endsOn. Every period already due is charged at once, one open debt per period. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. Pass your own requestId and reuse it when you retry: the same requestId and payload return the rule the first call wrote, a different payload or person under it is refused as a conflict (gift_request_conflict), and once that rule was deleted it is refused (gift_request_deleted) rather than recorded again. A replay charges nothing again. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4679,6 +5369,7 @@
             "maxLength": 10000
           },
           "requestId": {
+            "description": "Retry key, a UUID v4 you generate. Pass your own and reuse the same value when you retry this exact call, so a retry returns the original record instead of creating a second one; a changed payload under the same key is refused as a conflict. Left out, the server mints one and the call cannot be safely retried.",
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -4705,7 +5396,7 @@
       "name": "update_recurring_debt",
       "area": "gifts",
       "title": "Update, pause, or resume a recurring debt",
-      "description": "Changes a recurring debt's terms, or pauses (active false) or resumes (active true) it; recurringDebtId comes from list_gifts_and_debts. A period already charged is never charged again, resuming skips the periods that passed while paused, and a change that leaves due periods uncharged charges them at once. Send null to clear endsOn or reason. There is no revision check. An archived person's gifts and debts are read-only.",
+      "description": "Changes a recurring debt's terms, or pauses (active false) or resumes (active true) it. A period already charged is never charged again, resuming skips the periods that passed while paused, and a change that leaves due periods uncharged charges them at once. Send null to clear endsOn or reason, and change at least one field besides expectedUpdatedAt. Send expectedUpdatedAt, the rule's updatedAt, to refuse the change as a conflict (gift_stale) when it changed since; left out, the change applies to whatever the rule is now. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4806,7 +5497,7 @@
       "name": "delete_recurring_debt",
       "area": "gifts",
       "title": "Delete a recurring debt",
-      "description": "Permanently deletes a recurring debt so it charges nothing more. The debts it already charged stay, each to be settled or cancelled on its own. recurringDebtId comes from list_gifts_and_debts. An archived person's gifts and debts are read-only.",
+      "description": "Permanently deletes a recurring debt so it charges nothing more. The debts it already charged stay, each to be settled or cancelled on its own. There is no revision check. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
       "scope": "gifts:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4837,6 +5528,337 @@
         "required": [
           "personId",
           "recurringDebtId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_gift",
+      "area": "gifts",
+      "title": "Edit a gift",
+      "description": "Edits a gift's name, amount with currencyCode (sent together), eventAt, comment, url, recipientPersonId, or attachmentFileId; set_gift_status moves its status. A field left out keeps its value and null clears an optional one; name cannot be cleared, and at least one field is required. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. An attachment replaces the gift's attachment and null removes it; the previous file stays in the person's files. expectedUpdatedAt is required, and a gift changed since is refused as a conflict (gift_stale). Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. Any member may edit any gift. An archived person's gifts and debts are read-only.",
+      "scope": "gifts:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateGift",
+        "method": "PATCH",
+        "path": "/api/v1/people/{personId}/gifts/{giftId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "giftId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachmentFileId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currencyCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "recipientPersonId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "personId",
+          "giftId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_gift",
+      "area": "gifts",
+      "title": "Delete a gift",
+      "description": "Permanently deletes one gift; nothing restores it, and replaying the create_gift call that made it is refused as a conflict (gift_request_deleted). expectedUpdatedAt is required, and a gift changed since is refused as a conflict (gift_stale). An attached file is not deleted: only its link to the gift goes, and the file stays in the person's files. To keep a gift out of the way instead, archive it with set_gift_status. Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
+      "scope": "gifts:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "deleteGift",
+        "method": "DELETE",
+        "path": "/api/v1/people/{personId}/gifts/{giftId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "giftId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "personId",
+          "giftId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_debt",
+      "area": "gifts",
+      "title": "Edit a debt",
+      "description": "Edits a debt's amount, currencyCode, direction, or reason; set_debt_status moves its status. A field left out keeps its value, reason null clears it, and at least one field is required. amount is a decimal string (for example \"12.50\") and currencyCode a three-letter code the workspace supports, listed by list_gifts_and_debts. Amount, currency, and direction change only while the debt is open and has never been settled: once settled, even if reopened, they are refused (debt_values_locked) while its reason stays editable, and a cancelled debt refuses every edit. Editing a recurring charge changes neither its rule nor the other charges. expectedUpdatedAt is required, and a debt changed since is refused as a conflict (gift_stale). Ids and updatedAt come from list_gifts_and_debts or the last write; list_gifts_and_debts requires gifts:read, and a token without it cannot obtain them. An archived person's gifts and debts are read-only.",
+      "scope": "gifts:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "updateDebt",
+        "method": "PATCH",
+        "path": "/api/v1/people/{personId}/debts/{debtId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "debtId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "i_owe",
+              "they_owe"
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "personId",
+          "debtId",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_files",
+      "area": "files",
+      "title": "List a person's files",
+      "description": "Lists one person's photos and then documents with their fileId, filename, title, kind, mimeType, byteSize, and availability (available, missing, processing, or quarantined); the avatar image and removed files are never listed. It returns no file bytes: uploading and downloading are REST routes, not tools. A file id names a gift's attachmentFileId or a settlement's settlementPhotoFileId. Pages with limit and nextCursor.",
+      "scope": "files:read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "listPersonFiles",
+        "method": "GET",
+        "path": "/api/v1/people/{personId}/files"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "personId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_file",
+      "area": "files",
+      "title": "Delete a person's file",
+      "description": "Permanently deletes one of the person's documents or photos: its stored bytes and its link to the person are deleted, so it is no longer listed or downloadable, and no tool can restore it. A gift that attached it keeps its attachmentFileId, now naming a removed file, and a debt settlement whose photo it was reports that photo as unavailable. fileId comes from list_files, which requires files:read; a token without it cannot obtain one. There is no revision check; a file still being processed is refused as a conflict, and an avatar, another person's file, or an archived person's file is not found.",
+      "scope": "files:write",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "route": {
+        "operationId": "removePersonFile",
+        "method": "DELETE",
+        "path": "/api/v1/people/{personId}/files/{fileId}"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "personId",
+          "fileId"
         ],
         "additionalProperties": false
       }
@@ -4894,7 +5916,7 @@
       "name": "create_tag",
       "area": "vocabularies",
       "title": "Create a tag",
-      "description": "Creates a workspace tag to put on people with add_tag_to_people or update_person_tags. Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a workspace tag to put on people with add_tag_to_people or update_person_tags. Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4927,7 +5949,7 @@
       "name": "update_tag",
       "area": "vocabularies",
       "title": "Rename a tag",
-      "description": "Renames a tag everywhere it is used. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames a tag everywhere it is used. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4972,7 +5994,7 @@
       "name": "create_contact_label",
       "area": "vocabularies",
       "title": "Create a contact label",
-      "description": "Creates a label (such as work or home) for contact methods and addresses. Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a label (such as work or home) for contact methods and addresses. Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5005,7 +6027,7 @@
       "name": "update_contact_label",
       "area": "vocabularies",
       "title": "Rename a contact label",
-      "description": "Renames a contact label everywhere it is used. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames a contact label everywhere it is used. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5050,7 +6072,7 @@
       "name": "create_contact_method_type",
       "area": "vocabularies",
       "title": "Create a contact method type",
-      "description": "Creates a type of contact method, with an optional contactKind (email, phone, url, social, im, username, or custom by default) and position (sortOrder). Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a type of contact method, with an optional contactKind (email, phone, url, social, im, username, or custom by default) and position (sortOrder). Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5105,7 +6127,7 @@
       "name": "update_contact_method_type",
       "area": "vocabularies",
       "title": "Update a contact method type",
-      "description": "Renames, reorders, or changes the contactKind of a contact method type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames, reorders, or changes the contactKind of a contact method type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5174,7 +6196,7 @@
       "name": "create_activity_type",
       "area": "vocabularies",
       "title": "Create an activity type",
-      "description": "Creates a type that record_activity can name, with an optional position (sortOrder). Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a type that record_activity can name, with an optional position (sortOrder). Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5212,7 +6234,7 @@
       "name": "update_activity_type",
       "area": "vocabularies",
       "title": "Update an activity type",
-      "description": "Renames or reorders an activity type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames or reorders an activity type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5264,7 +6286,7 @@
       "name": "create_life_event_type",
       "area": "vocabularies",
       "title": "Create a life event type",
-      "description": "Creates a type that record_life_event can name, with an optional position (sortOrder). Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a type that record_life_event can name, with an optional position (sortOrder). Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5302,7 +6324,7 @@
       "name": "update_life_event_type",
       "area": "vocabularies",
       "title": "Update a life event type",
-      "description": "Renames or reorders a life event type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames or reorders a life event type. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5354,7 +6376,7 @@
       "name": "create_gender",
       "area": "vocabularies",
       "title": "Create a gender option",
-      "description": "Creates a gender option that update_person can set, with an optional position (sortOrder). Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a gender option that update_person can set, with an optional position (sortOrder). Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5392,7 +6414,7 @@
       "name": "update_gender",
       "area": "vocabularies",
       "title": "Update a gender option",
-      "description": "Renames or reorders a gender option, or makes it the default (isDefault true). isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames or reorders a gender option, or makes it the default (isDefault true). isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5448,7 +6470,7 @@
       "name": "create_relationship_type",
       "area": "vocabularies",
       "title": "Create a relationship type",
-      "description": "Creates a relationship type with the label read from the first person (forwardLabel, such as parent of) and from the second (reverseLabel, such as child of), and an optional position (sortOrder). Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a relationship type with the label read from the first person (forwardLabel, such as parent of) and from the second (reverseLabel, such as child of), and an optional position (sortOrder). Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5492,7 +6514,7 @@
       "name": "update_relationship_type",
       "area": "vocabularies",
       "title": "Update a relationship type",
-      "description": "Relabels (forwardLabel and reverseLabel together) or reorders a relationship type; every relationship of the type shows the new labels. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Relabels (forwardLabel and reverseLabel together) or reorders a relationship type; every relationship of the type shows the new labels. isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5549,7 +6571,7 @@
       "name": "create_reminder_rule",
       "area": "vocabularies",
       "title": "Create a reminder rule",
-      "description": "Creates a notification lead-time rule: how many days before a reminder falls due (daysBefore) the workspace is notified. Returns the new entry with its id. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Creates a notification lead-time rule: how many days before a reminder falls due (daysBefore) the workspace is notified. Returns the new entry with its id. There is no retry key. A name already used in the section is refused as a conflict. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5582,7 +6604,7 @@
       "name": "update_reminder_rule",
       "area": "vocabularies",
       "title": "Update a reminder rule",
-      "description": "Changes a lead-time rule's number of days (daysBefore). isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Changes a lead-time rule's number of days (daysBefore). isActive false disables (archives) the entry so it is no longer offered, and true re-enables it. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5629,7 +6651,7 @@
       "name": "update_profile_module",
       "area": "vocabularies",
       "title": "Update a profile module",
-      "description": "Renames or reorders one section of every person's page, or hides it for the whole workspace with isActive false (true shows it again); a hidden section's tools return nothing and refuse writes. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Renames or reorders one section of every person's page, or hides it for the whole workspace with isActive false (true shows it again); a hidden section's tools return nothing and refuse writes. id and expectedUpdatedAt are the entry's id and updatedAt from list_vocabulary_entries, whose capabilities say which changes the entry allows; a stale revision is refused as a conflict. list_vocabulary_entries requires vocabularies:read; a token without it cannot obtain one. Change at least one field. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,
@@ -5681,7 +6703,7 @@
       "name": "delete_vocabulary_entry",
       "area": "vocabularies",
       "title": "Delete a vocabulary entry",
-      "description": "Permanently deletes one entry; id and expectedUpdatedAt are its id and updatedAt from list_vocabulary_entries. While records still use the entry the call is refused as replacement required, and succeeds only with replacementId, another entry of the same section, to which those records move. Required and seeded entries, emotions, and pet categories cannot be deleted. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
+      "description": "Permanently deletes one entry; id and expectedUpdatedAt are its id and updatedAt from list_vocabulary_entries, which requires vocabularies:read; a token without it cannot obtain one. While records still use the entry the call is refused as replacement required, and succeeds only with replacementId, another entry of the same section, to which those records move. Required and seeded entries, emotions, and pet categories cannot be deleted. Vocabularies are administrative: the token's member must currently be an owner or admin of the workspace, or the call is refused as forbidden.",
       "scope": "vocabularies:write",
       "annotations": {
         "readOnlyHint": false,

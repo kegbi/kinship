@@ -45,7 +45,11 @@ import { type AgentTool, defineTool } from "./define.ts";
 
 /** The person revision every profile-fact write is checked against. */
 const FACT_REVISION =
-  "expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict.";
+  "expectedPersonUpdatedAt is personUpdatedAt from list_profile_facts or from the last profile-fact write on this person; every fact write changes it, so use the newest. A stale one is refused as a conflict. list_profile_facts requires people:profile:read; a token without it cannot obtain one.";
+
+/** Where the important-date and life-event writes read their ids and revisions. */
+const PROFILE_READ =
+  "That read requires people:profile:read; a token without it cannot obtain one.";
 
 /** The record revision an update or delete of a fact is checked against. */
 const RECORD_REVISION =
@@ -135,14 +139,14 @@ export const PROFILE_TOOLS: readonly AgentTool[] = [
     name: "update_important_date",
     title: "Update an important date",
     description:
-      `Replaces an important date with the value sent (fields left out are cleared). dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. ${DATE_PRECISION} Archived people are read-only.`,
+      `Replaces an important date with the value sent (fields left out are cleared). dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. ${PROFILE_READ} ${DATE_PRECISION} Archived people are read-only.`,
     route: updateImportantDate,
   }),
   defineTool({
     name: "delete_important_date",
     title: "Delete an important date",
     description:
-      "Permanently removes one important date. dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. Archived people are read-only.",
+      `Permanently removes one important date. dateId and expectedUpdatedAt are the date's id and updatedAt from list_important_dates; a stale revision is refused as a conflict. ${PROFILE_READ} Archived people are read-only.`,
     route: deleteImportantDate,
   }),
   defineTool({
@@ -273,14 +277,14 @@ export const PROFILE_TOOLS: readonly AgentTool[] = [
     name: "update_life_event",
     title: "Update a life event",
     description:
-      `Replaces a life event with the value sent (fields left out are cleared). lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. ${DATE_PRECISION} Archived people are read-only.`,
+      `Replaces a life event with the value sent (fields left out are cleared). lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. ${PROFILE_READ} ${DATE_PRECISION} Archived people are read-only.`,
     route: updatePersonLifeEvent,
   }),
   defineTool({
     name: "delete_life_event",
     title: "Delete a life event",
     description:
-      "Permanently removes a life event. lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. Archived people are read-only.",
+      `Permanently removes a life event. lifeEventId and expectedUpdatedAt are the event's id and updatedAt from list_life_events; a stale revision is refused as a conflict. ${PROFILE_READ} Archived people are read-only.`,
     route: deletePersonLifeEvent,
   }),
 ];

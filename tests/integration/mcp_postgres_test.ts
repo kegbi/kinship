@@ -333,7 +333,7 @@ async function use(
   return result.structuredContent;
 }
 
-Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every area and reads it back", async () => {
+Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every area, reads it back, and edits and deletes it", async () => {
   const owner = await ownerOf("agent");
   const agent = await tokens.mint(owner, [
     "people:read",
@@ -343,6 +343,7 @@ Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every ar
     "relationships:write",
     "interactions:create",
     "interactions:read",
+    "interactions:write",
     "tasks:create",
     "tasks:read",
     "tasks:write",
@@ -352,6 +353,7 @@ Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every ar
     "journal:write",
     "gifts:read",
     "gifts:write",
+    "files:read",
     "vocabularies:write",
   ], { name: "Full CRM agent" });
   const s = agent.secret;
@@ -361,6 +363,23 @@ Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every ar
     familyName: "Lovelace",
     isPartial: false,
   })).person.id as string;
+  const charlesInput = {
+    givenName: "Charles",
+    familyName: "Babbage",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const charles = (await use(s, "create_person", charlesInput)).person.id;
+  assertEquals(
+    (await use(s, "create_person", charlesInput)).person.id,
+    charles,
+    "the same retry key returns the person it created",
+  );
+  const [people] = await sql<{ count: string }[]>`
+    select count(*)::text as count from crm.people
+    where workspace_id = ${owner.workspaceId}::uuid
+      and given_name = 'Charles'`;
+  assertEquals(people?.count, "1", "a retried create makes one person");
   const grace = (await use(s, "create_person", {
     givenName: "Grace",
     familyName: "Hopper",
@@ -525,6 +544,84 @@ Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every ar
     "the relationship is gone in both directions",
   );
 
+  // Edit, then delete, each record through the revision a read returned.
+  const note = notes.items[0];
+  const savedNote = await use(s, "update_note", {
+    interactionId: note.id,
+    expectedUpdatedAt: note.updatedAt,
+    body: "Prefers green tea.",
+  });
+  assertEquals(savedNote.record.body, "Prefers green tea.");
+  const staleNote = await resultOf(
+    await callTool(s, "delete_note", {
+      interactionId: note.id,
+      expectedUpdatedAt: note.updatedAt,
+    }),
+  );
+  assert(staleNote.isError === true, "the pre-edit revision is stale");
+  const reread = await use(s, "list_notes_and_activities", {
+    personId: ada,
+    kind: "note",
+  });
+  await use(s, "delete_note", {
+    interactionId: note.id,
+    expectedUpdatedAt: reread.items[0].updatedAt,
+  });
+  assertEquals(
+    (await use(s, "list_notes_and_activities", { personId: ada })).items,
+    [],
+    "the note is gone",
+  );
+
+  const current = (await use(s, "get_task", { taskId: task.id })).task;
+  await use(s, "delete_task", {
+    taskId: task.id,
+    expectedUpdatedAt: current.updatedAt,
+  });
+  const gone = await resultOf(
+    await callTool(s, "get_task", { taskId: task.id }),
+  );
+  assert(gone.isError === true, "the deleted task is not found");
+
+  const reminder = reminders.reminders[0];
+  const moved = await use(s, "update_reminder", {
+    reminderId: reminder.id,
+    expectedUpdatedAt: reminder.updatedAt,
+    sendTime: "08:00",
+  });
+  assertEquals(moved.reminder.sendTime.slice(0, 5), "08:00");
+  await use(s, "delete_reminder", {
+    reminderId: reminder.id,
+    expectedUpdatedAt: moved.reminder.updatedAt,
+  });
+  assertEquals(
+    (await use(s, "list_reminders", { personId: ada })).reminders,
+    [],
+    "the reminder is gone",
+  );
+
+  const gift = gifts.gifts[0];
+  const renamedGift = await use(s, "update_gift", {
+    personId: ada,
+    giftId: gift.id,
+    expectedUpdatedAt: gift.updatedAt,
+    name: "A blue teapot",
+  });
+  assertEquals(renamedGift.gift.name, "A blue teapot");
+  await use(s, "delete_gift", {
+    personId: ada,
+    giftId: gift.id,
+    expectedUpdatedAt: renamedGift.gift.updatedAt,
+  });
+  assertEquals(
+    (await use(s, "list_gifts_and_debts", { personId: ada })).gifts,
+    [],
+    "the gift is gone",
+  );
+
+  const files = await use(s, "list_files", { personId: ada });
+  assertEquals(files.files, [], "a person with no uploads lists no files");
+
   const narrow = await tokens.mint(owner, ["people:read"]);
   const listed = await listedNames(narrow.secret, "legacy");
   assertEquals(listed, [
@@ -545,7 +642,7 @@ Deno.test("[MCP-C2] PostgreSQL an agent builds a person's record across every ar
   const [row] = await sql<{ count: string }[]>`
     select count(*)::text as count from crm.gifts
     where workspace_id = ${owner.workspaceId}::uuid`;
-  assertEquals(row?.count, "1", "only the agent's own gift exists");
+  assertEquals(row?.count, "0", "the refused gift never existed");
 });
 
 Deno.test({

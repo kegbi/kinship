@@ -28,6 +28,7 @@ const TYPE = "00000000-0000-4000-8000-0000000000c1";
 const RETRY = "00000000-0000-4000-8000-0000000000d1";
 const AT = "2026-11-22T09:30:00.000Z";
 const LATER = "2026-11-22T10:00:00.000Z";
+const DIGEST = "ab".repeat(32);
 
 interface Case {
   readonly tool: string;
@@ -70,6 +71,7 @@ const CASES: readonly Case[] = [
     method: "POST",
     path: "/api/v1/people",
     body: { givenName: "Ada", familyName: "Lovelace", isPartial: false },
+    mints: true,
   },
   {
     tool: "update_person",
@@ -102,6 +104,26 @@ const CASES: readonly Case[] = [
     method: "POST",
     path: "/api/v1/people/bulk",
     body: { action: "tag", personIds: [PERSON], tagId: TYPE },
+  },
+  {
+    tool: "merge_people",
+    args: {
+      primaryId: PERSON,
+      duplicateId: OTHER,
+      confirmed: true,
+      conflictsDigest: DIGEST,
+      primaryRevision: AT,
+      duplicateRevision: LATER,
+    },
+    method: "POST",
+    path: `/api/v1/people/${PERSON}/merge`,
+    body: {
+      confirmed: true,
+      conflictsDigest: DIGEST,
+      duplicateId: OTHER,
+      duplicateRevision: LATER,
+      primaryRevision: AT,
+    },
   },
   {
     tool: "delete_person",
@@ -241,6 +263,24 @@ const CASES: readonly Case[] = [
     path: `/api/v1/people/${PERSON}/life-events/${RECORD}`,
     body: { expectedUpdatedAt: AT },
   },
+  {
+    tool: "update_first_meeting",
+    args: {
+      personId: PERSON,
+      expectedPersonUpdatedAt: AT,
+      expectedUpdatedAt: LATER,
+      placeText: "A library",
+    },
+    method: "PUT",
+    path: `/api/v1/people/${PERSON}/facts/first-meeting/${PERSON}`,
+    body: {
+      expectedPersonUpdatedAt: AT,
+      expectedUpdatedAt: LATER,
+      id: PERSON,
+      placeText: "A library",
+      section: "first-meeting",
+    },
+  },
   // relationships
   {
     tool: "create_relationship",
@@ -290,6 +330,39 @@ const CASES: readonly Case[] = [
     path: `/api/v1/people/${PERSON}/activity-report`,
     query: { kind: "note", year: "2026" },
   },
+  {
+    tool: "update_note",
+    args: { interactionId: RECORD, expectedUpdatedAt: AT, isFavorited: true },
+    method: "PATCH",
+    path: `/api/v1/interactions/note/${RECORD}`,
+    body: { expectedUpdatedAt: AT, isFavorited: true },
+  },
+  {
+    tool: "delete_activity",
+    args: { interactionId: RECORD, expectedUpdatedAt: AT },
+    method: "DELETE",
+    path: `/api/v1/interactions/activity/${RECORD}`,
+    body: { expectedUpdatedAt: AT },
+  },
+  {
+    tool: "update_call",
+    args: { interactionId: RECORD, expectedUpdatedAt: AT, content: null },
+    method: "PATCH",
+    path: `/api/v1/interactions/call/${RECORD}`,
+    body: { content: null, expectedUpdatedAt: AT },
+  },
+  {
+    tool: "update_conversation",
+    args: {
+      interactionId: RECORD,
+      expectedUpdatedAt: AT,
+      messages: [],
+      title: null,
+    },
+    method: "PATCH",
+    path: `/api/v1/interactions/conversation/${RECORD}`,
+    body: { expectedUpdatedAt: AT, messages: [], title: null },
+  },
   // planning
   {
     tool: "create_task",
@@ -305,6 +378,13 @@ const CASES: readonly Case[] = [
     method: "PATCH",
     path: `/api/v1/tasks/${RECORD}`,
     body: { dueAt: null, expectedUpdatedAt: AT },
+  },
+  {
+    tool: "delete_task",
+    args: { taskId: RECORD, expectedUpdatedAt: AT },
+    method: "DELETE",
+    path: `/api/v1/tasks/${RECORD}`,
+    body: { expectedUpdatedAt: AT },
   },
   {
     tool: "create_reminder",
@@ -336,12 +416,33 @@ const CASES: readonly Case[] = [
     body: { active: false },
   },
   {
+    tool: "update_reminder",
+    args: { reminderId: RECORD, expectedUpdatedAt: AT, sendTime: "08:30" },
+    method: "PATCH",
+    path: `/api/v1/reminders/${RECORD}`,
+    body: { expectedUpdatedAt: AT, sendTime: "08:30" },
+  },
+  {
+    tool: "delete_reminder",
+    args: { reminderId: RECORD, expectedUpdatedAt: AT },
+    method: "DELETE",
+    path: `/api/v1/reminders/${RECORD}`,
+    body: { expectedUpdatedAt: AT },
+  },
+  {
     tool: "set_stay_in_touch_cadence",
     args: { personId: PERSON, intervalCount: 2, intervalUnit: "week" },
     method: "POST",
     path: "/api/v1/stay-in-touch-cadences",
     body: { intervalCount: 2, intervalUnit: "week", personId: PERSON },
     mints: true,
+  },
+  {
+    tool: "delete_stay_in_touch_cadence",
+    args: { cadenceId: RECORD, expectedUpdatedAt: AT },
+    method: "DELETE",
+    path: `/api/v1/stay-in-touch-cadences/${RECORD}`,
+    body: { expectedUpdatedAt: AT },
   },
   // journal
   {
@@ -350,6 +451,14 @@ const CASES: readonly Case[] = [
     method: "POST",
     path: "/api/v1/journal/posts",
     body: { body: "A quiet day.", occurredAt: AT },
+    mints: true,
+  },
+  {
+    tool: "update_journal_post",
+    args: { itemId: RECORD, body: "A quieter day.", occurredAt: AT },
+    method: "PUT",
+    path: `/api/v1/journal/posts/${RECORD}`,
+    body: { body: "A quieter day.", occurredAt: AT },
   },
   {
     tool: "set_day_rating",
@@ -371,6 +480,71 @@ const CASES: readonly Case[] = [
     method: "POST",
     path: `/api/v1/people/${PERSON}/gifts`,
     body: { name: "A teapot", status: "idea" },
+    mints: true,
+  },
+  {
+    tool: "update_gift",
+    args: {
+      personId: PERSON,
+      giftId: RECORD,
+      expectedUpdatedAt: AT,
+      amount: "12.50",
+      currencyCode: "EUR",
+      comment: null,
+    },
+    method: "PATCH",
+    path: `/api/v1/people/${PERSON}/gifts/${RECORD}`,
+    body: {
+      amount: "12.50",
+      comment: null,
+      currencyCode: "EUR",
+      expectedUpdatedAt: AT,
+    },
+  },
+  {
+    tool: "delete_gift",
+    args: { personId: PERSON, giftId: RECORD, expectedUpdatedAt: AT },
+    method: "DELETE",
+    path: `/api/v1/people/${PERSON}/gifts/${RECORD}`,
+    body: { expectedUpdatedAt: AT },
+  },
+  {
+    tool: "update_debt",
+    args: {
+      personId: PERSON,
+      debtId: RECORD,
+      expectedUpdatedAt: AT,
+      reason: null,
+    },
+    method: "PATCH",
+    path: `/api/v1/people/${PERSON}/debts/${RECORD}`,
+    body: { expectedUpdatedAt: AT, reason: null },
+  },
+  {
+    tool: "update_recurring_debt",
+    args: {
+      personId: PERSON,
+      recurringDebtId: RECORD,
+      expectedUpdatedAt: AT,
+      active: false,
+    },
+    method: "PATCH",
+    path: `/api/v1/people/${PERSON}/recurring-debts/${RECORD}`,
+    body: { active: false, expectedUpdatedAt: AT },
+  },
+  // files
+  {
+    tool: "list_files",
+    args: { personId: PERSON, limit: 10 },
+    method: "GET",
+    path: `/api/v1/people/${PERSON}/files`,
+    query: { limit: "10" },
+  },
+  {
+    tool: "delete_file",
+    args: { personId: PERSON, fileId: RECORD },
+    method: "DELETE",
+    path: `/api/v1/people/${PERSON}/files/${RECORD}`,
   },
   {
     tool: "set_debt_status",

@@ -15,6 +15,7 @@ import type { RouteDescriptor } from "../registry.ts";
 import { ANY_TOKEN_OPERATIONS, API_ROUTES } from "../routes/mod.ts";
 import type { AgentTool } from "./define.ts";
 import { CONTEXT_TOOLS } from "./context.ts";
+import { FILE_TOOLS } from "./files.ts";
 import { GIFT_TOOLS } from "./gifts.ts";
 import { INTERACTION_TOOLS } from "./interactions.ts";
 import { JOURNAL_TOOLS } from "./journal.ts";
@@ -34,6 +35,10 @@ export { AGENT_INSTRUCTIONS } from "./instructions.ts";
  */
 export const TOOL_EXCLUSIONS: Readonly<Record<string, string>> = {
   mcp: "The MCP endpoint itself; a tool cannot call the endpoint serving it.",
+  uploadPersonFile:
+    "Its request body is the file's raw bytes with the name and kind in headers, not JSON; upload through the REST route.",
+  downloadPersonFile:
+    "Its success answer is the file's raw bytes, not JSON; download through the REST route.",
 };
 
 /**
@@ -98,6 +103,7 @@ export const TOOL_AREAS: readonly ToolArea[] = [
   { id: "planning", title: "Tasks and reminders", tools: PLANNING_TOOLS },
   { id: "journal", title: "Journal", tools: JOURNAL_TOOLS },
   { id: "gifts", title: "Gifts and debts", tools: GIFT_TOOLS },
+  { id: "files", title: "Files", tools: FILE_TOOLS },
   { id: "vocabularies", title: "Vocabularies", tools: VOCABULARY_TOOLS },
 ];
 
