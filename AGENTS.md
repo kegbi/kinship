@@ -150,13 +150,21 @@ few cross-workspace paths use only the narrow means the ADR lists. It does not
 replace application authorization. Do not add code that depends on a superuser
 or `BYPASSRLS` database connection.
 
+[ADR 0009](docs/architecture/decisions/0009-mcp-endpoint-over-the-token-api.md)
+makes the MCP endpoint, `POST /api/v1/mcp`, a delivery adapter over the
+personal-token API inside the `api` process: each tool is declared in
+`packages/contracts/tools/` over one token-enabled route, and a tool call is an
+in-process request to that route, so the MCP layer holds no authorization of its
+own. Do not add a second authorization path, a separate MCP process, or OAuth
+without a new architecture decision.
+
 The selected implementation stack includes Hono, Zod, Kysely with Postgres.js,
-and Lefthook. A bounded Better Auth compatibility spike is approved, but Better
-Auth itself is not an accepted dependency until the spike proves exact
-compatibility with the canonical identity schema. Do not silently substitute
-Bun, add Redis, introduce microservices, or let an ORM become a second schema
-source of truth. Record a new architecture decision before changing these
-choices.
+`@modelcontextprotocol/server`, and Lefthook. A bounded Better Auth
+compatibility spike is approved, but Better Auth itself is not an accepted
+dependency until the spike proves exact compatibility with the canonical
+identity schema. Do not silently substitute Bun, add Redis, introduce
+microservices, or let an ORM become a second schema source of truth. Record a
+new architecture decision before changing these choices.
 
 The PostgreSQL DDL below remains the sole schema source of truth. Any new
 persistent queue, outbox, auth table, ORM-generated DDL, or other database

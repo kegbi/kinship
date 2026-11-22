@@ -12,16 +12,16 @@ The current baseline contains:
 - 15 backend modules and 9 read models in `module-boundaries.yaml`; 14 modules
   and all 9 read models exist under `packages/backend`, the optional `billing`
   module being the one not built;
-- 40 cataloged pages (35 `static-shell-islands`, 2 `on-demand`, 3 `static`), all
+- 41 cataloged pages (35 `static-shell-islands`, 2 `on-demand`, 4 `static`), all
   implemented, except `settings.billing`, which the catalog marks as an optional
   module and Phase 10 `APP-010C` withholds;
-- 42 required flows: 17 P0, 20 P1, and 5 P2;
-- 41 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
+- 43 required flows: 17 P0, 20 P1, and 6 P2;
+- 42 of those flows `delivered` with populated `testRefs`. Only `BILLING-001` is
   still planned with an empty `testRefs` array, consistent with its withheld
   optional module; and
-- 49 Playwright specs under `tests/e2e/`. Flow specs are named
+- 50 Playwright specs under `tests/e2e/`. Flow specs are named
   `<feature>.<FLOW-ID>.spec.ts` (GAP-036); specs with no flow keep a feature
-  name. The flows' `testRefs` name 45 of them; `perf.PERF-001.spec.ts`,
+  name. The flows' `testRefs` name 46 of them; `perf.PERF-001.spec.ts`,
   `perf.PERF-002.spec.ts`, `content-security-policy.spec.ts`, and
   `public-home.spec.ts` prove no catalog flow.
 
@@ -30,7 +30,8 @@ Verified against `docs/architecture/module-boundaries.yaml`,
 `tests/e2e/` on 2026-09-27 by GAP-043 and updated by GAP-050, which added
 `IMPORT-002` and `EXPORT-002`, by GAP-051, which added `PEOPLE-009`, and by
 GAP-053, which added `TODAY-002`, `PEOPLE-010`, and the `notifications` read
-model; the earlier count was taken on 2026-08-29 while integrating
+model, and on 2026-11-22 by MCP-C3 and MCP-C4, which added `public.mcp-guide`
+and `API-003`; the earlier count was taken on 2026-08-29 while integrating
 [`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
 §5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
 the specs' `flow` annotations in agreement. The five cataloged dynamic routes
@@ -61,10 +62,28 @@ repository, adapter, or transport implementation.
 | `gifts`         | core     |                                                                5 | Gifts, gift ideas/history, debts, and attachment coordination                                                                                                                    | Amount/currency invariants, file coordination, person-local `GIFTS-001` E2E                     |
 | `integrations`  | optional |                                                                8 | DAV synchronization and optional weather cache                                                                                                                                   | Disabled-module contract, fake provider, retry/idempotency and `INTEGRATION-001`                |
 | `import-export` | core     |                                                                7 | Staged imports, identity mapping, reports, manifests, and portable exports                                                                                                       | Fixture corpus, dry-run/atomicity/idempotency, hostile archives, round-trip tests               |
-| `api-access`    | runtime  |                                                                8 | Personal tokens, request history, and OAuth only if separately approved                                                                                                          | Secret hashing/scopes/revocation, rate limit, disabled-OAuth and `API-001`                      |
+| `api-access`    | runtime  |                                                                8 | Personal tokens with independent scopes, token introspection, and the token API and MCP endpoint over it (ADR 0009); OAuth only if separately approved                           | Secret hashing/scopes/revocation, per-lane bearer suites, `API-001`, `API-002`, and `API-003`   |
 | `governance`    | core     |                                         3 for audit; 6 for legal | Audit history, versioned legal documents, and immutable acceptance                                                                                                               | Same-transaction audit proof, append-only behavior, authorization, governance E2E               |
 | `billing`       | optional |                                                                8 | Provider-neutral customer, subscription, and entitlement state                                                                                                                   | Disabled-module contract, signed webhook/replay cases, fake provider, `BILLING-001`             |
 | `operations`    | runtime  | Begins in Foundation; completion pending DG-07/DG-10 and Slice 8 | Concrete internal run history and instance/statistics support; any user surface remains undecided                                                                                | No tenant-data leakage, bounded retention, health/readiness and operator authorization          |
+
+### Token API and MCP endpoint
+
+The 2026-11-22 work order ([MCP server plan](mcp-server-plan-2026-11-22.md),
+ADR 0009) added no module. It extended the existing modules' routes to personal
+tokens and added a delivery adapter over them. Each surface maps to its
+evidence:
+
+| Surface                                                                                                                                    | Evidence                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RouteDescriptor.tokenScope`, `ANY_TOKEN_OPERATIONS`, `x-kinship-token-scope`                                                              | `packages/contracts/registry_test.ts`, `packages/contracts/api_tokens_test.ts`, `apps/api/routes_test.ts`, `apps/api/default_deny_test.ts`, `tools/contracts/api_reference_test.ts` |
+| Token admission from the descriptor, `apiTokenId` in audit, `GET /api/v1/me`                                                               | `tests/integration/api_tokens_postgres_test.ts`, `apps/api/audit_correlation_test.ts`, `tests/support/tokens.ts`                                                                    |
+| Token-enabled people, profile, relationship, interaction, planning, journal, gift, file, and vocabulary routes                             | One lane suite each: `tests/integration/api_tokens_{people_identity,people_profile,relationships,interactions,planning,journal,gifts,files,vocabularies}_postgres_test.ts`          |
+| New operations: interaction, task, reminder, cadence, gift, and debt edits and deletes; retry-safe person, journal, gift, and debt creates | `tests/integration/interactions_edit_delete_postgres_test.ts`, `planning_edit_delete_postgres_test.ts`, `gifts_edits_postgres_test.ts`, and the people and journal lane suites      |
+| `POST /api/v1/mcp` and `packages/mcp-kit/`                                                                                                 | `packages/mcp-kit/*_test.ts`, `tests/integration/mcp_postgres_test.ts`, and `API-003`                                                                                               |
+| Tool catalog `packages/contracts/tools/` and generated `packages/contracts/mcp/tools.json`                                                 | `packages/contracts/tools/*_test.ts`, `tools/contracts/tool_catalog_test.ts`, and `contracts:check`                                                                                 |
+| Boundary rules for the kit, the SDK, and the catalog                                                                                       | `tools/architecture/check_boundaries_test.ts` and `check:architecture`                                                                                                              |
+| Scope picker, presets, and "Connect an AI agent" in `settings.api-access`; `public.mcp-guide`                                              | `apps/web/src/features/settings/api-access/*.test.ts*`, `apps/web/src/features/mcp-guide/guide.test.ts`, the build-output suite, `API-001`, `API-002`, and `API-003`                |
 
 `operations` begins only when the first runnable stack has concrete run-history
 or instance behavior to store; do not create an empty module scaffold. Its
@@ -135,13 +154,14 @@ and exercise the production-like gateway, not an internal service URL.
 | `EXPORT-002`       | P1       |              7 | export settings                                  | CSV archive and all-people vCard, formula-injection guard, manifests, short-lived downloads                  |
 | `API-001`          | P2       |              8 | API access settings                              | Create/scoped use/revoke tokens without weakening interactive auth                                           |
 | `API-002`          | P2       |              8 | Public API reference, API access settings        | Signed-out static documentation, bearer OpenAPI, person/task/capture automation and grant refusal/revocation |
+| `API-003`          | P2       |              8 | Public MCP guide, API access settings            | No-script MCP guide, preset token, stateless MCP client, scope-filtered tools, replay, audit, revocation     |
 | `INTEGRATION-001`  | P2       |              8 | integrations settings                            | Configure/synchronize DAV; isolate failures; core works while disabled                                       |
 | `INTEGRATION-002`  | P2       |              8 | personal preferences                             | Read-only iCalendar feed: secret URL shown once, rotate/revoke 404, 304, cap, secret never logged            |
 | `GOVERNANCE-001`   | P1       |              6 | privacy, terms, compliance acceptance            | Versioned document display and immutable, required acceptance                                                |
 | `GOVERNANCE-002`   | P1       |              3 | person audit, profile, workspace audit           | Authorized history, redaction, ordering, and forbidden cases                                                 |
 | `BILLING-001`      | P2       |              8 | billing settings                                 | Optional entitlement and provider workflow with module disabled by default                                   |
 
-For the current 42-flow snapshot, this assignment places all 17 P0 and all 20 P1
+For the current 43-flow snapshot, this assignment places all 17 P0 and all 20 P1
 flows at or before Slice 7, so the accepted MVP and Core feature complete cuts
 coincide there. The milestone meanings remain distinct and future catalog
 changes regenerate their membership and maximum slice. Slice 4 is the accepted

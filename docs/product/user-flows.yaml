@@ -1334,6 +1334,41 @@ flows:
     testLayers: [unit, contract, e2e]
     e2e: { required: true, testRefs: [tests/e2e/api-reference.API-002.spec.ts] }
 
+  # MCP-C4: an AI agent works through the MCP endpoint of ADR 0009 with a
+  # personal token. `ungranted-tool` is a tool outside the token's grants,
+  # neither listed nor callable; `route-refusal` is a route's own validation
+  # answer, returned as a tool error naming its problem code.
+  - id: API-003
+    title: Connect an AI agent through the MCP endpoint
+    deliveryStatus: delivered
+    priority: P2
+    actor: visitor-or-workspace-admin
+    trigger: An administrator connects an AI agent from API access settings or the public MCP guide.
+    preconditions: [
+      no-account-required-to-read,
+      active-admin-membership-for-token-issuance,
+    ]
+    steps:
+      - Read the signed-out MCP guide's endpoint, connection example, and tool reference without JavaScript.
+      - Open the Connect an AI agent section for this origin's endpoint, start from a preset, adjust independent grants, and create a token whose secret fills the connection snippets once.
+      - Initialize an MCP session statelessly and list only the tools the token's grants allow.
+      - Read the token's context and create a person with a retry key that a repeated call replays.
+      - See the person in the directory and the change audited as the issuing member.
+      - Revoke the token and have the endpoint refuse it with a bearer challenge.
+    alternateOutcomes: [ungranted-tool, route-refusal, replay, revoked-token]
+    result: An administrator can hand an AI agent scoped, audited, revocable access that uses the same routes and rules as the token API.
+    auditEffect: api-token-created-or-revoked-and-owning-use-case-events
+    pageIds: [public.mcp-guide, settings.api-access]
+    moduleIds: [api-access, people, governance, workspaces]
+    permissions: [
+      api-tokens.manage,
+      people.read,
+      people.write,
+      audit.read,
+    ]
+    testLayers: [unit, contract, integration, e2e]
+    e2e: { required: true, testRefs: [tests/e2e/mcp-agent.API-003.spec.ts] }
+
   - id: INTEGRATION-001
     title: Configure and synchronize DAV
     deliveryStatus: delivered

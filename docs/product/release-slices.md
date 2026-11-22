@@ -164,8 +164,8 @@ transaction, and exports the selection as one vCard.
 
 ## Slice 8: Optional Platform Modules
 
-Flows: `API-001`, `API-002`, `INTEGRATION-001`, `INTEGRATION-002`, and
-`BILLING-001`.
+Flows: `API-001`, `API-002`, `API-003`, `INTEGRATION-001`, `INTEGRATION-002`,
+and `BILLING-001`.
 
 `API-002` delivers `public.api-reference` at `/docs/api`: signed-out static
 documentation linked from public navigation and API access settings, anchored
@@ -175,8 +175,11 @@ revocation. It adds no credential-entry or interactive execution surface.
 
 `public.mcp-guide` at `/docs/mcp` is the matching signed-out static guide to the
 agent endpoint (ADR 0009), generated from the agent tool catalog and linked
-beside the API reference. Its flow, `API-003`, is planned and arrives with its
-end-to-end test.
+beside the API reference. `API-003` delivers it with the agent connection: the
+"Connect an AI agent" section of API access settings, a token minted from a
+preset, and a real MCP client over `POST /api/v1/mcp` that sees only its granted
+tools, creates a person through the same route a REST client reaches, and is
+refused once the token is revoked.
 
 Deliver API tokens/OAuth only when required, DAV and other optional adapters,
 billing, and operational administration. `INTEGRATION-002` is a read-only

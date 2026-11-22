@@ -15,19 +15,49 @@ edit, and remove CRM records within what its personal API token grants, with the
 API's access-control gaps fixed first. The work order is the
 [MCP server plan](mcp-server-plan-2026-11-22.md), and
 [ADR 0009](../architecture/decisions/0009-mcp-endpoint-over-the-token-api.md)
-records the architecture:
+records the architecture. The plan's checkboxes are the per-ticket ledger, and
+its "Delivered, and what is left" section lists the open follow-ups.
 
-- a foundation ticket that makes token scopes machine-readable and names the
-  token in every audit event it causes;
-- nine parallel lanes that extend token access across the CRM routes, the MCP
-  endpoint itself, and the token settings UI;
-- four lanes that add the edit, delete, and retry-safe operations an agent
-  expects and the application does not have yet;
-- a tool catalog, a public guide, flow `API-003`, and one integration
-  checkpoint.
+- [x] Token surface foundation (MCP-A1): each token route names its grant as
+      `tokenScope` on its descriptor and its admission reads it there, the
+      published documents carry it as `x-kinship-token-scope`, every audit event
+      a token request writes stores `payload.apiTokenId`, and `GET /api/v1/me`
+      introspects any valid token.
+- [x] Token access across the CRM (MCP-B1 to MCP-B9): people, profile facts and
+      dates, relationships, interactions, tasks and reminders, the journal and
+      life events, gifts and debts, person files, the vocabularies, search, and
+      Today accept a token holding their grant, each lane with its own
+      PostgreSQL suite; the session-only surface is listed in the authorization
+      matrix.
+- [x] Missing operations (MCP-D1 to MCP-D4): edit and delete notes, activities,
+      calls, and conversations; delete tasks, reminders, and cadences and edit
+      reminders; edit gifts and debts and delete gifts; retry-safe person,
+      journal post, gift, debt, and recurring-debt creates; revision checks on
+      journal, gift, and debt updates.
+- [x] MCP endpoint and tool catalog (MCP-C1, MCP-C2): stateless
+      `POST /api/v1/mcp` in the `api` process over `packages/mcp-kit/`, tools
+      declared in `packages/contracts/tools/` and generated to
+      `packages/contracts/mcp/tools.json`, filtered by the token's grants, each
+      call an in-process request to its route.
+- [x] Token settings and the public guide (MCP-W1, MCP-C3): the grouped scope
+      picker with the "Read-only agent" and "Full CRM agent" presets, the
+      "Connect an AI agent" section, and the static `/docs/mcp` guide
+      (`public.mcp-guide`).
+- [x] Flow and documentation (MCP-C4): flow `API-003` with
+      `tests/e2e/mcp-agent.API-003.spec.ts`, which mints a token from a preset
+      in settings, drives a real MCP client through the gateway, sees the person
+      and its audit in the browser, and is refused after revocation; the
+      authorization-matrix invariants, backend architecture, AGENTS.md, and
+      traceability describe the delivered surface. `API-001`, `API-002`, and
+      `API-003` pass in Chromium against the production-like stack after one
+      fix: `/docs/api` now names each media type of a multi-type file body or
+      response, so its code regions stay distinguishable.
+- [ ] Integration checkpoint: full coverage, all-browser E2E, and the dependency
+      audit, once the tool catalog covers the D-lane and file routes (its
+      completeness test is red until then) and the `decode-uri-component`
+      advisory through `minio` is decided.
 
-This work takes priority over the sections below. The plan's checkboxes are the
-ledger.
+This work takes priority over the sections below.
 
 ## User-directed audit remediation (2026-11-07)
 

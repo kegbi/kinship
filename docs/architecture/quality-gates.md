@@ -135,15 +135,20 @@ integration suites, run inside a disposable PostgreSQL Compose project.
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
 
-The contract build writes four checked-in artifacts: internal OpenAPI, the full
-generated TypeScript types and client barrel, and bearer-only external OpenAPI.
-The `contracts-build` unit/contract set verifies external operation filtering
-and complete reference closure; its focused coverage measures the projection. It
+The contract build writes five checked-in artifacts: internal OpenAPI, the full
+generated TypeScript types and client barrel, bearer-only external OpenAPI, and
+the agent tool catalog `packages/contracts/mcp/tools.json` (ADR 0009). The
+`contracts-build` unit/contract set verifies external operation filtering and
+complete reference closure; its focused coverage measures the projection. It
 uses the generator's existing environment permission because
 openapi-typescript's debug dependency enumerates `process.env`, without printing
-it. Public build checks include `/docs/api` in the React-free inventory;
-`API-002` covers signed-out reading/download and real bearer person/task/capture
-automation across browsers.
+it. Public build checks include `/docs/api` and `/docs/mcp` in the React-free
+inventory, and the MCP guide must render exactly the catalog's tools; `API-002`
+covers signed-out reading/download and real bearer person/task/capture
+automation across browsers. The `mcp` module's unit set holds the catalog to the
+rule that every token-enabled route is a tool or a named exclusion, and its
+integration suite drives `POST /api/v1/mcp` as a client would; `API-003` covers
+a real MCP client through the gateway with a token minted in settings.
 
 ### Generated Kysely types
 

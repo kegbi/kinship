@@ -113,8 +113,7 @@ pages:
     ]
 
   # MCP-C3: the signed-out guide to the agent endpoint of ADR 0009, generated
-  # from `packages/contracts/mcp/tools.json`. Its flow, `API-003`, is still
-  # planned: MCP-C4 adds it to the flow catalog with its Playwright test.
+  # from `packages/contracts/mcp/tools.json`; flow `API-003` (MCP-C4).
   - id: public.mcp-guide
     path: /docs/mcp
     access: public
@@ -648,7 +647,7 @@ pages:
     access: workspace-admin
     rendering: static-shell-islands
     owner: api-access
-    flowIds: [API-001, API-002]
+    flowIds: [API-001, API-002, API-003]
 
   - id: settings.integrations
     path: /app/settings/integrations

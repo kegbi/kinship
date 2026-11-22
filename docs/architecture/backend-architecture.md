@@ -442,111 +442,6 @@ expires the cookie, even when its session is already over (SECA-07); only an
 outage that leaves a live session live refuses with 503. Revoking a session id
 that is not the actor's own answers 404, the same as an unknown id (SECT-06).
 
-Personal tokens are issued, listed, and revoked only by active workspace owners
-and administrators. Creation requires one or more distinct grants from the
-closed vocabulary returned by token management. Grants are independent:
-`people:read` remains directory-only; `people:profile:read` permits the minimal
-`GET /api/v1/people/{personId}/identity`, profile-fact section reads (including
-their scoped lookup options), and important-date reads; `relationships:read`
-permits one person's relationship list and the workspace's relationship-type
-lookup. No grant implies another. These reads use the owning public application
-facades, including their current membership, workspace, parent, archived-person,
-hidden-section, and cursor checks. They do not expose the full person profile,
-summary, timeline, search, notes, tasks, journal, life events, file bytes, or
-mutations through those person grants.
-
-Task automation uses separate independent grants: `tasks:read` permits
-`GET /api/v1/tasks` and `GET /api/v1/tasks/{taskId}`; `tasks:create` permits
-only the retry-safe `POST /api/v1/tasks`; `tasks:write` permits
-`PATCH /api/v1/tasks/{taskId}` and `PUT /api/v1/tasks/{taskId}/completion`,
-including reopening. Full task automation explicitly selects all three. These
-routes use planning's existing public use cases and preserve requestId
-replay/conflict, optimistic revisions, explicit null clearing, archived
-linked-person rules, and tenant validation. The listing's optional `dueBefore`
-is an inclusive ISO instant filter; its cursor is bound to that filter as well
-as workspace, person, and status. Bearer writes require neither Cookie nor
-Origin. Cookie writes still require the exact configured public Origin. This
-exception applies only to the explicitly token-enabled writes; Today, reminders,
-cadences, security, and settings keep session admission.
-
-Interaction capture uses the independent `interactions:create` grant for
-`POST /api/v1/interactions` and the current vocabulary/availability lookups
-`GET /api/v1/interaction-options` and `GET /api/v1/communication-options`. The
-strict create union records notes, activities, calls, and conversations through
-the existing owning public use cases. It preserves body `requestId`
-replay/conflict, participants, active-person and enabled-section checks,
-vocabulary validation, and channel/contact-method compatibility. Bearer writes
-need neither Cookie nor Origin; browser-cookie writes still require the exact
-configured Origin through the shared scoped-actor admission. This grant implies
-no other grant and permits no historic-content reads, edits, or deletes.
-Activity reports, communications history, profile aggregates, timeline, Today,
-and journal keep session admission. Capture options expose only their existing
-current vocabulary and availability, with existing search/cursor bounds.
-
-On those token-enabled routes, any `Authorization` header selects token
-authentication exclusively. Invalid, expired, revoked, wrong-workspace, and
-wrong-grant credentials cannot fall back to a valid session cookie. Without that
-header, existing browser-session admission applies. Tokens revalidate the bound
-user's active membership and optional `X-Workspace-Id`; their grants never
-replace application permissions. OpenAPI describes required domain grants in
-operation prose and uses empty scope arrays for the HTTP bearer security scheme,
-because personal tokens are not OAuth credentials.
-
-A token-enabled route names its one required grant on its route descriptor as
-`tokenScope` (MCP-A1,
-[ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)). The registry
-refuses to load when a route admits `kinship_api_token` without naming a grant
-of the contract vocabulary, or names one without admitting a token; the few
-routes that accept any valid token are listed by operation id in
-`packages/contracts/routes/mod.ts` and are token-only. Handlers obtain their
-actor from `scopedRouteActor(descriptor, …)` in `packages/http-kit`, which reads
-the grant from the descriptor when the route mounts, so the enforced grant, the
-prose, and the published `x-kinship-token-scope` operation extension cannot
-disagree. Every module's route factory receives the one personal-token
-authority, typed over the whole contract vocabulary.
-
-A token-authenticated request carries the token's id on its actor's correlation
-beside the request id, and every audit event it writes stores it as
-`payload.apiTokenId`. Only the token admission sets it, so a cookie-admitted
-change names no token, and a module payload can neither set nor overwrite it.
-Audit history treats it as operational correlation and never shows it.
-
-`GET /api/v1/me` (`getTokenContext`) accepts any valid personal token without a
-required grant and answers with the token's id, name, grants, and expiry and the
-workspace, member, and role it acts as. It applies every other token check —
-revoked, expired, bound workspace, current membership, secret — records the use,
-runs the legal guard, and never reads a session cookie. A calendar feed's secret
-is never accepted there, even under the personal prefix.
-
-### The MCP endpoint
-
-`POST /api/v1/mcp` (`mcp`, MCP-C1,
-[ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)) serves the Model
-Context Protocol over Streamable HTTP, statelessly, to 2025-era and 2026-07-28
-clients alike, with one JSON body per request; `GET`, `DELETE`, and every other
-method answer 405. It accepts any valid personal token, introspected as
-`GET /api/v1/me` does with the legal guard, never reads a cookie, answers a
-missing or refused token with 401 and `WWW-Authenticate: Bearer`, and refuses a
-present `Origin` other than the configured web origin with 403. Each request
-builds a fresh server holding only the tools whose scope the token carries. A
-tool is declared with `defineTool` in `packages/contracts/tools/` over one
-token-enabled JSON route; calling it builds that route's request from the flat
-arguments (path, query, and a flattened object body), adds the caller's bearer
-token, request id, and client address but no cookie or `Origin`, and sends it to
-the same Hono application in process. The route then makes every decision it
-makes for a REST client, so the endpoint holds no authorization logic and calls
-no module facade. A route's JSON is the tool's structured content, and its RFC
-9457 problem is an error result with the code and field messages. The machinery
-is `packages/mcp-kit/`, mounted only by `apps/api/composition.ts`.
-
-The public reference at `/docs/api` is static and available without an account.
-Its operation catalog and `/docs/api/openapi.json` download consume the
-generated bearer-only projection `packages/contracts/openapi/external.json`.
-Generation filters executable security metadata, retains complete referenced
-schemas and their refinements, and removes the browser-only Origin parameter
-from that projection. The internal OpenAPI and generated application client
-remain the full surface authority. Cookie writes retain their Origin protection.
-
 The calendar feed (GAP-052, `INTEGRATION-002`) is the one read whose credential
 travels in its path, because a calendar application cannot send a header:
 `GET /api/v1/calendar-feeds/{secret}.ics`. The secret is an `api-access` token
@@ -592,6 +487,177 @@ avatars only.
 - The gateway passes the API's `Cache-Control` through unchanged and adds the
   one `X-Content-Type-Options: nosniff` to every response, downloads included.
   The API therefore emits no `nosniff` of its own (SECA-13).
+
+### The token API
+
+Personal API tokens (`kin_pat_…`) are issued, listed, and revoked only by active
+workspace owners and administrators (`api-tokens.manage`), each with an optional
+expiry and one or more distinct grants from the closed vocabulary in
+`packages/backend/modules/api-access/domain/token_rules.ts`, which the contract
+publishes as `apiTokenScope`. The secret is shown once and only its verifier is
+stored. A token is bound to one workspace and acts as its issuer's current
+membership and role: suspending the issuer or their leaving revokes their
+tokens, and a demoted issuer's token keeps working at the new role until an
+owner or administrator revokes it.
+
+A route accepts a token exactly when its route descriptor names the one grant it
+requires as `tokenScope` (MCP-A1,
+[ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)). The registry
+refuses to load when a route admits `kinship_api_token` without naming a grant
+of the vocabulary, or names one without admitting a token. The any-token
+operations, listed by operation id as `ANY_TOKEN_OPERATIONS` in
+`packages/contracts/routes/mod.ts`, are the exception: `GET /api/v1/me`
+(`getTokenContext`) and `POST /api/v1/mcp` (`mcp`) accept any valid token
+without a grant and are token-only. Handlers obtain their actor from
+`scopedRouteActor(descriptor, …)` in `packages/http-kit`, which reads the grant
+from the descriptor when the route mounts, so the enforced grant, the operation
+prose, and the published `x-kinship-token-scope` extension cannot disagree.
+OpenAPI uses empty scope arrays for the HTTP bearer scheme, because personal
+tokens are not OAuth credentials. Every module's route factory receives the one
+personal-token authority from `apps/api/composition.ts`.
+
+Grants are independent: none implies another, and a write grant does not include
+reading. The registry is the authority for which routes each grant admits; by
+area they are:
+
+| Area                | Grants                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| People              | `people:read` (directory and tag lookups), `people:profile:read`, `people:write`, `people:delete`, `people:merge` |
+| Relationships       | `relationships:read`, `relationships:write`                                                                       |
+| Interactions        | `interactions:read`, `interactions:create`, `interactions:write`                                                  |
+| Tasks and reminders | `tasks:read`, `tasks:create`, `tasks:write`, `reminders:read`, `reminders:write`                                  |
+| Journal             | `journal:read`, `journal:write`                                                                                   |
+| Gifts and debts     | `gifts:read`, `gifts:write`                                                                                       |
+| Files               | `files:read`, `files:write`                                                                                       |
+| Search and Today    | `search:read`, `today:read`                                                                                       |
+| Vocabularies        | `vocabularies:read`, `vocabularies:write`                                                                         |
+
+`people:profile:read` covers minimal identity, profile facts with their lookup
+options, important dates, and life events; profile-fact, important-date, and
+life-event writes are `people:write`. `interactions:create` records notes,
+activities, calls, and conversations and reads their capture options, but reads,
+edits, and deletes no historic content; `interactions:write` edits and deletes
+them. Two read grants are composite and say so in the token form: `search:read`
+returns people and matching notes, activities, journal posts, and tasks, and
+`today:read` returns every Today region, whatever other grants the token holds.
+`people:delete` and `people:merge` are destructive grants of their own that
+`people:write` never implies, and neither the "Read-only agent" nor the "Full
+CRM agent" preset ticks them or the administrative `vocabularies:write`. Upload
+and download of a person's files accept `files:write` and `files:read` over
+REST.
+
+A token reaches the same public application facades a session does, so every use
+case still decides role, current membership, workspace and parent boundaries,
+archived-person and hidden-section rules, cursor bounds, revisions, and retry
+keys. Retry-safe creates (tasks, interactions, reminders, stay-in-touch
+cadences, people, journal posts, gifts, debts, and recurring debts) keep their
+`requestId` replay and conflict rules, and updates and deletes keep their
+revision checks. Role rules such as the owner/admin-only vocabulary changes stay
+in the use case, so a token is refused what its issuer's role is refused.
+
+Any `Authorization` header commits a request to token admission. Invalid,
+expired, revoked, wrong-workspace, and wrong-grant credentials never fall back
+to, or resolve, a valid session cookie; without the header, browser-session
+admission applies. Tokens revalidate the bound user's active membership and an
+optional `X-Workspace-Id`, which answers 401 when it names another workspace.
+Bearer writes need neither Cookie nor Origin, while cookie writes still require
+the exact configured public Origin. Routes whose cookie requests are answered in
+a fixed order (a foreign Origin, then a malformed header or input, then the
+session) keep it through a cookie-only origin check or a module-local admission
+gate (files, gifts, journal, vocabularies) that admits or refuses a bearer
+before its body is read.
+
+A token-authenticated request carries the token's id on its actor's correlation
+beside the request id, and every audit event it writes stores it as
+`payload.apiTokenId`. Only the token admission sets it, so a cookie-admitted
+change names no token, and a module payload can neither set nor overwrite it.
+Audit history treats it as operational correlation and never shows it.
+
+`GET /api/v1/me` (`getTokenContext`) answers any valid personal token with the
+token's id, name, grants, and expiry and the workspace, member, and role it acts
+as. It applies every other token check — revoked, expired, bound workspace,
+current membership, secret — records the use, runs the legal guard, and never
+reads a session cookie. A calendar feed's secret is never accepted there, even
+under the personal prefix.
+
+Identity, sessions, security, legal acceptance, members and invitations,
+workspace settings other than the personalization vocabularies, personal and
+workspace lifecycle, API token management, calendar feed settings, DAV, imports
+and exports, audit history, notifications, storage settings, the aggregate
+person reads (`getPerson`, the person timeline, and `recordPersonView`),
+`createRelatedPersonRelationship` (which would need two grants), avatar writes,
+and `acknowledgeReminderOccurrence` keep session admission;
+[`authorization-matrix.yaml`](authorization-matrix.yaml) states the same rules
+as invariants.
+
+The public reference at `/docs/api` is static and available without an account.
+Its operation catalog and `/docs/api/openapi.json` download consume the
+generated bearer-only projection `packages/contracts/openapi/external.json`, so
+enabling a route for tokens publishes it there with its required grant.
+Generation filters executable security metadata, retains complete referenced
+schemas and their refinements, and removes the browser-only Origin parameter
+from that projection. The internal OpenAPI and generated application client
+remain the full surface authority. Cookie writes retain their Origin protection.
+
+### The MCP endpoint
+
+`POST /api/v1/mcp`
+([ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)) is a delivery
+adapter over the token API in the `api` process: an ordinary registered route
+under `/api/v1/`, with no container, public entry point, or gateway location of
+its own. Its machinery is `packages/mcp-kit/` on `@modelcontextprotocol/server`,
+which only that kit imports and only `apps/api/composition.ts` mounts.
+
+- **Admission.** The endpoint refuses a present `Origin` other than the
+  configured public web origin with 403, then introspects the bearer token as
+  `GET /api/v1/me` does, legal guard included. A missing or refused token
+  answers 401 with `WWW-Authenticate: Bearer`. It never reads a cookie, and it
+  strips `Authorization` and `Cookie` from what it hands the protocol library.
+- **Statelessness.** Every request builds a fresh server for one caller and
+  answers one JSON-RPC message with one JSON body, for 2025-era clients (an
+  `initialize` handshake, no session id) and 2026-07-28 clients (a per-request
+  protocol envelope) alike. There is no session, registry, or server-initiated
+  stream: `subscriptions/listen` is refused, and `GET`, `DELETE`, and every
+  other method answer 405. It therefore fits the gateway's existing buffering
+  and timeouts.
+- **The tool catalog is contract data.** Tools are declared with `defineTool` in
+  `packages/contracts/tools/`, one file per area, beside the route descriptors
+  they call. A tool names one token-enabled JSON route; it may fix part of the
+  route's input (one tool per interaction kind or vocabulary section), send one
+  argument as a second request member, omit an optional body member, and let the
+  server mint a `requestId` the agent left out. `collectTools` refuses two tools
+  under one name and a tool whose route the API does not register. The
+  completeness rule (`uncoveredTokenRoutes`) requires every token-enabled or
+  any-token route to be a tool or a `TOOL_EXCLUSIONS` entry with a written
+  reason; the endpoint itself is the one exclusion so far. The contract build
+  writes the catalog, with the server instructions, to
+  `packages/contracts/mcp/tools.json`, which `contracts:check` keeps current and
+  `/docs/mcp` renders.
+- **Scope filtering.** A server registers only the tools whose grant the token
+  holds, plus the any-token `get_context`, so a tool outside the token's grants
+  is neither listed nor callable by name. Role and section rules are still
+  decided by the route when the tool is called.
+- **A tool call is an in-process request.** The protocol library checks the
+  arguments against the tool's contract schema without transforming them. The
+  call then becomes the route's request: its method and path with each path
+  argument encoded, the query arguments, the flattened JSON body, the caller's
+  bearer token, the request id, and the client address, and never a cookie or an
+  `Origin`. The composition root dispatches it to the same Hono application, so
+  scope, role, membership, workspace isolation, the legal guard, validation,
+  revisions, retry keys, and audit all run on the route's one path, and the
+  endpoint holds no authorization logic and calls no module facade. A JSON
+  success is the tool's structured content and the same JSON as text; an RFC
+  9457 problem is an error result naming its code, detail, status, and field
+  messages; a route that cannot be reached is an error result telling the agent
+  to check whether the call took effect.
+- **Costs.** A tool call authenticates the token twice, once at the endpoint and
+  once at the route, and the request log shows two lines under one request id.
+  One MCP request performs at most one route call.
+- **What is excluded.** Every session-only route of the token API is outside the
+  catalog because it is not token-enabled. Binary bodies are not tools: file
+  upload and download stay REST-only. OAuth, member-issued tokens, per-token
+  rate limits, and a separate MCP process each need a new decision; a second
+  authorization path is not allowed.
 
 ## Pagination
 

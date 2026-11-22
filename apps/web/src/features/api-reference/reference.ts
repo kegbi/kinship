@@ -61,3 +61,16 @@ export function referencedSchemas(value: object): readonly string[] {
     ),
   ];
 }
+
+/**
+ * The accessible name of one body or response code region. A body or
+ * response offered in several media types (a file upload or download) shows
+ * one region per type, so each names its type to stay distinguishable.
+ */
+export function contentLabel(
+  base: string,
+  media: string,
+  mediaTypes: number,
+): string {
+  return mediaTypes > 1 ? `${base} (${media})` : base;
+}

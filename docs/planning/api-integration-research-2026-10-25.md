@@ -1,5 +1,8 @@
 # Kinship external API coverage research
 
+> Since delivered: the [MCP server plan](mcp-server-plan-2026-11-22.md) extended
+> token access across the CRM and added the MCP endpoint (ADR 0009).
+
 Status: proposed API scope and functionality, researched 25 October 2026 against
 code snapshot `c46579ec`. This research does not change accepted authorization,
 schema, product contracts, or the active delivery queue.

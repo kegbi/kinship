@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import external from "../../../../../packages/contracts/openapi/external.json";
 import { apiTokenScope } from "../../../../../packages/contracts/schemas/api_tokens.ts";
 import {
+  contentLabel,
   referencedSchemas,
   referenceOperations,
   referenceSchemas,
@@ -81,5 +82,41 @@ describe("MCP-W1 required grant per operation", () => {
         operation.operationId === "getTokenContext"
       )?.tokenScope,
     ).toBeUndefined();
+  });
+});
+
+describe("MCP-C4 code region labels", () => {
+  it("names the media type only when one body or response offers several", () => {
+    expect(contentLabel("createTask request body", "application/json", 1))
+      .toBe("createTask request body");
+    expect(contentLabel("downloadPersonFile 200 response", "image/png", 2))
+      .toBe("downloadPersonFile 200 response (image/png)");
+  });
+
+  it("gives every request-body and response code region of the reference a distinct label", () => {
+    const labels = referenceOperations.flatMap(({ operation }) => [
+      ...Object.keys(operation.requestBody?.content ?? {}).map((media) =>
+        contentLabel(
+          `${operation.operationId} request body`,
+          media,
+          Object.keys(operation.requestBody!.content).length,
+        )
+      ),
+      ...Object.entries(operation.responses).flatMap(([status, response]) => [
+        ...Object.keys(response.content ?? {}).map((media) =>
+          contentLabel(
+            `${operation.operationId} ${status} response`,
+            media,
+            Object.keys(response.content!).length,
+          )
+        ),
+        ...(response.headers
+          ? [`${operation.operationId} ${status} response headers`]
+          : []),
+      ]),
+    ]);
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.filter((label, index) => labels.indexOf(label) !== index))
+      .toEqual([]);
   });
 });

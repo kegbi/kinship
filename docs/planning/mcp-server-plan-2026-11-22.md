@@ -41,8 +41,8 @@ the gateway, and every module's application layer at `bdc989ea`.
 | F2 | A change made with a token is audited as the member. Neither the audit event nor the request log names the token.                                                                                              | MCP-A1: `payload.apiTokenId` on every audit event.          |
 | F3 | The bearer surface is pinned by hand: the count `14` in three tests, per-route tables, and "seven grants" prose.                                                                                               | MCP-A1 and MCP-W1: derive from the registry.                |
 | F4 | Only 14 of 157 routes accept a token. An agent cannot create a person, a reminder, a journal post, a gift, or a relationship.                                                                                  | Lanes MCP-B1 to MCP-B9.                                     |
-| F5 | Several creates are not safe to retry (`createPerson`, `createJournalPost`, `createGift`, `createDebt`, `createRecurringDebt`), and journal and gift updates have no revision check.                           | Lanes MCP-D1 to MCP-D4.                                     |
-| F6 | Operations an agent expects have no use case: edit or delete a note, activity, call, or conversation; delete a task; edit or delete a reminder; delete a cadence; edit a gift or debt's values; delete a gift. | Lanes MCP-D1 to MCP-D4.                                     |
+| F5 | Several creates are not safe to retry (`createPerson`, `createJournalPost`, `createGift`, `createDebt`, `createRecurringDebt`), and journal and gift updates have no revision check.                           | MCP-D4 (people, journal), MCP-D3 (gifts, debts).            |
+| F6 | Operations an agent expects have no use case: edit or delete a note, activity, call, or conversation; delete a task; edit or delete a reminder; delete a cadence; edit a gift or debt's values; delete a gift. | MCP-D1 (interactions), MCP-D2 (planning), MCP-D3 (gifts).   |
 
 ### 1.3 Findings recorded, not changed
 
@@ -54,7 +54,8 @@ the gateway, and every module's application layer at `bdc989ea`.
   address to 50 requests a second. One MCP request performs at most one route
   call, so the endpoint adds no amplification. Unchanged.
 - **Journal and gifts are workspace-wide.** Any member may edit or delete any
-  journal post, by design. Tool descriptions say so.
+  journal post, gift, or debt, by design. The route and tool descriptions and
+  the token form's grant details say so.
 
 ## Part 2 — Decisions
 
@@ -79,8 +80,10 @@ unless the product owner says otherwise.
 
 ## Part 3 — Token scopes
 
-Existing: `people:read`, `people:profile:read`, `relationships:read`,
-`tasks:read`, `tasks:create`, `tasks:write`, `interactions:create`.
+Existing before this plan: `people:read`, `people:profile:read`,
+`relationships:read`, `tasks:read`, `tasks:create`, `tasks:write`,
+`interactions:create`. The table lists what each grant admits as delivered; the
+route registry (`tokenScope` on each descriptor) is the authority.
 
 | Scope                              | Routes it admits (operation ids)                                                                                                                                                                              | Lane       |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -94,22 +97,26 @@ Existing: `people:read`, `people:profile:read`, `relationships:read`,
 | `today:read`                       | `getTodayRecentPeople`, `getTodayAttention`, `getTodayReminders`, `getTodayTasks`, `getTodayFavoriteNotes`, `getTodayRecentActivity`                                                                          | B1, B4, B5 |
 | `relationships:write`              | `createRelationship`, `updateRelationship`, `deleteRelationship`                                                                                                                                              | B3         |
 | `interactions:read`                | `getActivityReport`, `listPersonCommunications`                                                                                                                                                               | B4         |
-| `interactions:write`               | the edit and delete routes MCP-D1 adds                                                                                                                                                                        | D1         |
+| `interactions:write`               | `updateNote`, `deleteNote`, `updateActivity`, `deleteActivity`, `updateCall`, `deleteCall`, `updateConversation`, `deleteConversation`                                                                        | D1         |
+| `tasks:write` (existing, extended) | `deleteTask`                                                                                                                                                                                                  | D2         |
 | `reminders:read`                   | `listPersonReminders`                                                                                                                                                                                         | B5         |
-| `reminders:write`                  | `createReminder`, `setReminderActive`, `createStayInTouchCadence`, and the routes MCP-D2 adds                                                                                                                 | B5, D2     |
+| `reminders:write`                  | `createReminder`, `setReminderActive`, `updateReminder`, `deleteReminder`, `createStayInTouchCadence`, `deleteStayInTouchCadence`                                                                             | B5, D2     |
 | `journal:read`                     | `listJournal`, `getJournalItem`                                                                                                                                                                               | B6         |
 | `journal:write`                    | `createJournalPost`, `updateJournalPost`, `saveJournalDayRating`, `linkJournalActivity`, `deleteJournalItem`                                                                                                  | B6         |
 | `gifts:read`                       | `listPersonGiftsAndDebts`, `listDebtSettlements`                                                                                                                                                              | B7         |
-| `gifts:write`                      | `createGift`, `changeGiftStatus`, `createDebt`, `changeDebtStatus`, `deleteDebt`, `createRecurringDebt`, `updateRecurringDebt`, `deleteRecurringDebt`, and the routes MCP-D3 adds                             | B7, D3     |
-| `files:read`                       | `listPersonFiles`, `downloadPersonFile` (REST only)                                                                                                                                                           | B8         |
-| `files:write`                      | `uploadPersonFile` (REST only), `removePersonFile`                                                                                                                                                            | B8         |
+| `gifts:write`                      | `createGift`, `updateGift`, `changeGiftStatus`, `deleteGift`, `createDebt`, `updateDebt`, `changeDebtStatus`, `deleteDebt`, `createRecurringDebt`, `updateRecurringDebt`, `deleteRecurringDebt`               | B7, D3     |
+| `files:read`                       | `listPersonFiles`, `downloadPersonFile` (binary, REST only)                                                                                                                                                   | B8         |
+| `files:write`                      | `uploadPersonFile` (binary, REST only), `removePersonFile`                                                                                                                                                    | B8         |
 | `vocabularies:read`                | `listPersonalizationEntries`                                                                                                                                                                                  | B9         |
 | `vocabularies:write`               | `createPersonalizationEntry`, `updatePersonalizationEntry`, `deletePersonalizationEntry`                                                                                                                      | B9         |
 
-Routes not listed keep session admission. `createRelatedPersonRelationship`
-stays session-only because it needs two grants; an agent creates the person and
-then the relationship. `acknowledgeReminderOccurrence`, `recordPersonView`, the
-avatar routes, and the vCard exports stay session-only.
+`people:profile:read` keeps `getPersonIdentity`, `listProfileFacts`, and
+`listImportantDates` and gains `listPersonLifeEvents`; the life-event writes
+(MCP-B6) are `people:write`, not a journal grant. Routes not listed keep session
+admission. `createRelatedPersonRelationship` stays session-only because it needs
+two grants; an agent creates the person and then the relationship.
+`acknowledgeReminderOccurrence`, `recordPersonView`, the avatar routes, and the
+vCard exports stay session-only.
 
 ## Part 4 — Tickets
 
@@ -215,13 +222,83 @@ is a separate decision.
       routes the D lanes merged after MCP-C2, the retry keys and revision checks
       those lanes added, revision-source and grant notes in every description,
       `defineTool`'s `require`, and the updated grant details.
-- [ ] **MCP-C4 Flow and checkpoint.** Flow `API-003` in the catalogs with its
+- [x] **MCP-C4 Flow and checkpoint.** Flow `API-003` in the catalogs with its
       Playwright test (mint a token in settings, call tools through the
       endpoint, see the change in the app); the authorization-matrix invariants,
       `backend-architecture.md`, `repository-layout.md`,
       `module-boundaries.yaml`, and traceability brought up to date; then the
       integration gates once: coverage, contracts, architecture, build, and the
-      affected browser flows.
+      affected browser flows. The flow, its test, and the documents are
+      delivered, with `API-001` to `API-003` passing in Chromium; full coverage
+      and the all-browser run remain for the integration checkpoint below.
+
+## Delivered, and what is left
+
+Delivered: every ticket of Part 4. Personal tokens reach the routes of Part 3
+through the grant each descriptor names; the D lanes added the missing edits,
+deletes, retry keys, and revision checks; `POST /api/v1/mcp` serves the tool
+catalog filtered by the token's grants; the settings page offers grouped grants,
+two presets, and the "Connect an AI agent" section; `/docs/mcp` documents the
+endpoint; and flow `API-003` proves the whole path in a browser against the
+production-like stack. The authorization matrix,
+[backend architecture](../architecture/backend-architecture.md), and
+[traceability](traceability.md) describe the result.
+
+Open, each needing its own ticket or decision:
+
+- **Tool catalog completeness.** The D-lane routes (the interaction edits and
+  deletes, `deleteTask`, `updateReminder`, `deleteReminder`,
+  `deleteStayInTouchCadence`, `updateGift`, `deleteGift`, `updateDebt`) and the
+  four file routes merged after MCP-C2, so they are token routes with no tool
+  and no `TOOL_EXCLUSIONS` entry yet, and `test:unit --module=mcp` fails its
+  completeness test until a ticket adds them (the binary upload and download as
+  exclusions). The `create_person` description still says the create has no
+  retry key, although its `requestId` replays since MCP-D4.
+- **Dependency audit.** `deps:audit:gate` fails: `deno audit` now reports a high
+  advisory for `decode-uri-component` (`GHSA-qr28-fpjm-wq7f`), still reached
+  only through `minio` and `query-string`, which the gate's one accepted
+  exception does not cover. The product owner decides between a documented
+  exception in `quality-gates.md`, replacing `minio`, or waiting for a `minio`
+  release. The same report lists new moderate `hono` advisories, which the gate
+  does not fail on.
+- **Replay after a hard delete.** Re-sending a journal post's, note's,
+  activity's, call's, or conversation's original create with its `requestId`
+  after the record was deleted records it again, because the id derives from the
+  key and no tombstone is kept; the route descriptions say so. Refusing it needs
+  a schema-level tombstone at a new schema version.
+- **Gift retry keys and audit retention.** A gift, debt, or recurring-debt
+  create replayed after a delete is refused only because its audit events are
+  kept for the life of the workspace, and the lookup scans that action's events;
+  an index on `audit_events (workspace_id, subject_id)` at the next schema
+  version is the known remedy (see backend architecture, "Gift retry keys depend
+  on the audit history").
+- **Gift attachments.** `createGift` and `updateGift` require an attachment to
+  be an available, non-avatar file of the workspace, not of the gift's person.
+- **Removed files keep their gift links.** `removePersonFile` deletes the bytes
+  and the person link, but a gift keeps its `attachmentFileId` and a debt
+  settlement reports its photo as unavailable.
+- **Person revision on the identity read.** `getPersonIdentity` (`get_person`)
+  returns no `updatedAt`, so an agent takes a person's revision from
+  `personUpdatedAt` in `list_profile_facts` or the last lifecycle answer before
+  `update_person`, `archive_person`, or `restore_person`.
+- **Restore against a time-zone change (pre-existing).** A person restore
+  refills reminders through the worker's top-up inside its own transaction,
+  which already holds the workspace row and then takes member preference rows
+  `FOR SHARE`; a preference change holds its row while it waits for the
+  workspace row. The MCP-D2 refill avoids that order for exactly this reason
+  (`refillOtherMembers` in `reminder_repository.ts`); the restore path, from
+  AUD-W1, still takes it and may deadlock.
+- **A short reminder window.** The top-up no longer counts cancelled rows ahead
+  and revives only a cancelled row that was never attempted. A cancelled row
+  that had already been attempted keeps its date, so that date is neither
+  counted nor minted again and the member's window stays one date short until it
+  passes.
+- **Product decisions not taken.** OAuth for MCP clients that cannot send a
+  static bearer header (ADR 0009); member-issued tokens, which changes
+  `api-tokens.manage`; and per-token rate limits beyond the gateway's
+  per-address limits.
+- **Integration checkpoint.** Full coverage, all-browser E2E, and the release
+  gates run once the catalog completeness and dependency items are settled.
 
 ## Part 5 — Acceptance
 

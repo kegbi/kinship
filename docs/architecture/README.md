@@ -27,8 +27,9 @@ at that time rather than copying version numbers from this research snapshot.
 - [`technology-baseline.md`](technology-baseline.md) records platform choices,
   evaluated frameworks, the accepted Compose topology, and dependency policy.
 - [`backend-architecture.md`](backend-architecture.md) defines module
-  boundaries, dependency rules, data access, tenancy, HTTP contracts, and
-  background work.
+  boundaries, dependency rules, data access, tenancy, HTTP contracts, the
+  personal-token API and the MCP endpoint over it (ADR 0009), and background
+  work.
 - [`repository-layout.md`](repository-layout.md) fixes the scaffold layout,
   public entry points, import rules, and generated-file locations.
 - [`module-boundaries.yaml`](module-boundaries.yaml) is the machine-readable

@@ -3,7 +3,7 @@ import PublicLayout from "../../../layouts/PublicLayout.astro";
 import Schema from "../../../components/api-reference/Schema.astro";
 import Code from "../../../components/api-reference/Code.astro";
 import { ACCESS_TEXT, cautionText, scopeGroups, scopeLabel } from "../../../features/settings/api-access/api-access.ts";
-import { referenceOperations, referenceSchemas } from "../../../features/api-reference/reference.ts";
+import { contentLabel, referenceOperations, referenceSchemas } from "../../../features/api-reference/reference.ts";
 import "../../../styles/api-reference.css";
 
 export const prerender = true;
@@ -174,8 +174,8 @@ const sections = [
             <p data-api-operation-scope>{tokenScope ? <><strong>Required grant:</strong> <code>{tokenScope}</code> ({scopeLabel(tokenScope)}).</> : <><strong>Required grant:</strong> none; any valid token.</>}</p>
             <p><strong>Required header:</strong> <code>Authorization: Bearer &lt;token&gt;</code>. {operation.requestBody && <>Send <code>Content-Type: application/json</code>.</>}</p>
             {operation.parameters && <div class="reference-table"><table><caption>Parameters for {operation.operationId}</caption><thead><tr><th>Field / location</th><th>Required?</th><th>Schema & constraints</th></tr></thead><tbody>{operation.parameters.map((parameter) => <tr><td><code>{parameter.name}</code><small>{parameter.in}</small></td><td>{parameter.required ? "Required" : "Optional"}</td><td>{parameter.description && <p>{parameter.description}</p>}<Schema value={parameter.schema} label={`${operation.operationId} ${parameter.name}`} /></td></tr>)}</tbody></table></div>}
-            {operation.requestBody && <div><h4>Request body <span class="reference-meta">{operation.requestBody.required ? "Required" : "Optional"}</span></h4>{Object.entries(operation.requestBody.content).map(([media, { schema }]) => <div><p><code>{media}</code> — follow the linked schema's required fields, optional fields, and union variants.</p><Schema value={schema} label={`${operation.operationId} request body`} /></div>)}</div>}
-            <h4>Responses</h4><dl class="response-list">{Object.entries(operation.responses).map(([status, response]) => <div><dt><code>{status}</code> — {response.description}</dt><dd>{Object.entries(response.content ?? {}).map(([media, { schema }]) => <div><p><code>{media}</code></p><Schema value={schema} label={`${operation.operationId} ${status} response`} /></div>)}{response.headers && <Schema value={response.headers} label={`${operation.operationId} ${status} response headers`} />}</dd></div>)}</dl>
+            {operation.requestBody && <div><h4>Request body <span class="reference-meta">{operation.requestBody.required ? "Required" : "Optional"}</span></h4>{Object.entries(operation.requestBody.content).map(([media, { schema }], _index, types) => <div><p><code>{media}</code> — follow the linked schema's required fields, optional fields, and union variants.</p><Schema value={schema} label={contentLabel(`${operation.operationId} request body`, media, types.length)} /></div>)}</div>}
+            <h4>Responses</h4><dl class="response-list">{Object.entries(operation.responses).map(([status, response]) => <div><dt><code>{status}</code> — {response.description}</dt><dd>{Object.entries(response.content ?? {}).map(([media, { schema }], _index, types) => <div><p><code>{media}</code></p><Schema value={schema} label={contentLabel(`${operation.operationId} ${status} response`, media, types.length)} /></div>)}{response.headers && <Schema value={response.headers} label={`${operation.operationId} ${status} response headers`} />}</dd></div>)}</dl>
             <a class="back-to-index" href="#operations">Back to operation index ↑</a>
           </article>)}
         </section>

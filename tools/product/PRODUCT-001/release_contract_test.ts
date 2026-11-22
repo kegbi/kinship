@@ -44,6 +44,7 @@ const EXPECTED_FLOW_IDS = [
   "EXPORT-002",
   "API-001",
   "API-002",
+  "API-003",
   "INTEGRATION-001",
   "INTEGRATION-002",
   "GOVERNANCE-001",
@@ -429,6 +430,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
     ["EXPORT-002", ["tests/e2e/contacts-export.EXPORT-002.spec.ts"]],
     ["API-001", ["tests/e2e/api-tokens.API-001.spec.ts"]],
     ["API-002", ["tests/e2e/api-reference.API-002.spec.ts"]],
+    ["API-003", ["tests/e2e/mcp-agent.API-003.spec.ts"]],
     ["INTEGRATION-001", ["tests/e2e/dav.INTEGRATION-001.spec.ts"]],
     [
       "INTEGRATION-002",
@@ -460,7 +462,7 @@ Deno.test("PRODUCT-001 catalog extraction controls", () => {
   }
   assertEquals(
     JSON.stringify(priorityTotals),
-    JSON.stringify({ P0: 17, P1: 20, P2: 5 }),
+    JSON.stringify({ P0: 17, P1: 20, P2: 6 }),
     "priority totals",
   );
 
@@ -783,7 +785,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
   );
   assertIncludes(
     planningReadme,
-    "42 total: 17 P0, 20 P1, and 5 P2",
+    "43 total: 17 P0, 20 P1, and 6 P2",
     "planning catalog totals",
   );
   assertIncludes(
@@ -809,7 +811,7 @@ Deno.test("PRODUCT-001 AC-03 synchronizes subordinate planning without delivery 
 
   assertIncludes(
     traceIntro,
-    "42 required flows: 17 P0, 20 P1, and 5 P2",
+    "43 required flows: 17 P0, 20 P1, and 6 P2",
     "traceability catalog totals",
   );
   assertNotMatches(

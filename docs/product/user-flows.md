@@ -41,7 +41,14 @@ substitute for the other.
 download, then real token automation through the documented person, task, and
 interaction operations, including replay/conflict and grant refusal/revocation.
 `API-001` continues to own token creation, one-time display, and revocation
-management.
+management. `API-003` covers connecting an AI agent: the signed-out,
+JavaScript-free MCP guide, the "Connect an AI agent" section and scope presets
+in API access settings, and a real MCP client over `POST /api/v1/mcp` with the
+new token and no cookie. It initializes statelessly, sees only the tools its
+grants allow, is refused an ungranted tool and a route's validation failure as
+tool errors, creates a person that a retried call replays, and is cut off with a
+bearer challenge once the token is revoked; the browser then shows the person
+and the audit event attributed to the issuing member.
 
 ## Priorities
 
