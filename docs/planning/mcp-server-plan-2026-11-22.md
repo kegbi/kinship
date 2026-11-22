@@ -246,14 +246,6 @@ production-like stack. The authorization matrix,
 
 Open, each needing its own ticket or decision:
 
-- **Tool catalog completeness.** The D-lane routes (the interaction edits and
-  deletes, `deleteTask`, `updateReminder`, `deleteReminder`,
-  `deleteStayInTouchCadence`, `updateGift`, `deleteGift`, `updateDebt`) and the
-  four file routes merged after MCP-C2, so they are token routes with no tool
-  and no `TOOL_EXCLUSIONS` entry yet, and `test:unit --module=mcp` fails its
-  completeness test until a ticket adds them (the binary upload and download as
-  exclusions). The `create_person` description still says the create has no
-  retry key, although its `requestId` replays since MCP-D4.
 - **Dependency audit.** `deps:audit:gate` fails: `deno audit` now reports a high
   advisory for `decode-uri-component` (`GHSA-qr28-fpjm-wq7f`), still reached
   only through `minio` and `query-string`, which the gate's one accepted
@@ -298,7 +290,7 @@ Open, each needing its own ticket or decision:
   `api-tokens.manage`; and per-token rate limits beyond the gateway's
   per-address limits.
 - **Integration checkpoint.** Full coverage, all-browser E2E, and the release
-  gates run once the catalog completeness and dependency items are settled.
+  gates run once the dependency item is settled.
 
 ## Part 5 — Acceptance
 

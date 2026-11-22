@@ -552,8 +552,9 @@ archived-person and hidden-section rules, cursor bounds, revisions, and retry
 keys. Retry-safe creates (tasks, interactions, reminders, stay-in-touch
 cadences, people, journal posts, gifts, debts, and recurring debts) keep their
 `requestId` replay and conflict rules, and updates and deletes keep their
-revision checks. Role rules such as the owner/admin-only vocabulary changes stay
-in the use case, so a token is refused what its issuer's role is refused.
+revision checks. Role rules such as the owner/admin-only vocabulary reads and
+changes stay in the use case, so a token is refused what its issuer's role is
+refused.
 
 Any `Authorization` header commits a request to token admission. Invalid,
 expired, revoked, wrong-workspace, and wrong-grant credentials never fall back
@@ -563,9 +564,9 @@ optional `X-Workspace-Id`, which answers 401 when it names another workspace.
 Bearer writes need neither Cookie nor Origin, while cookie writes still require
 the exact configured public Origin. Routes whose cookie requests are answered in
 a fixed order (a foreign Origin, then a malformed header or input, then the
-session) keep it through a cookie-only origin check or a module-local admission
-gate (files, gifts, journal, vocabularies) that admits or refuses a bearer
-before its body is read.
+session) keep it through the HTTP kit's cookie-only origin check or its
+`routeAdmission` gate (files, gifts, journal, vocabularies), which admits or
+refuses a bearer before its body is read.
 
 A token-authenticated request carries the token's id on its actor's correlation
 beside the request id, and every audit event it writes stores it as
@@ -580,13 +581,14 @@ current membership, secret — records the use, runs the legal guard, and never
 reads a session cookie. A calendar feed's secret is never accepted there, even
 under the personal prefix.
 
-Identity, sessions, security, legal acceptance, members and invitations,
-workspace settings other than the personalization vocabularies, personal and
-workspace lifecycle, API token management, calendar feed settings, DAV, imports
-and exports, audit history, notifications, storage settings, the aggregate
-person reads (`getPerson`, the person timeline, and `recordPersonView`),
-`createRelatedPersonRelationship` (which would need two grants), avatar writes,
-and `acknowledgeReminderOccurrence` keep session admission;
+Identity, sessions, security, the member's own profile and preferences, legal
+acceptance, members and invitations, workspace settings other than the
+personalization vocabularies, personal and workspace lifecycle, API token
+management, calendar feed settings, DAV, imports and exports, audit history,
+notifications, storage settings, the aggregate person reads (`getPerson`, the
+person timeline, and `recordPersonView`), `createRelatedPersonRelationship`
+(which would need two grants), avatar writes, and
+`acknowledgeReminderOccurrence` keep session admission;
 [`authorization-matrix.yaml`](authorization-matrix.yaml) states the same rules
 as invariants.
 
@@ -629,10 +631,10 @@ which only that kit imports and only `apps/api/composition.ts` mounts.
   under one name and a tool whose route the API does not register. The
   completeness rule (`uncoveredTokenRoutes`) requires every token-enabled or
   any-token route to be a tool or a `TOOL_EXCLUSIONS` entry with a written
-  reason; the endpoint itself is the one exclusion so far. The contract build
-  writes the catalog, with the server instructions, to
-  `packages/contracts/mcp/tools.json`, which `contracts:check` keeps current and
-  `/docs/mcp` renders.
+  reason; the exclusions are the endpoint itself and the binary file upload and
+  download. The contract build writes the catalog, with the server instructions,
+  to `packages/contracts/mcp/tools.json`, which `contracts:check` keeps current
+  and `/docs/mcp` renders.
 - **Scope filtering.** A server registers only the tools whose grant the token
   holds, plus the any-token `get_context`, so a tool outside the token's grants
   is neither listed nor callable by name. Role and section rules are still
@@ -655,9 +657,9 @@ which only that kit imports and only `apps/api/composition.ts` mounts.
   One MCP request performs at most one route call.
 - **What is excluded.** Every session-only route of the token API is outside the
   catalog because it is not token-enabled. Binary bodies are not tools: file
-  upload and download stay REST-only. OAuth, member-issued tokens, per-token
-  rate limits, and a separate MCP process each need a new decision; a second
-  authorization path is not allowed.
+  upload and download stay REST-only and are named exclusions. OAuth,
+  member-issued tokens, per-token rate limits, and a separate MCP process each
+  need a new decision; a second authorization path is not allowed.
 
 ## Pagination
 

@@ -303,7 +303,7 @@ const SCOPES = {
     access: "read",
     caution: "broad",
     detail:
-      "Search results across areas: people and matching text from notes, activities, journal posts, tasks, and reminders.",
+      "Search results across areas: people and matching text from notes, activities, journal posts, and tasks.",
     group: "overview",
     label: "Search the workspace",
   },

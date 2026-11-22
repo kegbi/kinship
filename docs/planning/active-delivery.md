@@ -53,9 +53,8 @@ its "Delivered, and what is left" section lists the open follow-ups.
       fix: `/docs/api` now names each media type of a multi-type file body or
       response, so its code regions stay distinguishable.
 - [ ] Integration checkpoint: full coverage, all-browser E2E, and the dependency
-      audit, once the tool catalog covers the D-lane and file routes (its
-      completeness test is red until then) and the `decode-uri-component`
-      advisory through `minio` is decided.
+      audit, once the `decode-uri-component` advisory through `minio` is
+      decided.
 
 This work takes priority over the sections below.
 
