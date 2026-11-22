@@ -109,6 +109,25 @@ export type DebtVocabulary = {
   readonly status: DebtStatus;
 };
 
+/**
+ * The revision an UPDATE stores: the write's instant, or one microsecond past
+ * the row's current revision when that instant does not pass it.
+ *
+ * Revisions are compared at the microsecond the column keeps, but a write's
+ * instant is a JavaScript `Date`, read before the transaction and any lock
+ * wait, with only milliseconds. Two writes in one millisecond, from a fast
+ * caller or a frozen clock, would otherwise store the same revision, and an
+ * editor still holding the first would overwrite the second unseen. Every
+ * write that moves a gift, a debt, or a recurring rule therefore strictly
+ * advances `updated_at`, and returns the stored value, so the next
+ * `expectedUpdatedAt` round-trips exactly. The bare `updated_at` is the row's
+ * value before this UPDATE.
+ */
+export function advancedRevision(occurredAt: Date) {
+  return sql<Date>`greatest(${occurredAt}::timestamptz,
+    updated_at + interval '1 microsecond')`;
+}
+
 /** A page anchor's instant, compared as the `timestamptz` it was read from. */
 function anchorInstant(anchor: GiftPageAnchor) {
   return sql<Date>`${anchor.updatedAt}::timestamptz`;
@@ -313,7 +332,7 @@ export class PostgresGiftRepository implements GiftRepository {
             event_at: command.eventAt ?? null,
             name: command.name,
             recipient_person_id: command.recipientPersonId ?? null,
-            updated_at: command.occurredAt,
+            updated_at: advancedRevision(command.occurredAt),
             url: command.url ?? null,
           })
           .where("id", "=", command.id)
@@ -344,7 +363,7 @@ export class PostgresGiftRepository implements GiftRepository {
             currency_code: command.currencyCode,
             direction: command.direction,
             reason: command.reason ?? null,
-            updated_at: command.occurredAt,
+            updated_at: advancedRevision(command.occurredAt),
           })
           .where("id", "=", command.id)
           .where("workspace_id", "=", command.workspaceId)
@@ -671,7 +690,10 @@ export class PostgresGiftRepository implements GiftRepository {
     const row = await schemaDatabaseFromSession(command.transaction)
       .with("updated", (database) =>
         database.updateTable("crm.gifts")
-          .set({ status: command.status, updated_at: command.occurredAt })
+          .set({
+            status: command.status,
+            updated_at: advancedRevision(command.occurredAt),
+          })
           .where("id", "=", command.id)
           .where("workspace_id", "=", command.workspaceId)
           .where("person_id", "=", command.personId)
@@ -698,7 +720,7 @@ export class PostgresGiftRepository implements GiftRepository {
           .set({
             settled_at: command.settledAt ?? null,
             status: command.status,
-            updated_at: command.occurredAt,
+            updated_at: advancedRevision(command.occurredAt),
           })
           .where("id", "=", command.id)
           .where("workspace_id", "=", command.workspaceId)

@@ -296,6 +296,23 @@ GAP-053 (`PEOPLE-010`, `TODAY-002`) adds no table and no schema change.
   interface-state use case, which validates it and only moves it forward.
   Workspace-admin-only items, such as a member leaving, are left out.
 
+### Gift retry keys depend on the audit history (MCP-D3)
+
+Gifts, debts, and recurring debt rules are deleted permanently, so when a create
+retried with its `requestId` finds no row, `gifts` asks the audit history
+whether a record with the derived id ever existed
+(`AuditEventRecorder.subjectRecorded`, inside the create's workspace-scoped
+transaction): an event answers 409 `gift_request_deleted`, none lets the create
+proceed. That answer is only correct while every audit event for gifts, debts,
+and recurring debts is kept for the life of the workspace. Any future audit
+retention, pruning, or purge must first replace this dependency, for instance
+with a tombstone the module owns at a new schema version; a workspace reset,
+which removes the history with the records, already makes a replayed key create
+its record again, and the create routes say so. The lookup is served by the
+`(workspace_id, action)` index and then filters that action's events by subject,
+so its cost grows with the workspace's gift, debt, or rule history; an index on
+`(workspace_id, subject_id)` at the next schema version is the known remedy.
+
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
 rollback, catalog introspection, generated-type agreement, and every validation

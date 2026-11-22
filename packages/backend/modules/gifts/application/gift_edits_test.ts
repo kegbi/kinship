@@ -12,7 +12,8 @@ import {
   type StoredGift,
 } from "../public.ts";
 import { assert, assertEquals } from "../../../testing/assert.ts";
-import { sequentialIds } from "../../../testing/fakes.ts";
+import { recordingAudit, sequentialIds } from "../../../testing/fakes.ts";
+import { giftAuditAction, giftAuditFrom } from "./audit_events.ts";
 
 const actor = {
   memberId: "50000000-0000-4000-8000-000000000001",
@@ -48,6 +49,7 @@ function fixture(options: { readonly archived?: boolean } = {}) {
     subjectId: string;
   }[] = [];
   const locks: string[] = [];
+  let archived = options.archived ?? false;
   let now = Date.parse("2026-08-23T10:00:00.000Z");
   const clock = { now: () => new Date(now) };
   const tick = () => {
@@ -63,7 +65,7 @@ function fixture(options: { readonly archived?: boolean } = {}) {
   };
   const personState = (person: string) =>
     person === personId || person === otherPersonId
-      ? options.archived ? "archived" as const : "active" as const
+      ? archived ? "archived" as const : "active" as const
       : "not-found" as const;
   const refused = (person: string) => {
     const state = personState(person);
@@ -354,6 +356,10 @@ function fixture(options: { readonly archived?: boolean } = {}) {
     transaction: { run: (work) => work({ opaque: "transaction" }) },
   };
   return {
+    /** Archives both people, as a member archiving them after these writes. */
+    archive: () => {
+      archived = true;
+    },
     audits,
     debts,
     gifts,
@@ -843,4 +849,120 @@ Deno.test("[MCP-D3] a debt create retried with its request id never settles twic
   await createdDebt(plain);
   await createdDebt(plain);
   assertEquals(plain.debts.size, 2, "no request id: every create records");
+});
+
+Deno.test("[MCP-D3] an edit that changes nothing still answers a finished debt and an archived person", async () => {
+  const context = fixture();
+  const cancelled = await createdDebt(context, "cancelled");
+  assertEquals(
+    await context.management.changeDebt(actor, personId, cancelled.id, {
+      expectedUpdatedAt: cancelled.updatedAt,
+      reason: "Lunch",
+    }),
+    { status: "debt-values-locked" },
+    "a cancelled debt refuses even an edit naming its current values",
+  );
+  assertEquals(
+    await context.management.changeDebt(actor, personId, cancelled.id, {
+      amount: "20.00",
+      expectedUpdatedAt: cancelled.updatedAt,
+    }),
+    { status: "debt-values-locked" },
+  );
+  const settled = await createdDebt(context, "settled");
+  assertEquals(
+    (await context.management.changeDebt(actor, personId, settled.id, {
+      amount: "20",
+      expectedUpdatedAt: settled.updatedAt,
+    })).status,
+    "unchanged",
+    "a settled debt's unchanged money is no change, not a locked one",
+  );
+
+  // An archived gift is finished as a status only: its values stay editable,
+  // so naming the values it has is no change.
+  const gift = await createdGift(context);
+  const archivedGift = await context.management.changeGiftStatus(
+    actor,
+    personId,
+    gift.id,
+    "archived",
+  );
+  if (archivedGift.status !== "saved") throw new Error(archivedGift.status);
+  context.tick();
+  assertEquals(
+    (await context.management.changeGift(actor, personId, gift.id, {
+      expectedUpdatedAt: archivedGift.gift.updatedAt,
+      name: "Book",
+    })).status,
+    "unchanged",
+  );
+  const renamed = await context.management.changeGift(
+    actor,
+    personId,
+    gift.id,
+    { expectedUpdatedAt: archivedGift.gift.updatedAt, name: "Atlas" },
+  );
+  assertEquals(
+    renamed.status === "saved"
+      ? [renamed.gift.name, renamed.gift.status]
+      : renamed.status,
+    ["Atlas", "archived"],
+  );
+
+  // An archived person refuses before an edit is compared at all.
+  const open = await createdDebt(context);
+  const kept = await createdGift(context);
+  context.archive();
+  assertEquals(
+    await context.management.changeDebt(actor, personId, open.id, {
+      expectedUpdatedAt: open.updatedAt,
+      reason: "Lunch",
+    }),
+    { status: "archived-write-rejected" },
+  );
+  assertEquals(
+    await context.management.changeGift(actor, personId, kept.id, {
+      expectedUpdatedAt: kept.updatedAt,
+      name: "Book",
+    }),
+    { status: "archived-write-rejected" },
+  );
+});
+
+Deno.test("[MCP-D3] the audit trail is asked about the action every gift event is written under", async () => {
+  for (const recordType of ["debt", "gift", "recurring-debt"] as const) {
+    const recorder = recordingAudit();
+    const audit = giftAuditFrom(recorder);
+    const subjectId = "50000000-0000-4000-8000-0000000000bb";
+    const transaction = { opaque: recordType };
+    const ask = (type: typeof recordType) =>
+      audit.recorded({ actor, recordType: type, subjectId, transaction });
+    assertEquals(await ask(recordType), false, `${recordType} before`);
+    await audit.record({
+      action: "deleted",
+      actor,
+      occurredAt: new Date("2026-08-23T10:00:00.000Z"),
+      record: {
+        amount: "1",
+        createdAt: "2026-08-23T10:00:00.000000Z",
+        direction: "they_owe",
+        id: subjectId,
+        personId,
+        status: "open",
+        updatedAt: "2026-08-23T10:00:00.000000Z",
+      },
+      recordType,
+      transaction,
+    });
+    assertEquals(recorder.actions, [giftAuditAction(recordType)]);
+    assertEquals(await ask(recordType), true, `${recordType} after`);
+    for (
+      const other of (["debt", "gift", "recurring-debt"] as const).filter(
+        (type) => type !== recordType,
+      )
+    ) {
+      assertEquals(await ask(other), false, `${other} is another record`);
+    }
+  }
 });

@@ -140,7 +140,12 @@ export class PostgresAuditEventRecorder
     }
   }
 
-  /** Answered through the `(workspace_id, action)` index, then the subject. */
+  /**
+   * Served by the `(workspace_id, action)` index, which yields every event of
+   * that action in the workspace; the subject is then a filter over those
+   * rows, so the cost grows with that action's history. An index on
+   * `(workspace_id, subject_id)` at the next schema version is the remedy.
+   */
   async subjectRecorded(command: AuditSubjectQuery): Promise<boolean> {
     const result = await sql<{ readonly found: boolean }>`
       select exists (

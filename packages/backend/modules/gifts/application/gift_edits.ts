@@ -254,9 +254,8 @@ export function createGiftEdits(dependencies: GiftManagementDependencies) {
               transaction,
             })
           ) return { status: "validation-error" as const };
-          if (debtMatchesCreate(found.debt, next)) {
-            return { debt: found.debt, status: "unchanged" as const };
-          }
+          // Asked before the unchanged shortcut, so a cancelled debt refuses
+          // even an edit naming the values it already has.
           const history = await dependencies.repository.listSettlements({
             ...actor,
             debtId: id,
@@ -271,6 +270,9 @@ export function createGiftEdits(dependencies: GiftManagementDependencies) {
               history.status !== "ready" || history.settlements.length > 0,
             )
           ) return { status: "debt-values-locked" as const };
+          if (debtMatchesCreate(found.debt, next)) {
+            return { debt: found.debt, status: "unchanged" as const };
+          }
           const { status: _status, ...values } = next;
           const saved = await dependencies.repository.saveDebtValues({
             ...actor,

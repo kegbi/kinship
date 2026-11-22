@@ -9,8 +9,28 @@
  * edit, with no settlement orphaned or duplicated.
  */
 
+import { PostgresGiftAttachmentBoundary } from "../../packages/backend/modules/files/adapters/postgres/gift_attachment_boundary.ts";
+import { PostgresGiftAttachmentTarget } from "../../packages/backend/modules/gifts/adapters/postgres/gift_attachment_target.ts";
+import { PostgresGiftRepository } from "../../packages/backend/modules/gifts/adapters/postgres/gift_repository.ts";
+import { PostgresRecurringDebtRepository } from "../../packages/backend/modules/gifts/adapters/postgres/recurring_debt_repository.ts";
+import {
+  createGiftManagement,
+  giftAuditFrom,
+} from "../../packages/backend/modules/gifts/public.ts";
+import { PostgresAuditEventRecorder } from "../../packages/backend/modules/governance/adapters/postgres/audit_event_recorder.ts";
+import { PostgresPeopleTransaction } from "../../packages/backend/modules/people/adapters/postgres/people_repository.ts";
+import { PostgresActorRevalidation } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
+import { PostgresWorkspaceCurrencyBoundary } from "../../packages/backend/modules/workspaces/adapters/postgres/currency_boundary.ts";
+import { PostgresWorkspaceCalendarBoundary } from "../../packages/backend/modules/workspaces/adapters/postgres/workspace_calendar.ts";
+import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
-import type { HttpMethod, SignedInFixture } from "../support/api.ts";
+import {
+  type HttpMethod,
+  PASSWORD,
+  sessionCookie,
+  type SignedInFixture,
+} from "../support/api.ts";
+import { requireDatabaseUrl, revocableActor } from "../support/database.ts";
 import { composeTokenSuite } from "../support/tokens.ts";
 
 const suite = composeTokenSuite();
@@ -658,6 +678,23 @@ Deno.test("[MCP-D3] PostgreSQL token creates are retry-safe, revisions are check
     "gift_not_found",
     "a foreign person path",
   );
+  const foreignFile = await storedFile(foreign);
+  for (
+    const [field, value] of [
+      ["recipientPersonId", foreignPersonId],
+      ["attachmentFileId", foreignFile],
+    ] as const
+  ) {
+    await refused(
+      await send(giftPath, "PATCH", {
+        expectedUpdatedAt: one.gift.updatedAt,
+        [field]: value,
+      }),
+      404,
+      "gift_not_found",
+      `a token edit naming a foreign ${field}`,
+    );
+  }
   await refused(
     await send(`${giftPath}/status`, "PATCH", {
       expectedUpdatedAt: STALE,
@@ -861,6 +898,439 @@ Deno.test("[MCP-D3] PostgreSQL token creates are retry-safe, revisions are check
     ),
     "every token write names its token",
   );
+});
+
+Deno.test("[MCP-D3] PostgreSQL an unconditional settle racing a fresh edit never settles a debt whose amount then changes", async () => {
+  const suffix = crypto.randomUUID();
+  const own = await register(`gift-settle-${suffix}@example.test`, "Settles");
+  const personId = await person(own, "Ada");
+  const root = `/api/v1/people/${personId}`;
+  for (let round = 0; round < 6; round++) {
+    const { debt } = await expect<{ debt: Debt }>(
+      await api.request(own, `${root}/debts`, "POST", {
+        amount: "40",
+        currencyCode: "EUR",
+        direction: "they_owe",
+        status: "open",
+      }),
+      201,
+      `round ${round}: a debt to race over`,
+    );
+    const path = `${root}/debts/${debt.id}`;
+    // The settle names no revision, so only the row lock and the settlement
+    // history re-check stand between it and the edit.
+    const [settle, edit] = await Promise.all([
+      api.request(own, `${path}/status`, "PATCH", { status: "settled" }),
+      api.request(own, path, "PATCH", {
+        amount: "45",
+        expectedUpdatedAt: debt.updatedAt,
+      }),
+    ]);
+    const settled = await expect<{ debt: Debt }>(
+      settle,
+      200,
+      `round ${round}: the unconditional settle`,
+    );
+    const [stored] = await sql<
+      { amount: string; settlements: number; status: string }[]
+    >`select debt.amount::text, debt.status,
+        (select count(*)::int from crm.debt_settlements settlement
+          where settlement.debt_id = debt.id) as settlements
+      from crm.debts debt where debt.id = ${debt.id}::uuid`;
+    const audit = await auditTokens(debt.id);
+    if (edit.status === 200) {
+      // The edit ran first, on the open debt, and the settle settled its
+      // amount.
+      const edited = await expect<{ debt: Debt }>(edit, 200, "edit first");
+      assertEquals(edited.debt.status, "open", `round ${round}`);
+      assertEquals(settled.debt.amount, "45.0000", `round ${round}`);
+      assertEquals(audit, [
+        "created:cookie",
+        "changed:cookie",
+        "changed:cookie",
+      ]);
+    } else {
+      // The settle ran first and moved the revision the edit was read at.
+      await refused(edit, 409, "gift_stale", `round ${round}: edit after`);
+      assertEquals(settled.debt.amount, "40.0000", `round ${round}`);
+      assertEquals(audit, ["created:cookie", "changed:cookie"]);
+    }
+    assertEquals(
+      [stored?.amount, stored?.status, stored?.settlements],
+      [settled.debt.amount, "settled", 1],
+      `round ${round}: one settlement of the amount the debt still has`,
+    );
+  }
+});
+
+Deno.test("[MCP-D3] PostgreSQL a workspace reset removes the audit history, so a replayed key creates its record again", async () => {
+  const suffix = crypto.randomUUID();
+  const email = `gift-reset-${suffix}@example.test`;
+  const own = await register(email, "Reset retries");
+  const requestId = crypto.randomUUID();
+  const body = { name: `Lamp ${suffix}`, requestId, status: "idea" };
+  const firstPerson = await person(own, "Ada");
+  const { gift } = await expect<{ gift: Gift }>(
+    await api.request(own, `/api/v1/people/${firstPerson}/gifts`, "POST", body),
+    201,
+    "a keyed create",
+  );
+  await expect(
+    await api.request(
+      own,
+      `/api/v1/people/${firstPerson}/gifts/${gift.id}`,
+      "DELETE",
+      { expectedUpdatedAt: gift.updatedAt },
+    ),
+    200,
+    "the gift is deleted",
+  );
+  await refused(
+    await api.request(own, `/api/v1/people/${firstPerson}/gifts`, "POST", body),
+    409,
+    "gift_request_deleted",
+    "before the reset the audit trail refuses the replay",
+  );
+  const shown = await expect<{
+    confirmations: { resetWorkspace: string };
+    impactToken: string;
+  }>(
+    await api.request(own, "/api/v1/settings/workspace-lifecycle"),
+    200,
+    "the reset preview",
+  );
+  await expect(
+    await api.request(
+      own,
+      "/api/v1/settings/workspace-lifecycle/reset",
+      "POST",
+      {
+        confirmation: shown.confirmations.resetWorkspace,
+        impactToken: shown.impactToken,
+        password: PASSWORD,
+      },
+    ),
+    200,
+    "the owner resets the workspace",
+  );
+  const [history] = await sql<{ count: number }[]>`
+    select count(*)::int as count from crm.audit_events
+    where subject_id = ${gift.id}::uuid`;
+  assertEquals(history?.count, 0, "the reset removed the gift's history");
+  const signedIn = await api.signIn(email, { workspaceId: own.workspaceId });
+  const cookie = sessionCookie(signedIn);
+  assert(signedIn.status === 200 && cookie, `sign-in ${signedIn.status}`);
+  const again = { ...own, cookie };
+  const secondPerson = await person(again, "Ada again");
+  const recreated = await expect<{ gift: Gift }>(
+    await api.request(
+      again,
+      `/api/v1/people/${secondPerson}/gifts`,
+      "POST",
+      body,
+    ),
+    201,
+    "after a reset the same key creates the gift again",
+  );
+  assertEquals(recreated.gift.id, gift.id, "under the id the key derives");
+});
+
+/** The revision a row stores, at the precision a client must send back. */
+async function storedRevision(
+  table: "debts" | "gifts" | "recurring_debts",
+  id: string,
+): Promise<string | undefined> {
+  const [row] = await sql<{ revision: string }[]>`
+    select to_char(updated_at at time zone 'UTC',
+      'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as revision
+    from ${sql(`crm.${table}`)} where id = ${id}::uuid`;
+  return row?.revision;
+}
+
+Deno.test({
+  name:
+    "[MCP-D3] PostgreSQL writes at one instant still advance the revision, so a second writer is stale",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const connection = connectDatabase(requireDatabaseUrl());
+    try {
+      const actor = await revocableActor(
+        sql,
+        `gift-revision-${crypto.randomUUID()}`,
+      );
+      const personId = actor.personId;
+      // One instant for every write: a frozen clock, or callers inside one
+      // millisecond.
+      const instant = new Date("2026-10-14T10:00:00.000Z");
+      const gifts = createGiftManagement({
+        actors: new PostgresActorRevalidation(),
+        attachments: new PostgresGiftAttachmentBoundary(
+          new PostgresGiftAttachmentTarget(),
+        ),
+        audit: giftAuditFrom(new PostgresAuditEventRecorder()),
+        calendar: new PostgresWorkspaceCalendarBoundary(),
+        clock: { now: () => new Date(instant) },
+        currencies: new PostgresWorkspaceCurrencyBoundary(),
+        ids: { next: () => crypto.randomUUID() },
+        recurringDebts: new PostgresRecurringDebtRepository(),
+        repository: new PostgresGiftRepository(),
+        transaction: new PostgresPeopleTransaction(connection.db),
+      });
+      // Each record's revisions so far: every write must pass the last one.
+      const revisions = new Map<string, string>();
+      /** Keeps a revision a write answered, after checking it advanced. */
+      const advanced = async (
+        table: "debts" | "gifts" | "recurring_debts",
+        id: string,
+        revision: string,
+        label: string,
+      ) => {
+        const previous = revisions.get(id);
+        assert(
+          previous === undefined || revision > previous,
+          `${label}: revision ${revision} does not pass ${previous}`,
+        );
+        assertEquals(await storedRevision(table, id), revision, label);
+        revisions.set(id, revision);
+        return revision;
+      };
+
+      // A gift's values, then its status.
+      const createdGift = await gifts.createGift(actor, personId, {
+        name: "Scarf",
+        status: "idea",
+      });
+      if (createdGift.status !== "created") throw new Error(createdGift.status);
+      const giftId = createdGift.gift.id;
+      const giftCreated = await advanced(
+        "gifts",
+        giftId,
+        createdGift.gift.updatedAt,
+        "gift created",
+      );
+      const firstEdit = await gifts.changeGift(actor, personId, giftId, {
+        expectedUpdatedAt: giftCreated,
+        name: "Wool scarf",
+      });
+      if (firstEdit.status !== "saved") throw new Error(firstEdit.status);
+      const giftEdited = await advanced(
+        "gifts",
+        giftId,
+        firstEdit.gift.updatedAt,
+        "a gift edit at the creating instant",
+      );
+      assertEquals(
+        (await gifts.changeGift(actor, personId, giftId, {
+          expectedUpdatedAt: giftCreated,
+          name: "Silk scarf",
+        })).status,
+        "stale",
+        "a second gift editor holding the first revision",
+      );
+      const giftStatus = await gifts.changeGiftStatus(
+        actor,
+        personId,
+        giftId,
+        "planned",
+        { expectedUpdatedAt: giftEdited },
+      );
+      if (giftStatus.status !== "saved") throw new Error(giftStatus.status);
+      const giftPlanned = await advanced(
+        "gifts",
+        giftId,
+        giftStatus.gift.updatedAt,
+        "a gift status change at the same instant",
+      );
+      assertEquals(
+        (await gifts.changeGiftStatus(actor, personId, giftId, "given", {
+          expectedUpdatedAt: giftEdited,
+        })).status,
+        "stale",
+        "a second status writer holding the edit's revision",
+      );
+      assertEquals(
+        (await gifts.changeGift(actor, personId, giftId, {
+          expectedUpdatedAt: giftEdited,
+          name: "Silk scarf",
+        })).status,
+        "stale",
+        "an edit holding the revision before the status change",
+      );
+
+      // A debt's values, then a settle that must not follow a stale read.
+      const createdDebt = await gifts.createDebt(actor, personId, {
+        amount: "40",
+        currencyCode: "EUR",
+        direction: "they_owe",
+        status: "open",
+      });
+      if (createdDebt.status !== "created") throw new Error(createdDebt.status);
+      const debtId = createdDebt.debt.id;
+      const debtCreated = await advanced(
+        "debts",
+        debtId,
+        createdDebt.debt.updatedAt,
+        "debt created",
+      );
+      const debtEdit = await gifts.changeDebt(actor, personId, debtId, {
+        amount: "45",
+        expectedUpdatedAt: debtCreated,
+      });
+      if (debtEdit.status !== "saved") throw new Error(debtEdit.status);
+      const debtEdited = await advanced(
+        "debts",
+        debtId,
+        debtEdit.debt.updatedAt,
+        "a debt edit at the creating instant",
+      );
+      assertEquals(
+        (await gifts.changeDebtStatus(
+          actor,
+          personId,
+          debtId,
+          "settled",
+          {},
+          { expectedUpdatedAt: debtCreated },
+        )).status,
+        "stale",
+        "a settle holding the revision before the edit",
+      );
+      const [unsettled] = await sql<{ count: number }[]>`
+        select count(*)::int as count from crm.debt_settlements
+        where debt_id = ${debtId}::uuid`;
+      assertEquals(unsettled?.count, 0, "a stale settle appends nothing");
+      assertEquals(
+        (await gifts.changeDebt(actor, personId, debtId, {
+          expectedUpdatedAt: debtCreated,
+          reason: "Dinner",
+        })).status,
+        "stale",
+        "a second debt editor holding the first revision",
+      );
+      const settle = await gifts.changeDebtStatus(
+        actor,
+        personId,
+        debtId,
+        "settled",
+        {},
+        { expectedUpdatedAt: debtEdited },
+      );
+      if (settle.status !== "saved") throw new Error(settle.status);
+      const debtSettled = await advanced(
+        "debts",
+        debtId,
+        settle.debt.updatedAt,
+        "a settle at the same instant",
+      );
+      assertEquals(
+        (await gifts.changeDebt(actor, personId, debtId, {
+          expectedUpdatedAt: debtEdited,
+          reason: "Dinner",
+        })).status,
+        "stale",
+        "an edit holding the revision before the settle",
+      );
+      assertEquals(
+        (await gifts.changeDebtStatus(
+          actor,
+          personId,
+          debtId,
+          "open",
+          {},
+          { expectedUpdatedAt: debtEdited },
+        )).status,
+        "stale",
+        "a reopen holding the revision before the settle",
+      );
+      const [settledOnce] = await sql<
+        { amount: string; count: number; status: string }[]
+      >`select debt.amount::text, debt.status,
+          (select count(*)::int from crm.debt_settlements settlement
+            where settlement.debt_id = debt.id) as count
+        from crm.debts debt where debt.id = ${debtId}::uuid`;
+      assertEquals(
+        [settledOnce?.amount, settledOnce?.status, settledOnce?.count],
+        ["45.0000", "settled", 1],
+      );
+
+      // A recurring rule, where a stale update must charge nothing.
+      const createdRule = await gifts.createRecurringDebt(actor, personId, {
+        amount: "8",
+        currencyCode: "EUR",
+        dayOfMonth: 14,
+        direction: "i_owe",
+        intervalMonths: 1,
+        startsOn: "2026-12-14",
+      });
+      if (createdRule.status !== "created") throw new Error(createdRule.status);
+      assertEquals(createdRule.charged, 0);
+      const ruleId = createdRule.recurringDebt.id;
+      const ruleCreated = await advanced(
+        "recurring_debts",
+        ruleId,
+        createdRule.recurringDebt.updatedAt,
+        "rule created",
+      );
+      const ruleEdit = await gifts.changeRecurringDebt(
+        actor,
+        personId,
+        ruleId,
+        { reason: "Rent" },
+        { expectedUpdatedAt: ruleCreated },
+      );
+      if (ruleEdit.status !== "saved") throw new Error(ruleEdit.status);
+      const ruleEdited = await advanced(
+        "recurring_debts",
+        ruleId,
+        ruleEdit.recurringDebt.updatedAt,
+        "a rule update at the creating instant",
+      );
+      assertEquals(
+        (await gifts.changeRecurringDebt(
+          actor,
+          personId,
+          ruleId,
+          { startsOn: "2026-08-14" },
+          { expectedUpdatedAt: ruleCreated },
+        )).status,
+        "stale",
+        "a second rule writer holding the first revision",
+      );
+      const [ruleCharges] = await sql<{ count: number }[]>`
+        select count(*)::int as count from crm.debts
+        where recurring_debt_id = ${ruleId}::uuid`;
+      assertEquals(
+        ruleCharges?.count,
+        0,
+        "a stale rule update charges nothing",
+      );
+
+      // Every answered revision is the one the listing hands back.
+      const listing = await gifts.list(actor, personId);
+      if (listing.status !== "ready") throw new Error(listing.status);
+      assertEquals(listing.gifts.map((entry) => entry.updatedAt), [
+        giftPlanned,
+      ]);
+      assertEquals(listing.debts.map((entry) => entry.updatedAt), [
+        debtSettled,
+      ]);
+      assertEquals(listing.recurringDebts.map((entry) => entry.updatedAt), [
+        ruleEdited,
+      ]);
+      const roundTrip = await gifts.changeGift(actor, personId, giftId, {
+        comment: "Blue",
+        expectedUpdatedAt: listing.gifts[0]!.updatedAt,
+      });
+      assertEquals(
+        roundTrip.status,
+        "saved",
+        "the listed revision round-trips",
+      );
+    } finally {
+      await connection.destroy();
+    }
+  },
 });
 
 Deno.test({

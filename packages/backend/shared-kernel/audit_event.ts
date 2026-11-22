@@ -8,9 +8,12 @@
  * the shape they agree on cannot live there — ten modules restated it by hand
  * until it moved here.
  *
- * This module declares no writer and imports nothing, so the kernel stays a
- * leaf and the concrete recorder is still built at a composition root. Its one
- * function, `auditPayload`, is the pure rule every writer stores a payload by.
+ * This module implements no recorder and imports nothing, so the kernel stays
+ * a leaf and the concrete recorder is still built at a composition root. The
+ * recorder interface is mostly writes; its one read, `subjectRecorded`, asks
+ * whether the history already holds an event, for a retry-safety decision
+ * (MCP-D3), and is never a way to list or show history. Its one function,
+ * `auditPayload`, is the pure rule every writer stores a payload by.
  */
 
 export interface AuditTransaction {
@@ -118,9 +121,14 @@ export interface AuditEventRecorder {
   /** Re-reads the written row inside the same transaction. */
   assertRecorded(command: AuditEventAssertion): Promise<void>;
   /**
-   * Whether the workspace's history holds any event with this action about
-   * this subject. A module whose rows are deleted permanently asks it to tell
-   * a record that never existed from one that was removed (MCP-D3).
+   * Whether the workspace's history holds at least one event with this action
+   * about this subject type and id. It runs inside the caller's transaction,
+   * which is already scoped to `workspaceId`, so row-level security limits it
+   * to that workspace's history. It exists for one decision: `gifts` deletes
+   * its rows permanently, so a create retried with its request key asks it to
+   * tell a record that never existed from one a member removed (MCP-D3). The
+   * answer holds only while that history is retained; see "Gift retry keys
+   * depend on the audit history" in `docs/architecture/backend-architecture.md`.
    */
   subjectRecorded(command: AuditSubjectQuery): Promise<boolean>;
 }

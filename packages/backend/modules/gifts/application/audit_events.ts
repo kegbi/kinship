@@ -14,6 +14,24 @@ import type {
 import { correlationOf } from "../../../shared-kernel/telemetry.ts";
 import type { GiftAudit } from "../ports/audit.ts";
 
+/** The three kinds of record this module audits. */
+type GiftRecordType = Parameters<GiftAudit["record"]>[0]["recordType"];
+
+/**
+ * The action every event about a record of this type is stored under. It is
+ * the one spelling both the writes and the replay-after-delete lookup use: if
+ * the two ever differed, the lookup would find nothing and a retried create
+ * would quietly recreate a record a member deleted.
+ */
+export function giftAuditAction(recordType: GiftRecordType): string {
+  return `gifts.${recordType}-created-or-state-changed`;
+}
+
+/** The subject type an event about a record of this type names. */
+function giftSubjectType(recordType: GiftRecordType): string {
+  return recordType.replace("-", "_");
+}
+
 /** A record's status, or a recurring rule's paused state in its place. */
 function statusOf(
   record: Parameters<GiftAudit["record"]>[0]["record"],
@@ -29,7 +47,7 @@ export function describeGiftEvent(
   command: Parameters<GiftAudit["record"]>[0],
 ): AuditEvent {
   return {
-    action: `gifts.${command.recordType}-created-or-state-changed`,
+    action: giftAuditAction(command.recordType),
     actorMemberId: command.actor.memberId,
     occurredAt: command.occurredAt,
     payload: {
@@ -39,7 +57,7 @@ export function describeGiftEvent(
     },
     personId: command.record.personId,
     subjectId: command.record.id,
-    subjectType: command.recordType.replace("-", "_"),
+    subjectType: giftSubjectType(command.recordType),
     visibleOnDashboard: true,
     workspaceId: command.actor.workspaceId,
     ...correlationOf(command.actor),
@@ -51,7 +69,7 @@ export function describeChargedDebtEvent(
   command: Parameters<GiftAudit["recordCharged"]>[0],
 ): AuditEvent {
   return {
-    action: "gifts.debt-created-or-state-changed",
+    action: giftAuditAction("debt"),
     occurredAt: command.occurredAt,
     payload: {
       action: "charged",
@@ -64,7 +82,7 @@ export function describeChargedDebtEvent(
     personId: command.debt.personId,
     ...(command.requestId ? { requestId: command.requestId } : {}),
     subjectId: command.debt.id,
-    subjectType: "debt",
+    subjectType: giftSubjectType("debt"),
     visibleOnDashboard: true,
     workspaceId: command.workspaceId,
   };
@@ -72,13 +90,13 @@ export function describeChargedDebtEvent(
 
 export function giftAuditFrom(recorder: AuditEventRecorder): GiftAudit {
   return {
-    // The action every gift, debt, and rule event is stored under, so the
-    // question is the one `describeGiftEvent` answers for that record type.
+    // Asked under the same action and subject type the events above are
+    // written with, so a deleted record's history is always found.
     recorded: (command) =>
       recorder.subjectRecorded({
-        action: `gifts.${command.recordType}-created-or-state-changed`,
+        action: giftAuditAction(command.recordType),
         subjectId: command.subjectId,
-        subjectType: command.recordType.replace("-", "_"),
+        subjectType: giftSubjectType(command.recordType),
         transaction: command.transaction,
         workspaceId: command.actor.workspaceId,
       }),

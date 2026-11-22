@@ -10,6 +10,7 @@ import {
 } from "../../domain/recurring_debts.ts";
 import type { RecurringDebtRepository } from "../../ports/recurring_debt_repository.ts";
 import {
+  advancedRevision,
   chargeablePerson,
   debt,
   debtColumns,
@@ -220,7 +221,7 @@ export class PostgresRecurringDebtRepository
             next_occurrence_on: command.nextOccurrenceOn ?? null,
             reason: command.reason ?? null,
             starts_on: command.startsOn,
-            updated_at: command.occurredAt,
+            updated_at: advancedRevision(command.occurredAt),
           })
           .where("id", "=", command.id)
           .where("workspace_id", "=", command.workspaceId)
