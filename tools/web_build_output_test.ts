@@ -945,11 +945,11 @@ Deno.test("[GAP-027] the Kinship variants compile to utilities over the tokens",
   const expected: readonly (readonly [string, string])[] = [
     [String.raw`.min-h-11{`, "min-height:calc(var(--spacing) * 11)"],
     [String.raw`.px-\(--space-4\){`, "padding-inline:var(--space-4)"],
-    [String.raw`.py-\(--space-3\){`, "padding-block:var(--space-3)"],
-    [String.raw`.rounded-\[\.65rem\]{`, "border-radius:.65rem"],
+    [String.raw`.py-\(--space-2\){`, "padding-block:var(--space-2)"],
+    [String.raw`.rounded-\(--radius-sm\){`, "border-radius:var(--radius-sm)"],
     [String.raw`.bg-primary{`, "background-color:var(--primary)"],
     [String.raw`.border-input{`, "border-color:var(--input)"],
-    [String.raw`.bg-\(--accent\){`, "background-color:var(--accent)"],
+    [String.raw`.bg-\(--danger\){`, "background-color:var(--danger)"],
     [String.raw`.p-\(--pad-card\){`, "padding:var(--pad-card)"],
     [
       String.raw`.border-\(--line-hairline\){`,
@@ -963,8 +963,8 @@ Deno.test("[GAP-027] the Kinship variants compile to utilities over the tokens",
     [String.raw`.motion-reduce\:animate-none{`, "animation:none"],
     [
       String
-        .raw`:where([data-section-state=error]) .in-data-\[section-state\=error\]\:bg-\(--accent-soft\){`,
-      "background-color:var(--accent-soft)",
+        .raw`:where([data-section-state=error]) .in-data-\[section-state\=error\]\:bg-\(--danger-soft\){`,
+      "background-color:var(--danger-soft)",
     ],
   ];
   for (const [selector, declaration] of expected) {
@@ -988,6 +988,7 @@ Deno.test("[GAP-026] no Tailwind utility shares a name with a hand-written class
   );
   const styles = new URL("../apps/web/src/styles/", import.meta.url);
   const handWritten = new Set<string>();
+  const stylesContents: string[] = [];
   for await (const entry of Deno.readDir(styles)) {
     if (!entry.name.endsWith(".css") || entry.name === "islands.css") continue;
     const css = (await Deno.readTextFile(new URL(entry.name, styles)))
@@ -995,10 +996,20 @@ Deno.test("[GAP-026] no Tailwind utility shares a name with a hand-written class
     for (const [, name] of css.matchAll(/\.([a-zA-Z_][\w-]*)/g)) {
       handWritten.add(name!);
     }
+    const rule = css.match(/\.contents(?![\w-])(?!\s*>)[^{]*\{/)?.[0];
+    if (rule) stylesContents.push(`${entry.name}: ${rule}`);
   }
+  // `contents` is Tailwind's `display: contents`, the wrapper an island
+  // mounts into; the hand-written sheets only reach through it to its
+  // children (`.settings-content > .contents > *`) and never style it, so it
+  // keeps the one meaning. Styling the wrapper itself would be a collision.
+  assert(
+    stylesContents.length === 0,
+    `hand-written rules style the contents utility: ${stylesContents}`,
+  );
   // `sr-only` means the same visually hidden text in both.
   const shared = [...generated].filter((name) =>
-    handWritten.has(name) && name !== "sr-only"
+    handWritten.has(name) && name !== "sr-only" && name !== "contents"
   );
   assert(
     shared.length === 0,

@@ -57,15 +57,15 @@ import {
   // The preferences form is an island (`features/settings/preferences/`,
   // GAP-033) that takes over the disabled form drawn above. The member's own
   // calendar feed (GAP-052) is a second island over its own region, beside the
-  // reminder-delivery controls, because it is a personal setting.
+  // reminder-delivery controls, because it is a personal setting. The theme
+  // select needs no React and mounts from the same script: an island page
+  // loads exactly one page script (GAP-031, GAP-033), and the development
+  // "Outdated Optimize Dep" failure that once stranded the select is fixed by
+  // pre-bundling the browser dependencies (astro.config.mjs).
   import { mountCalendarFeed } from "../../../features/settings/calendar-feed/calendar-feed.tsx";
   import { mountPreferenceSettings } from "../../../features/settings/preferences/preference-settings.tsx";
-  void mountPreferenceSettings();
-  void mountCalendarFeed();
-</script>
-<script>
-  // The theme select needs no React; its own script keeps it working when an
-  // island's module fails to load.
   import { mountThemePreferenceControl } from "../../../lib/theme.ts";
   void mountThemePreferenceControl();
+  void mountPreferenceSettings();
+  void mountCalendarFeed();
 </script>
