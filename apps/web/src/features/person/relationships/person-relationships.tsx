@@ -71,7 +71,11 @@ import {
   requestRailEditorOpen,
 } from "../../../lib/rail-editors.ts";
 import { saveWithLockedForm } from "../../../lib/unsaved-changes.ts";
-import { nameInitials } from "../../../lib/person-name.ts";
+import {
+  displayPersonName,
+  nameInitials,
+  type PersonNameOrder,
+} from "../../../lib/person-name.ts";
 import { Quiet } from "../facts/fact-list.tsx";
 import { setRailCount, setRailEmpty } from "../profile-summary.ts";
 import {
@@ -86,7 +90,6 @@ import {
   initialRelationshipsState,
   lifecycleChange,
   normalizeRevision,
-  personName,
   type RelatedDraft,
   relatedName,
   type RelationshipFocus,
@@ -105,6 +108,8 @@ export interface PersonRelationshipsProps {
   readonly personId: string;
   readonly workspaceId: string;
   readonly archived: boolean;
+  /** The member's name order, which the people search names choices in. */
+  readonly nameOrder?: PersonNameOrder | undefined;
   /** The person's revision the page loaded; older lifecycle news is ignored. */
   readonly personUpdatedAt?: string | undefined;
   /** The block the island renders into; it carries the section state. */
@@ -302,7 +307,10 @@ export function PersonRelationships(props: PersonRelationshipsProps) {
     dispatch({
       people: answer.data.people.map((person) => ({
         id: person.id,
-        name: personName(person),
+        name: displayPersonName(
+          person,
+          props.nameOrder ?? "given_family_nickname",
+        ),
       })),
       type: "people-found",
     });
@@ -1097,6 +1105,7 @@ export const mountPersonRelationships: SectionMount = (container, props) => {
       <PersonRelationships
         archived={props.archived}
         heading={heading}
+        nameOrder={props.preferences?.contactNameOrder}
         onSettled={() => resolve(unmount)}
         personId={props.personId}
         personUpdatedAt={props.initial?.person.updatedAt}

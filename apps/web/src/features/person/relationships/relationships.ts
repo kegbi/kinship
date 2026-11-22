@@ -65,18 +65,6 @@ export function relatedName(row: Row): string {
   return row.display.name ?? "Related person";
 }
 
-/** A directory person's name as a choice reads it. */
-export function personName(
-  person: {
-    readonly familyName?: string;
-    readonly givenName: string;
-    readonly nickname?: string;
-  },
-): string {
-  return [person.givenName, person.familyName].filter(Boolean).join(" ") ||
-    person.nickname || "Unnamed person";
-}
-
 export interface TypeChoice {
   readonly id: string;
   readonly label: string;

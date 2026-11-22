@@ -28,6 +28,7 @@ import {
 import {
   ids,
   personProfile,
+  preferences,
   profileSummary,
   sectionProps,
 } from "../../../testing/fixtures.ts";
@@ -147,10 +148,14 @@ function props(
     readonly person?: string;
     /** How many relationships the profile summary counted. */
     readonly counted?: number;
+    readonly nameOrder?: "given_family_nickname" | "family_given_nickname";
   } = {},
 ) {
   return sectionProps({
     archived: options.archived ?? false,
+    ...(options.nameOrder
+      ? { preferences: preferences({ contactNameOrder: options.nameOrder }) }
+      : {}),
     initial: personProfile({
       person: {
         profileSections: options.hidden
@@ -1076,6 +1081,33 @@ describe("RELATIONSHIP-001 relationships island", () => {
     expect(new FormData(form()).get("targetPersonId")).toBe(targetId);
     expect(writes(api)).toHaveLength(0);
   });
+
+  it.each(
+    [
+      ["given_family_nickname", "Charles Babbage “Chuck”"],
+      ["family_given_nickname", "Babbage Charles “Chuck”"],
+    ] as const,
+  )(
+    "names a found person with their quoted nickname in %s order, as the global search does",
+    async (nameOrder, name) => {
+      shell();
+      stubApi(routes({
+        [PEOPLE]: people({
+          familyName: "Babbage",
+          givenName: "Charles",
+          id: targetId,
+          nickname: "Chuck",
+        }),
+      }));
+      await mount({ nameOrder });
+      fireEvent.click(add());
+      searchInput().focus();
+      searchFor("Chuck");
+      fireEvent.click(await within(form()).findByRole("option", { name }));
+      expect(searchInput().value).toBe(name);
+      expect(new FormData(form()).get("targetPersonId")).toBe(targetId);
+    },
+  );
 
   it("selects by keyboard, clears a selection when edited, and resets the picker on close", async () => {
     shell();

@@ -10,7 +10,6 @@ import {
   LIST_UNAVAILABLE,
   normalizeRevision,
   PEOPLE_UNAVAILABLE,
-  personName,
   READ_ONLY,
   relatedName,
   relationshipsReducer,
@@ -104,16 +103,11 @@ describe("RELATIONSHIP-001 relationship presentation", () => {
     expect([...summaryRowIds(rows)]).toEqual(["a", "b", "c", "d", "e"]);
   });
 
-  it("names related people, directory people, and type choices", () => {
+  it("names related people and type choices", () => {
     expect(relatedName(row("a"))).toBe("Person a");
     const unnamed = row("a");
     const { name: _name, ...display } = unnamed.display;
     expect(relatedName({ ...unnamed, display })).toBe("Related person");
-    expect(personName({ familyName: "Lovelace", givenName: "Ada" })).toBe(
-      "Ada Lovelace",
-    );
-    expect(personName({ givenName: "", nickname: "Mystery" })).toBe("Mystery");
-    expect(personName({ givenName: "" })).toBe("Unnamed person");
     const archived = { ...parent, archived: true, id: "old" };
     expect(typeChoices([parent], [archived], rowType(row("x")))).toEqual([
       { archived: false, id: typeId, label: "parent / child" },
