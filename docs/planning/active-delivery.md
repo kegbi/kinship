@@ -8,6 +8,27 @@ the current phase and deliver it as a complete vertical behavior. The larger
 and [`traceability.md`](traceability.md) remain coverage references, not
 prerequisite queues.
 
+## User-directed MCP server (2026-11-22)
+
+The product owner asked for an MCP server through which an AI agent can add,
+edit, and remove CRM records within what its personal API token grants, with the
+API's access-control gaps fixed first. The work order is the
+[MCP server plan](mcp-server-plan-2026-11-22.md), and
+[ADR 0009](../architecture/decisions/0009-mcp-endpoint-over-the-token-api.md)
+records the architecture:
+
+- a foundation ticket that makes token scopes machine-readable and names the
+  token in every audit event it causes;
+- nine parallel lanes that extend token access across the CRM routes, the MCP
+  endpoint itself, and the token settings UI;
+- four lanes that add the edit, delete, and retry-safe operations an agent
+  expects and the application does not have yet;
+- a tool catalog, a public guide, flow `API-003`, and one integration
+  checkpoint.
+
+This work takes priority over the sections below. The plan's checkboxes are the
+ledger.
+
 ## User-directed audit remediation (2026-11-07)
 
 The product owner asked for every finding of the

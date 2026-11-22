@@ -29,3 +29,5 @@ in an ADR written before scaffolding.
   — `accepted`; amends ADR 0001 and takes effect when AUD-G5 integrates
 - [`0008-database-enforced-workspace-isolation.md`](0008-database-enforced-workspace-isolation.md)
   — `accepted`; implemented by schema v14 (AUD-V2) and v15 (REL-120)
+- [`0009-mcp-endpoint-over-the-token-api.md`](0009-mcp-endpoint-over-the-token-api.md)
+  — `accepted`; implemented by the MCP server plan of 2026-11-22
