@@ -57,6 +57,10 @@ const OVERRIDES: Readonly<
   changeTask: { body: { expectedUpdatedAt: INSTANT, title: "Ada" } },
   saveMemberUiState: { body: { theme: "dark" } },
   updateRecurringDebt: { body: { active: true } },
+  updateNote: { body: { body: "Ada", expectedUpdatedAt: INSTANT } },
+  updateActivity: { body: { expectedUpdatedAt: INSTANT, summary: "Ada" } },
+  updateCall: { body: { content: "Ada", expectedUpdatedAt: INSTANT } },
+  updateConversation: { body: { expectedUpdatedAt: INSTANT, title: "Ada" } },
   // Unions the sampler cannot choose a member of on its own.
   updatePersonalizationEntry: {
     body: { expectedUpdatedAt: INSTANT, name: "Ada" },

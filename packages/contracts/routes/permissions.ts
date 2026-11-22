@@ -236,6 +236,14 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RoutePermission>> = {
   listPersonCommunications: "people.read",
   getTodayFavoriteNotes: "workspace.read",
   getTodayRecentActivity: "workspace.read",
+  updateNote: "interactions.write",
+  deleteNote: "interactions.write",
+  updateActivity: "interactions.write",
+  deleteActivity: "interactions.write",
+  updateCall: "interactions.write",
+  deleteCall: "interactions.write",
+  updateConversation: "interactions.write",
+  deleteConversation: "interactions.write",
 
   // Governance.
   listWorkspaceAudit: "audit.read",

@@ -42,6 +42,8 @@ export interface CallRecord {
   readonly id: string;
   readonly kind: "call";
   readonly person: InteractionParticipant;
+  /** The revision an edit or a removal names (MCP-D1). */
+  readonly updatedAt?: string;
 }
 
 export interface ConversationRecord {
@@ -54,6 +56,8 @@ export interface ConversationRecord {
   readonly messages: readonly CommunicationMessage[];
   readonly person: InteractionParticipant;
   readonly title?: string;
+  /** The revision an edit or a removal names (MCP-D1). */
+  readonly updatedAt?: string;
 }
 
 export type CommunicationRecord = CallRecord | ConversationRecord;
@@ -94,6 +98,7 @@ export interface StoredCall {
   readonly id: string;
   readonly kind: "call";
   readonly personId: string;
+  readonly updatedAt?: string;
 }
 
 /** A conversation as the repository keeps it. */
@@ -107,6 +112,7 @@ export interface StoredConversation {
   readonly messages: readonly CommunicationMessage[];
   readonly personId: string;
   readonly title?: string;
+  readonly updatedAt?: string;
 }
 
 export type StoredCommunication = StoredCall | StoredConversation;
@@ -344,6 +350,7 @@ export function callRecord(
     id: stored.id,
     kind: "call",
     person: { id: person.id, name: person.name },
+    ...(stored.updatedAt ? { updatedAt: stored.updatedAt } : {}),
   };
 }
 
@@ -372,5 +379,6 @@ export function conversationRecord(
     messages: orderMessages(stored.messages),
     person: { id: person.id, name: person.name },
     ...(stored.title ? { title: stored.title } : {}),
+    ...(stored.updatedAt ? { updatedAt: stored.updatedAt } : {}),
   };
 }

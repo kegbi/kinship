@@ -132,6 +132,24 @@ Deno.test("GOVERNANCE-002 preserves only action-positioned current writer detail
       action: "interactions.interaction-or-note-created",
       payload: { kind: "activity", participantIds: [personId] },
     },
+    {
+      action: "interactions.interaction-changed",
+      payload: {
+        action: "update",
+        fields: ["happenedAt", "participantIds", "summary"],
+        kind: "activity",
+        participantIds: [personId, id(101)],
+      },
+    },
+    {
+      action: "interactions.interaction-changed",
+      payload: {
+        action: "delete",
+        fields: [],
+        kind: "conversation",
+        participantIds: [personId],
+      },
+    },
     { action: "workspace.member-joined", payload: {} },
     { action: "people.person-created", payload: { isPartial: false } },
     {

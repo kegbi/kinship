@@ -16,12 +16,19 @@ import {
   workspaceHeaders,
 } from "./common.ts";
 import {
+  activityChangeInput,
   activityReport,
+  callChangeInput,
   communicationList,
   communicationOptions,
+  conversationChangeInput,
   interactionCreated,
+  interactionDeleted,
   interactionInput,
   interactionOptions,
+  interactionRemovalInput,
+  interactionSaved,
+  noteChangeInput,
   todayFavoriteNotes,
   todayRecentActivity,
 } from "../schemas/interactions.ts";
@@ -212,6 +219,254 @@ export const getTodayRecentActivity = defineRoute({
   },
 });
 
+export const updateNote = defineRoute({
+  method: "patch",
+  path: "/api/v1/interactions/note/{interactionId}",
+  operationId: "updateNote",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Edits one note: body and isFavorited (favorite notes appear on Today). Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": noteChangeInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Note saved at a new revision",
+      content: {
+        "application/json": interactionSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteNote = defineRoute({
+  method: "delete",
+  path: "/api/v1/interactions/note/{interactionId}",
+  operationId: "deleteNote",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one note; it leaves the activity report, search, the person's timeline, and Today's favorite notes. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": interactionRemovalInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Note deleted at the expected revision",
+      content: {
+        "application/json": interactionDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const updateActivity = defineRoute({
+  method: "patch",
+  path: "/api/v1/interactions/activity/{interactionId}",
+  operationId: "updateActivity",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Edits one activity: happenedAt, participantIds (replaces the whole list, every person active in the workspace), summary, activityTypeId, description, and emotionIds (replaces the whole list). Moving it later, or adding people, advances their stay-in-touch cadences as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": activityChangeInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Activity saved at a new revision",
+      content: {
+        "application/json": interactionSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteActivity = defineRoute({
+  method: "delete",
+  path: "/api/v1/interactions/activity/{interactionId}",
+  operationId: "deleteActivity",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one activity, its participants and emotions, and the journal entry that links it; it leaves the activity report, search, the timeline, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": interactionRemovalInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Activity deleted at the expected revision",
+      content: {
+        "application/json": interactionDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const updateCall = defineRoute({
+  method: "patch",
+  path: "/api/v1/interactions/call/{interactionId}",
+  operationId: "updateCall",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Edits one call: calledAt, contactWasCaller, content, and emotionIds (replaces the whole list). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": callChangeInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Call saved at a new revision",
+      content: {
+        "application/json": interactionSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteCall = defineRoute({
+  method: "delete",
+  path: "/api/v1/interactions/call/{interactionId}",
+  operationId: "deleteCall",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one call and its emotions; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": interactionRemovalInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Call deleted at the expected revision",
+      content: {
+        "application/json": interactionDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const updateConversation = defineRoute({
+  method: "patch",
+  path: "/api/v1/interactions/conversation/{interactionId}",
+  operationId: "updateConversation",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Edits one conversation: channelTypeId, contactMethodId (one of the person's contact methods on that channel), happenedAt, title, and messages (replaces every message). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": conversationChangeInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Conversation saved at a new revision",
+      content: {
+        "application/json": interactionSaved,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteConversation = defineRoute({
+  method: "delete",
+  path: "/api/v1/interactions/conversation/{interactionId}",
+  operationId: "deleteConversation",
+  description:
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one conversation and its messages; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      interactionId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": interactionRemovalInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Conversation deleted at the expected revision",
+      content: {
+        "application/json": interactionDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
 /** Every interactions route, in the order the surface mounts them. */
 export const INTERACTIONS_ROUTES: readonly RouteDescriptor[] = [
   listCommunicationOptions,
@@ -221,4 +476,12 @@ export const INTERACTIONS_ROUTES: readonly RouteDescriptor[] = [
   listPersonCommunications,
   getTodayFavoriteNotes,
   getTodayRecentActivity,
+  updateNote,
+  deleteNote,
+  updateActivity,
+  deleteActivity,
+  updateCall,
+  deleteCall,
+  updateConversation,
+  deleteConversation,
 ];

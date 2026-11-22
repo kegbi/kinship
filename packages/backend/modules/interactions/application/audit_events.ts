@@ -13,7 +13,11 @@ import type {
   AuditEventRecorder,
 } from "../../../shared-kernel/audit_event.ts";
 import { correlationOf } from "../../../shared-kernel/telemetry.ts";
-import type { CommunicationAudit, InteractionAudit } from "../ports/audit.ts";
+import type {
+  CommunicationAudit,
+  InteractionAudit,
+  InteractionChangeAudit,
+} from "../ports/audit.ts";
 
 export function describeInteractionEvent(
   command: Parameters<InteractionAudit["record"]>[0],
@@ -95,6 +99,55 @@ export function communicationAuditFrom(
         auditId: command.auditId,
         event: describeCommunicationEvent(command),
         failure: "Communication audit postcondition failed.",
+        transaction: command.transaction,
+      }),
+  };
+}
+
+/**
+ * An edit or a removal (MCP-D1). One action covers the four kinds and both
+ * operations, the way `people.person-date-updated` covers a date's changes:
+ * the payload says which (`action`, `kind`), which fields an edit supplied,
+ * and whom the record names. It carries no note body, summary, call content,
+ * or message text.
+ */
+export function describeInteractionChangeEvent(
+  command: Parameters<InteractionChangeAudit["record"]>[0],
+): AuditEvent {
+  return {
+    action: "interactions.interaction-changed",
+    actorMemberId: command.actor.memberId,
+    occurredAt: command.occurredAt,
+    payload: {
+      action: command.action,
+      fields: [...command.fields],
+      kind: command.kind,
+      participantIds: [...command.participantIds],
+    },
+    personId: command.participantIds[0]!,
+    subjectId: command.subjectId,
+    subjectType: command.kind,
+    visibleOnDashboard: true,
+    workspaceId: command.actor.workspaceId,
+    ...correlationOf(command.actor),
+  };
+}
+
+export function interactionChangeAuditFrom(
+  recorder: AuditEventRecorder,
+): InteractionChangeAudit {
+  return {
+    record: (command) =>
+      recorder.record({
+        event: describeInteractionChangeEvent(command),
+        missing: "Interaction change audit insert failed.",
+        transaction: command.transaction,
+      }),
+    assertPostcondition: (command) =>
+      recorder.assertRecorded({
+        auditId: command.auditId,
+        event: describeInteractionChangeEvent(command),
+        failure: "Interaction change audit postcondition failed.",
         transaction: command.transaction,
       }),
   };

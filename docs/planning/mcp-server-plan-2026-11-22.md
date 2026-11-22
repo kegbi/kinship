@@ -187,7 +187,7 @@ matrix or architecture prose; MCP-C4 does that once.
 A lane that finds it needs a schema change stops and reports; a schema version
 is a separate decision.
 
-- [ ] **MCP-D1 Interactions.** Edit and delete a note (including its favourite
+- [x] **MCP-D1 Interactions.** Edit and delete a note (including its favourite
       flag), an activity, a call, and a conversation, under
       `interactions:write`, with revision checks.
 - [ ] **MCP-D2 Planning.** Delete a task; edit and delete a reminder; delete a

@@ -31,6 +31,7 @@ interface ProjectionRow {
     readonly name: string;
   }[];
   readonly summary: string | null;
+  readonly updated_at: string;
 }
 
 function item(row: ProjectionRow): ActivityReportItem | undefined {
@@ -46,6 +47,7 @@ function item(row: ProjectionRow): ActivityReportItem | undefined {
       kind: "activity",
       participants: row.participants,
       summary: row.summary,
+      updatedAt: row.updated_at,
     };
   }
   const participant = row.participants[0];
@@ -57,6 +59,7 @@ function item(row: ProjectionRow): ActivityReportItem | undefined {
       isFavorited: row.is_favorited === true,
       kind: "note",
       participants: [participant],
+      updatedAt: row.updated_at,
     }
     : undefined;
 }
@@ -129,7 +132,7 @@ export class PostgresActivityReportRepository
         select activity.id, 'activity'::text as kind, activity.summary,
           activity.description, null::text as body,
           null::boolean as is_favorited, activity.happened_at as timestamp_at,
-          activity.activity_type_id, activity.workspace_id
+          activity.activity_type_id, activity.workspace_id, activity.updated_at
         from crm.activities activity
         join crm.activity_participants subject
           on subject.activity_id = activity.id
@@ -142,7 +145,8 @@ export class PostgresActivityReportRepository
         }::text = 'activity')
         union all
         select note.id, 'note'::text, null::text, null::text, note.body,
-          note.is_favorited, note.created_at, null::uuid, note.workspace_id
+          note.is_favorited, note.created_at, null::uuid, note.workspace_id,
+          note.updated_at
         from crm.notes note
         join crm.people note_person on note_person.id = note.person_id
           and note_person.workspace_id = note.workspace_id
@@ -170,7 +174,8 @@ export class PostgresActivityReportRepository
         coalesce(nullif(activity_type.name, ''), activity_type.translation_key) as activity_type,
         coalesce(participants.value, '[]'::jsonb) as participants,
         coalesce(emotions.value, '[]'::jsonb) as emotions,
-        ${instantColumn("page.timestamp_at")} as timestamp_at
+        ${instantColumn("page.timestamp_at")} as timestamp_at,
+        ${instantColumn("page.updated_at")} as updated_at
       from page
       left join crm.activity_types activity_type
         on activity_type.id = page.activity_type_id

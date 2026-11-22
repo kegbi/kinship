@@ -39,6 +39,8 @@ export type ActivityReportItem =
     readonly kind: "activity";
     readonly participants: readonly ActivityReportParticipant[];
     readonly summary: string;
+    /** The revision an edit or a removal names (MCP-D1). */
+    readonly updatedAt?: string;
   }
   | {
     readonly body: string;
@@ -47,6 +49,8 @@ export type ActivityReportItem =
     readonly isFavorited: boolean;
     readonly kind: "note";
     readonly participants: readonly [ActivityReportParticipant];
+    /** The revision an edit or a removal names (MCP-D1). */
+    readonly updatedAt?: string;
   };
 
 export interface ActivityReportRepository {

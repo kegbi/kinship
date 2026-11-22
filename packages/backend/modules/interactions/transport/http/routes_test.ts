@@ -1,11 +1,16 @@
 import type {
   CommunicationManagement,
+  InteractionChanges,
   InteractionManagement,
 } from "../../public.ts";
 import type { ActivityReport } from "../../../../read-models/activity-report/public.ts";
 import type { TodayInteractions } from "../../../../read-models/today/public.ts";
 import { createInteractionRoutes } from "./routes.ts";
-import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertStatus,
+} from "../../../../testing/assert.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
 import type { ScopedTokenAuthority } from "../../../../../http-kit/session.ts";
 
@@ -14,7 +19,10 @@ const otherPersonId = "00000000-0000-4000-8000-000000000101";
 const requestId = "00000000-0000-4000-8000-000000000800";
 const actor = fixtures.sessionActor({ workspaceName: "Circle" });
 
-type Interactions = InteractionManagement & CommunicationManagement;
+type Interactions =
+  & InteractionManagement
+  & CommunicationManagement
+  & InteractionChanges;
 
 function services(overrides: Partial<Interactions> = {}) {
   const record = {
@@ -70,6 +78,13 @@ function services(overrides: Partial<Interactions> = {}) {
           },
           status: "created",
         }),
+      changeInteraction: () =>
+        Promise.resolve({
+          record: { ...record, updatedAt: "2026-08-17T12:30:00.000000Z" },
+          status: "saved",
+        }),
+      removeInteraction: (_actor, kind, id) =>
+        Promise.resolve({ id, kind, status: "deleted" }),
       ...overrides,
     } as Interactions,
     protectedSessions: { resolve: () => Promise.resolve(actor) },
@@ -690,4 +705,288 @@ Deno.test("history and Today reads admit only their own token grant and never re
     "token report forwards every filter",
   );
   assert(sessionCalls === 0, "a bearer request resolved the cookie");
+});
+
+/** JSON with every object's keys sorted, so key order never decides. */
+function canonical(value: unknown): string {
+  return JSON.stringify(
+    value,
+    (_key, entry) =>
+      entry && typeof entry === "object" && !Array.isArray(entry)
+        ? Object.fromEntries(
+          Object.entries(entry).sort(([left], [right]) =>
+            left.localeCompare(right)
+          ),
+        )
+        : entry,
+  );
+}
+
+const interactionId = "00000000-0000-8000-8000-000000000a01";
+const revision = "2026-08-17T12:30:00.000000Z";
+const CHANGES = [
+  ["note", { body: "Reference", isFavorited: false }],
+  ["activity", {
+    activityTypeId: null,
+    description: null,
+    emotionIds: [],
+    happenedAt: "2026-08-16T18:15:00Z",
+    participantIds: [personId],
+    summary: "Dinner",
+  }],
+  ["call", {
+    calledAt: "2026-08-16T18:15:00Z",
+    contactWasCaller: true,
+    content: null,
+    emotionIds: [requestId],
+  }],
+  ["conversation", {
+    channelTypeId: requestId,
+    contactMethodId: null,
+    happenedAt: "2026-08-16T18:15:00Z",
+    messages: [{
+      content: "Hello",
+      direction: "outbound",
+      writtenAt: "2026-08-16T18:15:00Z",
+    }],
+    title: null,
+  }],
+] as const;
+
+Deno.test("[MCP-D1] edit and delete routes admit interactions:write and forward exactly what was sent", async () => {
+  const changed: unknown[] = [];
+  const removed: unknown[] = [];
+  const scopes: string[] = [];
+  let sessionCalls = 0;
+  const apiTokens: ScopedTokenAuthority<string> = {
+    authenticate: (token, scope) => {
+      scopes.push(scope);
+      return Promise.resolve(
+        token === "writer" && scope === "interactions:write"
+          ? {
+            actor,
+            status: "authenticated" as const,
+            tokenId: "00000000-0000-4000-8000-0000000000aa",
+          }
+          : { status: "invalid" as const },
+      );
+    },
+  };
+  const current = services({
+    changeInteraction: (actor, id, input) => {
+      changed.push({ id, input, tokenId: actor.apiTokenId });
+      return services().interactions.changeInteraction(actor, id, input);
+    },
+    removeInteraction: (actor, kind, id, expected) => {
+      removed.push({ expected, id, kind, tokenId: actor.apiTokenId });
+      return services().interactions.removeInteraction(
+        actor,
+        kind,
+        id,
+        expected,
+      );
+    },
+  });
+  const app = createInteractionRoutes({
+    ...current,
+    apiTokens,
+    protectedSessions: {
+      resolve: () => {
+        sessionCalls++;
+        return Promise.resolve(actor);
+      },
+    },
+  });
+  const bearer = (token: string) => ({
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+  });
+  for (const [kind, fields] of CHANGES) {
+    const path = `/api/v1/interactions/${kind}/${interactionId}`;
+    const edit = await app.request(path, {
+      method: "PATCH",
+      headers: bearer("writer"),
+      body: JSON.stringify({ ...fields, expectedUpdatedAt: revision }),
+    });
+    assertStatus(edit, 200, `${kind} edit with interactions:write`);
+    assert(
+      edit.headers.get("Cache-Control") === "private, no-store",
+      "edit stays private",
+    );
+    assert(
+      (await edit.json()).record.updatedAt === revision,
+      "the new revision is returned",
+    );
+    assert(
+      canonical(changed.at(-1)) === canonical({
+        id: interactionId,
+        input: { ...fields, expectedUpdatedAt: revision, kind },
+        tokenId: "00000000-0000-4000-8000-0000000000aa",
+      }),
+      `${kind} edit forwards nulls and lists and only what was sent: ${
+        JSON.stringify(changed.at(-1))
+      }`,
+    );
+    const removal = await app.request(path, {
+      method: "DELETE",
+      headers: bearer("writer"),
+      body: JSON.stringify({ expectedUpdatedAt: revision }),
+    });
+    assertStatus(removal, 200, `${kind} delete with interactions:write`);
+    assert(
+      JSON.stringify(await removal.json()) ===
+        JSON.stringify({ id: interactionId, kind, status: "deleted" }),
+      `${kind} delete answers what it deleted`,
+    );
+    assert(
+      JSON.stringify(removed.at(-1)) === JSON.stringify({
+        expected: revision,
+        id: interactionId,
+        kind,
+        tokenId: "00000000-0000-4000-8000-0000000000aa",
+      }),
+      `${kind} delete forwards the kind and revision`,
+    );
+
+    // Another grant is refused before the body is read: an unparsable body
+    // still answers 401, never 400.
+    for (const method of ["PATCH", "DELETE"]) {
+      for (const token of ["reader", "capture", "expired"]) {
+        const refused = await app.request(path, {
+          method,
+          headers: { ...bearer(token), cookie: headers.cookie },
+          body: "{not json",
+        });
+        assertStatus(refused, 401, `${method} ${kind} with ${token}`);
+      }
+      // A cookie write needs the exact Origin; with it, the session writes.
+      for (const origin of [undefined, "http://foreign.test"]) {
+        const refused = await app.request(path, {
+          method,
+          headers: {
+            cookie: headers.cookie,
+            "content-type": "application/json",
+            ...(origin ? { origin } : {}),
+          },
+          body: JSON.stringify({ expectedUpdatedAt: revision, ...fields }),
+        });
+        assertStatus(refused, 403, `${method} ${kind} cookie without Origin`);
+      }
+      const cookie = await app.request(path, {
+        method,
+        headers,
+        body: JSON.stringify(
+          method === "PATCH"
+            ? { ...fields, expectedUpdatedAt: revision }
+            : { expectedUpdatedAt: revision },
+        ),
+      });
+      assertStatus(cookie, 200, `${method} ${kind} with a session and Origin`);
+    }
+  }
+  assert(
+    scopes.every((scope) => scope === "interactions:write"),
+    "every change route asks for interactions:write",
+  );
+  assertEquals(
+    sessionCalls,
+    8,
+    "only the Origin-bearing cookie writes resolved a session",
+  );
+  assertEquals(changed.length, 8, "four token and four cookie edits");
+  assertEquals(removed.length, 8, "four token and four cookie deletes");
+});
+
+Deno.test("[MCP-D1] edit and delete routes validate input and map every refusal to a problem", async () => {
+  let calls = 0;
+  const counted = services({
+    changeInteraction: () => {
+      calls++;
+      return Promise.resolve({ status: "stale" });
+    },
+    removeInteraction: () => {
+      calls++;
+      return Promise.resolve({ status: "stale" });
+    },
+  });
+  const app = createInteractionRoutes(counted);
+  const path = `/api/v1/interactions/note/${interactionId}`;
+  for (
+    const [label, method, target, body] of [
+      ["empty edit", "PATCH", path, { expectedUpdatedAt: revision }],
+      ["missing revision", "PATCH", path, { body: "Reference" }],
+      ["unknown field", "PATCH", path, {
+        expectedUpdatedAt: revision,
+        personId,
+      }],
+      ["over-long body", "PATCH", path, {
+        body: "x".repeat(10_001),
+        expectedUpdatedAt: revision,
+      }],
+      ["non-canonical id", "PATCH", "/api/v1/interactions/note/x", {
+        body: "Reference",
+        expectedUpdatedAt: revision,
+      }],
+      ["missing removal revision", "DELETE", path, {}],
+      ["non-canonical removal id", "DELETE", "/api/v1/interactions/call/x", {
+        expectedUpdatedAt: revision,
+      }],
+    ] as const
+  ) {
+    const response = await app.request(target, {
+      method,
+      headers,
+      body: JSON.stringify(body),
+    });
+    assertStatus(response, 400, label);
+    assertEquals(
+      (await response.json()).code,
+      "interaction_change_invalid",
+      label,
+    );
+  }
+  assertEquals(calls, 0, "invalid requests reach no use case");
+
+  for (
+    const [status, httpStatus, code] of [
+      ["stale", 409, "interaction_stale"],
+      ["not-found", 404, "interaction_not_found"],
+      ["archived-write-rejected", 409, "archived_write_rejected"],
+      ["hidden", 403, "interactions_forbidden"],
+      ["forbidden", 403, "interactions_forbidden"],
+      ["validation-error", 400, "validation_failed"],
+    ] as const
+  ) {
+    const result = status === "validation-error"
+      ? { errors: { body: "Too long." }, status }
+      : { status };
+    const refusing = createInteractionRoutes(services({
+      changeInteraction: () => Promise.resolve(result),
+      removeInteraction: () => Promise.resolve(result),
+    }));
+    for (const method of ["PATCH", "DELETE"]) {
+      const response = await refusing.request(path, {
+        method,
+        headers,
+        body: JSON.stringify({ body: "Reference", expectedUpdatedAt: revision })
+          .replace(method === "DELETE" ? '"body":"Reference",' : "", ""),
+      });
+      assertStatus(response, httpStatus, `${method} ${status}`);
+      assertEquals((await response.json()).code, code, `${method} ${status}`);
+    }
+  }
+  const failing = createInteractionRoutes(services({
+    changeInteraction: () => Promise.reject(new Error("database down")),
+    removeInteraction: () => Promise.reject(new Error("database down")),
+  }));
+  for (const method of ["PATCH", "DELETE"]) {
+    const response = await failing.request(path, {
+      method,
+      headers,
+      body: JSON.stringify({ body: "Reference", expectedUpdatedAt: revision })
+        .replace(method === "DELETE" ? '"body":"Reference",' : "", ""),
+    });
+    assertStatus(response, 503, `${method} outage`);
+    assertEquals((await response.json()).code, "interactions_unavailable");
+  }
 });

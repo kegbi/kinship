@@ -11,6 +11,7 @@
  */
 
 import type { CommunicationRecord } from "../domain/communication_rules.ts";
+import type { InteractionKind } from "../domain/interaction_changes.ts";
 import type { InteractionRecord } from "../domain/interaction_rules.ts";
 import type { InteractionActor, InteractionTransaction } from "./context.ts";
 
@@ -44,4 +45,28 @@ export interface CommunicationAudit {
     readonly record: CommunicationRecord;
     readonly transaction: InteractionTransaction;
   }): Promise<void>;
+}
+
+/**
+ * An edit or a removal of a note, an activity, a call, or a conversation
+ * (MCP-D1). The event names which fields changed and whom the record names,
+ * never what it says: no note body, summary, call content, or message text
+ * reaches the audit history.
+ */
+export interface InteractionChangeAuditCommand {
+  readonly action: "delete" | "update";
+  readonly actor: InteractionActor;
+  readonly fields: readonly string[];
+  readonly kind: InteractionKind;
+  readonly occurredAt: Date;
+  readonly participantIds: readonly string[];
+  readonly subjectId: string;
+  readonly transaction: InteractionTransaction;
+}
+
+export interface InteractionChangeAudit {
+  record(command: InteractionChangeAuditCommand): Promise<string>;
+  assertPostcondition(
+    command: InteractionChangeAuditCommand & { readonly auditId: string },
+  ): Promise<void>;
 }

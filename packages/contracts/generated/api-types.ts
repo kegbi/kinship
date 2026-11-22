@@ -263,6 +263,78 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/interactions/activity/{interactionId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Permanently deletes one activity, its participants and emotions, and the journal entry that links it; it leaves the activity report, search, the timeline, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly delete: operations["deleteActivity"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Edits one activity: happenedAt, participantIds (replaces the whole list, every person active in the workspace), summary, activityTypeId, description, and emotionIds (replaces the whole list). Moving it later, or adding people, advances their stay-in-touch cadences as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly patch: operations["updateActivity"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/interactions/call/{interactionId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Permanently deletes one call and its emotions; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly delete: operations["deleteCall"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Edits one call: calledAt, contactWasCaller, content, and emotionIds (replaces the whole list). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly patch: operations["updateCall"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/interactions/conversation/{interactionId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Permanently deletes one conversation and its messages; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly delete: operations["deleteConversation"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Edits one conversation: channelTypeId, contactMethodId (one of the person's contact methods on that channel), happenedAt, title, and messages (replaces every message). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly patch: operations["updateConversation"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/interactions/note/{interactionId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Permanently deletes one note; it leaves the activity report, search, the person's timeline, and Today's favorite notes. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly delete: operations["deleteNote"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Requires a browser session or a personal token with interactions:write. Edits one note: body and isFavorited (favorite notes appear on Today). Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin. */
+        readonly patch: operations["updateNote"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/journal": {
         readonly parameters: {
             readonly query?: never;
@@ -2085,6 +2157,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        readonly ActivityChangeInput: {
+            readonly activityTypeId?: string | null;
+            readonly description?: string | null;
+            readonly emotionIds?: readonly string[];
+            /**
+             * Format: date-time
+             * @description The updatedAt the client last read for this record; a changed record answers 409.
+             */
+            readonly expectedUpdatedAt: string;
+            /** Format: date-time */
+            readonly happenedAt?: string;
+            readonly participantIds?: readonly string[];
+            readonly summary?: string;
+        };
         readonly ActivityInteraction: {
             readonly activityType?: string;
             /** Format: date-time */
@@ -2099,6 +2185,11 @@ export interface components {
             readonly kind: "activity";
             readonly participants: readonly components["schemas"]["InteractionParticipant"][];
             readonly summary: string;
+            /**
+             * Format: date-time
+             * @description The record's revision; send it back as expectedUpdatedAt to edit or delete it.
+             */
+            readonly updatedAt?: string;
         };
         readonly ActivityInteractionInput: {
             /** Format: uuid */
@@ -2407,6 +2498,18 @@ export interface components {
             /** @constant */
             readonly status: "ready";
         };
+        readonly CallChangeInput: {
+            /** Format: date-time */
+            readonly calledAt?: string;
+            readonly contactWasCaller?: boolean;
+            readonly content?: string | null;
+            readonly emotionIds?: readonly string[];
+            /**
+             * Format: date-time
+             * @description The updatedAt the client last read for this record; a changed record answers 409.
+             */
+            readonly expectedUpdatedAt: string;
+        };
         readonly CallInteraction: {
             /** Format: date-time */
             readonly calledAt: string;
@@ -2420,6 +2523,11 @@ export interface components {
             /** @constant */
             readonly kind: "call";
             readonly person: components["schemas"]["InteractionParticipant"];
+            /**
+             * Format: date-time
+             * @description The record's revision; send it back as expectedUpdatedAt to edit or delete it.
+             */
+            readonly updatedAt?: string;
         };
         readonly CallInteractionInput: {
             /** Format: date-time */
@@ -2510,6 +2618,27 @@ export interface components {
         };
         /** @enum {string} */
         readonly ContactMethodKind: "email" | "phone" | "url" | "social" | "im" | "username" | "custom";
+        readonly ConversationChangeInput: {
+            /** Format: uuid */
+            readonly channelTypeId?: string;
+            readonly contactMethodId?: string | null;
+            /**
+             * Format: date-time
+             * @description The updatedAt the client last read for this record; a changed record answers 409.
+             */
+            readonly expectedUpdatedAt: string;
+            /** Format: date-time */
+            readonly happenedAt?: string;
+            /** @description Replaces every message of the conversation; an empty list removes them all. */
+            readonly messages?: readonly {
+                readonly content: string;
+                /** @enum {string} */
+                readonly direction: "inbound" | "outbound";
+                /** Format: date-time */
+                readonly writtenAt: string;
+            }[];
+            readonly title?: string | null;
+        };
         readonly ConversationInteraction: {
             readonly channelType?: components["schemas"]["InteractionOption"];
             readonly contactMethod?: {
@@ -2528,6 +2657,11 @@ export interface components {
             readonly messages: readonly components["schemas"]["CommunicationMessage"][];
             readonly person: components["schemas"]["InteractionParticipant"];
             readonly title?: string;
+            /**
+             * Format: date-time
+             * @description The record's revision; send it back as expectedUpdatedAt to edit or delete it.
+             */
+            readonly updatedAt?: string;
         };
         readonly ConversationInteractionInput: {
             /** Format: uuid */
@@ -3049,6 +3183,14 @@ export interface components {
             /** @constant */
             readonly status: "created";
         };
+        readonly InteractionDeleted: {
+            /** Format: uuid */
+            readonly id: string;
+            /** @enum {string} */
+            readonly kind: "activity" | "call" | "conversation" | "note";
+            /** @constant */
+            readonly status: "deleted";
+        };
         readonly InteractionInput: components["schemas"]["ActivityInteractionInput"] | components["schemas"]["NoteInteractionInput"] | components["schemas"]["CallInteractionInput"] | components["schemas"]["ConversationInteractionInput"];
         readonly InteractionOption: {
             /** Format: uuid */
@@ -3071,6 +3213,18 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly name: string;
+        };
+        readonly InteractionRemovalInput: {
+            /**
+             * Format: date-time
+             * @description The updatedAt the client last read for this record; a changed record answers 409.
+             */
+            readonly expectedUpdatedAt: string;
+        };
+        readonly InteractionSaved: {
+            readonly record: components["schemas"]["Interaction"];
+            /** @constant */
+            readonly status: "saved";
         };
         readonly InvitationAccepted: {
             /** @constant */
@@ -3375,6 +3529,16 @@ export interface components {
             /** @constant */
             readonly next: "/auth/mfa";
         };
+        readonly NoteChangeInput: {
+            readonly body?: string;
+            /**
+             * Format: date-time
+             * @description The updatedAt the client last read for this record; a changed record answers 409.
+             */
+            readonly expectedUpdatedAt: string;
+            /** @description Whether the note is one of Today's favorite notes. */
+            readonly isFavorited?: boolean;
+        };
         readonly NoteInteraction: {
             readonly body: string;
             /** Format: date-time */
@@ -3386,6 +3550,11 @@ export interface components {
             readonly kind: "note";
             readonly person?: components["schemas"]["InteractionParticipant"];
             readonly participants?: readonly components["schemas"]["InteractionParticipant"][];
+            /**
+             * Format: date-time
+             * @description The record's revision; send it back as expectedUpdatedAt to edit or delete it.
+             */
+            readonly updatedAt?: string;
         };
         readonly NoteInteractionInput: {
             readonly body: string;
@@ -6396,6 +6565,758 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["InteractionCreated"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteActivity: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["InteractionRemovalInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Activity deleted at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateActivity: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ActivityChangeInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Activity saved at a new revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionSaved"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteCall: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["InteractionRemovalInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Call deleted at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateCall: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CallChangeInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Call saved at a new revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionSaved"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteConversation: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["InteractionRemovalInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Conversation deleted at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateConversation: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ConversationChangeInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Conversation saved at a new revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionSaved"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteNote: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["InteractionRemovalInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Note deleted at the expected revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateNote: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly interactionId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["NoteChangeInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Note saved at a new revision */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InteractionSaved"];
                 };
             };
             /** @description RFC 9457 problem details */

@@ -8,6 +8,8 @@ import {
 import type {
   ActivityRecord,
   NoteRecord,
+  StoredActivity,
+  StoredNote,
 } from "../../domain/interaction_rules.ts";
 import type { InteractionRepository } from "../../ports/interaction_repository.ts";
 
@@ -22,7 +24,17 @@ export class PostgresInteractionRepository implements InteractionRepository {
   async findRequest(
     command: Parameters<InteractionRepository["findRequest"]>[0],
   ): Promise<Awaited<ReturnType<InteractionRepository["findRequest"]>>> {
-    const database = databaseFromSession(command.transaction);
+    const interaction = await this.findActivity(command) ??
+      await this.findNote(command);
+    return interaction
+      ? { interaction, status: "found" }
+      : { status: "absent" };
+  }
+
+  /** One activity of the workspace, with its revision, or nothing. */
+  async findActivity(
+    command: Parameters<InteractionRepository["findRequest"]>[0],
+  ): Promise<StoredActivity | undefined> {
     const activity = await sql<{
       readonly activity_type_id: string | null;
       readonly created_at: string;
@@ -32,11 +44,13 @@ export class PostgresInteractionRepository implements InteractionRepository {
       readonly happened_at: string;
       readonly participant_ids: readonly string[];
       readonly summary: string;
+      readonly updated_at: string;
     }>`
       select activity.created_by_member_id::text, activity.activity_type_id::text,
         activity.summary, activity.description,
         ${millisecondInstantColumn("activity.happened_at")} as happened_at,
         ${instantColumn("activity.created_at")} as created_at,
+        ${instantColumn("activity.updated_at")} as updated_at,
         coalesce(participant_ids.value, array[]::text[]) as participant_ids,
         coalesce(emotions.value, array[]::text[]) as emotion_ids
       from crm.activities activity
@@ -52,62 +66,70 @@ export class PostgresInteractionRepository implements InteractionRepository {
       ) emotions on true
       where activity.id = ${command.id}::uuid
         and activity.workspace_id = ${command.workspaceId}::uuid
-    `.execute(database);
-    const activityRow = activity.rows[0];
-    if (activityRow) {
-      return {
-        interaction: {
-          ...pickDefined({ activityTypeId: activityRow.activity_type_id }),
-          createdAt: activityRow.created_at,
-          ...pickDefined({
-            createdByMemberId: activityRow.created_by_member_id,
-            description: activityRow.description,
-          }),
-          emotionIds: activityRow.emotion_ids,
-          happenedAt: activityRow.happened_at,
-          id: command.id,
-          kind: "activity",
-          participantIds: activityRow.participant_ids,
-          summary: activityRow.summary,
-        },
-        status: "found",
-      };
-    }
+    `.execute(databaseFromSession(command.transaction));
+    const row = activity.rows[0];
+    return row
+      ? {
+        ...pickDefined({ activityTypeId: row.activity_type_id }),
+        createdAt: row.created_at,
+        ...pickDefined({
+          createdByMemberId: row.created_by_member_id,
+          description: row.description,
+        }),
+        emotionIds: row.emotion_ids,
+        happenedAt: row.happened_at,
+        id: command.id,
+        kind: "activity",
+        participantIds: row.participant_ids,
+        summary: row.summary,
+        updatedAt: row.updated_at,
+      }
+      : undefined;
+  }
+
+  /** One note of the workspace, with its revision, or nothing. */
+  async findNote(
+    command: Parameters<InteractionRepository["findRequest"]>[0],
+  ): Promise<StoredNote | undefined> {
     const note = await sql<{
       readonly body: string;
       readonly created_at: string;
       readonly created_by_member_id: string | null;
       readonly is_favorited: boolean;
       readonly person_id: string;
+      readonly updated_at: string;
     }>`
       select note.created_by_member_id::text,
         note.person_id::text, note.body, note.is_favorited,
-        ${instantColumn("note.created_at")} as created_at
+        ${instantColumn("note.created_at")} as created_at,
+        ${instantColumn("note.updated_at")} as updated_at
       from crm.notes note
       where note.id = ${command.id}::uuid
         and note.workspace_id = ${command.workspaceId}::uuid
-    `.execute(database);
-    const noteRow = note.rows[0];
-    if (!noteRow) return { status: "absent" };
-    return {
-      interaction: {
-        body: noteRow.body,
-        createdAt: noteRow.created_at,
-        ...pickDefined({ createdByMemberId: noteRow.created_by_member_id }),
+    `.execute(databaseFromSession(command.transaction));
+    const row = note.rows[0];
+    return row
+      ? {
+        body: row.body,
+        createdAt: row.created_at,
+        ...pickDefined({ createdByMemberId: row.created_by_member_id }),
         id: command.id,
-        isFavorited: noteRow.is_favorited,
+        isFavorited: row.is_favorited,
         kind: "note",
-        personId: noteRow.person_id,
-      },
-      status: "found",
-    };
+        personId: row.person_id,
+        updatedAt: row.updated_at,
+      }
+      : undefined;
   }
 
   async createActivity(
     command: Parameters<InteractionRepository["createActivity"]>[0],
   ): Promise<ActivityRecord | undefined> {
     const database = databaseFromSession(command.transaction);
-    const inserted = await sql<{ readonly created_at: string }>`
+    const inserted = await sql<{
+      readonly created_at: string;
+      readonly updated_at: string;
+    }>`
       insert into crm.activities (
         id, workspace_id, activity_type_id, summary, description, happened_at,
         created_by_member_id, created_at, updated_at
@@ -117,7 +139,8 @@ export class PostgresInteractionRepository implements InteractionRepository {
         ${command.description ?? null}, ${command.happenedAt},
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt}
       )
-      returning ${instantColumn("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -151,13 +174,17 @@ export class PostgresInteractionRepository implements InteractionRepository {
       kind: "activity",
       participants: command.participants,
       summary: command.summary,
+      updatedAt: row.updated_at,
     };
   }
 
   async createNote(
     command: Parameters<InteractionRepository["createNote"]>[0],
   ): Promise<NoteRecord | undefined> {
-    const result = await sql<{ readonly created_at: string }>`
+    const result = await sql<{
+      readonly created_at: string;
+      readonly updated_at: string;
+    }>`
       insert into crm.notes (
         id, workspace_id, person_id, body, is_favorited, favorited_at,
         created_by_member_id, created_at, updated_at
@@ -167,7 +194,8 @@ export class PostgresInteractionRepository implements InteractionRepository {
         ${command.isFavorited ? command.occurredAt : null},
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt}
       )
-      returning ${instantColumn("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
     return row
@@ -178,6 +206,7 @@ export class PostgresInteractionRepository implements InteractionRepository {
         isFavorited: command.isFavorited,
         kind: "note",
         person: command.person,
+        updatedAt: row.updated_at,
       }
       : undefined;
   }

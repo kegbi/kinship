@@ -53,6 +53,7 @@ import {
   INTEGRATION_PROBLEMS,
 } from "../../packages/backend/modules/integrations/transport/http/routes.ts";
 import {
+  INTERACTION_CHANGE_FAILURES,
   INTERACTION_FAILURES,
   INTERACTION_PROBLEMS,
 } from "../../packages/backend/modules/interactions/transport/http/routes.ts";
@@ -533,6 +534,8 @@ Deno.test("[GAP-020] the refusals interactions.ts answers are unchanged", () => 
       "400 | communication_query_invalid | Invalid communication query | Use a canonical person identifier.",
       "503 | communications_unavailable | Communication unavailable | Saved communication was not changed.",
       "503 | today_favorite_notes_unavailable | Favorite notes unavailable | Other Today regions remain available.",
+      "400 | interaction_change_invalid | Invalid interaction change | Use a canonical interaction identifier, supported fields, and expectedUpdatedAt.",
+      "503 | interactions_unavailable | Interaction unavailable | Nothing was changed. Try again when the service is available.",
       "503 | interactions_unavailable | Interaction unavailable | Nothing was saved. Try again when the service is available.",
       "400 | interaction_request_invalid | Invalid interaction | Use supported interaction fields and canonical identifiers.",
       "400 | interaction_options_query_invalid | Invalid options search | Use bounded searches and opaque cursors.",
@@ -540,6 +543,18 @@ Deno.test("[GAP-020] the refusals interactions.ts answers are unchanged", () => 
       "503 | today_recent_activity_unavailable | Recent activity unavailable | Other Today regions remain available.",
     ].join("\n"),
     "INTERACTION_PROBLEMS",
+  );
+  assertEquals(
+    pinned(INTERACTION_CHANGE_FAILURES),
+    [
+      "archived-write-rejected | 409 | archived_write_rejected | Archived person is read-only | Restore every person this interaction names before changing it.",
+      "forbidden | 403 | interactions_forbidden | Interaction unavailable | Your active workspace membership or profile configuration no longer permits this action.",
+      "hidden | 403 | interactions_forbidden | Interaction unavailable | Your active workspace membership or profile configuration no longer permits this action.",
+      "not-found | 404 | interaction_not_found | Interaction unavailable | The interaction, or a person, activity type, channel, contact method, or emotion it names, does not exist in the active workspace.",
+      "stale | 409 | interaction_stale | Interaction changed | Read the interaction again and retry with its current updatedAt.",
+      "(fallback) | 400 | validation_failed | Invalid interaction change | Review the changed fields and expectedUpdatedAt.",
+    ].join("\n"),
+    "INTERACTION_CHANGE_FAILURES",
   );
 });
 

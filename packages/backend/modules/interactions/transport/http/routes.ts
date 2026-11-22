@@ -1,9 +1,9 @@
 /**
  * Interactions, communication, and the Today regions built on them, over HTTP.
  *
- * One write and six reads. The problem responder, the session cookie, the
- * origin check, and the kernel status map came from `packages/http-kit` (GAP-019,
- * GAP-020).
+ * One capture, an edit and a delete for each of the four kinds (MCP-D1), and
+ * six reads. The problem responder, the session cookie, the origin check, and
+ * the kernel status map came from `packages/http-kit` (GAP-019, GAP-020).
  *
  * `hidden` and `forbidden` answer the same refusal on purpose: a section an
  * administrator turned off and a membership that no longer permits the action
@@ -14,6 +14,9 @@
 import { Hono } from "hono";
 import type {
   CommunicationManagement,
+  InteractionChangeInput,
+  InteractionChanges,
+  InteractionKind,
   InteractionManagement,
   RecordCommunicationInput,
   RecordInteractionInput,
@@ -22,6 +25,10 @@ import type { ActivityReport } from "../../../../read-models/activity-report/pub
 import type { TodayInteractions } from "../../../../read-models/today/public.ts";
 import type { createProtectedSessionCoordinator } from "../../../workspaces/public.ts";
 import {
+  deleteActivity,
+  deleteCall,
+  deleteConversation,
+  deleteNote,
   getActivityReport,
   getActivityReportQuery,
   getTodayFavoriteNotes,
@@ -31,8 +38,21 @@ import {
   listInteractionOptionsQuery,
   listPersonCommunications,
   recordInteraction,
+  updateActivity,
+  updateCall,
+  updateConversation,
+  updateNote,
 } from "../../../../../contracts/routes/interactions.ts";
-import { interactionInput } from "../../../../../contracts/schemas/interactions.ts";
+import {
+  activityChangeInput,
+  callChangeInput,
+  conversationChangeInput,
+  interactionInput,
+  interactionRemovalInput,
+  noteChangeInput,
+} from "../../../../../contracts/schemas/interactions.ts";
+import type { RouteDescriptor } from "../../../../../contracts/registry.ts";
+import type { z } from "zod";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
 import {
@@ -64,7 +84,10 @@ export interface InteractionHttpServices {
   readonly apiTokens?: PersonalTokenAuthority;
   readonly activityReport: ActivityReport;
   readonly browserSecurity: BrowserSecurityPolicy;
-  readonly interactions: InteractionManagement & CommunicationManagement;
+  readonly interactions:
+    & InteractionManagement
+    & CommunicationManagement
+    & InteractionChanges;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly today: TodayInteractions;
 }
@@ -120,6 +143,40 @@ export const INTERACTION_FAILURES: FailureTable = {
 
 const failure = failureResponder(INTERACTION_FAILURES);
 
+/** What a refused edit or delete of a recorded interaction says (MCP-D1). */
+export const INTERACTION_CHANGE_FAILURES: FailureTable = {
+  fallback: {
+    code: "validation_failed",
+    detail: "Review the changed fields and expectedUpdatedAt.",
+    status: 400,
+    title: "Invalid interaction change",
+  },
+  statuses: {
+    "archived-write-rejected": {
+      code: "archived_write_rejected",
+      detail: "Restore every person this interaction names before changing it.",
+      title: "Archived person is read-only",
+    },
+    forbidden: INTERACTION_FAILURES.statuses.forbidden!,
+    hidden: INTERACTION_FAILURES.statuses.hidden!,
+    "not-found": {
+      code: "interaction_not_found",
+      detail:
+        "The interaction, or a person, activity type, channel, contact method, or emotion it names, does not exist in the active workspace.",
+      title: "Interaction unavailable",
+    },
+    stale: {
+      code: "interaction_stale",
+      detail:
+        "Read the interaction again and retry with its current updatedAt.",
+      status: 409,
+      title: "Interaction changed",
+    },
+  },
+};
+
+const changeFailure = failureResponder(INTERACTION_CHANGE_FAILURES);
+
 const INTERACTION_REQUEST_INVALID: ProblemDefinition = {
   code: "interaction_request_invalid",
   detail: "Use supported interaction fields and canonical identifiers.",
@@ -129,6 +186,19 @@ const INTERACTION_REQUEST_INVALID: ProblemDefinition = {
 const INTERACTION_NOT_SAVED: ProblemDefinition = {
   code: "interactions_unavailable",
   detail: "Nothing was saved. Try again when the service is available.",
+  status: 503,
+  title: "Interaction unavailable",
+};
+const INTERACTION_CHANGE_INVALID: ProblemDefinition = {
+  code: "interaction_change_invalid",
+  detail:
+    "Use a canonical interaction identifier, supported fields, and expectedUpdatedAt.",
+  status: 400,
+  title: "Invalid interaction change",
+};
+const INTERACTION_NOT_CHANGED: ProblemDefinition = {
+  code: "interactions_unavailable",
+  detail: "Nothing was changed. Try again when the service is available.",
   status: 503,
   title: "Interaction unavailable",
 };
@@ -195,12 +265,57 @@ export const INTERACTION_PROBLEMS: readonly ProblemDefinition[] = [
   COMMUNICATION_QUERY_INVALID,
   COMMUNICATIONS_UNAVAILABLE,
   FAVORITE_NOTES_UNAVAILABLE,
+  INTERACTION_CHANGE_INVALID,
+  INTERACTION_NOT_CHANGED,
   INTERACTION_NOT_SAVED,
   INTERACTION_REQUEST_INVALID,
   OPTIONS_QUERY_INVALID,
   OPTIONS_UNAVAILABLE,
   RECENT_ACTIVITY_UNAVAILABLE,
 ];
+
+/**
+ * The edit and delete route of each kind, and the body its edit parses. The
+ * kind is fixed by the route, so each operation documents one exact body.
+ */
+const CHANGE_ROUTES: readonly {
+  readonly kind: InteractionKind;
+  readonly remove: RouteDescriptor;
+  readonly schema: z.ZodType<Record<string, unknown>>;
+  readonly update: RouteDescriptor;
+}[] = [
+  {
+    kind: "note",
+    remove: deleteNote,
+    schema: noteChangeInput,
+    update: updateNote,
+  },
+  {
+    kind: "activity",
+    remove: deleteActivity,
+    schema: activityChangeInput,
+    update: updateActivity,
+  },
+  {
+    kind: "call",
+    remove: deleteCall,
+    schema: callChangeInput,
+    update: updateCall,
+  },
+  {
+    kind: "conversation",
+    remove: deleteConversation,
+    schema: conversationChangeInput,
+    update: updateConversation,
+  },
+];
+
+/** The parsed body without the members the client left out. */
+function supplied(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  );
+}
 
 export function createInteractionRoutes(
   services: InteractionHttpServices,
@@ -298,6 +413,50 @@ export function createInteractionRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json(result, 201);
   });
+
+  for (const { kind, remove, schema, update } of CHANGE_ROUTES) {
+    const updateActor = scopedRouteActor(update, tokens);
+    const removeActor = scopedRouteActor(remove, tokens);
+
+    mount(routes, update, session, async (context) => {
+      const actor = await updateActor(context);
+      if (actor instanceof Response) return actor;
+      const id = parseValue(uuid, context.req.param("interactionId"));
+      const input = await parseJsonBody(context, schema);
+      if ("errors" in id || "errors" in input) {
+        return definedProblem(context, INTERACTION_CHANGE_INVALID);
+      }
+      const result = await services.interactions.changeInteraction(
+        actor,
+        id.data,
+        { ...supplied(input.data), kind } as InteractionChangeInput,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, INTERACTION_NOT_CHANGED);
+      if (result.status !== "saved") return changeFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    });
+
+    mount(routes, remove, session, async (context) => {
+      const actor = await removeActor(context);
+      if (actor instanceof Response) return actor;
+      const id = parseValue(uuid, context.req.param("interactionId"));
+      const input = await parseJsonBody(context, interactionRemovalInput);
+      if ("errors" in id || "errors" in input) {
+        return definedProblem(context, INTERACTION_CHANGE_INVALID);
+      }
+      const result = await services.interactions.removeInteraction(
+        actor,
+        kind,
+        id.data,
+        input.data.expectedUpdatedAt,
+      ).catch(() => undefined);
+      if (!result) return definedProblem(context, INTERACTION_NOT_CHANGED);
+      if (result.status !== "deleted") return changeFailure(context, result);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    });
+  }
 
   mount(routes, listCommunicationOptions, session, async (context) => {
     const actor = await communicationOptionsActor(context);

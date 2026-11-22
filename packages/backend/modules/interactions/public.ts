@@ -17,7 +17,19 @@ export type {
   RecordInteractionInput,
   StoredInteraction,
 } from "./domain/interaction_rules.ts";
-export type { CommunicationAudit, InteractionAudit } from "./ports/audit.ts";
+export type {
+  CheckedChange,
+  InteractionChangeInput,
+  InteractionKind,
+  StoredRecord,
+} from "./domain/interaction_changes.ts";
+export type {
+  CommunicationAudit,
+  InteractionAudit,
+  InteractionChangeAudit,
+  InteractionChangeAuditCommand,
+} from "./ports/audit.ts";
+export type { InteractionChangeRepository } from "./ports/interaction_change_repository.ts";
 export type {
   InteractionActor,
   InteractionTransaction,
@@ -36,9 +48,17 @@ export { createCommunicationManagement } from "./application/record_communicatio
 export type { CommunicationManagement } from "./application/record_communication.ts";
 export type { CommunicationDependencies } from "./application/communication_context.ts";
 export type { RecordCommunicationResult } from "./application/communication_writes.ts";
+export { createInteractionChanges } from "./application/interaction_changes.ts";
+export type {
+  ChangeInteractionResult,
+  InteractionChangeDependencies,
+  InteractionChanges,
+  RemoveInteractionResult,
+} from "./application/interaction_changes.ts";
 export {
   communicationAuditFrom,
   interactionAuditFrom,
+  interactionChangeAuditFrom,
 } from "./application/audit_events.ts";
 export type { InteractionImportBoundary } from "./application/import_note_boundary.ts";
 

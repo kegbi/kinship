@@ -9,6 +9,7 @@ import { PostgresInteractionBusinessImportBoundary } from "./adapters/postgres/b
 import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresInteractionPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresCommunicationRepository } from "./adapters/postgres/communication_repository.ts";
+import { PostgresInteractionChangeRepository } from "./adapters/postgres/interaction_change_repository.ts";
 import { PostgresInteractionImportBoundary } from "./adapters/postgres/import_note_boundary.ts";
 import { PostgresInteractionRepository } from "./adapters/postgres/interaction_repository.ts";
 import { PostgresJournalActivityBoundary } from "./adapters/postgres/journal_activity_boundary.ts";
@@ -17,8 +18,10 @@ import { PostgresInteractionWorkspaceLifecycleImpact } from "./adapters/postgres
 import {
   communicationAuditFrom,
   createCommunicationManagement,
+  createInteractionChanges,
   createInteractionManagement,
   interactionAuditFrom,
+  interactionChangeAuditFrom,
   type InteractionRecordedPublisher,
   type InteractionWorkspaceBoundary,
 } from "./public.ts";
@@ -76,6 +79,11 @@ export function composeInteractions(
         ...common,
         audit: communicationAuditFrom(shared.audit),
         repository: new PostgresCommunicationRepository(),
+      }),
+      ...createInteractionChanges({
+        ...common,
+        audit: interactionChangeAuditFrom(shared.audit),
+        repository: new PostgresInteractionChangeRepository(),
       }),
     },
     lifecycleImpact: PostgresInteractionWorkspaceLifecycleImpact,

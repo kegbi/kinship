@@ -340,6 +340,998 @@
         }
       }
     },
+    "/api/v1/interactions/activity/{interactionId}": {
+      "patch": {
+        "operationId": "updateActivity",
+        "description": "Requires a browser session or a personal token with interactions:write. Edits one activity: happenedAt, participantIds (replaces the whole list, every person active in the workspace), summary, activityTypeId, description, and emotionIds (replaces the whole list). Moving it later, or adding people, advances their stay-in-touch cadences as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityChangeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Activity saved at a new revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteActivity",
+        "description": "Requires a browser session or a personal token with interactions:write. Permanently deletes one activity, its participants and emotions, and the journal entry that links it; it leaves the activity report, search, the timeline, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteractionRemovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Activity deleted at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/call/{interactionId}": {
+      "patch": {
+        "operationId": "updateCall",
+        "description": "Requires a browser session or a personal token with interactions:write. Edits one call: calledAt, contactWasCaller, content, and emotionIds (replaces the whole list). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallChangeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Call saved at a new revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCall",
+        "description": "Requires a browser session or a personal token with interactions:write. Permanently deletes one call and its emotions; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteractionRemovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Call deleted at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/conversation/{interactionId}": {
+      "patch": {
+        "operationId": "updateConversation",
+        "description": "Requires a browser session or a personal token with interactions:write. Edits one conversation: channelTypeId, contactMethodId (one of the person's contact methods on that channel), happenedAt, title, and messages (replaces every message). Moving it later advances the person's stay-in-touch cadence as recording it would. Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationChangeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation saved at a new revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteConversation",
+        "description": "Requires a browser session or a personal token with interactions:write. Permanently deletes one conversation and its messages; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteractionRemovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation deleted at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interactions/note/{interactionId}": {
+      "patch": {
+        "operationId": "updateNote",
+        "description": "Requires a browser session or a personal token with interactions:write. Edits one note: body and isFavorited (favorite notes appear on Today). Send only the fields to change: an omitted field stays as stored, null clears an optional one, and at least one field is required. expectedUpdatedAt is the record's updatedAt from getActivityReport or listPersonCommunications (or from the create or a previous edit); a stale revision is refused with 409. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteChangeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Note saved at a new revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteNote",
+        "description": "Requires a browser session or a personal token with interactions:write. Permanently deletes one note; it leaves the activity report, search, the person's timeline, and Today's favorite notes. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteractionRemovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Note deleted at the expected revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/journal": {
       "get": {
         "operationId": "listJournal",
@@ -9522,6 +10514,69 @@
       }
     },
     "schemas": {
+      "ActivityChangeInput": {
+        "type": "object",
+        "properties": {
+          "activityTypeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "emotionIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "participantIds": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "ActivityInteraction": {
         "type": "object",
         "properties": {
@@ -9562,6 +10617,11 @@
           },
           "summary": {
             "type": "string"
+          },
+          "updatedAt": {
+            "description": "The record's revision; send it back as expectedUpdatedAt to edit or delete it.",
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10139,6 +11199,47 @@
         ],
         "additionalProperties": false
       },
+      "CallChangeInput": {
+        "type": "object",
+        "properties": {
+          "calledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contactWasCaller": {
+            "type": "boolean"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "emotionIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "CallInteraction": {
         "type": "object",
         "properties": {
@@ -10172,6 +11273,11 @@
           },
           "person": {
             "$ref": "#/components/schemas/InteractionParticipant"
+          },
+          "updatedAt": {
+            "description": "The record's revision; send it back as expectedUpdatedAt to edit or delete it.",
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10487,6 +11593,83 @@
           "custom"
         ]
       },
+      "ConversationChangeInput": {
+        "type": "object",
+        "properties": {
+          "channelTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contactMethodId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "happenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messages": {
+            "description": "Replaces every message of the conversation; an empty list removes them all.",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10000
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "inbound",
+                    "outbound"
+                  ]
+                },
+                "writtenAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "content",
+                "direction",
+                "writtenAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "ConversationInteraction": {
         "type": "object",
         "properties": {
@@ -10537,6 +11720,11 @@
           },
           "title": {
             "type": "string"
+          },
+          "updatedAt": {
+            "description": "The record's revision; send it back as expectedUpdatedAt to edit or delete it.",
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11656,6 +12844,33 @@
         ],
         "additionalProperties": false
       },
+      "InteractionDeleted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "activity",
+              "call",
+              "conversation",
+              "note"
+            ]
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "InteractionInput": {
         "oneOf": [
           {
@@ -11754,6 +12969,36 @@
         "required": [
           "id",
           "name"
+        ],
+        "additionalProperties": false
+      },
+      "InteractionRemovalInput": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "InteractionSaved": {
+        "type": "object",
+        "properties": {
+          "record": {
+            "$ref": "#/components/schemas/Interaction"
+          },
+          "status": {
+            "const": "saved"
+          }
+        },
+        "required": [
+          "record",
+          "status"
         ],
         "additionalProperties": false
       },
@@ -12307,6 +13552,29 @@
         ],
         "additionalProperties": {}
       },
+      "NoteChangeInput": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The updatedAt the client last read for this record; a changed record answers 409."
+          },
+          "isFavorited": {
+            "description": "Whether the note is one of Today's favorite notes.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "NoteInteraction": {
         "type": "object",
         "properties": {
@@ -12337,6 +13605,11 @@
             "items": {
               "$ref": "#/components/schemas/InteractionParticipant"
             }
+          },
+          "updatedAt": {
+            "description": "The record's revision; send it back as expectedUpdatedAt to edit or delete it.",
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [

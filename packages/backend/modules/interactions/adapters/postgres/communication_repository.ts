@@ -22,6 +22,7 @@ interface CallRow {
   readonly emotion_ids: readonly string[];
   readonly id: string;
   readonly person_id: string;
+  readonly updated_at: string;
 }
 
 interface ConversationRow {
@@ -33,6 +34,7 @@ interface ConversationRow {
   readonly messages: readonly CommunicationMessage[];
   readonly person_id: string;
   readonly title: string | null;
+  readonly updated_at: string;
 }
 
 export class PostgresCommunicationRepository
@@ -47,6 +49,17 @@ export class PostgresCommunicationRepository
   async findRequest(
     command: Parameters<CommunicationRepository["findRequest"]>[0],
   ): Promise<Awaited<ReturnType<CommunicationRepository["findRequest"]>>> {
+    const communication = await this.findCall(command) ??
+      await this.findConversation(command);
+    return communication
+      ? { communication, status: "found" }
+      : { status: "absent" };
+  }
+
+  /** One call of the workspace, with its revision, or nothing. */
+  async findCall(
+    command: Parameters<CommunicationRepository["findRequest"]>[0],
+  ): Promise<StoredCommunication | undefined> {
     const database = databaseFromSession(command.transaction);
     const calls = await sql<CallRow>`
       select call.id::text, call.person_id::text, ${
@@ -54,19 +67,28 @@ export class PostgresCommunicationRepository
     } as called_at,
         call.contact_was_caller, call.content, call.created_by_member_id::text,
         ${instantColumn("call.created_at")} as created_at,
+        ${instantColumn("call.updated_at")} as updated_at,
         coalesce((select array_agg(link.emotion_id::text order by link.emotion_id)
           from crm.call_emotions link where link.call_id = call.id), array[]::text[]) as emotion_ids
       from crm.calls call where call.id = ${command.id}::uuid
         and call.workspace_id = ${command.workspaceId}::uuid
     `.execute(database);
     const call = calls.rows[0];
-    if (call) return { communication: this.storedCall(call), status: "found" };
+    return call ? this.storedCall(call) : undefined;
+  }
+
+  /** One conversation of the workspace, with its revision, or nothing. */
+  async findConversation(
+    command: Parameters<CommunicationRepository["findRequest"]>[0],
+  ): Promise<StoredCommunication | undefined> {
+    const database = databaseFromSession(command.transaction);
     const conversations = await sql<ConversationRow>`
       select thread.id::text, thread.person_id::text, thread.channel_type_id::text,
         thread.contact_method_id::text, ${
       millisecondInstantColumn("thread.happened_at")
     } as happened_at,
         thread.title, ${instantColumn("thread.created_at")} as created_at,
+        ${instantColumn("thread.updated_at")} as updated_at,
         coalesce((select jsonb_agg(jsonb_build_object('id', message.id::text,
           'content', message.content, 'direction', message.direction,
           'writtenAt', ${
@@ -77,9 +99,7 @@ export class PostgresCommunicationRepository
         and thread.workspace_id = ${command.workspaceId}::uuid
     `.execute(database);
     const thread = conversations.rows[0];
-    return thread
-      ? { communication: this.storedConversation(thread), status: "found" }
-      : { status: "absent" };
+    return thread ? this.storedConversation(thread) : undefined;
   }
 
   private storedCall(row: CallRow): StoredCommunication {
@@ -93,6 +113,7 @@ export class PostgresCommunicationRepository
       id: row.id,
       kind: "call",
       personId: row.person_id,
+      updatedAt: row.updated_at,
     };
   }
 
@@ -109,6 +130,7 @@ export class PostgresCommunicationRepository
       messages: row.messages,
       personId: row.person_id,
       ...pickDefined({ title: row.title }),
+      updatedAt: row.updated_at,
     };
   }
 
@@ -116,7 +138,10 @@ export class PostgresCommunicationRepository
     command: Parameters<CommunicationRepository["createCall"]>[0],
   ): Promise<CallRecord | undefined> {
     const database = databaseFromSession(command.transaction);
-    const inserted = await sql<{ readonly created_at: string }>`
+    const inserted = await sql<{
+      readonly created_at: string;
+      readonly updated_at: string;
+    }>`
       insert into crm.calls (id, workspace_id, person_id, called_at, contact_was_caller,
         content, created_by_member_id, created_at, updated_at) values (
         ${command.id}::uuid, ${command.workspaceId}::uuid, ${command.person.id}::uuid,
@@ -124,7 +149,8 @@ export class PostgresCommunicationRepository
       command.content ?? null
     },
         ${command.memberId}::uuid, ${command.occurredAt}, ${command.occurredAt})
-      returning ${instantColumn("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -148,6 +174,7 @@ export class PostgresCommunicationRepository
       id: command.id,
       kind: "call",
       person: command.person,
+      updatedAt: row.updated_at,
     };
   }
 
@@ -155,7 +182,10 @@ export class PostgresCommunicationRepository
     command: Parameters<CommunicationRepository["createConversation"]>[0],
   ): Promise<ConversationRecord | undefined> {
     const database = databaseFromSession(command.transaction);
-    const inserted = await sql<{ readonly created_at: string }>`
+    const inserted = await sql<{
+      readonly created_at: string;
+      readonly updated_at: string;
+    }>`
       insert into crm.conversation_threads (id, workspace_id, person_id, channel_type_id,
         contact_method_id, happened_at, title, created_at, updated_at) values (
         ${command.id}::uuid, ${command.workspaceId}::uuid, ${command.person.id}::uuid,
@@ -165,7 +195,8 @@ export class PostgresCommunicationRepository
         ${command.happenedAt}, ${
       command.title ?? null
     }, ${command.occurredAt}, ${command.occurredAt})
-      returning ${instantColumn("created_at")} as created_at
+      returning ${instantColumn("created_at")} as created_at,
+        ${instantColumn("updated_at")} as updated_at
     `.execute(database);
     const row = inserted.rows[0];
     if (!row) return undefined;
@@ -196,6 +227,7 @@ export class PostgresCommunicationRepository
       messages: command.messages,
       person: command.person,
       ...pickDefined({ title: command.title }),
+      updatedAt: row.updated_at,
     };
   }
 
@@ -210,6 +242,7 @@ export class PostgresCommunicationRepository
       } as called_at,
           call.contact_was_caller, call.content, call.created_by_member_id::text,
           ${instantColumn("call.created_at")} as created_at,
+        ${instantColumn("call.updated_at")} as updated_at,
           coalesce((select array_agg(link.emotion_id::text order by link.emotion_id)
             from crm.call_emotions link where link.call_id = call.id), array[]::text[]) as emotion_ids
         from crm.calls call
@@ -223,6 +256,7 @@ export class PostgresCommunicationRepository
           thread.channel_type_id::text, thread.contact_method_id::text,
           ${millisecondInstantColumn("thread.happened_at")} as happened_at,
           thread.title, ${instantColumn("thread.created_at")} as created_at,
+        ${instantColumn("thread.updated_at")} as updated_at,
           coalesce((select jsonb_agg(jsonb_build_object('id', message.id::text,
             'content', message.content, 'direction', message.direction,
             'writtenAt', ${millisecondInstantColumn("message.written_at")})

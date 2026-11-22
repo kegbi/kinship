@@ -57,6 +57,8 @@ export interface ActivityRecord {
   readonly kind: "activity";
   readonly participants: readonly InteractionParticipant[];
   readonly summary: string;
+  /** The revision an edit or a removal names (MCP-D1). */
+  readonly updatedAt?: string;
 }
 
 export interface NoteRecord {
@@ -66,6 +68,8 @@ export interface NoteRecord {
   readonly isFavorited: boolean;
   readonly kind: "note";
   readonly person: InteractionParticipant;
+  /** The revision an edit or a removal names (MCP-D1). */
+  readonly updatedAt?: string;
 }
 
 export type InteractionRecord = ActivityRecord | NoteRecord;
@@ -82,6 +86,7 @@ export interface StoredActivity {
   readonly kind: "activity";
   readonly participantIds: readonly string[];
   readonly summary: string;
+  readonly updatedAt?: string;
 }
 
 /** A note as the repository keeps it. */
@@ -93,6 +98,7 @@ export interface StoredNote {
   readonly isFavorited: boolean;
   readonly kind: "note";
   readonly personId: string;
+  readonly updatedAt?: string;
 }
 
 export type StoredInteraction = StoredActivity | StoredNote;
@@ -349,6 +355,7 @@ export function replayedActivity(
     kind: "activity",
     participants: participants.map(({ id, name }) => ({ id, name })),
     summary: stored.summary,
+    ...(stored.updatedAt ? { updatedAt: stored.updatedAt } : {}),
   };
 }
 
@@ -365,5 +372,6 @@ export function replayedNote(
     isFavorited: stored.isFavorited,
     kind: "note",
     person: { id: person.id, name: person.name },
+    ...(stored.updatedAt ? { updatedAt: stored.updatedAt } : {}),
   };
 }

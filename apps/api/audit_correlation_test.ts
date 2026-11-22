@@ -25,6 +25,7 @@ import { davAuditFrom } from "../../packages/backend/modules/integrations/public
 import {
   communicationAuditFrom,
   interactionAuditFrom,
+  interactionChangeAuditFrom,
 } from "../../packages/backend/modules/interactions/public.ts";
 import {
   journalAuditFrom,
@@ -163,6 +164,20 @@ const WRITERS: ReadonlyArray<readonly [string, Writer]> = [
         record: { id: SUBJECT, kind: "call", person: { id: PERSON } },
         transaction,
       } as never),
+  ],
+  [
+    "interactions change",
+    (recorder, actor) =>
+      interactionChangeAuditFrom(recorder).record({
+        action: "update",
+        actor,
+        fields: ["body"],
+        kind: "note",
+        occurredAt: OCCURRED_AT,
+        participantIds: [PERSON],
+        subjectId: SUBJECT,
+        transaction,
+      }),
   ],
   ["journal item", (recorder, actor) =>
     journalAuditFrom(recorder).record({

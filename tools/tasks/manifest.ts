@@ -949,7 +949,9 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/import-export/application/export_management_test.ts",
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_changes_test.ts",
         "packages/backend/modules/interactions/application/record_interaction_test.ts",
+        "packages/backend/modules/interactions/application/interaction_changes_test.ts",
         "packages/backend/modules/journal/domain/cursors_test.ts",
         "packages/backend/modules/journal/domain/journal_rules_test.ts",
         "packages/backend/modules/journal/domain/life_event_rules_test.ts",
@@ -1435,17 +1437,25 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_changes_test.ts",
         "packages/backend/modules/interactions/application/record_interaction_test.ts",
+        "packages/backend/modules/interactions/application/interaction_changes_test.ts",
       ],
     },
-    // MCP-B4: personal tokens on interaction history and its Today regions.
-    integration: ["tests/integration/api_tokens_interactions_postgres_test.ts"],
+    integration: [
+      // MCP-B4: personal tokens on interaction history and its Today regions.
+      "tests/integration/api_tokens_interactions_postgres_test.ts",
+      // MCP-D1: editing and deleting notes, activities, calls, and
+      // conversations, by session and by an interactions:write token.
+      "tests/integration/interactions_edit_delete_postgres_test.ts",
+    ],
     coverage: {
       directory: "interactions-domain",
       threshold: 95,
       tests: [
         "packages/backend/modules/interactions/domain/communication_rules_test.ts",
         "packages/backend/modules/interactions/domain/interaction_rules_test.ts",
+        "packages/backend/modules/interactions/domain/interaction_changes_test.ts",
       ],
       include: ["packages/backend/modules/interactions/domain"],
     },

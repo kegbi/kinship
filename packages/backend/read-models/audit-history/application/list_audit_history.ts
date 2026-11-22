@@ -74,6 +74,31 @@ const CHANGE_ACTION_VALUES = new Set([
 ]);
 const COMMUNICATION_KIND_VALUES = new Set(["call", "conversation"]);
 const INTERACTION_KIND_VALUES = new Set(["activity", "note"]);
+/** What an edit or a removal of an interaction may name (MCP-D1). */
+const INTERACTION_CHANGE_ACTION_VALUES = new Set(["delete", "update"]);
+const INTERACTION_CHANGE_KIND_VALUES = new Set([
+  "activity",
+  "call",
+  "conversation",
+  "note",
+]);
+const INTERACTION_CHANGE_FIELD_VALUES = new Set([
+  "activityTypeId",
+  "body",
+  "calledAt",
+  "channelTypeId",
+  "contactMethodId",
+  "contactWasCaller",
+  "content",
+  "description",
+  "emotionIds",
+  "happenedAt",
+  "isFavorited",
+  "messages",
+  "participantIds",
+  "summary",
+  "title",
+]);
 const LIFECYCLE_VALUES = new Set(["active", "archived", "deleted"]);
 const PROFILE_ACTION_VALUES = new Set(["delete", "save"]);
 const TASK_ACTION_VALUES = new Set([
@@ -228,8 +253,31 @@ function sanitizeDetail(
     }
     if (key === "personId") return uuidDetail(value);
   }
-  if (eventAction === "interactions.interaction-or-note-created") {
-    if (key === "kind") return enumDetail(value, INTERACTION_KIND_VALUES);
+  if (eventAction === "interactions.interaction-changed") {
+    if (key === "action") {
+      return enumDetail(value, INTERACTION_CHANGE_ACTION_VALUES);
+    }
+    if (key === "kind") {
+      return enumDetail(value, INTERACTION_CHANGE_KIND_VALUES);
+    }
+    if (key === "fields") {
+      return Array.isArray(value) && value.length <= 20 &&
+          value.every((entry) =>
+            typeof entry === "string" &&
+            INTERACTION_CHANGE_FIELD_VALUES.has(entry)
+          )
+        ? { accepted: true, redacted: false, value: [...value] as string[] }
+        : { accepted: false, redacted: true };
+    }
+  }
+  if (
+    eventAction === "interactions.interaction-or-note-created" ||
+    eventAction === "interactions.interaction-changed"
+  ) {
+    if (
+      eventAction === "interactions.interaction-or-note-created" &&
+      key === "kind"
+    ) return enumDetail(value, INTERACTION_KIND_VALUES);
     if (key === "participantIds") {
       return Array.isArray(value) && value.length <= 50 &&
           value.every((entry) =>

@@ -96,6 +96,7 @@ import {
 } from "../../packages/backend/modules/interactions/composition.ts";
 import type {
   CommunicationManagement,
+  InteractionChanges,
   InteractionManagement,
 } from "../../packages/backend/modules/interactions/public.ts";
 import {
@@ -283,7 +284,10 @@ export interface ApiServices extends RegistrationHttpServices {
   readonly notifications?: Notifications;
   readonly invitations?: InvitationHttpServices["invitations"];
   readonly importantDates?: ImportantDateManagement;
-  readonly interactions?: InteractionManagement & CommunicationManagement;
+  readonly interactions?:
+    & InteractionManagement
+    & CommunicationManagement
+    & InteractionChanges;
   readonly profileFacts?: PeopleHttpServices["profileFacts"];
   readonly passwordRecovery?: AuthenticationHttpServices["passwordRecovery"];
   readonly personalLifecycle?:
