@@ -5,11 +5,13 @@ import {
   isInstant,
   isoDate,
   isoTime,
+  isUuid,
   moneyAmount,
   optionalText,
   uuid,
 } from "./validation.ts";
 import { assert } from "../testing/assert.ts";
+import { deterministicId } from "./ids.ts";
 
 Deno.test("[GAP-006] optional text trims and drops the empty value", () => {
   assert(optionalText("  Ada  ") === "Ada", "surrounding space is removed");
@@ -78,8 +80,8 @@ Deno.test("[GAP-006] uuids are canonicalised and derived versions are accepted",
     "a deterministically derived identifier is accepted",
   );
   assert(
-    uuid("00000000-0000-6000-8000-000000000001") === undefined,
-    "an unsupported version is rejected",
+    uuid("00000000-0000-9000-8000-000000000001") === undefined,
+    "a version RFC 9562 does not define is rejected",
   );
   assert(
     uuid("00000000-0000-4000-c000-000000000001") === undefined,
@@ -87,6 +89,59 @@ Deno.test("[GAP-006] uuids are canonicalised and derived versions are accepted",
   );
   assert(uuid("not-a-uuid") === undefined, "a non-uuid is rejected");
   assert(uuid(undefined) === undefined, "absent stays absent");
+});
+
+Deno.test("[MCP-R3] every RFC 9562 version is a uuid, derived ones included", async () => {
+  const derived = await deterministicId("kinship.people.external-id.v1", [
+    "00000000-0000-4000-8000-000000000003",
+    "11111111-2222-4333-8444-555555555555",
+  ]);
+  for (
+    const [value, why] of [
+      ["6ba7b810-9dad-11d1-80b4-00c04fd430c8", "a time-based v1"],
+      ["00000000-0000-2000-8000-000000000001", "a v2"],
+      ["6fa459ea-ee8a-3ca4-894e-db77e160355e", "a name-based v3"],
+      ["00000000-0000-4000-8000-000000000001", "a random v4"],
+      ["886313e1-3b8a-5372-9b90-0c9aee199e5d", "a name-based v5"],
+      ["1ec9414c-232a-6b00-b3c8-9e6bdeced846", "a reordered-time v6"],
+      ["017f22e2-79b0-7cc3-98c4-dc0c0c07398f", "a Unix-time v7"],
+      [derived, "the v8 identifier deterministicId derives"],
+      [derived.toUpperCase(), "an upper-case spelling"],
+      ["017F22E2-79b0-7Cc3-98C4-dc0c0c07398f", "a mixed-case spelling"],
+    ] as const
+  ) {
+    assert(isUuid(value), `${why} is accepted: ${value}`);
+    assert(uuid(value) === value.toLowerCase(), `${why} is canonicalised`);
+  }
+  assert(derived[14] === "8", "the derived identifier really is version 8");
+  for (
+    const [value, why] of [
+      ["00000000-0000-0000-0000-000000000000", "the nil uuid"],
+      ["ffffffff-ffff-ffff-ffff-ffffffffffff", "the max uuid"],
+      ["FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "the upper-case max uuid"],
+      ["00000000-0000-0000-8000-000000000001", "version 0"],
+      ["00000000-0000-9000-8000-000000000001", "version 9"],
+      ["00000000-0000-f000-8000-000000000001", "version 15"],
+      ["00000000-0000-4000-0000-000000000001", "the NCS variant"],
+      ["00000000-0000-4000-7000-000000000001", "the NCS variant's top"],
+      ["00000000-0000-4000-c000-000000000001", "the Microsoft variant"],
+      ["00000000-0000-4000-e000-000000000001", "the reserved variant"],
+      ["00000000000040008000000000000001", "a uuid without hyphens"],
+      ["{00000000-0000-4000-8000-000000000001}", "a braced uuid"],
+      [" 00000000-0000-4000-8000-000000000001", "a padded uuid"],
+      ["00000000-0000-4000-8000-000000000001\n", "a trailing newline"],
+      ["00000000-0000-4000-8000-00000000000g", "a non-hex digit"],
+      ["00000000-0000-4000-8000-0000000000001", "an overlong uuid"],
+      ["urn:uuid:00000000-0000-4000-8000-000000000001", "a URN"],
+      ["", "the empty string"],
+    ] as const
+  ) {
+    assert(!isUuid(value), `${why} is refused: ${JSON.stringify(value)}`);
+    assert(uuid(value) === undefined, `${why} has no canonical form`);
+  }
+  for (const value of [undefined, null, 42, {}, ["x"]]) {
+    assert(!isUuid(value), `a ${typeof value} is not a uuid`);
+  }
 });
 
 Deno.test("[GAP-006] calendar dates and wall-clock times keep one shape", () => {

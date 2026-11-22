@@ -10,8 +10,14 @@
 
 import type { Instant } from "./clock.ts";
 
+/**
+ * Every RFC 9562 version, 1 through 8, with the RFC variant: the versions
+ * `z.uuid()` accepts at the API boundary. Version 8 is the one
+ * `deterministicId` derives, so a check that stops at 5 refuses the records
+ * a retry-safe create made (MCP-R3).
+ */
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_TIME = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
 const CURRENCY_CODE = /^[A-Z]{3}$/;
@@ -62,13 +68,22 @@ export function instant(value: string | undefined): Instant | undefined {
 }
 
 /**
- * The lower-case canonical form of a UUID, or `undefined`. Version 8 is
- * accepted alongside 1 through 5 because `deterministicId` derives it.
+ * True when the value is a UUID in any case, of any RFC 9562 version.
+ *
+ * This is the one definition of "a UUID" for backend code; nothing should
+ * spell its own version range. The nil and max UUIDs are refused although
+ * `z.uuid()` admits them: RFC 9562 reserves both as sentinels, no record is
+ * ever stored under either, and a check here asks whether the text could name
+ * a record. A request naming one therefore gets the same refusal it always
+ * did.
  */
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
+
+/** The lower-case canonical form of a UUID ({@link isUuid}), or `undefined`. */
 export function uuid(value: string | undefined): string | undefined {
-  return value !== undefined && UUID.test(value)
-    ? value.toLowerCase()
-    : undefined;
+  return isUuid(value) ? value.toLowerCase() : undefined;
 }
 
 /** A `YYYY-MM-DD` calendar date, or `undefined`. */

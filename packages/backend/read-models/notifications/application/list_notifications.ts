@@ -12,6 +12,7 @@
 
 import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 import {
   actorMayRead,
   type ActorRevalidation,
@@ -58,9 +59,6 @@ export type ListNotificationsResult =
     readonly unreadCount: number;
   };
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function base64Url(value: string): string {
   return btoa(value).replaceAll("+", "-").replaceAll("/", "_").replace(
     /=+$/,
@@ -81,7 +79,7 @@ function decodeCursor(value: string): NotificationPosition | undefined {
     const at = readThroughInstant(cursor.at);
     if (
       cursor.version !== 1 || !at || typeof cursor.id !== "string" ||
-      !UUID_PATTERN.test(cursor.id)
+      !isUuid(cursor.id)
     ) return undefined;
     return { at, id: cursor.id };
   } catch {

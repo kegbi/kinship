@@ -1038,6 +1038,87 @@ Deno.test("[AUD-G1] the TLS listener speaks HTTP/2 and the gateway hides its ver
   );
 });
 
+/**
+ * The label `map $uri $kinship_route_template` gives a path: an exact string
+ * entry, else the first regular expression in file order, else the default.
+ */
+function routeLabel(config: string, uri: string): string | undefined {
+  const entries = nginxMap(config, "$kinship_route_template").split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .map((line) => {
+      const [, quotedKey, bareKey, label] =
+        line.match(/^(?:"([^"]+)"|(\S+))\s+"([^"]*)";$/) ?? [];
+      return { key: quotedKey ?? bareKey ?? "", label };
+    });
+  const exact = entries.find(({ key }) => key === uri);
+  if (exact) return exact.label;
+  const regex = entries.find(({ key }) =>
+    key.startsWith("~") && new RegExp(key.slice(1)).test(uri)
+  );
+  return regex?.label ?? entries.find(({ key }) => key === "default")?.label;
+}
+
+Deno.test("[MCP-R3] every UUID-keyed page and its route label admit an identifier of any UUID version", async () => {
+  // People a DAV sync or a retry-safe create made, and journal posts created
+  // with a requestId, carry the version 8 identifier the backend derives; a
+  // version 1-5 location sent their pages to the 404 page.
+  const gateway = await Deno.readTextFile(
+    new URL("../gateway/nginx.conf", import.meta.url),
+  );
+  const locations = nginxLocations(gateway);
+  const pages = [
+    ["/app/people/{id}", "person-profile-shell"],
+    ["/app/people/{id}/", "person-profile-shell"],
+    ["/app/people/{id}/audit", "person-audit-shell"],
+    ["/app/people/{id}/activity-report", "activity-report-shell"],
+    ["/app/journal/{id}", "journal-item-shell"],
+    ["/app/settings/import/{id}/", "import-report-shell"],
+  ] as const;
+  const accepted = [
+    "393de041-31ca-47c3-95d4-ae37b7473e2e",
+    "8e5213b9-8cee-8024-8aed-45319d1b7d1b",
+    "8E5213B9-8CEE-8024-8AED-45319D1B7D1B",
+    "017f22e2-79b0-7cc3-98c4-dc0c0c07398f",
+  ];
+  const refused = [
+    "not-a-uuid",
+    "8e5213b9-8cee-9024-8aed-45319d1b7d1b",
+    "8e5213b9-8cee-0024-8aed-45319d1b7d1b",
+    "8e5213b9-8cee-8024-caed-45319d1b7d1b",
+    "8e5213b9-8cee-8024-8aed-45319d1b7d1",
+  ];
+  for (const [template, shell] of pages) {
+    const tryFiles = `try_files /internal/${shell}/index.html =404;`;
+    for (const id of accepted) {
+      const path = template.replace("{id}", id);
+      assert(
+        servingLocation(locations, path)?.body.includes(tryFiles),
+        `${path} is served from the ${shell}`,
+      );
+    }
+    for (const id of refused) {
+      const path = template.replace("{id}", id);
+      assert(
+        !servingLocation(locations, path)?.body.includes(tryFiles),
+        `${path} names no record and is not served from the ${shell}`,
+      );
+    }
+  }
+  for (const id of accepted) {
+    assert(
+      routeLabel(gateway, `/app/people/${id}`) === "/app/people/:personId",
+      `/app/people/${id} is logged under its route template`,
+    );
+  }
+  for (const id of refused) {
+    assert(
+      routeLabel(gateway, `/app/people/${id}`) === "static-or-unmatched",
+      `/app/people/${id} is not logged as a person page`,
+    );
+  }
+});
+
 Deno.test("[AUD-G1] a person file up to its limit passes the gateway and a larger one is a problem", async () => {
   const gateway = await Deno.readTextFile(
     new URL("../gateway/nginx.conf", import.meta.url),

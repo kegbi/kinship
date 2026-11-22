@@ -17,12 +17,11 @@
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
 import type { ValidationErrors } from "../../../shared-kernel/result.ts";
-import { boundedText } from "../../../shared-kernel/validation.ts";
+import { boundedText, isUuid } from "../../../shared-kernel/validation.ts";
 import {
   canonicalUuid,
   type InteractionOption,
   type InteractionParticipant,
-  isClientUuid,
 } from "./interaction_rules.ts";
 
 /** One message inside a conversation, once it has its derived identifier. */
@@ -291,10 +290,10 @@ export function validateCommunication(
   input: RecordCommunicationInput,
 ): ValidationErrors {
   const errors: Record<string, string> = {};
-  if (!isClientUuid(input.requestId)) {
+  if (!isUuid(input.requestId)) {
     errors.requestId = "Use a canonical request identifier.";
   }
-  if (!isClientUuid(input.personId)) {
+  if (!isUuid(input.personId)) {
     errors.personId = "Choose one person from this workspace.";
   }
   const happenedAt = new Date(
@@ -308,14 +307,14 @@ export function validateCommunication(
       errors.content = "Details must be at most 10,000 characters.";
     }
     const emotions = canonicalEmotionIds(input.emotionIds);
-    if (emotions.length > 20 || emotions.some((id) => !isClientUuid(id))) {
+    if (emotions.length > 20 || emotions.some((id) => !isUuid(id))) {
       errors.emotionIds = "Choose at most 20 active emotions.";
     }
   } else {
-    if (!isClientUuid(input.channelTypeId)) {
+    if (!isUuid(input.channelTypeId)) {
       errors.channelTypeId = "Choose an active channel.";
     }
-    if (input.contactMethodId && !isClientUuid(input.contactMethodId)) {
+    if (input.contactMethodId && !isUuid(input.contactMethodId)) {
       errors.contactMethodId = "Choose a contact method for this person.";
     }
     if (input.title !== undefined && !boundedText(input.title, 500)) {

@@ -3,10 +3,8 @@ import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { personDisplayNameSql } from "../../../../platform/postgres/person_display.ts";
 import { UNNAMED_PERSON } from "../../../../modules/people/public.ts";
+import { isUuid } from "../../../../shared-kernel/validation.ts";
 import type { TodayRecentPeopleRepository } from "../../application/get_today_recent_people.ts";
-
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function idsFromUiState(value: unknown, limit: number): readonly string[] {
   if (typeof value === "string") {
@@ -25,7 +23,7 @@ function idsFromUiState(value: unknown, limit: number): readonly string[] {
   const ids: string[] = [];
   for (let index = 0; index < candidate.length && ids.length < limit; index++) {
     const value = candidate[index];
-    if (typeof value !== "string" || !UUID.test(value)) continue;
+    if (!isUuid(value)) continue;
     const id = value.toLowerCase();
     if (seen.has(id)) continue;
     seen.add(id);

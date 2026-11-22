@@ -1,5 +1,6 @@
 import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 import {
   actorMayRead,
   type ActorRevalidation,
@@ -67,9 +68,6 @@ interface EncodedTagCursor extends PeopleTagOptionCursor {
   readonly version: 1;
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function normalizeSearch(value: string | undefined): string {
   return value?.trim().replace(/\s+/g, " ").slice(0, 200).toLowerCase() ?? "";
 }
@@ -104,7 +102,7 @@ function decodeCursor(value: string): EncodedTagCursor | undefined {
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const cursor = parsed as Partial<EncodedTagCursor>;
     if (
-      cursor.version !== 1 || !UUID_PATTERN.test(cursor.id ?? "") ||
+      cursor.version !== 1 || !isUuid(cursor.id ?? "") ||
       typeof cursor.primary !== "string" || typeof cursor.search !== "string"
     ) {
       return undefined;
@@ -158,7 +156,7 @@ export function createPeopleTagOptions(dependencies: {
       if (!await readable(actor)) return { status: "forbidden" };
       const search = normalizeSearch(input.search);
       if (
-        input.selectedTagId && !UUID_PATTERN.test(input.selectedTagId)
+        input.selectedTagId && !isUuid(input.selectedTagId)
       ) {
         return { status: "invalid-input" };
       }

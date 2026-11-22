@@ -9,6 +9,8 @@
  * time field one format.
  */
 
+import { isUuid } from "../../lib/uuid.ts";
+
 /**
  * Sent on `globalThis` with the saved record as `detail` whenever Quick
  * capture records an activity or a note. Today, the activity report, and the
@@ -49,8 +51,5 @@ export function profilePersonId(
 
 /** `value` as a lower-case canonical UUID, or `undefined` when it is not one. */
 export function canonicalUuid(value: string): string | undefined {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(value)
-    ? value.toLowerCase()
-    : undefined;
+  return isUuid(value) ? value.toLowerCase() : undefined;
 }

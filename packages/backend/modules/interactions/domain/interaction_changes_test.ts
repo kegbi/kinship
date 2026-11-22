@@ -170,6 +170,31 @@ Deno.test("[MCP-D1] an activity edit canonicalises lists, clears nullable fields
   );
 });
 
+Deno.test("[MCP-R3] an activity edit may name a person whose identifier was derived", () => {
+  // `id` is itself a derived (version 8) identifier, as a person a DAV sync
+  // or a retry-safe create made would carry.
+  const derived = "8e5213b9-8cee-8024-8aed-45319d1b7d1b";
+  assertEquals(
+    checked(validateInteractionChange(id, {
+      expectedUpdatedAt: revision,
+      kind: "activity",
+      participantIds: [ada, derived.toUpperCase()],
+    })).change,
+    {
+      kind: "activity",
+      participantIds: [ada.toLowerCase(), derived].sort(),
+    },
+  );
+  assertEquals(
+    Object.keys(errors(validateInteractionChange(id, {
+      expectedUpdatedAt: revision,
+      kind: "activity",
+      participantIds: [ada, "00000000-0000-9000-8000-000000000001"],
+    }))),
+    ["participantIds"],
+  );
+});
+
 Deno.test("[MCP-D1] a call edit keeps its bounds and may clear its content", () => {
   assertEquals(
     checked(validateInteractionChange(id, {

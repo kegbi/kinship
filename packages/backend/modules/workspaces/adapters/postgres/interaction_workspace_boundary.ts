@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
+import { isUuid } from "../../../../shared-kernel/validation.ts";
 import type {
   InteractionWorkspaceBoundary,
   WorkspaceInteractionOption,
@@ -19,9 +20,6 @@ interface OptionCursor {
   readonly name: string;
   readonly sortOrder: number;
 }
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function encodeCursor(
   cursor: OptionCursor,
@@ -51,7 +49,7 @@ function decodeCursor(
     if (
       parsed.version !== 1 || parsed.workspaceId !== workspaceId ||
       parsed.kind !== kind || parsed.search !== search ||
-      typeof parsed.id !== "string" || !UUID_PATTERN.test(parsed.id) ||
+      !isUuid(parsed.id) ||
       typeof parsed.name !== "string" ||
       !Number.isSafeInteger(parsed.sortOrder)
     ) return undefined;

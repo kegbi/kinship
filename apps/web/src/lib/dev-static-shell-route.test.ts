@@ -33,3 +33,37 @@ describe("Astro development static-shell routing", () => {
     expect(resolveDevStaticShellRoute(requested)).toBeUndefined();
   });
 });
+
+describe("MCP-R3 static-shell routing for derived identifiers", () => {
+  // People DAV sync or a retry-safe create made, and journal posts created
+  // with a requestId, carry the version 8 identifier the backend derives.
+  const derived = "8e5213b9-8cee-8024-8aed-45319d1b7d1b";
+  const timeOrdered = "017F22E2-79B0-7CC3-98C4-DC0C0C07398F";
+
+  it.each([derived, timeOrdered])("maps every page keyed by %s", (id) => {
+    expect(resolveDevStaticShellRoute(`/app/people/${id}`)).toBe(
+      "/internal/person-profile-shell",
+    );
+    expect(resolveDevStaticShellRoute(`/app/people/${id}/audit`)).toBe(
+      "/internal/person-audit-shell",
+    );
+    expect(resolveDevStaticShellRoute(`/app/people/${id}/activity-report`))
+      .toBe("/internal/activity-report-shell");
+    expect(resolveDevStaticShellRoute(`/app/journal/${id}`)).toBe(
+      "/internal/journal-item-shell",
+    );
+    expect(resolveDevStaticShellRoute(`/app/settings/import/${id}`)).toBe(
+      "/internal/import-report-shell",
+    );
+  });
+
+  it.each([
+    "8e5213b9-8cee-9024-8aed-45319d1b7d1b",
+    "8e5213b9-8cee-0024-8aed-45319d1b7d1b",
+    "8e5213b9-8cee-8024-caed-45319d1b7d1b",
+    "8e5213b9-8cee-8024-8aed-45319d1b7d1",
+  ])("still refuses the malformed identifier %s", (id) => {
+    expect(resolveDevStaticShellRoute(`/app/people/${id}`)).toBeUndefined();
+    expect(resolveDevStaticShellRoute(`/app/journal/${id}`)).toBeUndefined();
+  });
+});

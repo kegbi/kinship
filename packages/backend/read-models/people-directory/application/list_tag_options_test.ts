@@ -114,3 +114,43 @@ Deno.test("PEOPLE-002 tag options reject malformed or mismatched input before pe
     "authorization denial propagates without options",
   );
 });
+
+Deno.test("[MCP-R3] tag options select and page past identifiers of any UUID version", async () => {
+  // No tag is derived today; the check still follows the one kernel
+  // definition rather than a version range of its own.
+  const derived = (index: number): PeopleTagOptionRecord => {
+    const id = `8e5213b9-8cee-8024-8aed-${String(index).padStart(12, "0")}`;
+    return { ...option(index), cursor: { ...option(index).cursor, id }, id };
+  };
+  const calls: Parameters<PeopleTagOptionsRepository["listTagOptions"]>[0][] =
+    [];
+  const tags = createPeopleTagOptions({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      listTagOptions(command) {
+        calls.push(command);
+        return Promise.resolve({
+          options: Array.from(
+            { length: PEOPLE_TAG_OPTION_PAGE_SIZE + 1 },
+            (_, index) => derived(index + 1),
+          ),
+          selected: derived(30),
+          status: "ready",
+        });
+      },
+    },
+  });
+  const first = await tags.list(actor, { selectedTagId: derived(30).id });
+  assert(
+    first.status === "ready" && first.selected?.id === derived(30).id &&
+      first.nextCursor,
+    "a derived selected tag is not invalid input",
+  );
+  const second = await tags.list(actor, { cursor: first.nextCursor });
+  assert(
+    second.status === "ready" &&
+      calls[1]?.after?.id === derived(PEOPLE_TAG_OPTION_PAGE_SIZE).id,
+    "a cursor ending on a derived tag resumes",
+  );
+});

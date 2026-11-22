@@ -1,5 +1,6 @@
 import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 import {
   actorMayRead,
   type ActorRevalidation,
@@ -163,9 +164,6 @@ interface EncodedCursor extends Required<PeopleDirectoryCursor> {
   readonly version: 2;
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function normalize(input: ListPeopleInput): PeopleDirectoryCriteria {
   const search = input.search?.trim().slice(0, 200) ?? "";
   const limit = Math.max(1, Math.min(50, Math.trunc(input.limit ?? 20)));
@@ -217,8 +215,8 @@ function decodeCursor(value: string): EncodedCursor | undefined {
     if (
       cursor.version !== 2 ||
       (cursor.excludePersonId !== null &&
-        !UUID_PATTERN.test(cursor.excludePersonId ?? "")) ||
-      !UUID_PATTERN.test(cursor.id ?? "") ||
+        !isUuid(cursor.excludePersonId ?? "")) ||
+      !isUuid(cursor.id ?? "") ||
       typeof cursor.primary !== "string" ||
       typeof cursor.secondary !== "string" ||
       typeof cursor.starred !== "boolean" ||
@@ -227,7 +225,7 @@ function decodeCursor(value: string): EncodedCursor | undefined {
       (cursor.lifecycle !== "active" && cursor.lifecycle !== "archived") ||
       typeof cursor.search !== "string" ||
       typeof cursor.sort !== "string" || !SORTS.has(cursor.sort) ||
-      (cursor.tagId !== null && !UUID_PATTERN.test(cursor.tagId ?? ""))
+      (cursor.tagId !== null && !isUuid(cursor.tagId ?? ""))
     ) {
       return undefined;
     }

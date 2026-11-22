@@ -17,8 +17,13 @@ import type {
   TodayReminders,
 } from "./types.ts";
 
+/**
+ * Every RFC 9562 version, as `z.uuid()` and the backend's `isUuid` accept: a
+ * person a DAV sync or a retry-safe create made carries a derived version 8
+ * identifier, and a time-ordered one is as much a person's id as a random one.
+ */
 const todayReminderUuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const todayRfc3339Instant =
   /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))$/;

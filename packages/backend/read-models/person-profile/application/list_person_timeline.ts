@@ -1,5 +1,6 @@
 import type { TransactionScope } from "../../../shared-kernel/transaction.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 import type {
   PersonLifeEventPrecision,
   PersonProfileActor,
@@ -13,9 +14,6 @@ import type {
   InteractionOption,
   InteractionParticipant,
 } from "../../../modules/interactions/public.ts";
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type PersonTimelineKind =
   | "activity"
@@ -114,7 +112,7 @@ export function createPersonTimeline(dependencies: {
             decoded.workspaceId !== actor.workspaceId ||
             decoded.personId !== personId ||
             decoded.kind !== (input.kind ?? null) ||
-            typeof decoded.id !== "string" || !UUID_PATTERN.test(decoded.id) ||
+            typeof decoded.id !== "string" || !isUuid(decoded.id) ||
             typeof decoded.timestamp !== "string" ||
             !Number.isFinite(Date.parse(decoded.timestamp))
           ) return { status: "stale-cursor" as const };

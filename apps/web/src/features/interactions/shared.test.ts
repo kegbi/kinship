@@ -34,5 +34,9 @@ describe("interaction helpers", () => {
   it("canonicalizes only a real UUID", () => {
     expect(canonicalUuid(id.toUpperCase())).toBe(id);
     expect(canonicalUuid("not-a-uuid")).toBeUndefined();
+    const derived = "8e5213b9-8cee-8024-8aed-45319d1b7d1b";
+    expect(canonicalUuid(derived.toUpperCase())).toBe(derived);
+    expect(canonicalUuid("8e5213b9-8cee-9024-8aed-45319d1b7d1b"))
+      .toBeUndefined();
   });
 });

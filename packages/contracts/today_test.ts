@@ -146,6 +146,27 @@ Deno.test("[GAP-022] the Today guards accept the responses the API sends", () =>
   );
 });
 
+Deno.test("[MCP-R3] the Today guards accept a person id of any UUID version", () => {
+  const ids = [
+    "8e5213b9-8cee-8024-8aed-45319d1b7d1b",
+    "017f22e2-79b0-7cc3-98c4-dc0c0c07398f",
+    "1ec9414c-232a-6b00-b3c8-9e6bdeced846",
+  ];
+  const people = ids.map((id) => ({ ...PERSON, id }));
+  assert(
+    parseTodayRecentPeople({ people, status: "ready" }).people.length === 3,
+    "derived and time-ordered person ids pass",
+  );
+  assertThrows(
+    () =>
+      parseTodayRecentPeople({
+        people: [{ ...PERSON, id: "11111111-1111-9111-8111-111111111111" }],
+        status: "ready",
+      }),
+    "a version RFC 9562 does not define is refused",
+  );
+});
+
 Deno.test("[GAP-022] the Today guards refuse a response that drifted", () => {
   for (
     const [reason, feed] of [

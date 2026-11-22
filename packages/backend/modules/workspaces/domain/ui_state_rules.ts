@@ -18,10 +18,12 @@
  * otherwise look like it worked.
  *
  * Recent people are capped at eight, de-duplicated, lower-cased, and refused
- * unless they are ordinary identifiers. The pattern excludes version 8 on
- * purpose: those are the identifiers the backend derives for itself, and a
- * list of recently viewed people is a list of rows somebody actually opened.
+ * unless they are identifiers. Every UUID version counts: a person a DAV sync
+ * or a retry-safe create made carries the version 8 identifier the backend
+ * derives, and somebody opens that person's page like any other (MCP-R3).
  */
+
+import { uuid } from "../../../shared-kernel/validation.ts";
 
 /** The tabs a person's page can be left on. */
 export type PersonWorkspaceView =
@@ -55,9 +57,6 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 /** The most recently viewed people a membership remembers. */
 export const RECENT_PEOPLE_LIMIT = 8;
-
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -174,7 +173,7 @@ export function mergedUiState(
 
 /** A person identifier as the list stores it, or nothing. */
 export function canonicalPersonId(value: string): string | undefined {
-  return UUID.test(value) ? value.toLowerCase() : undefined;
+  return uuid(value);
 }
 
 /** The stored list, cleaned: known identifiers, no repeats, at most eight. */

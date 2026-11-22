@@ -16,7 +16,7 @@
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
 import type { ValidationErrors } from "../../../shared-kernel/result.ts";
-import { boundedText } from "../../../shared-kernel/validation.ts";
+import { boundedText, isUuid } from "../../../shared-kernel/validation.ts";
 
 /**
  * A person an interaction names, as the people module summarised them.
@@ -122,25 +122,9 @@ export type RecordInteractionInput =
     readonly requestId: string;
   };
 
-/**
- * The identifiers this module accepts from a client.
- *
- * Version 8 is deliberately absent: a derived identifier is a version 8 UUID,
- * so refusing one here keeps a caller from presenting a derived identifier as
- * its own request. The shared kernel's `uuid` accepts version 8 because it
- * also reads identifiers this module derived, which is the opposite job.
- */
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** The lower-case form of an identifier that already passed the pattern. */
+/** The lower-case form of an identifier that already passed `isUuid`. */
 export function canonicalUuid(value: string): string {
   return value.toLowerCase();
-}
-
-/** True when the text is an identifier a client may name. */
-export function isClientUuid(value: string): boolean {
-  return UUID_PATTERN.test(value);
 }
 
 /**
@@ -213,13 +197,13 @@ export function validateInteraction(
   input: RecordInteractionInput,
 ): InteractionValidation {
   const errors: Record<string, string> = {};
-  if (!isClientUuid(input.requestId)) {
+  if (!isUuid(input.requestId)) {
     errors.requestId = "Use a canonical request identifier.";
   }
   if (input.kind === "note") {
     const body = boundedText(input.body, 10_000);
     if (!body) errors.body = "Write a note of at most 10,000 characters.";
-    if (!isClientUuid(input.personId)) {
+    if (!isUuid(input.personId)) {
       errors.personId = "Choose one person from this workspace.";
     }
     return Object.keys(errors).length > 0 ? { errors } : {
@@ -246,7 +230,7 @@ export function validateInteraction(
   ].sort();
   if (
     input.participantIds.length === 0 || input.participantIds.length > 50 ||
-    participantIds.some((id) => !isClientUuid(id))
+    participantIds.some((id) => !isUuid(id))
   ) {
     errors.participantIds = "Choose between 1 and 50 valid people.";
   }
@@ -254,11 +238,11 @@ export function validateInteraction(
   const emotionIds = [...new Set(rawEmotions.map(canonicalUuid))].sort();
   if (
     rawEmotions.length > 20 ||
-    emotionIds.some((id) => !isClientUuid(id))
+    emotionIds.some((id) => !isUuid(id))
   ) {
     errors.emotionIds = "Choose at most 20 active emotions.";
   }
-  if (input.activityTypeId && !isClientUuid(input.activityTypeId)) {
+  if (input.activityTypeId && !isUuid(input.activityTypeId)) {
     errors.activityTypeId = "Choose an active activity type.";
   }
   return Object.keys(errors).length > 0 ? { errors } : {

@@ -910,6 +910,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/domain/identity_rules_test.ts",
         "packages/backend/modules/identity/adapters/crypto/argon2id_test.ts",
         "packages/backend/modules/identity/adapters/crypto/totp_test.ts",
+        "packages/backend/modules/identity/adapters/postgres/authentication_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
         "packages/backend/modules/integrations/domain/dav_rules_test.ts",
         "packages/backend/modules/integrations/domain/ical_test.ts",
@@ -2120,6 +2121,7 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/identity/domain/identity_rules_test.ts",
         "packages/backend/modules/identity/adapters/crypto/argon2id_test.ts",
         "packages/backend/modules/identity/adapters/crypto/totp_test.ts",
+        "packages/backend/modules/identity/adapters/postgres/authentication_test.ts",
         "packages/backend/modules/identity/application/password_recovery_test.ts",
         // Retention (AUD-A2).
         "packages/backend/modules/identity/application/authentication_retention_test.ts",
@@ -2284,6 +2286,8 @@ export const MODULES: readonly TaskModule[] = [
         "tools/pipeline_contract_test.ts",
         "tools/dependency_audit_gate_test.ts",
         "tools/source_hygiene_test.ts",
+        // MCP-R3: no production UUID check narrows the accepted versions.
+        "tools/uuid_version_contract_test.ts",
         "tools/architecture/check_boundaries_test.ts",
         "tools/product/flow_traceability_test.ts",
       ],
@@ -2312,6 +2316,7 @@ export const MODULES: readonly TaskModule[] = [
           "packages",
           "tools",
           "tests",
+          "gateway",
         ],
       },
     },

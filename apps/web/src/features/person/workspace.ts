@@ -29,6 +29,7 @@ import {
   updateCachedSessionUiState,
 } from "../../lib/workspace-context.ts";
 import { mountUnsavedChangesGuard } from "../../lib/unsaved-changes.ts";
+import { UUID_SOURCE } from "../../lib/uuid.ts";
 import {
   type FilterZone,
   filterZone,
@@ -556,9 +557,10 @@ function heading(): HTMLElement | undefined {
     undefined;
 }
 
+const PERSON_PATH = new RegExp(`^/app/people/(${UUID_SOURCE})/?$`);
+
 function personId(): string | undefined {
-  return /^\/app\/people\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/?$/i
-    .exec(globalThis.location.pathname)?.[1];
+  return PERSON_PATH.exec(globalThis.location.pathname)?.[1];
 }
 
 function renderState(profile: ProfileElements, state: ProfileState): void {

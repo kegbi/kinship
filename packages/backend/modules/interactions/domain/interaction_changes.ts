@@ -18,6 +18,7 @@ import type { ValidationErrors } from "../../../shared-kernel/result.ts";
 import {
   boundedText,
   instant,
+  isUuid,
   uuid,
 } from "../../../shared-kernel/validation.ts";
 import {
@@ -26,11 +27,7 @@ import {
   type MessageValue,
   type StoredCommunication,
 } from "./communication_rules.ts";
-import {
-  canonicalUuid,
-  isClientUuid,
-  type StoredInteraction,
-} from "./interaction_rules.ts";
+import { canonicalUuid, type StoredInteraction } from "./interaction_rules.ts";
 
 /** The four kinds of record a change can name. */
 export type InteractionKind = "activity" | "call" | "conversation" | "note";
@@ -144,7 +141,7 @@ function emotions(
 ): readonly string[] | undefined {
   if (value === undefined) return undefined;
   const ids = canonicalEmotionIds(value);
-  if (value.length > 20 || ids.some((entry) => !isClientUuid(entry))) {
+  if (value.length > 20 || ids.some((entry) => !isUuid(entry))) {
     errors.emotionIds = "Choose at most 20 active emotions.";
   }
   return ids;
@@ -172,7 +169,7 @@ function nullableId(
   message: string,
 ): string | null | undefined {
   if (value === undefined || value === null) return value;
-  if (!isClientUuid(value)) errors[field] = message;
+  if (!isUuid(value)) errors[field] = message;
   return canonicalUuid(value);
 }
 
@@ -226,7 +223,7 @@ function checkChange(
         if (
           input.participantIds.length === 0 ||
           input.participantIds.length > 50 ||
-          participantIds.some((entry) => !isClientUuid(entry))
+          participantIds.some((entry) => !isUuid(entry))
         ) errors.participantIds = "Choose between 1 and 50 valid people.";
       }
       return definedOnly({
@@ -266,7 +263,7 @@ function checkChange(
       });
     case "conversation": {
       if (
-        input.channelTypeId !== undefined && !isClientUuid(input.channelTypeId)
+        input.channelTypeId !== undefined && !isUuid(input.channelTypeId)
       ) errors.channelTypeId = "Choose an active channel.";
       let messages: readonly MessageValue[] | undefined;
       if (input.messages !== undefined) {

@@ -436,3 +436,52 @@ Deno.test("SEARCH-001 directory hands the repository a search's name forms and f
   assertEquals(calls[1]?.nameForms, []);
   assertEquals(calls[1]?.nameFold, []);
 });
+
+Deno.test("[MCP-R3] the directory pages past, excludes, filters by, and selects people whose identifiers were derived", async () => {
+  // DAV-synced people and people created with a `requestId` carry the
+  // version 8 identifier `deterministicId` derives; a page ending on one
+  // used to emit a cursor the next request refused as stale.
+  const derived = (suffix: string) => `8e5213b9-8cee-8024-8aed-${suffix}`;
+  const lastOnPage = derived("000000000001");
+  const excluded = derived("000000000002");
+  const tagId = derived("000000000003");
+  const selectedId = derived("000000000004");
+  const people = [record(1), { ...record(2), id: lastOnPage }, record(3)]
+    .map((entry) => ({ ...entry, cursor: { ...entry.cursor, id: entry.id } }));
+  const calls: Parameters<PeopleDirectoryRepository["list"]>[0][] = [];
+  const directory = createPeopleDirectory({
+    actors: { revalidate: () => Promise.resolve("active" as const) },
+    transaction: { run: (work) => work({ opaque: undefined }) },
+    repository: {
+      findSelected: ({ personId }) =>
+        Promise.resolve(
+          personId === selectedId
+            ? {
+              ...record(4),
+              cursor: { ...record(4).cursor, id: selectedId },
+              id: selectedId,
+            }
+            : undefined,
+        ),
+      list(command) {
+        calls.push(command);
+        return Promise.resolve({ people, status: "ready" });
+      },
+    },
+  });
+  const criteria = { excludePersonId: excluded, limit: 2, tagId };
+  const first = await directory.list(actor, {
+    ...criteria,
+    selectedPersonId: selectedId,
+  });
+  assert(first.status === "ready" && first.nextCursor, "the page has more");
+  assertEquals(first.selected?.id, selectedId);
+  const second = await directory.list(actor, {
+    ...criteria,
+    cursor: first.nextCursor,
+  });
+  assertEquals(second.status, "ready", "the cursor is not refused");
+  assertEquals(calls[1]?.after?.id, lastOnPage);
+  assertEquals(calls[1]?.excludePersonId, excluded);
+  assertEquals(calls[1]?.tagId, tagId);
+});

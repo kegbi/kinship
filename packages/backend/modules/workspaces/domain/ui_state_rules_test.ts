@@ -85,10 +85,23 @@ Deno.test("[GAP-018] a save merges rather than replaces", () => {
 Deno.test("[GAP-018] a person identifier is canonicalised, or refused", () => {
   assertEquals(canonicalPersonId(PERSON(1).toUpperCase()), PERSON(1));
   assertEquals(canonicalPersonId("not a uuid"), undefined);
+});
+
+Deno.test("[MCP-R3] a person whose identifier was derived is remembered", () => {
+  // A DAV-synced person, or one created with a `requestId`, carries the
+  // version 8 identifier `deterministicId` derives.
+  const derived = "8e5213b9-8cee-8024-8aed-45319d1b7d1b";
+  assertEquals(canonicalPersonId(derived.toUpperCase()), derived);
+  assertEquals(recentPersonIds([derived, PERSON(1)]), [derived, PERSON(1)]);
   assertEquals(
-    canonicalPersonId("11111111-1111-8111-8111-111111111111"),
+    storedRecentPersonIds({ recentPersonIds: [derived] }),
+    [derived],
+  );
+  assertEquals(withRecentPerson({}, derived), { recentPersonIds: [derived] });
+  assertEquals(
+    canonicalPersonId("11111111-1111-9111-8111-111111111111"),
     undefined,
-    "a derived identifier is not a person somebody opened",
+    "a version RFC 9562 does not define is still refused",
   );
 });
 

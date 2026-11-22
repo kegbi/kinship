@@ -1,10 +1,10 @@
 import { assert, assertEquals } from "../../../testing/assert.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
 import {
   canonicalUuid,
   type CheckedInteraction,
   deriveInteractionId,
   expectedInteraction,
-  isClientUuid,
   matchesExpected,
   type RecordInteractionInput,
   replayedActivity,
@@ -111,18 +111,36 @@ Deno.test("[GAP-017] the aggregate identifier a request derives is fixed for all
   );
 });
 
-Deno.test("[GAP-017] a derived identifier is not an identifier a client may name", () => {
-  assert(isClientUuid(requestId), "a version 4 identifier is a client's");
-  assert(
-    !isClientUuid(interactionId),
-    "the version 8 identifier this module derives is refused as an input",
+Deno.test("[MCP-R3] a note and an activity name a person whose identifier was derived", async () => {
+  // A person a DAV sync or a retry-safe create made carries a version 8
+  // identifier; recording for them answered "Choose one person" (MCP-R3).
+  // The people module's derivation of a person created with a `requestId`.
+  const derived = await deterministicId("kinship.people.external-id.v1", [
+    workspaceId,
+    requestId,
+  ]);
+  assert(derived[14] === "8", "the person identifier is a derived one");
+  const note = validateInteraction(noteInput({ personId: derived }));
+  assert(!("errors" in note), `the note is valid: ${JSON.stringify(note)}`);
+  assertEquals(note.participantIds, [derived]);
+  const activity = validateInteraction(
+    activityInput({ participantIds: [personA, derived.toUpperCase()] }),
   );
-  assert(!isClientUuid("not-a-uuid"), "nonsense is refused");
+  assert(!("errors" in activity), "the activity is valid");
+  assertEquals(activity.participantIds, [personA, derived].sort());
+  const retried = validateInteraction(noteInput({ requestId: interactionId }));
   assert(
-    isClientUuid(requestId.toUpperCase()),
-    "case is a spelling, not a difference",
+    !("errors" in retried),
+    "a request identifier of any version is the client's own key",
   );
+});
+
+Deno.test("[GAP-017] case is a spelling of an identifier, not a difference", () => {
   assertEquals(canonicalUuid(requestId.toUpperCase()), requestId);
+  assertEquals(
+    validateInteraction(noteInput({ personId: "not-a-uuid" })),
+    { errors: { personId: "Choose one person from this workspace." } },
+  );
 });
 
 Deno.test("[GAP-017] a note needs a body, a person, and a request identifier", () => {

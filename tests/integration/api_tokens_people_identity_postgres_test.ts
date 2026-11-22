@@ -994,6 +994,154 @@ Deno.test("[MCP-D4] PostgreSQL a deleted person is never resurrected by a replay
   );
 });
 
+Deno.test("[MCP-R3] PostgreSQL a person created with a requestId can be recorded for, related, starred, viewed, and listed", async () => {
+  // A retry-safe create derives the person's version 8 identifier; every
+  // path below used to refuse it with a version 1-5 check (MCP-R3).
+  const own = await owner("Derived");
+  const created = expect(
+    await browser(own, "/api/v1/people", "POST", {
+      familyName: "Derived",
+      givenName: "Aaron",
+      isPartial: false,
+      requestId: crypto.randomUUID(),
+    }),
+    201,
+    "a person is created with a request identifier",
+  );
+  const derived = created.body.person.id as string;
+  assertEquals(derived[14], "8", "the person's identifier is a derived one");
+  const beth = await person(own, "Beth");
+  await person(own, "Cara");
+  const channelTypeId = crypto.randomUUID();
+  await sql`insert into crm.contact_method_types (id, workspace_id, name)
+    values (${channelTypeId}, ${own.workspaceId}, 'Derived email')`;
+
+  const recorded = (input: Record<string, unknown>, label: string) =>
+    browser(own, "/api/v1/interactions", "POST", {
+      ...input,
+      requestId: crypto.randomUUID(),
+    }).then((result) => expect(result, 201, label));
+  const note = await recorded(
+    { body: "Met at the library", kind: "note", personId: derived },
+    "a note is recorded for the derived person",
+  );
+  const activity = await recorded({
+    happenedAt: "2026-11-20T18:00:00.000Z",
+    kind: "activity",
+    participantIds: [beth],
+    summary: "Dinner",
+  }, "an activity is recorded");
+  expect(
+    await browser(
+      own,
+      `/api/v1/interactions/activity/${activity.body.record.id}`,
+      "PATCH",
+      {
+        expectedUpdatedAt: activity.body.record.updatedAt,
+        participantIds: [beth, derived],
+      },
+    ),
+    200,
+    "an activity is edited to name the derived person as a participant",
+  );
+  await recorded({
+    happenedAt: "2026-11-20T19:00:00.000Z",
+    kind: "activity",
+    participantIds: [derived, beth],
+    summary: "Concert",
+  }, "an activity is recorded with the derived person as a participant");
+  await recorded({
+    calledAt: "2026-11-20T20:00:00.000Z",
+    contactWasCaller: true,
+    kind: "call",
+    personId: derived,
+  }, "a call is recorded for the derived person");
+  await recorded({
+    channelTypeId,
+    happenedAt: "2026-11-20T21:00:00.000Z",
+    kind: "conversation",
+    messages: [{
+      content: "Hello",
+      direction: "outbound",
+      writtenAt: "2026-11-20T21:00:00.000Z",
+    }],
+    personId: derived,
+  }, "a conversation is recorded for the derived person");
+  assert(note.body.record.id, "the note has an identifier");
+
+  const types = expect(
+    await browser(own, "/api/v1/relationship-types"),
+    200,
+    "relationship types are listed",
+  );
+  expect(
+    await browser(own, `/api/v1/people/${derived}/relationships`, "POST", {
+      relationshipTypeId: types.body.options[0].id,
+      targetPersonId: beth,
+    }),
+    201,
+    "the derived person is related to another",
+  );
+  expect(
+    await browser(own, `/api/v1/people/${beth}/relationships`, "POST", {
+      relationshipTypeId: types.body.options[0].id,
+      targetPersonId: derived,
+    }),
+    201,
+    "another person is related to the derived person",
+  );
+  expect(
+    await browser(own, `/api/v1/people/${derived}/star`, "PUT"),
+    200,
+    "the derived person is starred",
+  );
+  expect(
+    await browser(own, `/api/v1/people/${derived}/view`, "POST"),
+    200,
+    "a view of the derived person is recorded",
+  );
+  const recent = expect(
+    await browser(own, "/api/v1/today/recent-people"),
+    200,
+    "Today lists recent people",
+  );
+  assertEquals(
+    recent.body.people.map((entry: { id: string }) => entry.id),
+    [derived],
+    "Today's recent people include the derived person",
+  );
+
+  const first = expect(
+    await browser(own, `/api/v1/people?limit=1&selectedPersonId=${derived}`),
+    200,
+    "the directory selects the derived person",
+  );
+  assertEquals(first.body.selected?.id, derived, "the selection is hydrated");
+  assertEquals(first.body.people[0].id, derived, "the first page ends on it");
+  const second = expect(
+    await browser(
+      own,
+      `/api/v1/people?limit=1&selectedPersonId=${derived}&cursor=${first.body.nextCursor}`,
+    ),
+    200,
+    "a cursor ending on the derived person resumes",
+  );
+  assertEquals(second.body.people[0].id, beth, "the next page follows it");
+  const excluding = expect(
+    await browser(own, `/api/v1/people?limit=1&excludePersonId=${derived}`),
+    200,
+    "the directory excludes the derived person",
+  );
+  expect(
+    await browser(
+      own,
+      `/api/v1/people?limit=1&excludePersonId=${derived}&cursor=${excluding.body.nextCursor}`,
+    ),
+    200,
+    "a cursor excluding the derived person resumes",
+  );
+});
+
 Deno.test({
   name: "close the people-identity token fixture",
   sanitizeOps: false,

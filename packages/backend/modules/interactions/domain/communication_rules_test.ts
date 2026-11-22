@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "../../../testing/assert.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
 import {
   callRecord,
   canonicalEmotionIds,
@@ -53,6 +54,26 @@ function conversationInput(
     ...overrides,
   };
 }
+
+Deno.test("[MCP-R3] a call and a conversation name a person whose identifier was derived", async () => {
+  // The people module's derivation of a person created with a `requestId`.
+  const derived = await deterministicId("kinship.people.external-id.v1", [
+    workspaceId,
+    requestId,
+  ]);
+  assert(derived[14] === "8", "the person identifier is a derived one");
+  assertEquals(validateCommunication(callInput({ personId: derived })), {});
+  assertEquals(
+    validateCommunication(
+      conversationInput({ personId: derived.toUpperCase() }),
+    ),
+    {},
+  );
+  assertEquals(
+    validateCommunication(callInput({ personId: "not-a-uuid" })),
+    { personId: "Choose one person from this workspace." },
+  );
+});
 
 function storedCall(overrides: Partial<StoredCall> = {}): StoredCall {
   return {

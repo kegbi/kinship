@@ -1,6 +1,7 @@
 import { type Kysely, sql } from "kysely";
 import type { Clock } from "../../../../shared-kernel/clock.ts";
 import type { IdGenerator } from "../../../../shared-kernel/ids.ts";
+import { isUuid } from "../../../../shared-kernel/validation.ts";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import type {
@@ -76,9 +77,7 @@ export class PostgresIdentityAuthentication
         command.subject.startsWith("user:")
       ? command.subject.slice("user:".length)
       : undefined;
-    const mfaUserId = candidateMfaUserId &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-          .test(candidateMfaUserId)
+    const mfaUserId = isUuid(candidateMfaUserId)
       ? candidateMfaUserId
       : "00000000-0000-0000-0000-000000000000";
     const result = await sql<{ readonly user_id: string }>`

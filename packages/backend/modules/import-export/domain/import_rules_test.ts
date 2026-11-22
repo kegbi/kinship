@@ -91,6 +91,25 @@ Deno.test("[GAP-018] a contact becomes a staging row with the identifiers the ca
   );
 });
 
+Deno.test("[MCP-R3] a source identifier of any UUID version is staged, derived ones included", () => {
+  // This backend's own portable export writes `uuid: person.id`, and a
+  // person a DAV sync or a retry-safe create made has a derived version 8
+  // identifier; refusing it refused the whole re-import of such a workspace.
+  for (
+    const uuid of [
+      "2A5B6C7D-8E9F-8A1B-9C2D-3E4F5A6B7C8D",
+      "017f22e2-79b0-7cc3-98c4-dc0c0c07398f",
+      "1ec9414c-232a-6b00-b3c8-9e6bdeced846",
+    ]
+  ) {
+    assertEquals(
+      staged([{ first_name: "Ada", id: 1, uuid }])[0]?.sourceUuid,
+      uuid.toLowerCase(),
+      `${uuid} is a source identity`,
+    );
+  }
+});
+
 Deno.test("[GAP-018] the snapshot keeps what the source said, and the row keeps what it meant", () => {
   const [contact] = staged([{ first_name: "Ada", id: 1, password: "hunter2" }]);
   assert(contact, "one contact staged");
@@ -145,11 +164,11 @@ Deno.test("[GAP-018] one unusable contact makes the whole source unusable", () =
         uuid: "not-a-uuid",
       }],
       [
-        "a version 8 uuid, which only this backend derives",
+        "a uuid of a version RFC 9562 does not define",
         {
           id: 1,
           first_name: "A",
-          uuid: "2a5b6c7d-8e9f-8a1b-9c2d-3e4f5a6b7c8d",
+          uuid: "2a5b6c7d-8e9f-9a1b-9c2d-3e4f5a6b7c8d",
         },
       ],
       ["a deleted_at that is not text", {

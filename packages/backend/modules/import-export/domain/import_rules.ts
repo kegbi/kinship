@@ -11,14 +11,17 @@ import type { BusinessEntity } from "./business_entities.ts";
  * contact becomes, and the commit decides what a staged contact becomes once
  * the repository has said which rows survive.
  *
- * The source identifier rule is the one place this module keeps a pattern of
- * its own rather than calling the shared kernel's `uuid`. The kernel accepts
- * version 8 because `deterministicId` derives it; a Monica export never
- * contains one, and accepting it here would let a crafted export claim an
- * identifier the backend itself derives.
+ * A source identifier is any UUID the shared kernel accepts, version 8
+ * included (MCP-R3): this module's own portable export writes `uuid` as the
+ * person's id, and a person a DAV sync or a retry-safe create made carries a
+ * derived version 8 one. The source identifier is only ever compared with
+ * the source identifiers of this workspace's earlier imports, never with a
+ * person's id, so an export naming a derived identifier claims nothing a
+ * random one could not.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 import type { CsvPreview, ImportedContact } from "./contact_import.ts";
 import { canonicalJson, sha256Hex } from "./formats/canonical.ts";
 import {
@@ -33,10 +36,6 @@ import {
   textValue,
   validOptionalBoolean,
 } from "./formats/monica_source.ts";
-
-/** A source identifier, refusing the version the backend derives itself. */
-const SOURCE_UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** What a dry run counts, and what it tells the member about each count. */
 export interface ImportReport {
@@ -377,7 +376,7 @@ export function stageContacts(
       !validOptionalBoolean(contact.is_partial) ||
       !validOptionalBoolean(contact.is_starred) ||
       ((contact.uuid !== null && contact.uuid !== undefined) &&
-        (!sourceUuid || !SOURCE_UUID.test(sourceUuid))) ||
+        !isUuid(sourceUuid)) ||
       (sourceUuid !== undefined && uniqueUuids.has(sourceUuid)) ||
       (deletedAt !== undefined && deletedAt !== null &&
         (typeof deletedAt !== "string" || Number.isNaN(Date.parse(deletedAt))))

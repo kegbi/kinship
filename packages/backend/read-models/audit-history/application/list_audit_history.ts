@@ -1,4 +1,5 @@
 import type { Failure } from "../../../shared-kernel/result.ts";
+import { isUuid } from "../../../shared-kernel/validation.ts";
 
 export interface AuditHistoryActor {
   readonly memberId: string;
@@ -63,9 +64,6 @@ export interface AuditHistoryRepository {
     | Failure<"forbidden" | "not-found", "stale-cursor">
   >;
 }
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-58][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const CHANGE_ACTION_VALUES = new Set([
   "create",
@@ -210,7 +208,7 @@ function booleanDetail(value: unknown): SanitizedDetail {
 }
 
 function uuidDetail(value: unknown): SanitizedDetail {
-  return typeof value === "string" && UUID_PATTERN.test(value)
+  return typeof value === "string" && isUuid(value)
     ? { accepted: true, redacted: false, value }
     : { accepted: false, redacted: true };
 }
@@ -281,9 +279,7 @@ function sanitizeDetail(
     ) return enumDetail(value, INTERACTION_KIND_VALUES);
     if (key === "participantIds") {
       return Array.isArray(value) && value.length <= 50 &&
-          value.every((entry) =>
-            typeof entry === "string" && UUID_PATTERN.test(entry)
-          )
+          value.every((entry) => typeof entry === "string" && isUuid(entry))
         ? {
           accepted: true,
           redacted: false,
@@ -444,7 +440,7 @@ async function decodeCursor(
       decoded.actorMemberId !== expected.actorMemberId ||
       decoded.action !== expected.action || decoded.from !== expected.from ||
       decoded.to !== expected.to || typeof decoded.id !== "string" ||
-      !UUID_PATTERN.test(decoded.id) ||
+      !isUuid(decoded.id) ||
       typeof decoded.timestamp !== "string" ||
       !Number.isFinite(Date.parse(decoded.timestamp))
     ) return undefined;

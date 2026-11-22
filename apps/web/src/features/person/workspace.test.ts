@@ -698,6 +698,38 @@ it("APR-008 applies membership name order to profile heading, breadcrumb, mini i
   expect(document.title).toBe("Byron Ada — Kinship");
 });
 
+it("MCP-R3 opens the workspace of a person whose identifier was derived", async () => {
+  // A DAV-synced person, or one created with a requestId, has the version 8
+  // identifier the backend derives; the page used to call it not found.
+  const derived = "8e5213b9-8cee-8024-8aed-45319d1b7d1b";
+  markup(`/app/people/${derived.toUpperCase()}/`);
+  const api = stubProfile(profileOf({ ...lovelace, id: derived }));
+  await mountPersonWorkspace();
+  expect(api.calls()).toContain(
+    `GET /api/v1/people/${derived.toUpperCase()}?include=rail`,
+  );
+  expect(
+    document.querySelector("#person-profile-state")?.hasAttribute("hidden"),
+  )
+    .toBe(true);
+});
+
+it.each([
+  "/app/people/not-a-uuid",
+  "/app/people/8e5213b9-8cee-9024-8aed-45319d1b7d1b",
+  "/app/people/8e5213b9-8cee-8024-caed-45319d1b7d1b",
+])(
+  "MCP-R3 still calls a path that names no person not found: %s",
+  async (path) => {
+    markup(path);
+    const api = stubApi({});
+    await mountPersonWorkspace();
+    expect(document.querySelector("[data-profile-state-heading]")?.textContent)
+      .toBe("Person not found");
+    expect(requested(api, "/api/v1/people/")).toEqual([]);
+  },
+);
+
 it.each([0, 3])(
   "APR-006 keeps %i open tasks out of the cadence hero",
   async (openTaskCount) => {
