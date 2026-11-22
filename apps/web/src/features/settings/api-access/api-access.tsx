@@ -373,7 +373,9 @@ export function ApiAccess(props: { readonly onSettled?: () => void }) {
           with a token's secret, or copy the filled-in configuration while a new
           token is shown. Each operation and the grant it needs is listed in the
           {" "}
-          <a href="/docs/api">API reference</a>.
+          <a href="/docs/api">API reference</a>. The{" "}
+          <a href="/docs/mcp">MCP guide</a>{" "}
+          lists every tool and the grant it needs.
         </p>
       </section>
 

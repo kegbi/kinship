@@ -2399,6 +2399,8 @@ export const MODULES: readonly TaskModule[] = [
           "apps/web/dist/server",
           "apps/web/src/styles",
           "gateway/security_headers.conf",
+          // The MCP guide renders one entry per catalog tool (MCP-C3).
+          "packages/contracts/mcp/tools.json",
         ],
       },
     },

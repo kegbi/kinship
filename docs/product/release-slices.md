@@ -173,6 +173,11 @@ operations and complete schemas derived from the bearer-only contract, a static
 OpenAPI download, and real person/task/capture automation with grant refusal and
 revocation. It adds no credential-entry or interactive execution surface.
 
+`public.mcp-guide` at `/docs/mcp` is the matching signed-out static guide to the
+agent endpoint (ADR 0009), generated from the agent tool catalog and linked
+beside the API reference. Its flow, `API-003`, is planned and arrives with its
+end-to-end test.
+
 Deliver API tokens/OAuth only when required, DAV and other optional adapters,
 billing, and operational administration. `INTEGRATION-002` is a read-only
 iCalendar feed of person dates and a member's reminder days behind a secret URL

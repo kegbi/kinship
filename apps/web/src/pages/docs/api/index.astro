@@ -103,7 +103,7 @@ const sections = [
       <p class="reference-meta">REST · JSON · <code>/api/v1</code> · {referenceOperations.length} supported operations</p>
     </header>
     <div class="reference-layout">
-      <aside class="reference-toc"><nav aria-label="API reference contents"><p class="scope-label">On this page</p><ol>{sections.map(([id, label]) => <li><a href={`#${id}`}>{label}</a></li>)}</ol></nav><a href="/app/settings/api">Manage API tokens <span aria-hidden="true">↗</span></a></aside>
+      <aside class="reference-toc"><nav aria-label="API reference contents"><p class="scope-label">On this page</p><ol>{sections.map(([id, label]) => <li><a href={`#${id}`}>{label}</a></li>)}</ol></nav><a href="/app/settings/api">Manage API tokens <span aria-hidden="true">↗</span></a><a href="/docs/mcp">Connect an AI agent (MCP guide)</a></aside>
       <div class="reference-content">
         <section id="quickstart" aria-labelledby="quickstart-heading">
           <p class="eyebrow">01 / Get connected</p><h2 id="quickstart-heading">Quickstart</h2>
@@ -122,7 +122,7 @@ const sections = [
           <p>Each token is bound to its issuing user and workspace. Every request revalidates the active user, membership, and workspace; grants also remain subject to application permissions and enabled profile sections. Only owners and administrators can issue or manage tokens. Revoke unused tokens from API access.</p>
           <p>Grants are independent: none implies another, and a write grant does not include reading. Select all three task grants for the complete task example. Grants that are destructive, span several areas, cover financial information, or need an owner or administrator say so.</p>
           {scopeGroups(undefined).map(({ title, choices }) => <><h3>{title}</h3><dl class="grant-list">{choices.map(({ scope, label, detail, access, caution }) => <div><dt><code>{scope}</code><span>{label}</span></dt><dd><strong>{ACCESS_TEXT[access]}.</strong> {caution && <strong>{cautionText(caution)}</strong>} {detail}</dd></div>)}</dl></>)}
-          <p>Each operation in the <a href="#operations">Operations</a> section names the grant it requires. That list is generated from the route registry, so it always matches what a token can reach over REST.</p>
+          <p>Each operation in the <a href="#operations">Operations</a> section names the grant it requires. That list is generated from the route registry, so it always matches what a token can reach over REST. An AI agent uses the same grants through the MCP endpoint; the <a href="/docs/mcp">MCP guide</a> lists every tool and the grant it needs.</p>
           <p>The optional <code>X-Workspace-Id</code> header must match the token's workspace; it cannot switch the token to another workspace. Any Authorization header selects token authentication exclusively, with no session-cookie fallback. Expired, revoked, wrong-workspace, and wrong-grant tokens are refused with <code>401</code>.</p>
         </section>
 

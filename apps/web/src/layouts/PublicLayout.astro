@@ -3,10 +3,10 @@ import ThemeBootstrap from "../components/ThemeBootstrap.astro";
 import "../styles/public.css";
 
 interface Props {
-  readonly currentPath?: "/" | "/features" | "/docs/api" | "/privacy" | "/terms";
+  readonly currentPath?: "/" | "/features" | "/docs/api" | "/docs/mcp" | "/privacy" | "/terms";
   readonly description: string;
   readonly noIndex?: boolean;
-  readonly pageId?: "public.home" | "public.features" | "public.api-reference" | "legal.privacy" | "legal.terms";
+  readonly pageId?: "public.home" | "public.features" | "public.api-reference" | "public.mcp-guide" | "legal.privacy" | "legal.terms";
   readonly title: string;
 }
 
@@ -57,6 +57,7 @@ const {
             Features
           </a>
           <a href="/docs/api" tabindex="0" aria-current={currentPath === "/docs/api" ? "page" : undefined}>API</a>
+          <a href="/docs/mcp" tabindex="0" aria-current={currentPath === "/docs/mcp" ? "page" : undefined}>MCP</a>
           <a href="/privacy" tabindex="0" aria-current={currentPath === "/privacy" ? "page" : undefined}>Privacy</a>
           <a href="/terms" tabindex="0" aria-current={currentPath === "/terms" ? "page" : undefined}>Terms</a>
         </nav>

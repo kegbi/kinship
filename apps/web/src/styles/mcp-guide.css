@@ -1,0 +1,100 @@
+/*
+ * The public MCP guide (MCP-C3). It draws on the API reference's layout,
+ * typography, tables, and operation blocks (`api-reference.css`) and adds
+ * only what the guide has of its own, on the spacing tokens.
+ */
+.mcp-instructions {
+  margin: var(--space-4) 0;
+  padding: var(--space-4) var(--pad-card);
+  border-left: 3px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+.mcp-instructions p {
+  margin: 0;
+}
+.reference-steps ul {
+  padding-left: var(--space-5);
+}
+.reference-steps ul li {
+  margin-block: var(--space-2);
+}
+.grant-tools {
+  margin-block: 0 var(--space-2);
+}
+.reference-table th[scope="row"] {
+  background: transparent;
+  font-weight: 600;
+}
+.reference-table th small {
+  display: block;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.reference-table td small {
+  margin-top: var(--space-1);
+}
+.mcp-tool-index {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--space-5);
+  margin-block: var(--space-5);
+  padding: var(--space-4) var(--pad-card);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+.mcp-tool-index .scope-label {
+  margin: 0 0 var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mcp-tool-index ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mcp-tool-index li {
+  margin-block: var(--space-1);
+}
+.mcp-area-heading {
+  scroll-margin-top: var(--space-5);
+}
+.reference-content .mcp-area-heading {
+  margin-top: var(--space-7);
+}
+.mcp-tool-title {
+  margin-top: 0;
+}
+.mcp-tool-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+}
+.mcp-tool-facts > div {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.mcp-tool-facts dt {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.mcp-tool-facts dd {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+.mcp-tool-facts .http-method {
+  min-width: 0;
+  margin-right: var(--space-2);
+}
+@media (max-width: 540px) {
+  .mcp-tool-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}

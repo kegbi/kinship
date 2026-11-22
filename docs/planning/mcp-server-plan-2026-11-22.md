@@ -203,7 +203,7 @@ is a separate decision.
 - [x] **MCP-C2 Tool catalog.** A tool for every token-enabled JSON route, named
       and described consistently, with the contract test of ADR 0009 point 5 and
       the generated `packages/contracts/mcp/tools.json`.
-- [ ] **MCP-C3 Public MCP guide.** A static `/docs/mcp` page with its own
+- [x] **MCP-C3 Public MCP guide.** A static `/docs/mcp` page with its own
       page-catalog id: connecting a client, the scope-to-tool table, and the
       tool reference rendered from the generated catalog.
 - [ ] **MCP-C4 Flow and checkpoint.** Flow `API-003` in the catalogs with its

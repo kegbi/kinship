@@ -54,6 +54,7 @@ const PUBLIC_PAGES = [
   "auth/verify-email/index.html",
   "features/index.html",
   "docs/api/index.html",
+  "docs/mcp/index.html",
   "index.html",
   "internal/invite-shell/index.html",
 ];
@@ -1269,6 +1270,35 @@ Deno.test("[FER-14] the API reference renders each operation only near the viewp
   assert(
     operation.includes("contain-intrinsic-size:auto 600px"),
     `an operation reserves no intrinsic size: ${operation}`,
+  );
+});
+
+// --- [MCP-C3] The MCP guide renders the whole generated tool catalog -------
+
+Deno.test("[MCP-C3] the MCP guide renders exactly one reference entry per catalog tool", async () => {
+  const catalog = JSON.parse(
+    await Deno.readTextFile(
+      new URL("../packages/contracts/mcp/tools.json", import.meta.url),
+    ),
+  ) as { readonly tools: readonly { readonly name: string }[] };
+  const names = catalog.tools.map(({ name }) => name);
+  const html = await read("docs/mcp/index.html");
+  const rendered = [
+    ...html.matchAll(/<article\b[^>]*\bdata-mcp-tool="([^"]+)"/g),
+  ].map(([, name]) => name!);
+  assert(names.length > 0, "the catalog lists tools");
+  assert(
+    rendered.length === names.length,
+    `the guide renders ${rendered.length} tools; the catalog has ${names.length}`,
+  );
+  assert(
+    JSON.stringify([...rendered].sort()) === JSON.stringify([...names].sort()),
+    `the guide renders other tools than the catalog: ${rendered}`,
+  );
+  const stated = html.match(/data-mcp-tool-count[^>]*>(\d+)</)?.[1];
+  assert(
+    stated === String(names.length),
+    `the guide states ${stated} tools; the catalog has ${names.length}`,
   );
 });
 

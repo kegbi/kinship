@@ -132,6 +132,7 @@ test("public navigation and skip links have a coherent keyboard order", async ({
     page.getByRole("link", { name: "Home", exact: true }),
     page.getByRole("link", { name: "Features", exact: true }),
     page.getByRole("link", { name: "API", exact: true }),
+    page.getByRole("link", { name: "MCP", exact: true }),
     page.getByRole("link", { name: "Privacy", exact: true }),
     page.getByRole("link", { name: "Terms", exact: true }),
     page.getByRole("banner").getByRole("link", {

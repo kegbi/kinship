@@ -70,7 +70,7 @@ const staticBlocks = configurationBlocks(agentConfigurations(staticEndpoint));
       <p>An AI agent connects to this workspace's MCP endpoint with a personal API token and sees only the tools its scopes allow. The agent can do whatever the token's scopes allow in this workspace, with the role of the member who created the token. Revoking the token cuts the agent off.</p>
       <div class="api-secret-control"><input data-api-endpoint aria-label="MCP endpoint URL" readonly value={staticEndpoint} /><button type="button" disabled>Copy endpoint URL</button></div>
       <div class="agent-configuration">{staticBlocks.map(({ heading, name, text }) => <div><h3>{heading}</h3><Code label={name} text={text} /><button type="button" class={buttonVariants({ variant: "outline" })} disabled>{`Copy ${name}`}</button></div>)}</div>
-      <p>Replace <code>{TOKEN_PLACEHOLDER}</code> with a token's secret, or copy the filled-in configuration while a new token is shown. Each operation and the grant it needs is listed in the <a href="/docs/api">API reference</a>.</p>
+      <p>Replace <code>{TOKEN_PLACEHOLDER}</code> with a token's secret, or copy the filled-in configuration while a new token is shown. Each operation and the grant it needs is listed in the <a href="/docs/api">API reference</a>. The <a href="/docs/mcp">MCP guide</a> lists every tool and the grant it needs.</p>
     </section>
 
     <section class="api-access-section" aria-labelledby="api-token-list-heading">

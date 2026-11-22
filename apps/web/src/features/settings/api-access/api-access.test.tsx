@@ -606,7 +606,10 @@ describe("MCP-W1 grouped grants, presets, and connecting an agent", () => {
       within(connect).getByRole("link", { name: /API reference/ })
         .getAttribute("href"),
     ).toBe("/docs/api");
-    expect(document.querySelector('a[href^="/docs/mcp"]')).toBeNull();
+    expect(
+      within(connect).getByRole("link", { name: /MCP guide/ })
+        .getAttribute("href"),
+    ).toBe("/docs/mcp");
     const claude = within(connect).getByRole("region", {
       name: "Claude Code command",
     });

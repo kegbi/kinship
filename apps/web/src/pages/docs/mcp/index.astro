@@ -1,0 +1,132 @@
+---
+import PublicLayout from "../../../layouts/PublicLayout.astro";
+import Schema from "../../../components/api-reference/Schema.astro";
+import Code from "../../../components/api-reference/Code.astro";
+import {
+  ACCESS_TEXT,
+  agentConfigurations,
+  cautionText,
+  configurationBlocks,
+  mcpEndpoint,
+  SCOPE_PRESETS,
+  TOKEN_PLACEHOLDER,
+} from "../../../features/settings/api-access/api-access.ts";
+import {
+  grantSections,
+  guideAreas,
+  guideTools,
+  mcpCatalog,
+  retryKeyTools,
+} from "../../../features/mcp-guide/guide.ts";
+import "../../../styles/api-reference.css";
+import "../../../styles/mcp-guide.css";
+
+export const prerender = true;
+
+const endpoint = mcpEndpoint("https://<your-kinship-origin>");
+const configurations = configurationBlocks(agentConfigurations(endpoint));
+const areas = guideAreas();
+const toolCount = guideTools().length;
+const grants = grantSections();
+const retryable = retryKeyTools();
+const sections = [
+  ["overview", "What it is"], ["connect", "Connect an agent"],
+  ["grants", "Grants & tools"], ["behavior", "How tools behave"],
+  ["tools", "Tool reference"],
+];
+---
+
+<PublicLayout currentPath="/docs/mcp" pageId="public.mcp-guide" title="MCP guide — Kinship" description="Connect an AI agent to your Kinship workspace over the Model Context Protocol with a scoped personal API token, and see every tool it can use.">
+  <main id="main-content" class="api-reference" tabindex="-1">
+    <header class="reference-heading">
+      <div><p class="eyebrow">Model Context Protocol</p><h1>MCP guide</h1><p class="reference-lede">Connect an AI agent to your Kinship workspace, decide exactly what it may do, and look up every tool it can call.</p></div>
+      <a class="button-link button-link-primary" href="/docs/api">API reference</a>
+      <p class="reference-meta">Streamable HTTP · JSON · <code>{mcpCatalog.endpoint.method} {mcpCatalog.endpoint.path}</code> · <span data-mcp-tool-count>{toolCount}</span> tools</p>
+    </header>
+    <div class="reference-layout">
+      <aside class="reference-toc"><nav aria-label="MCP guide contents"><p class="scope-label">On this page</p><ol>{sections.map(([id, label]) => <li><a href={`#${id}`}>{label}</a></li>)}</ol></nav><a href="/app/settings/api">Manage API tokens <span aria-hidden="true">↗</span></a><a href="/docs/api">REST API reference</a></aside>
+      <div class="reference-content">
+        <section id="overview" aria-labelledby="overview-heading">
+          <p class="eyebrow">01 / The endpoint</p><h2 id="overview-heading">What it is</h2>
+          <p>Kinship serves an MCP endpoint at <code>{mcpCatalog.endpoint.method} https://&lt;your-kinship-origin&gt;{mcpCatalog.endpoint.path}</code>. It speaks the Streamable HTTP transport and answers each request with one JSON response. It keeps no session and opens no server-initiated stream; <code>GET</code> and <code>DELETE</code> on the endpoint answer <code>405</code>.</p>
+          <p>An agent connects with a personal API token. It can do exactly what the token's grants allow, in the one workspace the token is bound to, acting as the member who created the token and with that member's current role. Every change it makes is audited as that member, and the stored audit event records the id of the token that made it.</p>
+          <div class="reference-note"><strong>Each tool is one REST operation.</strong> A tool call runs the same route a REST client holding the same token would reach, with the same grant, role, validation, revision, and audit rules. The <a href="/docs/api">API reference</a> documents those routes.</div>
+          <h3>What the endpoint tells your agent</h3>
+          <p>Clients receive these instructions when they connect:</p>
+          <blockquote class="mcp-instructions"><p>{mcpCatalog.instructions}</p></blockquote>
+        </section>
+
+        <section id="connect" aria-labelledby="connect-heading">
+          <p class="eyebrow">02 / Get connected</p><h2 id="connect-heading">Connect an agent</h2>
+          <ol class="reference-steps">
+            <li>Sign in as a workspace owner or administrator and open <a href="/app/settings/api">Settings → API access</a>. Members cannot create tokens.</li>
+            <li>Create a named token, optionally with an expiry, and choose its grants. Two presets give a starting point; each only ticks checkboxes you can still change:
+              <ul>{SCOPE_PRESETS.map(({ label, detail }) => <li><strong>{label}.</strong> {detail}</li>)}</ul>
+            </li>
+            <li>Copy the secret while it is shown. It cannot be revealed again.</li>
+            <li>Add the endpoint to your client, replacing <code>&lt;your-kinship-origin&gt;</code> with your Kinship deployment's public origin and <code>{TOKEN_PLACEHOLDER}</code> with the secret.</li>
+          </ol>
+          {configurations.map(({ heading, name, text }) => <><h3>{heading}</h3><Code label={name} text={text} /></>)}
+          <p>Any client that can send a static <code>Authorization</code> header to a remote Streamable HTTP server can connect the same way.</p>
+          <div class="reference-note"><strong>OAuth sign-in is not supported.</strong> The endpoint accepts only a personal API token in the <code>Authorization: Bearer …</code> header and never reads a cookie. Clients that support only OAuth for remote servers cannot connect yet.</div>
+          <h3>Keep the token secret</h3>
+          <p>The token is a password for your workspace. A configuration file or a shell command that contains it holds the secret: keep such files private, out of version control and shared folders, and out of shell history (for example, read the secret from an environment variable). Revoking the token in <a href="/app/settings/api">Settings → API access</a> cuts the agent off at its next request.</p>
+        </section>
+
+        <section id="grants" aria-labelledby="grants-heading">
+          <p class="eyebrow">03 / Choose access deliberately</p><h2 id="grants-heading">Grants & tools</h2>
+          <p>An agent is shown only the tools its token's grants allow. The tables below list every grant the token form offers and the tools each one unlocks, grouped by area. They are generated from the tool catalog the endpoint serves.</p>
+          <dl class="convention-list">
+            <div><dt>Grants are independent</dt><dd>No grant implies another, and a write grant does not include reading. Many update and delete tools need a revision, such as <code>expectedUpdatedAt</code>, that only a read tool returns, so pair each write grant with its read grant.</dd></div>
+            <div><dt>Some reads span several areas</dt><dd>The search and Today grants return content from several areas, such as notes, activities, journal posts, tasks, and reminders, whatever other grants the token holds.</dd></div>
+            <div><dt>Vocabularies need an administrator</dt><dd>The vocabulary tools, reads and writes alike, are refused unless the token's creator is a workspace owner or administrator.</dd></div>
+            <div><dt>Deleting and merging people are separate</dt><dd>Permanently deleting a person and merging two people each have their own grant. Neither preset ticks them; choose them deliberately.</dd></div>
+            <div><dt>The role still decides</dt><dd>A grant never exceeds the creator's role. A call the grants allow can still be refused by the member's current permissions or by a section the workspace has turned off.</dd></div>
+          </dl>
+          {grants.map(({ id, title, grants: rows }) => <div class="reference-table" id={`grants-${id}`}><table><caption>{title}</caption><thead><tr><th scope="col">Grant</th><th scope="col">Access</th><th scope="col">Tools it unlocks</th></tr></thead><tbody>
+            {rows.map(({ scope, label, access, caution, areas: unlocked }) => <tr data-mcp-grant={scope ?? "any"}>
+              <th scope="row">{scope === null ? <span>{label}</span> : <><code>{scope}</code><small>{label}</small></>}</th>
+              <td>{access === "any" ? "Always listed" : ACCESS_TEXT[access]}{caution && <small>{cautionText(caution)}</small>}</td>
+              <td>{unlocked.length === 0 ? <p>No tool needs this grant. Its operations are listed in the <a href="/docs/api#operations">API reference</a>.</p> : unlocked.map(({ title: areaTitle, tools }) => <p class="grant-tools"><strong>{areaTitle}:</strong> {tools.map(({ name, destructive }, index) => <>{index > 0 && ", "}<a href={`#tool-${name}`}><code>{name}</code></a>{destructive && " (destructive)"}</>)}</p>)}</td>
+            </tr>)}
+          </tbody></table></div>)}
+        </section>
+
+        <section id="behavior" aria-labelledby="behavior-heading">
+          <p class="eyebrow">04 / Know what to expect</p><h2 id="behavior-heading">How tools behave</h2>
+          <dl class="convention-list">
+            <div><dt>Tool list</dt><dd>The tool list is filtered to the token's grants: a tool whose grant the token lacks is not listed and cannot be called. Tools that need no grant are always listed. The member's role is checked when a tool is called.</dd></div>
+            <div><dt>Errors</dt><dd>A refused call comes back as a tool error (<code>isError</code>) naming the API's problem title, its stable <code>code</code>, the HTTP status, and any field errors, also as structured content. Correct the arguments rather than retrying unchanged. A missing, unknown, expired, or revoked token is refused before any tool runs with <code>401</code> and a <code>WWW-Authenticate: Bearer</code> challenge; a request from a browser page on another origin is refused with <code>403</code>.</dd></div>
+            <div><dt>Revisions</dt><dd>Updates and deletes that take a revision, usually <code>expectedUpdatedAt</code>, use it as an optimistic check. Copy it verbatim from the matching list or get tool. A stale revision is refused as a conflict: read again, reconcile, and retry with the current value.</dd></div>
+            <div><dt>Retries</dt><dd>Creates that take a <code>requestId</code> are safe to retry: pass your own UUID and reuse it for a retry of the same call, and the original record comes back instead of a second one. A changed payload under a used key is a conflict. When the agent leaves <code>requestId</code> out, the server mints one, and a retry is not deduplicated. Tools that take a retry key: {retryable.map((name, index) => <>{index > 0 && ", "}<a href={`#tool-${name}`}><code>{name}</code></a></>)}. Other creates take none, so check before retrying them.</dd></div>
+            <div><dt>What is not exposed</dt><dd>No tool covers sign-in, sessions, or identity; members and invitations; workspace settings or the danger zone; API token management; imports and exports; audit history; calendar feeds; or notifications.</dd></div>
+            <div><dt>Files</dt><dd>Tools carry JSON only. Uploading and downloading a person's files is available with a token over REST; see the <a href="/docs/api">API reference</a>.</dd></div>
+          </dl>
+        </section>
+
+        <section id="tools" aria-labelledby="tools-heading">
+          <p class="eyebrow">05 / Every tool</p><h2 id="tools-heading">Tool reference</h2>
+          <p>Every tool the endpoint serves, generated from its catalog: its grant, its annotations, the REST operation it calls, and its input fields. A field marked required must be sent; every other field is optional.</p>
+          <nav aria-label="Tool index" class="mcp-tool-index">{areas.map(({ id, title, tools }) => <div><p class="scope-label"><a href={`#area-${id}`}>{title}</a></p><ul>{tools.map(({ tool }) => <li><a href={`#tool-${tool.name}`}><code>{tool.name}</code></a></li>)}</ul></div>)}</nav>
+          {areas.map(({ id, title, tools }) => <>
+            <h3 id={`area-${id}`} class="mcp-area-heading">{title}</h3>
+            {tools.map(({ tool, traits, operationHref, fields }) => <article class="reference-operation" id={`tool-${tool.name}`} data-mcp-tool={tool.name}>
+              <h4><code>{tool.name}</code></h4>
+              <p class="mcp-tool-title"><strong>{tool.title}.</strong> {tool.description}</p>
+              <dl class="mcp-tool-facts">
+                <div><dt>Required grant</dt><dd>{tool.scope === null ? "None; any valid token." : <code>{tool.scope}</code>}</dd></div>
+                <div><dt>Annotations</dt><dd data-mcp-tool-traits>{traits.words.join(" · ")}</dd></div>
+                <div><dt>REST operation</dt><dd><span class="http-method">{tool.route.method}</span><code>{tool.route.path}</code>{operationHref ? <> — <a href={operationHref}><code>{tool.route.operationId}</code> in the API reference</a></> : <> — <code>{tool.route.operationId}</code></>}</dd></div>
+              </dl>
+              {fields.length === 0 ? <p>No input.</p> : <div class="reference-table"><table><caption>Input for {tool.name}</caption><thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Required?</th><th scope="col">Description & constraints</th></tr></thead><tbody>
+                {fields.map(({ name, type, required, description, values, constraints }) => <tr><th scope="row"><code>{name}</code></th><td><code>{type}</code></td><td>{required ? "Required" : "Optional"}</td><td>{description && <p>{description}</p>}{values && <p>One of: {values.map((value, index) => <>{index > 0 && ", "}<code>{value}</code></>)}</p>}{constraints.length > 0 && <small>{constraints.join("; ")}</small>}</td></tr>)}
+              </tbody></table></div>}
+              <details class="reference-schema"><summary>Exact input schema</summary><Schema value={tool.inputSchema} label={`${tool.name} input schema`} /></details>
+              <a class="back-to-index" href="#tools">Back to tool index ↑</a>
+            </article>)}
+          </>)}
+        </section>
+      </div>
+    </div>
+  </main>
+</PublicLayout>

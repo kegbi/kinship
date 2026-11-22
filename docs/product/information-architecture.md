@@ -17,6 +17,7 @@ Public
   Home
   Features
   API reference
+  MCP guide
   Privacy
   Terms
   Authentication and invitation acceptance
@@ -228,6 +229,13 @@ without page-specific JavaScript. The public navigation uses the short label
 grants, automation examples, conventions, errors, operations, and full schema
 expanders use the generated bearer contract and offer a static OpenAPI download.
 It accepts no credentials and performs no API requests on a visitor's behalf.
+
+`public.mcp-guide` (`/docs/mcp`, flow `API-003`, planned) is the signed-out,
+static guide to the agent endpoint of ADR 0009. The public navigation labels it
+"MCP" beside "API"; the API reference and the API access settings link to it,
+and it links back. Its anchored overview, connection steps, grant-to-tool
+tables, tool behaviour, and tool reference are generated from the agent tool
+catalog, ship no page-specific JavaScript, and perform no API requests.
 
 ## Responsive And Accessible Composition
 

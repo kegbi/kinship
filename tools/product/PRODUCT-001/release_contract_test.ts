@@ -55,6 +55,7 @@ const EXPECTED_PAGE_IDS = [
   "public.home",
   "public.features",
   "public.api-reference",
+  "public.mcp-guide",
   "legal.privacy",
   "legal.terms",
   "auth.sign-in",
