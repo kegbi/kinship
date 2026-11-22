@@ -22,10 +22,8 @@ import {
 } from "../../../../../http-kit/failures.ts";
 import { definedProblem } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
-import {
-  cookieWriteOrigin,
-  scopedRouteActor,
-} from "../../../../../http-kit/scoped_actor.ts";
+import { requireCookieWriteOrigin } from "../../../../../http-kit/origin.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
   sessionActor,
@@ -74,7 +72,7 @@ export function createStarRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = cookieWriteOrigin(services.browserSecurity);
+  const origin = requireCookieWriteOrigin(services.browserSecurity);
   const tokens = {
     browserSecurity: services.browserSecurity,
     tokens: services.apiTokens,
