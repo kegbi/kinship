@@ -163,7 +163,7 @@ matrix or architecture prose; MCP-C4 does that once.
       regions.
 - [ ] **MCP-B5 Planning.** `reminders:read`, `reminders:write`, and the three
       planning Today regions.
-- [ ] **MCP-B6 Journal.** `journal:read`, `journal:write`, and the life-event
+- [x] **MCP-B6 Journal.** `journal:read`, `journal:write`, and the life-event
       writes under `people:write`.
 - [ ] **MCP-B7 Gifts and debts.** `gifts:read`, `gifts:write`.
 - [ ] **MCP-B8 Files.** `files:read`, `files:write`, including the binary upload

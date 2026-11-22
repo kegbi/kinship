@@ -270,6 +270,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Items may carry the content of linked activities. Does not grant writing. */
         readonly get: operations["listJournal"];
         readonly put?: never;
         readonly post?: never;
@@ -288,6 +289,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Personal tokens require journal:write. Links an existing activity of the token's workspace to the journal; an activity that is already linked, or is not in the workspace, answers 404. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["linkJournalActivity"];
         readonly delete?: never;
         readonly options?: never;
@@ -303,6 +305,7 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
+        /** @description Personal tokens require journal:write. Upserts the one workspace-wide rating for its date: an existing rating for that date is replaced, an omitted comment cleared (200), otherwise one is created (201). Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly put: operations["saveJournalDayRating"];
         readonly post?: never;
         readonly delete?: never;
@@ -318,9 +321,11 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. An activity item carries the linked activity's content. Does not grant writing. */
         readonly get: operations["getJournalItem"];
         readonly put?: never;
         readonly post?: never;
+        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Deleting an activity item removes its journal link, not the activity. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly delete: operations["deleteJournalItem"];
         readonly options?: never;
         readonly head?: never;
@@ -336,6 +341,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createJournalPost"];
         readonly delete?: never;
         readonly options?: never;
@@ -351,6 +357,7 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
+        /** @description Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly put: operations["updateJournalPost"];
         readonly post?: never;
         readonly delete?: never;
@@ -973,6 +980,7 @@ export interface paths {
         };
         readonly get: operations["listPersonLifeEvents"];
         readonly put?: never;
+        /** @description Personal tokens require people:write. Records a life event on a person of the token's workspace; a retry records a second one. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createPersonLifeEvent"];
         readonly delete?: never;
         readonly options?: never;
@@ -990,9 +998,11 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post?: never;
+        /** @description Personal tokens require people:write. Removes the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly delete: operations["deletePersonLifeEvent"];
         readonly options?: never;
         readonly head?: never;
+        /** @description Personal tokens require people:write. Replaces the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly patch: operations["updatePersonLifeEvent"];
         readonly trace?: never;
     };
@@ -6408,9 +6418,9 @@ export interface operations {
     readonly linkJournalActivity: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -6494,9 +6504,9 @@ export interface operations {
     readonly saveJournalDayRating: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -6647,9 +6657,9 @@ export interface operations {
     readonly deleteJournalItem: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -6719,9 +6729,9 @@ export interface operations {
     readonly createJournalPost: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -6793,9 +6803,9 @@ export interface operations {
     readonly updateJournalPost: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -10827,9 +10837,9 @@ export interface operations {
     readonly createPersonLifeEvent: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -10921,9 +10931,9 @@ export interface operations {
     readonly deletePersonLifeEvent: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11016,9 +11026,9 @@ export interface operations {
     readonly updatePersonLifeEvent: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

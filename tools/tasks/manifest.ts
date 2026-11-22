@@ -1598,6 +1598,7 @@ export const MODULES: readonly TaskModule[] = [
     integration: [
       "tests/integration/journal_postgres_test.ts",
       "tests/integration/life_events_postgres_test.ts",
+      "tests/integration/api_tokens_journal_postgres_test.ts",
     ],
     coverage: {
       directory: "journal",
@@ -1613,6 +1614,7 @@ export const MODULES: readonly TaskModule[] = [
       include: [
         "packages/backend/modules/journal/transport/http/routes.ts",
         "packages/backend/modules/journal/transport/http/life_events.ts",
+        "packages/backend/modules/journal/transport/http/admission.ts",
         "packages/backend/modules/journal/application/journal_management.ts",
         "packages/backend/modules/journal/application/life_events.ts",
         "packages/backend/modules/journal/domain",

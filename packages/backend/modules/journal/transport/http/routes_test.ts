@@ -489,3 +489,174 @@ Deno.test("[GAP-023] the journal timeline pages behind a workspace-bound cursor"
     throw new Error(`the timeline was asked for ${asked.join(",")}`);
   }
 });
+
+Deno.test("[MCP-B6] journal grants admit bearer reads and writes independently and never borrow the cookie", async () => {
+  const tokenId = "00000000-0000-4000-8000-0000000000aa";
+  const asked: string[] = [];
+  const acted: (string | undefined)[] = [];
+  const answer = (value: unknown) => (who: { apiTokenId?: string }) => {
+    acted.push(who.apiTokenId);
+    return Promise.resolve(value);
+  };
+  const session = { ...actor, workspaceName: "Journal" };
+  const app = createJournalRoutes({
+    apiTokens: {
+      authenticate: (token: string, scope: string) => {
+        asked.push(scope);
+        return Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        );
+      },
+    },
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {
+      createPost: answer({ post: { id }, status: "created" }),
+      deleteItem: answer({ itemType: "post", status: "deleted" }),
+      linkActivity: answer({
+        activityId: id,
+        id,
+        occurredAt: now,
+        status: "created",
+      }),
+      saveDayRating: answer({ rating: { id }, status: "created" }),
+      updatePost: answer({ post: { id }, status: "updated" }),
+    } as never,
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({ ...session, accessibleWorkspaces: [session] }),
+    },
+    timeline: {
+      get: answer({ item: { id }, status: "ready" }),
+      list: answer({ activities: [], items: [], status: "ready" }),
+    } as never,
+  });
+  const routes = [
+    ["GET", "/api/v1/journal", "journal:read", undefined, 200],
+    ["GET", `/api/v1/journal/items/${id}`, "journal:read", undefined, 200],
+    ["POST", "/api/v1/journal/posts", "journal:write", {
+      body: "Entry",
+      occurredAt: now,
+    }, 201],
+    ["PUT", `/api/v1/journal/posts/${id}`, "journal:write", {
+      body: "Edited",
+      occurredAt: now,
+    }, 200],
+    ["PUT", "/api/v1/journal/day-ratings", "journal:write", {
+      ratedOn: "2026-08-23",
+      rating: 5,
+    }, 201],
+    ["POST", "/api/v1/journal/activities", "journal:write", {
+      activityId: id,
+    }, 201],
+    ["DELETE", `/api/v1/journal/items/${id}`, "journal:write", undefined, 200],
+  ] as const;
+  for (const [method, path, grant, body, status] of routes) {
+    const send = (headers: Record<string, string>, payload: unknown = body) =>
+      app.request(`http://localhost${path}`, {
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        headers: { "content-type": "application/json", ...headers },
+        method,
+      });
+    const label = `${method} ${path}`;
+    acted.length = 0;
+    const admitted = await send({ authorization: `Bearer ${grant}` });
+    if (admitted.status !== status || acted[0] !== tokenId) {
+      throw new Error(`${label} bearer answered ${admitted.status}`);
+    }
+    for (
+      const wrong of ["journal:read", "journal:write", "people:write"].filter(
+        (scope) => scope !== grant,
+      )
+    ) {
+      const refused = await send({
+        authorization: `Bearer ${wrong}`,
+        cookie: "kinship_session=valid",
+        origin: "http://localhost",
+      });
+      if (refused.status !== 401) {
+        throw new Error(`${label} admitted ${wrong}: ${refused.status}`);
+      }
+    }
+    const invalid = await send({
+      authorization: "Bearer revoked",
+      cookie: "kinship_session=valid",
+      origin: "http://localhost",
+    });
+    if (invalid.status !== 401) {
+      throw new Error(`${label} borrowed the cookie: ${invalid.status}`);
+    }
+    if (method === "GET") continue;
+    const unparsable = path.includes("/items/")
+      ? undefined
+      : { unexpected: true };
+    if (unparsable) {
+      const early = await send(
+        { authorization: "Bearer people:write" },
+        unparsable,
+      );
+      if (early.status !== 401) {
+        throw new Error(`${label} judged a refused token's body first`);
+      }
+    }
+    for (const origin of [undefined, "http://attacker.test"]) {
+      const foreign = await send({
+        cookie: "kinship_session=valid",
+        ...(origin ? { origin } : {}),
+      });
+      if (foreign.status !== 403) {
+        throw new Error(`${label} cookie write without Origin admitted`);
+      }
+    }
+    acted.length = 0;
+    const cookie = await send({
+      cookie: "kinship_session=valid",
+      origin: "http://localhost",
+    });
+    if (cookie.status !== status || acted[0] !== undefined) {
+      throw new Error(`${label} cookie write answered ${cookie.status}`);
+    }
+  }
+  if (!asked.includes("journal:read") || !asked.includes("journal:write")) {
+    throw new Error(`each grant was not checked: ${asked}`);
+  }
+});
+
+Deno.test("[MCP-B6] cookie journal writes keep their check order", async () => {
+  const app = createJournalRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {} as never,
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+    timeline: {} as never,
+  });
+  const send = (headers: Record<string, string>) =>
+    app.request("http://localhost/api/v1/journal/posts", {
+      body: JSON.stringify({ body: "" }),
+      headers: { "content-type": "application/json", ...headers },
+      method: "POST",
+    });
+  const statuses = [
+    (await send({ origin: "http://attacker.test" })).status,
+    (await send({
+      origin: "http://localhost",
+      "x-workspace-id": "not-a-workspace",
+    })).status,
+    (await send({ origin: "http://localhost" })).status,
+  ];
+  if (JSON.stringify(statuses) !== JSON.stringify([403, 400, 400])) {
+    throw new Error(`cookie order changed: ${statuses}`);
+  }
+  const unparsableRead = await app.request(
+    "http://localhost/api/v1/journal/items/not-a-uuid",
+  );
+  if (unparsableRead.status !== 404) {
+    throw new Error("an unparsable item now asks for a session first");
+  }
+  const malformedQuery = await app.request(
+    "http://localhost/api/v1/journal?limit=0",
+  );
+  if (malformedQuery.status !== 400) {
+    throw new Error("a malformed query now asks for a session first");
+  }
+});

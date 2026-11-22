@@ -12,6 +12,7 @@ import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
   originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -850,12 +851,15 @@ export const createPersonLifeEvent = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/life-events",
   operationId: "createPersonLifeEvent",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Records a life event on a person of the token's workspace; a retry records a second one. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -878,13 +882,16 @@ export const updatePersonLifeEvent = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}/life-events/{lifeEventId}",
   operationId: "updatePersonLifeEvent",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Replaces the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       lifeEventId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -907,13 +914,16 @@ export const deletePersonLifeEvent = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}/life-events/{lifeEventId}",
   operationId: "deletePersonLifeEvent",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Removes the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       lifeEventId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

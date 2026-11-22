@@ -10,8 +10,8 @@
 import { z } from "zod";
 import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
-  originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -35,7 +35,10 @@ export const listJournal = defineRoute({
   method: "get",
   path: "/api/v1/journal",
   operationId: "listJournal",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Items may carry the content of linked activities. Does not grant writing.",
+  tokenScope: "journal:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listJournalQuery,
     headers: workspaceHeaders,
@@ -55,9 +58,12 @@ export const linkJournalActivity = defineRoute({
   method: "post",
   path: "/api/v1/journal/activities",
   operationId: "linkJournalActivity",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:write. Links an existing activity of the token's workspace to the journal; an activity that is already linked, or is not in the workspace, answers 404. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "journal:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -80,9 +86,12 @@ export const saveJournalDayRating = defineRoute({
   method: "put",
   path: "/api/v1/journal/day-ratings",
   operationId: "saveJournalDayRating",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:write. Upserts the one workspace-wide rating for its date: an existing rating for that date is replaced, an omitted comment cleared (200), otherwise one is created (201). Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "journal:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -111,12 +120,15 @@ export const deleteJournalItem = defineRoute({
   method: "delete",
   path: "/api/v1/journal/items/{itemId}",
   operationId: "deleteJournalItem",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Deleting an activity item removes its journal link, not the activity. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "journal:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       itemId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
   },
   responses: {
     200: {
@@ -133,7 +145,10 @@ export const getJournalItem = defineRoute({
   method: "get",
   path: "/api/v1/journal/items/{itemId}",
   operationId: "getJournalItem",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. An activity item carries the linked activity's content. Does not grant writing.",
+  tokenScope: "journal:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       itemId: uuid,
@@ -155,9 +170,12 @@ export const createJournalPost = defineRoute({
   method: "post",
   path: "/api/v1/journal/posts",
   operationId: "createJournalPost",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "journal:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -180,12 +198,15 @@ export const updateJournalPost = defineRoute({
   method: "put",
   path: "/api/v1/journal/posts/{itemId}",
   operationId: "updateJournalPost",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "journal:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       itemId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

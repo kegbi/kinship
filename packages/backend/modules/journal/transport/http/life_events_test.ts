@@ -299,3 +299,102 @@ Deno.test("[JOURNAL-002] a full date and a note travel both ways; unparsable ids
     badPerson.status !== 404 || calls.length !== 1
   ) throw new Error(`answered ${JSON.stringify(body)} ${badPerson.status}`);
 });
+
+Deno.test("[MCP-B6] life-event writes admit a people:write token and never borrow the cookie", async () => {
+  const tokenId = "00000000-0000-4000-8000-0000000000aa";
+  const asked: string[] = [];
+  const acted: (string | undefined)[] = [];
+  const answer = (value: unknown) => (who: { apiTokenId?: string }) => {
+    acted.push(who.apiTokenId);
+    return Promise.resolve(value);
+  };
+  const context = { ...actor, workspaceName: "Life events" };
+  const routes = createJournalRoutes({
+    apiTokens: {
+      authenticate: (token: string, scope: string) => {
+        asked.push(scope);
+        return Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        );
+      },
+    },
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    journal: {} as never,
+    lifeEvents: {
+      create: answer({ event: stored, status: "created" }),
+      delete: answer({ lifeEventId, status: "deleted" }),
+      update: answer({ event: stored, status: "updated" }),
+    } as unknown as LifeEventManagement,
+    protectedSessions: {
+      resolve: () =>
+        Promise.resolve({ ...context, accessibleWorkspaces: [context] }),
+    },
+    timeline: {} as never,
+  });
+  const writes = [
+    ["POST", path, { name: "Moved", precision: "unknown" }, 201],
+    ["PATCH", `${path}/${lifeEventId}`, {
+      expectedUpdatedAt: now,
+      name: "Moved",
+      precision: "unknown",
+    }, 200],
+    ["DELETE", `${path}/${lifeEventId}`, { expectedUpdatedAt: now }, 200],
+  ] as const;
+  for (const [method, target, body, status] of writes) {
+    const send = (headers: Record<string, string>, payload: unknown = body) =>
+      routes.request(`http://localhost${target}`, {
+        body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", ...headers },
+        method,
+      });
+    const label = `${method} ${target}`;
+    acted.length = 0;
+    const admitted = await send({ authorization: "Bearer people:write" });
+    if (admitted.status !== status || acted[0] !== tokenId) {
+      throw new Error(`${label} bearer answered ${admitted.status}`);
+    }
+    for (
+      const wrong of [
+        "journal:write",
+        "people:read",
+        "people:delete",
+        "revoked",
+      ]
+    ) {
+      const refused = await send({
+        authorization: `Bearer ${wrong}`,
+        cookie: "kinship_session=valid",
+        origin: "http://localhost",
+      });
+      if (refused.status !== 401) {
+        throw new Error(`${label} admitted ${wrong}: ${refused.status}`);
+      }
+    }
+    const early = await send({ authorization: "Bearer journal:write" }, {});
+    if (early.status !== 401) {
+      throw new Error(`${label} judged a refused token's body first`);
+    }
+    for (const origin of [undefined, "http://attacker.test"]) {
+      const foreign = await send({
+        cookie: "kinship_session=valid",
+        ...(origin ? { origin } : {}),
+      });
+      if (foreign.status !== 403) {
+        throw new Error(`${label} cookie write without Origin admitted`);
+      }
+    }
+    acted.length = 0;
+    const cookie = await send({
+      cookie: "kinship_session=valid",
+      origin: "http://localhost",
+    });
+    if (cookie.status !== status || acted[0] !== undefined) {
+      throw new Error(`${label} cookie write answered ${cookie.status}`);
+    }
+  }
+  if (!asked.every((scope) => scope === "people:write")) {
+    throw new Error(`a life-event write asked for ${asked}`);
+  }
+});

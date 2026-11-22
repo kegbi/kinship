@@ -2059,11 +2059,16 @@
     "/api/v1/journal": {
       "get": {
         "operationId": "listJournal",
+        "description": "Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Items may carry the content of linked activities. Does not grant writing.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:read",
         "parameters": [
           {
             "in": "query",
@@ -2153,11 +2158,16 @@
     "/api/v1/journal/activities": {
       "post": {
         "operationId": "linkJournalActivity",
+        "description": "Personal tokens require journal:write. Links an existing activity of the token's workspace to the journal; an activity that is already linked, or is not in the workspace, answers 404. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:write",
         "parameters": [
           {
             "in": "header",
@@ -2166,8 +2176,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -2277,11 +2287,16 @@
     "/api/v1/journal/day-ratings": {
       "put": {
         "operationId": "saveJournalDayRating",
+        "description": "Personal tokens require journal:write. Upserts the one workspace-wide rating for its date: an existing rating for that date is replaced, an omitted comment cleared (200), otherwise one is created (201). Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:write",
         "parameters": [
           {
             "in": "header",
@@ -2290,8 +2305,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -2391,11 +2406,16 @@
     "/api/v1/journal/items/{itemId}": {
       "delete": {
         "operationId": "deleteJournalItem",
+        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Deleting an activity item removes its journal link, not the activity. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:write",
         "parameters": [
           {
             "in": "path",
@@ -2413,8 +2433,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -2492,11 +2512,16 @@
       },
       "get": {
         "operationId": "getJournalItem",
+        "description": "Personal tokens require journal:read. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. An activity item carries the linked activity's content. Does not grant writing.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:read",
         "parameters": [
           {
             "in": "path",
@@ -2585,11 +2610,16 @@
     "/api/v1/journal/posts": {
       "post": {
         "operationId": "createJournalPost",
+        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. A retry creates a second post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:write",
         "parameters": [
           {
             "in": "header",
@@ -2598,8 +2628,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -2689,11 +2719,16 @@
     "/api/v1/journal/posts/{itemId}": {
       "put": {
         "operationId": "updateJournalPost",
+        "description": "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Replaces the post with the body sent: an omitted title is cleared, and there is no revision check, so a concurrent edit is overwritten. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "journal:write",
         "parameters": [
           {
             "in": "path",
@@ -2711,8 +2746,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -8722,11 +8757,16 @@
       },
       "post": {
         "operationId": "createPersonLifeEvent",
+        "description": "Personal tokens require people:write. Records a life event on a person of the token's workspace; a retry records a second one. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -8744,8 +8784,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -8855,11 +8895,16 @@
     "/api/v1/people/{personId}/life-events/{lifeEventId}": {
       "patch": {
         "operationId": "updatePersonLifeEvent",
+        "description": "Personal tokens require people:write. Replaces the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -8886,8 +8931,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -8995,11 +9040,16 @@
       },
       "delete": {
         "operationId": "deletePersonLifeEvent",
+        "description": "Personal tokens require people:write. Removes the life event when expectedUpdatedAt still matches its revision; a stale revision is refused with 409. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -9026,8 +9076,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",

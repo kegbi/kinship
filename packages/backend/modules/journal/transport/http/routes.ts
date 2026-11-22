@@ -38,11 +38,9 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -50,6 +48,7 @@ import {
   parseQuery,
   parseValue,
 } from "../../../../../http-kit/validate.ts";
+import { routeAdmission } from "./admission.ts";
 import { createLifeEventRoutes } from "./life_events.ts";
 
 export { LIFE_EVENT_FAILURES } from "./life_events.ts";
@@ -57,9 +56,10 @@ export { LIFE_EVENT_FAILURES } from "./life_events.ts";
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface JournalHttpServices {
   /**
-   * The personal-token authority (MCP-A1). The composition root already hands
-   * it in, so enabling one of these routes for tokens never edits the root;
-   * a route that does reads it through `scopedRouteActor`.
+   * The personal-token authority (MCP-A1). Every route here, and the three
+   * life-event writes, admit a token through `routeAdmission` (MCP-B6):
+   * `journal:read` for the two reads, `journal:write` for the five writes,
+   * `people:write` for the life events.
    */
   readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
@@ -110,12 +110,22 @@ export function createJournalRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const list = routeAdmission(listJournal, tokens);
+  const item = routeAdmission(getJournalItem, tokens);
+  const create = routeAdmission(createJournalPost, tokens);
+  const update = routeAdmission(updateJournalPost, tokens);
+  const rate = routeAdmission(saveJournalDayRating, tokens);
+  const link = routeAdmission(linkJournalActivity, tokens);
+  const remove = routeAdmission(deleteJournalItem, tokens);
 
-  mount(routes, listJournal, session, async (context) => {
+  mount(routes, listJournal, list.gate, session, async (context) => {
     const query = parseQuery(context, listJournalQuery);
     if ("errors" in query) return failure(context, "query-invalid");
-    const actor = await requireActor(context);
+    const actor = await list.actor(context);
     if (actor instanceof Response) return actor;
     const result = await services.timeline.list(actor, {
       ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
@@ -128,10 +138,10 @@ export function createJournalRoutes(
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });
-  mount(routes, getJournalItem, session, async (context) => {
+  mount(routes, getJournalItem, item.gate, session, async (context) => {
     const itemId = parseValue(uuid, context.req.param("itemId"));
     if ("errors" in itemId) return failure(context, "not-found");
-    const actor = await requireActor(context);
+    const actor = await item.actor(context);
     if (actor instanceof Response) return actor;
     const result = await services.timeline.get(actor, itemId.data);
     if (result.status !== "ready") return failure(context, result.status);
@@ -141,12 +151,12 @@ export function createJournalRoutes(
   mount(
     routes,
     createJournalPost,
-    origin,
+    create.gate,
     session,
     async (context) => {
       const body = await parseJsonBody(context, journalPostInput);
       if ("errors" in body) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await create.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.journal.createPost(actor, {
         body: body.data.body,
@@ -160,7 +170,7 @@ export function createJournalRoutes(
   mount(
     routes,
     updateJournalPost,
-    origin,
+    update.gate,
     session,
     async (context) => {
       const postId = parseValue(uuid, context.req.param("itemId"));
@@ -168,7 +178,7 @@ export function createJournalRoutes(
       if ("errors" in postId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await update.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.journal.updatePost(actor, postId.data, {
         body: body.data.body,
@@ -182,12 +192,12 @@ export function createJournalRoutes(
   mount(
     routes,
     saveJournalDayRating,
-    origin,
+    rate.gate,
     session,
     async (context) => {
       const body = await parseJsonBody(context, journalDayRatingInput);
       if ("errors" in body) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await rate.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.journal.saveDayRating(actor, {
         ...(body.data.comment ? { comment: body.data.comment } : {}),
@@ -203,12 +213,12 @@ export function createJournalRoutes(
   mount(
     routes,
     linkJournalActivity,
-    origin,
+    link.gate,
     session,
     async (context) => {
       const body = await parseJsonBody(context, journalActivityInput);
       if ("errors" in body) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await link.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.journal.linkActivity(
         actor,
@@ -221,12 +231,12 @@ export function createJournalRoutes(
   mount(
     routes,
     deleteJournalItem,
-    origin,
+    remove.gate,
     session,
     async (context) => {
       const itemId = parseValue(uuid, context.req.param("itemId"));
       if ("errors" in itemId) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await remove.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.journal.deleteItem(actor, itemId.data);
       if (result.status !== "deleted") return failure(context, result.status);
@@ -237,6 +247,7 @@ export function createJournalRoutes(
     routes.route(
       "/",
       createLifeEventRoutes({
+        ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
         browserSecurity: services.browserSecurity,
         lifeEvents: services.lifeEvents,
         protectedSessions: services.protectedSessions,
