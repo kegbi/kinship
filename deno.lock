@@ -13,8 +13,8 @@
     "npm:openapi-typescript@7.13.0": "7.13.0_typescript@5.9.3",
     "npm:postgres@3.4.9": "3.4.9",
     "npm:typescript@5.9.3": "5.9.3",
-    "npm:zod-openapi@6.0.2": "6.0.2_zod@4.4.3",
-    "npm:zod@4.4.3": "4.4.3"
+    "npm:zod-openapi@6.0.2": "6.0.2_zod@4.6.6",
+    "npm:zod@4.6.6": "4.6.6"
   },
   "jsr": {
     "@std/yaml@1.2.0": {
@@ -526,14 +526,14 @@
     "yargs-parser@21.1.1": {
       "integrity": "sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw=="
     },
-    "zod-openapi@6.0.2_zod@4.4.3": {
+    "zod-openapi@6.0.2_zod@4.6.6": {
       "integrity": "sha512-SwC5Ppi2ov8WimzNWP/XK95VqPyLDzxPYj10HgNPzhZH9gO7zx0sxdYL9eq7wOADHx1JddOApjhYDmMWQvnVnw==",
       "dependencies": [
         "zod"
       ]
     },
-    "zod@4.4.3": {
-      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="
+    "zod@4.6.6": {
+      "integrity": "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="
     }
   },
   "workspace": {
@@ -549,7 +549,7 @@
       "npm:postgres@3.4.9",
       "npm:typescript@5.9.3",
       "npm:zod-openapi@6.0.2",
-      "npm:zod@4.4.3"
+      "npm:zod@4.6.6"
     ]
   }
 }
