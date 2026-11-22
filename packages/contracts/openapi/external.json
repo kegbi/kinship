@@ -9024,6 +9024,254 @@
         }
       }
     },
+    "/api/v1/reminders/{reminderId}": {
+      "patch": {
+        "operationId": "updateReminder",
+        "description": "Personal tokens require reminders:write. Edits one of a member's own calendar reminders: its title, anchorOn, sendTime, recurrenceUnit, or recurrenceInterval, at least one of them. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences are replaced from the new schedule, exactly as disabling and re-enabling it would; delivered and in-flight occurrences are kept as they are, and a disabled reminder stays disabled. A reminder generated from an important date answers 409 reminder_managed_by_source: change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reminderId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderEditInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reminder edited, with its next occurrence under the new schedule, or already equal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteReminder",
+        "description": "Personal tokens require reminders:write. Deletes one of a member's own calendar reminders. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences stop exactly as disabling stops them, while delivered and in-flight occurrences are kept as delivery evidence; afterwards it no longer appears in the person's reminders or in Today. Retrying the createReminder request that made it answers 409 reminder_request_deleted rather than recreating it. A reminder generated from an important date answers 409 reminder_managed_by_source: delete or change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reminderId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningRevisionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reminder deleted; unattempted future work cancelled and delivery evidence kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reminders/{reminderId}/active": {
       "put": {
         "operationId": "setReminderActive",
@@ -9851,6 +10099,131 @@
         }
       }
     },
+    "/api/v1/stay-in-touch-cadences/{cadenceId}": {
+      "delete": {
+        "operationId": "deleteStayInTouchCadence",
+        "description": "Personal tokens require reminders:write. Removes a person's stay-in-touch cadence, named by the id createStayInTouchCadence and listPersonReminders answer; the id stays the same when the cadence is replaced. Send the cadence's updatedAt from listPersonReminders as expectedUpdatedAt; recording an interaction moves it, so a cadence changed since answers 409 reminder_stale. Its due item leaves Today and the attention queue, and recording an interaction afterwards does not bring it back; set a new cadence with createStayInTouchCadence and a new requestId. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "reminders:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cadenceId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningRevisionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stay-in-touch cadence removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CadenceDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "operationId": "listTasks",
@@ -10243,6 +10616,129 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTask",
+        "description": "Personal tokens require tasks:write. Deletes an existing task. Read it first (getTask or listTasks) and send its updatedAt as expectedUpdatedAt; a task changed since answers 409 task_stale. Afterwards it is not found by getTask and no longer appears in listTasks, Today, the attention queue, or search. Retrying the createTask request that made it answers 409 task_request_deleted rather than recreating it. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "tasks:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "taskId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningRevisionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDeleted"
                 }
               }
             }
@@ -11593,6 +12089,23 @@
         },
         "required": [
           "cadence",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "CadenceDeleted": {
+        "type": "object",
+        "properties": {
+          "cadenceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "cadenceId",
           "status"
         ],
         "additionalProperties": false
@@ -16445,6 +16958,19 @@
           }
         ]
       },
+      "PlanningRevisionInput": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
       "Problem": {
         "type": "object",
         "properties": {
@@ -17437,6 +17963,26 @@
         ],
         "additionalProperties": false
       },
+      "ReminderChanged": {
+        "type": "object",
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/Reminder"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "saved",
+              "unchanged"
+            ]
+          }
+        },
+        "required": [
+          "reminder",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "ReminderCreateInput": {
         "type": "object",
         "properties": {
@@ -17501,6 +18047,64 @@
         "required": [
           "reminder",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderDeleted": {
+        "type": "object",
+        "properties": {
+          "reminderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "reminderId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ReminderEditInput": {
+        "type": "object",
+        "properties": {
+          "anchorOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recurrenceInterval": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "recurrenceUnit": {
+            "type": "string",
+            "enum": [
+              "none",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "sendTime": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
         ],
         "additionalProperties": false
       },
@@ -18092,6 +18696,23 @@
         "required": [
           "status",
           "task"
+        ],
+        "additionalProperties": false
+      },
+      "TaskDeleted": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "deleted"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "status",
+          "taskId"
         ],
         "additionalProperties": false
       },

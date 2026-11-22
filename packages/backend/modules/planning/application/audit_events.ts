@@ -28,7 +28,8 @@ export function describeReminderEvent(
     occurredAt: command.occurredAt,
     payload: { action: command.action },
     subjectId: command.subjectId,
-    subjectType: command.action === "cadence-created"
+    subjectType: command.action === "cadence-created" ||
+        command.action === "cadence-deleted"
       ? "stay_in_touch_cadence"
       : command.action === "acknowledged"
       ? "reminder_occurrence"

@@ -1,10 +1,10 @@
 /**
  * The task facade.
  *
- * Tasks are read two ways and written three, and the two halves share only the
+ * Tasks are read two ways and written four, and the two halves share only the
  * context they both establish first. They are assembled here so a composition
- * root still builds a single object with `get`, `create`, `list`, `change`, and
- * `setCompletion` on it, and so the split between `task_listing.ts` and
+ * root still builds a single object with `get`, `create`, `list`, `change`,
+ * `setCompletion`, and `delete` on it, and so the split between `task_listing.ts` and
  * `task_writes.ts` stays an internal matter rather than something every caller
  * has to know about.
  *
@@ -25,10 +25,11 @@ export function createTaskManagement(dependencies: TaskManagementDependencies) {
     list: listing.list,
     change: writes.change,
     setCompletion: writes.setCompletion,
+    delete: writes.delete,
   };
 }
 
 export type TaskManagement = Pick<
   ReturnType<typeof createTaskManagement>,
-  "change" | "create" | "get" | "list" | "setCompletion"
+  "change" | "create" | "delete" | "get" | "list" | "setCompletion"
 >;

@@ -24,6 +24,8 @@ import type {
 import type {
   ReminderDefinitionRecord,
   ReminderOccurrenceRecord,
+  ReminderPatch,
+  ReminderSource,
 } from "../domain/reminder_rules.ts";
 import type { PlanningActor, PlanningTransaction } from "./context.ts";
 
@@ -125,6 +127,56 @@ export interface ReminderRepository {
       readonly transaction: PlanningTransaction;
     },
   ): Promise<ReminderDefinitionRecord | undefined>;
+  /** Whether `id` names a reminder this workspace deleted. */
+  reminderDeleted(
+    command: PlanningActor & {
+      readonly id: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<boolean>;
+  /**
+   * A live reminder an edit or delete may target, with the source its row
+   * records, so the use case can refuse one its source owns (MCP-D2).
+   */
+  findReminderForChange(
+    command: PlanningActor & {
+      readonly id: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<
+    | {
+      readonly reminder: ReminderDefinitionRecord;
+      readonly source: ReminderSource;
+    }
+    | undefined
+  >;
+  /**
+   * Applies the patch to a member's own reminder while it still carries
+   * `expectedUpdatedAt`; undefined when it has changed or is not theirs to
+   * edit.
+   */
+  saveReminder(
+    command: PlanningActor & {
+      readonly expectedUpdatedAt: string;
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly patch: ReminderPatch;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<ReminderDefinitionRecord | undefined>;
+  /**
+   * Soft-deletes and disables a member's own reminder while it still carries
+   * `expectedUpdatedAt`. Its occurrences stay: `deleted_at` keeps every one,
+   * delivered or in flight, where a hard delete would cascade them away.
+   */
+  deleteReminder(
+    command: PlanningActor & {
+      readonly expectedUpdatedAt: string;
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<boolean>;
   upsertOccurrences(
     command: PlanningActor & {
       readonly occurrences: readonly CalendarOccurrence[];
@@ -178,6 +230,24 @@ export interface ReminderRepository {
     }
     | undefined
   >;
+  /** The cadence `id` names in this workspace, if any. */
+  findCadence(
+    command: PlanningActor & {
+      readonly id: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<StayInTouchCadenceRecord | undefined>;
+  /**
+   * Removes the cadence while it still carries `expectedUpdatedAt`, with the
+   * request receipts that only replayed its creation.
+   */
+  deleteCadence(
+    command: PlanningActor & {
+      readonly expectedUpdatedAt: string;
+      readonly id: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<boolean>;
   updateCadenceFromInteraction(command: {
     readonly happenedAt: string;
     readonly memberId: string;

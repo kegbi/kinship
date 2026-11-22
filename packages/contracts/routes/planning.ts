@@ -18,11 +18,16 @@ import {
 import {
   cadenceCreated,
   cadenceCreateInput,
+  cadenceDeleted,
   notificationsPage,
   personReminders,
+  planningRevisionInput,
   reminderActiveInput,
+  reminderChanged,
   reminderCreated,
   reminderCreateInput,
+  reminderDeleted,
+  reminderEditInput,
   reminderOccurrenceAcknowledged,
   reminderSaved,
   taskChanged,
@@ -30,6 +35,7 @@ import {
   taskCompletionInput,
   taskCreated,
   taskCreateInput,
+  taskDeleted,
   taskList,
   taskReady,
   todayAttention,
@@ -127,6 +133,70 @@ export const setReminderActive = defineRoute({
   },
 });
 
+export const updateReminder = defineRoute({
+  method: "patch",
+  path: "/api/v1/reminders/{reminderId}",
+  operationId: "updateReminder",
+  description:
+    "Personal tokens require reminders:write. Edits one of a member's own calendar reminders: its title, anchorOn, sendTime, recurrenceUnit, or recurrenceInterval, at least one of them. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences are replaced from the new schedule, exactly as disabling and re-enabling it would; delivered and in-flight occurrences are kept as they are, and a disabled reminder stays disabled. A reminder generated from an important date answers 409 reminder_managed_by_source: change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      reminderId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": reminderEditInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Reminder edited, with its next occurrence under the new schedule, or already equal",
+      content: {
+        "application/json": reminderChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteReminder = defineRoute({
+  method: "delete",
+  path: "/api/v1/reminders/{reminderId}",
+  operationId: "deleteReminder",
+  description:
+    "Personal tokens require reminders:write. Deletes one of a member's own calendar reminders. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences stop exactly as disabling stops them, while delivered and in-flight occurrences are kept as delivery evidence; afterwards it no longer appears in the person's reminders or in Today. Retrying the createReminder request that made it answers 409 reminder_request_deleted rather than recreating it. A reminder generated from an important date answers 409 reminder_managed_by_source: delete or change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      reminderId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": planningRevisionInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Reminder deleted; unattempted future work cancelled and delivery evidence kept",
+      content: {
+        "application/json": reminderDeleted,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
 export const acknowledgeReminderOccurrence = defineRoute({
   method: "put",
   path: "/api/v1/reminder-occurrences/{occurrenceId}/acknowledgement",
@@ -173,6 +243,37 @@ export const createStayInTouchCadence = defineRoute({
       description: "Stay-in-touch cadence created or changed",
       content: {
         "application/json": cadenceCreated,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteStayInTouchCadence = defineRoute({
+  method: "delete",
+  path: "/api/v1/stay-in-touch-cadences/{cadenceId}",
+  operationId: "deleteStayInTouchCadence",
+  description:
+    "Personal tokens require reminders:write. Removes a person's stay-in-touch cadence, named by the id createStayInTouchCadence and listPersonReminders answer; the id stays the same when the cadence is replaced. Send the cadence's updatedAt from listPersonReminders as expectedUpdatedAt; recording an interaction moves it, so a cadence changed since answers 409 reminder_stale. Its due item leaves Today and the attention queue, and recording an interaction afterwards does not bring it back; set a new cadence with createStayInTouchCadence and a new requestId. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "reminders:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      cadenceId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": planningRevisionInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Stay-in-touch cadence removed",
+      content: {
+        "application/json": cadenceDeleted,
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
@@ -289,6 +390,37 @@ export const changeTask = defineRoute({
       description: "Task changed or already equal",
       content: {
         "application/json": taskChanged,
+      },
+    },
+    ...problemResponses(400, 401, 403, 404, 409, 503),
+  },
+});
+
+export const deleteTask = defineRoute({
+  method: "delete",
+  path: "/api/v1/tasks/{taskId}",
+  operationId: "deleteTask",
+  description:
+    "Personal tokens require tasks:write. Deletes an existing task. Read it first (getTask or listTasks) and send its updatedAt as expectedUpdatedAt; a task changed since answers 409 task_stale. Afterwards it is not found by getTask and no longer appears in listTasks, Today, the attention queue, or search. Retrying the createTask request that made it answers 409 task_request_deleted rather than recreating it. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "tasks:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  request: {
+    params: z.object({
+      taskId: uuid,
+    }),
+    headers: tokenOrSessionWriteHeaders,
+    body: {
+      required: true,
+      content: {
+        "application/json": planningRevisionInput,
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Task deleted",
+      content: {
+        "application/json": taskDeleted,
       },
     },
     ...problemResponses(400, 401, 403, 404, 409, 503),
@@ -425,12 +557,16 @@ export const PLANNING_ROUTES: readonly RouteDescriptor[] = [
   listPersonReminders,
   createReminder,
   setReminderActive,
+  updateReminder,
+  deleteReminder,
   acknowledgeReminderOccurrence,
   createStayInTouchCadence,
+  deleteStayInTouchCadence,
   listTasks,
   getTask,
   createTask,
   changeTask,
+  deleteTask,
   setTaskCompletion,
   getTodayAttention,
   getTodayReminders,

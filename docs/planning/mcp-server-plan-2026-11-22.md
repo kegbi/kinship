@@ -190,7 +190,7 @@ is a separate decision.
 - [x] **MCP-D1 Interactions.** Edit and delete a note (including its favourite
       flag), an activity, a call, and a conversation, under
       `interactions:write`, with revision checks.
-- [ ] **MCP-D2 Planning.** Delete a task; edit and delete a reminder; delete a
+- [x] **MCP-D2 Planning.** Delete a task; edit and delete a reminder; delete a
       cadence.
 - [x] **MCP-D3 Gifts and debts.** Edit a gift's and a debt's values, delete a
       gift, retry-safe creates (`requestId`), and revision checks on updates.

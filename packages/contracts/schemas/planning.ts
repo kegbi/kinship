@@ -110,6 +110,51 @@ export const reminderSaved = z.strictObject({
   status: z.literal("saved"),
 }).meta({ id: "ReminderSaved" });
 
+/**
+ * The revision a delete of a task, a reminder, or a cadence names (MCP-D2):
+ * the `updatedAt` the caller last read.
+ */
+export const planningRevisionInput = z.strictObject({
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+}).meta({ id: "PlanningRevisionInput" });
+
+/** The title and schedule fields an edit may change, at least one of them. */
+export const reminderEditInput = z.strictObject({
+  anchorOn: z.iso.date().optional(),
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+  recurrenceInterval: z.number().int().min(1).max(100).optional(),
+  recurrenceUnit: z.enum(["none", "day", "week", "month", "year"]).optional(),
+  sendTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
+    .optional(),
+  title: z.string().trim().min(1).max(500).optional(),
+}).refine(
+  (value) =>
+    value.anchorOn !== undefined || value.recurrenceInterval !== undefined ||
+    value.recurrenceUnit !== undefined || value.sendTime !== undefined ||
+    value.title !== undefined,
+  { message: "At least one reminder field must change." },
+).meta({ id: "ReminderEditInput" });
+
+export const reminderChanged = z.strictObject({
+  reminder: reminder,
+  status: z.enum(["saved", "unchanged"]),
+}).meta({ id: "ReminderChanged" });
+
+export const reminderDeleted = z.strictObject({
+  reminderId: z.uuid(),
+  status: z.literal("deleted"),
+}).meta({ id: "ReminderDeleted" });
+
+export const cadenceDeleted = z.strictObject({
+  cadenceId: z.uuid(),
+  status: z.literal("deleted"),
+}).meta({ id: "CadenceDeleted" });
+
+export const taskDeleted = z.strictObject({
+  status: z.literal("deleted"),
+  taskId: z.uuid(),
+}).meta({ id: "TaskDeleted" });
+
 /** An undelivered occurrence the member cleared from Today (REL-088). */
 export const reminderOccurrenceAcknowledged = z.strictObject({
   occurrenceId: z.uuid(),

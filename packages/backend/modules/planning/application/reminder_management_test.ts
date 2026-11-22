@@ -97,6 +97,12 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
         interactions.push([...command.personIds]);
         return Promise.resolve();
       },
+      deleteCadence: () => Promise.resolve(false),
+      deleteReminder: () => Promise.resolve(false),
+      findCadence: () => Promise.resolve(undefined),
+      findReminderForChange: () => Promise.resolve(undefined),
+      reminderDeleted: () => Promise.resolve(false),
+      saveReminder: () => Promise.resolve(undefined),
       upsertCadence: (command) => {
         cadenceFingerprint = command.requestFingerprint;
         return Promise.resolve(savedCadence);
@@ -392,4 +398,313 @@ Deno.test("[PLANNING-003] REL-088 a member acknowledges their own undelivered re
     event.subjectType !== "reminder_occurrence" ||
     event.actorMemberId !== actor.memberId
   ) throw new Error(`acknowledgement event: ${JSON.stringify(event)}`);
+});
+
+Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by revision", async () => {
+  const actor = {
+    memberId: crypto.randomUUID(),
+    role: "member" as const,
+    userId: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
+  };
+  const personId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  let reminder: planning.ReminderDefinitionRecord | undefined;
+  let source = { canDelete: true, targetKind: "person" };
+  let deletedReminderId: string | undefined;
+  let cadence: planning.StayInTouchCadenceRecord | undefined = {
+    id: crypto.randomUUID(),
+    intervalCount: 2,
+    intervalUnit: "week",
+    isActive: true,
+    nextDueAt: "2026-09-01T10:00:00.000Z",
+    personId,
+    updatedAt: "2026-08-18T10:00:00.000Z",
+  };
+  let authorized = true;
+  let personStatus: "archived" | "not-found" | "ready" = "ready";
+  const audits: { action: string; subjectId: string }[] = [];
+  const steps: string[] = [];
+  const tick = (value: string) => new Date(Date.parse(value) + 1).toISOString();
+  const management = planning.createReminderManagement({
+    actors: {
+      revalidate: () =>
+        Promise.resolve(authorized ? "active" as const : "revoked" as const),
+    },
+    audit: {
+      record(command) {
+        audits.push({ action: command.action, subjectId: command.subjectId });
+        return Promise.resolve();
+      },
+    },
+    clock: fixedClock("2026-08-18T10:00:00.000Z"),
+    people: {
+      inspect: (command) => {
+        steps.push(`person:${command.personIds.join(",")}:${command.lock}`);
+        return Promise.resolve({ status: personStatus });
+      },
+      summarize: () => Promise.resolve([]),
+    },
+    repository: ({
+      cancelFutureOccurrences: (command) => {
+        steps.push(`cancel:${command.reminderId}`);
+        return Promise.resolve();
+      },
+      createReminder: (command) => {
+        reminder = {
+          anchorOn: command.anchorOn,
+          createdAt: command.occurredAt.toISOString(),
+          id: command.id,
+          isActive: true,
+          personId: command.personId,
+          recurrenceInterval: command.recurrenceInterval,
+          recurrenceUnit: command.recurrenceUnit,
+          sendTime: command.sendTime,
+          title: command.title,
+          updatedAt: command.occurredAt.toISOString(),
+        };
+        return Promise.resolve(reminder);
+      },
+      deleteCadence: (command) => {
+        if (cadence?.updatedAt !== command.expectedUpdatedAt) {
+          return Promise.resolve(false);
+        }
+        cadence = undefined;
+        return Promise.resolve(true);
+      },
+      deleteReminder: (command) => {
+        if (reminder?.updatedAt !== command.expectedUpdatedAt) {
+          return Promise.resolve(false);
+        }
+        deletedReminderId = reminder.id;
+        reminder = undefined;
+        return Promise.resolve(true);
+      },
+      findCadence: (command) =>
+        Promise.resolve(cadence?.id === command.id ? cadence : undefined),
+      findReminder: (command) =>
+        Promise.resolve(reminder?.id === command.id ? reminder : undefined),
+      findReminderForChange: (command) =>
+        Promise.resolve(
+          reminder?.id === command.id ? { reminder, source } : undefined,
+        ),
+      lockRequest: () => Promise.resolve(),
+      reminderDeleted: (command) =>
+        Promise.resolve(command.id === deletedReminderId),
+      saveReminder: (command) => {
+        if (reminder?.updatedAt !== command.expectedUpdatedAt) {
+          return Promise.resolve(undefined);
+        }
+        reminder = {
+          ...reminder,
+          ...command.patch,
+          updatedAt: tick(reminder.updatedAt),
+        };
+        steps.push(`save:${JSON.stringify(command.patch)}`);
+        return Promise.resolve(reminder);
+      },
+      upsertOccurrences: (command) => {
+        steps.push(
+          `mint:${command.reminder.title}:${command.occurrences.length}`,
+        );
+        return Promise.resolve([{
+          attemptCount: 0,
+          deliverAt: command.occurrences[0]!.deliverAt,
+          id: crypto.randomUUID(),
+          occursOn: command.occurrences[0]!.occursOn,
+          status: "pending" as const,
+        }]);
+      },
+    } satisfies Partial<
+      planning.ReminderRepository
+    >) as unknown as planning.ReminderRepository,
+    transaction: { run: (work) => work({ opaque: "tx" }) },
+    workspace: {
+      effectiveTimezone: () =>
+        Promise.resolve({ status: "ready" as const, timezone: "UTC" }),
+    },
+  });
+  const input = {
+    anchorOn: "2026-08-20",
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "month" as const,
+    requestId,
+    sendTime: "09:00",
+    title: "Call Ada",
+  };
+  const created = await management.createReminder(actor, input);
+  if (created.status !== "created" || !("reminder" in created)) {
+    throw new Error(`fixture reminder: ${JSON.stringify(created)}`);
+  }
+  const id = created.reminder.id;
+  const revision = created.reminder.updatedAt;
+  const statuses: Record<string, string> = {};
+  statuses.malformed = (await management.editReminder(actor, "bad", {
+    expectedUpdatedAt: revision,
+    title: "x",
+  })).status;
+  statuses.empty = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: revision,
+  })).status;
+  authorized = false;
+  statuses.forbidden = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: revision,
+    title: "Forbidden",
+  })).status;
+  authorized = true;
+  statuses.missing = (await management.editReminder(
+    actor,
+    crypto.randomUUID(),
+    { expectedUpdatedAt: revision, title: "Missing" },
+  )).status;
+  statuses.stale = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: "2025-01-01T00:00:00.000Z",
+    title: "Stale",
+  })).status;
+  source = { canDelete: false, targetKind: "person_date" };
+  statuses.managedEdit = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: revision,
+    title: "Birthday",
+  })).status;
+  statuses.managedDelete = (await management.deleteReminder(actor, id, {
+    expectedUpdatedAt: revision,
+  })).status;
+  source = { canDelete: true, targetKind: "person" };
+  personStatus = "archived";
+  statuses.archived = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: revision,
+    title: "Archived",
+  })).status;
+  personStatus = "ready";
+  statuses.unchanged = (await management.editReminder(actor, id, {
+    expectedUpdatedAt: revision,
+    sendTime: "09:00",
+    title: " Call Ada ",
+  })).status;
+  steps.length = 0;
+  const edited = await management.editReminder(actor, id.toUpperCase(), {
+    expectedUpdatedAt: revision,
+    recurrenceUnit: "week",
+    title: "Call Ada weekly",
+  });
+  if (edited.status !== "saved") {
+    throw new Error(`edit: ${JSON.stringify(edited)}`);
+  }
+  // The person is locked before the reminder, as a create does, and the
+  // future is replaced the way disabling and re-enabling would replace it.
+  if (
+    JSON.stringify(steps) !== JSON.stringify([
+        `person:${personId}:true`,
+        `save:${
+          JSON.stringify({ recurrenceUnit: "week", title: "Call Ada weekly" })
+        }`,
+        `cancel:${id}`,
+        "mint:Call Ada weekly:8",
+      ]) ||
+    edited.reminder.recurrenceUnit !== "week" ||
+    !edited.reminder.nextOccurrence
+  ) throw new Error(`edit steps: ${JSON.stringify({ edited, steps })}`);
+  reminder = { ...reminder!, isActive: false };
+  steps.length = 0;
+  const inactive = await management.editReminder(actor, id, {
+    anchorOn: "2026-09-01",
+    expectedUpdatedAt: reminder.updatedAt,
+  });
+  if (
+    inactive.status !== "saved" ||
+    steps.some((step) => step.startsWith("mint:"))
+  ) throw new Error(`a disabled reminder minted: ${JSON.stringify(steps)}`);
+  statuses.deleteStale = (await management.deleteReminder(actor, id, {
+    expectedUpdatedAt: revision,
+  })).status;
+  steps.length = 0;
+  const deleted = await management.deleteReminder(actor, id, {
+    expectedUpdatedAt: reminder.updatedAt,
+  });
+  if (
+    deleted.status !== "deleted" || deleted.reminderId !== id ||
+    !steps.includes(`cancel:${id}`)
+  ) throw new Error(`delete: ${JSON.stringify({ deleted, steps })}`);
+  statuses.deletedAgain = (await management.deleteReminder(actor, id, {
+    expectedUpdatedAt: revision,
+  })).status;
+  statuses.recreate = (await management.createReminder(actor, input)).status;
+
+  const cadenceId = cadence!.id;
+  const cadenceRevision = cadence!.updatedAt;
+  statuses.cadenceMalformed = (await management.deleteCadence(actor, "bad", {
+    expectedUpdatedAt: cadenceRevision,
+  })).status;
+  statuses.cadenceStale = (await management.deleteCadence(actor, cadenceId, {
+    expectedUpdatedAt: "2025-01-01T00:00:00.000Z",
+  })).status;
+  personStatus = "archived";
+  statuses.cadenceArchived = (await management.deleteCadence(
+    actor,
+    cadenceId,
+    { expectedUpdatedAt: cadenceRevision },
+  )).status;
+  personStatus = "ready";
+  authorized = false;
+  statuses.cadenceForbidden = (await management.deleteCadence(
+    actor,
+    cadenceId,
+    { expectedUpdatedAt: cadenceRevision },
+  )).status;
+  authorized = true;
+  const cadenceDeleted = await management.deleteCadence(actor, cadenceId, {
+    expectedUpdatedAt: cadenceRevision,
+  });
+  statuses.cadenceDeleted = cadenceDeleted.status;
+  statuses.cadenceAgain = (await management.deleteCadence(actor, cadenceId, {
+    expectedUpdatedAt: cadenceRevision,
+  })).status;
+
+  const expected = {
+    malformed: "validation-error",
+    empty: "validation-error",
+    forbidden: "forbidden",
+    missing: "not-found",
+    stale: "stale",
+    managedEdit: "managed-reminder",
+    managedDelete: "managed-reminder",
+    archived: "archived-write-rejected",
+    unchanged: "unchanged",
+    deleteStale: "stale",
+    deletedAgain: "not-found",
+    recreate: "request-deleted",
+    cadenceMalformed: "validation-error",
+    cadenceStale: "stale",
+    cadenceArchived: "archived-write-rejected",
+    cadenceForbidden: "forbidden",
+    cadenceDeleted: "deleted",
+    cadenceAgain: "not-found",
+  };
+  if (JSON.stringify(statuses) !== JSON.stringify(expected)) {
+    throw new Error(`statuses: ${JSON.stringify(statuses)}`);
+  }
+  const actions = audits.map((entry) => entry.action);
+  if (
+    JSON.stringify(actions) !== JSON.stringify([
+        "created",
+        "generated",
+        "edited",
+        "generated",
+        "edited",
+        "deleted",
+        "cadence-deleted",
+      ]) || audits.at(-1)?.subjectId !== cadenceId
+  ) throw new Error(`audits: ${JSON.stringify(audits)}`);
+  const event = describeReminderEvent({
+    action: "cadence-deleted",
+    actor,
+    occurredAt: new Date("2026-08-18T10:00:00.000Z"),
+    subjectId: cadenceId,
+    transaction: { opaque: "tx" },
+  });
+  if (
+    event.action !== "planning.reminder-cadence-deleted" ||
+    event.subjectType !== "stay_in_touch_cadence"
+  ) throw new Error(`cadence deletion event: ${JSON.stringify(event)}`);
 });

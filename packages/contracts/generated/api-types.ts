@@ -1427,6 +1427,24 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/reminders/{reminderId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Personal tokens require reminders:write. Deletes one of a member's own calendar reminders. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences stop exactly as disabling stops them, while delivered and in-flight occurrences are kept as delivery evidence; afterwards it no longer appears in the person's reminders or in Today. Retrying the createReminder request that made it answers 409 reminder_request_deleted rather than recreating it. A reminder generated from an important date answers 409 reminder_managed_by_source: delete or change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        readonly delete: operations["deleteReminder"];
+        readonly options?: never;
+        readonly head?: never;
+        /** @description Personal tokens require reminders:write. Edits one of a member's own calendar reminders: its title, anchorOn, sendTime, recurrenceUnit, or recurrenceInterval, at least one of them. Read the person's reminders first (listPersonReminders) and send that reminder's updatedAt as expectedUpdatedAt; a reminder changed since answers 409 reminder_stale. Its unattempted future occurrences are replaced from the new schedule, exactly as disabling and re-enabling it would; delivered and in-flight occurrences are kept as they are, and a disabled reminder stays disabled. A reminder generated from an important date answers 409 reminder_managed_by_source: change the date on the person instead. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        readonly patch: operations["updateReminder"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/reminders/{reminderId}/active": {
         readonly parameters: {
             readonly query?: never;
@@ -1866,6 +1884,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/stay-in-touch-cadences/{cadenceId}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** @description Personal tokens require reminders:write. Removes a person's stay-in-touch cadence, named by the id createStayInTouchCadence and listPersonReminders answer; the id stays the same when the cadence is replaced. Send the cadence's updatedAt from listPersonReminders as expectedUpdatedAt; recording an interaction moves it, so a cadence changed since answers 409 reminder_stale. Its due item leaves Today and the attention queue, and recording an interaction afterwards does not bring it back; set a new cadence with createStayInTouchCadence and a new requestId. Archived people are read-only. Does not grant read access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        readonly delete: operations["deleteStayInTouchCadence"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/tasks": {
         readonly parameters: {
             readonly query?: never;
@@ -1895,7 +1930,8 @@ export interface paths {
         readonly get: operations["getTask"];
         readonly put?: never;
         readonly post?: never;
-        readonly delete?: never;
+        /** @description Personal tokens require tasks:write. Deletes an existing task. Read it first (getTask or listTasks) and send its updatedAt as expectedUpdatedAt; a task changed since answers 409 task_stale. Afterwards it is not found by getTask and no longer appears in listTasks, Today, the attention queue, or search. Retrying the createTask request that made it answers 409 task_request_deleted rather than recreating it. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
+        readonly delete: operations["deleteTask"];
         readonly options?: never;
         readonly head?: never;
         /** @description Personal tokens require tasks:write. Edits an existing task using expectedUpdatedAt; nullable fields may be explicitly cleared. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
@@ -2491,6 +2527,12 @@ export interface components {
             readonly cadence: components["schemas"]["StayInTouchCadence"];
             /** @constant */
             readonly status: "created";
+        };
+        readonly CadenceDeleted: {
+            /** Format: uuid */
+            readonly cadenceId: string;
+            /** @constant */
+            readonly status: "deleted";
         };
         readonly CalendarFeed: {
             /** Format: date-time */
@@ -4460,6 +4502,10 @@ export interface components {
         } | unknown | {
             readonly name: string;
         };
+        readonly PlanningRevisionInput: {
+            /** Format: date-time */
+            readonly expectedUpdatedAt: string;
+        };
         readonly PreferenceSettings: {
             /** @constant */
             readonly status: "ready";
@@ -4786,6 +4832,11 @@ export interface components {
             /** Format: date-time */
             readonly updatedAt: string;
         };
+        readonly ReminderChanged: {
+            readonly reminder: components["schemas"]["Reminder"];
+            /** @enum {string} */
+            readonly status: "saved" | "unchanged";
+        };
         readonly ReminderCreateInput: {
             /** Format: date */
             readonly anchorOn: string;
@@ -4803,6 +4854,23 @@ export interface components {
             readonly reminder: components["schemas"]["Reminder"];
             /** @constant */
             readonly status: "created";
+        };
+        readonly ReminderDeleted: {
+            /** Format: uuid */
+            readonly reminderId: string;
+            /** @constant */
+            readonly status: "deleted";
+        };
+        readonly ReminderEditInput: {
+            /** Format: date */
+            readonly anchorOn?: string;
+            /** Format: date-time */
+            readonly expectedUpdatedAt: string;
+            readonly recurrenceInterval?: number;
+            /** @enum {string} */
+            readonly recurrenceUnit?: "none" | "day" | "week" | "month" | "year";
+            readonly sendTime?: string;
+            readonly title?: string;
         };
         readonly ReminderOccurrence: {
             readonly attemptCount: number;
@@ -5084,6 +5152,12 @@ export interface components {
             /** @constant */
             readonly status: "created";
             readonly task: components["schemas"]["Task"];
+        };
+        readonly TaskDeleted: {
+            /** @constant */
+            readonly status: "deleted";
+            /** Format: uuid */
+            readonly taskId: string;
         };
         readonly TaskList: {
             readonly items: readonly components["schemas"]["Task"][];
@@ -14368,6 +14442,194 @@ export interface operations {
             };
         };
     };
+    readonly deleteReminder: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly reminderId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PlanningRevisionInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Reminder deleted; unattempted future work cancelled and delivery evidence kept */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ReminderDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly updateReminder: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly reminderId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ReminderEditInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Reminder edited, with its next occurrence under the new schedule, or already equal */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ReminderChanged"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     readonly setReminderActive: {
         readonly parameters: {
             readonly query?: never;
@@ -17150,6 +17412,100 @@ export interface operations {
             };
         };
     };
+    readonly deleteStayInTouchCadence: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly cadenceId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PlanningRevisionInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Stay-in-touch cadence removed */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CadenceDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     readonly listTasks: {
         readonly parameters: {
             readonly query?: {
@@ -17368,6 +17724,100 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly deleteTask: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path: {
+                readonly taskId: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PlanningRevisionInput"];
+            };
+        };
+        readonly responses: {
+            /** @description Task deleted */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TaskDeleted"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

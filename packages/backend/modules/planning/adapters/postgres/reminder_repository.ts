@@ -517,6 +517,108 @@ export class PostgresReminderRepository implements ReminderRepository {
     return row ? reminder(row) : undefined;
   }
 
+  async reminderDeleted(
+    command: Parameters<ReminderRepository["reminderDeleted"]>[0],
+  ): Promise<boolean> {
+    const result = await sql<{ readonly deleted: boolean }>`
+      select exists (
+        select 1 from crm.reminders reminder
+        where reminder.id = ${command.id}::uuid
+          and reminder.workspace_id = ${command.workspaceId}::uuid
+          and reminder.deleted_at is not null
+      ) as deleted
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]?.deleted === true;
+  }
+
+  async findReminderForChange(
+    command: Parameters<ReminderRepository["findReminderForChange"]>[0],
+  ) {
+    const result = await sql<
+      ReminderRow & {
+        readonly can_delete: boolean;
+        readonly target_kind: string;
+      }
+    >`
+      select ${reminderColumns}, reminder.can_delete, reminder.target_kind
+      from crm.reminders reminder
+      where reminder.id = ${command.id}::uuid
+        and reminder.workspace_id = ${command.workspaceId}::uuid
+        and reminder.deleted_at is null
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row
+      ? {
+        reminder: reminder(row),
+        source: { canDelete: row.can_delete, targetKind: row.target_kind },
+      }
+      : undefined;
+  }
+
+  /**
+   * Only a member's own reminder at the revision they read is written: the
+   * statement repeats the use case's source check, so a row its source took
+   * over in between is left alone and answered as changed.
+   */
+  async saveReminder(
+    command: Parameters<ReminderRepository["saveReminder"]>[0],
+  ): Promise<ReminderDefinitionRecord | undefined> {
+    const patch = command.patch;
+    const result = await sql<ReminderRow>`
+      update crm.reminders reminder set
+        title = coalesce(${patch.title ?? null}::text, reminder.title),
+        anchor_on = coalesce(${
+      patch.anchorOn ?? null
+    }::date, reminder.anchor_on),
+        recurrence_unit = coalesce(
+          ${patch.recurrenceUnit ?? null}::text, reminder.recurrence_unit
+        ),
+        recurrence_interval = coalesce(
+          ${patch.recurrenceInterval ?? null}::int, reminder.recurrence_interval
+        ),
+        send_time = coalesce(${
+      patch.sendTime ?? null
+    }::time, reminder.send_time),
+        updated_at = greatest(
+          ${command.occurredAt}::timestamptz,
+          reminder.updated_at + interval '1 microsecond'
+        )
+      where reminder.id = ${command.id}::uuid
+        and reminder.workspace_id = ${command.workspaceId}::uuid
+        and reminder.deleted_at is null
+        and reminder.target_kind = 'person' and reminder.can_delete
+        and ${
+      instantColumn("reminder.updated_at")
+    } = ${command.expectedUpdatedAt}
+      returning ${reminderColumns}
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row ? reminder(row) : undefined;
+  }
+
+  async deleteReminder(
+    command: Parameters<ReminderRepository["deleteReminder"]>[0],
+  ): Promise<boolean> {
+    const result = await sql<{ readonly id: string }>`
+      update crm.reminders reminder set
+        is_active = false,
+        deleted_at = ${command.occurredAt}::timestamptz,
+        updated_at = greatest(
+          ${command.occurredAt}::timestamptz,
+          reminder.updated_at + interval '1 microsecond'
+        )
+      where reminder.id = ${command.id}::uuid
+        and reminder.workspace_id = ${command.workspaceId}::uuid
+        and reminder.deleted_at is null
+        and reminder.target_kind = 'person' and reminder.can_delete
+        and ${
+      instantColumn("reminder.updated_at")
+    } = ${command.expectedUpdatedAt}
+      returning reminder.id::text
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.length === 1;
+  }
+
   async createReminder(
     command: Parameters<ReminderRepository["createReminder"]>[0],
   ): Promise<ReminderDefinitionRecord | undefined> {
@@ -580,6 +682,8 @@ export class PostgresReminderRepository implements ReminderRepository {
           deliver_at = excluded.deliver_at, status = 'pending',
           claim_token = null, claim_owner = null, lease_expires_at = null,
           next_attempt_at = null, error = null,
+          title_snapshot = excluded.title_snapshot,
+          body_snapshot = excluded.body_snapshot,
           updated_at = excluded.updated_at
         where reminder_occurrences.status = 'cancelled'
           and reminder_occurrences.attempt_count = 0
@@ -775,6 +879,40 @@ export class PostgresReminderRepository implements ReminderRepository {
         requestFingerprint: row.last_request_fingerprint,
       }
       : undefined;
+  }
+
+  async findCadence(
+    command: Parameters<ReminderRepository["findCadence"]>[0],
+  ): Promise<StayInTouchCadenceRecord | undefined> {
+    const result = await sql<CadenceRow>`
+      select cadence.id::text, cadence.person_id::text,
+        cadence.interval_count, cadence.interval_unit, cadence.is_active,
+        ${instantColumn("cadence.last_contacted_at")} as last_contacted_at,
+        ${instantColumn("cadence.next_due_at")} as next_due_at,
+        ${instantColumn("cadence.updated_at")} as updated_at
+      from crm.stay_in_touch_cadences cadence
+      join crm.people person on person.id = cadence.person_id
+      where cadence.id = ${command.id}::uuid
+        and cadence.workspace_id = ${command.workspaceId}::uuid
+        and person.workspace_id = ${command.workspaceId}::uuid
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row ? cadence(row) : undefined;
+  }
+
+  async deleteCadence(
+    command: Parameters<ReminderRepository["deleteCadence"]>[0],
+  ): Promise<boolean> {
+    const result = await sql<{ readonly id: string }>`
+      delete from crm.stay_in_touch_cadences cadence
+      where cadence.id = ${command.id}::uuid
+        and cadence.workspace_id = ${command.workspaceId}::uuid
+        and ${
+      instantColumn("cadence.updated_at")
+    } = ${command.expectedUpdatedAt}
+      returning cadence.id::text
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows.length === 1;
   }
 
   async updateCadenceFromInteraction(
@@ -1166,7 +1304,11 @@ async function topUpWindows(
     eligible.some((recipient) => recipient.memberId === window.memberId)
   );
   if (current.length === 0) return;
-  // An important date notifies on the day plus each active lead rule.
+  // An important date notifies on the day plus each active lead rule. The
+  // definitions are held FOR SHARE while their dates are minted (MCP-D2): an
+  // edit or delete committing meanwhile is waited for and its schedule read,
+  // and one that starts later waits for these rows and then cancels them, so
+  // a top-up never mints the old schedule after an edit replaced it.
   const candidates = await sql<ReplenishmentRow>`
     select reminder.id::text as reminder_id,
       short.member_id::text as member_id, reminder.anchor_on::text,
@@ -1201,6 +1343,7 @@ async function topUpWindows(
     where reminder.is_active and reminder.deleted_at is null
       and reminder.recurrence_unit <> 'none'
       and person.archived_at is null and person.deleted_at is null
+    for share of reminder
   `.execute(transaction);
   const rows = windowRows(candidates.rows, channels, now);
   if (rows.length === 0) return;

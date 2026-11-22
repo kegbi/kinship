@@ -12,9 +12,18 @@
  * time nobody can parse, is ignored rather than failing the interaction that
  * caused it — and the person identifiers are deduplicated and sorted so two
  * concurrent interactions take the same rows in the same order.
+ *
+ * Deleting a cadence (MCP-D2) removes its row, with the request receipts that
+ * only replayed its creation. A cadence mints no occurrences — Today and the
+ * attention queue compute its due item from the row — so nothing delivered is
+ * lost, and an interaction recorded afterwards updates no row and so cannot
+ * bring it back. The schema gives the cadence no soft-delete column, and an
+ * inactive row would still be listed as the person's one cadence and kept by
+ * a merge in place of the duplicate's live one.
  */
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
+import { uuid } from "../../../shared-kernel/validation.ts";
 import {
   CADENCE_ID_NAMESPACE,
   cadenceDueAt,
@@ -25,6 +34,7 @@ import {
 import type { PlanningActor, PlanningTransaction } from "../ports/context.ts";
 import {
   actorIsActive,
+  type DeleteCadenceResult,
   type ReminderManagementDependencies,
   type ReminderMutationResult,
   writablePerson,
@@ -109,6 +119,57 @@ export function createReminderCadences(
           transaction,
         });
         return { cadence, status: "created" };
+      }, { workspaceId: actor.workspaceId });
+    },
+    deleteCadence: async (
+      actor: PlanningActor,
+      cadenceId: string,
+      input: { readonly expectedUpdatedAt: string },
+    ): Promise<DeleteCadenceResult> => {
+      const id = uuid(cadenceId);
+      if (id === undefined) {
+        return {
+          errors: { cadenceId: "Use a canonical cadence identifier." },
+          status: "validation-error",
+        };
+      }
+      return await dependencies.transaction.run(async (
+        transaction,
+      ): Promise<DeleteCadenceResult> => {
+        if (!await actorIsActive(dependencies, actor, transaction)) {
+          return { status: "forbidden" };
+        }
+        const cadence = await dependencies.repository.findCadence({
+          ...actor,
+          id,
+          transaction,
+        });
+        if (!cadence) return { status: "not-found" };
+        if (cadence.updatedAt !== input.expectedUpdatedAt) {
+          return { status: "stale" };
+        }
+        const person = await writablePerson(
+          dependencies,
+          actor,
+          cadence.personId,
+          transaction,
+        );
+        if (person !== "ready") return { status: person };
+        const deleted = await dependencies.repository.deleteCadence({
+          ...actor,
+          expectedUpdatedAt: input.expectedUpdatedAt,
+          id,
+          transaction,
+        });
+        if (!deleted) return { status: "stale" };
+        await dependencies.audit.record({
+          action: "cadence-deleted",
+          actor,
+          occurredAt: dependencies.clock.now(),
+          subjectId: id,
+          transaction,
+        });
+        return { cadenceId: id, status: "deleted" };
       }, { workspaceId: actor.workspaceId });
     },
     interactionRecorded: async (

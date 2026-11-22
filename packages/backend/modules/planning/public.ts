@@ -22,6 +22,7 @@ export type {
 } from "./domain/recurrence.ts";
 export type {
   CreateReminderInput,
+  EditReminderInput,
   ReminderDefinitionRecord,
   ReminderOccurrenceRecord,
   ReminderOccurrenceStatus,

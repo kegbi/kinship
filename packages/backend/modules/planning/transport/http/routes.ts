@@ -20,11 +20,17 @@
  * only then its session, exactly the order it always had, while a bearer
  * write is admitted or refused before its body is read, as every token write
  * is: a refused token learns nothing about the payload it sent.
+ *
+ * MCP-D2 adds deleting a task, editing and deleting a reminder, and deleting
+ * a cadence, in the order their neighbours keep: the task delete resolves its
+ * actor first like every task write, and the three reminder writes answer the
+ * outage, then a bearer or an Origin, then the body, then the session.
  */
 
 import { type Context, Hono } from "hono";
 import type {
   ChangeTaskInput,
+  EditReminderInput,
   ReminderManagement,
   TaskManagement,
 } from "../../public.ts";
@@ -42,6 +48,9 @@ import {
   createReminder,
   createStayInTouchCadence,
   createTask,
+  deleteReminder,
+  deleteStayInTouchCadence,
+  deleteTask,
   getTask,
   getTodayAttention,
   getTodayReminders,
@@ -52,11 +61,14 @@ import {
   listTasksQuery,
   setReminderActive,
   setTaskCompletion,
+  updateReminder,
 } from "../../../../../contracts/routes/planning.ts";
 import {
   cadenceCreateInput,
+  planningRevisionInput,
   reminderActiveInput,
   reminderCreateInput,
+  reminderEditInput,
   taskChangeInput,
   taskCompletionInput,
   taskCreateInput,
@@ -135,6 +147,13 @@ export const TASK_FAILURES: FailureTable = {
         "The task or linked person does not exist in the active workspace.",
       title: "Task unavailable",
     },
+    "request-deleted": {
+      code: "task_request_deleted",
+      detail:
+        "The task this request created was deleted. Use a new request identifier to create another.",
+      status: 409,
+      title: "Task was deleted",
+    },
     stale: {
       code: "task_stale",
       detail: "Refresh the task before saving your edits.",
@@ -177,10 +196,24 @@ export const REMINDER_FAILURES: FailureTable = {
       status: 409,
       title: "Request identifier already used",
     },
+    "managed-reminder": {
+      code: "reminder_managed_by_source",
+      detail:
+        "This reminder is generated from an important date. Change or delete the date on the person instead.",
+      status: 409,
+      title: "Reminder follows its source",
+    },
     "not-found": {
       code: "reminder_not_found",
       detail: "The reminder or person does not exist in the active workspace.",
       title: "Reminder unavailable",
+    },
+    "request-deleted": {
+      code: "reminder_request_deleted",
+      detail:
+        "The reminder this request created was deleted. Use a new request identifier to create another.",
+      status: 409,
+      title: "Reminder was deleted",
     },
     stale: {
       code: "reminder_occurrence_stale",
@@ -269,6 +302,42 @@ const REMINDER_OCCURRENCE_INVALID: ProblemDefinition = {
   status: 400,
   title: "Invalid reminder",
 };
+/**
+ * A reminder or cadence edit or delete sent with a revision it no longer has
+ * (MCP-D2). The acknowledgement's own `stale` keeps its sentence.
+ */
+const REMINDER_STALE: ProblemDefinition = {
+  code: "reminder_stale",
+  detail:
+    "It changed since it was read. Read the person's reminders again and send the current updatedAt.",
+  status: 409,
+  title: "Reminder changed",
+};
+const CADENCE_NOT_FOUND: ProblemDefinition = {
+  code: "cadence_not_found",
+  detail: "The stay-in-touch cadence does not exist in the active workspace.",
+  status: 404,
+  title: "Cadence unavailable",
+};
+const REMINDER_EDIT_INVALID: ProblemDefinition = {
+  code: "reminder_request_invalid",
+  detail:
+    "Use a canonical reminder, its expectedUpdatedAt, and at least one supported calendar field.",
+  status: 400,
+  title: "Invalid reminder",
+};
+const REMINDER_DELETE_INVALID: ProblemDefinition = {
+  code: "reminder_request_invalid",
+  detail: "Use a canonical reminder and its expectedUpdatedAt.",
+  status: 400,
+  title: "Invalid reminder",
+};
+const CADENCE_DELETE_INVALID: ProblemDefinition = {
+  code: "cadence_request_invalid",
+  detail: "Use a canonical cadence and its expectedUpdatedAt.",
+  status: 400,
+  title: "Invalid stay-in-touch cadence",
+};
 const CADENCE_REQUEST_INVALID: ProblemDefinition = {
   code: "cadence_request_invalid",
   detail: "Use a supported calendar interval.",
@@ -290,6 +359,12 @@ const TASK_FIELDS_INVALID: ProblemDefinition = {
 const TASK_CHANGE_INVALID: ProblemDefinition = {
   code: "task_request_invalid",
   detail: "Use a canonical task and at least one supported change.",
+  status: 400,
+  title: "Invalid task",
+};
+const TASK_DELETE_INVALID: ProblemDefinition = {
+  code: "task_request_invalid",
+  detail: "Use a canonical task and its expectedUpdatedAt.",
   status: 400,
   title: "Invalid task",
 };
@@ -320,17 +395,23 @@ const TASKS_NOTHING_CHANGED: ProblemDefinition = {
 
 /** Every problem this file answers on its own, for the pinning suite. */
 export const PLANNING_PROBLEMS: readonly ProblemDefinition[] = [
+  CADENCE_DELETE_INVALID,
+  CADENCE_NOT_FOUND,
   CADENCE_REQUEST_INVALID,
   REMINDER_ACTIVE_INVALID,
   REMINDER_CALENDAR_INVALID,
+  REMINDER_DELETE_INVALID,
+  REMINDER_EDIT_INVALID,
   REMINDER_OCCURRENCE_INVALID,
   REMINDER_PERSON_NOT_FOUND,
   REMINDER_QUERY_INVALID,
   REMINDERS_NOTHING_CHANGED,
   REMINDERS_NOTHING_SAVED,
   REMINDERS_SECTION_UNAVAILABLE,
+  REMINDER_STALE,
   TASK_CHANGE_INVALID,
   TASK_COMPLETION_INVALID,
+  TASK_DELETE_INVALID,
   TASK_FIELDS_INVALID,
   TASK_QUERY_INVALID,
   TASKS_LIST_UNAVAILABLE,
@@ -359,6 +440,13 @@ export function createPlanningRoutes(
   const createReminderActor = scopedRouteActor(createReminder, tokens);
   const reminderActiveActor = scopedRouteActor(setReminderActive, tokens);
   const cadenceActor = scopedRouteActor(createStayInTouchCadence, tokens);
+  const updateReminderActor = scopedRouteActor(updateReminder, tokens);
+  const deleteReminderActor = scopedRouteActor(deleteReminder, tokens);
+  const deleteCadenceActor = scopedRouteActor(
+    deleteStayInTouchCadence,
+    tokens,
+  );
+  const deleteTaskActor = scopedRouteActor(deleteTask, tokens);
   const attentionActor = scopedRouteActor(getTodayAttention, tokens);
   const todayRemindersActor = scopedRouteActor(getTodayReminders, tokens);
   const todayTasksActor = scopedRouteActor(getTodayTasks, tokens);
@@ -374,6 +462,21 @@ export function createPlanningRoutes(
     context.req.header("Authorization") === undefined
       ? rejectForeignOrigin(context, services.browserSecurity)
       : await admit(context);
+  /**
+   * An edit or delete of a reminder or cadence refused by the use case: a
+   * moved revision answers what to read again, and a missing cadence is named
+   * as one rather than as a reminder.
+   */
+  const changeFailure = (
+    context: Context<ActorEnv>,
+    result: { readonly status: string },
+    notFound?: ProblemDefinition,
+  ): Response =>
+    result.status === "stale"
+      ? definedProblem(context, REMINDER_STALE)
+      : result.status === "not-found" && notFound
+      ? definedProblem(context, notFound)
+      : reminderFailure(context, result);
 
   mount(routes, getTodayAttention, session, async (context) => {
     const actor = await attentionActor(context);
@@ -501,6 +604,79 @@ export function createPlanningRoutes(
       return context.json(result);
     },
   );
+
+  mount(routes, updateReminder, session, async (context) => {
+    const reminders = services.reminders;
+    if (!reminders) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    const early = await beforeBody(context, updateReminderActor);
+    if (early instanceof Response) return early;
+    const reminderId = parseValue(uuid, context.req.param("reminderId"));
+    const input = await parseJsonBody(context, reminderEditInput);
+    if ("errors" in reminderId || "errors" in input) {
+      return definedProblem(context, REMINDER_EDIT_INVALID);
+    }
+    const actor = early ?? await updateReminderActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await reminders.editReminder(
+      actor,
+      reminderId.data,
+      input.data as EditReminderInput,
+    ).catch(() => undefined);
+    if (!result) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    if (result.status !== "saved" && result.status !== "unchanged") {
+      return changeFailure(context, result);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, deleteReminder, session, async (context) => {
+    const reminders = services.reminders;
+    if (!reminders) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    const early = await beforeBody(context, deleteReminderActor);
+    if (early instanceof Response) return early;
+    const reminderId = parseValue(uuid, context.req.param("reminderId"));
+    const input = await parseJsonBody(context, planningRevisionInput);
+    if ("errors" in reminderId || "errors" in input) {
+      return definedProblem(context, REMINDER_DELETE_INVALID);
+    }
+    const actor = early ?? await deleteReminderActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await reminders.deleteReminder(
+      actor,
+      reminderId.data,
+      input.data,
+    ).catch(() => undefined);
+    if (!result) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    if (result.status !== "deleted") return changeFailure(context, result);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, deleteStayInTouchCadence, session, async (context) => {
+    const reminders = services.reminders;
+    if (!reminders) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    const early = await beforeBody(context, deleteCadenceActor);
+    if (early instanceof Response) return early;
+    const cadenceId = parseValue(uuid, context.req.param("cadenceId"));
+    const input = await parseJsonBody(context, planningRevisionInput);
+    if ("errors" in cadenceId || "errors" in input) {
+      return definedProblem(context, CADENCE_DELETE_INVALID);
+    }
+    const actor = early ?? await deleteCadenceActor(context);
+    if (actor instanceof Response) return actor;
+    const result = await reminders.deleteCadence(
+      actor,
+      cadenceId.data,
+      input.data,
+    ).catch(() => undefined);
+    if (!result) return definedProblem(context, REMINDERS_NOTHING_CHANGED);
+    if (result.status !== "deleted") {
+      return changeFailure(context, result, CADENCE_NOT_FOUND);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
 
   mount(
     routes,
@@ -632,6 +808,25 @@ export function createPlanningRoutes(
     if (result.status !== "saved" && result.status !== "unchanged") {
       return taskFailure(context, result);
     }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, deleteTask, session, async (context) => {
+    const actor = await deleteTaskActor(context);
+    if (actor instanceof Response) return actor;
+    const taskId = parseValue(uuid, context.req.param("taskId"));
+    const input = await parseJsonBody(context, planningRevisionInput);
+    if ("errors" in taskId || "errors" in input) {
+      return definedProblem(context, TASK_DELETE_INVALID);
+    }
+    const result = await services.tasks.delete(
+      actor,
+      taskId.data,
+      input.data,
+    ).catch(() => undefined);
+    if (!result) return definedProblem(context, TASKS_NOTHING_CHANGED);
+    if (result.status !== "deleted") return taskFailure(context, result);
     context.header("Cache-Control", "private, no-store");
     return context.json(result);
   });

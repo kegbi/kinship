@@ -32,7 +32,12 @@ export const MAXIMUM_DESCRIPTION_LENGTH = 10_000;
 export type TaskStatus = "cancelled" | "completed" | "open";
 
 /** What `planning` says about a task in the audit history. */
-export type TaskAuditAction = "changed" | "completed" | "created" | "reopened";
+export type TaskAuditAction =
+  | "changed"
+  | "completed"
+  | "created"
+  | "deleted"
+  | "reopened";
 
 /** The person a task names, as the reader is allowed to see them. */
 export interface TaskPerson {

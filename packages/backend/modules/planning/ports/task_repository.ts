@@ -79,8 +79,32 @@ export interface TaskRepository {
       readonly transaction: PlanningTransaction;
     },
   ): Promise<StoredTask | undefined>;
+  /**
+   * Soft-deletes the task while it still carries `expectedUpdatedAt`, and
+   * answers the row as it was; undefined when it is gone or has changed.
+   */
+  delete(
+    command: PlanningActor & {
+      readonly expectedUpdatedAt: string;
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<StoredTask | undefined>;
+  /** Whether `id` names a task this workspace deleted. */
+  isDeleted(
+    command: PlanningActor & {
+      readonly id: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<boolean>;
+  /**
+   * Proves the write is stored: the task as saved, or with `deleted`, the
+   * task soft-deleted.
+   */
   assertPostcondition(
     command: PlanningActor & {
+      readonly deleted?: boolean;
       readonly task: StoredTask;
       readonly transaction: PlanningTransaction;
     },

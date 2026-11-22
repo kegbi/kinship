@@ -240,6 +240,40 @@ export class PostgresTaskRepository implements TaskRepository {
     return row ? task(row) : undefined;
   }
 
+  async delete(
+    command: Parameters<TaskRepository["delete"]>[0],
+  ): Promise<StoredTask | undefined> {
+    const result = await sql<TaskRow>`
+      update crm.tasks task set
+        deleted_at = ${command.occurredAt}::timestamptz,
+        updated_at = greatest(
+          ${command.occurredAt}::timestamptz,
+          task.updated_at + interval '1 microsecond'
+        )
+      where task.id = ${command.id}::uuid
+        and task.workspace_id = ${command.workspaceId}::uuid
+        and task.deleted_at is null
+        and ${instantColumn("task.updated_at")} = ${command.expectedUpdatedAt}
+      returning ${columns}
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row ? task(row) : undefined;
+  }
+
+  async isDeleted(
+    command: Parameters<TaskRepository["isDeleted"]>[0],
+  ): Promise<boolean> {
+    const result = await sql<{ readonly deleted: boolean }>`
+      select exists (
+        select 1 from crm.tasks task
+        where task.id = ${command.id}::uuid
+          and task.workspace_id = ${command.workspaceId}::uuid
+          and task.deleted_at is not null
+      ) as deleted
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]?.deleted === true;
+  }
+
   async assertPostcondition(
     command: Parameters<TaskRepository["assertPostcondition"]>[0],
   ): Promise<void> {
@@ -250,7 +284,7 @@ export class PostgresTaskRepository implements TaskRepository {
         and task.workspace_id = ${command.workspaceId}::uuid
         and task.status = ${command.task.status}
         and task.title = ${command.task.title}
-        and task.deleted_at is null
+        and (task.deleted_at is not null) = ${command.deleted === true}
         and (task.status <> 'completed' or
           (task.completed_at is not null and task.completed_by_member_id is not null))
     `.execute(databaseFromSession(command.transaction));

@@ -1092,6 +1092,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/planning_cadences_postgres_test.ts",
         "tests/integration/planning_delivery_postgres_test.ts",
         "tests/integration/planning_email_delivery_postgres_test.ts",
+        "tests/integration/planning_edit_delete_postgres_test.ts",
         "tests/integration/settings_preferences_postgres_test.ts",
         "tests/integration/settings_personalization_postgres_test.ts",
         "tests/integration/time_preferences_postgres_test.ts",
@@ -1312,6 +1313,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/planning_cadences_postgres_test.ts",
       "tests/integration/planning_delivery_postgres_test.ts",
       "tests/integration/planning_email_delivery_postgres_test.ts",
+      // Deleting tasks, reminders, and cadences and editing reminders (MCP-D2).
+      "tests/integration/planning_edit_delete_postgres_test.ts",
       // Personal tokens on the reminder and Today planning routes (MCP-B5).
       "tests/integration/api_tokens_planning_postgres_test.ts",
       // The worker loop under a cut database connection (BEQ-09).
@@ -1350,6 +1353,7 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/planning_cadences_postgres_test.ts",
         "tests/integration/planning_delivery_postgres_test.ts",
         "tests/integration/planning_email_delivery_postgres_test.ts",
+        "tests/integration/planning_edit_delete_postgres_test.ts",
         "tests/integration/read_models_today_postgres_test.ts",
       ],
       include: [

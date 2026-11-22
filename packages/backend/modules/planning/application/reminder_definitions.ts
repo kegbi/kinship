@@ -1,5 +1,6 @@
 /**
- * Creating a reminder, enabling or disabling one, and reading a person's.
+ * Creating a reminder, enabling or disabling one, editing or deleting one,
+ * and reading a person's.
  *
  * Creation is idempotent by derivation: the request identifier derives the
  * reminder identifier, an advisory lock serializes retries of the same
@@ -11,6 +12,16 @@
  * reminder off must stop hearing from it; re-enabling mints a fresh window
  * from now, and only when the reminder was actually off, so toggling a live
  * reminder on again neither duplicates occurrences nor audits a generation.
+ *
+ * Editing and deleting (MCP-D2) take the reminder's `updatedAt` as their
+ * revision and touch only a member's own reminder: one an important date
+ * generated is refused as `managed-reminder`, because the date would
+ * regenerate it. An edit replaces the future the way disabling and then
+ * re-enabling would, so the occurrence rules stay the recurrence domain's; a
+ * delete is a soft delete that disables the reminder and cancels the same
+ * unattempted work, keeping every delivered or in-flight occurrence as
+ * evidence. The deleted reminder keeps its derived identifier, so a create
+ * retried with its request identifier is refused as `request-deleted`.
  *
  * The two time-zone entry points are events, not requests: a member or a
  * workspace changed zone, and the occurrences already minted have to be
@@ -25,20 +36,29 @@
  */
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
+import { uuid } from "../../../shared-kernel/validation.ts";
 import {
   decodeReminderCursor,
   encodeReminderCursor,
 } from "../domain/cursors.ts";
 import {
   type CreateReminderInput,
+  type EditReminderInput,
   REMINDER_ID_NAMESPACE,
+  type ReminderDefinitionRecord,
+  reminderEditIsUnchanged,
+  reminderIsManaged,
   reminderMatchesCreate,
   validateCreateReminder,
+  validateEditReminder,
 } from "../domain/reminder_rules.ts";
 import type { PlanningActor, PlanningTransaction } from "../ports/context.ts";
 import {
   actorIsActive,
+  type DeleteReminderResult,
+  type EditReminderResult,
   regenerateWindow,
+  type ReminderChangeFailure,
   type ReminderManagementDependencies,
   type ReminderMutationResult,
   writablePerson,
@@ -69,6 +89,44 @@ export function reminderPageLimit(limit: number | undefined): number {
 export function createReminderDefinitions(
   dependencies: ReminderManagementDependencies,
 ) {
+  /**
+   * The member's own live reminder an edit or delete may change, read after
+   * the actor stands and refused in a fixed order: missing, owned by its
+   * source, read at another revision, then its person not writable. The
+   * person is locked before the reminder row is written, as a create locks
+   * them, so the two never take the same rows in opposite orders.
+   */
+  const changeableReminder = async (
+    actor: PlanningActor,
+    id: string,
+    expectedUpdatedAt: string,
+    transaction: PlanningTransaction,
+  ): Promise<
+    { readonly current: ReminderDefinitionRecord } | ReminderChangeFailure
+  > => {
+    if (!await actorIsActive(dependencies, actor, transaction)) {
+      return { status: "forbidden" };
+    }
+    const found = await dependencies.repository.findReminderForChange({
+      ...actor,
+      id,
+      transaction,
+    });
+    if (!found) return { status: "not-found" };
+    if (reminderIsManaged(found.source)) return { status: "managed-reminder" };
+    if (found.reminder.updatedAt !== expectedUpdatedAt) {
+      return { status: "stale" };
+    }
+    const person = await writablePerson(
+      dependencies,
+      actor,
+      found.reminder.personId,
+      transaction,
+    );
+    return person === "ready"
+      ? { current: found.reminder }
+      : { status: person };
+  };
   return {
     createReminder: async (
       actor: PlanningActor,
@@ -109,6 +167,15 @@ export function createReminderDefinitions(
             ? { reminder: replay, status: "created" }
             : { status: "idempotency-conflict" };
         }
+        // A deleted reminder keeps its derived identifier, so retrying the
+        // request that created it is refused rather than recreating it.
+        if (
+          await dependencies.repository.reminderDeleted({
+            ...actor,
+            id,
+            transaction,
+          })
+        ) return { status: "request-deleted" };
         const occurredAt = dependencies.clock.now();
         const reminder = await dependencies.repository.createReminder({
           ...actor,
@@ -199,6 +266,133 @@ export function createReminderDefinitions(
         }
         return { reminder, status: "saved" as const };
       }, { workspaceId: actor.workspaceId }),
+    editReminder: async (
+      actor: PlanningActor,
+      reminderId: string,
+      input: EditReminderInput,
+    ): Promise<EditReminderResult> => {
+      const id = uuid(reminderId);
+      const checked = validateEditReminder(input);
+      if (id === undefined || Object.keys(checked.errors).length > 0) {
+        return {
+          errors: {
+            ...checked.errors,
+            ...(id === undefined
+              ? { reminderId: "Use a canonical reminder identifier." }
+              : {}),
+          },
+          status: "validation-error",
+        };
+      }
+      return await dependencies.transaction.run(async (
+        transaction,
+      ): Promise<EditReminderResult> => {
+        const target = await changeableReminder(
+          actor,
+          id,
+          input.expectedUpdatedAt,
+          transaction,
+        );
+        if ("status" in target) return target;
+        const { current } = target;
+        if (reminderEditIsUnchanged(current, checked.patch)) {
+          return { reminder: current, status: "unchanged" };
+        }
+        const zone = await dependencies.workspace.effectiveTimezone({
+          ...actor,
+          transaction,
+        });
+        if (zone.status !== "ready") return { status: "forbidden" };
+        const occurredAt = dependencies.clock.now();
+        const saved = await dependencies.repository.saveReminder({
+          ...actor,
+          expectedUpdatedAt: input.expectedUpdatedAt,
+          id,
+          occurredAt,
+          patch: checked.patch,
+          transaction,
+        });
+        if (!saved) return { status: "stale" };
+        // The future is replaced exactly as disabling and re-enabling would
+        // replace it: unattempted work is cancelled, a delivered or claimed
+        // occurrence is left alone, and the window is minted again from now
+        // under the new schedule when the reminder is live.
+        await dependencies.repository.cancelFutureOccurrences({
+          ...actor,
+          now: occurredAt,
+          reminderId: id,
+          transaction,
+        });
+        await dependencies.audit.record({
+          action: "edited",
+          actor,
+          occurredAt,
+          subjectId: id,
+          transaction,
+        });
+        return {
+          reminder: saved.isActive
+            ? await regenerateWindow(
+              dependencies,
+              actor,
+              transaction,
+              saved,
+              id,
+              occurredAt,
+              zone.timezone,
+            )
+            : saved,
+          status: "saved",
+        };
+      }, { workspaceId: actor.workspaceId });
+    },
+    deleteReminder: async (
+      actor: PlanningActor,
+      reminderId: string,
+      input: { readonly expectedUpdatedAt: string },
+    ): Promise<DeleteReminderResult> => {
+      const id = uuid(reminderId);
+      if (id === undefined) {
+        return {
+          errors: { reminderId: "Use a canonical reminder identifier." },
+          status: "validation-error",
+        };
+      }
+      return await dependencies.transaction.run(async (
+        transaction,
+      ): Promise<DeleteReminderResult> => {
+        const target = await changeableReminder(
+          actor,
+          id,
+          input.expectedUpdatedAt,
+          transaction,
+        );
+        if ("status" in target) return target;
+        const occurredAt = dependencies.clock.now();
+        const deleted = await dependencies.repository.deleteReminder({
+          ...actor,
+          expectedUpdatedAt: input.expectedUpdatedAt,
+          id,
+          occurredAt,
+          transaction,
+        });
+        if (!deleted) return { status: "stale" };
+        await dependencies.repository.cancelFutureOccurrences({
+          ...actor,
+          now: occurredAt,
+          reminderId: id,
+          transaction,
+        });
+        await dependencies.audit.record({
+          action: "deleted",
+          actor,
+          occurredAt,
+          subjectId: id,
+          transaction,
+        });
+        return { reminderId: id, status: "deleted" };
+      }, { workspaceId: actor.workspaceId });
+    },
     listPerson: async (
       actor: PlanningActor,
       personId: string,

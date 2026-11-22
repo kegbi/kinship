@@ -55,6 +55,7 @@ const OVERRIDES: Readonly<
 > = {
   // Each of these refines its object to "at least one change".
   changeTask: { body: { expectedUpdatedAt: INSTANT, title: "Ada" } },
+  updateReminder: { body: { expectedUpdatedAt: INSTANT, title: "Ada" } },
   saveMemberUiState: { body: { theme: "dark" } },
   updateRecurringDebt: { body: { active: true } },
   updateNote: { body: { body: "Ada", expectedUpdatedAt: INSTANT } },

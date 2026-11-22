@@ -52,7 +52,7 @@ export interface DavTaskBoundary {
     | { readonly status: "created"; readonly task: { readonly id: string } }
     | Failure<
       "archived-write-rejected" | "forbidden" | "not-found",
-      "idempotency-conflict" | "stale" | "validation-error"
+      "idempotency-conflict" | "request-deleted" | "stale" | "validation-error"
     >
   >;
   update(

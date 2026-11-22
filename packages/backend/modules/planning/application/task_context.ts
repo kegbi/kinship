@@ -145,7 +145,7 @@ export async function inspectWritablePeople(
  *
  * The repository and the recorder each read their own write back inside the
  * transaction, so a save that silently did nothing cannot commit as an
- * audited success.
+ * audited success. A deletion is read back as deleted.
  */
 export async function auditTask(
   dependencies: Pick<TaskManagementDependencies, "audit" | "repository">,
@@ -159,6 +159,7 @@ export async function auditTask(
   const auditId = await dependencies.audit.record(command);
   await dependencies.repository.assertPostcondition({
     ...actor,
+    ...(action === "deleted" ? { deleted: true } : {}),
     task,
     transaction,
   });

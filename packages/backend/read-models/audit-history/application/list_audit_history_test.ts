@@ -174,6 +174,10 @@ Deno.test("GOVERNANCE-002 preserves only action-positioned current writer detail
       action: "planning.task-created-or-state-changed",
       payload: { action: "completed", status: "completed" },
     },
+    {
+      action: "planning.task-created-or-state-changed",
+      payload: { action: "deleted", status: "open" },
+    },
     { action: "member.profile-updated", payload: {} },
     { action: "member.preferences-updated", payload: {} },
     { action: "identity.session-revoked", payload: { current: true } },

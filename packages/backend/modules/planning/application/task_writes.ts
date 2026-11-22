@@ -1,7 +1,7 @@
 /**
- * Creating a task, changing one, and toggling its completion.
+ * Creating a task, changing one, toggling its completion, and deleting it.
  *
- * All three writes follow the same discipline: check the proposal, revalidate
+ * All four writes follow the same discipline: check the proposal, revalidate
  * the actor under lock, prove the people involved may be written to, write,
  * and only then audit — with the repository and the recorder each reading
  * their own row back before the transaction may commit.
@@ -11,6 +11,13 @@
  * retries of the same request, and a task already stored under that identifier
  * is returned when it is the same proposal and refused as a conflict when it
  * is not.
+ *
+ * Deleting is a soft delete (MCP-D2): `tasks.deleted_at` is set, so every
+ * read that already leaves deleted rows out — the task list and detail,
+ * Today, the attention queue, search, the profile — stops showing it, and the
+ * row keeps the derived identifier. A create retried with the deleted task's
+ * request identifier is therefore refused as `request-deleted` rather than
+ * replayed or recreated: the identifier stays spent.
  */
 
 import { deterministicId } from "../../../shared-kernel/ids.ts";
@@ -41,7 +48,11 @@ import {
 
 export type CreateTaskResult =
   | { readonly status: "created"; readonly task: TaskRecord }
-  | { readonly status: "idempotency-conflict" }
+  | { readonly status: "idempotency-conflict" | "request-deleted" }
+  | TaskFailure;
+
+export type DeleteTaskResult =
+  | { readonly status: "deleted"; readonly taskId: string }
   | TaskFailure;
 
 export type ChangeTaskResult =
@@ -95,6 +106,13 @@ export function createTaskWrites(dependencies: TaskManagementDependencies) {
               task: await hydrateOne(actor, transaction, replay.task),
             }
             : { status: "idempotency-conflict" };
+        }
+        // The identifier is derived, so the task a deleted request created
+        // still holds it: the retry is refused rather than recreating it.
+        if (
+          await dependencies.repository.isDeleted({ ...actor, id, transaction })
+        ) {
+          return { status: "request-deleted" };
         }
         const personStatus = await inspectWritablePeople(
           dependencies,
@@ -270,6 +288,62 @@ export function createTaskWrites(dependencies: TaskManagementDependencies) {
           status: "saved",
           task: await hydrateOne(actor, transaction, saved),
         };
+      });
+    },
+    delete: (
+      actor: PlanningActor,
+      taskId: string,
+      input: { readonly expectedUpdatedAt: string },
+      existingTransaction?: PlanningTransaction,
+    ): Promise<DeleteTaskResult> => {
+      const id = uuid(taskId);
+      if (id === undefined) {
+        return Promise.resolve({
+          errors: { taskId: "Use a canonical task identifier." },
+          status: "validation-error",
+        });
+      }
+      return inTransaction(dependencies, actor, existingTransaction, async (
+        transaction,
+      ): Promise<DeleteTaskResult> => {
+        if (!await actorStands(dependencies, actor, transaction)) {
+          return { status: "forbidden" };
+        }
+        const current = await dependencies.repository.find({
+          ...actor,
+          id,
+          lock: true,
+          transaction,
+        });
+        if (current.status !== "found") return { status: "not-found" };
+        if (current.task.updatedAt !== input.expectedUpdatedAt) {
+          return { status: "stale" };
+        }
+        const personStatus = await inspectWritablePeople(
+          dependencies,
+          actor,
+          transaction,
+          [current.task.personId],
+        );
+        if (personStatus !== "ready") return { status: personStatus };
+        const occurredAt = dependencies.clock.now();
+        const deleted = await dependencies.repository.delete({
+          ...actor,
+          expectedUpdatedAt: input.expectedUpdatedAt,
+          id,
+          occurredAt,
+          transaction,
+        });
+        if (!deleted) return { status: "stale" };
+        await auditTask(
+          dependencies,
+          actor,
+          transaction,
+          deleted,
+          "deleted",
+          occurredAt,
+        );
+        return { status: "deleted", taskId: id };
       });
     },
   };

@@ -101,10 +101,15 @@ function dependencies(
     title: string;
     updatedAt: string;
   } | undefined;
+  let deletedId: string | undefined;
   const auditActions: string[] = [];
+  const postconditions: string[] = [];
   const seenTransactions: unknown[] = [];
+  const people = { status: personStatus };
   return {
     auditActions,
+    people,
+    postconditions,
     management: createTaskManagement({
       actors: {
         revalidate: ({ transaction }) => {
@@ -126,16 +131,29 @@ function dependencies(
       clock: fixedClock("2026-08-18T10:00:00.000Z"),
       cursorKeyset,
       people: {
-        inspect: () => Promise.resolve({ status: personStatus }),
+        inspect: () => Promise.resolve({ status: people.status }),
         summarize: () =>
           Promise.resolve([{
-            archived: personStatus === "archived",
+            archived: people.status === "archived",
             id: personId,
             name: "Ada Lovelace",
           }]),
       },
       repository: {
-        assertPostcondition: () => Promise.resolve(),
+        assertPostcondition: ({ deleted, task }) => {
+          postconditions.push(`${task.id}:${deleted === true}`);
+          return Promise.resolve();
+        },
+        delete: (command) => {
+          if (!stored || stored.updatedAt !== command.expectedUpdatedAt) {
+            return Promise.resolve(undefined);
+          }
+          const removed = stored;
+          deletedId = stored.id;
+          stored = undefined;
+          return Promise.resolve(removed);
+        },
+        isDeleted: ({ id }) => Promise.resolve(id === deletedId),
         lockRequest: () => Promise.resolve(),
         create: (command) => {
           stored = {
@@ -381,6 +399,8 @@ Deno.test("PLANNING-001 hydrates every person in a bounded 100-task page", async
     repository: {
       assertPostcondition: () => Promise.resolve(),
       create: () => Promise.resolve(undefined),
+      delete: () => Promise.resolve(undefined),
+      isDeleted: () => Promise.resolve(false),
       find: ({ id: selectedId }) => {
         const selected = tasks.find((task) => task.id === selectedId);
         return Promise.resolve(
@@ -555,6 +575,8 @@ Deno.test("PLANNING-001 concurrent person swaps use one canonical lock set", asy
     repository: {
       assertPostcondition: () => Promise.resolve(),
       create: () => Promise.resolve(undefined),
+      delete: () => Promise.resolve(undefined),
+      isDeleted: () => Promise.resolve(false),
       find: (command) => {
         const task = stored.get(command.id);
         return Promise.resolve(
@@ -658,6 +680,8 @@ Deno.test("PLANNING-001 preserves unavailable linked-person history as read-only
     repository: {
       assertPostcondition: () => Promise.resolve(),
       create: () => Promise.resolve(undefined),
+      delete: () => Promise.resolve(undefined),
+      isDeleted: () => Promise.resolve(false),
       find: () => Promise.resolve({ status: "found", task: stored }),
       list: () => Promise.resolve({ items: [stored], status: "ready" }),
       lockRequest: () => Promise.resolve(),
@@ -724,6 +748,8 @@ Deno.test("PLANNING-001 returns a bound continuation that reaches task 101", asy
       repository: {
         assertPostcondition: () => Promise.resolve(),
         create: () => Promise.resolve(undefined),
+        delete: () => Promise.resolve(undefined),
+        isDeleted: () => Promise.resolve(false),
         find: () => Promise.resolve({ status: "not-found" }),
         list: ((
           command: {
@@ -804,5 +830,63 @@ Deno.test("PLANNING-001 returns a bound continuation that reaches task 101", asy
   assert(
     Number(listCalls.length) === 2,
     "continuation did not reach repository",
+  );
+});
+
+Deno.test("[MCP-D2] deletes a task by revision and refuses its request identifier afterwards", async () => {
+  const { auditActions, management, people, postconditions } = dependencies();
+  const input = { personId, requestId: taskId, title: "Call Ada" };
+  const created = await management.create(actor, input);
+  assert(created.status === "created", "fixture task created");
+  if (created.status !== "created") return;
+  const id = created.task.id;
+  const revision = { expectedUpdatedAt: created.task.updatedAt };
+  assert(
+    (await management.delete(actor, "malformed", revision)).status ===
+      "validation-error",
+    "a malformed task identifier is refused before the transaction",
+  );
+  assert(
+    (await dependencies("ready", "forbidden").management.delete(
+      actor,
+      id,
+      revision,
+    )).status === "forbidden",
+    "the actor is revalidated before the task is read",
+  );
+  assert(
+    (await management.delete(actor, id, {
+      expectedUpdatedAt: "2025-01-01T00:00:00.000Z",
+    })).status === "stale",
+    "a stale revision deletes nothing",
+  );
+  people.status = "archived";
+  assert(
+    (await management.delete(actor, id, revision)).status ===
+      "archived-write-rejected",
+    "an archived linked person keeps the task read-only",
+  );
+  people.status = "ready";
+  const deleted = await management.delete(actor, id.toUpperCase(), revision);
+  assert(
+    deleted.status === "deleted" && deleted.taskId === id,
+    `the task is deleted: ${JSON.stringify(deleted)}`,
+  );
+  assert(
+    (await management.get(actor, id)).status === "not-found",
+    "a deleted task is not found",
+  );
+  assert(
+    (await management.delete(actor, id, revision)).status === "not-found",
+    "deleting it again answers not found",
+  );
+  assert(
+    (await management.create(actor, input)).status === "request-deleted",
+    "retrying the create of a deleted task neither recreates nor replays it",
+  );
+  assert(
+    auditActions.join(",") === "created,deleted" &&
+      postconditions.at(-1) === `${id}:true`,
+    `the delete is audited and proven deleted: ${auditActions} ${postconditions}`,
   );
 });

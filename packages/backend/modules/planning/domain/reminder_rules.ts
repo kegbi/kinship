@@ -41,8 +41,11 @@ export type ReminderOccurrenceStatus =
 export type ReminderAuditAction =
   | "acknowledged"
   | "cadence-created"
+  | "cadence-deleted"
   | "created"
+  | "deleted"
   | "disabled"
+  | "edited"
   | "generated";
 
 export interface ReminderDefinitionRecord {
@@ -89,45 +92,166 @@ export interface CheckedReminder {
   readonly title?: string;
 }
 
+/** The trimmed title, recording an error when it is empty or too long. */
+function checkedTitle(
+  value: string,
+  errors: Record<string, string>,
+): string | undefined {
+  const title = value.trim();
+  if (!title || title.length > MAXIMUM_TITLE_LENGTH) {
+    errors.title = "Add a title of at most 500 characters.";
+  }
+  return title || undefined;
+}
+
+/** Records an error unless the anchor is a calendar date that exists. */
+function checkAnchor(value: string, errors: Record<string, string>): void {
+  if (isoDate(value) === undefined) {
+    errors.anchorOn = "Choose a calendar date.";
+    return;
+  }
+  try {
+    Temporal.PlainDate.from(value);
+  } catch {
+    errors.anchorOn = "Choose a valid calendar date.";
+  }
+}
+
+/** The canonical send time, recording an error when it is not one. */
+function checkedSendTime(
+  value: string,
+  errors: Record<string, string>,
+): string | undefined {
+  const sendTime = isoTime(value);
+  if (!sendTime) errors.sendTime = "Choose a local delivery time.";
+  return sendTime;
+}
+
+/** Records an error unless the interval is a whole 1 to 100. */
+function checkInterval(value: number, errors: Record<string, string>): void {
+  if (
+    !Number.isInteger(value) || value < 1 ||
+    value > MAXIMUM_RECURRENCE_INTERVAL
+  ) {
+    errors.recurrenceInterval = "Choose an interval from 1 to 100.";
+  }
+}
+
 /** The field errors a proposed reminder carries, and its canonical parts. */
 export function validateCreateReminder(
   input: CreateReminderInput,
 ): CheckedReminder {
   const errors: Record<string, string> = {};
-  const title = input.title.trim();
-  if (!title || title.length > MAXIMUM_TITLE_LENGTH) {
-    errors.title = "Add a title of at most 500 characters.";
-  }
+  const title = checkedTitle(input.title, errors);
   if (uuid(input.personId) === undefined) {
     errors.personId = "Choose a person from this workspace.";
   }
   if (uuid(input.requestId) === undefined) {
     errors.requestId = "Use a canonical request identifier.";
   }
-  if (isoDate(input.anchorOn) === undefined) {
-    errors.anchorOn = "Choose a calendar date.";
-  }
-  const sendTime = isoTime(input.sendTime);
-  if (!sendTime) errors.sendTime = "Choose a local delivery time.";
-  if (
-    !Number.isInteger(input.recurrenceInterval) ||
-    input.recurrenceInterval < 1 ||
-    input.recurrenceInterval > MAXIMUM_RECURRENCE_INTERVAL
-  ) {
-    errors.recurrenceInterval = "Choose an interval from 1 to 100.";
-  }
-  try {
-    if (isoDate(input.anchorOn) !== undefined) {
-      Temporal.PlainDate.from(input.anchorOn);
-    }
-  } catch {
-    errors.anchorOn = "Choose a valid calendar date.";
-  }
+  checkAnchor(input.anchorOn, errors);
+  const sendTime = checkedSendTime(input.sendTime, errors);
+  checkInterval(input.recurrenceInterval, errors);
   return {
     errors,
     ...(sendTime ? { sendTime } : {}),
     ...(title ? { title } : {}),
   };
+}
+
+/** The schedule and title a member may change on a reminder (MCP-D2). */
+export interface ReminderPatch {
+  readonly anchorOn?: string;
+  readonly recurrenceInterval?: number;
+  readonly recurrenceUnit?: RecurrenceUnit;
+  readonly sendTime?: string;
+  readonly title?: string;
+}
+
+/** What a member proposes when they edit a reminder they read. */
+export interface EditReminderInput extends ReminderPatch {
+  readonly expectedUpdatedAt: string;
+}
+
+/**
+ * The field errors an edit carries, and the canonical patch it asks for.
+ * Only the fields it names are checked: a stored reminder may hold values a
+ * member never typed, such as an imported title.
+ */
+export function validateEditReminder(
+  input: EditReminderInput,
+): { readonly errors: ValidationErrors; readonly patch: ReminderPatch } {
+  const errors: Record<string, string> = {};
+  if (!input.expectedUpdatedAt) {
+    errors.expectedUpdatedAt = "Send the updatedAt of the reminder you read.";
+  }
+  const title = input.title === undefined
+    ? undefined
+    : checkedTitle(input.title, errors);
+  if (input.anchorOn !== undefined) checkAnchor(input.anchorOn, errors);
+  const sendTime = input.sendTime === undefined
+    ? undefined
+    : checkedSendTime(input.sendTime, errors);
+  if (input.recurrenceInterval !== undefined) {
+    checkInterval(input.recurrenceInterval, errors);
+  }
+  const patch: ReminderPatch = {
+    ...(input.anchorOn !== undefined ? { anchorOn: input.anchorOn } : {}),
+    ...(input.recurrenceInterval !== undefined
+      ? { recurrenceInterval: input.recurrenceInterval }
+      : {}),
+    ...(input.recurrenceUnit !== undefined
+      ? { recurrenceUnit: input.recurrenceUnit }
+      : {}),
+    ...(sendTime ? { sendTime } : {}),
+    ...(title ? { title } : {}),
+  };
+  if (
+    Object.keys(errors).length === 0 &&
+    input.anchorOn === undefined && input.recurrenceInterval === undefined &&
+    input.recurrenceUnit === undefined && input.sendTime === undefined &&
+    input.title === undefined
+  ) {
+    errors.reminder = "Change at least one reminder field.";
+  }
+  return { errors, patch };
+}
+
+/** The reminder an edit would leave, its untouched fields kept. */
+export function applyReminderEdit(
+  current: ReminderDefinitionRecord,
+  patch: ReminderPatch,
+): ReminderDefinitionRecord {
+  return { ...current, ...patch };
+}
+
+/** True when the edit asks for exactly what the reminder already is. */
+export function reminderEditIsUnchanged(
+  current: ReminderDefinitionRecord,
+  patch: ReminderPatch,
+): boolean {
+  const next = applyReminderEdit(current, patch);
+  return next.anchorOn === current.anchorOn &&
+    next.recurrenceInterval === current.recurrenceInterval &&
+    next.recurrenceUnit === current.recurrenceUnit &&
+    next.sendTime === current.sendTime && next.title === current.title;
+}
+
+/** Where a stored reminder came from, as its row records it. */
+export interface ReminderSource {
+  readonly canDelete: boolean;
+  readonly targetKind: string;
+}
+
+/**
+ * True for a reminder its source owns (MCP-D2). A member's own reminder is
+ * `person`-targeted and deletable; an important date's is `person_date`, and
+ * the date regenerates it whenever it changes, so editing or deleting it here
+ * would be silently undone. Imported rows that Monica marked undeletable, or
+ * that target a life event, a task, or nobody, are left to their source too.
+ */
+export function reminderIsManaged(source: ReminderSource): boolean {
+  return source.targetKind !== "person" || !source.canDelete;
 }
 
 /**

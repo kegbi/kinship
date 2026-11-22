@@ -772,7 +772,7 @@ Deno.test("PLANNING-002 HTTP creates and lists reminders/cadences and exposes To
     deliveryChanged: () => Promise.resolve(),
     timezoneChanged: () => Promise.resolve(),
     workspaceTimezoneChanged: () => Promise.resolve(),
-  } as ReminderManagement;
+  } as unknown as ReminderManagement;
   const app = createPlanningRoutes({
     ...services(),
     reminders,
@@ -1224,6 +1224,451 @@ Deno.test("[PLANNING-003] REL-088 HTTP acknowledges an undelivered reminder and 
       (await response.json() as { readonly detail?: string }).detail ===
         "Nothing was changed.",
       "and says nothing changed",
+    );
+  }
+});
+
+Deno.test("[MCP-D2] task, reminder, and cadence edits and deletes admit their one write grant", async () => {
+  const reminderId = "00000000-0000-4000-8000-000000000901";
+  const cadenceId = "00000000-0000-4000-8000-000000000902";
+  const revision = "2026-08-18T10:00:00.000000Z";
+  const reminder = {
+    anchorOn: "2026-10-25",
+    createdAt: revision,
+    id: reminderId,
+    isActive: true,
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "week" as const,
+    sendTime: "02:30:00",
+    title: "Weekly call",
+    updatedAt: revision,
+  };
+  const calls: { name: string; apiTokenId?: string; args: unknown[] }[] = [];
+  const record = <T>(name: string, value: T) =>
+  (
+    who: { readonly apiTokenId?: string },
+    ...args: unknown[]
+  ) => {
+    calls.push({
+      ...(who.apiTokenId ? { apiTokenId: who.apiTokenId } : {}),
+      args,
+      name,
+    });
+    return Promise.resolve(value);
+  };
+  const reminders = {
+    deleteCadence: record("deleteCadence", {
+      cadenceId,
+      status: "deleted" as const,
+    }),
+    deleteReminder: record("deleteReminder", {
+      reminderId,
+      status: "deleted" as const,
+    }),
+    editReminder: record("editReminder", {
+      reminder,
+      status: "saved" as const,
+    }),
+  } as unknown as ReminderManagement;
+  const tokenId = "00000000-0000-4000-8000-0000000000cc";
+  const current = {
+    ...services({
+      delete: record("deleteTask", { status: "deleted" as const, taskId }),
+    } as Partial<TaskManagement>),
+    apiTokens: {
+      authenticate: (token: string, scope: string) =>
+        Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        ),
+    },
+    reminders,
+  };
+  const app = createPlanningRoutes(current);
+  const requests = [
+    ["DELETE", `/api/v1/tasks/${taskId}`, "tasks:write", "deleteTask", {
+      expectedUpdatedAt: revision,
+    }],
+    [
+      "PATCH",
+      `/api/v1/reminders/${reminderId}`,
+      "reminders:write",
+      "editReminder",
+      {
+        expectedUpdatedAt: revision,
+        recurrenceUnit: "week",
+        sendTime: "02:30",
+        title: "Weekly call",
+      },
+    ],
+    [
+      "DELETE",
+      `/api/v1/reminders/${reminderId}`,
+      "reminders:write",
+      "deleteReminder",
+      {
+        expectedUpdatedAt: revision,
+      },
+    ],
+    [
+      "DELETE",
+      `/api/v1/stay-in-touch-cadences/${cadenceId}`,
+      "reminders:write",
+      "deleteCadence",
+      { expectedUpdatedAt: revision },
+    ],
+  ] as const;
+  const grants = [
+    "tasks:read",
+    "tasks:create",
+    "tasks:write",
+    "reminders:read",
+    "reminders:write",
+    "today:read",
+  ];
+  for (const [method, path, grant, name, body] of requests) {
+    const send = (
+      authorization: string,
+      extra: Readonly<Record<string, string>> = {},
+      payload: string = JSON.stringify(body),
+    ) =>
+      app.request(`http://localhost${path}`, {
+        method,
+        headers: {
+          authorization,
+          "content-type": "application/json",
+          ...extra,
+        },
+        body: payload,
+      });
+    const before = calls.length;
+    const accepted = await send(`Bearer ${grant}`);
+    assertStatus(accepted, 200, `${method} ${path} bearer-only`);
+    assert(
+      accepted.headers.get("cache-control") === "private, no-store",
+      `${method} ${path} answers privately`,
+    );
+    assert(
+      calls.length === before + 1 && calls.at(-1)?.name === name &&
+        calls.at(-1)?.apiTokenId === tokenId,
+      `${method} ${path} calls ${name} as the token`,
+    );
+    for (const wrong of grants.filter((scope) => scope !== grant)) {
+      assertStatus(
+        await send(`Bearer ${wrong}`, { cookie: headers.cookie }),
+        401,
+        `${method} ${path} refuses ${wrong} and never borrows the cookie`,
+      );
+    }
+    const unread = calls.length;
+    for (const refused of ["Bearer reminders:read", "Bearer revoked"]) {
+      assertStatus(
+        await send(refused, {}, "{"),
+        401,
+        `${method} ${path} refuses a bearer before reading its body`,
+      );
+    }
+    assert(calls.length === unread, `${method} ${path} wrote nothing`);
+    assertStatus(
+      await send(`Bearer ${grant}`, { origin: "http://attacker.test" }),
+      200,
+      `${method} ${path} bearer writes ignore Origin`,
+    );
+    for (const origin of [undefined, "http://attacker.test"]) {
+      assertStatus(
+        await app.request(`http://localhost${path}`, {
+          method,
+          headers: {
+            cookie: headers.cookie,
+            "content-type": "application/json",
+            ...(origin ? { origin } : {}),
+          },
+          body: JSON.stringify(body),
+        }),
+        403,
+        `${method} ${path} cookie writes require the exact Origin`,
+      );
+    }
+    assertStatus(
+      await app.request(`http://localhost${path}`, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+      }),
+      200,
+      `${method} ${path} same-origin cookie writes still work`,
+    );
+    const counted = calls.length;
+    for (
+      const [invalidPath, payload] of [
+        [path.replace(/[0-9a-f-]{36}$/, "not-a-uuid"), JSON.stringify(body)],
+        [path, JSON.stringify({ ...body, unexpected: true })],
+        [path, JSON.stringify({ expectedUpdatedAt: "yesterday" })],
+      ] as const
+    ) {
+      assertStatus(
+        await app.request(`http://localhost${invalidPath}`, {
+          method,
+          headers,
+          body: payload,
+        }),
+        400,
+        `${method} ${invalidPath} refuses ${payload}`,
+      );
+    }
+    assert(calls.length === counted, `${method} ${path} refused input early`);
+    if (grant === "tasks:write") continue;
+    const { reminders: _absent, ...withoutReminders } = current;
+    assertStatus(
+      await createPlanningRoutes(withoutReminders).request(
+        `http://localhost${path}`,
+        {
+          method,
+          headers: {
+            authorization: "Bearer revoked",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      ),
+      503,
+      `${method} ${path} answers the outage before admission`,
+    );
+  }
+  const edit = calls.find((call) => call.name === "editReminder");
+  assert(
+    JSON.stringify(edit?.args) === JSON.stringify([reminderId, {
+      expectedUpdatedAt: revision,
+      recurrenceUnit: "week",
+      sendTime: "02:30",
+      title: "Weekly call",
+    }]),
+    `the edit forwards the reminder and its fields: ${
+      JSON.stringify(edit?.args)
+    }`,
+  );
+  assertStatus(
+    await app.request(`http://localhost/api/v1/reminders/${reminderId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ expectedUpdatedAt: revision }),
+    }),
+    400,
+    "an edit naming no field is refused",
+  );
+});
+
+Deno.test("[MCP-D2] edit and delete refusals answer what the caller must do next", async () => {
+  const reminderId = "00000000-0000-4000-8000-000000000901";
+  const cadenceId = "00000000-0000-4000-8000-000000000902";
+  const revision = { expectedUpdatedAt: "2026-08-18T10:00:00.000Z" };
+  const routesFor = (
+    status: string,
+    taskStatus = status,
+  ) =>
+    createPlanningRoutes({
+      ...services({
+        create: () => Promise.resolve({ status: taskStatus }),
+        delete: () => Promise.resolve({ status: taskStatus }),
+      } as unknown as Partial<TaskManagement>),
+      reminders: {
+        createReminder: () => Promise.resolve({ status }),
+        deleteCadence: () => Promise.resolve({ status }),
+        deleteReminder: () => Promise.resolve({ status }),
+        editReminder: () => Promise.resolve({ status }),
+      } as unknown as ReminderManagement,
+    });
+  const ask = async (
+    app: ReturnType<typeof createPlanningRoutes>,
+    method: string,
+    path: string,
+    body: unknown,
+  ) => {
+    const response = await app.request(`http://localhost${path}`, {
+      method,
+      headers,
+      body: JSON.stringify(body),
+    });
+    return {
+      code: (await response.json()).code as string,
+      status: response.status,
+    };
+  };
+  const edit = { ...revision, title: "Changed" };
+  const cases = [
+    [
+      "stale",
+      "PATCH",
+      `/api/v1/reminders/${reminderId}`,
+      edit,
+      409,
+      "reminder_stale",
+    ],
+    [
+      "stale",
+      "DELETE",
+      `/api/v1/reminders/${reminderId}`,
+      revision,
+      409,
+      "reminder_stale",
+    ],
+    [
+      "stale",
+      "DELETE",
+      `/api/v1/stay-in-touch-cadences/${cadenceId}`,
+      revision,
+      409,
+      "reminder_stale",
+    ],
+    ["stale", "DELETE", `/api/v1/tasks/${taskId}`, revision, 409, "task_stale"],
+    [
+      "managed-reminder",
+      "PATCH",
+      `/api/v1/reminders/${reminderId}`,
+      edit,
+      409,
+      "reminder_managed_by_source",
+    ],
+    [
+      "managed-reminder",
+      "DELETE",
+      `/api/v1/reminders/${reminderId}`,
+      revision,
+      409,
+      "reminder_managed_by_source",
+    ],
+    [
+      "not-found",
+      "PATCH",
+      `/api/v1/reminders/${reminderId}`,
+      edit,
+      404,
+      "reminder_not_found",
+    ],
+    [
+      "not-found",
+      "DELETE",
+      `/api/v1/stay-in-touch-cadences/${cadenceId}`,
+      revision,
+      404,
+      "cadence_not_found",
+    ],
+    [
+      "not-found",
+      "DELETE",
+      `/api/v1/tasks/${taskId}`,
+      revision,
+      404,
+      "task_not_found",
+    ],
+    [
+      "archived-write-rejected",
+      "DELETE",
+      `/api/v1/reminders/${reminderId}`,
+      revision,
+      409,
+      "archived_write_rejected",
+    ],
+    [
+      "archived-write-rejected",
+      "DELETE",
+      `/api/v1/stay-in-touch-cadences/${cadenceId}`,
+      revision,
+      409,
+      "archived_write_rejected",
+    ],
+    [
+      "archived-write-rejected",
+      "DELETE",
+      `/api/v1/tasks/${taskId}`,
+      revision,
+      409,
+      "archived_write_rejected",
+    ],
+    [
+      "forbidden",
+      "PATCH",
+      `/api/v1/reminders/${reminderId}`,
+      edit,
+      403,
+      "reminders_forbidden",
+    ],
+    [
+      "request-deleted",
+      "POST",
+      "/api/v1/reminders",
+      {
+        anchorOn: "2026-10-25",
+        personId,
+        recurrenceInterval: 1,
+        recurrenceUnit: "year",
+        requestId: crypto.randomUUID(),
+        sendTime: "09:00",
+        title: "Birthday call",
+      },
+      409,
+      "reminder_request_deleted",
+    ],
+    [
+      "request-deleted",
+      "POST",
+      "/api/v1/tasks",
+      {
+        requestId: crypto.randomUUID(),
+        title: "Call Ada",
+      },
+      409,
+      "task_request_deleted",
+    ],
+  ] as const;
+  for (const [status, method, path, body, code, problem] of cases) {
+    const answer = await ask(routesFor(status), method, path, body);
+    assert(
+      answer.status === code && answer.code === problem,
+      `${status} on ${method} ${path} answers ${code} ${problem}: ${
+        JSON.stringify(answer)
+      }`,
+    );
+  }
+  const unavailable = createPlanningRoutes({
+    ...services({
+      delete: () => Promise.reject(new Error("offline")),
+    } as unknown as Partial<TaskManagement>),
+    reminders: {
+      deleteCadence: () => Promise.reject(new Error("offline")),
+      deleteReminder: () => Promise.reject(new Error("offline")),
+      editReminder: () => Promise.reject(new Error("offline")),
+    } as unknown as ReminderManagement,
+  });
+  for (
+    const [method, path, body, problem] of [
+      [
+        "PATCH",
+        `/api/v1/reminders/${reminderId}`,
+        edit,
+        "reminders_unavailable",
+      ],
+      [
+        "DELETE",
+        `/api/v1/reminders/${reminderId}`,
+        revision,
+        "reminders_unavailable",
+      ],
+      [
+        "DELETE",
+        `/api/v1/stay-in-touch-cadences/${cadenceId}`,
+        revision,
+        "reminders_unavailable",
+      ],
+      ["DELETE", `/api/v1/tasks/${taskId}`, revision, "tasks_unavailable"],
+    ] as const
+  ) {
+    const answer = await ask(unavailable, method, path, body);
+    assert(
+      answer.status === 503 && answer.code === problem,
+      `${method} ${path} outage answers ${problem}: ${JSON.stringify(answer)}`,
     );
   }
 });

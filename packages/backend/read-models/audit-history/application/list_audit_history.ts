@@ -105,6 +105,7 @@ const TASK_ACTION_VALUES = new Set([
   "changed",
   "completed",
   "created",
+  "deleted",
   "reopened",
 ]);
 const TASK_STATUS_VALUES = new Set(["cancelled", "completed", "open"]);

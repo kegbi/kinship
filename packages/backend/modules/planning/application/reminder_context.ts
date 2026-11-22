@@ -51,9 +51,36 @@ export type ReminderMutationResult =
   | { readonly cadence: StayInTouchCadenceRecord; readonly status: "created" }
   | Failure<
     "archived-write-rejected" | "forbidden" | "not-found",
-    "idempotency-conflict"
+    "idempotency-conflict" | "request-deleted"
   >
   | ValidationFailure;
+
+/**
+ * Every way an edit or delete of a reminder or cadence can be refused: the
+ * revision moved (`stale`), or the reminder belongs to the source that
+ * regenerates it (`managed-reminder`).
+ */
+export type ReminderChangeFailure =
+  | Failure<
+    "archived-write-rejected" | "forbidden" | "not-found",
+    "managed-reminder" | "stale"
+  >
+  | ValidationFailure;
+
+export type EditReminderResult =
+  | {
+    readonly reminder: ReminderDefinitionRecord;
+    readonly status: "saved" | "unchanged";
+  }
+  | ReminderChangeFailure;
+
+export type DeleteReminderResult =
+  | { readonly reminderId: string; readonly status: "deleted" }
+  | ReminderChangeFailure;
+
+export type DeleteCadenceResult =
+  | { readonly cadenceId: string; readonly status: "deleted" }
+  | ReminderChangeFailure;
 
 /**
  * The actor's standing, asked first inside the caller's transaction and under

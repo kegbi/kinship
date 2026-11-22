@@ -1,13 +1,17 @@
 import { assertEquals } from "../../../testing/assert.ts";
 import {
+  applyReminderEdit,
   type CreateReminderInput,
   MAXIMUM_TITLE_LENGTH,
   OCCURRENCE_WINDOW,
   occurrenceCount,
   REMINDER_ID_NAMESPACE,
   type ReminderDefinitionRecord,
+  reminderEditIsUnchanged,
+  reminderIsManaged,
   reminderMatchesCreate,
   validateCreateReminder,
+  validateEditReminder,
 } from "./reminder_rules.ts";
 
 const personId = "10000000-0000-4000-8000-000000000001";
@@ -142,5 +146,104 @@ Deno.test("[GAP-016] a one-off reminder mints one occurrence and a repeating one
   assertEquals(occurrenceCount("none"), 1);
   for (const unit of ["day", "week", "month", "year"] as const) {
     assertEquals(occurrenceCount(unit), OCCURRENCE_WINDOW);
+  }
+});
+
+const editable: ReminderDefinitionRecord = {
+  anchorOn: "2026-05-04",
+  createdAt: "2026-05-01T09:00:00.000Z",
+  id: "10000000-0000-4000-8000-000000000003",
+  isActive: true,
+  personId,
+  recurrenceInterval: 1,
+  recurrenceUnit: "year",
+  sendTime: "09:00:00",
+  title: "Call Ada",
+  updatedAt: "2026-05-01T09:00:00.000Z",
+};
+
+Deno.test("[MCP-D2] an edit checks and canonicalizes only the fields it names", () => {
+  const revision = editable.updatedAt;
+  assertEquals(
+    validateEditReminder({
+      expectedUpdatedAt: revision,
+      sendTime: "07:30",
+      title: "  Call Ada early  ",
+    }),
+    {
+      errors: {},
+      patch: { sendTime: "07:30:00", title: "Call Ada early" },
+    },
+  );
+  assertEquals(
+    validateEditReminder({ expectedUpdatedAt: revision }).errors,
+    { reminder: "Change at least one reminder field." },
+  );
+  assertEquals(
+    Object.keys(
+      validateEditReminder({
+        anchorOn: "2026-02-30",
+        expectedUpdatedAt: "",
+        recurrenceInterval: 0,
+        sendTime: "25:00",
+        title: " ",
+      }).errors,
+    ).sort(),
+    [
+      "anchorOn",
+      "expectedUpdatedAt",
+      "recurrenceInterval",
+      "sendTime",
+      "title",
+    ],
+  );
+  assertEquals(
+    validateEditReminder({
+      expectedUpdatedAt: revision,
+      title: "x".repeat(MAXIMUM_TITLE_LENGTH + 1),
+    }).errors.title,
+    "Add a title of at most 500 characters.",
+  );
+});
+
+Deno.test("[MCP-D2] an edit applies over the editable reminder and knows when it changes nothing", () => {
+  const next = applyReminderEdit(editable, {
+    anchorOn: "2026-06-01",
+    recurrenceInterval: 2,
+    recurrenceUnit: "month",
+  });
+  assertEquals(
+    [next.anchorOn, next.recurrenceUnit, next.recurrenceInterval, next.title],
+    ["2026-06-01", "month", 2, "Call Ada"],
+  );
+  assertEquals(
+    reminderEditIsUnchanged(editable, {
+      sendTime: "09:00:00",
+      title: "Call Ada",
+    }),
+    true,
+  );
+  assertEquals(
+    reminderEditIsUnchanged(editable, { recurrenceInterval: 3 }),
+    false,
+  );
+});
+
+Deno.test("[MCP-D2] a reminder its source regenerates is managed, a member's own is not", () => {
+  assertEquals(
+    reminderIsManaged({ canDelete: true, targetKind: "person" }),
+    false,
+  );
+  for (
+    const source of [
+      { canDelete: false, targetKind: "person_date" },
+      { canDelete: true, targetKind: "person_date" },
+      { canDelete: true, targetKind: "life_event" },
+      { canDelete: true, targetKind: "task" },
+      { canDelete: true, targetKind: "custom" },
+      { canDelete: false, targetKind: "person" },
+    ]
+  ) {
+    assertEquals(reminderIsManaged(source), true, JSON.stringify(source));
   }
 });
