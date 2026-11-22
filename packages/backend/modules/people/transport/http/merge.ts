@@ -32,15 +32,17 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
+  cookieWriteOrigin,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
+import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -57,6 +59,7 @@ import {
 /** What the duplicate review and the merge are served from. */
 export type PersonMergeHttpServices = Pick<
   PeopleHttpServices,
+  | "apiTokens"
   | "browserSecurity"
   | "duplicateDismissals"
   | "duplicates"
@@ -192,10 +195,18 @@ export function createMergeRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const origin = cookieWriteOrigin(services.browserSecurity);
+  const duplicatesActor = scopedRouteActor(listPeopleDuplicates, tokens);
+  const dismissalActor = scopedRouteActor(dismissPeopleDuplicate, tokens);
+  const previewActor = scopedRouteActor(previewPeopleMerge, tokens);
+  const mergeActor = scopedRouteActor(mergePeople, tokens);
 
   mount(routes, listPeopleDuplicates, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await duplicatesActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.duplicates?.list(actor).catch(() =>
       undefined
@@ -220,7 +231,7 @@ export function createMergeRoutes(
     if ("errors" in input) {
       return definedProblem(context, DUPLICATE_DISMISSAL_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await dismissalActor(context);
     if (actor instanceof Response) return actor;
     // The contract admits exactly two identifiers.
     const personIds = input.data.personIds as unknown as readonly [
@@ -243,7 +254,7 @@ export function createMergeRoutes(
     if ("errors" in primaryId || "errors" in query) {
       return definedProblem(context, MERGE_PREVIEW_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await previewActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.merge?.preview(
       actor,
@@ -273,7 +284,7 @@ export function createMergeRoutes(
     if ("errors" in primaryId || "errors" in input) {
       return definedProblem(context, MERGE_REQUEST_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await mergeActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.merge?.merge(actor, primaryId.data, {
       conflictsDigest: input.data.conflictsDigest,

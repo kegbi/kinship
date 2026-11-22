@@ -153,7 +153,7 @@ borrowing the cookie, `apiTokenId` on the audit event); remove the session-only
 pins for those routes; regenerate contracts. Lanes do not edit the authorization
 matrix or architecture prose; MCP-C4 does that once.
 
-- [ ] **MCP-B1 People identity.** `people:write`, `people:delete`,
+- [x] **MCP-B1 People identity.** `people:write`, `people:delete`,
       `people:merge`, the `people:read` lookups, `search:read`, and
       `getTodayRecentPeople`.
 - [ ] **MCP-B2 People profile.** Fact and important-date writes, and the

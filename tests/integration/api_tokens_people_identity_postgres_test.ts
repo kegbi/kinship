@@ -1,0 +1,744 @@
+/**
+ * Personal tokens on the people-identity routes (MCP-B1), through the real
+ * composition over the disposable database.
+ *
+ * Each grant family — `people:write`, `people:delete`, `people:merge`, the
+ * `people:read` lookups, `search:read`, and `today:read` — is proven the same
+ * way: the granted call works and its effect is visible to the member's
+ * browser session; a token without the grant, one holding only the
+ * neighbouring grant, a revoked one, and an expired one are refused, and a
+ * refused bearer never borrows the session cookie sent beside it; another
+ * workspace's token cannot reach this workspace's people; a bearer write's
+ * audit events name the token. The destructive routes keep demanding what
+ * they demand of a browser: deletion its confirmation and revision, a merge
+ * its preview digest and both revisions.
+ */
+
+import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
+import type { HttpMethod, SignedInFixture } from "../support/api.ts";
+import { composeTokenSuite, type MintedToken } from "../support/tokens.ts";
+
+const suite = composeTokenSuite();
+const { api, register, sql, tokens } = suite;
+
+/** What a request answered: its status and its parsed body, if any. */
+interface Answer {
+  // deno-lint-ignore no-explicit-any
+  readonly body: any;
+  readonly status: number;
+}
+
+async function answer(response: Response): Promise<Answer> {
+  const text = await response.text();
+  return { body: text ? JSON.parse(text) : undefined, status: response.status };
+}
+
+/** A bearer request: the token and nothing else, unless `headers` adds it. */
+async function bearer(
+  token: MintedToken | string,
+  path: string,
+  method: HttpMethod = "GET",
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<Answer> {
+  const secret = typeof token === "string" ? token : token.secret;
+  return await answer(
+    await tokens.bearer(secret, path, { body, headers, method }),
+  );
+}
+
+/** A browser request: the session cookie, the workspace, and the Origin. */
+async function browser(
+  fixture: SignedInFixture,
+  path: string,
+  method: HttpMethod = "GET",
+  body?: unknown,
+): Promise<Answer> {
+  return await answer(await api.request(fixture, path, method, body));
+}
+
+function expect(result: Answer, status: number, label: string): Answer {
+  assert(
+    result.status === status,
+    `${label}: expected ${status}, received ${result.status} ${
+      JSON.stringify(result.body)
+    }`,
+  );
+  return result;
+}
+
+async function owner(label: string): Promise<SignedInFixture> {
+  const suffix = crypto.randomUUID();
+  const local = label.toLowerCase().replaceAll(" ", "-");
+  return await register(`identity-${local}-${suffix}@example.test`, label);
+}
+
+async function person(
+  fixture: SignedInFixture,
+  givenName: string,
+  familyName?: string,
+): Promise<string> {
+  const created = expect(
+    await browser(fixture, "/api/v1/people", "POST", {
+      duplicateOverride: true,
+      ...(familyName ? { familyName } : {}),
+      givenName,
+      isPartial: false,
+    }),
+    201,
+    `${givenName} created by the browser`,
+  );
+  return created.body.person.id as string;
+}
+
+/** The person's current revision, as the browser's own page reads it. */
+async function revision(
+  fixture: SignedInFixture,
+  personId: string,
+): Promise<string> {
+  const read = expect(
+    await browser(fixture, `/api/v1/people/${personId}`),
+    200,
+    "person read by the browser",
+  );
+  return read.body.person.updatedAt as string;
+}
+
+/**
+ * The tokens every family is refused with beside its own grant: one with an
+ * unrelated grant, the neighbouring grant, a revoked one, and an expired one.
+ */
+async function refusedTokens(
+  fixture: SignedInFixture,
+  scope: string,
+  neighbour: string,
+): Promise<readonly { readonly label: string; readonly secret: string }[]> {
+  const missing = await tokens.mint(fixture, ["tasks:read"]);
+  const neighbouring = await tokens.mint(fixture, [neighbour]);
+  const revoked = await tokens.mint(fixture, [scope]);
+  expect(
+    await browser(
+      fixture,
+      `/api/v1/settings/api-tokens/${revoked.record.id}`,
+      "DELETE",
+    ),
+    200,
+    "token revoked through its owning route",
+  );
+  const expired = await tokens.mint(fixture, [scope]);
+  await sql`update crm.api_tokens set expires_at = now() - interval '1 second'
+    where id = ${expired.record.id}::uuid`;
+  return [
+    { label: "a token without the grant", secret: missing.secret },
+    { label: `a ${neighbour} token`, secret: neighbouring.secret },
+    { label: "a revoked token", secret: revoked.secret },
+    { label: "an expired token", secret: expired.secret },
+    { label: "a malformed bearer", secret: "kin_pat_malformed" },
+  ];
+}
+
+/** Every refused token is a 401, even with a valid session cookie beside it. */
+async function refusedEverywhere(
+  fixture: SignedInFixture,
+  refused: readonly { readonly label: string; readonly secret: string }[],
+  calls: readonly (readonly [HttpMethod, string, unknown?])[],
+): Promise<void> {
+  for (const { label, secret } of refused) {
+    for (const [method, path, body] of calls) {
+      expect(
+        await bearer(secret, path, method, body, {
+          cookie: fixture.cookie,
+          origin: "http://localhost",
+        }),
+        401,
+        `${method} ${path}: ${label} is refused and never borrows the cookie`,
+      );
+    }
+  }
+}
+
+/** The audit events about `subjectId`, with the token each names. */
+async function audited(
+  workspaceId: string,
+  subjectId: string,
+): Promise<readonly { action: string; api_token_id: string | null }[]> {
+  return await sql<{ action: string; api_token_id: string | null }[]>`
+    select action, payload ->> 'apiTokenId' as api_token_id
+    from crm.audit_events
+    where workspace_id = ${workspaceId}::uuid
+      and subject_id = ${subjectId}::uuid
+    order by occurred_at`;
+}
+
+/**
+ * The audit events `call` writes in the workspace, with the token each
+ * names: every event that is new after it, whatever its subject.
+ */
+async function auditedBy(
+  workspaceId: string,
+  call: () => Promise<unknown>,
+): Promise<readonly { action: string; api_token_id: string | null }[]> {
+  const before = new Set(
+    (await sql<{ id: string }[]>`select id::text from crm.audit_events
+      where workspace_id = ${workspaceId}::uuid`).map((row) => row.id),
+  );
+  await call();
+  const rows = await sql<
+    { action: string; api_token_id: string | null; id: string }[]
+  >`select id::text, action, payload ->> 'apiTokenId' as api_token_id
+    from crm.audit_events where workspace_id = ${workspaceId}::uuid`;
+  return rows.filter((row) => !before.has(row.id)).map((
+    { action, api_token_id },
+  ) => ({ action, api_token_id }));
+}
+
+Deno.test("[MCP-B1] PostgreSQL people:write creates, edits, archives, restores, stars, and bulk-acts as the token's member", async () => {
+  const own = await owner("Writer");
+  const foreign = await owner("Foreign writer");
+  const writer = await tokens.mint(own, ["people:write"], { name: "Agent" });
+  const foreignWriter = await tokens.mint(foreign, ["people:write"]);
+
+  const created = expect(
+    await bearer(writer, "/api/v1/people", "POST", {
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    201,
+    "a bearer creates a person without cookie or Origin",
+  );
+  const personId = created.body.person.id as string;
+  let updatedAt = await revision(own, personId);
+  const edited = expect(
+    await bearer(writer, `/api/v1/people/${personId}`, "PATCH", {
+      expectedUpdatedAt: updatedAt,
+      familyName: "Lovelace",
+      givenName: "Ada",
+      isPartial: false,
+    }),
+    200,
+    "a bearer edits the person",
+  );
+  expect(
+    await bearer(writer, `/api/v1/people/${personId}`, "PATCH", {
+      expectedUpdatedAt: updatedAt,
+      givenName: "Stale",
+      isPartial: false,
+    }),
+    409,
+    "a bearer edit against an old revision is refused",
+  );
+  updatedAt = edited.body.person.updatedAt;
+  expect(
+    await bearer(writer, `/api/v1/people/${personId}/star`, "PUT"),
+    200,
+    "a bearer stars the person",
+  );
+  const page = await browser(own, `/api/v1/people/${personId}`);
+  assertEquals(
+    [page.body.person.familyName, page.body.person.isStarred],
+    ["Lovelace", true],
+    "the browser sees the token's edit and star",
+  );
+  expect(
+    await bearer(writer, `/api/v1/people/${personId}/star`, "DELETE"),
+    200,
+    "a bearer unstars the person",
+  );
+  const archived = expect(
+    await bearer(writer, `/api/v1/people/${personId}/archive`, "POST", {
+      expectedUpdatedAt: updatedAt,
+    }),
+    200,
+    "a bearer archives the person",
+  );
+  expect(
+    await bearer(writer, `/api/v1/people/${personId}/restore`, "POST", {
+      expectedUpdatedAt: archived.body.person.updatedAt,
+    }),
+    200,
+    "a bearer restores the person",
+  );
+  const bulk = expect(
+    await bearer(writer, "/api/v1/people/bulk", "POST", {
+      action: "archive",
+      personIds: [personId],
+    }),
+    200,
+    "a bearer archives in bulk",
+  );
+  assertEquals(bulk.body.results[0]?.outcome, "done", "the bulk item is done");
+  const [state] = await sql<{ archived: boolean }[]>`
+    select archived_at is not null as archived from crm.people
+    where id = ${personId}::uuid`;
+  assert(state?.archived, "the bulk archive is stored");
+
+  const events = await audited(own.workspaceId, personId);
+  assert(
+    events.length >= 5 &&
+      events.every((event) => event.api_token_id === writer.record.id),
+    `every audit event the token's writes caused names it: ${
+      JSON.stringify(events)
+    }`,
+  );
+
+  // Another workspace's token answers this workspace's person as missing.
+  for (
+    const [method, path, body] of [
+      ["PATCH", `/api/v1/people/${personId}`, {
+        expectedUpdatedAt: updatedAt,
+        givenName: "Foreign",
+        isPartial: false,
+      }],
+      ["PUT", `/api/v1/people/${personId}/star`],
+      ["POST", `/api/v1/people/${personId}/restore`, {
+        expectedUpdatedAt: updatedAt,
+      }],
+    ] as const
+  ) {
+    expect(
+      await bearer(foreignWriter, path, method, body),
+      404,
+      `${method} ${path}: a foreign token finds no such person`,
+    );
+  }
+  const foreignBulk = expect(
+    await bearer(foreignWriter, "/api/v1/people/bulk", "POST", {
+      action: "restore",
+      personIds: [personId],
+    }),
+    200,
+    "a foreign bulk request is answered per person",
+  );
+  assertEquals(
+    [foreignBulk.body.results[0]?.outcome, foreignBulk.body.results[0]?.code],
+    ["failed", "not_found"],
+    "a foreign token's bulk item is not found",
+  );
+  expect(
+    await bearer(foreignWriter, "/api/v1/people", "POST", {
+      givenName: "Intruder",
+      isPartial: false,
+    }, { "X-Workspace-Id": own.workspaceId }),
+    401,
+    "a token cannot name another workspace",
+  );
+  const [stillArchived] = await sql<{ archived: boolean }[]>`
+    select archived_at is not null as archived from crm.people
+    where id = ${personId}::uuid`;
+  assert(stillArchived?.archived, "the foreign token changed nothing");
+
+  await refusedEverywhere(
+    own,
+    await refusedTokens(own, "people:write", "people:read"),
+    [
+      ["POST", "/api/v1/people", { givenName: "Refused", isPartial: false }],
+      ["PATCH", `/api/v1/people/${personId}`, {
+        expectedUpdatedAt: updatedAt,
+        givenName: "Refused",
+        isPartial: false,
+      }],
+      ["POST", `/api/v1/people/${personId}/archive`, {
+        expectedUpdatedAt: updatedAt,
+      }],
+      ["POST", `/api/v1/people/${personId}/restore`, {
+        expectedUpdatedAt: updatedAt,
+      }],
+      ["PUT", `/api/v1/people/${personId}/star`],
+      ["DELETE", `/api/v1/people/${personId}/star`],
+      ["POST", "/api/v1/people/bulk", {
+        action: "restore",
+        personIds: [personId],
+      }],
+    ],
+  );
+
+  // A browser keeps its rules: the exact Origin on a write.
+  const noOrigin = await suite.app.request("http://localhost/api/v1/people", {
+    body: JSON.stringify({ givenName: "Cookie", isPartial: false }),
+    headers: { "content-type": "application/json", cookie: own.cookie },
+    method: "POST",
+  });
+  assertEquals(noOrigin.status, 403, "a cookie write without Origin");
+  await noOrigin.body?.cancel();
+  const cookieCreated = await person(own, "Cookie");
+  const cookieEvents = await audited(own.workspaceId, cookieCreated);
+  assert(
+    cookieEvents.length > 0 &&
+      cookieEvents.every((event) => event.api_token_id === null),
+    "a cookie write names no token",
+  );
+});
+
+Deno.test("[MCP-B1] PostgreSQL people:delete previews and deletes only with the confirmation and revision", async () => {
+  const own = await owner("Deleter");
+  const foreign = await owner("Foreign deleter");
+  const deleter = await tokens.mint(own, ["people:delete"]);
+  const foreignDeleter = await tokens.mint(foreign, ["people:delete"]);
+  const personId = await person(own, "Grace", "Hopper");
+  const impactPath = `/api/v1/people/${personId}/deletion-impact`;
+  const impact = expect(
+    await bearer(deleter, impactPath),
+    200,
+    "a bearer previews the deletion",
+  );
+  const confirmation = impact.body.impact.confirmation as string;
+  const updatedAt = impact.body.impact.person.updatedAt as string;
+  const remove = (body: unknown, token: MintedToken = deleter) =>
+    bearer(token, `/api/v1/people/${personId}`, "DELETE", body);
+
+  expect(
+    await remove({ expectedUpdatedAt: updatedAt }),
+    400,
+    "a deletion without the confirmation is refused",
+  );
+  expect(
+    await remove({ confirmation }),
+    400,
+    "a deletion without the revision is refused",
+  );
+  expect(
+    await remove({
+      confirmation: "Delete somebody",
+      expectedUpdatedAt: updatedAt,
+    }),
+    400,
+    "a deletion with the wrong confirmation is refused",
+  );
+  expect(
+    await remove({
+      confirmation,
+      expectedUpdatedAt: "2000-01-01T00:00:00.000000Z",
+    }),
+    409,
+    "a deletion against an old revision is refused",
+  );
+  expect(
+    await bearer(
+      foreignDeleter,
+      impactPath,
+    ),
+    404,
+    "a foreign token finds no such person to preview",
+  );
+  expect(
+    await remove(
+      { confirmation, expectedUpdatedAt: updatedAt },
+      foreignDeleter,
+    ),
+    404,
+    "a foreign token finds no such person to delete",
+  );
+  await refusedEverywhere(
+    own,
+    await refusedTokens(own, "people:delete", "people:write"),
+    [
+      ["GET", impactPath],
+      ["DELETE", `/api/v1/people/${personId}`, {
+        confirmation,
+        expectedUpdatedAt: updatedAt,
+      }],
+    ],
+  );
+  expect(
+    await browser(own, `/api/v1/people/${personId}`),
+    200,
+    "no refusal deleted the person",
+  );
+
+  const deletion = await auditedBy(own.workspaceId, async () =>
+    expect(
+      await remove({ confirmation, expectedUpdatedAt: updatedAt }),
+      200,
+      "a bearer deletes with the exact confirmation and revision",
+    ));
+  expect(
+    await browser(own, `/api/v1/people/${personId}`),
+    404,
+    "the browser no longer finds the deleted person",
+  );
+  assert(
+    deletion.length > 0 &&
+      deletion.every((event) => event.api_token_id === deleter.record.id),
+    `the deletion's audit events name the token: ${JSON.stringify(deletion)}`,
+  );
+});
+
+Deno.test("[MCP-B1] PostgreSQL people:merge reviews, dismisses, previews, and merges against the digest and revisions", async () => {
+  const own = await owner("Merger");
+  const foreign = await owner("Foreign merger");
+  const merger = await tokens.mint(own, ["people:merge"]);
+  const foreignMerger = await tokens.mint(foreign, ["people:merge"]);
+  const primaryId = await person(own, "Margaret", "Hamilton");
+  const duplicateId = await person(own, "Margaret", "Hamilton");
+  const alan = await person(own, "Alan", "Turing");
+  const alanAgain = await person(own, "Alan", "Turing");
+  await person(foreign, "Margaret", "Hamilton");
+  await person(foreign, "Margaret", "Hamilton");
+  const pairs = async (token: MintedToken) => {
+    const listed = expect(
+      await bearer(token, "/api/v1/people/duplicates"),
+      200,
+      "the duplicate review",
+    );
+    return (listed.body.pairs as { people: { id: string }[] }[]).map((pair) =>
+      pair.people.map((entry) => entry.id).sort().join()
+    );
+  };
+  const reviewed = await pairs(merger);
+  assert(
+    reviewed.includes([primaryId, duplicateId].sort().join()) &&
+      reviewed.includes([alan, alanAgain].sort().join()),
+    `a bearer lists the workspace's pairs: ${JSON.stringify(reviewed)}`,
+  );
+  assert(
+    !(await pairs(foreignMerger)).some((pair) => pair.includes(primaryId)),
+    "a foreign token never lists this workspace's people",
+  );
+  expect(
+    await bearer(
+      foreignMerger,
+      "/api/v1/people/duplicates/dismissals",
+      "POST",
+      { personIds: [alan, alanAgain] },
+    ),
+    404,
+    "a foreign token cannot dismiss this workspace's pair",
+  );
+  const dismissal = await auditedBy(own.workspaceId, async () =>
+    expect(
+      await bearer(merger, "/api/v1/people/duplicates/dismissals", "POST", {
+        personIds: [alan, alanAgain],
+      }),
+      200,
+      "a bearer dismisses a pair",
+    ));
+  assert(
+    !(await pairs(merger)).includes([alan, alanAgain].sort().join()),
+    "the dismissed pair is no longer offered",
+  );
+
+  const previewPath =
+    `/api/v1/people/${primaryId}/merge-preview?duplicateId=${duplicateId}`;
+  const preview = expect(
+    await bearer(merger, previewPath),
+    200,
+    "a bearer previews the merge",
+  );
+  expect(
+    await bearer(foreignMerger, previewPath),
+    404,
+    "a foreign token cannot preview this workspace's people",
+  );
+  const confirmed = {
+    confirmed: true,
+    conflictsDigest: preview.body.conflictsDigest,
+    duplicateId,
+    duplicateRevision: preview.body.duplicate.updatedAt,
+    primaryRevision: preview.body.primary.updatedAt,
+  };
+  const mergePath = `/api/v1/people/${primaryId}/merge`;
+  const { conflictsDigest: _digest, ...undigested } = confirmed;
+  expect(
+    await bearer(merger, mergePath, "POST", undigested),
+    400,
+    "a merge without the preview digest is refused",
+  );
+  const { primaryRevision: _revision, ...unrevised } = confirmed;
+  expect(
+    await bearer(merger, mergePath, "POST", unrevised),
+    400,
+    "a merge without both revisions is refused",
+  );
+  expect(
+    await bearer(merger, mergePath, "POST", {
+      ...confirmed,
+      conflictsDigest: "0".repeat(64),
+    }),
+    409,
+    "a merge against another digest is refused",
+  );
+  expect(
+    await bearer(merger, mergePath, "POST", {
+      ...confirmed,
+      primaryRevision: "2000-01-01T00:00:00.000000Z",
+    }),
+    409,
+    "a merge against an old revision is refused",
+  );
+  expect(
+    await bearer(foreignMerger, mergePath, "POST", confirmed),
+    404,
+    "a foreign token cannot merge this workspace's people",
+  );
+  await refusedEverywhere(
+    own,
+    await refusedTokens(own, "people:merge", "people:write"),
+    [
+      ["GET", "/api/v1/people/duplicates"],
+      ["POST", "/api/v1/people/duplicates/dismissals", {
+        personIds: [primaryId, duplicateId],
+      }],
+      ["GET", previewPath],
+      ["POST", mergePath, confirmed],
+    ],
+  );
+  expect(
+    await browser(own, `/api/v1/people/${duplicateId}`),
+    200,
+    "no refusal merged the duplicate",
+  );
+
+  const merged = await auditedBy(own.workspaceId, async () =>
+    expect(
+      await bearer(merger, mergePath, "POST", confirmed),
+      200,
+      "a bearer merges with the digest and both revisions",
+    ));
+  expect(
+    await browser(own, `/api/v1/people/${duplicateId}`),
+    404,
+    "the browser no longer finds the merged duplicate",
+  );
+  for (
+    const [label, events] of [["merge", merged], [
+      "dismissal",
+      dismissal,
+    ]] as const
+  ) {
+    assert(
+      events.length > 0 &&
+        events.every((event) => event.api_token_id === merger.record.id),
+      `the ${label}'s audit events name the token: ${JSON.stringify(events)}`,
+    );
+  }
+});
+
+Deno.test("[MCP-B1] PostgreSQL people:read lookups, search:read, and today:read answer only their own workspace", async () => {
+  const own = await owner("Reader");
+  const foreign = await owner("Foreign reader");
+  const marker = `Zephyrine${crypto.randomUUID().slice(0, 8)}`;
+  const personId = await person(own, marker);
+  const foreignPersonId = await person(foreign, marker);
+  const tag = async (fixture: SignedInFixture, name: string, id: string) => {
+    const [row] = await sql<{ id: string }[]>`
+      insert into crm.tags (workspace_id, name, slug)
+      values (${fixture.workspaceId}, ${name}, ${name.toLowerCase()})
+      returning id::text`;
+    await sql`insert into crm.person_tags (person_id, tag_id, workspace_id)
+      values (${id}, ${row!.id}, ${fixture.workspaceId})`;
+    return row!.id;
+  };
+  const ownTag = await tag(own, `Own ${marker}`, personId);
+  const foreignTag = await tag(foreign, `Foreign ${marker}`, foreignPersonId);
+  expect(
+    await browser(own, `/api/v1/people/${personId}/view`, "POST"),
+    200,
+    "the browser records a view",
+  );
+  expect(
+    await browser(foreign, `/api/v1/people/${foreignPersonId}/view`, "POST"),
+    200,
+    "the foreign browser records a view",
+  );
+
+  const reader = await tokens.mint(own, ["people:read"]);
+  const searcher = await tokens.mint(own, ["search:read"]);
+  const today = await tokens.mint(own, ["today:read"]);
+  const families = [
+    {
+      calls: [
+        `/api/v1/people/tag-options?search=${marker}`,
+        "/api/v1/people/tag-facet",
+      ],
+      neighbour: "people:profile:read",
+      scope: "people:read",
+      token: reader,
+    },
+    {
+      calls: [`/api/v1/search?q=${marker}`],
+      neighbour: "people:read",
+      scope: "search:read",
+      token: searcher,
+    },
+    {
+      calls: ["/api/v1/today/recent-people"],
+      neighbour: "people:read",
+      scope: "today:read",
+      token: today,
+    },
+  ];
+  for (const family of families) {
+    for (const path of family.calls) {
+      const read = expect(
+        await bearer(family.token, path),
+        200,
+        `${path}: ${family.scope} reads it`,
+      );
+      const text = JSON.stringify(read.body);
+      assert(
+        !text.includes(foreignPersonId) && !text.includes(foreignTag),
+        `${path}: another workspace's rows never answer`,
+      );
+    }
+    await refusedEverywhere(
+      own,
+      await refusedTokens(own, family.scope, family.neighbour),
+      family.calls.map((path) => ["GET", path] as const),
+    );
+  }
+
+  const options = await bearer(
+    reader,
+    `/api/v1/people/tag-options?search=${marker}`,
+  );
+  assert(
+    JSON.stringify(options.body).includes(ownTag),
+    "the tag options answer this workspace's tag",
+  );
+  const facet = await bearer(reader, "/api/v1/people/tag-facet");
+  assert(
+    JSON.stringify(facet.body).includes(ownTag),
+    "the tag facet counts this workspace's tag",
+  );
+  const found = await bearer(searcher, `/api/v1/search?q=${marker}`);
+  assert(
+    found.body.groups[0].results.some((entry: { id: string }) =>
+      entry.id === personId
+    ),
+    "the search finds this workspace's person",
+  );
+  const recent = await bearer(today, "/api/v1/today/recent-people");
+  assert(
+    recent.body.people.some((entry: { id: string }) => entry.id === personId),
+    "the recent people are the token's member's views",
+  );
+  // Recording a view stays a browser write: Origin first, then the cookie.
+  expect(
+    await bearer(today, `/api/v1/people/${personId}/view`, "POST"),
+    403,
+    "a bearer cannot record a view without the browser's Origin",
+  );
+  expect(
+    await bearer(today, `/api/v1/people/${personId}/view`, "POST", undefined, {
+      origin: "http://localhost",
+    }),
+    401,
+    "nor with it, since recording a view accepts no token",
+  );
+  expect(
+    await bearer(searcher, `/api/v1/search?q=${marker}`, "GET", undefined, {
+      "X-Workspace-Id": foreign.workspaceId,
+    }),
+    401,
+    "a token cannot name another workspace",
+  );
+});
+
+Deno.test({
+  name: "close the people-identity token fixture",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await suite.close();
+  },
+});

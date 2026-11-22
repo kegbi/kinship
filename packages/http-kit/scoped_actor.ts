@@ -9,7 +9,7 @@
  * grants — and a route handed to it without a scope fails when the app is
  * built, not on the request that would have needed one.
  */
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { RouteDescriptor } from "../contracts/registry.ts";
 import { apiTokenScope } from "../contracts/schemas/api_tokens.ts";
 import { rejectForeignOrigin, UNSAFE_METHODS } from "./origin.ts";
@@ -75,5 +75,31 @@ export function scopedRouteActor(
       scope,
       ...(services.tokens ? { tokens: services.tokens } : {}),
     });
+  };
+}
+
+/**
+ * The origin rule of a token-enabled write whose route checks the origin
+ * before anything else, in that same place.
+ *
+ * A cookie write keeps answering a foreign or missing `Origin` first, before
+ * its body is read, exactly as `requireMatchingOrigin` made it. A request
+ * that carries an `Authorization` header is left to `scopedRouteActor`, which
+ * admits a bearer write without an `Origin` and never lets a refused token
+ * fall back onto the cookie.
+ */
+export function cookieWriteOrigin(
+  policy: BrowserSecurityPolicy,
+): MiddlewareHandler {
+  return async (context, next) => {
+    if (
+      context.req.header("Authorization") !== undefined ||
+      !UNSAFE_METHODS.has(context.req.method)
+    ) {
+      return await next();
+    }
+    const refused = rejectForeignOrigin(context, policy);
+    if (refused) return refused;
+    await next();
   };
 }

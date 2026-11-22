@@ -522,6 +522,7 @@ export interface paths {
         /** @description Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates. */
         readonly get: operations["listPeople"];
         readonly put?: never;
+        /** @description Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride. */
         readonly post: operations["createPerson"];
         readonly delete?: never;
         readonly options?: never;
@@ -538,7 +539,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** @description Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. */
+        /** @description Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. Personal tokens require the people:write grant. */
         readonly post: operations["bulkPeople"];
         readonly delete?: never;
         readonly options?: never;
@@ -570,6 +571,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Bounded pairs of active people who look like the same person. Personal tokens require the people:merge grant. */
         readonly get: operations["listPeopleDuplicates"];
         readonly put?: never;
         readonly post?: never;
@@ -588,7 +590,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** @description Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. */
+        /** @description Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. Personal tokens require the people:merge grant. */
         readonly post: operations["dismissPeopleDuplicate"];
         readonly delete?: never;
         readonly options?: never;
@@ -603,7 +605,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** @description The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. */
+        /** @description The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. Personal tokens require the people:read grant. */
         readonly get: operations["listPeopleTagFacet"];
         readonly put?: never;
         readonly post?: never;
@@ -620,6 +622,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Bounded tag options for the directory's tag filter. Personal tokens require the people:read grant. */
         readonly get: operations["listPeopleTagOptions"];
         readonly put?: never;
         readonly post?: never;
@@ -639,9 +642,11 @@ export interface paths {
         readonly get: operations["getPerson"];
         readonly put?: never;
         readonly post?: never;
+        /** @description Deletes a person. The body repeats the exact confirmation phrase of the deletion impact and the person's expectedUpdatedAt; either missing or no longer current is refused. Personal tokens require the people:delete grant, which no other grant implies. */
         readonly delete: operations["deletePerson"];
         readonly options?: never;
         readonly head?: never;
+        /** @description Edits a person's identity against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. A stale revision is refused (409) and an archived person is read-only. */
         readonly patch: operations["editPerson"];
         readonly trace?: never;
     };
@@ -671,6 +676,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Archives a person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. */
         readonly post: operations["archivePerson"];
         readonly delete?: never;
         readonly options?: never;
@@ -832,6 +838,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description What deleting the person removes, and the exact confirmation phrase the deletion must repeat. Personal tokens require the people:delete grant. */
         readonly get: operations["getPersonDeletionImpact"];
         readonly put?: never;
         readonly post?: never;
@@ -1116,6 +1123,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Restores an archived person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. */
         readonly post: operations["restorePerson"];
         readonly delete?: never;
         readonly options?: never;
@@ -1131,10 +1139,10 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
-        /** @description Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. */
+        /** @description Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. Personal tokens require the people:write grant. */
         readonly put: operations["starPerson"];
         readonly post?: never;
-        /** @description Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. */
+        /** @description Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. Personal tokens require the people:write grant. */
         readonly delete: operations["unstarPerson"];
         readonly options?: never;
         readonly head?: never;
@@ -1198,6 +1206,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Merges the duplicate into the primary; a merge cannot be undone. The body quotes the preview's conflictsDigest, both people's revisions, and confirmed: true; any of them no longer current is refused. Personal tokens require the people:merge grant, which no other grant implies. */
         readonly post: operations["mergePeople"];
         readonly delete?: never;
         readonly options?: never;
@@ -1212,6 +1221,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description What merging the duplicate into the primary would keep, discard, and move, with both people's revisions and the conflictsDigest the merge must quote. Personal tokens require the people:merge grant. */
         readonly get: operations["previewPeopleMerge"];
         readonly put?: never;
         readonly post?: never;
@@ -1313,7 +1323,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** @description Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. */
+        /** @description Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. Personal tokens require the search:read grant, which deliberately returns results from several areas (people, notes, activities, journal posts, and tasks) and permits no other read. */
         readonly get: operations["searchWorkspace"];
         readonly put?: never;
         readonly post?: never;
@@ -1835,6 +1845,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description The people the member recently viewed, newest first. Personal tokens require the today:read grant and answer the token's own member's views. */
         readonly get: operations["getTodayRecentPeople"];
         readonly put?: never;
         readonly post?: never;
@@ -7626,9 +7637,9 @@ export interface operations {
     readonly createPerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -7709,9 +7720,9 @@ export interface operations {
     readonly bulkPeople: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -7927,9 +7938,9 @@ export interface operations {
     readonly dismissPeopleDuplicate: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -8225,9 +8236,9 @@ export interface operations {
     readonly deletePerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -8319,9 +8330,9 @@ export interface operations {
     readonly editPerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -8497,9 +8508,9 @@ export interface operations {
     readonly archivePerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11941,9 +11952,9 @@ export interface operations {
     readonly restorePerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -12035,9 +12046,9 @@ export interface operations {
     readonly starPerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -12116,9 +12127,9 @@ export interface operations {
     readonly unstarPerson: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -12416,9 +12427,9 @@ export interface operations {
     readonly mergePeople: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

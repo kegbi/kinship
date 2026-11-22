@@ -3918,11 +3918,16 @@
       },
       "post": {
         "operationId": "createPerson",
+        "description": "Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "header",
@@ -3931,8 +3936,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -4032,12 +4037,16 @@
     "/api/v1/people/bulk": {
       "post": {
         "operationId": "bulkPeople",
-        "description": "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request.",
+        "description": "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. Personal tokens require the people:write grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "header",
@@ -4046,8 +4055,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -4264,11 +4273,16 @@
     "/api/v1/people/duplicates": {
       "get": {
         "operationId": "listPeopleDuplicates",
+        "description": "Bounded pairs of active people who look like the same person. Personal tokens require the people:merge grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:merge",
         "parameters": [
           {
             "in": "header",
@@ -4338,12 +4352,16 @@
     "/api/v1/people/duplicates/dismissals": {
       "post": {
         "operationId": "dismissPeopleDuplicate",
-        "description": "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing.",
+        "description": "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. Personal tokens require the people:merge grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:merge",
         "parameters": [
           {
             "in": "header",
@@ -4352,8 +4370,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -4453,12 +4471,16 @@
     "/api/v1/people/tag-facet": {
       "get": {
         "operationId": "listPeopleTagFacet",
-        "description": "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use.",
+        "description": "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. Personal tokens require the people:read grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:read",
         "parameters": [
           {
             "in": "query",
@@ -4541,11 +4563,16 @@
     "/api/v1/people/tag-options": {
       "get": {
         "operationId": "listPeopleTagOptions",
+        "description": "Bounded tag options for the directory's tag filter. Personal tokens require the people:read grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:read",
         "parameters": [
           {
             "in": "query",
@@ -4652,11 +4679,16 @@
     "/api/v1/people/{personId}": {
       "delete": {
         "operationId": "deletePerson",
+        "description": "Deletes a person. The body repeats the exact confirmation phrase of the deletion impact and the person's expectedUpdatedAt; either missing or no longer current is refused. Personal tokens require the people:delete grant, which no other grant implies.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:delete",
         "parameters": [
           {
             "in": "path",
@@ -4674,8 +4706,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -4897,11 +4929,16 @@
       },
       "patch": {
         "operationId": "editPerson",
+        "description": "Edits a person's identity against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. A stale revision is refused (409) and an archived person is read-only.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -4919,8 +4956,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -5180,11 +5217,16 @@
     "/api/v1/people/{personId}/archive": {
       "post": {
         "operationId": "archivePerson",
+        "description": "Archives a person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -5202,8 +5244,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -6891,11 +6933,16 @@
     "/api/v1/people/{personId}/deletion-impact": {
       "get": {
         "operationId": "getPersonDeletionImpact",
+        "description": "What deleting the person removes, and the exact confirmation phrase the deletion must repeat. Personal tokens require the people:delete grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:delete",
         "parameters": [
           {
             "in": "path",
@@ -10387,11 +10434,16 @@
     "/api/v1/people/{personId}/restore": {
       "post": {
         "operationId": "restorePerson",
+        "description": "Restores an archived person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -10409,8 +10461,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -10520,12 +10572,16 @@
     "/api/v1/people/{personId}/star": {
       "put": {
         "operationId": "starPerson",
-        "description": "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only.",
+        "description": "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. Personal tokens require the people:write grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -10543,8 +10599,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -10632,12 +10688,16 @@
       },
       "delete": {
         "operationId": "unstarPerson",
-        "description": "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only.",
+        "description": "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. Personal tokens require the people:write grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -10655,8 +10715,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -11081,11 +11141,16 @@
     "/api/v1/people/{primaryId}/merge": {
       "post": {
         "operationId": "mergePeople",
+        "description": "Merges the duplicate into the primary; a merge cannot be undone. The body quotes the preview's conflictsDigest, both people's revisions, and confirmed: true; any of them no longer current is refused. Personal tokens require the people:merge grant, which no other grant implies.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:merge",
         "parameters": [
           {
             "in": "path",
@@ -11103,8 +11168,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -11214,11 +11279,16 @@
     "/api/v1/people/{primaryId}/merge-preview": {
       "get": {
         "operationId": "previewPeopleMerge",
+        "description": "What merging the duplicate into the primary would keep, discard, and move, with both people's revisions and the conflictsDigest the merge must quote. Personal tokens require the people:merge grant.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:merge",
         "parameters": [
           {
             "in": "path",
@@ -11936,12 +12006,16 @@
     "/api/v1/search": {
       "get": {
         "operationId": "searchWorkspace",
-        "description": "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty.",
+        "description": "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. Personal tokens require the search:read grant, which deliberately returns results from several areas (people, notes, activities, journal posts, and tasks) and permits no other read.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "search:read",
         "parameters": [
           {
             "in": "query",
@@ -16488,11 +16562,16 @@
     "/api/v1/today/recent-people": {
       "get": {
         "operationId": "getTodayRecentPeople",
+        "description": "The people the member recently viewed, newest first. Personal tokens require the today:read grant and answer the token's own member's views.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "today:read",
         "parameters": [
           {
             "in": "header",

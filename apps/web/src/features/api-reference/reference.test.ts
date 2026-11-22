@@ -36,7 +36,7 @@ describe("public API contract presentation", () => {
     );
     expect(
       referenceOperations.some(({ operation }) =>
-        operation.operationId === "createPerson"
+        operation.operationId === "getPerson"
       ),
     ).toBe(false);
   });

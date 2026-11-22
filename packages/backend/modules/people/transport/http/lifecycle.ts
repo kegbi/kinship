@@ -23,15 +23,17 @@ import {
   personTransitionInput,
 } from "../../../../../contracts/schemas/people.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
+  cookieWriteOrigin,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
+import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -45,7 +47,7 @@ import {
 /** What a person's lifecycle transitions are served from. */
 export type PersonLifecycleHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "people" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "people" | "protectedSessions"
 >;
 
 export const LIFECYCLE_REQUEST_INVALID: ProblemDefinition = {
@@ -84,7 +86,13 @@ export function createLifecycleRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const origin = cookieWriteOrigin(services.browserSecurity);
+  const impactActor = scopedRouteActor(getPersonDeletionImpact, tokens);
+  const deleteActor = scopedRouteActor(deletePerson, tokens);
 
   for (
     const [action, route] of [
@@ -92,6 +100,7 @@ export function createLifecycleRoutes(
       ["restore", restorePerson],
     ] as const
   ) {
+    const transitionActor = scopedRouteActor(route, tokens);
     mount(
       routes,
       route,
@@ -103,7 +112,7 @@ export function createLifecycleRoutes(
         if ("errors" in personId || "errors" in input) {
           return definedProblem(context, LIFECYCLE_REQUEST_INVALID);
         }
-        const actor = await requireActor(context);
+        const actor = await transitionActor(context);
         if (actor instanceof Response) return actor;
         const result = await services.people[action](
           actor,
@@ -132,7 +141,7 @@ export function createLifecycleRoutes(
       if ("errors" in personId) {
         return definedProblem(context, PERSON_ID_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await impactActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.people.previewDeletion(
         actor,
@@ -163,7 +172,7 @@ export function createLifecycleRoutes(
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, PERSON_DELETE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await deleteActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.people.delete(
         actor,

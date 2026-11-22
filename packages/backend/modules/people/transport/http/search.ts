@@ -27,9 +27,9 @@ import {
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseQuery } from "../../../../../http-kit/validate.ts";
@@ -57,18 +57,22 @@ export const SEARCH_UNAVAILABLE: ProblemDefinition = {
 export function createSearchRoutes(
   services: Pick<
     PeopleHttpServices,
-    "browserSecurity" | "protectedSessions" | "search"
+    "apiTokens" | "browserSecurity" | "protectedSessions" | "search"
   >,
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
+  const searchActor = scopedRouteActor(searchWorkspace, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
 
   mount(routes, searchWorkspace, session, async (context) => {
     const parsed = parseQuery(context, searchWorkspaceQuery);
     if ("errors" in parsed) {
       return definedProblem(context, SEARCH_QUERY_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await searchActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.search?.search(actor, {
       limit: parsed.data.limit,

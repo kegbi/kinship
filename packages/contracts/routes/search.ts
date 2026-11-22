@@ -33,8 +33,9 @@ export const searchWorkspace = defineRoute({
   path: "/api/v1/search",
   operationId: "searchWorkspace",
   description:
-    "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty.",
-  security: [{ kinship_session: [] }],
+    "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. Personal tokens require the search:read grant, which deliberately returns results from several areas (people, notes, activities, journal posts, and tasks) and permits no other read.",
+  tokenScope: "search:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: searchWorkspaceQuery,
     headers: workspaceHeaders,

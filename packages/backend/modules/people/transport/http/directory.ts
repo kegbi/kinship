@@ -175,10 +175,14 @@ export function createDirectoryRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const directoryActor = scopedRouteActor(listPeople, {
+  const tokens = {
     browserSecurity: services.browserSecurity,
     tokens: services.apiTokens,
-  });
+  };
+  const directoryActor = scopedRouteActor(listPeople, tokens);
+  const tagOptionsActor = scopedRouteActor(listPeopleTagOptions, tokens);
+  const tagFacetActor = scopedRouteActor(listPeopleTagFacet, tokens);
+  const recentPeopleActor = scopedRouteActor(getTodayRecentPeople, tokens);
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listPeople, session, async (context) => {
@@ -235,7 +239,7 @@ export function createDirectoryRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, TAG_OPTIONS_QUERY_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await tagOptionsActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.tagOptions.list(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
@@ -265,7 +269,7 @@ export function createDirectoryRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, TAG_FACET_QUERY_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await tagFacetActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.tagFacet?.list(actor, {
       lifecycle: parsed.data.lifecycle,
@@ -313,7 +317,7 @@ export function createDirectoryRoutes(
   );
 
   mount(routes, getTodayRecentPeople, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await recentPeopleActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.todayRecentPeople?.get(actor).catch(() =>
       undefined

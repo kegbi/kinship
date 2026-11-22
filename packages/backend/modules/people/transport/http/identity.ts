@@ -22,16 +22,17 @@ import {
   personInput,
 } from "../../../../../contracts/schemas/people.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
-import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
+import {
+  cookieWriteOrigin,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -113,7 +114,15 @@ export function createIdentityRoutes(
     browserSecurity: services.browserSecurity,
     tokens: services.apiTokens,
   });
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const createActor = scopedRouteActor(createPerson, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
+  const editActor = scopedRouteActor(editPerson, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
+  const origin = cookieWriteOrigin(services.browserSecurity);
 
   mount(routes, getPersonIdentity, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
@@ -141,7 +150,7 @@ export function createIdentityRoutes(
     if ("errors" in personId || "errors" in input) {
       return definedProblem(context, PERSON_EDIT_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await editActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.people.edit(actor, personId.data, {
       ...(input.data.description === undefined
@@ -174,7 +183,7 @@ export function createIdentityRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, PERSON_CREATE_INVALID);
     }
-    const actor = await requireActor(context);
+    const actor = await createActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.people.create(actor, {
       ...(parsed.data.duplicateOverride === true

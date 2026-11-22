@@ -1,9 +1,10 @@
 /**
  * The bounded people directory: what it lists, and who may read it.
  *
- * The one route in the surface that a personal access token can reach, which
+ * The first route in the surface a personal access token could reach, which
  * is why the bearer test lives here — and why it also proves that the same
- * token cannot reach the create route beside it.
+ * people:read token cannot reach the create route beside it, which needs
+ * people:write (MCP-B1).
  */
 
 import {
@@ -31,10 +32,10 @@ Deno.test("API-001 bearer scope authenticates only the people directory read", a
           token === "accepted-token",
           "bearer passed without logging or mutation",
         );
-        assert(
-          scope === "people:read",
-          "directory requires explicit read scope",
-        );
+        // The token holds people:read only, so a write grant is refused.
+        if (scope !== "people:read") {
+          return Promise.resolve({ status: "invalid" });
+        }
         assert(
           workspaceId === actor.workspaceId,
           "requested workspace is verified",
@@ -78,7 +79,7 @@ Deno.test("API-001 bearer scope authenticates only the people directory read", a
     },
     method: "POST",
   });
-  assertStatus(mutation, 401, "bearer cannot reuse browser mutation boundary");
+  assertStatus(mutation, 401, "a read grant cannot create a person");
 });
 
 Deno.test("PEOPLE-002 HTTP lists only the resolved active workspace", async () => {

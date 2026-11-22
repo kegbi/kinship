@@ -1091,7 +1091,6 @@ Deno.test("scoped person tokens preserve projections, parent boundaries, lookups
       `${root}?include=summary`,
       `${root}/timeline`,
       `${root}/life-events`,
-      "/api/v1/search?q=Ada",
     ]
   ) {
     assert(

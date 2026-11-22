@@ -20,12 +20,14 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import { definedProblem } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
+  cookieWriteOrigin,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
+import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import type { Context } from "hono";
@@ -35,7 +37,7 @@ import { type PeopleHttpServices, PERSON_ID_INVALID } from "./shared.ts";
 /** What a person's star is served from. */
 export type PersonStarHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "protectedSessions" | "stars"
+  "apiTokens" | "browserSecurity" | "protectedSessions" | "stars"
 >;
 
 /** What a refused star says. */
@@ -72,12 +74,20 @@ export function createStarRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const origin = cookieWriteOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const actors = {
+    star: scopedRouteActor(starPerson, tokens),
+    unstar: scopedRouteActor(unstarPerson, tokens),
+  };
 
   const setStar = (starred: boolean) => async (context: Context<ActorEnv>) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return definedProblem(context, PERSON_ID_INVALID);
-    const actor = await requireActor(context);
+    const actor = await actors[starred ? "star" : "unstar"](context);
     if (actor instanceof Response) return actor;
     const result = await services.stars?.set(actor, personId.data, starred)
       .catch(() => undefined);

@@ -120,9 +120,12 @@ export const createPerson = defineRoute({
   method: "post",
   path: "/api/v1/people",
   operationId: "createPerson",
-  security: [{ kinship_session: [] }],
+  description:
+    "Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -170,7 +173,10 @@ export const listPeopleTagOptions = defineRoute({
   method: "get",
   path: "/api/v1/people/tag-options",
   operationId: "listPeopleTagOptions",
-  security: [{ kinship_session: [] }],
+  description:
+    "Bounded tag options for the directory's tag filter. Personal tokens require the people:read grant.",
+  tokenScope: "people:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listPeopleTagOptionsQuery,
     headers: workspaceHeaders,
@@ -196,8 +202,9 @@ export const listPeopleTagFacet = defineRoute({
   path: "/api/v1/people/tag-facet",
   operationId: "listPeopleTagFacet",
   description:
-    "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use.",
-  security: [{ kinship_session: [] }],
+    "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. Personal tokens require the people:read grant.",
+  tokenScope: "people:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listPeopleTagFacetQuery,
     headers: workspaceHeaders,
@@ -217,12 +224,15 @@ export const deletePerson = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}",
   operationId: "deletePerson",
-  security: [{ kinship_session: [] }],
+  description:
+    "Deletes a person. The body repeats the exact confirmation phrase of the deletion impact and the person's expectedUpdatedAt; either missing or no longer current is refused. Personal tokens require the people:delete grant, which no other grant implies.",
+  tokenScope: "people:delete",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -277,12 +287,15 @@ export const editPerson = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}",
   operationId: "editPerson",
-  security: [{ kinship_session: [] }],
+  description:
+    "Edits a person's identity against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. A stale revision is refused (409) and an archived person is read-only.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -305,12 +318,15 @@ export const archivePerson = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/archive",
   operationId: "archivePerson",
-  security: [{ kinship_session: [] }],
+  description:
+    "Archives a person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -337,7 +353,10 @@ export const listPeopleDuplicates = defineRoute({
   method: "get",
   path: "/api/v1/people/duplicates",
   operationId: "listPeopleDuplicates",
-  security: [{ kinship_session: [] }],
+  description:
+    "Bounded pairs of active people who look like the same person. Personal tokens require the people:merge grant.",
+  tokenScope: "people:merge",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -358,10 +377,11 @@ export const dismissPeopleDuplicate = defineRoute({
   path: "/api/v1/people/duplicates/dismissals",
   operationId: "dismissPeopleDuplicate",
   description:
-    "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing.",
-  security: [{ kinship_session: [] }],
+    "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. Personal tokens require the people:merge grant.",
+  tokenScope: "people:merge",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -390,7 +410,10 @@ export const previewPeopleMerge = defineRoute({
   method: "get",
   path: "/api/v1/people/{primaryId}/merge-preview",
   operationId: "previewPeopleMerge",
-  security: [{ kinship_session: [] }],
+  description:
+    "What merging the duplicate into the primary would keep, discard, and move, with both people's revisions and the conflictsDigest the merge must quote. Personal tokens require the people:merge grant.",
+  tokenScope: "people:merge",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       primaryId: uuid,
@@ -414,12 +437,15 @@ export const mergePeople = defineRoute({
   method: "post",
   path: "/api/v1/people/{primaryId}/merge",
   operationId: "mergePeople",
-  security: [{ kinship_session: [] }],
+  description:
+    "Merges the duplicate into the primary; a merge cannot be undone. The body quotes the preview's conflictsDigest, both people's revisions, and confirmed: true; any of them no longer current is refused. Personal tokens require the people:merge grant, which no other grant implies.",
+  tokenScope: "people:merge",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       primaryId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -505,7 +531,7 @@ const starRequest = {
   params: z.object({
     personId: uuid,
   }),
-  headers: originAndWorkspaceHeaders,
+  headers: tokenOrSessionWriteHeaders,
 };
 
 export const starPerson = defineRoute({
@@ -513,8 +539,9 @@ export const starPerson = defineRoute({
   path: "/api/v1/people/{personId}/star",
   operationId: "starPerson",
   description:
-    "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only.",
-  security: [{ kinship_session: [] }],
+    "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. Personal tokens require the people:write grant.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: starRequest,
   responses: {
     200: {
@@ -532,8 +559,9 @@ export const unstarPerson = defineRoute({
   path: "/api/v1/people/{personId}/star",
   operationId: "unstarPerson",
   description:
-    "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only.",
-  security: [{ kinship_session: [] }],
+    "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. Personal tokens require the people:write grant.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: starRequest,
   responses: {
     200: {
@@ -661,7 +689,10 @@ export const getPersonDeletionImpact = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/deletion-impact",
   operationId: "getPersonDeletionImpact",
-  security: [{ kinship_session: [] }],
+  description:
+    "What deleting the person removes, and the exact confirmation phrase the deletion must repeat. Personal tokens require the people:delete grant.",
+  tokenScope: "people:delete",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -946,12 +977,15 @@ export const restorePerson = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/restore",
   operationId: "restorePerson",
-  security: [{ kinship_session: [] }],
+  description:
+    "Restores an archived person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -1027,7 +1061,10 @@ export const getTodayRecentPeople = defineRoute({
   method: "get",
   path: "/api/v1/today/recent-people",
   operationId: "getTodayRecentPeople",
-  security: [{ kinship_session: [] }],
+  description:
+    "The people the member recently viewed, newest first. Personal tokens require the today:read grant and answer the token's own member's views.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -1047,10 +1084,11 @@ export const bulkPeople = defineRoute({
   path: "/api/v1/people/bulk",
   operationId: "bulkPeople",
   description:
-    "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request.",
-  security: [{ kinship_session: [] }],
+    "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. Personal tokens require the people:write grant.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {

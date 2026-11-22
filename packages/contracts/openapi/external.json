@@ -1317,6 +1317,838 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createPerson",
+        "description": "Creates a person in the workspace. Personal tokens require the people:write grant. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace-owned person created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/bulk": {
+      "post": {
+        "operationId": "bulkPeople",
+        "description": "Archives, restores, tags, or untags up to 100 people. Each person runs through the single-person use case in its own transaction and is answered per person, in request order; only a malformed request, lost access, or a tag outside the workspace refuses the whole request. Personal tokens require the people:write grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeopleBulkInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Each person's outcome; partial success is expected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleBulkResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/duplicates": {
+      "get": {
+        "operationId": "listPeopleDuplicates",
+        "description": "Bounded pairs of active people who look like the same person. Personal tokens require the people:merge grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:merge",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded pairs of active people in the workspace who share a full name, an email address, or a phone number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleDuplicates"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/duplicates/dismissals": {
+      "post": {
+        "operationId": "dismissPeopleDuplicate",
+        "description": "Marks two people from the duplicate review as not duplicates for the whole workspace. Dismissing a dismissed pair changes nothing. Personal tokens require the people:merge grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:merge",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeopleDuplicateDismissalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The duplicate review no longer offers the pair to any member of the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleDuplicateDismissed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/tag-facet": {
+      "get": {
+        "operationId": "listPeopleTagFacet",
+        "description": "The workspace's tags with how many people of the active or archived view carry each, most carried first, at most thirty; `truncated` says more tags are in use. Personal tokens require the people:read grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:read",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lifecycle",
+            "schema": {
+              "default": "active",
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded tenant-scoped tag counts for the directory view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleTagFacet"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/tag-options": {
+      "get": {
+        "operationId": "listPeopleTagOptions",
+        "description": "Bounded tag options for the directory's tag filter. Personal tokens require the people:read grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:read",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "selected",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded tenant-scoped people tag options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleTagOptionsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}": {
+      "delete": {
+        "operationId": "deletePerson",
+        "description": "Deletes a person. The body repeats the exact confirmation phrase of the deletion impact and the person's expectedUpdatedAt; either missing or no longer current is refused. Personal tokens require the people:delete grant, which no other grant implies.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonDeleteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Atomic current-workspace person lifecycle change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "editPerson",
+        "description": "Edits a person's identity against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant. A stale revision is refused (409) and an archived person is read-only.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonEditInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Atomic current-workspace person lifecycle change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifecycleChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/people/{personId}/activity-report": {
@@ -1444,6 +2276,131 @@
             }
           },
           "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/archive": {
+      "post": {
+        "operationId": "archivePerson",
+        "description": "Archives a person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonTransitionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Atomic current-workspace person lifecycle change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifecycleChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -1599,6 +2556,101 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImportantDateList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/deletion-impact": {
+      "get": {
+        "operationId": "getPersonDeletionImpact",
+        "description": "What deleting the person removes, and the exact confirmation phrase the deletion must repeat. Personal tokens require the people:delete grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Canonical soft-delete impact and confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDeletionImpact"
                 }
               }
             }
@@ -2531,6 +3583,578 @@
         }
       }
     },
+    "/api/v1/people/{personId}/restore": {
+      "post": {
+        "operationId": "restorePerson",
+        "description": "Restores an archived person against the expectedUpdatedAt it was decided from. Personal tokens require the people:write grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonTransitionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Atomic current-workspace person lifecycle change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifecycleChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/star": {
+      "put": {
+        "operationId": "starPerson",
+        "description": "Stars the person for the whole workspace. Starring a starred person changes nothing, and an archived person's star is read-only. Personal tokens require the people:write grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The person is starred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonStarChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unstarPerson",
+        "description": "Removes the person's workspace star. An unstarred person is unchanged, and an archived person's star is read-only. Personal tokens require the people:write grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The person is no longer starred",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonStarChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{primaryId}/merge": {
+      "post": {
+        "operationId": "mergePeople",
+        "description": "Merges the duplicate into the primary; a merge cannot be undone. The body quotes the preview's conflictsDigest, both people's revisions, and confirmed: true; any of them no longer current is refused. Personal tokens require the people:merge grant, which no other grant implies.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:merge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "primaryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every record of the duplicate now belongs to the primary and the duplicate is deleted; a merge cannot be undone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMerged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{primaryId}/merge-preview": {
+      "get": {
+        "operationId": "previewPeopleMerge",
+        "description": "What merging the duplicate into the primary would keep, discard, and move, with both people's revisions and the conflictsDigest the merge must quote. Personal tokens require the people:merge grant.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:merge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "primaryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "duplicateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What merging the duplicate into the primary would keep, discard, and move, from the same decision the merge takes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMergePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/relationship-types": {
       "get": {
         "operationId": "listRelationshipTypes",
@@ -2878,6 +4502,115 @@
             }
           },
           "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "searchWorkspace",
+        "description": "Searches the active workspace's people, notes, activities, journal posts, and tasks, each group bounded and filtered by the rules its owning module lists rows with. People are answered first; when the text groups cannot be, each is marked unavailable and the people still answer. A blank query answers the member's recently viewed people, archived ones included, in the people group, and every other group empty. Personal tokens require the search:read grant, which deliberately returns results from several areas (people, notes, activities, journal posts, and tasks) and permits no other read.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "search:read",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 5,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "default": "given-name",
+              "type": "string",
+              "enum": [
+                "given-name",
+                "family-name"
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grouped workspace search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
             "description": "RFC 9457 problem details",
             "content": {
               "application/problem+json": {
@@ -3791,6 +5524,82 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TodayRecentActivity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/today/recent-people": {
+      "get": {
+        "operationId": "getTodayRecentPeople",
+        "description": "The people the member recently viewed, newest first. Personal tokens require the today:read grant and answer the token's own member's views.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded actual member-scoped recently viewed people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayRecentPeople"
                 }
               }
             }
@@ -5580,6 +7389,132 @@
         ],
         "additionalProperties": false
       },
+      "PeopleBulkInput": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "archive",
+              "restore",
+              "tag",
+              "untag"
+            ]
+          },
+          "personIds": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Distinct people in the active workspace."
+          },
+          "tagId": {
+            "description": "The workspace tag to add or remove; only tagging names one.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "action",
+          "personIds"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleBulkItemResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Why a failed person was refused.",
+            "type": "string",
+            "enum": [
+              "archived_write_rejected",
+              "forbidden",
+              "invalid",
+              "not_found",
+              "section_hidden",
+              "stale",
+              "tag_unavailable",
+              "unavailable"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "done",
+              "failed",
+              "skipped",
+              "unchanged"
+            ]
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "outcome",
+          "personId"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleBulkResult": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "archive",
+              "restore",
+              "tag",
+              "untag"
+            ]
+          },
+          "results": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleBulkItemResult"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "done": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unchanged": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "done",
+              "failed",
+              "skipped",
+              "unchanged"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "action",
+          "results",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
       "PeopleDirectoryPage": {
         "type": "object",
         "properties": {
@@ -5688,6 +7623,215 @@
         ],
         "additionalProperties": false
       },
+      "PeopleDuplicateDismissalInput": {
+        "type": "object",
+        "properties": {
+          "personIds": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "personIds"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicateDismissed": {
+        "type": "object",
+        "properties": {
+          "personIds": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "status": {
+            "const": "dismissed"
+          }
+        },
+        "required": [
+          "personIds",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicatePair": {
+        "type": "object",
+        "properties": {
+          "people": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleDuplicatePerson"
+            }
+          },
+          "reasons": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "name",
+                "phone"
+              ]
+            }
+          }
+        },
+        "required": [
+          "people",
+          "reasons"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicatePerson": {
+        "type": "object",
+        "properties": {
+          "avatar": {
+            "$ref": "#/components/schemas/PersonAvatar"
+          },
+          "familyName": {
+            "type": "string"
+          },
+          "givenName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "middleName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "givenName",
+          "id",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleDuplicates": {
+        "type": "object",
+        "properties": {
+          "pairs": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleDuplicatePair"
+            }
+          },
+          "status": {
+            "const": "ready"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pairs",
+          "status",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleTagFacet": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "tags": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleTagFacetEntry"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "lifecycle",
+          "tags",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleTagFacetEntry": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PeopleTagOptionsPage": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "ready"
+          },
+          "options": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeopleDirectoryTag"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "selected": {
+            "$ref": "#/components/schemas/PeopleDirectoryTag"
+          }
+        },
+        "required": [
+          "status",
+          "options"
+        ],
+        "additionalProperties": false
+      },
       "PersonAvatar": {
         "type": "object",
         "properties": {
@@ -5702,6 +7846,152 @@
         },
         "required": [
           "color"
+        ],
+        "additionalProperties": false
+      },
+      "PersonCreated": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "created"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonIdentity"
+          },
+          "next": {
+            "type": "string",
+            "pattern": "^\\/app\\/people\\/[0-9a-f-]+$"
+          }
+        },
+        "required": [
+          "status",
+          "person",
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "PersonDeleteInput": {
+        "type": "object",
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "confirmation",
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonDeleted": {
+        "type": "object",
+        "properties": {
+          "next": {
+            "const": "/app/people"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "next",
+          "personId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonDeletionImpact": {
+        "type": "object",
+        "properties": {
+          "impact": {
+            "type": "object",
+            "properties": {
+              "confirmation": {
+                "type": "string"
+              },
+              "dependentRecordPolicy": {
+                "const": "retained"
+              },
+              "person": {
+                "$ref": "#/components/schemas/PersonLifecycleIdentity"
+              }
+            },
+            "required": [
+              "confirmation",
+              "dependentRecordPolicy",
+              "person"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "impact",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonEditInput": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "familyName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "genderOptionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "const": ""
+              }
+            ]
+          },
+          "givenName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isDeceased": {
+            "type": "boolean"
+          },
+          "isPartial": {
+            "type": "boolean"
+          },
+          "middleName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "nickname": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "expectedUpdatedAt",
+          "givenName",
+          "isPartial"
         ],
         "additionalProperties": false
       },
@@ -5752,6 +8042,38 @@
         "required": [
           "person",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonInput": {
+        "type": "object",
+        "properties": {
+          "duplicateOverride": {
+            "type": "boolean"
+          },
+          "familyName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "givenName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPartial": {
+            "type": "boolean"
+          },
+          "middleName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "nickname": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "givenName",
+          "isPartial"
         ],
         "additionalProperties": false
       },
@@ -5968,6 +8290,211 @@
         ],
         "additionalProperties": false
       },
+      "PersonLifecycleChanged": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "archived",
+              "restored"
+            ]
+          }
+        },
+        "required": [
+          "person",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifecycleIdentity": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "familyName": {
+            "type": "string"
+          },
+          "genderOptionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "givenName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isDeceased": {
+            "type": "boolean"
+          },
+          "isPartial": {
+            "type": "boolean"
+          },
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ]
+          },
+          "middleName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "givenName",
+          "id",
+          "isDeceased",
+          "isPartial",
+          "lifecycle",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergeConflict": {
+        "type": "object",
+        "properties": {
+          "discarded": {
+            "type": "string"
+          },
+          "fact": {
+            "type": "string",
+            "enum": [
+              "avatar",
+              "birthday",
+              "deceased",
+              "first-meeting",
+              "first_met",
+              "stay-in-touch"
+            ]
+          },
+          "kept": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "discarded",
+          "fact",
+          "kept"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergeInput": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "const": true
+          },
+          "conflictsDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "duplicateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duplicateRevision": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "primaryRevision": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "confirmed",
+          "conflictsDigest",
+          "duplicateId",
+          "duplicateRevision",
+          "primaryRevision"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMergePreview": {
+        "type": "object",
+        "properties": {
+          "conflicts": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonMergeConflict"
+            }
+          },
+          "conflictsDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "duplicate": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "moves": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "primary": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "conflicts",
+          "conflictsDigest",
+          "duplicate",
+          "moves",
+          "primary",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonMerged": {
+        "type": "object",
+        "properties": {
+          "duplicateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "moved": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next": {
+            "type": "string",
+            "pattern": "^\\/app\\/people\\/[0-9a-f-]{36}$"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonLifecycleIdentity"
+          },
+          "status": {
+            "const": "merged"
+          }
+        },
+        "required": [
+          "duplicateId",
+          "moved",
+          "next",
+          "person",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "PersonReminders": {
         "type": "object",
         "properties": {
@@ -5995,6 +8522,22 @@
         "required": [
           "cadences",
           "reminders",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "PersonStarChanged": {
+        "type": "object",
+        "properties": {
+          "isStarred": {
+            "type": "boolean"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "isStarred",
           "status"
         ],
         "additionalProperties": false
@@ -6605,6 +9148,188 @@
         },
         "required": [
           "reminder",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "SearchEntityGroup": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "notes",
+              "activities",
+              "journal-posts",
+              "tasks"
+            ]
+          },
+          "results": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchEntityResult"
+            }
+          },
+          "unavailable": {
+            "const": true
+          }
+        },
+        "required": [
+          "kind",
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "SearchEntityResult": {
+        "type": "object",
+        "properties": {
+          "href": {
+            "type": "string",
+            "pattern": "^\\/app\\/(?:people\\/[0-9a-f-]{36}\\?section=(?:notes|activities|tasks)|journal\\/[0-9a-f-]{36}|tasks)$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "note",
+              "activity",
+              "journal-post",
+              "task"
+            ]
+          },
+          "person": {
+            "$ref": "#/components/schemas/SearchPersonReference"
+          },
+          "snippet": {
+            "type": "string",
+            "maxLength": 322
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "href",
+          "id",
+          "kind",
+          "snippet"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPeopleGroup": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "people"
+          },
+          "results": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchPersonResult"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPersonReference": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "SearchPersonResult": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "avatar": {
+            "$ref": "#/components/schemas/PersonAvatar"
+          },
+          "familyName": {
+            "type": "string"
+          },
+          "givenName": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string",
+            "pattern": "^\\/app\\/people\\/[0-9a-f-]{36}$"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "const": "person"
+          },
+          "middleName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "givenName",
+          "href",
+          "id",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "minItems": 5,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SearchPeopleGroup"
+                },
+                {
+                  "$ref": "#/components/schemas/SearchEntityGroup"
+                }
+              ]
+            }
+          },
+          "query": {
+            "type": "string"
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "groups",
+          "query",
           "status"
         ],
         "additionalProperties": false
@@ -7220,6 +9945,47 @@
         "required": [
           "items",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "TodayRecentPeople": {
+        "type": "object",
+        "properties": {
+          "people": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodayRecentPerson"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "people",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "TodayRecentPerson": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "archived",
+          "id",
+          "name"
         ],
         "additionalProperties": false
       },

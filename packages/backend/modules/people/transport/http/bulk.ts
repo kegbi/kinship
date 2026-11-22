@@ -11,15 +11,17 @@
 import { Hono } from "hono";
 import { bulkPeople } from "../../../../../contracts/routes/people.ts";
 import { peopleBulkInput } from "../../../../../contracts/schemas/people.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
+  cookieWriteOrigin,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
+import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody } from "../../../../../http-kit/validate.ts";
@@ -28,7 +30,7 @@ import type { PeopleHttpServices } from "./shared.ts";
 /** What the bulk action is served from. */
 export type BulkHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "bulk" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "bulk" | "protectedSessions"
 >;
 
 export const PEOPLE_BULK_INVALID: ProblemDefinition = {
@@ -60,14 +62,18 @@ export const PEOPLE_BULK_UNAVAILABLE: ProblemDefinition = {
 export function createBulkRoutes(services: BulkHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const origin = cookieWriteOrigin(services.browserSecurity);
+  const bulkActor = scopedRouteActor(bulkPeople, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
 
   mount(routes, bulkPeople, origin, session, async (context) => {
     const input = await parseJsonBody(context, peopleBulkInput);
     if ("errors" in input) {
       return definedProblem(context, PEOPLE_BULK_INVALID, input.errors);
     }
-    const actor = await requireActor(context);
+    const actor = await bulkActor(context);
     if (actor instanceof Response) return actor;
     if (!services.bulk) {
       return definedProblem(context, PEOPLE_BULK_UNAVAILABLE);

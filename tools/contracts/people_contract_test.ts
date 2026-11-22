@@ -521,8 +521,8 @@ Deno.test("PEOPLE-001 OpenAPI describes tenant-safe person creation", () => {
   assert(create !== undefined, "person creation path must be versioned");
   assert(
     JSON.stringify(create.security) ===
-      JSON.stringify([{ kinship_session: [] }]),
-    "person creation must require the session cookie",
+      JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
+    "person creation requires the session cookie or a people:write token",
   );
   assert(
     create.parameters?.some((parameter) => parameter.name === "Origin") ===
@@ -599,7 +599,7 @@ Deno.test("PEOPLE-002 OpenAPI describes tenant-safe cursor directory reads", () 
   assert(tagOptions !== undefined, "tag options path must be versioned");
   assert(
     JSON.stringify(tagOptions.security) ===
-        JSON.stringify([{ kinship_session: [] }]) &&
+        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]) &&
       ["X-Workspace-Id", "search", "cursor", "selected"].every((name) =>
         tagOptions.parameters?.some((parameter) => parameter.name === name)
       ),
@@ -981,12 +981,14 @@ Deno.test("PEOPLE-004 OpenAPI versions every tenant-safe lifecycle action", () =
     assert(operation, `${method} ${path} is documented`);
     assert(
       JSON.stringify(operation.security) ===
-          JSON.stringify([{ kinship_session: [] }]) &&
+          JSON.stringify([{ kinship_session: [] }, {
+            kinship_api_token: [],
+          }]) &&
         operation.parameters?.some((parameter) =>
             parameter.name === "X-Workspace-Id"
           ) === true &&
         operation.parameters.some((parameter) => parameter.name === "personId"),
-      `${method} ${path} is session and workspace scoped`,
+      `${method} ${path} is session-or-token and workspace scoped`,
     );
     for (const status of ["200", "400", "401", "403", "404", "503"]) {
       assert(operation.responses?.[status], `${method} documents ${status}`);
