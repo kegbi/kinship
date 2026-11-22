@@ -4,6 +4,8 @@ import external from "../../../../../packages/contracts/openapi/external.json";
 export interface ReferenceOperation {
   readonly operationId: string;
   readonly description: string;
+  /** The grant the route admits a token with; absent when any token will do. */
+  readonly "x-kinship-token-scope"?: string;
   readonly parameters?: readonly {
     readonly name: string;
     readonly in: string;
@@ -40,6 +42,7 @@ export const referenceOperations = Object.entries(paths).flatMap((
     path,
     method: method.toUpperCase(),
     operation,
+    tokenScope: operation["x-kinship-token-scope"],
   }))
 );
 

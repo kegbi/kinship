@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import external from "../../../../../packages/contracts/openapi/external.json";
+import { apiTokenScope } from "../../../../../packages/contracts/schemas/api_tokens.ts";
 import {
   referencedSchemas,
   referenceOperations,
@@ -57,5 +58,28 @@ describe("public API contract presentation", () => {
     });
     expect(value.dependentRequired).toEqual({ label: ["reverseLabel"] });
     expect(referencedSchemas({ type: "boolean" })).toEqual([]);
+  });
+});
+
+describe("MCP-W1 required grant per operation", () => {
+  it("names each operation's grant from the generated contract, and every grant is a known scope", () => {
+    const declared = Object.values(external.paths).flatMap((methods) =>
+      Object.values(methods).map((operation) =>
+        (operation as Record<string, unknown>)["x-kinship-token-scope"]
+      )
+    );
+    expect(referenceOperations.map(({ tokenScope }) => tokenScope)).toEqual(
+      declared,
+    );
+    expect(declared.some((scope) => scope !== undefined)).toBe(true);
+    for (const { tokenScope } of referenceOperations) {
+      if (tokenScope === undefined) continue;
+      expect(apiTokenScope.options).toContain(tokenScope);
+    }
+    expect(
+      referenceOperations.find(({ operation }) =>
+        operation.operationId === "getTokenContext"
+      )?.tokenScope,
+    ).toBeUndefined();
   });
 });

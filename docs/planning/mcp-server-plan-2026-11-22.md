@@ -177,7 +177,7 @@ matrix or architecture prose; MCP-C4 does that once.
       PostgreSQL suite that drives the endpoint as a client would: initialize, a
       tool list filtered by scope, a successful call, a refused scope, a revoked
       token, a foreign `Origin`, an ignored cookie, and the legal guard.
-- [ ] **MCP-W1 Token settings.** The scope picker grouped by area with read and
+- [x] **MCP-W1 Token settings.** The scope picker grouped by area with read and
       write grants, two presets (read-only agent, full CRM agent), and a
       "Connect an AI agent" block with the endpoint URL and client
       configuration. The `/docs/api` prose stops counting grants by hand.

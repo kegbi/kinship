@@ -2,7 +2,7 @@
 import PublicLayout from "../../../layouts/PublicLayout.astro";
 import Schema from "../../../components/api-reference/Schema.astro";
 import Code from "../../../components/api-reference/Code.astro";
-import { API_TOKEN_SCOPE_CHOICES } from "../../../features/settings/api-access/api-access.ts";
+import { ACCESS_TEXT, cautionText, scopeGroups, scopeLabel } from "../../../features/settings/api-access/api-access.ts";
 import { referenceOperations, referenceSchemas } from "../../../features/api-reference/reference.ts";
 import "../../../styles/api-reference.css";
 
@@ -120,9 +120,9 @@ const sections = [
         <section id="grants" aria-labelledby="grants-heading">
           <p class="eyebrow">02 / Choose access deliberately</p><h2 id="grants-heading">Tokens & grants</h2>
           <p>Each token is bound to its issuing user and workspace. Every request revalidates the active user, membership, and workspace; grants also remain subject to application permissions and enabled profile sections. Only owners and administrators can issue or manage tokens. Revoke unused tokens from API access.</p>
-          <p>These grants are independent. None implies another. Select all three task grants for the complete task example.</p>
-          <dl class="grant-list">{API_TOKEN_SCOPE_CHOICES.map(({ scope, label, detail }) => <div><dt><code>{scope}</code><span>{label}</span></dt><dd>{detail}</dd></div>)}</dl>
-          <p><code>people:read</code> covers the directory only. The profile grant reads minimal identity, profile facts and their options, and important dates. The relationship grant reads directional relationships and type lookup. Full profiles, timeline, search, history, files, administration, and other mutations remain outside this token API.</p>
+          <p>Grants are independent: none implies another, and a write grant does not include reading. Select all three task grants for the complete task example. Grants that are destructive, span several areas, cover financial information, or need an owner or administrator say so.</p>
+          {scopeGroups(undefined).map(({ title, choices }) => <><h3>{title}</h3><dl class="grant-list">{choices.map(({ scope, label, detail, access, caution }) => <div><dt><code>{scope}</code><span>{label}</span></dt><dd><strong>{ACCESS_TEXT[access]}.</strong> {caution && <strong>{cautionText(caution)}</strong>} {detail}</dd></div>)}</dl></>)}
+          <p>Each operation in the <a href="#operations">Operations</a> section names the grant it requires. That list is generated from the route registry, so it always matches what a token can reach over REST.</p>
           <p>The optional <code>X-Workspace-Id</code> header must match the token's workspace; it cannot switch the token to another workspace. Any Authorization header selects token authentication exclusively, with no session-cookie fallback. Expired, revoked, wrong-workspace, and wrong-grant tokens are refused with <code>401</code>.</p>
         </section>
 
@@ -167,10 +167,11 @@ const sections = [
 
         <section id="operations" aria-labelledby="operations-heading">
           <p class="eyebrow">06 / Supported surface</p><h2 id="operations-heading">Operations</h2>
-          <p>Every operation below accepts a bearer token and only its explicitly described grant. The list, parameters, responses, and schemas are rendered from the generated external OpenAPI contract. Browser-only endpoints are outside this reference.</p>
+          <p>Every operation below accepts a bearer token carrying the grant it names. The list, required grants, parameters, responses, and schemas are rendered from the generated external OpenAPI contract. Browser-only endpoints are outside this reference.</p>
           <ul class="operation-index">{referenceOperations.map(({ path, method, operation }) => <li><a href={`#${operation.operationId}`}><span class="http-method">{method}</span><code>{path}</code></a></li>)}</ul>
-          {referenceOperations.map(({ path, method, operation }) => <article class="reference-operation" id={operation.operationId} data-api-operation={operation.operationId}>
+          {referenceOperations.map(({ path, method, operation, tokenScope }) => <article class="reference-operation" id={operation.operationId} data-api-operation={operation.operationId}>
             <h3><span class="http-method">{method}</span><code>{path}</code></h3><p>{operation.description}</p>
+            <p data-api-operation-scope>{tokenScope ? <><strong>Required grant:</strong> <code>{tokenScope}</code> ({scopeLabel(tokenScope)}).</> : <><strong>Required grant:</strong> none; any valid token.</>}</p>
             <p><strong>Required header:</strong> <code>Authorization: Bearer &lt;token&gt;</code>. {operation.requestBody && <>Send <code>Content-Type: application/json</code>.</>}</p>
             {operation.parameters && <div class="reference-table"><table><caption>Parameters for {operation.operationId}</caption><thead><tr><th>Field / location</th><th>Required?</th><th>Schema & constraints</th></tr></thead><tbody>{operation.parameters.map((parameter) => <tr><td><code>{parameter.name}</code><small>{parameter.in}</small></td><td>{parameter.required ? "Required" : "Optional"}</td><td>{parameter.description && <p>{parameter.description}</p>}<Schema value={parameter.schema} label={`${operation.operationId} ${parameter.name}`} /></td></tr>)}</tbody></table></div>}
             {operation.requestBody && <div><h4>Request body <span class="reference-meta">{operation.requestBody.required ? "Required" : "Optional"}</span></h4>{Object.entries(operation.requestBody.content).map(([media, { schema }]) => <div><p><code>{media}</code> — follow the linked schema's required fields, optional fields, and union variants.</p><Schema value={schema} label={`${operation.operationId} request body`} /></div>)}</div>}

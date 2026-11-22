@@ -1,13 +1,27 @@
 ---
 import Breadcrumb from "../../../components/Breadcrumb.astro";
 import SettingsNavigation from "../../../components/SettingsNavigation.astro";
+import Code from "../../../components/api-reference/Code.astro";
 import ApplicationLayout from "../../../layouts/ApplicationLayout.astro";
 import "../../../styles/page-settings.css";
-import { API_TOKEN_SCOPE_CHOICES } from "../../../features/settings/api-access/api-access.ts";
+import {
+  ACCESS_TEXT,
+  agentConfigurations,
+  cautionText,
+  configurationBlocks,
+  mcpEndpoint,
+  SCOPE_PRESETS,
+  scopeGroups,
+  TOKEN_PLACEHOLDER,
+} from "../../../features/settings/api-access/api-access.ts";
 export const prerender = true;
 import {
+  badgeVariants,
   buttonVariants,
 } from "../../../components/ui/variants.ts";
+// The island fills in this page's own origin once it mounts.
+const staticEndpoint = mcpEndpoint("https://<your-kinship-origin>");
+const staticBlocks = configurationBlocks(agentConfigurations(staticEndpoint));
 ---
 
 <ApplicationLayout
@@ -35,7 +49,11 @@ import {
       <form method="post" data-api-create class="api-token-form" novalidate>
         <label>Token name<input name="name" type="text" maxlength="100" autocomplete="off" required /></label>
         <label>Expiry <span class="optional-label">Optional</span><input name="expiresAt" type="datetime-local" /></label>
-        <fieldset><legend>Scopes</legend>{API_TOKEN_SCOPE_CHOICES.map(({ scope, label, detail }) => <label class="scope-choice"><input name="scopes" type="checkbox" value={scope} aria-label={label} aria-describedby={`scope-${scope}-detail`} /><span>{label}<small id={`scope-${scope}-detail`}>{detail}</small></span></label>)}</fieldset>
+        <fieldset class="scope-picker"><legend>Scopes</legend>
+          <p>Grants are independent: none implies another, and a write grant does not include reading. For full task automation, select Read tasks, Create tasks, and Edit and complete tasks.</p>
+          <div class="scope-presets">{SCOPE_PRESETS.map((preset) => <div><button type="button" class={buttonVariants({ variant: "outline" })} aria-describedby={`preset-${preset.id}-detail`} disabled>{preset.label}</button><small id={`preset-${preset.id}-detail`}>{preset.detail}</small></div>)}</div>
+          {scopeGroups(undefined).map((group) => <fieldset class="scope-group"><legend>{group.title}</legend>{group.choices.map(({ scope, label, detail, access, caution }) => <label class="scope-choice" data-scope-access={access}><input name="scopes" type="checkbox" value={scope} aria-label={label} aria-describedby={[`scope-${scope}-access`, ...(caution ? [`scope-${scope}-caution`] : []), `scope-${scope}-detail`].join(" ")} /><span><span class="scope-choice-title">{label}<span id={`scope-${scope}-access`} class={badgeVariants({ variant: access === "read" ? "secondary" : "warning" })}>{ACCESS_TEXT[access]}</span>{caution && <span id={`scope-${scope}-caution`} class={badgeVariants(caution === "destructive" ? { className: "bg-(--danger-soft) text-(--danger-strong)" } : {})}>{cautionText(caution)}</span>}</span><small id={`scope-${scope}-detail`}>{detail}</small></span></label>)}</fieldset>)}
+        </fieldset>
         <button type="submit" disabled>Create token</button>
       </form>
     </section>
@@ -45,6 +63,14 @@ import {
       <p>This secret cannot be shown again after you leave or dismiss this view.</p>
       <div class="api-secret-control"><input data-api-secret aria-label="New API token secret" readonly /><button data-api-copy type="button">Copy</button></div>
       <button data-api-dismiss class={buttonVariants({ variant: "outline" })} type="button">I have saved it</button>
+    </section>
+
+    <section class="api-access-section" aria-labelledby="connect-agent-heading" data-api-connect>
+      <header><p class="scope-label">Model Context Protocol</p><h2 id="connect-agent-heading">Connect an AI agent</h2></header>
+      <p>An AI agent connects to this workspace's MCP endpoint with a personal API token and sees only the tools its scopes allow. The agent can do whatever the token's scopes allow in this workspace, with the role of the member who created the token. Revoking the token cuts the agent off.</p>
+      <div class="api-secret-control"><input data-api-endpoint aria-label="MCP endpoint URL" readonly value={staticEndpoint} /><button type="button" disabled>Copy endpoint URL</button></div>
+      <div class="agent-configuration">{staticBlocks.map(({ heading, name, text }) => <div><h3>{heading}</h3><Code label={name} text={text} /><button type="button" class={buttonVariants({ variant: "outline" })} disabled>{`Copy ${name}`}</button></div>)}</div>
+      <p>Replace <code>{TOKEN_PLACEHOLDER}</code> with a token's secret, or copy the filled-in configuration while a new token is shown. Each operation and the grant it needs is listed in the <a href="/docs/api">API reference</a>.</p>
     </section>
 
     <section class="api-access-section" aria-labelledby="api-token-list-heading">

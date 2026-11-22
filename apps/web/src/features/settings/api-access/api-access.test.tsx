@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiTokenScope } from "../../../../../../packages/contracts/schemas/api_tokens.ts";
 import { expectNoAxeViolations } from "../../../testing/a11y.ts";
 import {
   deferred,
@@ -359,6 +360,8 @@ describe("API-001 personal API tokens", () => {
       "API token management requires workspace owner or administrator access.",
     );
     expect(api.calls()).toEqual([SESSION]);
+    expect(screen.getByRole("region", { name: "Connect an AI agent" }))
+      .toBeTruthy();
   });
 
   it("keeps validation and unavailable management failures actionable", async () => {
@@ -443,5 +446,275 @@ describe("API-001 personal API tokens", () => {
     stubApi({ [SESSION]: unreachable });
     await mount();
     expect(state().textContent).toBe("Your session could not be confirmed.");
+  });
+});
+
+const everyScope = () =>
+  jsonResponse({ records: [], scopes: apiTokenScope.options, status: "ready" });
+/** The words a control's `aria-describedby` points at. */
+const described = (control: HTMLElement) =>
+  (control.getAttribute("aria-describedby") ?? "").split(" ").map((id) =>
+    document.getElementById(id)?.textContent ?? ""
+  ).join(" ");
+const checkbox = (name: string) =>
+  screen.getByRole<HTMLInputElement>("checkbox", { name });
+const checkedScopes = () =>
+  screen.getAllByRole<HTMLInputElement>("checkbox").filter(({ checked }) =>
+    checked
+  ).map(({ value }) => value);
+
+describe("MCP-W1 grouped grants, presets, and connecting an agent", () => {
+  it("groups the grants by area and marks reads, writes, and risky grants in words", async () => {
+    shell();
+    stubApi({ ...base, [LIST]: everyScope() });
+    await mount();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(
+      apiTokenScope.options.length,
+    );
+    const people = screen.getByRole("group", { name: "People" });
+    expect(within(people).getAllByRole("checkbox")).toHaveLength(5);
+    for (
+      const name of [
+        "Relationships",
+        "Interactions",
+        "Tasks and reminders",
+        "Journal",
+        "Gifts and debts",
+        "Files",
+        "Search and Today",
+        "Vocabularies",
+      ]
+    ) {
+      expect(screen.getByRole("group", { name })).toBeTruthy();
+    }
+    expect(described(checkbox("Read people"))).toMatch(/^Read\b/);
+    expect(described(checkbox("Edit people"))).toMatch(/^Write\b/);
+    expect(described(checkbox("Delete people"))).toMatch(/Destructive/);
+    expect(described(checkbox("Merge people"))).toMatch(/Destructive/);
+    expect(described(checkbox("Search the workspace"))).toMatch(/Broad/);
+    expect(described(checkbox("Read Today"))).toMatch(/Broad/);
+    expect(described(checkbox("Read gifts and debts"))).toMatch(/Financial/);
+    expect(described(checkbox("Edit vocabularies"))).toMatch(
+      /administrators/,
+    );
+    await expectNoAxeViolations(document.body);
+  });
+
+  it("shows an offered grant this page does not describe under its own name and sends it", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: jsonResponse({
+        records: [],
+        scopes: ["people:read", "notes:archive"],
+        status: "ready",
+      }),
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    await mount();
+    const other = screen.getByRole("group", { name: "Other grants" });
+    act(() => {
+      fireEvent.input(screen.getByLabelText("Token name"), {
+        target: { value: "Future" },
+      });
+      fireEvent.click(
+        within(other).getByRole("checkbox", { name: "notes:archive" }),
+      );
+    });
+    submit();
+    await waitFor(() =>
+      expect(api.bodies()).toEqual([{
+        name: "Future",
+        scopes: ["notes:archive"],
+      }])
+    );
+  });
+
+  it("ticks a preset's grants, which stay adjustable, and never ticks an opt-in grant", async () => {
+    shell();
+    const api = stubApi({
+      ...base,
+      [LIST]: everyScope(),
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    await mount();
+    const readOnly = screen.getByRole("button", { name: "Read-only agent" });
+    expect(described(readOnly)).toMatch(/no write/i);
+    act(() => {
+      fireEvent.click(readOnly);
+    });
+    expect(checkedScopes().toSorted()).toEqual(
+      apiTokenScope.options.filter((scope) => scope.endsWith(":read"))
+        .toSorted(),
+    );
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Full CRM agent" }));
+    });
+    expect(checkbox("Edit people").checked).toBe(true);
+    expect(checkbox("Read people").checked).toBe(true);
+    for (const name of ["Delete people", "Merge people", "Edit vocabularies"]) {
+      expect(checkbox(name).checked).toBe(false);
+    }
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Read-only agent" }));
+    });
+    act(() => {
+      fireEvent.click(checkbox("Read files"));
+      fireEvent.input(screen.getByLabelText("Token name"), {
+        target: { value: "Reader" },
+      });
+    });
+    submit();
+    await waitFor(() =>
+      expect(api.bodies()).toEqual([{
+        name: "Reader",
+        scopes: apiTokenScope.options.filter((scope) =>
+          scope.endsWith(":read") && scope !== "files:read"
+        ),
+      }])
+    );
+  });
+
+  it("explains connecting an agent and fills the one-time secret in only while it is shown", async () => {
+    shell();
+    stubApi({
+      ...base,
+      [LIST]: [listed(), listed(record)],
+      [CREATE]: jsonResponse({ secret, status: "created" }, 201),
+    });
+    const writeText = vi.fn((_text: string) => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    await mount();
+    const endpoint = `${location.origin}/api/v1/mcp`;
+    const connect = screen.getByRole("region", {
+      name: "Connect an AI agent",
+    });
+    expect(
+      within(connect).getByLabelText<HTMLInputElement>("MCP endpoint URL")
+        .value,
+    ).toBe(endpoint);
+    expect(connect.textContent).toMatch(
+      /whatever the token's scopes allow in this workspace/,
+    );
+    expect(connect.textContent).toMatch(
+      /Revoking the token cuts the agent off/,
+    );
+    expect(
+      within(connect).getByRole("link", { name: /API reference/ })
+        .getAttribute("href"),
+    ).toBe("/docs/api");
+    expect(document.querySelector('a[href^="/docs/mcp"]')).toBeNull();
+    const claude = within(connect).getByRole("region", {
+      name: "Claude Code command",
+    });
+    expect(claude.textContent).toBe(
+      `claude mcp add --transport http kinship ${endpoint} --header "Authorization: Bearer <your-api-token>"`,
+    );
+    expect(
+      within(connect).getByRole("region", { name: "JSON configuration" })
+        .textContent,
+    ).toContain('"Authorization": "Bearer <your-api-token>"');
+    act(() => {
+      fireEvent.click(
+        within(connect).getByRole("button", { name: "Copy endpoint URL" }),
+      );
+    });
+    await waitFor(() =>
+      expect(state().textContent).toBe("MCP endpoint URL copied.")
+    );
+    expect(writeText).toHaveBeenLastCalledWith(endpoint);
+    act(() => {
+      fireEvent.click(
+        within(connect).getByRole("button", {
+          name: "Copy Claude Code command",
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(state().textContent).toBe("Claude Code command copied.")
+    );
+    expect(writeText).toHaveBeenLastCalledWith(claude.textContent);
+    await expectNoAxeViolations(document.body);
+
+    fill("Agent");
+    submit();
+    const panel = element("[data-api-secret-panel]");
+    await waitFor(() => expect(panel.hidden).toBe(false));
+    expect(connect.textContent).not.toContain(secret);
+    const filled = within(panel).getByRole("region", {
+      name: "JSON configuration with your new token",
+    });
+    expect(JSON.parse(filled.textContent!)).toEqual({
+      mcpServers: {
+        kinship: {
+          headers: { Authorization: `Bearer ${secret}` },
+          type: "http",
+          url: endpoint,
+        },
+      },
+    });
+    act(() => {
+      fireEvent.click(
+        within(panel).getByRole("button", {
+          name: "Copy Claude Code command with your new token",
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(
+        `claude mcp add --transport http kinship ${endpoint} --header "Authorization: Bearer ${secret}"`,
+      )
+    );
+    act(() => {
+      fireEvent.click(
+        within(panel).getByRole("button", {
+          name: "Copy JSON configuration with your new token",
+        }),
+      );
+    });
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(filled.textContent)
+    );
+    for (const storage of [localStorage, sessionStorage]) {
+      const values = Array.from(
+        { length: storage.length },
+        (_, index) => storage.getItem(storage.key(index)!),
+      );
+      expect(values.join(" ")).not.toContain("kin_pat_");
+    }
+    expect(location.href).not.toContain(secret);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "I have saved it" }));
+    });
+    expect(document.body.textContent).not.toContain(secret);
+    expect(
+      within(panel).queryByRole("region", {
+        name: "JSON configuration with your new token",
+        hidden: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("reports a failed configuration copy", async () => {
+    shell();
+    stubApi({ ...base, [LIST]: listed() });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    await mount();
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy JSON configuration" }),
+      );
+    });
+    await waitFor(() =>
+      expect(state().textContent).toBe(
+        "Copy failed. Select the text and copy it manually.",
+      )
+    );
   });
 });

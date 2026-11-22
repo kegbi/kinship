@@ -218,7 +218,7 @@ settings from search results.
 | `settings.export`           | `/app/settings/export`                      | Export creation, progress, history, and authorized download                  |
 | `settings.audit`            | `/app/settings/audit`                       | Filterable workspace audit history                                           |
 | `settings.integrations`     | `/app/settings/integrations`                | Optional adapters such as DAV and their health/conflicts                     |
-| `settings.api-access`       | `/app/settings/api`                         | API tokens, OAuth clients, scopes, expiry, and revocation                    |
+| `settings.api-access`       | `/app/settings/api`                         | API tokens, OAuth clients, scopes, expiry, revocation, and agent connection  |
 | `settings.billing`          | `/app/settings/billing`                     | Optional owner-only billing and invoices                                     |
 
 The accepted personalization deep-link values are:

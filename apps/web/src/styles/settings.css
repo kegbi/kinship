@@ -390,6 +390,93 @@
   justify-self: start;
 }
 
+.scope-picker > p {
+  margin: 0;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.scope-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.scope-presets > div {
+  display: grid;
+  flex: 1 1 15rem;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.scope-presets small {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* Each area is its own group, so reads and writes sit together by area. */
+.api-token-form .scope-group {
+  grid-column: auto;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-sm);
+}
+
+.api-token-form .scope-group > legend {
+  padding-inline: var(--space-1);
+  font-weight: 700;
+}
+
+.api-token-form .scope-choice {
+  align-items: start;
+  padding-left: var(--space-2);
+  border-left: 3px solid transparent;
+}
+
+.api-token-form .scope-choice > input {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: .15rem;
+}
+
+/* A write grant is marked by its badge's words and, beside it, an edge. */
+.api-token-form .scope-choice[data-scope-access="write"] {
+  border-left-color: var(--warning);
+}
+
+.scope-choice-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.agent-configuration {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
+}
+
+.agent-configuration h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.agent-configuration pre {
+  max-width: 100%;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3);
+  overflow-x: auto;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: ui-monospace, monospace;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
 .api-secret-panel {
   margin: var(--space-6) 0;
 }
