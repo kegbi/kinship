@@ -438,7 +438,7 @@
   flex: none;
   width: 1.125rem;
   height: 1.125rem;
-  margin-top: .15rem;
+  margin-top: var(--space-1);
 }
 
 /* A write grant is marked by its badge's words and, beside it, an edge. */
