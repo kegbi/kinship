@@ -778,6 +778,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
+        /** @description Requires a browser session or a personal token with gifts:write. Records a debt the person owes or is owed: `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. A debt created settled may carry a settlement reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second debt. An archived person's gifts and debts can be read but refuse this write. */
         readonly post: operations["createDebt"];
         readonly delete?: never;
         readonly options?: never;
@@ -795,7 +796,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post?: never;
-        /** @description Permanently removes one debt. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again. */
+        /** @description Requires a browser session or a personal token with gifts:write. Permanently removes one debt and its whole settlement history; nothing can restore it. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again. An archived person's gifts and debts can be read but refuse this write. */
         readonly delete: operations["deleteDebt"];
         readonly options?: never;
         readonly head?: never;
@@ -809,6 +810,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with gifts:read, which covers both gifts and debts — financial information. Returns one debt's permanent settlement history, newest first: when it was settled, the optional reason, and the optional settlement photo's file id and filename, with whether that photo is still available. Page with the opaque cursor. Grants no write access. */
         readonly get: operations["listDebtSettlements"];
         readonly put?: never;
         readonly post?: never;
@@ -831,6 +833,7 @@ export interface paths {
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
+        /** @description Requires a browser session or a personal token with gifts:write. Moves a debt between `open`, `settled`, and `cancelled`: an open debt may be settled or cancelled, a settled debt may reopen, and `cancelled` is terminal. Settling appends to the debt's permanent settlement history and may carry a reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. Asking for the status the debt already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write. */
         readonly patch: operations["changeDebtStatus"];
         readonly trace?: never;
     };
@@ -942,8 +945,10 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with gifts:read, which covers both gifts and debts — financial information. Returns one person's gifts, debts, and recurring debts: amounts are decimal strings with a three-letter currency code, and the answer names the default and supported currencies. Gifts and debts page independently with their own opaque cursors. An archived person's records stay readable. Grants no write access. */
         readonly get: operations["listPersonGiftsAndDebts"];
         readonly put?: never;
+        /** @description Requires a browser session or a personal token with gifts:write. Records a gift idea, plan, or exchange: an optional `amount` is a decimal string with a three-letter `currencyCode` the workspace supports. A recipient person id must name a live person of this workspace. An attachment file id must name an available file of this workspace that is not a person's avatar; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second gift. An archived person's gifts and debts can be read but refuse this write. */
         readonly post: operations["createGift"];
         readonly delete?: never;
         readonly options?: never;
@@ -964,6 +969,7 @@ export interface paths {
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
+        /** @description Requires a browser session or a personal token with gifts:write. Moves a gift along its transition graph: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived; and `archived` is terminal. A move the graph does not allow answers 409, and asking for the status the gift already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write. */
         readonly patch: operations["changeGiftStatus"];
         readonly trace?: never;
     };
@@ -1029,7 +1035,7 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** @description Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. */
+        /** @description Requires a browser session or a personal token with gifts:write. Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. It has no retry key or revision check, so repeating the request creates a second rule, and charges its due periods again. An archived person's gifts and debts can be read but refuse this write. */
         readonly post: operations["createRecurringDebt"];
         readonly delete?: never;
         readonly options?: never;
@@ -1047,11 +1053,11 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post?: never;
-        /** @description Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own. */
+        /** @description Requires a browser session or a personal token with gifts:write. Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own. An archived person's gifts and debts can be read but refuse this write. */
         readonly delete: operations["deleteRecurringDebt"];
         readonly options?: never;
         readonly head?: never;
-        /** @description Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. */
+        /** @description Requires a browser session or a personal token with gifts:write. Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. A change that leaves due periods uncharged charges them at once. It has no revision check. An archived person's gifts and debts can be read but refuse this write. */
         readonly patch: operations["updateRecurringDebt"];
         readonly trace?: never;
     };
@@ -9315,9 +9321,9 @@ export interface operations {
     readonly createDebt: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9409,9 +9415,9 @@ export interface operations {
     readonly deleteDebt: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9565,9 +9571,9 @@ export interface operations {
     readonly changeDebtStatus: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -10533,9 +10539,9 @@ export interface operations {
     readonly createGift: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -10627,9 +10633,9 @@ export interface operations {
     readonly changeGiftStatus: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11146,9 +11152,9 @@ export interface operations {
     readonly createRecurringDebt: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11240,9 +11246,9 @@ export interface operations {
     readonly deleteRecurringDebt: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -11322,9 +11328,9 @@ export interface operations {
     readonly updateRecurringDebt: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

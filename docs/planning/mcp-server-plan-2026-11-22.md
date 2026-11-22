@@ -165,7 +165,7 @@ matrix or architecture prose; MCP-C4 does that once.
       planning Today regions.
 - [x] **MCP-B6 Journal.** `journal:read`, `journal:write`, and the life-event
       writes under `people:write`.
-- [ ] **MCP-B7 Gifts and debts.** `gifts:read`, `gifts:write`.
+- [x] **MCP-B7 Gifts and debts.** `gifts:read`, `gifts:write`.
 - [ ] **MCP-B8 Files.** `files:read`, `files:write`, including the binary upload
       and download over REST.
 - [ ] **MCP-B9 Vocabularies.** `vocabularies:read`, `vocabularies:write` on the

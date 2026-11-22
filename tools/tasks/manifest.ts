@@ -1483,7 +1483,11 @@ export const MODULES: readonly TaskModule[] = [
         "packages/contracts/gifts_test.ts",
       ],
     },
-    integration: ["tests/integration/gifts_postgres_test.ts"],
+    integration: [
+      "tests/integration/gifts_postgres_test.ts",
+      // MCP-B7: personal tokens on gifts and debts.
+      "tests/integration/api_tokens_gifts_postgres_test.ts",
+    ],
     coverage: {
       directory: "gifts",
       tests: [

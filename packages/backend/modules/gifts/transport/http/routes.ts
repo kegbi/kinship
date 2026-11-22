@@ -40,11 +40,9 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -52,14 +50,15 @@ import {
   parseQuery,
   parseValue,
 } from "../../../../../http-kit/validate.ts";
+import { routeAdmission } from "./admission.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface GiftHttpServices {
   /**
-   * The personal-token authority (MCP-A1). The composition root already hands
-   * it in, so enabling one of these routes for tokens never edits the root;
-   * a route that does reads it through `scopedRouteActor`.
+   * The personal-token authority (MCP-A1). Every route here admits a token
+   * through `routeAdmission` (MCP-B7): `gifts:read` for the two reads,
+   * `gifts:write` for the eight writes.
    */
   readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
@@ -131,59 +130,84 @@ const failure = failureResponder(GIFT_FAILURES);
 export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const settlements = routeAdmission(listDebtSettlements, tokens);
+  const list = routeAdmission(listPersonGiftsAndDebts, tokens);
+  const giftCreate = routeAdmission(createGift, tokens);
+  const giftStatus = routeAdmission(changeGiftStatus, tokens);
+  const debtCreate = routeAdmission(createDebt, tokens);
+  const debtStatus = routeAdmission(changeDebtStatus, tokens);
+  const debtDelete = routeAdmission(deleteDebt, tokens);
+  const recurringCreate = routeAdmission(createRecurringDebt, tokens);
+  const recurringUpdate = routeAdmission(updateRecurringDebt, tokens);
+  const recurringDelete = routeAdmission(deleteRecurringDebt, tokens);
 
-  mount(routes, listDebtSettlements, session, async (context) => {
-    const person = parseValue(uuid, context.req.param("personId"));
-    const debt = parseValue(uuid, context.req.param("debtId"));
-    if ("errors" in person || "errors" in debt) {
-      return failure(context, "not-found");
-    }
-    const query = parseQuery(context, listDebtSettlementsQuery);
-    if ("errors" in query) return failure(context, "query-invalid");
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
-    const result = await services.gifts.listDebtSettlements(
-      actor,
-      person.data,
-      debt.data,
-      {
-        ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+  mount(
+    routes,
+    listDebtSettlements,
+    settlements.gate,
+    session,
+    async (context) => {
+      const person = parseValue(uuid, context.req.param("personId"));
+      const debt = parseValue(uuid, context.req.param("debtId"));
+      if ("errors" in person || "errors" in debt) {
+        return failure(context, "not-found");
+      }
+      const query = parseQuery(context, listDebtSettlementsQuery);
+      if ("errors" in query) return failure(context, "query-invalid");
+      const actor = await settlements.actor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.gifts.listDebtSettlements(
+        actor,
+        person.data,
+        debt.data,
+        {
+          ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
+          limit: query.data.limit,
+        },
+      );
+      if (result.status === "validation-error") {
+        return failure(context, "query-invalid");
+      }
+      if (result.status !== "ready") return failure(context, result.status);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
+
+  mount(
+    routes,
+    listPersonGiftsAndDebts,
+    list.gate,
+    session,
+    async (context) => {
+      const personId = parseValue(uuid, context.req.param("personId"));
+      if ("errors" in personId) return failure(context, "not-found");
+      const query = parseQuery(context, listPersonGiftsAndDebtsQuery);
+      if ("errors" in query) return failure(context, "query-invalid");
+      const actor = await list.actor(context);
+      if (actor instanceof Response) return actor;
+      const result = await services.gifts.list(actor, personId.data, {
+        ...(query.data.debtCursor ? { debtCursor: query.data.debtCursor } : {}),
+        ...(query.data.giftCursor ? { giftCursor: query.data.giftCursor } : {}),
         limit: query.data.limit,
-      },
-    );
-    if (result.status === "validation-error") {
-      return failure(context, "query-invalid");
-    }
-    if (result.status !== "ready") return failure(context, result.status);
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
-
-  mount(routes, listPersonGiftsAndDebts, session, async (context) => {
-    const personId = parseValue(uuid, context.req.param("personId"));
-    if ("errors" in personId) return failure(context, "not-found");
-    const query = parseQuery(context, listPersonGiftsAndDebtsQuery);
-    if ("errors" in query) return failure(context, "query-invalid");
-    const actor = await requireActor(context);
-    if (actor instanceof Response) return actor;
-    const result = await services.gifts.list(actor, personId.data, {
-      ...(query.data.debtCursor ? { debtCursor: query.data.debtCursor } : {}),
-      ...(query.data.giftCursor ? { giftCursor: query.data.giftCursor } : {}),
-      limit: query.data.limit,
-    });
-    if (result.status === "validation-error") {
-      return failure(context, "query-invalid");
-    }
-    if (result.status !== "ready") return failure(context, result.status);
-    context.header("Cache-Control", "private, no-store");
-    return context.json(result);
-  });
+      });
+      if (result.status === "validation-error") {
+        return failure(context, "query-invalid");
+      }
+      if (result.status !== "ready") return failure(context, result.status);
+      context.header("Cache-Control", "private, no-store");
+      return context.json(result);
+    },
+  );
 
   mount(
     routes,
     createGift,
-    origin,
+    giftCreate.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -191,7 +215,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await giftCreate.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.gifts.createGift(
         actor,
@@ -223,7 +247,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     changeGiftStatus,
-    origin,
+    giftStatus.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -232,7 +256,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in giftId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await giftStatus.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.gifts.changeGiftStatus(
         actor,
@@ -251,7 +275,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     createDebt,
-    origin,
+    debtCreate.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -259,7 +283,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await debtCreate.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.gifts.createDebt(
         actor,
@@ -287,7 +311,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     changeDebtStatus,
-    origin,
+    debtStatus.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -296,7 +320,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in debtId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await debtStatus.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.gifts.changeDebtStatus(
         actor,
@@ -323,7 +347,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     createRecurringDebt,
-    origin,
+    recurringCreate.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -331,7 +355,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in body) {
         return failure(context, "validation-error");
       }
-      const actor = await requireActor(context);
+      const actor = await recurringCreate.actor(context);
       if (actor instanceof Response) return actor;
       const { endsOn, reason, ...required } = body.data;
       const result = await services.gifts.createRecurringDebt(
@@ -349,13 +373,13 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
     },
   );
 
-  mount(routes, deleteDebt, origin, session, async (context) => {
+  mount(routes, deleteDebt, debtDelete.gate, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     const debtId = parseValue(uuid, context.req.param("debtId"));
     if ("errors" in personId || "errors" in debtId) {
       return failure(context, "not-found");
     }
-    const actor = await requireActor(context);
+    const actor = await debtDelete.actor(context);
     if (actor instanceof Response) return actor;
     const result = await services.gifts.deleteDebt(
       actor,
@@ -370,7 +394,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     updateRecurringDebt,
-    origin,
+    recurringUpdate.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -382,7 +406,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if (
         "errors" in personId || "errors" in recurringDebtId || "errors" in body
       ) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await recurringUpdate.actor(context);
       if (actor instanceof Response) return actor;
       const change = Object.fromEntries(
         Object.entries(body.data).filter(([, value]) => value !== undefined),
@@ -402,7 +426,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     deleteRecurringDebt,
-    origin,
+    recurringDelete.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -413,7 +437,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in recurringDebtId) {
         return failure(context, "not-found");
       }
-      const actor = await requireActor(context);
+      const actor = await recurringDelete.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.gifts.deleteRecurringDebt(
         actor,

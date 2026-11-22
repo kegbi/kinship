@@ -889,3 +889,226 @@ Deno.test("[GIFTS-001] HTTP creates, changes, and deletes a recurring debt", asy
     `routes forwarded ${calls.join(" | ")}`,
   );
 });
+
+/** Every gifts route a personal token may reach, with its grant (MCP-B7). */
+const TOKEN_ROUTES = [
+  ["GET", `/api/v1/people/${id}/gifts`, "gifts:read", undefined, 200],
+  [
+    "GET",
+    `/api/v1/people/${id}/debts/${debtId}/settlements`,
+    "gifts:read",
+    undefined,
+    200,
+  ],
+  ["POST", `/api/v1/people/${id}/gifts`, "gifts:write", {
+    name: "Train tickets",
+    status: "idea",
+  }, 201],
+  ["PATCH", `/api/v1/people/${id}/gifts/${giftId}/status`, "gifts:write", {
+    status: "planned",
+  }, 200],
+  ["POST", `/api/v1/people/${id}/debts`, "gifts:write", {
+    amount: "12.50",
+    currencyCode: "EUR",
+    direction: "they_owe",
+    status: "open",
+  }, 201],
+  ["PATCH", `/api/v1/people/${id}/debts/${debtId}/status`, "gifts:write", {
+    settlementReason: "Paid back",
+    status: "settled",
+  }, 200],
+  [
+    "DELETE",
+    `/api/v1/people/${id}/debts/${debtId}`,
+    "gifts:write",
+    undefined,
+    200,
+  ],
+  ["POST", `/api/v1/people/${id}/recurring-debts`, "gifts:write", {
+    amount: "500",
+    currencyCode: "EUR",
+    dayOfMonth: 1,
+    direction: "they_owe",
+    intervalMonths: 1,
+    startsOn: "2026-05-01",
+  }, 201],
+  [
+    "PATCH",
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    "gifts:write",
+    { active: false },
+    200,
+  ],
+  [
+    "DELETE",
+    `/api/v1/people/${id}/recurring-debts/${debtId}`,
+    "gifts:write",
+    undefined,
+    200,
+  ],
+] as const;
+
+Deno.test("[MCP-B7] gift grants admit bearer reads and writes independently and never borrow the cookie", async () => {
+  const tokenId = "00000000-0000-4000-8000-0000000000b7";
+  const asked: string[] = [];
+  const acted: (string | undefined)[] = [];
+  let sessions = 0;
+  const answer = (value: unknown) => (who: { apiTokenId?: string }) => {
+    acted.push(who.apiTokenId);
+    return Promise.resolve(value);
+  };
+  const app = createGiftRoutes({
+    apiTokens: {
+      authenticate: (token: string, scope: string) => {
+        asked.push(scope);
+        return Promise.resolve(
+          token === scope
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        );
+      },
+    },
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      changeDebtStatus: answer({ debt: {}, status: "saved" }),
+      changeGiftStatus: answer({ gift: {}, status: "saved" }),
+      changeRecurringDebt: answer({ charged: 0, status: "saved" }),
+      createDebt: answer({ debt: {}, status: "created" }),
+      createGift: answer({ gift: {}, status: "created" }),
+      createRecurringDebt: answer({ charged: 0, status: "created" }),
+      deleteDebt: answer({ debtId, status: "deleted" }),
+      deleteRecurringDebt: answer({
+        recurringDebtId: debtId,
+        status: "deleted",
+      }),
+      list: answer({ debts: [], gifts: [], status: "ready" }),
+      listDebtSettlements: answer({ settlements: [], status: "ready" }),
+    } as never,
+    protectedSessions: {
+      resolve: () => {
+        sessions++;
+        return Promise.resolve(actor) as never;
+      },
+    },
+  });
+  const cookie = "__Host-kinship_session=token";
+  for (const [method, path, grant, body, status] of TOKEN_ROUTES) {
+    const send = (headers: Record<string, string>, payload: unknown = body) =>
+      app.request(path, {
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        headers: { "Content-Type": "application/json", ...headers },
+        method,
+      });
+    const label = `${method} ${path}`;
+    acted.length = 0;
+    sessions = 0;
+    const admitted = await send({ Authorization: `Bearer ${grant}` });
+    assertStatus(admitted, status, `${label} bearer ${grant}`);
+    assert(acted.join() === tokenId, `${label} acted once as the token`);
+    assert(sessions === 0, `${label} bearer never resolved a session`);
+    for (
+      const wrong of [
+        "gifts:read",
+        "gifts:write",
+        "people:write",
+        "tasks:write",
+      ]
+        .filter((scope) => scope !== grant)
+    ) {
+      sessions = 0;
+      const refused = await send({
+        Authorization: `Bearer ${wrong}`,
+        Cookie: cookie,
+        Origin: "https://app.test",
+      });
+      assertStatus(refused, 401, `${label} refuses ${wrong}`);
+      assert(sessions === 0, `${label} ${wrong} borrowed the cookie`);
+    }
+    const invalid = await send({
+      Authorization: "Bearer revoked",
+      Cookie: cookie,
+      Origin: "https://app.test",
+    });
+    assertStatus(invalid, 401, `${label} invalid bearer beside a cookie`);
+    if (method === "GET") continue;
+    if (body !== undefined) {
+      const early = await send(
+        { Authorization: "Bearer people:write" },
+        { unexpected: true },
+      );
+      assertStatus(early, 401, `${label} judged a refused token's body first`);
+    }
+    for (const origin of [undefined, "https://evil.test"]) {
+      const foreign = await send({
+        Cookie: cookie,
+        ...(origin ? { Origin: origin } : {}),
+      });
+      assertStatus(foreign, 403, `${label} cookie write without its Origin`);
+    }
+    acted.length = 0;
+    const cookieWrite = await send({
+      Cookie: cookie,
+      Origin: "https://app.test",
+    });
+    assertStatus(cookieWrite, status, `${label} cookie write`);
+    assert(
+      acted.length === 1 && acted[0] === undefined,
+      `${label} cookie write names no token`,
+    );
+  }
+  assert(
+    asked.includes("gifts:read") && asked.includes("gifts:write"),
+    `each grant was checked: ${asked}`,
+  );
+});
+
+Deno.test("[MCP-B7] cookie gift writes keep their check order", async () => {
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {} as never,
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+  });
+  for (const [method, path, , body] of TOKEN_ROUTES) {
+    const send = (headers: Record<string, string>, payload?: unknown) =>
+      app.request(path, {
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+        headers: { "Content-Type": "application/json", ...headers },
+        method,
+      });
+    const label = `${method} ${path}`;
+    if (method === "GET") {
+      assertStatus(
+        await send({ "X-Workspace-Id": "not-a-workspace" }),
+        400,
+        `${label} malformed workspace`,
+      );
+      continue;
+    }
+    const statuses = [
+      (await send({ Origin: "https://evil.test" }, body)).status,
+      (await send({
+        Origin: "https://app.test",
+        "X-Workspace-Id": "not-a-workspace",
+      }, body)).status,
+      body === undefined
+        ? 400
+        : (await send({ Origin: "https://app.test" }, { unexpected: true }))
+          .status,
+      (await send({ Origin: "https://app.test" }, body)).status,
+    ];
+    assert(
+      JSON.stringify(statuses) === JSON.stringify([403, 400, 400, 401]),
+      `${label} cookie order changed: ${statuses}`,
+    );
+  }
+  assertStatus(
+    await app.request(`/api/v1/people/${id}/debts/not-a-uuid/settlements`),
+    404,
+    "an unparsable debt still answers before the session",
+  );
+  assertStatus(
+    await app.request(`/api/v1/people/${id}/gifts?limit=0`),
+    400,
+    "a malformed query still answers before the session",
+  );
+});

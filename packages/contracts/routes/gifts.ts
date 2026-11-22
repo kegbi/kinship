@@ -10,8 +10,8 @@
 import { z } from "zod";
 import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
-  originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -42,7 +42,10 @@ export const listDebtSettlements = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/debts/{debtId}/settlements",
   operationId: "listDebtSettlements",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:read, which covers both gifts and debts — financial information. Returns one debt's permanent settlement history, newest first: when it was settled, the optional reason, and the optional settlement photo's file id and filename, with whether that photo is still available. Page with the opaque cursor. Grants no write access.",
+  tokenScope: "gifts:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({ personId: uuid, debtId: uuid }),
     query: listDebtSettlementsQuery,
@@ -61,12 +64,15 @@ export const createDebt = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/debts",
   operationId: "createDebt",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:write. Records a debt the person owes or is owed: `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. A debt created settled may carry a settlement reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second debt. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -89,13 +95,16 @@ export const changeDebtStatus = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}/debts/{debtId}/status",
   operationId: "changeDebtStatus",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:write. Moves a debt between `open`, `settled`, and `cancelled`: an open debt may be settled or cancelled, a settled debt may reopen, and `cancelled` is terminal. Settling appends to the debt's permanent settlement history and may carry a reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. Asking for the status the debt already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       debtId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -119,11 +128,12 @@ export const deleteDebt = defineRoute({
   path: "/api/v1/people/{personId}/debts/{debtId}",
   operationId: "deleteDebt",
   description:
-    "Permanently removes one debt. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again.",
-  security: [{ kinship_session: [] }],
+    "Requires a browser session or a personal token with gifts:write. Permanently removes one debt and its whole settlement history; nothing can restore it. For a recurring charge, its rule, next occurrence, and other charges stay. Ordinary pause/resume does not recreate the removed charge; later explicit schedule changes may charge deleted periods again. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({ personId: uuid, debtId: uuid }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
   },
   responses: {
     200: {
@@ -152,7 +162,10 @@ export const listPersonGiftsAndDebts = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/gifts",
   operationId: "listPersonGiftsAndDebts",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:read, which covers both gifts and debts — financial information. Returns one person's gifts, debts, and recurring debts: amounts are decimal strings with a three-letter currency code, and the answer names the default and supported currencies. Gifts and debts page independently with their own opaque cursors. An archived person's records stay readable. Grants no write access.",
+  tokenScope: "gifts:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -175,12 +188,15 @@ export const createGift = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/gifts",
   operationId: "createGift",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:write. Records a gift idea, plan, or exchange: an optional `amount` is a decimal string with a three-letter `currencyCode` the workspace supports. A recipient person id must name a live person of this workspace. An attachment file id must name an available file of this workspace that is not a person's avatar; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second gift. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -203,13 +219,16 @@ export const changeGiftStatus = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}/gifts/{giftId}/status",
   operationId: "changeGiftStatus",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with gifts:write. Moves a gift along its transition graph: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived; and `archived` is terminal. A move the graph does not allow answers 409, and asking for the status the gift already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       giftId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -233,13 +252,14 @@ export const createRecurringDebt = defineRoute({
   path: "/api/v1/people/{personId}/recurring-debts",
   operationId: "createRecurringDebt",
   description:
-    "Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period.",
-  security: [{ kinship_session: [] }],
+    "Requires a browser session or a personal token with gifts:write. Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. It has no retry key or revision check, so repeating the request creates a second rule, and charges its due periods again. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -263,14 +283,15 @@ export const updateRecurringDebt = defineRoute({
   path: "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}",
   operationId: "updateRecurringDebt",
   description:
-    "Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused.",
-  security: [{ kinship_session: [] }],
+    "Requires a browser session or a personal token with gifts:write. Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. A change that leaves due periods uncharged charges them at once. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       recurringDebtId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -294,14 +315,15 @@ export const deleteRecurringDebt = defineRoute({
   path: "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}",
   operationId: "deleteRecurringDebt",
   description:
-    "Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own.",
-  security: [{ kinship_session: [] }],
+    "Requires a browser session or a personal token with gifts:write. Deletes a recurring debt. The debts it already charged stay, each settled or cancelled on its own. An archived person's gifts and debts can be read but refuse this write.",
+  tokenScope: "gifts:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       recurringDebtId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
   },
   responses: {
     200: {
