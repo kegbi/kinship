@@ -159,6 +159,9 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RoutePermission>> = {
   createRecurringDebt: "gifts.write",
   updateRecurringDebt: "gifts.write",
   deleteRecurringDebt: "gifts.write",
+  updateGift: "gifts.write",
+  deleteGift: "gifts.write",
+  updateDebt: "gifts.write",
 
   // Journal.
   listJournal: "workspace.read",

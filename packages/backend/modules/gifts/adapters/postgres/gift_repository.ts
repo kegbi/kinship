@@ -217,7 +217,172 @@ async function recipientExists(command: {
   return row !== undefined;
 }
 
+/** Whether the workspace holds a row with this id in one of its tables. */
+async function idInUse(
+  table: "crm.debts" | "crm.gifts",
+  command: {
+    readonly id: string;
+    readonly transaction: Session;
+    readonly workspaceId: string;
+  },
+): Promise<boolean> {
+  const row = await schemaDatabaseFromSession(command.transaction)
+    .selectFrom(table)
+    .select((eb) => eb.lit(1).as("found"))
+    .where("workspace_id", "=", command.workspaceId)
+    .where("id", "=", command.id)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
 export class PostgresGiftRepository implements GiftRepository {
+  async lockRequest(
+    command: Parameters<GiftRepository["lockRequest"]>[0],
+  ): Promise<void> {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${command.id}, 0))`
+      .execute(databaseFromSession(command.transaction));
+  }
+
+  giftExists(
+    command: Parameters<GiftRepository["giftExists"]>[0],
+  ): Promise<boolean> {
+    return idInUse("crm.gifts", command);
+  }
+
+  debtExists(
+    command: Parameters<GiftRepository["debtExists"]>[0],
+  ): Promise<boolean> {
+    return idInUse("crm.debts", command);
+  }
+
+  async findSettlement(
+    command: Parameters<GiftRepository["findSettlement"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["findSettlement"]>>> {
+    const result = await sql<{
+      id: string;
+      settled_at: string;
+      reason: string | null;
+      photo_file_id: string | null;
+      photo_filename: string | null;
+    }>`
+      select id::text, ${
+      instantColumn("settled_at")
+    } as settled_at, reason, photo_file_id::text, photo_filename
+      from crm.debt_settlements
+      where workspace_id = ${command.workspaceId}::uuid
+        and debt_id = ${command.debtId}::uuid and id = ${command.id}::uuid
+    `.execute(databaseFromSession(command.transaction));
+    const row = result.rows[0];
+    return row
+      ? {
+        id: row.id,
+        settledAt: row.settled_at,
+        ...pickDefined({
+          photoFileId: row.photo_file_id,
+          photoFilename: row.photo_filename,
+          reason: row.reason,
+        }),
+      }
+      : undefined;
+  }
+
+  async saveGiftValues(
+    command: Parameters<GiftRepository["saveGiftValues"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["saveGiftValues"]>>> {
+    const status = await personStatus({ ...command, lock: true });
+    if (status !== "active") {
+      return {
+        status: status === "archived" ? "archived-write-rejected" : "not-found",
+      };
+    }
+    if (
+      command.checkRecipient && command.recipientPersonId !== undefined &&
+      !await recipientExists({
+        recipientPersonId: command.recipientPersonId,
+        transaction: command.transaction,
+        workspaceId: command.workspaceId,
+      })
+    ) return { status: "not-found" };
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("updated", (database) =>
+        database.updateTable("crm.gifts")
+          .set({
+            amount: command.amount ?? null,
+            comment: command.comment ?? null,
+            currency_code: command.currencyCode ?? null,
+            event_at: command.eventAt ?? null,
+            name: command.name,
+            recipient_person_id: command.recipientPersonId ?? null,
+            updated_at: command.occurredAt,
+            url: command.url ?? null,
+          })
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("updated as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .executeTakeFirst();
+    return row ? { gift: gift(row), status: "saved" } : { status: "not-found" };
+  }
+
+  async saveDebtValues(
+    command: Parameters<GiftRepository["saveDebtValues"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["saveDebtValues"]>>> {
+    const status = await personStatus({ ...command, lock: true });
+    if (status !== "active") {
+      return {
+        status: status === "archived" ? "archived-write-rejected" : "not-found",
+      };
+    }
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("updated", (database) =>
+        database.updateTable("crm.debts")
+          .set({
+            amount: command.amount,
+            currency_code: command.currencyCode,
+            direction: command.direction,
+            reason: command.reason ?? null,
+            updated_at: command.occurredAt,
+          })
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("updated as debt")
+      .select(debtColumns)
+      .$narrowType<DebtVocabulary>()
+      .executeTakeFirst();
+    return row ? { debt: debt(row), status: "saved" } : { status: "not-found" };
+  }
+
+  async deleteGift(
+    command: Parameters<GiftRepository["deleteGift"]>[0],
+  ): Promise<Awaited<ReturnType<GiftRepository["deleteGift"]>>> {
+    const status = await personStatus({ ...command, lock: true });
+    if (status !== "active") {
+      return {
+        status: status === "archived" ? "archived-write-rejected" : "not-found",
+      };
+    }
+    // The gift's file links cascade with it; the files themselves stay.
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .with("deleted", (database) =>
+        database.deleteFrom("crm.gifts")
+          .where("id", "=", command.id)
+          .where("workspace_id", "=", command.workspaceId)
+          .where("person_id", "=", command.personId)
+          .returningAll())
+      .selectFrom("deleted as gift")
+      .select(giftColumns)
+      .$narrowType<GiftVocabulary>()
+      .executeTakeFirst();
+    return row
+      ? { gift: gift(row), status: "deleted" }
+      : { status: "not-found" };
+  }
+
   async recordSettlement(
     command: Parameters<GiftRepository["recordSettlement"]>[0],
   ): Promise<void> {

@@ -17,6 +17,12 @@
  * finds more periods due when it comes back.
  *
  * "Due" is the workspace's calendar date, never the server's.
+ *
+ * A create may carry a retry key (MCP-D3), as a gift or a debt create may. A
+ * retry that finds the rule its first attempt wrote returns it and charges
+ * nothing: the periods that attempt charged were charged once, and anything
+ * due since is the worker's to charge, through the same one-debt-per-period
+ * key. A change may carry the revision it was read at.
  */
 
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
@@ -37,11 +43,18 @@ import {
   resumedNextOccurrence,
   type StoredRecurringDebt,
 } from "../domain/recurring_debts.ts";
+import { RECURRING_DEBT_ID_NAMESPACE } from "../domain/gift_rules.ts";
+import { recurringDebtMatchesCreate } from "../domain/recurring_debts.ts";
 import type { GiftActor, GiftTransaction } from "../ports/context.ts";
 import {
   active,
   type GiftManagementDependencies,
   type GiftMutationFailure,
+  recordId,
+  requestKey,
+  type Revision,
+  staleRevision,
+  unreplayable,
 } from "./gift_context.ts";
 
 /** The time zone a workspace without one schedules in. */
@@ -181,13 +194,53 @@ export function createRecurringDebtWrites(
       | GiftMutationFailure
     > => {
       const values = normalizeRecurringDebt(input);
-      if (!values) return { status: "validation-error" };
+      const requestId = requestKey(input.requestId);
+      if (!values || requestId === false) return { status: "validation-error" };
       const occurredAt = dependencies.clock.now();
       return await runOrUnavailable(
         dependencies.transaction,
         async (transaction) => {
           if (!await active(dependencies, actor, transaction, true)) {
             return { status: "forbidden" as const };
+          }
+          const id = await recordId(
+            dependencies,
+            RECURRING_DEBT_ID_NAMESPACE,
+            actor,
+            requestId,
+          );
+          if (requestId) {
+            await dependencies.recurringDebts.lockRequest({ id, transaction });
+            const found = await dependencies.recurringDebts.find({
+              ...actor,
+              id,
+              personId,
+              transaction,
+            });
+            if (found.status === "found") {
+              return recurringDebtMatchesCreate(found.recurringDebt, values)
+                ? {
+                  charged: 0,
+                  recurringDebt: found.recurringDebt,
+                  status: "created" as const,
+                }
+                : { status: "idempotency-conflict" as const };
+            }
+            if (found.status === "archived-write-rejected") return found;
+            const refused = await unreplayable(
+              dependencies,
+              actor,
+              "recurring-debt",
+              id,
+              () =>
+                dependencies.recurringDebts.exists({
+                  ...actor,
+                  id,
+                  transaction,
+                }),
+              transaction,
+            );
+            if (refused) return refused;
           }
           if (
             !await dependencies.currencies.isSupported({
@@ -207,7 +260,7 @@ export function createRecurringDebtWrites(
           const created = await dependencies.recurringDebts.create({
             ...actor,
             ...values,
-            id: dependencies.ids.next(),
+            id,
             ...(next ? { nextOccurrenceOn: next } : {}),
             occurredAt,
             personId,
@@ -243,6 +296,7 @@ export function createRecurringDebtWrites(
       personId: string,
       id: string,
       change: RecurringDebtChange,
+      revision: Revision = {},
     ): Promise<
       | {
         readonly charged: number;
@@ -265,6 +319,9 @@ export function createRecurringDebtWrites(
             transaction,
           });
           if (found.status !== "found") return found;
+          if (staleRevision(found.recurringDebt.updatedAt, revision)) {
+            return { status: "stale" as const };
+          }
           const current = found.recurringDebt;
           const values = mergeRecurringDebtChange(current, change);
           if (!values) return { status: "validation-error" as const };

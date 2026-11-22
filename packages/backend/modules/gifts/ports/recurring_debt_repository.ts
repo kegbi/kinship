@@ -81,6 +81,18 @@ export interface RecurringDebtRepository {
     | { readonly recurringDebt: StoredRecurringDebt; readonly status: "saved" }
     | Failure<"not-found">
   >;
+  /** Serializes every retry of one create request (MCP-D3). */
+  lockRequest(command: {
+    readonly id: string;
+    readonly transaction: GiftTransaction;
+  }): Promise<void>;
+  /** Whether the workspace holds a rule with this id, under any person. */
+  exists(
+    command: GiftActor & {
+      readonly id: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<boolean>;
   /** Removes the rule; the debts it already charged stay. */
   remove(
     command: GiftActor & {

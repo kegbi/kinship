@@ -21,7 +21,10 @@
 
 import type { Clock } from "../shared-kernel/clock.ts";
 import type { IdGenerator } from "../shared-kernel/ids.ts";
-import type { AuditEventWrite } from "../shared-kernel/audit_event.ts";
+import type {
+  AuditEvent,
+  AuditEventWrite,
+} from "../shared-kernel/audit_event.ts";
 import type { LogEvent, Logger } from "../shared-kernel/telemetry.ts";
 
 // --- Time ----------------------------------------------------------------
@@ -87,6 +90,16 @@ export interface RecordingAudit<Command, Id extends string | void = string> {
     command: Command & { readonly when: boolean },
   ): Promise<Id | undefined>;
   assertRecorded(command: Command): Promise<void>;
+  /**
+   * Whether a kernel event with this action and subject was recorded here; a
+   * module's own audit command names no subject and never matches.
+   */
+  subjectRecorded(command: {
+    readonly action: string;
+    readonly subjectId: string;
+    readonly subjectType: string;
+    readonly workspaceId: string;
+  }): Promise<boolean>;
   assertPostcondition(command: Command): Promise<void>;
   assertFailurePostcondition(command: Command): Promise<void>;
 }
@@ -132,6 +145,15 @@ export function recordingAudit<
     recordWhen: (command) =>
       command.when ? record(command) : Promise.resolve(undefined),
     assertRecorded: () => Promise.resolve(),
+    subjectRecorded: (query) =>
+      Promise.resolve(commands.some((command) => {
+        const event = (command as { readonly event?: Partial<AuditEvent> })
+          .event;
+        return event?.action === query.action &&
+          event.subjectId === query.subjectId &&
+          event.subjectType === query.subjectType &&
+          event.workspaceId === query.workspaceId;
+      })),
     assertPostcondition: () => Promise.resolve(),
     assertFailurePostcondition: () => Promise.resolve(),
   };

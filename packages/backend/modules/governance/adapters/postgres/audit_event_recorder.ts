@@ -7,6 +7,7 @@ import {
   type AuditEventRecorder,
   type AuditEventWrite,
   auditPayload,
+  type AuditSubjectQuery,
   type ConditionalAuditEventWrite,
 } from "../../../../shared-kernel/audit_event.ts";
 
@@ -137,5 +138,19 @@ export class PostgresAuditEventRecorder
     if (result.rows[0]?.count !== (command.matches ?? 1)) {
       throw new Error(command.failure ?? "Audit event postcondition failed.");
     }
+  }
+
+  /** Answered through the `(workspace_id, action)` index, then the subject. */
+  async subjectRecorded(command: AuditSubjectQuery): Promise<boolean> {
+    const result = await sql<{ readonly found: boolean }>`
+      select exists (
+        select 1 from crm.audit_events event
+        where event.workspace_id = ${command.workspaceId}::uuid
+          and event.action = ${command.action}
+          and event.subject_type = ${command.subjectType}
+          and event.subject_id = ${command.subjectId}::uuid
+      ) as found
+    `.execute(databaseFromSession(command.transaction));
+    return result.rows[0]?.found === true;
   }
 }

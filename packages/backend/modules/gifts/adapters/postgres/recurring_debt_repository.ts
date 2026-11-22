@@ -184,6 +184,25 @@ export class PostgresRecurringDebtRepository
     };
   }
 
+  async lockRequest(
+    command: Parameters<RecurringDebtRepository["lockRequest"]>[0],
+  ): Promise<void> {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${command.id}, 0))`
+      .execute(schemaDatabaseFromSession(command.transaction));
+  }
+
+  async exists(
+    command: Parameters<RecurringDebtRepository["exists"]>[0],
+  ): Promise<boolean> {
+    const row = await schemaDatabaseFromSession(command.transaction)
+      .selectFrom("crm.recurring_debts as rule")
+      .select((eb) => eb.lit(1).as("found"))
+      .where("rule.workspace_id", "=", command.workspaceId)
+      .where("rule.id", "=", command.id)
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
   async save(
     command: Parameters<RecurringDebtRepository["save"]>[0],
   ): Promise<Awaited<ReturnType<RecurringDebtRepository["save"]>>> {

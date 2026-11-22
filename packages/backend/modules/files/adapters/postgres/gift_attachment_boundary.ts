@@ -104,6 +104,23 @@ export class PostgresGiftAttachmentBoundary implements GiftAttachmentBoundary {
     };
   }
 
+  async detachFromGift(
+    command: Parameters<GiftAttachmentBoundary["detachFromGift"]>[0],
+  ): Promise<Awaited<ReturnType<GiftAttachmentBoundary["detachFromGift"]>>> {
+    const owned = await this.gifts.ownedGiftIds({
+      giftIds: [command.giftId],
+      transaction: command.transaction,
+      workspaceId: command.workspaceId,
+    });
+    if (owned.length === 0) return { status: "not-found" };
+    await sql`
+      delete from crm.gift_file_links link
+      where link.gift_id = ${command.giftId}::uuid
+        and link.workspace_id = ${command.workspaceId}::uuid
+    `.execute(databaseFromSession(command.transaction));
+    return { status: "detached" };
+  }
+
   async validateForGift(
     command: Parameters<GiftAttachmentBoundary["validateForGift"]>[0],
   ): Promise<Awaited<ReturnType<GiftAttachmentBoundary["validateForGift"]>>> {

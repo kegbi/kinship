@@ -170,4 +170,88 @@ export interface GiftRepository {
     | { readonly debt: StoredDebt; readonly status: "saved" }
     | Failure<"archived-write-rejected" | "not-found">
   >;
+  /**
+   * Serializes every retry of one request: the caller holds the lock on the
+   * derived identifier until its transaction ends (MCP-D3).
+   */
+  lockRequest(command: {
+    readonly id: string;
+    readonly transaction: GiftTransaction;
+  }): Promise<void>;
+  /** Whether the workspace holds a gift with this id, under any person. */
+  giftExists(
+    command: GiftActor & {
+      readonly id: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<boolean>;
+  /** Whether the workspace holds a debt with this id, under any person. */
+  debtExists(
+    command: GiftActor & {
+      readonly id: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<boolean>;
+  /** One settlement event of a debt, when it exists. */
+  findSettlement(
+    command: GiftActor & {
+      readonly debtId: string;
+      readonly id: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<DebtSettlement | undefined>;
+  /**
+   * Replaces a gift's values, never its status. The recipient is checked
+   * only when `checkRecipient` says the change named a new one, so a gift
+   * whose recipient was removed since can still be renamed.
+   */
+  saveGiftValues(
+    command: GiftActor & {
+      readonly amount?: string;
+      readonly checkRecipient: boolean;
+      readonly comment?: string;
+      readonly currencyCode?: string;
+      readonly eventAt?: string;
+      readonly id: string;
+      readonly name: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly recipientPersonId?: string;
+      readonly transaction: GiftTransaction;
+      readonly url?: string;
+    },
+  ): Promise<
+    | { readonly gift: StoredGift; readonly status: "saved" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  /** Replaces a debt's values, never its status or settlement. */
+  saveDebtValues(
+    command: GiftActor & {
+      readonly amount: string;
+      readonly currencyCode: string;
+      readonly direction: DebtDirection;
+      readonly id: string;
+      readonly occurredAt: Date;
+      readonly personId: string;
+      readonly reason?: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly debt: StoredDebt; readonly status: "saved" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
+  /**
+   * Permanently removes a gift. Its file links go with it by the schema's
+   * cascade; the files they named stay.
+   */
+  deleteGift(
+    command: GiftActor & {
+      readonly id: string;
+      readonly personId: string;
+      readonly transaction: GiftTransaction;
+    },
+  ): Promise<
+    | { readonly gift: StoredGift; readonly status: "deleted" }
+    | Failure<"archived-write-rejected" | "not-found">
+  >;
 }

@@ -13,7 +13,13 @@
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
-import { hydrateGifts, type StoredGift } from "../domain/gift_rules.ts";
+import { deterministicId } from "../../../shared-kernel/ids.ts";
+import { uuid } from "../../../shared-kernel/validation.ts";
+import {
+  hydrateGifts,
+  sameRevision,
+  type StoredGift,
+} from "../domain/gift_rules.ts";
 import type { GiftAudit } from "../ports/audit.ts";
 import type {
   GiftActor,
@@ -50,8 +56,87 @@ export interface GiftManagementDependencies {
  */
 export type GiftMutationFailure = Failure<
   "archived-write-rejected" | "forbidden" | "not-found" | "unavailable",
-  "invalid-transition" | "limit-reached" | "validation-error"
+  | "debt-values-locked"
+  | "idempotency-conflict"
+  | "invalid-transition"
+  | "limit-reached"
+  | "request-deleted"
+  | "stale"
+  | "validation-error"
 >;
+
+/** The revision a write was read at, when the client sent one (MCP-D3). */
+export interface Revision {
+  readonly expectedUpdatedAt?: string | undefined;
+}
+
+/**
+ * Whether a supplied revision no longer names the record's current one. An
+ * omitted revision is never stale, which is how every write behaved before a
+ * client could send one.
+ */
+export function staleRevision(updatedAt: string, revision: Revision): boolean {
+  return revision.expectedUpdatedAt !== undefined &&
+    !sameRevision(updatedAt, revision.expectedUpdatedAt);
+}
+
+/**
+ * The canonical retry key, nothing when none was sent, or `false` when the
+ * one sent is not a request identifier.
+ */
+export function requestKey(
+  value: string | undefined,
+): string | false | undefined {
+  if (value === undefined) return undefined;
+  return uuid(value) ?? false;
+}
+
+/**
+ * The identifier a create writes: derived from the retry key inside the
+ * workspace, so every retry of one request names the same row, or fresh.
+ */
+export async function recordId(
+  dependencies: Pick<GiftManagementDependencies, "ids">,
+  namespace: string,
+  actor: GiftActor,
+  requestId: string | undefined,
+): Promise<string> {
+  return requestId
+    ? await deterministicId(namespace, [actor.workspaceId, requestId])
+    : dependencies.ids.next();
+}
+
+/**
+ * Why a retried create whose record is not under this person cannot proceed,
+ * or nothing when it is the first attempt.
+ *
+ * A row with the derived id elsewhere in the workspace — under another
+ * person, or moved by a merge — is the key reused for something else. No row
+ * but an audit event about the id means the record was created and then
+ * deleted: rows here are deleted permanently, so the audit history is the
+ * one trace left, and recreating the record would bring back what a member
+ * removed.
+ */
+export async function unreplayable(
+  dependencies: Pick<GiftManagementDependencies, "audit">,
+  actor: GiftActor,
+  recordType: "debt" | "gift" | "recurring-debt",
+  id: string,
+  exists: () => Promise<boolean>,
+  transaction: GiftTransaction,
+): Promise<
+  Failure<never, "idempotency-conflict" | "request-deleted"> | undefined
+> {
+  if (await exists()) return { status: "idempotency-conflict" };
+  return await dependencies.audit.recorded({
+      actor,
+      recordType,
+      subjectId: id,
+      transaction,
+    })
+    ? { status: "request-deleted" }
+    : undefined;
+}
 
 /** The failure an attachment boundary reports, carried out of a transaction. */
 type AttachmentFailureStatus = Failure<"forbidden" | "not-found">["status"];

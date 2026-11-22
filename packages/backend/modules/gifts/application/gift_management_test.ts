@@ -64,6 +64,8 @@ function fixture(
         attachments.push(`${command.giftId}:${command.fileId}`);
         return Promise.resolve({ status: "attached" });
       },
+      // Edits are `gift_edits_test.ts`'s; nothing here detaches.
+      detachFromGift: () => Promise.reject(new Error("not detached here")),
       validateForGift: (command) =>
         Promise.resolve({
           status: command.fileId === fileId ? "ready" : "not-found",
@@ -87,6 +89,7 @@ function fixture(
     audit: {
       record: (command) => audit.record(command),
       recordCharged: () => Promise.resolve("charged-audit"),
+      recorded: () => Promise.resolve(false),
     },
     calendar: { timezones: () => Promise.resolve(new Map()) },
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
@@ -100,6 +103,14 @@ function fixture(
       listForPerson: () => Promise.resolve([]),
     } as unknown as GiftManagementDependencies["recurringDebts"],
     repository: {
+      // Retries and edits are `gift_edits_test.ts`'s; these never run here.
+      lockRequest: () => Promise.reject(new Error("no retry key here")),
+      giftExists: () => Promise.reject(new Error("no retry key here")),
+      debtExists: () => Promise.reject(new Error("no retry key here")),
+      findSettlement: () => Promise.reject(new Error("no retry key here")),
+      saveGiftValues: () => Promise.reject(new Error("no edit here")),
+      saveDebtValues: () => Promise.reject(new Error("no edit here")),
+      deleteGift: () => Promise.reject(new Error("no deletion here")),
       recordSettlement: (command) => {
         settlements.push({
           id: command.id,

@@ -165,6 +165,11 @@ Deno.test("[GAP-019] the gifts failure table is what gifts.ts answered", () => {
       "not-found | 404 | gift_not_found | Record unavailable | The person, recipient, attachment, gift, debt, or recurring debt does not exist in the active workspace.",
       "query-invalid | 400 | gift_query_invalid | Invalid gift query | Reload the first page of gifts and debts before continuing.",
       "validation-error | 400 | gift_invalid | Invalid gift or debt | Review the amount, currency, recipient, attachment, and other fields.",
+      // MCP-D3: edits, retry keys, and revisions.
+      "debt-values-locked | 409 | debt_values_locked | Debt values cannot be changed | A debt's amount, currency, and direction change only while it is open and was never settled, and a cancelled debt changes no value.",
+      "idempotency-conflict | 409 | gift_request_conflict | Request identifier already used | This request identifier already recorded something else. Use a new request identifier for a different record.",
+      "request-deleted | 409 | gift_request_deleted | Request identifier already used | The record this request identifier created was deleted. Use a new request identifier to record it again.",
+      "stale | 409 | gift_stale | Record changed | The record changed since it was read. Reload it and apply the change to its current updatedAt.",
       "(fallback) | 503 | gifts_unavailable | Gifts unavailable | Gifts and debts are temporarily unavailable.",
     ].join("\n"),
     "gifts problems",

@@ -18,7 +18,7 @@ import {
   currencyCode as canonicalCurrency,
   isoDate,
 } from "../../../shared-kernel/validation.ts";
-import { type DebtDirection, money } from "./gift_rules.ts";
+import { type DebtDirection, money, sameAmount } from "./gift_rules.ts";
 
 /** The widest interval a rule may repeat at: ten years. */
 export const MAXIMUM_INTERVAL_MONTHS = 120;
@@ -67,6 +67,8 @@ export interface CreateRecurringDebtInput {
   readonly endsOn?: string;
   readonly intervalMonths: number;
   readonly reason?: string;
+  /** The client's retry key, as on a gift or a debt (MCP-D3). */
+  readonly requestId?: string;
   readonly startsOn: string;
 }
 
@@ -347,4 +349,23 @@ export function localDate(now: Date, timezone: string): string {
  */
 export function defaultCurrency(preferred: string | undefined): string {
   return preferred ?? FALLBACK_CURRENCY;
+}
+
+/**
+ * Whether a stored rule is what a create with these values would write. Its
+ * pause state and next period are the rule's own history since, not part of
+ * what the create asked for.
+ */
+export function recurringDebtMatchesCreate(
+  stored: RecurringDebtRecord,
+  values: RecurringDebtValues,
+): boolean {
+  return sameAmount(stored.amount, values.amount) &&
+    stored.currencyCode === values.currencyCode &&
+    stored.direction === values.direction &&
+    stored.reason === values.reason &&
+    stored.dayOfMonth === values.dayOfMonth &&
+    stored.intervalMonths === values.intervalMonths &&
+    stored.startsOn === values.startsOn &&
+    stored.endsOn === values.endsOn;
 }

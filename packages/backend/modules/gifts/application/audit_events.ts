@@ -72,6 +72,16 @@ export function describeChargedDebtEvent(
 
 export function giftAuditFrom(recorder: AuditEventRecorder): GiftAudit {
   return {
+    // The action every gift, debt, and rule event is stored under, so the
+    // question is the one `describeGiftEvent` answers for that record type.
+    recorded: (command) =>
+      recorder.subjectRecorded({
+        action: `gifts.${command.recordType}-created-or-state-changed`,
+        subjectId: command.subjectId,
+        subjectType: command.recordType.replace("-", "_"),
+        transaction: command.transaction,
+        workspaceId: command.actor.workspaceId,
+      }),
     record: (command) =>
       recorder.record({
         event: describeGiftEvent(command),

@@ -50,6 +50,16 @@ export interface GiftAttachmentBoundary {
     | { readonly status: "attached" }
     | Failure<"forbidden" | "not-found">
   >;
+  /**
+   * Removes every file link of a gift the workspace owns; the files stay
+   * (MCP-D3). A gift with no link is already detached.
+   */
+  detachFromGift(
+    command: PersonFileActor & {
+      readonly giftId: string;
+      readonly transaction: PersonFileTransaction;
+    },
+  ): Promise<{ readonly status: "detached" } | Failure<"not-found">>;
   validateForGift(
     command: PersonFileActor & {
       readonly fileId: string;

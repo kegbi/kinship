@@ -117,4 +117,18 @@ export interface AuditEventRecorder {
   recordWhen(command: ConditionalAuditEventWrite): Promise<string | undefined>;
   /** Re-reads the written row inside the same transaction. */
   assertRecorded(command: AuditEventAssertion): Promise<void>;
+  /**
+   * Whether the workspace's history holds any event with this action about
+   * this subject. A module whose rows are deleted permanently asks it to tell
+   * a record that never existed from one that was removed (MCP-D3).
+   */
+  subjectRecorded(command: AuditSubjectQuery): Promise<boolean>;
+}
+
+export interface AuditSubjectQuery {
+  readonly action: string;
+  readonly subjectId: string;
+  readonly subjectType: string;
+  readonly transaction: AuditTransaction;
+  readonly workspaceId: string;
 }

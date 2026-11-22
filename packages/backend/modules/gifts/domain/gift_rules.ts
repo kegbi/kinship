@@ -72,6 +72,11 @@ export interface CreateGiftInput {
   readonly eventAt?: string;
   readonly name: string;
   readonly recipientPersonId?: string;
+  /**
+   * The client's retry key (MCP-D3). A create retried with it returns the
+   * record it already wrote instead of writing a second one.
+   */
+  readonly requestId?: string;
   readonly status: GiftStatus;
   readonly url?: string;
 }
@@ -83,6 +88,8 @@ export interface CreateDebtInput {
   readonly currencyCode: string;
   readonly direction: DebtDirection;
   readonly reason?: string;
+  /** The client's retry key, as on a gift (MCP-D3). */
+  readonly requestId?: string;
   readonly status: DebtStatus;
 }
 
@@ -219,4 +226,237 @@ export function normalizeDebt(input: CreateDebtInput): DebtValues | undefined {
     ...(reason ? { reason } : {}),
     status: input.status,
   };
+}
+
+/*
+ * Edits, retries, and revisions (MCP-D3).
+ *
+ * A retried create derives its record's identifier from the client's request
+ * identifier, so the record it already wrote is found rather than written
+ * again. Each record kind has its own namespace, so one request identifier
+ * used for a gift and a debt names two different rows.
+ */
+export const GIFT_ID_NAMESPACE = "kinship.gifts.gift-id.v1";
+export const DEBT_ID_NAMESPACE = "kinship.gifts.debt-id.v1";
+export const RECURRING_DEBT_ID_NAMESPACE = "kinship.gifts.recurring-debt-id.v1";
+
+/**
+ * A change to a gift's values. A field left out keeps its value and `null`
+ * clears an optional one; the name is never cleared. `amount` and
+ * `currencyCode` are sent together or not at all, so a price never changes
+ * its number without its currency being restated. Status keeps its own
+ * operation and transition graph.
+ */
+export interface GiftChange {
+  readonly amount?: string | null | undefined;
+  readonly attachmentFileId?: string | null | undefined;
+  readonly comment?: string | null | undefined;
+  readonly currencyCode?: string | null | undefined;
+  readonly eventAt?: string | null | undefined;
+  readonly name?: string | undefined;
+  readonly recipientPersonId?: string | null | undefined;
+  readonly url?: string | null | undefined;
+}
+
+/** A change to a debt's values. `reason` alone may be cleared with `null`. */
+export interface DebtChange {
+  readonly amount?: string | undefined;
+  readonly currencyCode?: string | undefined;
+  readonly direction?: DebtDirection | undefined;
+  readonly reason?: string | null | undefined;
+}
+
+/** The value a change names: kept when omitted, cleared by `null`. */
+function changed<T>(
+  next: T | null | undefined,
+  current: T | undefined,
+): T | undefined {
+  return next === null ? undefined : next === undefined ? current : next;
+}
+
+/** Whether a change names nothing at all. */
+function empty(change: object): boolean {
+  return Object.values(change).every((value) => value === undefined);
+}
+
+/**
+ * The gift a change leaves, with its attachment, or nothing when the member
+ * has to fix something. Every value the create checks is checked again, and
+ * a value the member sent that will not normalize is refused rather than
+ * dropped, because an edit names exactly what it means to change.
+ */
+export function mergeGiftChange(
+  current: StoredGift,
+  change: GiftChange,
+):
+  | {
+    readonly attachmentFileId: string | undefined;
+    readonly values: GiftValues;
+  }
+  | undefined {
+  if (
+    empty(change) ||
+    (change.amount === undefined) !== (change.currencyCode === undefined)
+  ) return undefined;
+  const name = change.name === undefined
+    ? current.name
+    : boundedText(change.name, 500);
+  const comment = changed(change.comment, current.comment);
+  const url = changed(change.url, current.url);
+  const eventAt = change.eventAt === undefined
+    ? current.eventAt
+    : change.eventAt === null
+    ? undefined
+    : instant(change.eventAt);
+  if (
+    !name ||
+    (typeof change.comment === "string" &&
+      !boundedText(change.comment, 10_000)) ||
+    (typeof change.url === "string" && !boundedText(change.url, 2_000)) ||
+    (typeof change.eventAt === "string" && !eventAt)
+  ) return undefined;
+  const amount = changed(change.amount, current.amount);
+  const currencyCode = changed(change.currencyCode, current.currencyCode);
+  const recipientPersonId = changed(
+    change.recipientPersonId,
+    current.recipientPersonId,
+  );
+  const values = normalizeGift({
+    ...(amount !== undefined ? { amount } : {}),
+    ...(comment !== undefined ? { comment } : {}),
+    ...(currencyCode !== undefined ? { currencyCode } : {}),
+    name,
+    ...(recipientPersonId !== undefined ? { recipientPersonId } : {}),
+    status: current.status,
+    ...(url !== undefined ? { url } : {}),
+  });
+  if (!values) return undefined;
+  return {
+    attachmentFileId: changed(
+      change.attachmentFileId,
+      current.attachmentFileId,
+    ),
+    // The stored event time is kept exactly as read, a new one canonical.
+    values: {
+      ...(values.amount !== undefined ? { amount: values.amount } : {}),
+      ...(values.comment !== undefined ? { comment: values.comment } : {}),
+      ...(values.currencyCode !== undefined
+        ? { currencyCode: values.currencyCode }
+        : {}),
+      ...(eventAt !== undefined ? { eventAt } : {}),
+      name: values.name,
+      ...(values.recipientPersonId !== undefined
+        ? { recipientPersonId: values.recipientPersonId }
+        : {}),
+      status: values.status,
+      ...(values.url !== undefined ? { url: values.url } : {}),
+    },
+  };
+}
+
+/** The debt a change leaves, or nothing when the member has to fix something. */
+export function mergeDebtChange(
+  current: StoredDebt,
+  change: DebtChange,
+): DebtValues | undefined {
+  if (
+    empty(change) ||
+    (typeof change.reason === "string" && !boundedText(change.reason, 10_000))
+  ) return undefined;
+  const reason = changed(change.reason, current.reason);
+  return normalizeDebt({
+    amount: change.amount ?? current.amount,
+    currencyCode: change.currencyCode ?? current.currencyCode ?? "",
+    direction: change.direction ?? current.direction,
+    ...(reason !== undefined ? { reason } : {}),
+    status: current.status,
+  });
+}
+
+/**
+ * Whether a debt's values may no longer move the way `next` moves them.
+ *
+ * Settlement history is append-only and records when, why, and with what
+ * proof a debt was settled — never how much. Once a debt has been settled,
+ * even if it was reopened since, its amount, currency, and direction are what
+ * that history settled, so changing them would rewrite what was paid; they
+ * may change only while the debt is open and has never been settled. The
+ * reason describes the debt rather than the payment and stays editable. A
+ * cancelled debt is finished, as its status graph already says, so nothing
+ * on it changes.
+ */
+export function debtValuesLocked(
+  current: StoredDebt,
+  next: DebtValues,
+  hasSettlementHistory: boolean,
+): boolean {
+  if (current.status === "cancelled") return true;
+  const moneyChanged = !sameAmount(current.amount, next.amount) ||
+    current.currencyCode !== next.currencyCode ||
+    current.direction !== next.direction;
+  return moneyChanged && (current.status !== "open" || hasSettlementHistory);
+}
+
+/** Whether two decimal strings name the same amount, however written. */
+export function sameAmount(
+  first: string | undefined,
+  second: string | undefined,
+): boolean {
+  return canonicalAmount(first) === canonicalAmount(second);
+}
+
+function canonicalAmount(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const [whole = "", fraction = ""] = value.split(".");
+  const integer = whole.replace(/^0+(?=\d)/, "");
+  const decimals = fraction.replace(/0+$/, "");
+  return decimals ? `${integer}.${decimals}` : integer;
+}
+
+/** Whether two instants are the same moment, however written. */
+function sameInstant(
+  first: string | undefined,
+  second: string | undefined,
+): boolean {
+  if (first === undefined || second === undefined) return first === second;
+  return Date.parse(first) === Date.parse(second);
+}
+
+/**
+ * Whether `expected` is the revision `stored` carries. Both are read as the
+ * instant they name, so a client that drops trailing zeros or writes an
+ * offset still names the revision it read.
+ */
+export function sameRevision(stored: string, expected: string): boolean {
+  const canonical = instant(expected);
+  return canonical !== undefined && canonical === instant(stored);
+}
+
+/** Whether a stored gift is what a create with these values would write. */
+export function giftMatchesCreate(
+  stored: GiftRecord,
+  values: GiftValues,
+  attachmentFileId: string | undefined,
+): boolean {
+  return stored.name === values.name &&
+    sameAmount(stored.amount, values.amount) &&
+    stored.currencyCode === values.currencyCode &&
+    sameInstant(stored.eventAt, values.eventAt) &&
+    stored.comment === values.comment &&
+    stored.url === values.url &&
+    stored.recipientPersonId === values.recipientPersonId &&
+    stored.status === values.status &&
+    stored.attachmentFileId === attachmentFileId;
+}
+
+/** Whether a stored debt is what a create with these values would write. */
+export function debtMatchesCreate(
+  stored: DebtRecord,
+  values: DebtValues,
+): boolean {
+  return sameAmount(stored.amount, values.amount) &&
+    stored.currencyCode === values.currencyCode &&
+    stored.direction === values.direction &&
+    stored.reason === values.reason &&
+    stored.status === values.status;
 }

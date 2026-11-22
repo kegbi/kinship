@@ -211,6 +211,7 @@ Deno.test({
         audit: {
           record: () => Promise.reject(new Error("audit unavailable")),
           recordCharged: () => Promise.reject(new Error("unused")),
+          recorded: () => Promise.reject(new Error("unused")),
         },
         calendar: new PostgresWorkspaceCalendarBoundary(),
         clock: { now: () => new Date() },

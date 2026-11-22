@@ -7647,7 +7647,7 @@
     "/api/v1/people/{personId}/debts": {
       "post": {
         "operationId": "createDebt",
-        "description": "Requires a browser session or a personal token with gifts:write. Records a debt the person owes or is owed: `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. A debt created settled may carry a settlement reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second debt. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Records a debt the person owes or is owed: `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. A debt created settled may carry a settlement reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. An optional `requestId` (a UUID the client generates once per intended record) makes a retry safe: repeating the request with the same `requestId` and the same payload returns the record the first attempt wrote, answering 201 again without writing anything; the same `requestId` with a different payload, or for a different person, answers 409 `gift_request_conflict`; and once that record was deleted, the same `requestId` answers 409 `gift_request_deleted` rather than recording it again. The key is the workspace's, shared by every member and token. Without `requestId`, repeating the request records a second debt. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -7907,6 +7907,151 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "updateDebt",
+        "description": "Requires a browser session or a personal token with gifts:write. Edits a debt's `amount`, `currencyCode`, `direction`, or `reason`; status moves with changeDebtStatus. A field left out keeps its value, `reason: null` clears the reason, and at least one field must be named. `expectedUpdatedAt` is required: the debt's `updatedAt` from listPersonGiftsAndDebts or the last write; when the debt has changed since, it answers 409 `gift_stale` and changes nothing. The amount, currency, and direction can change only while the debt is open and has never been settled, because its settlement history records what was paid; once it has been settled, even if reopened since, they answer 409 `debt_values_locked`, and its reason stays editable. A cancelled debt is finished and refuses every edit with 409 `debt_values_locked`. A debt a recurring rule charged is an ordinary debt once charged: editing it changes neither the rule nor its other charges, and the rule never charges that period again. A request that changes nothing answers `unchanged`. A debt under another person's path answers 404. An archived person's gifts and debts can be read but refuse this write.",
+        "security": [
+          {
+            "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "gifts:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "debtId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DebtUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Debt saved, or unchanged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebtSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/people/{personId}/debts/{debtId}/settlements": {
@@ -8039,7 +8184,7 @@
     "/api/v1/people/{personId}/debts/{debtId}/status": {
       "patch": {
         "operationId": "changeDebtStatus",
-        "description": "Requires a browser session or a personal token with gifts:write. Moves a debt between `open`, `settled`, and `cancelled`: an open debt may be settled or cancelled, a settled debt may reopen, and `cancelled` is terminal. Settling appends to the debt's permanent settlement history and may carry a reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. Asking for the status the debt already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Moves a debt between `open`, `settled`, and `cancelled`: an open debt may be settled or cancelled, a settled debt may reopen, and `cancelled` is terminal. Settling appends to the debt's permanent settlement history and may carry a reason and the file id of a settlement photo, which must be an available JPEG, PNG, or WebP photo of this same person in this workspace; a token needs no files scope to reference it. Asking for the status the debt already has answers `unchanged`. An optional `expectedUpdatedAt`, the debt's `updatedAt` from listPersonGiftsAndDebts or the last write, makes the change conditional: when the debt has changed since, it answers 409 `gift_stale` and changes nothing, so no settlement is recorded; without it the change applies to whatever the debt is now. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -9633,7 +9778,7 @@
       },
       "post": {
         "operationId": "createGift",
-        "description": "Requires a browser session or a personal token with gifts:write. Records a gift idea, plan, or exchange: an optional `amount` is a decimal string with a three-letter `currencyCode` the workspace supports. A recipient person id must name a live person of this workspace. An attachment file id must name an available file of this workspace that is not a person's avatar; a token needs no files scope to reference it. It has no retry key or revision check, so repeating the request records a second gift. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Records a gift idea, plan, or exchange: an optional `amount` is a decimal string with a three-letter `currencyCode` the workspace supports. A recipient person id must name a live person of this workspace. An attachment file id must name an available file of this workspace that is not a person's avatar; a token needs no files scope to reference it. An optional `requestId` (a UUID the client generates once per intended record) makes a retry safe: repeating the request with the same `requestId` and the same payload returns the record the first attempt wrote, answering 201 again without writing anything; the same `requestId` with a different payload, or for a different person, answers 409 `gift_request_conflict`; and once that record was deleted, the same `requestId` answers 409 `gift_request_deleted` rather than recording it again. The key is the workspace's, shared by every member and token. Without `requestId`, repeating the request records a second gift. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -9768,10 +9913,302 @@
         }
       }
     },
+    "/api/v1/people/{personId}/gifts/{giftId}": {
+      "patch": {
+        "operationId": "updateGift",
+        "description": "Requires a browser session or a personal token with gifts:write. Edits a gift's values: `name`, `amount` with `currencyCode`, `eventAt`, `comment`, `url`, `recipientPersonId`, and `attachmentFileId` — what createGift accepts except `status`, which changeGiftStatus moves. A field left out keeps its value and `null` clears an optional one; `name` cannot be cleared, and at least one field must be named. `amount` and `currencyCode` are sent together or not at all, and an amount needs a currency the workspace supports. `expectedUpdatedAt` is required: the gift's `updatedAt` from listPersonGiftsAndDebts or the last write; when the gift has changed since, it answers 409 `gift_stale` and changes nothing. A recipient must be a live person of this workspace. An attachment must be an available file of this workspace that is not a person's avatar; it replaces the gift's attachment, `null` removes it, and either way the previous file stays in the person's files. A request that changes nothing answers `unchanged`. A gift under another person's path answers 404. Gifts are workspace-wide: any member may edit any gift. An archived person's gifts and debts can be read but refuse this write.",
+        "security": [
+          {
+            "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "gifts:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "giftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GiftUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gift saved, or unchanged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GiftSaved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteGift",
+        "description": "Requires a browser session or a personal token with gifts:write. Permanently removes one gift; nothing can restore it, and a createGift retried later with the `requestId` that created it answers 409 `gift_request_deleted` instead of recording it again. The body carries the required `expectedUpdatedAt`, the gift's `updatedAt` from listPersonGiftsAndDebts or the last write; when the gift has changed since, it answers 409 `gift_stale` and deletes nothing. An attached file is not deleted: only its link to the gift goes, and the file stays in the person's files. To keep a gift out of the way without losing it, archive it with changeGiftStatus instead. A gift under another person's path answers 404. An archived person's gifts and debts can be read but refuse this write.",
+        "security": [
+          {
+            "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "gifts:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "giftId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GiftDeleteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gift permanently deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GiftDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/gifts/{giftId}/status": {
       "patch": {
         "operationId": "changeGiftStatus",
-        "description": "Requires a browser session or a personal token with gifts:write. Moves a gift along its transition graph: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived; and `archived` is terminal. A move the graph does not allow answers 409, and asking for the status the gift already has answers `unchanged`. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Moves a gift along its transition graph: an idea may become planned, given, or received; a planned gift may be given or received; any gift may be archived; and `archived` is terminal. A move the graph does not allow answers 409, and asking for the status the gift already has answers `unchanged`. An optional `expectedUpdatedAt`, the gift's `updatedAt` from listPersonGiftsAndDebts or the last write, makes the change conditional: when the gift has changed since, it answers 409 `gift_stale` and changes nothing; without it the change applies to whatever the gift is now. Edit the gift's other values with updateGift. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -10542,7 +10979,7 @@
     "/api/v1/people/{personId}/recurring-debts": {
       "post": {
         "operationId": "createRecurringDebt",
-        "description": "Requires a browser session or a personal token with gifts:write. Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. It has no retry key or revision check, so repeating the request creates a second rule, and charges its due periods again. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Creates a rule that charges the person the same debt every period. Every period already due in the workspace's calendar is charged at once, one open debt per period. `amount` is a decimal string and `currencyCode` a three-letter code the workspace supports. An optional `requestId` (a UUID the client generates once per intended rule) makes a retry safe: the same `requestId` and payload returns the rule the first attempt created, answering 201 with `charged: 0` because the periods that attempt charged are never charged again; a different payload or person answers 409 `gift_request_conflict`; and once the rule was deleted it answers 409 `gift_request_deleted` and charges nothing. Without `requestId`, repeating the request creates a second rule and charges its due periods again. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -10680,7 +11117,7 @@
     "/api/v1/people/{personId}/recurring-debts/{recurringDebtId}": {
       "patch": {
         "operationId": "updateRecurringDebt",
-        "description": "Requires a browser session or a personal token with gifts:write. Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. A change that leaves due periods uncharged charges them at once. It has no revision check. An archived person's gifts and debts can be read but refuse this write.",
+        "description": "Requires a browser session or a personal token with gifts:write. Changes, pauses, or resumes a recurring debt. A period already charged is never charged again; resuming skips the periods that passed while it was paused. A change that leaves due periods uncharged charges them at once. An optional `expectedUpdatedAt`, the rule's `updatedAt` from listPersonGiftsAndDebts or the last write, makes the change conditional: when the rule has changed since, it answers 409 `gift_stale`, changes nothing, and charges nothing; it does not count as the one changed field the body must name. An archived person's gifts and debts can be read but refuse this write.",
         "security": [
           {
             "kinship_session": []
@@ -21549,6 +21986,10 @@
             "minLength": 1,
             "maxLength": 10000
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -21687,6 +22128,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -21700,6 +22145,47 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "DebtUpdateInput": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "i_owe",
+              "they_owe"
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "minProperties": 2
       },
       "ExportDownload": {
         "type": "object",
@@ -22262,6 +22748,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -22355,6 +22845,36 @@
         ],
         "additionalProperties": false
       },
+      "GiftDeleteInput": {
+        "type": "object",
+        "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "GiftDeleted": {
+        "type": "object",
+        "properties": {
+          "giftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "giftId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "GiftSaved": {
         "type": "object",
         "properties": {
@@ -22378,6 +22898,10 @@
       "GiftStatusInput": {
         "type": "object",
         "properties": {
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -22393,6 +22917,104 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "GiftUpdateInput": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,15}(?:\\.\\d{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachmentFileId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currencyCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "recipientPersonId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "additionalProperties": false,
+        "minProperties": 2
       },
       "ImportDryRun": {
         "type": "object",
@@ -28172,6 +28794,10 @@
             "minLength": 1,
             "maxLength": 10000
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "startsOn": {
             "type": "string",
             "format": "date"
@@ -28282,6 +28908,10 @@
                 "type": "null"
               }
             ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
           },
           "intervalMonths": {
             "type": "integer",

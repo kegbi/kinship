@@ -1,5 +1,9 @@
 import { createGiftRoutes } from "./routes.ts";
-import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertStatus,
+} from "../../../../testing/assert.ts";
 import { actor as memberActor, uuid } from "../../../../testing/fixtures.ts";
 
 const id = uuid(100);
@@ -890,6 +894,9 @@ Deno.test("[GIFTS-001] HTTP creates, changes, and deletes a recurring debt", asy
   );
 });
 
+/** A revision a client read back from the list (MCP-D3). */
+const revision = "2026-08-23T10:00:00.000000Z";
+
 /** Every gifts route a personal token may reach, with its grant (MCP-B7). */
 const TOKEN_ROUTES = [
   ["GET", `/api/v1/people/${id}/gifts`, "gifts:read", undefined, 200],
@@ -946,6 +953,17 @@ const TOKEN_ROUTES = [
     undefined,
     200,
   ],
+  ["PATCH", `/api/v1/people/${id}/gifts/${giftId}`, "gifts:write", {
+    expectedUpdatedAt: revision,
+    name: "Novel",
+  }, 200],
+  ["DELETE", `/api/v1/people/${id}/gifts/${giftId}`, "gifts:write", {
+    expectedUpdatedAt: revision,
+  }, 200],
+  ["PATCH", `/api/v1/people/${id}/debts/${debtId}`, "gifts:write", {
+    expectedUpdatedAt: revision,
+    reason: "Dinner",
+  }, 200],
 ] as const;
 
 Deno.test("[MCP-B7] gift grants admit bearer reads and writes independently and never borrow the cookie", async () => {
@@ -970,8 +988,11 @@ Deno.test("[MCP-B7] gift grants admit bearer reads and writes independently and 
     },
     browserSecurity: { origin: "https://app.test", secureCookie: true },
     gifts: {
+      changeDebt: answer({ debt: {}, status: "saved" }),
       changeDebtStatus: answer({ debt: {}, status: "saved" }),
+      changeGift: answer({ gift: {}, status: "saved" }),
       changeGiftStatus: answer({ gift: {}, status: "saved" }),
+      deleteGift: answer({ giftId, status: "deleted" }),
       changeRecurringDebt: answer({ charged: 0, status: "saved" }),
       createDebt: answer({ debt: {}, status: "created" }),
       createGift: answer({ gift: {}, status: "created" }),
@@ -1112,3 +1133,304 @@ Deno.test("[MCP-B7] cookie gift writes keep their check order", async () => {
     "a malformed query still answers before the session",
   );
 });
+
+Deno.test("[MCP-D3] HTTP forwards gift and debt edits, deletions, retry keys, and revisions", async () => {
+  const received: string[] = [];
+  const answer = (name: string, value: unknown) =>
+  (
+    _actor: unknown,
+    ...args: unknown[]
+  ) => {
+    received.push(`${name}:${JSON.stringify(args)}`);
+    return Promise.resolve(value);
+  };
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      changeDebt: answer("changeDebt", { debt: { id }, status: "saved" }),
+      changeDebtStatus: answer("changeDebtStatus", {
+        debt: { id },
+        status: "saved",
+      }),
+      changeGift: answer("changeGift", { gift: { id }, status: "unchanged" }),
+      changeGiftStatus: answer("changeGiftStatus", {
+        gift: { id },
+        status: "saved",
+      }),
+      changeRecurringDebt: answer("changeRecurringDebt", {
+        charged: 0,
+        recurringDebt: { id },
+        status: "saved",
+      }),
+      createDebt: answer("createDebt", { debt: { id }, status: "created" }),
+      createGift: answer("createGift", { gift: { id }, status: "created" }),
+      createRecurringDebt: answer("createRecurringDebt", {
+        charged: 0,
+        recurringDebt: { id },
+        status: "created",
+      }),
+      deleteGift: answer("deleteGift", { giftId, status: "deleted" }),
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const headers = {
+    Cookie: "__Host-kinship_session=token",
+    Origin: "https://app.test",
+    "Content-Type": "application/json",
+  };
+  const send = (method: string, path: string, body: unknown) =>
+    app.request(`/api/v1/people/${id}${path}`, {
+      body: JSON.stringify(body),
+      headers,
+      method,
+    });
+  const requestId = "00000000-0000-4000-8000-0000000000d3";
+  for (
+    const [method, path, body, status] of [
+      ["PATCH", `/gifts/${giftId}`, {
+        amount: null,
+        attachmentFileId: null,
+        comment: null,
+        currencyCode: null,
+        eventAt: null,
+        expectedUpdatedAt: revision,
+        recipientPersonId: null,
+        url: null,
+      }, 200],
+      ["PATCH", `/gifts/${giftId}`, {
+        amount: "30",
+        currencyCode: "usd",
+        expectedUpdatedAt: revision,
+        name: "Novel",
+      }, 200],
+      ["DELETE", `/gifts/${giftId}`, { expectedUpdatedAt: revision }, 200],
+      ["PATCH", `/debts/${debtId}`, {
+        amount: "25",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        expectedUpdatedAt: revision,
+        reason: null,
+      }, 200],
+      ["PATCH", `/gifts/${giftId}/status`, {
+        expectedUpdatedAt: revision,
+        status: "given",
+      }, 200],
+      ["PATCH", `/debts/${debtId}/status`, {
+        expectedUpdatedAt: revision,
+        status: "settled",
+      }, 200],
+      ["PATCH", `/recurring-debts/${debtId}`, {
+        active: false,
+        expectedUpdatedAt: revision,
+      }, 200],
+      ["POST", "/gifts", { name: "Book", requestId, status: "idea" }, 201],
+      ["POST", "/debts", {
+        amount: "2",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        requestId,
+        status: "open",
+      }, 201],
+      ["POST", "/recurring-debts", {
+        amount: "500",
+        currencyCode: "EUR",
+        dayOfMonth: 1,
+        direction: "they_owe",
+        intervalMonths: 1,
+        requestId,
+        startsOn: "2026-05-01",
+      }, 201],
+    ] as const
+  ) {
+    assertStatus(await send(method, path, body), status, `${method} ${path}`);
+  }
+  assertEquals(received, [
+    `changeGift:${
+      JSON.stringify([id, giftId, {
+        amount: null,
+        attachmentFileId: null,
+        comment: null,
+        currencyCode: null,
+        eventAt: null,
+        expectedUpdatedAt: revision,
+        recipientPersonId: null,
+        url: null,
+      }])
+    }`,
+    `changeGift:${
+      JSON.stringify([id, giftId, {
+        amount: "30",
+        currencyCode: "usd",
+        expectedUpdatedAt: revision,
+        name: "Novel",
+      }])
+    }`,
+    `deleteGift:${
+      JSON.stringify([id, giftId, { expectedUpdatedAt: revision }])
+    }`,
+    `changeDebt:${
+      JSON.stringify([id, debtId, {
+        amount: "25",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        expectedUpdatedAt: revision,
+        reason: null,
+      }])
+    }`,
+    `changeGiftStatus:${
+      JSON.stringify([id, giftId, "given", { expectedUpdatedAt: revision }])
+    }`,
+    `changeDebtStatus:${
+      JSON.stringify([id, debtId, "settled", {}, {
+        expectedUpdatedAt: revision,
+      }])
+    }`,
+    `changeRecurringDebt:${
+      JSON.stringify([id, debtId, { active: false }, {
+        expectedUpdatedAt: revision,
+      }])
+    }`,
+    `createGift:${
+      JSON.stringify([id, { name: "Book", requestId, status: "idea" }])
+    }`,
+    `createDebt:${
+      JSON.stringify([id, {
+        amount: "2",
+        currencyCode: "EUR",
+        direction: "i_owe",
+        requestId,
+        status: "open",
+      }])
+    }`,
+    `createRecurringDebt:${
+      JSON.stringify([id, {
+        amount: "500",
+        currencyCode: "EUR",
+        dayOfMonth: 1,
+        direction: "they_owe",
+        intervalMonths: 1,
+        startsOn: "2026-05-01",
+        requestId,
+      }])
+    }`,
+  ]);
+  received.length = 0;
+  // Omitting the new fields forwards exactly what the web client sends.
+  await send("PATCH", `/gifts/${giftId}/status`, { status: "given" });
+  await send("PATCH", `/debts/${debtId}/status`, { status: "open" });
+  await send("PATCH", `/recurring-debts/${debtId}`, { active: true });
+  assertEquals(received, [
+    `changeGiftStatus:${JSON.stringify([id, giftId, "given", {}])}`,
+    `changeDebtStatus:${JSON.stringify([id, debtId, "open", {}, {}])}`,
+    `changeRecurringDebt:${JSON.stringify([id, debtId, { active: true }, {}])}`,
+  ]);
+});
+
+Deno.test("[MCP-D3] HTTP refuses an incomplete edit before the use case and maps retry and revision refusals", async () => {
+  let calls = 0;
+  let result: unknown = { status: "stale" };
+  const answer = () => {
+    calls++;
+    return Promise.resolve(result);
+  };
+  const app = createGiftRoutes({
+    browserSecurity: { origin: "https://app.test", secureCookie: true },
+    gifts: {
+      changeDebt: answer,
+      changeGift: answer,
+      changeRecurringDebt: answer,
+      createGift: answer,
+      deleteGift: answer,
+    } as never,
+    protectedSessions: { resolve: () => Promise.resolve(actor) as never },
+  });
+  const headers = {
+    Cookie: "__Host-kinship_session=token",
+    Origin: "https://app.test",
+    "Content-Type": "application/json",
+  };
+  const send = (method: string, path: string, body?: unknown) =>
+    app.request(`/api/v1/people/${id}${path}`, {
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      headers,
+      method,
+    });
+  for (
+    const [method, path, body] of [
+      ["PATCH", `/gifts/${giftId}`, { expectedUpdatedAt: revision }],
+      ["PATCH", `/gifts/${giftId}`, { name: "Novel" }],
+      ["PATCH", `/gifts/${giftId}`, {
+        amount: "30",
+        expectedUpdatedAt: revision,
+      }],
+      ["PATCH", `/gifts/${giftId}`, {
+        expectedUpdatedAt: revision,
+        status: "given",
+      }],
+      ["PATCH", `/gifts/${giftId}`, {
+        expectedUpdatedAt: revision,
+        name: null,
+      }],
+      ["PATCH", `/gifts/not-a-uuid`, {
+        expectedUpdatedAt: revision,
+        name: "x",
+      }],
+      ["DELETE", `/gifts/${giftId}`, undefined],
+      ["DELETE", `/gifts/${giftId}`, { expectedUpdatedAt: "yesterday" }],
+      ["PATCH", `/debts/${debtId}`, { expectedUpdatedAt: revision }],
+      ["PATCH", `/debts/${debtId}`, {
+        expectedUpdatedAt: revision,
+        status: "settled",
+      }],
+      ["PATCH", `/debts/${debtId}`, {
+        amount: null,
+        expectedUpdatedAt: revision,
+      }],
+      ["PATCH", `/recurring-debts/${debtId}`, { expectedUpdatedAt: revision }],
+      ["POST", "/gifts", { name: "Book", requestId: "retry", status: "idea" }],
+    ] as const
+  ) {
+    const response = await send(method, path, body);
+    assertStatus(response, 400, `${method} ${path} ${JSON.stringify(body)}`);
+    assert(await problemCode(response) === "gift_invalid", "invalid code");
+  }
+  assert(calls === 0, "no incomplete edit reached a use case");
+  for (
+    const [status, code] of [
+      ["stale", "gift_stale"],
+      ["idempotency-conflict", "gift_request_conflict"],
+      ["request-deleted", "gift_request_deleted"],
+      ["debt-values-locked", "debt_values_locked"],
+    ] as const
+  ) {
+    result = { status };
+    for (
+      const [method, path, body] of [
+        ["PATCH", `/gifts/${giftId}`, {
+          expectedUpdatedAt: revision,
+          url: null,
+        }],
+        ["DELETE", `/gifts/${giftId}`, { expectedUpdatedAt: revision }],
+        ["PATCH", `/debts/${debtId}`, {
+          expectedUpdatedAt: revision,
+          reason: "x",
+        }],
+        ["PATCH", `/recurring-debts/${debtId}`, {
+          active: true,
+          expectedUpdatedAt: revision,
+        }],
+        ["POST", "/gifts", {
+          name: "Book",
+          requestId: revisionKey,
+          status: "idea",
+        }],
+      ] as const
+    ) {
+      const response = await send(method, path, body);
+      assertStatus(response, 409, `${status} ${method} ${path}`);
+      assert(await problemCode(response) === code, `${status} code`);
+    }
+  }
+});
+
+const revisionKey = "00000000-0000-4000-8000-0000000000d4";

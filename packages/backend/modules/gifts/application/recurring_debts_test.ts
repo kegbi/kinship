@@ -120,6 +120,8 @@ function memoryRepository(
       rules.set(rule.id, { rule, workspaceId: found.workspaceId });
       return Promise.resolve({ recurringDebt: rule, status: "saved" });
     },
+    lockRequest: () => Promise.resolve(),
+    exists: (command) => Promise.resolve(rules.has(command.id)),
     remove: (command) =>
       Promise.resolve(
         owned(command.id, command.workspaceId, command.personId) !==
@@ -203,6 +205,7 @@ function fixture(
 ) {
   const memory = memoryRepository(options);
   const audits: string[] = [];
+  const audited = new Set<string>();
   const dependencies: GiftManagementDependencies = {
     actors: {
       revalidate: () =>
@@ -212,8 +215,13 @@ function fixture(
     audit: {
       record: (command) => {
         audits.push(`${command.recordType}:${command.action}`);
+        audited.add(`${command.recordType}:${command.record.id}`);
         return Promise.resolve("audit");
       },
+      recorded: (command) =>
+        Promise.resolve(
+          audited.has(`${command.recordType}:${command.subjectId}`),
+        ),
       recordCharged: (command) => {
         audits.push(
           `charged:${command.workspaceId}:${command.debt.occurrenceOn}`,
@@ -912,4 +920,93 @@ Deno.test("[GIFTS-001] a rule and a charged debt describe their own audit rows",
       workspaceId: actor.workspaceId,
     },
   );
+});
+
+Deno.test("[MCP-D3] a rule create retried with its request id never charges twice", async () => {
+  const { audits, debts, management, rules } = fixture();
+  const requestId = "20000000-0000-4000-8000-0000000000aa";
+  const created = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    requestId,
+  });
+  if (created.status !== "created") throw new Error(created.status);
+  assertEquals([created.charged, debts.length], [3, 3]);
+  const audited = audits.length;
+  const replay = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    amount: "500.00",
+    currencyCode: "eur",
+    requestId,
+  });
+  assertEquals(replay, {
+    charged: 0,
+    recurringDebt: created.recurringDebt,
+    status: "created",
+  });
+  assertEquals([rules.size, debts.length], [1, 3], "nothing charged again");
+  assertEquals(audits.length, audited, "a replay is not audited");
+  for (
+    const [person, input] of [
+      [personId, { ...monthlyRent, dayOfMonth: 1, requestId }],
+      [personId, { ...monthlyRent, reason: "Rent", requestId }],
+      ["10000000-0000-4000-8000-0000000000ee", { ...monthlyRent, requestId }],
+    ] as const
+  ) {
+    assertEquals(
+      await management.createRecurringDebt(actor, person, input),
+      { status: "idempotency-conflict" },
+    );
+  }
+  assertEquals(
+    await management.createRecurringDebt(actor, personId, {
+      ...monthlyRent,
+      requestId: "rent",
+    }),
+    { status: "validation-error" },
+  );
+  await management.deleteRecurringDebt(
+    actor,
+    personId,
+    created.recurringDebt.id,
+  );
+  assertEquals(
+    await management.createRecurringDebt(actor, personId, {
+      ...monthlyRent,
+      requestId,
+    }),
+    { status: "request-deleted" },
+    "a deleted rule is not recreated, and charges nothing",
+  );
+  assertEquals([rules.size, debts.length], [0, 3]);
+});
+
+Deno.test("[MCP-D3] a rule change at a stale revision changes and charges nothing", async () => {
+  const { debts, management, rules } = fixture();
+  const created = await management.createRecurringDebt(actor, personId, {
+    ...monthlyRent,
+    startsOn: "2026-09-30",
+  });
+  if (created.status !== "created") throw new Error(created.status);
+  const stale = await management.changeRecurringDebt(
+    actor,
+    personId,
+    created.recurringDebt.id,
+    { startsOn: "2026-05-31" },
+    { expectedUpdatedAt: "2026-01-01T00:00:00.000Z" },
+  );
+  assertEquals(stale, { status: "stale" });
+  assertEquals(debts.length, 0, "no backfill");
+  assertEquals(
+    rules.get(created.recurringDebt.id)?.rule.startsOn,
+    "2026-09-30",
+  );
+  const current = await management.changeRecurringDebt(
+    actor,
+    personId,
+    created.recurringDebt.id,
+    { startsOn: "2026-05-31" },
+    { expectedUpdatedAt: created.recurringDebt.updatedAt },
+  );
+  assertEquals(current.status, "saved");
+  assertEquals(debts.length, 3);
 });

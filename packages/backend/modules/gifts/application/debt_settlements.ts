@@ -20,6 +20,8 @@ export async function recordSettlement(
   occurredAt: Date,
   details: SettlementDetails,
   transaction: GiftTransaction,
+  /** The event's id when the caller must find it again; fresh otherwise. */
+  settlementId?: string,
 ): Promise<void> {
   let photo: { photoFileId: string; photoFilename: string } | undefined;
   if (details.settlementPhotoFileId) {
@@ -37,7 +39,7 @@ export async function recordSettlement(
   }
   await dependencies.repository.recordSettlement({
     ...actor,
-    id: dependencies.ids.next(),
+    id: settlementId ?? dependencies.ids.next(),
     debtId,
     occurredAt,
     ...(details.settlementReason ? { reason: details.settlementReason } : {}),

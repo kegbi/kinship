@@ -18,18 +18,24 @@ import {
   createGift,
   createRecurringDebt,
   deleteDebt,
+  deleteGift,
   deleteRecurringDebt,
   listDebtSettlements,
   listDebtSettlementsQuery,
   listPersonGiftsAndDebts,
   listPersonGiftsAndDebtsQuery,
+  updateDebt,
+  updateGift,
   updateRecurringDebt,
 } from "../../../../../contracts/routes/gifts.ts";
 import {
   debtCreateInput,
   debtStatusInput,
+  debtUpdateInput,
   giftCreateInput,
+  giftDeleteInput,
   giftStatusInput,
+  giftUpdateInput,
   recurringDebtCreateInput,
   recurringDebtUpdateInput,
 } from "../../../../../contracts/schemas/gifts.ts";
@@ -58,7 +64,8 @@ export interface GiftHttpServices {
   /**
    * The personal-token authority (MCP-A1). Every route here admits a token
    * through `routeAdmission` (MCP-B7): `gifts:read` for the two reads,
-   * `gifts:write` for the eight writes.
+   * `gifts:write` for every write, including the edits and the gift
+   * deletion MCP-D3 added.
    */
   readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
@@ -122,10 +129,47 @@ export const GIFT_FAILURES: FailureTable = {
         "Review the amount, currency, recipient, attachment, and other fields.",
       title: "Invalid gift or debt",
     },
+    "debt-values-locked": {
+      code: "debt_values_locked",
+      detail:
+        "A debt's amount, currency, and direction change only while it is open and was never settled, and a cancelled debt changes no value.",
+      status: 409,
+      title: "Debt values cannot be changed",
+    },
+    "idempotency-conflict": {
+      code: "gift_request_conflict",
+      detail:
+        "This request identifier already recorded something else. Use a new request identifier for a different record.",
+      status: 409,
+      title: "Request identifier already used",
+    },
+    "request-deleted": {
+      code: "gift_request_deleted",
+      detail:
+        "The record this request identifier created was deleted. Use a new request identifier to record it again.",
+      status: 409,
+      title: "Request identifier already used",
+    },
+    stale: {
+      code: "gift_stale",
+      detail:
+        "The record changed since it was read. Reload it and apply the change to its current updatedAt.",
+      status: 409,
+      title: "Record changed",
+    },
   },
 };
 
 const failure = failureResponder(GIFT_FAILURES);
+
+/** The revision a body names, as the use cases take it. */
+function revisionOf(
+  body: { readonly expectedUpdatedAt?: string | undefined },
+): { readonly expectedUpdatedAt?: string } {
+  return body.expectedUpdatedAt
+    ? { expectedUpdatedAt: body.expectedUpdatedAt }
+    : {};
+}
 
 export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
@@ -144,6 +188,9 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
   const recurringCreate = routeAdmission(createRecurringDebt, tokens);
   const recurringUpdate = routeAdmission(updateRecurringDebt, tokens);
   const recurringDelete = routeAdmission(deleteRecurringDebt, tokens);
+  const giftUpdate = routeAdmission(updateGift, tokens);
+  const giftDelete = routeAdmission(deleteGift, tokens);
+  const debtUpdate = routeAdmission(updateDebt, tokens);
 
   mount(
     routes,
@@ -234,6 +281,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
           ...(body.data.recipientPersonId
             ? { recipientPersonId: body.data.recipientPersonId }
             : {}),
+          ...(body.data.requestId ? { requestId: body.data.requestId } : {}),
           status: body.data.status,
           ...(body.data.url ? { url: body.data.url } : {}),
         },
@@ -263,6 +311,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
         personId.data,
         giftId.data,
         body.data.status,
+        revisionOf(body.data),
       );
       if (
         result.status !== "saved" && result.status !== "unchanged"
@@ -299,6 +348,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
             ? { settlementPhotoFileId: body.data.settlementPhotoFileId }
             : {}),
           ...(body.data.reason ? { reason: body.data.reason } : {}),
+          ...(body.data.requestId ? { requestId: body.data.requestId } : {}),
           status: body.data.status,
         },
       );
@@ -335,6 +385,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
             ? { settlementPhotoFileId: body.data.settlementPhotoFileId }
             : {}),
         },
+        revisionOf(body.data),
       );
       if (
         result.status !== "saved" && result.status !== "unchanged"
@@ -357,7 +408,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       }
       const actor = await recurringCreate.actor(context);
       if (actor instanceof Response) return actor;
-      const { endsOn, reason, ...required } = body.data;
+      const { endsOn, reason, requestId, ...required } = body.data;
       const result = await services.gifts.createRecurringDebt(
         actor,
         personId.data,
@@ -365,6 +416,7 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
           ...required,
           ...(endsOn ? { endsOn } : {}),
           ...(reason ? { reason } : {}),
+          ...(requestId ? { requestId } : {}),
         },
       );
       if (result.status !== "created") return failure(context, result.status);
@@ -408,14 +460,16 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       ) return failure(context, "validation-error");
       const actor = await recurringUpdate.actor(context);
       if (actor instanceof Response) return actor;
+      const { expectedUpdatedAt, ...fields } = body.data;
       const change = Object.fromEntries(
-        Object.entries(body.data).filter(([, value]) => value !== undefined),
+        Object.entries(fields).filter(([, value]) => value !== undefined),
       );
       const result = await services.gifts.changeRecurringDebt(
         actor,
         personId.data,
         recurringDebtId.data,
         change,
+        revisionOf({ expectedUpdatedAt }),
       );
       if (result.status !== "saved") return failure(context, result.status);
       context.header("Cache-Control", "private, no-store");
@@ -449,5 +503,70 @@ export function createGiftRoutes(services: GiftHttpServices): Hono<ActorEnv> {
       return context.json(result);
     },
   );
+
+  mount(routes, updateGift, giftUpdate.gate, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const giftId = parseValue(uuid, context.req.param("giftId"));
+    const body = await parseJsonBody(context, giftUpdateInput);
+    if ("errors" in personId || "errors" in giftId || "errors" in body) {
+      return failure(context, "validation-error");
+    }
+    const actor = await giftUpdate.actor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.gifts.changeGift(
+      actor,
+      personId.data,
+      giftId.data,
+      body.data,
+    );
+    if (result.status !== "saved" && result.status !== "unchanged") {
+      return failure(context, result.status);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, deleteGift, giftDelete.gate, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const giftId = parseValue(uuid, context.req.param("giftId"));
+    const body = await parseJsonBody(context, giftDeleteInput);
+    if ("errors" in personId || "errors" in giftId) {
+      return failure(context, "not-found");
+    }
+    if ("errors" in body) return failure(context, "validation-error");
+    const actor = await giftDelete.actor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.gifts.deleteGift(
+      actor,
+      personId.data,
+      giftId.data,
+      body.data,
+    );
+    if (result.status !== "deleted") return failure(context, result.status);
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
+
+  mount(routes, updateDebt, debtUpdate.gate, session, async (context) => {
+    const personId = parseValue(uuid, context.req.param("personId"));
+    const debtId = parseValue(uuid, context.req.param("debtId"));
+    const body = await parseJsonBody(context, debtUpdateInput);
+    if ("errors" in personId || "errors" in debtId || "errors" in body) {
+      return failure(context, "validation-error");
+    }
+    const actor = await debtUpdate.actor(context);
+    if (actor instanceof Response) return actor;
+    const result = await services.gifts.changeDebt(
+      actor,
+      personId.data,
+      debtId.data,
+      body.data,
+    );
+    if (result.status !== "saved" && result.status !== "unchanged") {
+      return failure(context, result.status);
+    }
+    context.header("Cache-Control", "private, no-store");
+    return context.json(result);
+  });
   return routes;
 }

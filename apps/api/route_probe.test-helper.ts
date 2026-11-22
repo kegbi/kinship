@@ -61,6 +61,8 @@ const OVERRIDES: Readonly<
   updateActivity: { body: { expectedUpdatedAt: INSTANT, summary: "Ada" } },
   updateCall: { body: { content: "Ada", expectedUpdatedAt: INSTANT } },
   updateConversation: { body: { expectedUpdatedAt: INSTANT, title: "Ada" } },
+  updateGift: { body: { expectedUpdatedAt: INSTANT, name: "Ada" } },
+  updateDebt: { body: { expectedUpdatedAt: INSTANT, reason: "Ada" } },
   // Unions the sampler cannot choose a member of on its own.
   updatePersonalizationEntry: {
     body: { expectedUpdatedAt: INSTANT, name: "Ada" },

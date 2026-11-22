@@ -9,6 +9,7 @@
  * internal matter rather than something every caller has to know about.
  */
 
+import { createGiftEdits } from "./gift_edits.ts";
 import { createGiftListing } from "./gift_listing.ts";
 import { createDebtSettlementReads } from "./debt_settlements.ts";
 import { createGiftWrites } from "./gift_writes.ts";
@@ -18,6 +19,7 @@ import type { GiftManagementDependencies } from "./gift_context.ts";
 export function createGiftManagement(dependencies: GiftManagementDependencies) {
   const listing = createGiftListing(dependencies);
   const writes = createGiftWrites(dependencies);
+  const edits = createGiftEdits(dependencies);
   const recurring = createRecurringDebtWrites(dependencies);
   return {
     listDebtSettlements: createDebtSettlementReads(dependencies),
@@ -26,6 +28,9 @@ export function createGiftManagement(dependencies: GiftManagementDependencies) {
     changeGiftStatus: writes.changeGiftStatus,
     changeDebtStatus: writes.changeDebtStatus,
     deleteDebt: writes.deleteDebt,
+    changeGift: edits.changeGift,
+    deleteGift: edits.deleteGift,
+    changeDebt: edits.changeDebt,
     createRecurringDebt: recurring.createRecurringDebt,
     changeRecurringDebt: recurring.changeRecurringDebt,
     deleteRecurringDebt: recurring.deleteRecurringDebt,

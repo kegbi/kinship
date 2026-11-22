@@ -19,6 +19,17 @@ const debtDirection = z.enum(["i_owe", "they_owe"]);
 const dayOfMonth = z.number().int().min(1).max(31);
 /** Months between a recurring debt's charges: one month to ten years. */
 const intervalMonths = z.number().int().min(1).max(120);
+/**
+ * A client's retry key (MCP-D3). A create retried with the same key and the
+ * same payload returns the record the first attempt wrote; with a different
+ * payload, or once that record was deleted, it is refused with 409.
+ */
+const requestId = z.uuid().optional();
+/**
+ * The `updatedAt` a client last read for the record. A write that carries it
+ * is refused with 409 when the record has changed since.
+ */
+const revision = z.iso.datetime({ offset: true });
 const settlementFields = {
   settlementReason: z.string().trim().min(1).max(10000).optional(),
   settlementPhotoFileId: z.uuid().optional(),
@@ -71,9 +82,25 @@ export const debtCreateInput = z.strictObject({
   currencyCode: z.string().regex(/^[A-Za-z]{3}$/),
   direction: z.enum(["i_owe", "they_owe"]),
   reason: z.string().trim().min(1).max(10000).optional(),
+  requestId,
   status: z.enum(["open", "settled", "cancelled"]),
 }).refine(onlyWhenSettling, "Settlement details require settled status").meta({
   id: "DebtCreateInput",
+});
+
+/**
+ * A change to a debt's values (MCP-D3). A field left out keeps its value;
+ * `reason: null` clears the reason. Status keeps its own route.
+ */
+export const debtUpdateInput = z.strictObject({
+  amount: money.optional(),
+  currencyCode: z.string().regex(/^[A-Za-z]{3}$/).optional(),
+  direction: debtDirection.optional(),
+  expectedUpdatedAt: revision,
+  reason: z.string().trim().min(1).max(10000).nullable().optional(),
+}).refine((value) => Object.keys(value).length > 1).meta({
+  id: "DebtUpdateInput",
+  minProperties: 2,
 });
 
 export const debtCreated = z.strictObject({
@@ -93,6 +120,7 @@ export const debtDeleted = z.strictObject({
 
 export const debtStatusInput = z.strictObject({
   ...settlementFields,
+  expectedUpdatedAt: revision.optional(),
   status: z.enum(["open", "settled", "cancelled"]),
 }).refine(onlyWhenSettling, "Settlement details require settled status").meta({
   id: "DebtStatusInput",
@@ -122,9 +150,43 @@ export const giftCreateInput = z.strictObject({
   eventAt: z.iso.datetime({ offset: true }).optional(),
   name: z.string().trim().min(1).max(500),
   recipientPersonId: z.uuid().optional(),
+  requestId,
   status: z.enum(["idea", "planned", "given", "received", "archived"]),
   url: z.url().max(2000).optional(),
 }).meta({ id: "GiftCreateInput" });
+
+/**
+ * A change to a gift's values (MCP-D3): the fields a create accepts, except
+ * `status`, which keeps its own route. A field left out keeps its value and
+ * `null` clears an optional one; `name` cannot be cleared. `amount` and
+ * `currencyCode` are sent together or not at all.
+ */
+export const giftUpdateInput = z.strictObject({
+  amount: z.string().regex(/^\d{1,15}(?:\.\d{1,4})?$/).nullable().optional(),
+  attachmentFileId: z.uuid().nullable().optional(),
+  comment: z.string().trim().min(1).max(10000).nullable().optional(),
+  currencyCode: z.string().regex(/^[A-Za-z]{3}$/).nullable().optional(),
+  eventAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  expectedUpdatedAt: revision,
+  name: z.string().trim().min(1).max(500).optional(),
+  recipientPersonId: z.uuid().nullable().optional(),
+  url: z.url().max(2000).nullable().optional(),
+}).refine((value) => Object.keys(value).length > 1)
+  .refine(
+    (value) =>
+      (value.amount === undefined) === (value.currencyCode === undefined),
+    "Send amount and currencyCode together",
+  ).meta({ id: "GiftUpdateInput", minProperties: 2 });
+
+/** The revision a gift deletion is read at (MCP-D3). */
+export const giftDeleteInput = z.strictObject({
+  expectedUpdatedAt: revision,
+}).meta({ id: "GiftDeleteInput" });
+
+export const giftDeleted = z.strictObject({
+  giftId: z.uuid(),
+  status: z.literal("deleted"),
+}).meta({ id: "GiftDeleted" });
 
 export const giftCreated = z.strictObject({
   gift: gift,
@@ -172,13 +234,16 @@ export const recurringDebtCreateInput = z.strictObject({
   endsOn: z.iso.date().optional(),
   intervalMonths,
   reason: z.string().trim().min(1).max(10000).optional(),
+  requestId,
   startsOn: z.iso.date(),
 }).meta({ id: "RecurringDebtCreateInput" });
 
 /**
  * A change to a recurring debt. A field left out keeps its value; `null`
  * clears the end date or the reason. `active: false` pauses the rule and
- * `active: true` resumes it from the first period on or after today.
+ * `active: true` resumes it from the first period on or after today. The
+ * optional `expectedUpdatedAt` is a revision, not a change, so it does not
+ * count toward the one field a change names.
  */
 export const recurringDebtUpdateInput = z.strictObject({
   active: z.boolean().optional(),
@@ -187,10 +252,13 @@ export const recurringDebtUpdateInput = z.strictObject({
   dayOfMonth: dayOfMonth.optional(),
   direction: debtDirection.optional(),
   endsOn: z.iso.date().nullable().optional(),
+  expectedUpdatedAt: revision.optional(),
   intervalMonths: intervalMonths.optional(),
   reason: z.string().trim().min(1).max(10000).nullable().optional(),
   startsOn: z.iso.date().optional(),
-}).refine((value) => Object.keys(value).length > 0).meta({
+}).refine((value) =>
+  Object.keys(value).some((key) => key !== "expectedUpdatedAt")
+).meta({
   id: "RecurringDebtUpdateInput",
   minProperties: 1,
 });
@@ -235,5 +303,6 @@ export const giftSaved = z.strictObject({
 }).meta({ id: "GiftSaved" });
 
 export const giftStatusInput = z.strictObject({
+  expectedUpdatedAt: revision.optional(),
   status: z.enum(["idea", "planned", "given", "received", "archived"]),
 }).meta({ id: "GiftStatusInput" });

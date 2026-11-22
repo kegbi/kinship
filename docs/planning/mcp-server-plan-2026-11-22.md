@@ -192,7 +192,7 @@ is a separate decision.
       `interactions:write`, with revision checks.
 - [ ] **MCP-D2 Planning.** Delete a task; edit and delete a reminder; delete a
       cadence.
-- [ ] **MCP-D3 Gifts and debts.** Edit a gift's and a debt's values, delete a
+- [x] **MCP-D3 Gifts and debts.** Edit a gift's and a debt's values, delete a
       gift, retry-safe creates (`requestId`), and revision checks on updates.
 - [x] **MCP-D4 People and journal retries.** `requestId` on `createPerson` (the
       existing `ensure` use case) and `createJournalPost`, and a revision check
