@@ -289,8 +289,16 @@ Open, each needing its own ticket or decision:
   static bearer header (ADR 0009); member-issued tokens, which changes
   `api-tokens.manage`; and per-token rate limits beyond the gateway's
   per-address limits.
-- **Integration checkpoint.** Full coverage, all-browser E2E, and the release
-  gates run once the dependency item is settled.
+- **Integration checkpoint, run on 2026-11-22 at `ea12b2a6`.** `check`, `lint`,
+  `check:architecture`, `contracts:check`, every unit set, the web suite, and
+  `build` pass. Every PostgreSQL integration suite passes (487 tests). Full
+  `test:coverage` passes every threshold when run with the native Deno
+  executable; through the npm shim the largest set still exceeds the Windows
+  command length (REL-105). The whole browser suite in Chromium passes 89 of 91
+  with one skipped; the one failure is `IMPORT-002`'s status assertion matching
+  two elements, already tracked as REL-108 and untouched by this work. Still to
+  run at release: the all-browser E2E matrix and the dependency audit gate, once
+  the dependency item above is settled.
 
 ## Part 5 — Acceptance
 

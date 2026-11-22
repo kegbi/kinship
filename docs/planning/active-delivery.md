@@ -52,9 +52,13 @@ its "Delivered, and what is left" section lists the open follow-ups.
       `API-003` pass in Chromium against the production-like stack after one
       fix: `/docs/api` now names each media type of a multi-type file body or
       response, so its code regions stay distinguishable.
-- [ ] Integration checkpoint: full coverage, all-browser E2E, and the dependency
-      audit, once the `decode-uri-component` advisory through `minio` is
-      decided.
+- [x] Integration checkpoint at `ea12b2a6`: static gates, every unit set, the
+      web suite, the build, every PostgreSQL integration suite (487 tests), and
+      full coverage pass; the Chromium browser suite passes 89 of 91 with one
+      skipped and the known `IMPORT-002` assertion failure (REL-108). The plan
+      records the details.
+- [ ] Release gates still open: the all-browser E2E matrix, and the dependency
+      audit once the `decode-uri-component` advisory through `minio` is decided.
 
 This work takes priority over the sections below.
 
