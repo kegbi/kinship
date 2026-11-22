@@ -602,6 +602,248 @@
         }
       }
     },
+    "/api/v1/people/{personId}/activity-report": {
+      "get": {
+        "operationId": "getActivityReport",
+        "description": "Requires a browser session or a personal token with interactions:read. Returns one person's activities and notes, including their summaries, descriptions, and note bodies, newest first; filter by kind and year and page with the opaque cursor, which stays bound to its workspace, person, and filters. Grants no capture, edit, or delete access.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "activity",
+                "note"
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant-scoped person activity report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/communications": {
+      "get": {
+        "operationId": "listPersonCommunications",
+        "description": "Requires a browser session or a personal token with interactions:read. Returns one person's calls and conversations, including call content and conversation message text. Grants no capture, edit, or delete access.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "interactions:read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant-scoped person communication history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{personId}/dates": {
       "get": {
         "operationId": "listImportantDates",
@@ -1778,6 +2020,158 @@
           }
         }
       }
+    },
+    "/api/v1/today/favorite-notes": {
+      "get": {
+        "operationId": "getTodayFavoriteNotes",
+        "description": "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns the workspace's favorite notes, including their bodies and the people they are about.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read-only favorite-note Today region",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayFavoriteNotes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/today/recent-activity": {
+      "get": {
+        "operationId": "getTodayRecentActivity",
+        "description": "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns recent notes and activities, including their content and participants.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "today:read",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read-only recent-activity Today region",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayRecentActivity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1895,6 +2289,47 @@
           "participantIds",
           "requestId",
           "summary"
+        ],
+        "additionalProperties": false
+      },
+      "ActivityOrNoteInteraction": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ActivityInteraction"
+          },
+          {
+            "$ref": "#/components/schemas/NoteInteraction"
+          }
+        ]
+      },
+      "ActivityReport": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityOrNoteInteraction"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/InteractionParticipant"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "archived",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "person",
+          "status"
         ],
         "additionalProperties": false
       },
@@ -2138,6 +2573,33 @@
           "kind",
           "personId",
           "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "CommunicationList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CallInteraction"
+                },
+                {
+                  "$ref": "#/components/schemas/ConversationInteraction"
+                }
+              ]
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "items",
+          "status"
         ],
         "additionalProperties": false
       },
@@ -3645,6 +4107,46 @@
         "required": [
           "status",
           "task"
+        ],
+        "additionalProperties": false
+      },
+      "TodayFavoriteNotes": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteInteraction"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "items",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "TodayRecentActivity": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityOrNoteInteraction"
+            }
+          },
+          "status": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "items",
+          "status"
         ],
         "additionalProperties": false
       }

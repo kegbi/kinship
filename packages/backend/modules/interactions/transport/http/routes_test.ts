@@ -610,3 +610,84 @@ Deno.test("INTERACTION-001 HTTP forwards bounded cursors and keeps note timestam
     "stale cursor was not mapped to stable HTTP 409",
   );
 });
+
+Deno.test("history and Today reads admit only their own token grant and never resolve the cookie", async () => {
+  const grants = {
+    [`/api/v1/people/${personId}/activity-report?kind=note&year=2026&limit=5&cursor=opaque`]:
+      "interactions:read",
+    [`/api/v1/people/${personId}/communications`]: "interactions:read",
+    "/api/v1/today/favorite-notes": "today:read",
+    "/api/v1/today/recent-activity": "today:read",
+  } as const;
+  let sessionCalls = 0;
+  let reportInput: unknown;
+  for (
+    const scope of [
+      "interactions:read",
+      "today:read",
+      "interactions:create",
+      "people:profile:read",
+    ] as const
+  ) {
+    const requested: string[] = [];
+    const apiTokens: ScopedTokenAuthority<string> = {
+      authenticate: (token, required, workspace) => {
+        requested.push(required);
+        assert(workspace === actor.workspaceId, "workspace forwarded");
+        return Promise.resolve(
+          token === "agent" && required === scope
+            ? {
+              actor,
+              status: "authenticated" as const,
+              tokenId: "00000000-0000-4000-8000-0000000000bb",
+            }
+            : { status: "invalid" as const },
+        );
+      },
+    };
+    const current = services();
+    const app = createInteractionRoutes({
+      ...current,
+      activityReport: {
+        list: (_actor, _personId, input) => {
+          reportInput = input;
+          return current.activityReport.list(_actor, _personId, input);
+        },
+      } as ActivityReport,
+      apiTokens,
+      protectedSessions: {
+        resolve: () => {
+          sessionCalls++;
+          return Promise.resolve(actor);
+        },
+      },
+    });
+    for (const [path, grant] of Object.entries(grants)) {
+      const response = await app.request(path, {
+        headers: {
+          authorization: "Bearer agent",
+          cookie: headers.cookie,
+          "X-Workspace-Id": actor.workspaceId,
+        },
+      });
+      assertStatus(
+        response,
+        grant === scope ? 200 : 401,
+        `${path} with ${scope}`,
+      );
+      if (grant === scope) {
+        assert(
+          response.headers.get("Cache-Control") === "private, no-store",
+          `${path} stays private`,
+        );
+      } else await response.body?.cancel();
+      assert(requested.at(-1) === grant, `${path} asks for ${grant}`);
+    }
+  }
+  assert(
+    JSON.stringify(reportInput) ===
+      JSON.stringify({ cursor: "opaque", kind: "note", limit: 5, year: 2026 }),
+    "token report forwards every filter",
+  );
+  assert(sessionCalls === 0, "a bearer request resolved the cookie");
+});

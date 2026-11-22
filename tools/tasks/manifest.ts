@@ -1400,6 +1400,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/interactions/application/record_interaction_test.ts",
       ],
     },
+    // MCP-B4: personal tokens on interaction history and its Today regions.
+    integration: ["tests/integration/api_tokens_interactions_postgres_test.ts"],
     coverage: {
       directory: "interactions-domain",
       threshold: 95,

@@ -4995,11 +4995,16 @@
     "/api/v1/people/{personId}/activity-report": {
       "get": {
         "operationId": "getActivityReport",
+        "description": "Requires a browser session or a personal token with interactions:read. Returns one person's activities and notes, including their summaries, descriptions, and note bodies, newest first; filter by kind and year and page with the opaque cursor, which stays bound to its workspace, person, and filters. Grants no capture, edit, or delete access.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "interactions:read",
         "parameters": [
           {
             "in": "path",
@@ -5722,11 +5727,16 @@
     "/api/v1/people/{personId}/communications": {
       "get": {
         "operationId": "listPersonCommunications",
+        "description": "Requires a browser session or a personal token with interactions:read. Returns one person's calls and conversations, including call content and conversation message text. Grants no capture, edit, or delete access.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "interactions:read",
         "parameters": [
           {
             "in": "path",
@@ -16245,11 +16255,16 @@
     "/api/v1/today/favorite-notes": {
       "get": {
         "operationId": "getTodayFavoriteNotes",
+        "description": "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns the workspace's favorite notes, including their bodies and the people they are about.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "today:read",
         "parameters": [
           {
             "in": "header",
@@ -16319,11 +16334,16 @@
     "/api/v1/today/recent-activity": {
       "get": {
         "operationId": "getTodayRecentActivity",
+        "description": "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns recent notes and activities, including their content and participants.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "today:read",
         "parameters": [
           {
             "in": "header",

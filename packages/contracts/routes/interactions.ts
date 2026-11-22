@@ -121,7 +121,10 @@ export const getActivityReport = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/activity-report",
   operationId: "getActivityReport",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with interactions:read. Returns one person's activities and notes, including their summaries, descriptions, and note bodies, newest first; filter by kind and year and page with the opaque cursor, which stays bound to its workspace, person, and filters. Grants no capture, edit, or delete access.",
+  tokenScope: "interactions:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -144,7 +147,10 @@ export const listPersonCommunications = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/communications",
   operationId: "listPersonCommunications",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with interactions:read. Returns one person's calls and conversations, including call content and conversation message text. Grants no capture, edit, or delete access.",
+  tokenScope: "interactions:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -166,7 +172,10 @@ export const getTodayFavoriteNotes = defineRoute({
   method: "get",
   path: "/api/v1/today/favorite-notes",
   operationId: "getTodayFavoriteNotes",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns the workspace's favorite notes, including their bodies and the people they are about.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },
@@ -185,7 +194,10 @@ export const getTodayRecentActivity = defineRoute({
   method: "get",
   path: "/api/v1/today/recent-activity",
   operationId: "getTodayRecentActivity",
-  security: [{ kinship_session: [] }],
+  description:
+    "Requires a browser session or a personal token with today:read. A dashboard projection across people: returns recent notes and activities, including their content and participants.",
+  tokenScope: "today:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
   },

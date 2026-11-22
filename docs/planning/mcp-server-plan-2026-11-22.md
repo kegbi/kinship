@@ -159,7 +159,7 @@ matrix or architecture prose; MCP-C4 does that once.
 - [ ] **MCP-B2 People profile.** Fact and important-date writes, and the
       life-event list.
 - [ ] **MCP-B3 Relationships.** `relationships:write`.
-- [ ] **MCP-B4 Interactions.** `interactions:read` and the two interaction Today
+- [x] **MCP-B4 Interactions.** `interactions:read` and the two interaction Today
       regions.
 - [ ] **MCP-B5 Planning.** `reminders:read`, `reminders:write`, and the three
       planning Today regions.

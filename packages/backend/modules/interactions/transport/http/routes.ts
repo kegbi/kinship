@@ -50,7 +50,6 @@ import {
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -221,6 +220,13 @@ export function createInteractionRoutes(
     listInteractionOptions,
     tokens,
   );
+  const communicationsActor = scopedRouteActor(
+    listPersonCommunications,
+    tokens,
+  );
+  const reportActor = scopedRouteActor(getActivityReport, tokens);
+  const favoriteNotesActor = scopedRouteActor(getTodayFavoriteNotes, tokens);
+  const recentActivityActor = scopedRouteActor(getTodayRecentActivity, tokens);
 
   mount(routes, recordInteraction, session, async (context) => {
     const actor = await recordActor(context);
@@ -315,7 +321,7 @@ export function createInteractionRoutes(
       if ("errors" in personId) {
         return definedProblem(context, COMMUNICATION_QUERY_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await communicationsActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.interactions.listCommunications(
         actor,
@@ -368,7 +374,7 @@ export function createInteractionRoutes(
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, ACTIVITY_REPORT_QUERY_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await reportActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.activityReport.list(
         actor,
@@ -393,7 +399,7 @@ export function createInteractionRoutes(
   );
 
   mount(routes, getTodayFavoriteNotes, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await favoriteNotesActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.today.getFavoriteNotes(actor).catch(() =>
       undefined
@@ -405,7 +411,7 @@ export function createInteractionRoutes(
   });
 
   mount(routes, getTodayRecentActivity, session, async (context) => {
-    const actor = await requireActor(context);
+    const actor = await recentActivityActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.today.getRecentActivity(actor).catch(() =>
       undefined

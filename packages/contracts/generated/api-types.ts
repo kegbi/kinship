@@ -645,6 +645,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with interactions:read. Returns one person's activities and notes, including their summaries, descriptions, and note bodies, newest first; filter by kind and year and page with the opaque cursor, which stays bound to its workspace, person, and filters. Grants no capture, edit, or delete access. */
         readonly get: operations["getActivityReport"];
         readonly put?: never;
         readonly post?: never;
@@ -709,6 +710,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with interactions:read. Returns one person's calls and conversations, including call content and conversation message text. Grants no capture, edit, or delete access. */
         readonly get: operations["listPersonCommunications"];
         readonly put?: never;
         readonly post?: never;
@@ -1784,6 +1786,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with today:read. A dashboard projection across people: returns the workspace's favorite notes, including their bodies and the people they are about. */
         readonly get: operations["getTodayFavoriteNotes"];
         readonly put?: never;
         readonly post?: never;
@@ -1800,6 +1803,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Requires a browser session or a personal token with today:read. A dashboard projection across people: returns recent notes and activities, including their content and participants. */
         readonly get: operations["getTodayRecentActivity"];
         readonly put?: never;
         readonly post?: never;

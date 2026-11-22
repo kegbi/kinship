@@ -117,19 +117,6 @@ Deno.test("routes that are not token-enabled keep session admission", () => {
     )?.required === true,
     "unrelated cookie write Origin remains required",
   );
-  for (
-    const path of [
-      "/api/v1/people/{personId}/activity-report",
-      "/api/v1/people/{personId}/communications",
-      "/api/v1/today/favorite-notes",
-      "/api/v1/today/recent-activity",
-    ]
-  ) {
-    assert(
-      sessionOnly(path),
-      `${path}: historic projections stay session-only`,
-    );
-  }
   assert(
     sessionOnly("/api/v1/people/{personId}"),
     "full profile never accepts a personal token",
