@@ -45,7 +45,11 @@ Deno.test("interaction composition uses its configured token authority and fails
               token === "capture" && scope === "interactions:create",
               "composition forwards capture authority",
             );
-            return Promise.resolve({ actor, status: "authenticated" });
+            return Promise.resolve({
+              actor,
+              status: "authenticated",
+              tokenId: "00000000-0000-4000-8000-0000000000aa",
+            });
           },
         }
         : undefined,
@@ -168,7 +172,12 @@ function captureServices(
   const actor = sessionActor();
   return servicesWith({
     apiTokens: {
-      authenticate: () => Promise.resolve({ actor, status: "authenticated" }),
+      authenticate: () =>
+        Promise.resolve({
+          actor,
+          status: "authenticated",
+          tokenId: "00000000-0000-4000-8000-0000000000aa",
+        }),
     },
     browserSecurity: { origin: "http://localhost", secureCookie: false },
     interactions: {
@@ -245,6 +254,38 @@ Deno.test("[AUD-K1] a bearer request is refused while a legal document is outsta
 
   const admitted = await capture(captureServices(), {});
   assert(admitted.status === 201, `expected 201, got ${admitted.status}`);
+});
+
+Deno.test("[MCP-A1] GET /api/v1/me owes the legal guard what any token route owes", async () => {
+  const actor = sessionActor();
+  const introspecting = (outstanding: number) =>
+    createApiApp(captureServices({
+      apiTokens: {
+        introspect: () =>
+          Promise.resolve({
+            actor,
+            status: "authenticated",
+            token: { id: uuid(802), name: "Agent", scopes: ["people:read"] },
+          }),
+      },
+      legal: legalWith(outstanding),
+    })).request("/api/v1/me", {
+      headers: { authorization: "Bearer agent" },
+    });
+
+  const refused = await introspecting(1);
+  assert(refused.status === 403, `expected 403, got ${refused.status}`);
+  assert(
+    await problemCode(refused) === "legal_acceptance_required",
+    "the token's member owes the outstanding document",
+  );
+  const admitted = await introspecting(0);
+  assert(admitted.status === 200, `expected 200, got ${admitted.status}`);
+  assert(
+    (await admitted.json() as { token: { id: string } }).token.id ===
+      uuid(802),
+    "the token is described",
+  );
 });
 
 Deno.test("[AUD-K1] a malformed X-Workspace-Id answers 400 and asks nobody", async () => {

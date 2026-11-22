@@ -98,6 +98,7 @@ export const listPeople = defineRoute({
   operationId: "listPeople",
   description:
     "Directory only. Personal tokens require the people:read grant; it does not permit person identity, profile facts, dates, relationships, or profile aggregates.",
+  tokenScope: "people:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listPeopleQuery,
@@ -145,6 +146,7 @@ export const getPersonIdentity = defineRoute({
   operationId: "getPersonIdentity",
   description:
     "Minimal person name and identifier, including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data.",
+  tokenScope: "people:profile:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: { params: z.object({ personId: uuid }), headers: workspaceHeaders },
   responses: {
@@ -549,6 +551,7 @@ export const listImportantDates = defineRoute({
   operationId: "listImportantDates",
   description:
     "Personal tokens require people:profile:read. Reads important dates, including archived people, preserving stored date precision.",
+  tokenScope: "people:profile:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
@@ -705,6 +708,7 @@ export const listProfileFacts = defineRoute({
   operationId: "listProfileFacts",
   description:
     "Personal tokens require people:profile:read. Reads one profile-fact section and its lookup options when requested. Hidden sections return no saved records or options; archived people remain readable. Existing person, section, revision, and option-search cursor checks apply.",
+  tokenScope: "people:profile:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({

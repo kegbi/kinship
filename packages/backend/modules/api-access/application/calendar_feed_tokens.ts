@@ -30,15 +30,20 @@ import {
 import type { CalendarFeedRepository } from "../ports/calendar_feed_repository.ts";
 import type { ApiTokenActor, ApiTokenTransaction } from "../ports/context.ts";
 import type { ApiTokenDependencies } from "./api_token_management.ts";
-import {
-  authenticatePresented,
-  type TokenAuthentication,
-} from "./token_authentication.ts";
+import { authenticatePresented } from "./token_authentication.ts";
 
 export interface CalendarFeedTokenDependencies
   extends Omit<ApiTokenDependencies, "issuers"> {
   readonly calendarFeeds: CalendarFeedRepository;
 }
+
+/**
+ * A feed secret's acceptance. Unlike a personal token's, it names no row: a
+ * feed is read, never written with, so nothing audits it.
+ */
+export type FeedAuthentication =
+  | { readonly actor: ApiTokenActor; readonly status: "authenticated" }
+  | { readonly status: "invalid" };
 
 type Minted<Status extends string> = {
   readonly feed: CalendarFeedRecord;
@@ -48,7 +53,7 @@ type Minted<Status extends string> = {
 
 export interface CalendarFeedTokens {
   /** Accepts a feed's secret as its URL carries it. */
-  authenticate(rawSecret: string): Promise<TokenAuthentication>;
+  authenticate(rawSecret: string): Promise<FeedAuthentication>;
   create(
     actor: ApiTokenActor,
   ): Promise<Minted<"created"> | Failure<"conflict" | "forbidden">>;
@@ -132,12 +137,16 @@ export function createCalendarFeedTokens(
   };
 
   return {
-    authenticate: (rawSecret) =>
-      authenticatePresented(
+    authenticate: async (rawSecret) => {
+      const accepted = await authenticatePresented(
         dependencies,
         parseCalendarFeedToken(rawSecret),
         CALENDAR_FEED_SCOPE,
-      ),
+      );
+      return accepted.status === "authenticated"
+        ? { actor: accepted.actor, status: "authenticated" }
+        : accepted;
+    },
     create: async (actor) => {
       const now = dependencies.clock.now();
       return await dependencies.transaction.run(async (transaction) => {

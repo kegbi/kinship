@@ -1,7 +1,9 @@
 /**
  * Personal API tokens over HTTP.
  *
- * Three routes and the prose each refusal carries. The problem responder, the
+ * Three routes for the owner and administrators who manage tokens, the one a
+ * token asks what it is through (MCP-A1), and the prose each refusal carries.
+ * The problem responder, the
  * session cookie, the origin check, and the kernel status map came from
  * `packages/http-kit` (GAP-019, GAP-020); the paths these routes answer on and the shape a
  * token is created from come from `packages/contracts` (GAP-022).
@@ -18,6 +20,7 @@ import type { createProtectedSessionCoordinator } from "../../../workspaces/publ
 import {
   createApiToken,
   getApiTokens,
+  getTokenContext,
   revokeApiToken,
 } from "../../../../../contracts/routes/api_tokens.ts";
 import { apiTokenCreateInput } from "../../../../../contracts/schemas/api_tokens.ts";
@@ -36,6 +39,7 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
+  requireTokenActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -49,7 +53,10 @@ export {
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface ApiTokenHttpServices {
-  readonly apiTokens: Pick<ApiTokenManagement, "create" | "list" | "revoke">;
+  readonly apiTokens: Pick<
+    ApiTokenManagement,
+    "create" | "introspect" | "list" | "revoke"
+  >;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
 }
@@ -183,5 +190,31 @@ export function createApiTokenRoutes(
       return context.json(result);
     },
   );
+
+  // What the presented token is and who it acts as (MCP-A1). It takes any valid
+  // personal token and never a cookie, so it mounts no session middleware;
+  // the app-wide resolution and the legal guard still run in front of it.
+  mount(routes, getTokenContext, async (context) => {
+    const admitted = await requireTokenActor(
+      context,
+      async (rawToken, requestedWorkspaceId) => {
+        const result = await services.apiTokens.introspect(
+          rawToken,
+          requestedWorkspaceId,
+        );
+        return result.status === "authenticated"
+          ? { ...result, tokenId: result.token.id }
+          : result;
+      },
+    );
+    if (admitted instanceof Response) return admitted;
+    context.header("Cache-Control", "private, no-store");
+    return context.json({
+      memberId: admitted.actor.memberId,
+      role: admitted.actor.role,
+      token: admitted.token,
+      workspaceId: admitted.actor.workspaceId,
+    });
+  });
   return routes;
 }

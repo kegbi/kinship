@@ -48,7 +48,7 @@ Deno.test("external operations are exactly the registry's bearer surface with co
     route.security?.some((entry) => "kinship_api_token" in entry)
   ).map((route) => `${route.method} ${route.path}`);
   assertEquals(actual.sort(), expected.sort());
-  assertEquals(actual.length, 14);
+  assert(actual.length > 0, "the registry publishes a bearer surface");
   const components = external.components as {
     schemas: Record<string, unknown>;
     securitySchemes: Record<string, unknown>;

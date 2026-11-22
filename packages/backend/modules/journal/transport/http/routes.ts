@@ -33,6 +33,7 @@ import {
 } from "../../../../../contracts/schemas/journal.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
+import type { PersonalTokenAuthority } from "../../../../../http-kit/scoped_actor.ts";
 import {
   failureResponder,
   type FailureTable,
@@ -55,6 +56,12 @@ export { LIFE_EVENT_FAILURES } from "./life_events.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 export interface JournalHttpServices {
+  /**
+   * The personal-token authority (MCP-A1). The composition root already hands
+   * it in, so enabling one of these routes for tokens never edits the root;
+   * a route that does reads it through `scopedRouteActor`.
+   */
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly journal: JournalManagement;
   /** A person's life events (JOURNAL-002), when the root composed them. */

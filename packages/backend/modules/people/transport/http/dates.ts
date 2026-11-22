@@ -39,10 +39,10 @@ import {
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
   requireActor,
-  requireTokenOrSessionActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -184,6 +184,10 @@ export function createDatesRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
+  const datesActor = scopedRouteActor(listImportantDates, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listImportantDates, session, async (context) => {
@@ -191,10 +195,7 @@ export function createDatesRoutes(
     if ("errors" in personId) {
       return definedProblem(context, PERSON_ID_INVALID);
     }
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: "people:profile:read",
-      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-    });
+    const actor = await datesActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.importantDates?.list(actor, personId.data)
       .catch(() => undefined);

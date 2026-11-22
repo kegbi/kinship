@@ -21,6 +21,8 @@
  * still add up to somebody. Only then is the secret compared, because that is
  * the one expensive step and everything cheaper has already had its chance to
  * refuse. `markUsed` is what makes the acceptance visible to its owner.
+ * `introspect` is the same acceptance without a required scope, for the one
+ * route that tells a client what its token is (MCP-A1).
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -44,7 +46,12 @@ import type {
 } from "../ports/context.ts";
 import type { ApiTokenIssuers } from "../ports/issuers.ts";
 import type { ApiTokenSecrets } from "../ports/secrets.ts";
-import { authenticatePresented } from "./token_authentication.ts";
+import {
+  authenticatePresented,
+  introspectPresented,
+  type TokenAuthentication,
+  type TokenIntrospection,
+} from "./token_authentication.ts";
 import {
   type ActorContext,
   type ActorRevalidation,
@@ -69,10 +76,17 @@ export interface ApiTokenManagement {
     rawToken: string,
     requiredScope: ApiTokenScope,
     requestedWorkspaceId?: string,
-  ): Promise<
-    | { readonly actor: ApiTokenActor; readonly status: "authenticated" }
-    | { readonly status: "invalid" }
-  >;
+  ): Promise<TokenAuthentication>;
+  /**
+   * The presented personal token and the membership it acts as, whatever
+   * grant it carries (MCP-A1). Every other check `authenticate` makes still
+   * applies — revoked, expired, the bound workspace, a current membership,
+   * the secret — and the use is recorded the same way.
+   */
+  introspect(
+    rawToken: string,
+    requestedWorkspaceId?: string,
+  ): Promise<TokenIntrospection>;
   create(actor: ApiTokenActor, input: ApiTokenInput): Promise<
     | {
       readonly record: ApiTokenRecord;
@@ -126,6 +140,12 @@ export function createApiTokenManagement(
         dependencies,
         parseToken(rawToken),
         requiredScope,
+        requestedWorkspaceId,
+      ),
+    introspect: (rawToken, requestedWorkspaceId) =>
+      introspectPresented(
+        dependencies,
+        parseToken(rawToken),
         requestedWorkspaceId,
       ),
     create: async (actor, input) => {

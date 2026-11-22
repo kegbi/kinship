@@ -186,6 +186,7 @@ export const listTasks = defineRoute({
   operationId: "listTasks",
   description:
     "Personal tokens require tasks:read. Lists tasks in the active workspace, optionally filtered by personId, status, and dueBefore (inclusive ISO instant). Continuation cursors are bound to the workspace and all filters; changing a filter requires a new first page. Grants are independent; create and write grants do not imply read access.",
+  tokenScope: "tasks:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listTasksQuery,
@@ -208,6 +209,7 @@ export const getTask = defineRoute({
   operationId: "getTask",
   description:
     "Personal tokens require tasks:read. Reads one task through planning's public use case with current membership and workspace validation, including its archived or unavailable linked-person projection.",
+  tokenScope: "tasks:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({ taskId: uuid }),
@@ -228,6 +230,7 @@ export const createTask = defineRoute({
   operationId: "createTask",
   description:
     "Personal tokens require tasks:create. Retry the same requestId and payload to receive the original task; a changed payload conflicts. Does not grant listing, detail, or editing. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "tasks:create",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: tokenOrSessionWriteHeaders,
@@ -255,6 +258,7 @@ export const changeTask = defineRoute({
   operationId: "changeTask",
   description:
     "Personal tokens require tasks:write. Edits an existing task using expectedUpdatedAt; nullable fields may be explicitly cleared. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "tasks:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
@@ -285,6 +289,7 @@ export const setTaskCompletion = defineRoute({
   operationId: "setTaskCompletion",
   description:
     "Personal tokens require tasks:write. Completes or reopens an existing task idempotently with completed true or false. Archived linked people remain read-only. Does not grant read or create access. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "tasks:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({

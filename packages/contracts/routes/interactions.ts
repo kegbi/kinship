@@ -33,6 +33,7 @@ export const listCommunicationOptions = defineRoute({
   operationId: "listCommunicationOptions",
   description:
     "Requires a browser session or a personal token with interactions:create. Returns current capture vocabulary and availability only; no historic content.",
+  tokenScope: "interactions:create",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: workspaceHeaders,
@@ -63,6 +64,7 @@ export const listInteractionOptions = defineRoute({
   operationId: "listInteractionOptions",
   description:
     "Requires a browser session or a personal token with interactions:create. Returns bounded current capture vocabulary and availability only; no historic content. Cursors remain bound to their workspace and search filters.",
+  tokenScope: "interactions:create",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listInteractionOptionsQuery,
@@ -85,6 +87,7 @@ export const recordInteraction = defineRoute({
   operationId: "recordInteraction",
   description:
     "Requires a browser session or a personal token with the independent interactions:create grant. Records a note, activity, call, or conversation through its owning use case; grants no historic-content read, edit, or delete access. Reuse body requestId for retries; changed payloads conflict. Bearer requests need no Cookie or Origin. Cookie writes require the exact configured public Origin.",
+  tokenScope: "interactions:create",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     headers: tokenOrSessionWriteHeaders,

@@ -687,6 +687,7 @@ Deno.test("[AUD-K1] a token-admitted member owes the same legal documents", asyn
               workspaceId: ids.workspace,
             },
             status: "authenticated" as const,
+            tokenId: "00000000-0000-4000-8000-0000000000aa",
           }),
       },
     });

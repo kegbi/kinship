@@ -154,6 +154,107 @@ export const API_TOKEN_SCOPE_CHOICES: readonly {
     detail:
       "Record notes, activities, calls, and conversations, with their capture options; no reading, editing, or deleting historic content.",
   },
+  {
+    scope: "people:write",
+    label: "Edit people",
+    detail:
+      "Create, rename, archive, restore, and star people, and change their profile facts, important dates, and life events; no deleting or merging.",
+  },
+  {
+    scope: "people:delete",
+    label: "Delete people",
+    detail:
+      "Preview and permanently delete a person and everything recorded about them.",
+  },
+  {
+    scope: "people:merge",
+    label: "Merge people",
+    detail:
+      "Review possible duplicates, dismiss them, and merge two people into one.",
+  },
+  {
+    scope: "relationships:write",
+    label: "Edit relationships",
+    detail: "Add, change, and remove relationships between people.",
+  },
+  {
+    scope: "interactions:read",
+    label: "Read interactions",
+    detail:
+      "A person's notes, activities, calls, and conversations, and their activity report.",
+  },
+  {
+    scope: "interactions:write",
+    label: "Edit interactions",
+    detail:
+      "Edit and delete existing notes, activities, calls, and conversations; no recording new ones.",
+  },
+  {
+    scope: "reminders:read",
+    label: "Read reminders",
+    detail: "A person's reminders.",
+  },
+  {
+    scope: "reminders:write",
+    label: "Edit reminders",
+    detail: "Create, pause, and resume reminders and stay-in-touch cadences.",
+  },
+  {
+    scope: "journal:read",
+    label: "Read journal",
+    detail: "The workspace journal: posts, day ratings, and linked activities.",
+  },
+  {
+    scope: "journal:write",
+    label: "Edit journal",
+    detail:
+      "Write, edit, and delete any journal post or day rating in the workspace, not only your own.",
+  },
+  {
+    scope: "gifts:read",
+    label: "Read gifts and debts",
+    detail: "A person's gifts, debts, recurring debts, and debt settlements.",
+  },
+  {
+    scope: "gifts:write",
+    label: "Edit gifts and debts",
+    detail:
+      "Create and change gifts, debts, and recurring debts, and record settlements.",
+  },
+  {
+    scope: "files:read",
+    label: "Read files",
+    detail: "List and download the files attached to a person.",
+  },
+  {
+    scope: "files:write",
+    label: "Edit files",
+    detail: "Upload files to a person and remove them.",
+  },
+  {
+    scope: "search:read",
+    label: "Search the workspace",
+    detail:
+      "Search results across areas: people and matching text from notes, activities, journal posts, tasks, and reminders.",
+  },
+  {
+    scope: "today:read",
+    label: "Read Today",
+    detail:
+      "The Today page across areas: people due for contact, recent people, reminders, tasks, favorite notes, and recent activity.",
+  },
+  {
+    scope: "vocabularies:read",
+    label: "Read vocabularies",
+    detail:
+      "The workspace's personalization lists, such as relationship, activity, and contact types.",
+  },
+  {
+    scope: "vocabularies:write",
+    label: "Edit vocabularies",
+    detail:
+      "Add, rename, and remove personalization entries; owners and administrators only.",
+  },
 ];
 
 /** A token's scopes and expiry, as its row shows them. */

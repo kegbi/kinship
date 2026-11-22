@@ -407,6 +407,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/me": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** @description Accepts any valid personal token and requires no grant. Returns the presented token's id, name, scopes, and optional expiry, and the workspace, member, and current role it acts as. Never reads a session cookie; the optional X-Workspace-Id must match the token's workspace. */
+        readonly get: operations["getTokenContext"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/member/ui-state": {
         readonly parameters: {
             readonly query?: never;
@@ -2112,11 +2129,27 @@ export interface components {
         } | {
             readonly street: string;
         };
+        readonly ApiTokenContext: {
+            /** Format: uuid */
+            readonly memberId: string;
+            /** @enum {string} */
+            readonly role: "owner" | "admin" | "member";
+            readonly token: {
+                /** Format: date-time */
+                readonly expiresAt?: string;
+                /** Format: uuid */
+                readonly id: string;
+                readonly name: string;
+                readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create" | "people:write" | "people:delete" | "people:merge" | "relationships:write" | "interactions:read" | "interactions:write" | "reminders:read" | "reminders:write" | "journal:read" | "journal:write" | "gifts:read" | "gifts:write" | "files:read" | "files:write" | "search:read" | "today:read" | "vocabularies:read" | "vocabularies:write")[];
+            };
+            /** Format: uuid */
+            readonly workspaceId: string;
+        };
         readonly ApiTokenCreateInput: {
             /** Format: date-time */
             readonly expiresAt?: string;
             readonly name: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create" | "people:write" | "people:delete" | "people:merge" | "relationships:write" | "interactions:read" | "interactions:write" | "reminders:read" | "reminders:write" | "journal:read" | "journal:write" | "gifts:read" | "gifts:write" | "files:read" | "files:write" | "search:read" | "today:read" | "vocabularies:read" | "vocabularies:write")[];
         };
         readonly ApiTokenCreated: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -2126,7 +2159,7 @@ export interface components {
         };
         readonly ApiTokenList: {
             readonly records: readonly components["schemas"]["ApiTokenListEntry"][];
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create" | "people:write" | "people:delete" | "people:merge" | "relationships:write" | "interactions:read" | "interactions:write" | "reminders:read" | "reminders:write" | "journal:read" | "journal:write" | "gifts:read" | "gifts:write" | "files:read" | "files:write" | "search:read" | "today:read" | "vocabularies:read" | "vocabularies:write")[];
             /** @constant */
             readonly status: "ready";
         };
@@ -2142,7 +2175,7 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             readonly revokedAt?: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create" | "people:write" | "people:delete" | "people:merge" | "relationships:write" | "interactions:read" | "interactions:write" | "reminders:read" | "reminders:write" | "journal:read" | "journal:write" | "gifts:read" | "gifts:write" | "files:read" | "files:write" | "search:read" | "today:read" | "vocabularies:read" | "vocabularies:write")[];
             readonly issuer: {
                 readonly email: string;
                 readonly name: string;
@@ -2160,7 +2193,7 @@ export interface components {
             readonly name: string;
             /** Format: date-time */
             readonly revokedAt?: string;
-            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create")[];
+            readonly scopes: readonly ("people:read" | "people:profile:read" | "relationships:read" | "tasks:read" | "tasks:create" | "tasks:write" | "interactions:create" | "people:write" | "people:delete" | "people:merge" | "relationships:write" | "interactions:read" | "interactions:write" | "reminders:read" | "reminders:write" | "journal:read" | "journal:write" | "gifts:read" | "gifts:write" | "files:read" | "files:write" | "search:read" | "today:read" | "vocabularies:read" | "vocabularies:write")[];
         };
         readonly ApiTokenRevoked: {
             readonly record: components["schemas"]["ApiTokenRecord"];
@@ -7023,6 +7056,56 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly getTokenContext: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description The presented token and the membership it acts as */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ApiTokenContext"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

@@ -43,10 +43,12 @@ import {
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
+  type PersonalTokenAuthority,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
+import {
   type ActorEnv,
   requireActor,
-  requireTokenOrSessionActor,
-  type ScopedTokenAuthority,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -58,7 +60,7 @@ import {
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface RelationshipHttpServices {
-  readonly apiTokens?: ScopedTokenAuthority<"relationships:read">;
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;
   readonly relationships: RelationshipManagement;
@@ -234,6 +236,12 @@ export function createRelationshipRoutes(
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
   const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const typesActor = scopedRouteActor(listRelationshipTypes, tokens);
+  const relationshipsActor = scopedRouteActor(listRelationships, tokens);
 
   mount(routes, listRelationshipTypes, session, async (context) => {
     // `selected` travels as one comma-separated value, which is what
@@ -249,10 +257,7 @@ export function createRelationshipRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, TYPES_QUERY_INVALID);
     }
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: "relationships:read",
-      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-    });
+    const actor = await typesActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.relationships.listTypes(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),
@@ -279,10 +284,7 @@ export function createRelationshipRoutes(
       if ("errors" in personId || "errors" in query) {
         return definedProblem(context, SECTION_REQUEST_INVALID);
       }
-      const actor = await requireTokenOrSessionActor(context, {
-        scope: "relationships:read",
-        ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-      });
+      const actor = await relationshipsActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.relationships.list(actor, personId.data, {
         ...(query.data.cursor ? { cursor: query.data.cursor } : {}),

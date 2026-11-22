@@ -39,7 +39,11 @@ Deno.test("API-001 bearer scope authenticates only the people directory read", a
           workspaceId === actor.workspaceId,
           "requested workspace is verified",
         );
-        return Promise.resolve({ actor, status: "authenticated" });
+        return Promise.resolve({
+          actor,
+          status: "authenticated",
+          tokenId: "00000000-0000-4000-8000-0000000000aa",
+        });
       },
     },
     directory: {

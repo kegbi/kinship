@@ -35,6 +35,7 @@ import {
 } from "../../../../../contracts/schemas/gifts.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
+import type { PersonalTokenAuthority } from "../../../../../http-kit/scoped_actor.ts";
 import {
   failureResponder,
   type FailureTable,
@@ -55,6 +56,12 @@ import {
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface GiftHttpServices {
+  /**
+   * The personal-token authority (MCP-A1). The composition root already hands
+   * it in, so enabling one of these routes for tokens never edits the root;
+   * a route that does reads it through `scopedRouteActor`.
+   */
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly gifts: GiftManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;

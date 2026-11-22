@@ -28,10 +28,10 @@ import {
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
   requireActor,
-  requireTokenOrSessionActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -109,15 +109,16 @@ export function createIdentityRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
+  const identityActor = scopedRouteActor(getPersonIdentity, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, getPersonIdentity, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return definedProblem(context, PERSON_ID_INVALID);
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: "people:profile:read",
-      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-    });
+    const actor = await identityActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.people.get(actor, personId.data).catch(() =>
       undefined

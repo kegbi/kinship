@@ -57,7 +57,11 @@ Deno.test("task automation grants independently admit token-only reads, creates 
         calls.push(scope);
         return Promise.resolve(
           token === scope
-            ? { actor, status: "authenticated" as const }
+            ? {
+              actor,
+              status: "authenticated" as const,
+              tokenId: "00000000-0000-4000-8000-0000000000aa",
+            }
             : { status: "invalid" as const },
         );
       },

@@ -13,7 +13,12 @@
  * document would have to give one name.
  */
 
-import { collectRoutes, type RouteDescriptor } from "../registry.ts";
+import {
+  checkTokenScopes,
+  collectRoutes,
+  type RouteDescriptor,
+} from "../registry.ts";
+import { apiTokenScope } from "../schemas/api_tokens.ts";
 import { HEALTH_ROUTES } from "./health.ts";
 import { REGISTRATION_ROUTES } from "./registration.ts";
 import { AUTHENTICATION_ROUTES } from "./authentication.ts";
@@ -36,30 +41,42 @@ import { INTERACTIONS_ROUTES } from "./interactions.ts";
 import { GOVERNANCE_ROUTES } from "./governance.ts";
 import { PLANNING_ROUTES } from "./planning.ts";
 
+/**
+ * The routes that accept any valid personal API token and so name no
+ * `tokenScope` (MCP-A1): what a token may do is the question they answer.
+ * Each is token-only. Adding one is adding its operation id here.
+ */
+export const ANY_TOKEN_OPERATIONS: readonly string[] = [
+  "getTokenContext",
+];
+
 /** The whole mounted surface, probes included. */
-export const API_ROUTES: readonly RouteDescriptor[] = collectRoutes([
-  HEALTH_ROUTES,
-  REGISTRATION_ROUTES,
-  AUTHENTICATION_ROUTES,
-  INVITATIONS_ROUTES,
-  SETTINGS_ROUTES,
-  API_TOKENS_ROUTES,
-  CALENDAR_FEEDS_ROUTES,
-  INTEGRATIONS_ROUTES,
-  PERSONAL_LIFECYCLE_ROUTES,
-  WORKSPACE_LIFECYCLE_ROUTES,
-  FILES_ROUTES,
-  GIFTS_ROUTES,
-  JOURNAL_ROUTES,
-  IMPORTS_ROUTES,
-  EXPORTS_ROUTES,
-  PEOPLE_ROUTES,
-  SEARCH_ROUTES,
-  RELATIONSHIPS_ROUTES,
-  INTERACTIONS_ROUTES,
-  GOVERNANCE_ROUTES,
-  PLANNING_ROUTES,
-]);
+export const API_ROUTES: readonly RouteDescriptor[] = checkTokenScopes(
+  collectRoutes([
+    HEALTH_ROUTES,
+    REGISTRATION_ROUTES,
+    AUTHENTICATION_ROUTES,
+    INVITATIONS_ROUTES,
+    SETTINGS_ROUTES,
+    API_TOKENS_ROUTES,
+    CALENDAR_FEEDS_ROUTES,
+    INTEGRATIONS_ROUTES,
+    PERSONAL_LIFECYCLE_ROUTES,
+    WORKSPACE_LIFECYCLE_ROUTES,
+    FILES_ROUTES,
+    GIFTS_ROUTES,
+    JOURNAL_ROUTES,
+    IMPORTS_ROUTES,
+    EXPORTS_ROUTES,
+    PEOPLE_ROUTES,
+    SEARCH_ROUTES,
+    RELATIONSHIPS_ROUTES,
+    INTERACTIONS_ROUTES,
+    GOVERNANCE_ROUTES,
+    PLANNING_ROUTES,
+  ]),
+  { anyToken: ANY_TOKEN_OPERATIONS, scopes: apiTokenScope.options },
+);
 
 /** The part of it the published document describes. */
 export const DOCUMENTED_ROUTES: readonly RouteDescriptor[] = API_ROUTES.filter(

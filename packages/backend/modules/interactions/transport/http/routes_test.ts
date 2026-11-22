@@ -104,7 +104,11 @@ Deno.test("capture token admits four strict kinds and forwards bounded options w
         "exact capture grant requested",
       );
       assert(workspace === actor.workspaceId, "workspace selection forwarded");
-      return Promise.resolve({ actor, status: "authenticated" });
+      return Promise.resolve({
+        actor,
+        status: "authenticated",
+        tokenId: "00000000-0000-4000-8000-0000000000aa",
+      });
     },
   };
   const current = services({

@@ -68,6 +68,7 @@ function anonymousApp(): Hono {
   return createApiApp(servicesWith({
     apiTokens: servicesWith({
       authenticate: () => Promise.resolve({ status: "invalid" }),
+      introspect: () => Promise.resolve({ status: "invalid" }),
     }),
     browserSecurity: { origin: SAMPLE_ORIGIN, secureCookie: false },
     protectedSessions: NOBODY,

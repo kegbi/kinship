@@ -43,3 +43,26 @@ Deno.test("[GAP-039] the correlation cannot be overwritten by a module payload",
     "the event's own correlation wins",
   );
 });
+
+Deno.test("[MCP-A1] a token-authenticated event names its token, and only it can", () => {
+  const tokenId = "00000000-0000-4000-8000-000000000009";
+  assertEquals(
+    auditPayload({ ...EVENT, apiTokenId: tokenId, requestId: "3f2a9c0d" }),
+    { isPartial: false, requestId: "3f2a9c0d", apiTokenId: tokenId },
+    "the module's payload, the correlation, then the credential",
+  );
+  assertEquals(
+    auditPayload({
+      ...EVENT,
+      apiTokenId: tokenId,
+      payload: { apiTokenId: "spoofed" },
+    }),
+    { apiTokenId: tokenId },
+    "the event's own token wins",
+  );
+  assertEquals(
+    auditPayload({ ...EVENT, payload: { apiTokenId: "spoofed", kept: 1 } }),
+    { kept: 1 },
+    "an event without a token names none, whatever its payload says",
+  );
+});

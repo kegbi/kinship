@@ -117,6 +117,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RoutePermission>> = {
 
   // API tokens, calendar feeds, and integrations.
   getApiTokens: "api-tokens.manage",
+  // Any member's token reads what it is; it changes nothing (MCP-A1).
+  getTokenContext: "workspace.read",
   createApiToken: "api-tokens.manage",
   revokeApiToken: "api-tokens.manage",
   getCalendarFeed: "calendar-feed.manage",

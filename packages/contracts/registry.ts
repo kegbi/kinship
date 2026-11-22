@@ -104,6 +104,17 @@ export interface RouteDescriptor {
   readonly undocumented?: string;
   /** Set only on a secret-bearing route; see `RouteSecrecy`. */
   readonly secrecy?: RouteSecrecy;
+  /**
+   * The one personal API token scope this route requires (MCP-A1, ADR 0009).
+   *
+   * A route names it exactly when its `security` lists `kinship_api_token`,
+   * except for the few routes that accept any valid token and so require no
+   * scope; `checkTokenScopes` holds the registry to that. The handler's
+   * admission reads it from here and the documents publish it as
+   * `x-kinship-token-scope`, so enforcement, prose, and the published
+   * contract cannot disagree.
+   */
+  readonly tokenScope?: string;
 }
 
 const PATH_PARAMETER = /\{([^}]*)\}/g;
@@ -227,5 +238,64 @@ export function collectRoutes(
     }
     keys.add(key);
   }
+  return routes;
+}
+
+/** Whether a route admits a personal API token at all. */
+export function acceptsToken(route: RouteDescriptor): boolean {
+  return route.security?.some((requirement) =>
+    "kinship_api_token" in requirement
+  ) ?? false;
+}
+
+/**
+ * Holds a registry to the token-scope rule (MCP-A1) and hands it back.
+ *
+ * A route names a `tokenScope` exactly when it admits a personal token, and
+ * the scope is one of `scopes`, the contract's vocabulary. The routes named in
+ * `anyToken` admit any valid token instead: they are token-only, name no
+ * scope, and must be registered. Every breach is reported at once, when the
+ * registry is collected, so a route cannot be mounted with a scope the
+ * document and the admission would read differently.
+ */
+export function checkTokenScopes(
+  routes: readonly RouteDescriptor[],
+  vocabulary: {
+    readonly anyToken: readonly string[];
+    readonly scopes: readonly string[];
+  },
+): readonly RouteDescriptor[] {
+  const complaints: string[] = [];
+  const anyToken = new Set(vocabulary.anyToken);
+  const scopes = new Set(vocabulary.scopes);
+  for (const route of routes) {
+    const name = route.operationId;
+    const scope = route.tokenScope;
+    if (anyToken.has(name)) {
+      const tokenOnly = route.security?.length === 1 &&
+        Object.keys(route.security[0] ?? {}).join() === "kinship_api_token";
+      if (!tokenOnly) {
+        complaints.push(
+          `${name} accepts any token and must admit only a token`,
+        );
+      }
+      if (scope !== undefined) {
+        complaints.push(`${name} accepts any token and names ${scope}`);
+      }
+    } else if (acceptsToken(route) && scope === undefined) {
+      complaints.push(`${name} accepts a personal token and names no scope`);
+    } else if (!acceptsToken(route) && scope !== undefined) {
+      complaints.push(`${name} names ${scope} and accepts no personal token`);
+    } else if (scope !== undefined && !scopes.has(scope)) {
+      complaints.push(`${name} names ${scope}, which is not a token scope`);
+    }
+  }
+  const registered = new Set(routes.map((route) => route.operationId));
+  for (const name of anyToken) {
+    if (!registered.has(name)) {
+      complaints.push(`${name} accepts any token and is not registered`);
+    }
+  }
+  if (complaints.length > 0) throw new Error(complaints.join("; "));
   return routes;
 }

@@ -15,6 +15,7 @@ import {
   workspaceHeaders,
 } from "./common.ts";
 import {
+  apiTokenContext,
   apiTokenCreated,
   apiTokenCreateInput,
   apiTokenList,
@@ -90,9 +91,36 @@ export const revokeApiToken = defineRoute({
   },
 });
 
+/**
+ * What the presented token is and who it acts as (MCP-A1). It accepts any
+ * valid personal token, so it names no `tokenScope`, and it never reads a
+ * session cookie: without a valid bearer it answers 401.
+ */
+export const getTokenContext = defineRoute({
+  method: "get",
+  path: "/api/v1/me",
+  operationId: "getTokenContext",
+  description:
+    "Accepts any valid personal token and requires no grant. Returns the presented token's id, name, scopes, and optional expiry, and the workspace, member, and current role it acts as. Never reads a session cookie; the optional X-Workspace-Id must match the token's workspace.",
+  security: [{ kinship_api_token: [] }],
+  request: {
+    headers: workspaceHeaders,
+  },
+  responses: {
+    200: {
+      description: "The presented token and the membership it acts as",
+      content: {
+        "application/json": apiTokenContext,
+      },
+    },
+    ...problemResponses(401, 403),
+  },
+});
+
 /** Every api tokens route, in the order the surface mounts them. */
 export const API_TOKENS_ROUTES: readonly RouteDescriptor[] = [
   getApiTokens,
   createApiToken,
   revokeApiToken,
+  getTokenContext,
 ];

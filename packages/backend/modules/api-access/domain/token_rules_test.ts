@@ -9,8 +9,12 @@ import {
   renderCalendarFeedToken,
   renderToken,
   usable,
+  usableWithAnyGrant,
   validateApiToken,
 } from "./token_rules.ts";
+
+/** A scope name the `area:verb` vocabulary can never grow into. */
+const NEVER_A_SCOPE = "not a scope" as "people:read";
 
 const ID = "3f1d2c4b-5a6e-4f7a-8b9c-0d1e2f3a4b5c";
 const SECRET = "abcdefghijklmnop";
@@ -32,6 +36,24 @@ Deno.test("[GAP-018] the scope vocabulary is closed", () => {
     "tasks:create",
     "tasks:write",
     "interactions:create",
+    "people:write",
+    "people:delete",
+    "people:merge",
+    "relationships:write",
+    "interactions:read",
+    "interactions:write",
+    "reminders:read",
+    "reminders:write",
+    "journal:read",
+    "journal:write",
+    "gifts:read",
+    "gifts:write",
+    "files:read",
+    "files:write",
+    "search:read",
+    "today:read",
+    "vocabularies:read",
+    "vocabularies:write",
   ]);
   const scopes = [...API_TOKEN_SCOPES];
   assertEquals(validateApiToken({ name: "Connector", scopes }, NOW), {
@@ -128,7 +150,7 @@ Deno.test("[GAP-018] a token needs a name, at least one known scope, and a futur
   );
   assertEquals(
     validateApiToken(
-      { name: "CLI", scopes: ["people:write" as "people:read"] },
+      { name: "CLI", scopes: [NEVER_A_SCOPE] },
       NOW,
     ),
     undefined,
@@ -238,6 +260,43 @@ Deno.test("[INTEGRATION-002] the calendar scope opens only a calendar token", ()
   assertEquals(
     usable({ ...command, record: RECORD, requiredScope: CALENDAR_FEED_SCOPE }),
     false,
+  );
+});
+
+Deno.test("[MCP-A1] any current personal token is usable without a grant, and a feed never is", () => {
+  const base = { now: NOW, record: RECORD, workspaceId: "w1" };
+  assertEquals(usableWithAnyGrant(base), true);
+  assertEquals(
+    usableWithAnyGrant({
+      ...base,
+      record: { ...RECORD, scopes: ["tasks:write"] },
+    }),
+    true,
+    "whatever grant it carries",
+  );
+  for (
+    const [record, reason] of [
+      [{ ...RECORD, revokedAt: "2026-02-02T00:00:00.000Z" }, "revoked"],
+      [{ ...RECORD, expiresAt: "2026-02-02T00:00:00.000Z" }, "expired"],
+      [{ ...RECORD, scopes: [] }, "no grant at all"],
+      [{ ...RECORD, scopes: [CALENDAR_FEED_SCOPE] }, "a calendar feed"],
+      [
+        { ...RECORD, scopes: ["people:read", CALENDAR_FEED_SCOPE] },
+        "a row that carries the feed scope",
+      ],
+      [{ ...RECORD, scopes: [NEVER_A_SCOPE] }, "no personal grant"],
+    ] as const
+  ) {
+    assertEquals(usableWithAnyGrant({ ...base, record }), false, reason);
+  }
+  assertEquals(
+    usableWithAnyGrant({ ...base, requestedWorkspaceId: "w1" }),
+    true,
+  );
+  assertEquals(
+    usableWithAnyGrant({ ...base, requestedWorkspaceId: "w2" }),
+    false,
+    "the bound workspace still decides",
   );
 });
 

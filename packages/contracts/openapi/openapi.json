@@ -355,6 +355,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "interactions:create",
         "parameters": [
           {
             "in": "header",
@@ -1802,6 +1803,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "interactions:create",
         "parameters": [
           {
             "in": "query",
@@ -1937,6 +1939,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "interactions:create",
         "parameters": [
           {
             "in": "header",
@@ -3065,6 +3068,71 @@
         }
       }
     },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "getTokenContext",
+        "description": "Accepts any valid personal token and requires no grant. Returns the presented token's id, name, scopes, and optional expiry, and the workspace, member, and current role it acts as. Never reads a session cookie; the optional X-Workspace-Id must match the token's workspace.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The presented token and the membership it acts as",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenContext"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/member/ui-state": {
       "get": {
         "operationId": "getMemberUiState",
@@ -3626,6 +3694,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:read",
         "parameters": [
           {
             "in": "query",
@@ -5755,6 +5824,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:profile:read",
         "parameters": [
           {
             "in": "path",
@@ -6878,6 +6948,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:profile:read",
         "parameters": [
           {
             "in": "path",
@@ -8461,6 +8532,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:profile:read",
         "parameters": [
           {
             "in": "path",
@@ -9462,6 +9534,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "relationships:read",
         "parameters": [
           {
             "in": "path",
@@ -11295,6 +11368,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "relationships:read",
         "parameters": [
           {
             "in": "query",
@@ -15467,6 +15541,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "tasks:read",
         "parameters": [
           {
             "in": "query",
@@ -15604,6 +15679,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "tasks:create",
         "parameters": [
           {
             "in": "header",
@@ -15732,6 +15808,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "tasks:read",
         "parameters": [
           {
             "in": "path",
@@ -15827,6 +15904,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "tasks:write",
         "parameters": [
           {
             "in": "path",
@@ -15964,6 +16042,7 @@
             "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "tasks:write",
         "parameters": [
           {
             "in": "path",
@@ -18022,6 +18101,92 @@
           }
         ]
       },
+      "ApiTokenContext": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ]
+          },
+          "token": {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "scopes": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "people:read",
+                    "people:profile:read",
+                    "relationships:read",
+                    "tasks:read",
+                    "tasks:create",
+                    "tasks:write",
+                    "interactions:create",
+                    "people:write",
+                    "people:delete",
+                    "people:merge",
+                    "relationships:write",
+                    "interactions:read",
+                    "interactions:write",
+                    "reminders:read",
+                    "reminders:write",
+                    "journal:read",
+                    "journal:write",
+                    "gifts:read",
+                    "gifts:write",
+                    "files:read",
+                    "files:write",
+                    "search:read",
+                    "today:read",
+                    "vocabularies:read",
+                    "vocabularies:write"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "scopes"
+            ],
+            "additionalProperties": false
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "memberId",
+          "role",
+          "token",
+          "workspaceId"
+        ],
+        "additionalProperties": false
+      },
       "ApiTokenCreateInput": {
         "type": "object",
         "properties": {
@@ -18036,7 +18201,7 @@
           },
           "scopes": {
             "minItems": 1,
-            "maxItems": 7,
+            "maxItems": 25,
             "type": "array",
             "items": {
               "type": "string",
@@ -18047,7 +18212,25 @@
                 "tasks:read",
                 "tasks:create",
                 "tasks:write",
-                "interactions:create"
+                "interactions:create",
+                "people:write",
+                "people:delete",
+                "people:merge",
+                "relationships:write",
+                "interactions:read",
+                "interactions:write",
+                "reminders:read",
+                "reminders:write",
+                "journal:read",
+                "journal:write",
+                "gifts:read",
+                "gifts:write",
+                "files:read",
+                "files:write",
+                "search:read",
+                "today:read",
+                "vocabularies:read",
+                "vocabularies:write"
               ]
             },
             "uniqueItems": true
@@ -18100,7 +18283,25 @@
                 "tasks:read",
                 "tasks:create",
                 "tasks:write",
-                "interactions:create"
+                "interactions:create",
+                "people:write",
+                "people:delete",
+                "people:merge",
+                "relationships:write",
+                "interactions:read",
+                "interactions:write",
+                "reminders:read",
+                "reminders:write",
+                "journal:read",
+                "journal:write",
+                "gifts:read",
+                "gifts:write",
+                "files:read",
+                "files:write",
+                "search:read",
+                "today:read",
+                "vocabularies:read",
+                "vocabularies:write"
               ]
             }
           },
@@ -18155,7 +18356,25 @@
                 "tasks:read",
                 "tasks:create",
                 "tasks:write",
-                "interactions:create"
+                "interactions:create",
+                "people:write",
+                "people:delete",
+                "people:merge",
+                "relationships:write",
+                "interactions:read",
+                "interactions:write",
+                "reminders:read",
+                "reminders:write",
+                "journal:read",
+                "journal:write",
+                "gifts:read",
+                "gifts:write",
+                "files:read",
+                "files:write",
+                "search:read",
+                "today:read",
+                "vocabularies:read",
+                "vocabularies:write"
               ]
             }
           },
@@ -18226,7 +18445,25 @@
                 "tasks:read",
                 "tasks:create",
                 "tasks:write",
-                "interactions:create"
+                "interactions:create",
+                "people:write",
+                "people:delete",
+                "people:merge",
+                "relationships:write",
+                "interactions:read",
+                "interactions:write",
+                "reminders:read",
+                "reminders:write",
+                "journal:read",
+                "journal:write",
+                "gifts:read",
+                "gifts:write",
+                "files:read",
+                "files:write",
+                "search:read",
+                "today:read",
+                "vocabularies:read",
+                "vocabularies:write"
               ]
             }
           }

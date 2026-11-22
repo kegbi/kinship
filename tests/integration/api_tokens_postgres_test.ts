@@ -5,11 +5,6 @@ import {
 } from "../../packages/backend/modules/api-access/public.ts";
 import { apiTokenAuditFrom } from "../../packages/backend/modules/api-access/public.ts";
 import {
-  CapturedVerificationMail,
-  createConfiguredApiApp,
-} from "../../apps/api/composition.ts";
-import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
-import {
   PostgresApiTokenRepository,
   PostgresApiTokenTransaction,
 } from "../../packages/backend/modules/api-access/adapters/postgres/api_token_repository.ts";
@@ -28,25 +23,20 @@ import {
 import { assert } from "../../packages/backend/testing/assert.ts";
 import {
   addMembership,
-  openSql,
-  requireDatabaseUrl,
   revocableActor,
   revokeMembership,
 } from "../support/database.ts";
-import { apiSupport, PASSWORD, type SignedInFixture } from "../support/api.ts";
+import {
+  type HttpMethod,
+  PASSWORD,
+  type SignedInFixture,
+} from "../support/api.ts";
+import { composeTokenSuite } from "../support/tokens.ts";
 import type { Task } from "../../packages/contracts/generated/auth-client.ts";
 
-const databaseUrl = requireDatabaseUrl();
-const sql = openSql(databaseUrl);
-const mail = new CapturedVerificationMail();
-const configured = createConfiguredApiApp(
-  databaseUrl,
-  mail,
-  browserSecurityPolicy("test", "http://localhost"),
-);
-const api = apiSupport(configured.app, mail, sql);
-const register = (email: string, workspaceName: string) =>
-  api.register(email, workspaceName, { firstName: "API", lastName: "Tester" });
+const suite = composeTokenSuite();
+const { api, databaseUrl, register, sql, tokens: personalTokens } = suite;
+const configured = { app: suite.app, close: suite.close };
 
 function management(
   fixture: SignedInFixture,
@@ -75,17 +65,8 @@ Deno.test("interaction capture token preserves four kinds, retries, bounded voca
   const personId = await person(own, "Ada");
   const otherPersonId = await person(own, "Grace");
   const foreignPersonId = await person(foreign, "Foreign person");
-  const mint = async (fixture: SignedInFixture, scopes: string[]) => {
-    const response = await management(fixture, undefined, "POST", {
-      name: "Capture connector",
-      scopes,
-    });
-    assert(response.status === 201, `capture grant minted: ${response.status}`);
-    return await response.json() as {
-      secret: string;
-      record: { id: string; scopes: string[] };
-    };
-  };
+  const mint = (fixture: SignedInFixture, scopes: string[]) =>
+    personalTokens.mint(fixture, scopes, { name: "Capture connector" });
   const capture = await mint(own, ["interactions:create"]);
   const foreignCapture = await mint(foreign, ["interactions:create"]);
   assert(
@@ -99,14 +80,10 @@ Deno.test("interaction capture token preserves four kinds, retries, bounded voca
     body?: unknown,
     extra: Record<string, string> = {},
   ) =>
-    configured.app.request(`http://localhost${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${secret}`,
-        "content-type": "application/json",
-        ...extra,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    personalTokens.bearer(secret, path, {
+      body,
+      headers: extra,
+      method: method as HttpMethod,
     });
   const expect = async (response: Response, status: number, label: string) => {
     assert(
@@ -613,14 +590,8 @@ Deno.test("task automation tokens keep independent grants, retry safety, revisio
   };
   const personId = await person(own);
   const foreignPersonId = await person(foreign);
-  const mint = async (scopes: string[]) => {
-    const response = await management(own, undefined, "POST", {
-      name: "Task connector",
-      scopes,
-    });
-    assert(response.status === 201, `task grants minted: ${response.status}`);
-    return await response.json() as { secret: string; record: { id: string } };
-  };
+  const mint = (scopes: string[]) =>
+    personalTokens.mint(own, scopes, { name: "Task connector" });
   const reader = await mint(["tasks:read"]);
   const creator = await mint(["tasks:create"]);
   const writer = await mint(["tasks:write"]);
@@ -632,14 +603,10 @@ Deno.test("task automation tokens keep independent grants, retry safety, revisio
     body?: unknown,
     extra: Record<string, string> = {},
   ) =>
-    configured.app.request(`http://localhost${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${secret}`,
-        "content-type": "application/json",
-        ...extra,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    personalTokens.bearer(secret, path, {
+      body,
+      headers: extra,
+      method: method as HttpMethod,
     });
   const expect = async (response: Response, status: number, label: string) => {
     assert(
@@ -1044,17 +1011,7 @@ Deno.test("scoped person tokens preserve projections, parent boundaries, lookups
       (${foreignRelationshipTypeId}, ${foreign.workspaceId}, 'Foreign secret relation', 'Foreign secret inverse')`;
   await sql`insert into crm.relationships (workspace_id, from_person_id, to_person_id, relationship_type_id)
     values (${own.workspaceId}, ${sourceId}, ${targetId}, ${relationshipTypeId})`;
-  const mint = async (scopes: readonly string[]) => {
-    const response = await management(own, undefined, "POST", {
-      name: scopes.join(" + "),
-      scopes,
-    });
-    assert(response.status === 201, `mint ${scopes}: ${response.status}`);
-    return await response.json() as {
-      secret: string;
-      record: { id: string; scopes: string[] };
-    };
-  };
+  const mint = (scopes: readonly string[]) => personalTokens.mint(own, scopes);
   const directory = await mint(["people:read"]);
   const profile = await mint(["people:profile:read"]);
   const relationships = await mint(["relationships:read"]);
@@ -1072,10 +1029,7 @@ Deno.test("scoped person tokens preserve projections, parent boundaries, lookups
     path: string,
     secret: string,
     extra: Record<string, string> = {},
-  ) =>
-    configured.app.request(`http://localhost${path}`, {
-      headers: { authorization: `Bearer ${secret}`, ...extra },
-    });
+  ) => personalTokens.bearer(secret, path, { headers: extra });
   const root = `/api/v1/people/${sourceId}`;
   const profilePaths = [
     `${root}/identity`,
@@ -1276,7 +1230,7 @@ Deno.test("[API-001] PostgreSQL API tokens are hashed, scoped, tenant-bound, exp
     (await management(primary, undefined, "POST", {
       expiresAt: "2026-09-24T10:00:00.000Z",
       name: "Invalid",
-      scopes: ["people:write"],
+      scopes: ["not a scope"],
     })).status === 400,
     "unknown scope rejected",
   );
@@ -1733,24 +1687,13 @@ async function joinWorkspace(
 }
 
 function tokenBearer(secret: string, workspaceId: string) {
-  return configured.app.request("http://localhost/api/v1/people", {
-    headers: {
-      authorization: `Bearer ${secret}`,
-      "X-Workspace-Id": workspaceId,
-    },
+  return personalTokens.bearer(secret, "/api/v1/people", {
+    headers: { "X-Workspace-Id": workspaceId },
   });
 }
 
-async function mintToken(fixture: SignedInFixture, name: string) {
-  const response = await management(fixture, undefined, "POST", {
-    name,
-    scopes: ["people:read"],
-  });
-  assert(response.status === 201, `${name} minted: ${response.status}`);
-  return await response.json() as {
-    readonly record: { readonly id: string };
-    readonly secret: string;
-  };
+function mintToken(fixture: SignedInFixture, name: string) {
+  return personalTokens.mint(fixture, ["people:read"], { name });
 }
 
 Deno.test("[API-001] AUD-M4 an owner lists and revokes a demoted admin's token", async () => {
@@ -1955,6 +1898,203 @@ Deno.test("[API-001] AUD-M4 suspending or leaving revokes the member's tokens in
       audit.some((row) => row.subject_id === id)
     ),
     `each revocation is audited: ${JSON.stringify(audit)}`,
+  );
+});
+
+// --- MCP-A1 --------------------------------------------------------------
+
+Deno.test("[MCP-A1] PostgreSQL names the token on every audit event a bearer write causes, and no token for a cookie write", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(
+    `attribution-${suffix}@example.test`,
+    "Attribution",
+  );
+  const person = await api.request(owner, "/api/v1/people", "POST", {
+    givenName: "Ada",
+    isPartial: false,
+  });
+  assert(person.status === 201, `person created: ${person.status}`);
+  const personId = (await person.json()).person.id as string;
+  const writer = await personalTokens.mint(owner, [
+    "tasks:create",
+    "tasks:write",
+    "interactions:create",
+  ]);
+  const bearerWrite = async (
+    path: string,
+    method: HttpMethod,
+    body: unknown,
+  ) => {
+    const response = await personalTokens.bearer(writer.secret, path, {
+      body,
+      method,
+    });
+    assert(
+      response.status === 200 || response.status === 201,
+      `${method} ${path} by token: ${response.status} ${await response
+        .clone().text()}`,
+    );
+    return await response.json();
+  };
+  const tokenTask = (await bearerWrite("/api/v1/tasks", "POST", {
+    personId,
+    requestId: crypto.randomUUID(),
+    title: "Token task",
+  })).task as Task;
+  await bearerWrite(`/api/v1/tasks/${tokenTask.id}`, "PATCH", {
+    expectedUpdatedAt: tokenTask.updatedAt,
+    title: "Token task, renamed",
+  });
+  await bearerWrite(`/api/v1/tasks/${tokenTask.id}/completion`, "PUT", {
+    completed: true,
+  });
+  const note = (await bearerWrite("/api/v1/interactions", "POST", {
+    body: "Token note",
+    kind: "note",
+    personId,
+    requestId: crypto.randomUUID(),
+  })).record as { readonly id: string };
+  const cookie = await api.request(owner, "/api/v1/tasks", "POST", {
+    requestId: crypto.randomUUID(),
+    title: "Cookie task",
+  });
+  assert(cookie.status === 201, `cookie task created: ${cookie.status}`);
+  const cookieTask = (await cookie.json()).task as Task;
+
+  const rows = await sql<
+    {
+      action: string;
+      api_token_id: string | null;
+      request_id: string | null;
+      subject_id: string | null;
+    }[]
+  >`select action, payload ->> 'apiTokenId' as api_token_id,
+      payload ->> 'requestId' as request_id, subject_id::text
+    from crm.audit_events where workspace_id = ${owner.workspaceId}::uuid`;
+  const byToken = rows.filter((row) =>
+    row.subject_id === tokenTask.id || row.subject_id === note.id
+  );
+  assert(
+    byToken.length >= 4 &&
+      byToken.every((row) =>
+        row.api_token_id === writer.record.id && row.request_id !== null
+      ),
+    `every audit event a token write caused names the token: ${
+      JSON.stringify(byToken)
+    }`,
+  );
+  const byCookie = rows.filter((row) =>
+    row.subject_id !== tokenTask.id && row.subject_id !== note.id
+  );
+  assert(
+    byCookie.some((row) => row.subject_id === cookieTask.id) &&
+      byCookie.some((row) => row.subject_id === writer.record.id) &&
+      byCookie.every((row) => row.api_token_id === null),
+    `a cookie write names no token: ${JSON.stringify(byCookie)}`,
+  );
+});
+
+Deno.test("[MCP-A1] PostgreSQL GET /api/v1/me describes any current personal token and nothing else", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`context-${suffix}@example.test`, "Context");
+  const foreign = await register(
+    `context-foreign-${suffix}@example.test`,
+    "Foreign context",
+  );
+  const agent = await personalTokens.mint(owner, ["tasks:write"], {
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    name: "Agent",
+  });
+  const me = (secret: string, headers: Record<string, string> = {}) =>
+    personalTokens.bearer(secret, "/api/v1/me", { headers });
+  const status = async (response: Response) => {
+    await response.body?.cancel();
+    return response.status;
+  };
+
+  const answered = await me(agent.secret, {
+    "X-Workspace-Id": owner.workspaceId,
+  });
+  assert(answered.status === 200, `context answered: ${answered.status}`);
+  const body = await answered.json();
+  assert(
+    JSON.stringify(body) === JSON.stringify({
+      memberId: owner.memberId,
+      role: "owner",
+      token: {
+        expiresAt: agent.record.expiresAt,
+        id: agent.record.id,
+        name: "Agent",
+        scopes: ["tasks:write"],
+      },
+      workspaceId: owner.workspaceId,
+    }),
+    `a grant unrelated to the route is enough: ${JSON.stringify(body)}`,
+  );
+  const [used] = await sql<{ last_used_at: Date | null }[]>`
+    select last_used_at from crm.api_tokens where id = ${agent.record.id}::uuid`;
+  assert(used?.last_used_at, "an introspection records the token's use");
+
+  assert(
+    await status(
+      await api.request(owner, "/api/v1/me"),
+    ) === 401,
+    "a session cookie is never read",
+  );
+  assert(
+    await status(
+      await me(agent.secret, { "X-Workspace-Id": foreign.workspaceId }),
+    ) ===
+      401,
+    "the token cannot name another workspace",
+  );
+  assert(
+    await status(
+      await me(agent.secret.replace(/\.[^.]*$/, ".wrong-secret-with-entropy")),
+    ) === 401,
+    "the secret is compared",
+  );
+
+  // A feed's secret, presented under the personal prefix, is still a feed.
+  const feed = await api.request(
+    owner,
+    "/api/v1/settings/calendar-feed",
+    "POST",
+  );
+  assert(feed.status === 201, `calendar feed minted: ${feed.status}`);
+  const [feedRow] = await sql<{ id: string }[]>`
+    select id::text from crm.api_tokens
+    where workspace_id = ${owner.workspaceId}::uuid
+      and 'calendar.read' = any(scopes)`;
+  const feedSecret = /kin_cal_([^.]+)\.([A-Za-z0-9_-]+)/.exec(
+    JSON.stringify(await feed.json()),
+  );
+  assert(feedRow && feedSecret, "the feed's secret is in its answer");
+  assert(
+    await status(await me(`kin_pat_${feedSecret[1]}.${feedSecret[2]}`)) ===
+      401,
+    "a calendar feed is not a personal token",
+  );
+
+  await sql`update crm.api_tokens set expires_at = now() - interval '1 minute'
+    where id = ${agent.record.id}::uuid`;
+  assert(await status(await me(agent.secret)) === 401, "an expired token");
+  await sql`update crm.api_tokens set expires_at = null
+    where id = ${agent.record.id}::uuid`;
+  assert(await status(await me(agent.secret)) === 200, "a renewed token");
+  const revoked = await api.request(
+    owner,
+    `/api/v1/settings/api-tokens/${agent.record.id}`,
+    "DELETE",
+  );
+  assert(revoked.status === 200, `token revoked: ${revoked.status}`);
+  assert(await status(await me(agent.secret)) === 401, "a revoked token");
+
+  const member = await personalTokens.mint(owner, ["people:read"]);
+  await revokeMembership(sql, owner.memberId);
+  assert(
+    await status(await me(member.secret)) === 401,
+    "a token whose member is gone",
   );
 });
 

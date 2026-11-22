@@ -48,7 +48,7 @@ import type {
   RecentPeopleManagement,
 } from "../../../workspaces/public.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
-import type { ScopedTokenAuthority } from "../../../../../http-kit/session.ts";
+import type { PersonalTokenAuthority } from "../../../../../http-kit/scoped_actor.ts";
 import {
   failureResponder,
   type FailureTable,
@@ -63,9 +63,7 @@ export interface PeopleHttpServices {
    * depend on api-access, so the route names the kit's structural port and
    * the composition root hands api-access's facade in.
    */
-  readonly apiTokens?: ScopedTokenAuthority<
-    "people:read" | "people:profile:read"
-  >;
+  readonly apiTokens?: PersonalTokenAuthority;
   /** A person's avatar (GAP-045); without it the avatar routes answer 503. */
   readonly avatars?: PersonAvatarManagement;
   readonly browserSecurity: BrowserSecurityPolicy;

@@ -39,7 +39,10 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireScopedActor } from "../../../../../http-kit/scoped_actor.ts";
+import {
+  type PersonalTokenAuthority,
+  scopedRouteActor,
+} from "../../../../../http-kit/scoped_actor.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -48,7 +51,6 @@ import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
   requireActor,
-  type ScopedTokenAuthority,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -60,7 +62,7 @@ import {
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface InteractionHttpServices {
-  readonly apiTokens?: ScopedTokenAuthority<"interactions:create">;
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly activityReport: ActivityReport;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly interactions: InteractionManagement & CommunicationManagement;
@@ -206,15 +208,22 @@ export function createInteractionRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const captureActor = (context: Parameters<typeof requireScopedActor>[0]) =>
-    requireScopedActor(context, {
-      browserSecurity: services.browserSecurity,
-      scope: "interactions:create",
-      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-    });
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const recordActor = scopedRouteActor(recordInteraction, tokens);
+  const communicationOptionsActor = scopedRouteActor(
+    listCommunicationOptions,
+    tokens,
+  );
+  const interactionOptionsActor = scopedRouteActor(
+    listInteractionOptions,
+    tokens,
+  );
 
   mount(routes, recordInteraction, session, async (context) => {
-    const actor = await captureActor(context);
+    const actor = await recordActor(context);
     if (actor instanceof Response) return actor;
     const input = await parseJsonBody(context, interactionInput);
     if ("errors" in input) {
@@ -285,7 +294,7 @@ export function createInteractionRoutes(
   });
 
   mount(routes, listCommunicationOptions, session, async (context) => {
-    const actor = await captureActor(context);
+    const actor = await communicationOptionsActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.interactions.communicationOptions(actor)
       .catch(() => undefined);
@@ -322,7 +331,7 @@ export function createInteractionRoutes(
   );
 
   mount(routes, listInteractionOptions, session, async (context) => {
-    const actor = await captureActor(context);
+    const actor = await interactionOptionsActor(context);
     if (actor instanceof Response) return actor;
     const input = parseQuery(context, listInteractionOptionsQuery);
     if ("errors" in input) {

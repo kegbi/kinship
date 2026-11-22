@@ -93,3 +93,18 @@ Deno.test("[GAP-039] the silent logger drops everything", () => {
     "nothing is returned and nothing is written",
   );
 });
+
+Deno.test("[MCP-A1] a correlation carries the request's token, when it has one", () => {
+  const apiTokenId = "00000000-0000-4000-8000-000000000009";
+  assertEquals(
+    correlationOf({ apiTokenId, requestId: "3f2a9c0d" }),
+    { requestId: "3f2a9c0d", apiTokenId },
+    "both travel together",
+  );
+  assertEquals(correlationOf({ apiTokenId }), { apiTokenId });
+  assertEquals(
+    Object.keys(correlationOf({ apiTokenId: "", requestId: "3f2a9c0d" })),
+    ["requestId"],
+    "an empty token id is no member",
+  );
+});

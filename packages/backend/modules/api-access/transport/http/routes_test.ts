@@ -1,6 +1,10 @@
 import { createApiTokenRoutes } from "./routes.ts";
 import type { ApiTokenHttpServices } from "./routes.ts";
-import { assert, assertStatus } from "../../../../testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertStatus,
+} from "../../../../testing/assert.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
 
 const owner = fixtures.sessionActor({
@@ -9,6 +13,8 @@ const owner = fixtures.sessionActor({
   userId: fixtures.uuid(2),
   workspaceName: "Circle",
 });
+
+const TOKEN_ID = "00000000-0000-4000-8000-000000000009";
 
 function fixture(role: "owner" | "member" = "owner") {
   const calls: string[] = [];
@@ -47,6 +53,24 @@ function fixture(role: "owner" | "member" = "owner") {
           },
           status: "revoked",
         });
+      },
+      introspect: (rawToken, requestedWorkspaceId) => {
+        calls.push(`introspect:${requestedWorkspaceId ?? "-"}`);
+        if (rawToken === "throws") return Promise.reject(new Error("down"));
+        return Promise.resolve(
+          rawToken === "agent"
+            ? {
+              actor: { ...owner, role },
+              status: "authenticated" as const,
+              token: {
+                expiresAt: "2026-09-24T10:00:00.000Z",
+                id: TOKEN_ID,
+                name: "Agent",
+                scopes: ["tasks:write", "people:read"],
+              },
+            }
+            : { status: "invalid" as const },
+        );
       },
     },
     browserSecurity: { origin: "http://localhost", secureCookie: false },
@@ -196,5 +220,67 @@ Deno.test("API-001 HTTP maps invalid, stale, unauthenticated, and unavailable st
       },
     )).status === 404,
     "stale token hidden",
+  );
+});
+
+Deno.test("[MCP-A1] GET /api/v1/me tells a token what it is and who it acts as", async () => {
+  const state = fixture("member");
+  const me = (headers: Record<string, string>) =>
+    state.routes.request("http://localhost/api/v1/me", { headers });
+
+  const answered = await me({ authorization: "Bearer agent" });
+  assertStatus(answered, 200, "any valid personal token is admitted");
+  assert(
+    answered.headers.get("Cache-Control") === "private, no-store",
+    "the answer is never cached",
+  );
+  assertEquals(await answered.json(), {
+    memberId: owner.memberId,
+    role: "member",
+    token: {
+      expiresAt: "2026-09-24T10:00:00.000Z",
+      id: TOKEN_ID,
+      name: "Agent",
+      scopes: ["tasks:write", "people:read"],
+    },
+    workspaceId: owner.workspaceId,
+  });
+  assertStatus(
+    await me({
+      authorization: "Bearer agent",
+      "X-Workspace-Id": owner.workspaceId,
+    }),
+    200,
+    "the bound workspace may be named",
+  );
+  assert(
+    state.calls.join() === `introspect:-,introspect:${owner.workspaceId}`,
+    `the requested workspace reaches the check: ${state.calls}`,
+  );
+
+  for (
+    const [headers, reason] of [
+      [{ cookie: "kinship_session=session" }, "a cookie is never read"],
+      [{}, "nothing presented"],
+      [
+        { authorization: "Bearer refused", cookie: "kinship_session=session" },
+        "a refused token never borrows the cookie",
+      ],
+      [{ authorization: "Basic agent" }, "another scheme"],
+      [{ authorization: "Bearer throws" }, "an outage conceals as nobody"],
+    ] as const
+  ) {
+    const refused = await me(headers);
+    assertStatus(refused, 401, reason);
+    assertEquals(
+      (await refused.json() as { code: string }).code,
+      "session_invalid",
+      reason,
+    );
+  }
+  assertStatus(
+    await me({ authorization: "Bearer agent", "X-Workspace-Id": "nope" }),
+    400,
+    "a malformed workspace header is refused before the token is checked",
   );
 });

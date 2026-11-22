@@ -195,6 +195,9 @@ invariants:
   - Personal token grants are independent; people:read is directory-only, people:profile:read permits minimal identity, profile facts and their lookup options, and important dates, and relationships:read permits relationship lists and type lookups.
   - Personal token grants intersect current membership, role permissions, workspace and parent boundaries, section visibility, and cursor rules; they never imply access to full profile aggregates or unrelated content.
   - On token-enabled routes an Authorization header selects only token authentication; a refused bearer never falls back to a session cookie.
+  - A token-enabled route names the one grant it requires on its route descriptor (tokenScope), and its admission reads it from there; a route admits a personal token exactly when it names one. The published documents carry it as x-kinship-token-scope. Only the routes listed as accepting any valid token (GET /api/v1/me) name no grant, and they are token-only.
+  - Every audit event written by a token-authenticated request names the token as payload.apiTokenId. A cookie-authenticated request names none, and a module payload can neither set nor overwrite it.
+  - GET /api/v1/me answers a valid personal token, whatever its grants, with the token's id, name, scopes and expiry and the workspace, member and role it acts as. It never reads a session cookie, still revalidates the token and its membership, and owes the legal guard what any token route owes. A calendar feed secret is never a personal token.
   - A role is ignored unless the membership is active.
   - A body or route workspace identifier is never authorization evidence.
   - Every aggregate identifier is resolved together with the active workspace.

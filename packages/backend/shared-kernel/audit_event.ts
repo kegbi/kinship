@@ -30,6 +30,12 @@ export interface AuditEvent {
    * `payload.requestId`, and the audit-history read model never shows it.
    */
   readonly requestId?: string | undefined;
+  /**
+   * The personal API token the request authenticated with (MCP-A1). The
+   * writer stores it as `payload.apiTokenId`; an event written for a session
+   * cookie, or by a job, has none.
+   */
+  readonly apiTokenId?: string | undefined;
   readonly subjectId?: string | undefined;
   readonly subjectType: string;
   readonly visibleOnDashboard: boolean;
@@ -40,13 +46,25 @@ export interface AuditEvent {
  * The `payload` column an event is stored with: the module's own payload and,
  * when the event is correlated, its `requestId`, which a module payload cannot
  * overwrite. `audit_events.payload` is `jsonb`, so correlation needs no column.
+ *
+ * `apiTokenId` is stricter (MCP-A1): it is the event's own token or nothing,
+ * so a module payload can neither overwrite the credential that made a change
+ * nor name one for a change no token made.
  */
 export function auditPayload(
   event: AuditEvent,
 ): Readonly<Record<string, unknown>> {
-  return event.requestId
-    ? { ...event.payload, requestId: event.requestId }
+  const payload = "apiTokenId" in event.payload
+    ? Object.fromEntries(
+      Object.entries(event.payload).filter(([key]) => key !== "apiTokenId"),
+    )
     : event.payload;
+  if (!event.requestId && !event.apiTokenId) return payload;
+  return {
+    ...payload,
+    ...(event.requestId ? { requestId: event.requestId } : {}),
+    ...(event.apiTokenId ? { apiTokenId: event.apiTokenId } : {}),
+  };
 }
 
 /**

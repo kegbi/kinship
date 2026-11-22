@@ -25,6 +25,11 @@ import {
   type SessionServices,
   WORKSPACE_HEADER,
 } from "./session.ts";
+import { defineRoute } from "../contracts/registry.ts";
+import {
+  type PersonalTokenAuthority,
+  scopedRouteActor,
+} from "./scoped_actor.ts";
 import {
   REQUEST_ID_HEADER,
   requestId,
@@ -162,7 +167,11 @@ Deno.test("[GAP-019] an Authorization header commits the request to the token pa
     authenticate(rawToken, requiredScope) {
       return Promise.resolve(
         rawToken === "good" && requiredScope === "people:read"
-          ? { actor: member, status: "authenticated" as const }
+          ? {
+            actor: member,
+            status: "authenticated" as const,
+            tokenId: "00000000-0000-4000-8000-0000000000aa",
+          }
           : { status: "invalid" as const },
       );
     },
@@ -408,7 +417,11 @@ Deno.test("[GAP-039] a token-authenticated actor carries the request identifier 
       scope: "people:read",
       tokens: {
         authenticate: () =>
-          Promise.resolve({ actor: member, status: "authenticated" }),
+          Promise.resolve({
+            actor: member,
+            status: "authenticated",
+            tokenId: "00000000-0000-4000-8000-0000000000aa",
+          }),
       },
     });
     return context.json({
@@ -557,7 +570,11 @@ Deno.test("[AUD-K1] a token-admitted member answers to the admission the guard s
       scope: "people:read",
       tokens: {
         authenticate: () =>
-          Promise.resolve({ actor: member, status: "authenticated" }),
+          Promise.resolve({
+            actor: member,
+            status: "authenticated",
+            tokenId: "00000000-0000-4000-8000-0000000000aa",
+          }),
       },
     });
     return actor instanceof Response ? actor : context.json(actor);
@@ -687,4 +704,159 @@ Deno.test("[AUD-K4] a response that sets the session cookie itself keeps it", as
     ["kinship_session=fresh; Path=/"],
     "a new session is not expired behind its own back",
   );
+});
+
+const TOKEN_ID = "00000000-0000-4000-8000-0000000000aa";
+
+/** A token-enabled read and write, as a lane would declare them. */
+const scopedRead = defineRoute({
+  method: "get",
+  path: "/scoped",
+  operationId: "scopedRead",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
+  tokenScope: "tasks:read",
+  responses: { 200: { description: "ok" } },
+});
+const scopedWrite = defineRoute({
+  ...scopedRead,
+  method: "post",
+  operationId: "scopedWrite",
+  tokenScope: "tasks:write",
+});
+
+/** A personal-token authority that admits `good` for one scope. */
+function personalTokens(
+  asked: string[],
+  scope: string,
+): PersonalTokenAuthority {
+  return {
+    authenticate(rawToken, requiredScope) {
+      asked.push(requiredScope);
+      return Promise.resolve(
+        rawToken === "good" && requiredScope === scope
+          ? { actor: member, status: "authenticated", tokenId: TOKEN_ID }
+          : { status: "invalid" },
+      );
+    },
+  };
+}
+
+Deno.test("[MCP-A1] a route's admission reads its scope from the descriptor", async () => {
+  const asked: string[] = [];
+  const services = {
+    browserSecurity: LOOPBACK,
+    tokens: personalTokens(asked, "tasks:write"),
+  };
+  const app = new Hono<ActorEnv>();
+  for (const route of [scopedRead, scopedWrite]) {
+    const admit = scopedRouteActor(route, services);
+    app.on(
+      route.method.toUpperCase(),
+      route.path,
+      sessionActor(over(coordinator([]))),
+      async (context) => {
+        const actor = await admit(context);
+        return actor instanceof Response ? actor : context.json({
+          apiTokenId: actor.apiTokenId ?? null,
+          member: actor.memberId,
+        });
+      },
+    );
+  }
+  const send = (method: string, headers: Record<string, string>) =>
+    app.request("http://localhost/scoped", { headers, method });
+
+  const write = await send("POST", { Authorization: "Bearer good" });
+  assertStatus(write, 200, "a bearer write needs no Origin");
+  assertEquals(
+    await write.json(),
+    { apiTokenId: TOKEN_ID, member: member.memberId },
+    "the admitted actor names its token",
+  );
+  assertStatus(
+    await send("GET", { Authorization: "Bearer good" }),
+    401,
+    "the read asks for its own scope, which the token lacks",
+  );
+  assertEquals(asked, ["tasks:write", "tasks:read"], "each descriptor's scope");
+
+  const cookieWrite = await send("POST", { Cookie: "kinship_session=s" });
+  assertStatus(cookieWrite, 403, "a cookie write still owes the exact Origin");
+  const cookie = await send("POST", {
+    Cookie: "kinship_session=s",
+    Origin: LOOPBACK.origin,
+  });
+  assertStatus(cookie, 200, "a cookie write from the origin is the session");
+  assertEquals(
+    await cookie.json(),
+    { apiTokenId: null, member: member.memberId },
+    "a cookie-admitted actor never names a token",
+  );
+  assertStatus(
+    await send("POST", {
+      Authorization: "Bearer refused",
+      Cookie: "kinship_session=s",
+      Origin: LOOPBACK.origin,
+    }),
+    401,
+    "a refused bearer never falls back onto the cookie",
+  );
+});
+
+Deno.test("[MCP-A1] a route without a token scope cannot be given a token admission", () => {
+  const sessionOnly = defineRoute({
+    method: "get",
+    path: "/session",
+    operationId: "sessionOnly",
+    security: [{ kinship_session: [] }],
+    responses: { 200: { description: "ok" } },
+  });
+  const unknown = { ...scopedRead, operationId: "unknown", tokenScope: "x" };
+  for (const route of [sessionOnly, unknown]) {
+    let message = "";
+    try {
+      scopedRouteActor(route, { browserSecurity: LOOPBACK });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    assertEquals(
+      message,
+      `${route.operationId} names no personal token scope, so it cannot admit a token`,
+      "the mount fails, not the request",
+    );
+  }
+});
+
+Deno.test("[MCP-A1] a token's id rides on the actor over whatever the authority said", async () => {
+  const app = new Hono<RequestIdEnv>();
+  app.use(requestId({ generate: () => "minted-9" }));
+  const routes = new Hono<ActorEnv>();
+  routes.use(sessionActor(over(coordinator([]))));
+  routes.get("/token", async (context) => {
+    const actor = await requireTokenOrSessionActor(context, {
+      scope: "people:read",
+      tokens: {
+        authenticate: () =>
+          Promise.resolve({
+            actor: { ...member, apiTokenId: "forged", requestId: "forged" },
+            status: "authenticated",
+            tokenId: TOKEN_ID,
+          }),
+      },
+    });
+    return actor instanceof Response ? actor : context.json({
+      apiTokenId: actor.apiTokenId,
+      requestId: actor.requestId,
+    });
+  });
+  app.route("/", routes);
+
+  const response = await app.request("http://localhost/token", {
+    headers: { Authorization: "Bearer kin_pat_token" },
+  });
+
+  assertEquals(await response.json(), {
+    apiTokenId: TOKEN_ID,
+    requestId: "minted-9",
+  });
 });

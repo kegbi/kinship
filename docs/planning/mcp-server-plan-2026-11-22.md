@@ -120,7 +120,7 @@ merges approved candidates and regenerates the contract artefacts at each merge.
 
 ### Phase A — Foundation (serial)
 
-- [ ] **MCP-A1 Token surface foundation.** Fixes F1, F2, and the backend half of
+- [x] **MCP-A1 Token surface foundation.** Fixes F1, F2, and the backend half of
       F3.
   - `RouteDescriptor.tokenScope`; a registry rule that a route has it exactly
     when its `security` lists `kinship_api_token` (two named exceptions accept

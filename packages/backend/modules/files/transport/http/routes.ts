@@ -32,6 +32,7 @@ import {
 import { personFileKind } from "../../../../../contracts/schemas/files.ts";
 import { uuid } from "../../../../../contracts/schemas/shared.ts";
 import type { BrowserSecurityPolicy } from "../../../../../http-kit/security_policy.ts";
+import type { PersonalTokenAuthority } from "../../../../../http-kit/scoped_actor.ts";
 import { readBoundedBody } from "../../../../../http-kit/body_limit.ts";
 import { fileDownload } from "../../../../../http-kit/downloads.ts";
 import {
@@ -50,6 +51,12 @@ import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface FileHttpServices {
+  /**
+   * The personal-token authority (MCP-A1). The composition root already hands
+   * it in, so enabling one of these routes for tokens never edits the root;
+   * a route that does reads it through `scopedRouteActor`.
+   */
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly files: PersonFileManagement;
   readonly protectedSessions: Pick<ProtectedSessions, "resolve">;

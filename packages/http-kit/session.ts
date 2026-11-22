@@ -390,11 +390,20 @@ export interface ScopedTokenAuthority<Scope extends string> {
     rawToken: string,
     requiredScope: Scope,
     requestedWorkspaceId?: string,
-  ): Promise<
-    | { readonly actor: SessionActor; readonly status: "authenticated" }
-    | { readonly status: "invalid" }
-  >;
+  ): Promise<TokenAcceptance>;
 }
+
+/**
+ * A presented token, accepted or not. An accepted one names its row, which
+ * the admission puts on the actor as `apiTokenId` (MCP-A1).
+ */
+export type TokenAcceptance =
+  | {
+    readonly actor: SessionActor;
+    readonly status: "authenticated";
+    readonly tokenId: string;
+  }
+  | { readonly status: "invalid" };
 
 /** The bearer token this request carries, if it carries one at all. */
 export function bearerToken(context: Context): string | undefined {
@@ -423,19 +432,53 @@ export async function requireTokenOrSessionActor<Scope extends string>(
   if (context.req.header("Authorization") === undefined) {
     return await requireActor(context);
   }
+  const tokens = options.tokens;
+  const admitted = await requireTokenActor(
+    context,
+    tokens &&
+      ((rawToken, requestedWorkspaceId) =>
+        tokens.authenticate(rawToken, options.scope, requestedWorkspaceId)),
+  );
+  return admitted instanceof Response ? admitted : admitted.actor;
+}
+
+/**
+ * The member behind a bearer token, and what accepted it, or the refusal a
+ * route answers instead. Every token admission runs through here, so each
+ * one answers the same way.
+ *
+ * A malformed workspace header is a 400; no token, a token nobody can check,
+ * a refused token, and an authority that throws are each a 401 — never the
+ * cookie's member. An accepted token's actor carries the request's
+ * correlation and the token's id as `apiTokenId` (MCP-A1), so every audit
+ * event the request writes names the credential, and it still answers to the
+ * `tokenAdmission` the legal guard set.
+ */
+export async function requireTokenActor<
+  Accepted extends Extract<TokenAcceptance, { status: "authenticated" }>,
+>(
+  context: Context<ActorEnv>,
+  accept:
+    | ((
+      rawToken: string,
+      requestedWorkspaceId: string | undefined,
+    ) => Promise<Accepted | { readonly status: "invalid" }>)
+    | undefined,
+): Promise<Accepted | Response> {
   const refused = workspaceRefusal(context);
   if (refused) return refused;
   const token = bearerToken(context);
-  const authenticated = token && options.tokens
-    ? await options.tokens.authenticate(
-      token,
-      options.scope,
-      requestedWorkspace(context),
-    ).catch(() => undefined)
+  const accepted = token && accept
+    ? await accept(token, requestedWorkspace(context)).catch(() => undefined)
     : undefined;
-  if (authenticated?.status !== "authenticated") {
+  if (accepted?.status !== "authenticated") {
     return definedProblem(context, SESSION_INVALID);
   }
-  const actor = { ...authenticated.actor, ...correlation(context) };
-  return await context.var.tokenAdmission?.(actor) ?? actor;
+  const admitted = accepted as Accepted;
+  const actor: SessionActor = {
+    ...admitted.actor,
+    ...correlation(context),
+    apiTokenId: admitted.tokenId,
+  };
+  return await context.var.tokenAdmission?.(actor) ?? { ...admitted, actor };
 }

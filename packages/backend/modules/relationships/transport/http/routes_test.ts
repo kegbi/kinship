@@ -21,7 +21,11 @@ Deno.test("relationship bearer reads require relationships:read without cookie f
       authenticate: (token: string, scope: string) =>
         Promise.resolve(
           token === "relationships" && scope === "relationships:read"
-            ? { actor, status: "authenticated" as const }
+            ? {
+              actor,
+              status: "authenticated" as const,
+              tokenId: "00000000-0000-4000-8000-0000000000aa",
+            }
             : { status: "invalid" as const },
         ),
     },

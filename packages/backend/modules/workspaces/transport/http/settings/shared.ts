@@ -22,10 +22,17 @@ import type {
   SettingsManagement,
 } from "../../../public.ts";
 import type { BrowserSecurityPolicy } from "../../../../../../http-kit/security_policy.ts";
+import type { PersonalTokenAuthority } from "../../../../../../http-kit/scoped_actor.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
 export interface SettingsHttpServices {
+  /**
+   * The personal-token authority (MCP-A1). The composition root already hands
+   * it in, so enabling one of these routes for tokens never edits the root;
+   * a route that does reads it through `scopedRouteActor`.
+   */
+  readonly apiTokens?: PersonalTokenAuthority;
   readonly browserSecurity: BrowserSecurityPolicy;
   readonly memberUiState: MemberUiStateManagement;
   readonly personalization: PersonalizationManagement;

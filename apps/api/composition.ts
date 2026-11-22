@@ -504,6 +504,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         api.route(
           "/",
           createSettingsRoutes({
+            ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
             browserSecurity: services.browserSecurity,
             memberUiState: services.memberUiState,
             protectedSessions: services.protectedSessions,
@@ -566,6 +567,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         api.route(
           "/",
           createFileRoutes({
+            ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
             browserSecurity: services.browserSecurity,
             files: services.files,
             protectedSessions: services.protectedSessions,
@@ -579,6 +581,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         api.route(
           "/",
           createGiftRoutes({
+            ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
             browserSecurity: services.browserSecurity,
             gifts: services.gifts,
             protectedSessions: services.protectedSessions,
@@ -589,6 +592,7 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
         api.route(
           "/",
           createJournalRoutes({
+            ...(services.apiTokens ? { apiTokens: services.apiTokens } : {}),
             browserSecurity: services.browserSecurity,
             journal: services.journal,
             ...(services.lifeEvents ? { lifeEvents: services.lifeEvents } : {}),

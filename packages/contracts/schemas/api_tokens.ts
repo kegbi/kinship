@@ -13,6 +13,11 @@
 
 import { z } from "zod";
 
+/**
+ * Every grant a personal token may carry, in the order the token API's areas
+ * are listed. No grant implies another; several are minted before any route
+ * consumes them, so a token can be issued once for an agent's whole job.
+ */
 export const apiTokenScope = z.enum([
   "people:read",
   "people:profile:read",
@@ -21,6 +26,24 @@ export const apiTokenScope = z.enum([
   "tasks:create",
   "tasks:write",
   "interactions:create",
+  "people:write",
+  "people:delete",
+  "people:merge",
+  "relationships:write",
+  "interactions:read",
+  "interactions:write",
+  "reminders:read",
+  "reminders:write",
+  "journal:read",
+  "journal:write",
+  "gifts:read",
+  "gifts:write",
+  "files:read",
+  "files:write",
+  "search:read",
+  "today:read",
+  "vocabularies:read",
+  "vocabularies:write",
 ]);
 
 export const apiTokenCreateInput = z.strictObject({
@@ -69,3 +92,19 @@ export const apiTokenRevoked = z.strictObject({
   record: apiTokenRecord,
   status: z.literal("revoked"),
 }).meta({ id: "ApiTokenRevoked" });
+
+/**
+ * What `GET /api/v1/me` answers a personal token with (MCP-A1): the token's
+ * own record, and the workspace, membership, and role it currently acts as.
+ */
+export const apiTokenContext = z.strictObject({
+  memberId: z.uuid(),
+  role: z.enum(["owner", "admin", "member"]),
+  token: z.strictObject({
+    expiresAt: z.iso.datetime({ offset: true }).optional(),
+    id: z.uuid(),
+    name: z.string().min(1).max(100),
+    scopes: z.array(apiTokenScope).min(1),
+  }),
+  workspaceId: z.uuid(),
+}).meta({ id: "ApiTokenContext" });

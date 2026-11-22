@@ -20,7 +20,9 @@ describe("public API contract presentation", () => {
     expect(await response.json()).toEqual(external);
   });
   it("renders every generated operation and schema, without browser endpoints", () => {
-    expect(referenceOperations).toHaveLength(14);
+    const published = Object.values(external.paths).flatMap(Object.keys);
+    expect(published.length).toBeGreaterThan(0);
+    expect(referenceOperations).toHaveLength(published.length);
     expect(referenceOperations.map(({ path, method }) => `${method} ${path}`))
       .toEqual(
         Object.entries(external.paths).flatMap(([path, methods]) =>

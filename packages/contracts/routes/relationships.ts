@@ -41,6 +41,7 @@ export const listRelationships = defineRoute({
   operationId: "listRelationships",
   description:
     "Personal tokens require relationships:read. Returns one person's directional relationships and authorized endpoint names in the bound workspace, including archived people. Hidden sections return no relationships; existing cursor checks apply.",
+  tokenScope: "relationships:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
@@ -201,6 +202,7 @@ export const listRelationshipTypes = defineRoute({
   operationId: "listRelationshipTypes",
   description:
     "Personal tokens require relationships:read. Reads the bound workspace's relationship types and resolves selected same-workspace types. Hidden relationship sections return no options; existing cursor and search bounds apply.",
+  tokenScope: "relationships:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     query: listRelationshipTypesQuery,

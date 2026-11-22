@@ -1,6 +1,9 @@
 import { buildOpenApiDocument } from "../../tools/contracts/document.ts";
-import { apiTokenCreateInput } from "./schemas/api_tokens.ts";
+import { buildExternalOpenApiDocument } from "../../tools/contracts/external.ts";
+import { apiTokenCreateInput, apiTokenScope } from "./schemas/api_tokens.ts";
 import { API_TOKEN_SCOPES } from "../backend/modules/api-access/public.ts";
+import { ANY_TOKEN_OPERATIONS, API_ROUTES } from "./routes/mod.ts";
+import { tokenOrSessionWriteHeaders } from "./routes/common.ts";
 import {
   createApiToken,
   getApiTokens,
@@ -14,58 +17,99 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("task contracts describe independent grants and conditional write Origin", () => {
-  const document = buildOpenApiDocument() as {
-    paths: Record<
-      string,
-      Record<string, {
-        security: Record<string, string[]>[];
-        description?: string;
-        parameters?: { name: string; required?: boolean }[];
-      }>
-    >;
-  };
-  for (
-    const [path, method, grant] of [
-      ["/api/v1/tasks", "get", "tasks:read"],
-      ["/api/v1/tasks/{taskId}", "get", "tasks:read"],
-      ["/api/v1/tasks", "post", "tasks:create"],
-      ["/api/v1/tasks/{taskId}", "patch", "tasks:write"],
-      ["/api/v1/tasks/{taskId}/completion", "put", "tasks:write"],
-    ] as const
-  ) {
-    const operation = document.paths[path]?.[method];
-    assert(
-      operation && operation.description &&
-        operation.description.includes(grant),
-      `${method} ${path} describes ${grant}`,
-    );
-    assert(
-      JSON.stringify(operation.security) ===
-        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
-      "HTTP bearer uses empty scopes",
-    );
-    if (method !== "get") {
+interface PublishedOperation {
+  readonly description?: string;
+  readonly operationId: string;
+  readonly parameters?: readonly { name: string; required?: boolean }[];
+  readonly security?: readonly Record<string, readonly string[]>[];
+  readonly "x-kinship-token-scope"?: string;
+}
+
+type PublishedPaths = Record<string, Record<string, PublishedOperation>>;
+
+const SAFE_METHODS = new Set(["get"]);
+
+/**
+ * The one rule every token-enabled route keeps (MCP-A1): it names its scope
+ * on the descriptor, the documents publish that scope, it is admitted by the
+ * session cookie or a token (or a token alone, for the routes that accept any
+ * valid token), a write takes the optional `Origin` a bearer may omit, and its
+ * prose names the scope it needs.
+ */
+Deno.test("[MCP-A1] every token-enabled route publishes its one scope and the bearer pair", () => {
+  const internal = buildOpenApiDocument() as { paths: PublishedPaths };
+  const external = buildExternalOpenApiDocument() as { paths: PublishedPaths };
+  const anyToken = new Set<string>(ANY_TOKEN_OPERATIONS);
+  const tokenRoutes = API_ROUTES.filter((route) =>
+    route.security?.some((entry) => "kinship_api_token" in entry)
+  );
+  assert(tokenRoutes.length > 0, "some route accepts a personal token");
+  for (const route of tokenRoutes) {
+    const name = route.operationId;
+    const published = internal.paths[route.path]?.[route.method];
+    const projected = external.paths[route.path]?.[route.method];
+    assert(published && projected, `${name} is in both documents`);
+    if (anyToken.has(name)) {
+      assert(route.tokenScope === undefined, `${name} accepts any token`);
       assert(
-        operation.description.includes("Origin") &&
-          operation.parameters?.find((p) => p.name === "Origin")?.required ===
-            false,
-        "task write Origin is conditional",
+        JSON.stringify(route.security) ===
+          JSON.stringify([{ kinship_api_token: [] }]),
+        `${name} is token-only`,
+      );
+      assert(
+        published["x-kinship-token-scope"] === undefined &&
+          projected["x-kinship-token-scope"] === undefined,
+        `${name} publishes no scope`,
+      );
+      continue;
+    }
+    const scope = route.tokenScope;
+    assert(
+      scope !== undefined && apiTokenScope.safeParse(scope).success,
+      `${name} names a token scope of the vocabulary: ${scope}`,
+    );
+    assert(
+      JSON.stringify(route.security) ===
+        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
+      `${name} is admitted by the session or a token, with empty scope arrays`,
+    );
+    assert(
+      published["x-kinship-token-scope"] === scope &&
+        projected["x-kinship-token-scope"] === scope,
+      `${name} publishes x-kinship-token-scope ${scope} in both documents`,
+    );
+    assert(
+      route.description?.includes(scope),
+      `${name} describes the ${scope} grant it requires`,
+    );
+    if (!SAFE_METHODS.has(route.method)) {
+      assert(
+        route.request?.headers === tokenOrSessionWriteHeaders,
+        `${name} takes the Origin a bearer write may omit`,
+      );
+      assert(
+        published.parameters?.find((p) => p.name === "Origin")?.required ===
+          false,
+        `${name} publishes Origin as optional`,
       );
     }
   }
-  assert(
-    document.paths["/api/v1/tasks"]?.get?.parameters?.some((p) =>
-      p.name === "dueBefore"
-    ),
-    "dueBefore is published",
-  );
-  for (const path of ["/api/v1/today/tasks", "/api/v1/today/reminders"]) {
+  for (const route of API_ROUTES) {
+    if (tokenRoutes.includes(route)) continue;
     assert(
-      JSON.stringify(document.paths[path]?.get?.security) ===
-        JSON.stringify([{ kinship_session: [] }]),
-      "Today stays session-only",
+      route.tokenScope === undefined,
+      `${route.operationId} names a scope and accepts no token`,
     );
+  }
+});
+
+Deno.test("routes that are not token-enabled keep session admission", () => {
+  const document = buildOpenApiDocument() as { paths: PublishedPaths };
+  const sessionOnly = (path: string, method = "get") =>
+    JSON.stringify(document.paths[path]?.[method]?.security) ===
+      JSON.stringify([{ kinship_session: [] }]);
+  for (const path of ["/api/v1/today/tasks", "/api/v1/today/reminders"]) {
+    assert(sessionOnly(path), `${path}: Today stays session-only`);
   }
   assert(
     document.paths["/api/v1/reminders"]?.post?.parameters?.find((p) =>
@@ -73,24 +117,44 @@ Deno.test("task contracts describe independent grants and conditional write Orig
     )?.required === true,
     "unrelated cookie write Origin remains required",
   );
+  for (
+    const path of [
+      "/api/v1/people/{personId}/activity-report",
+      "/api/v1/people/{personId}/communications",
+      "/api/v1/today/favorite-notes",
+      "/api/v1/today/recent-activity",
+    ]
+  ) {
+    assert(
+      sessionOnly(path),
+      `${path}: historic projections stay session-only`,
+    );
+  }
+  assert(
+    sessionOnly("/api/v1/people/{personId}"),
+    "full profile never accepts a personal token",
+  );
+  assert(
+    document.paths["/api/v1/tasks"]?.get?.parameters?.some((p) =>
+      p.name === "dueBefore"
+    ),
+    "dueBefore is published",
+  );
 });
 
+/** A scope name the vocabulary's `area:verb` grammar can never produce. */
+const NEVER_A_SCOPE = "not a scope";
+
 Deno.test("personal tokens deliberately accept multiple distinct supported grants", () => {
-  const scopes = [
-    "people:read",
-    "people:profile:read",
-    "relationships:read",
-    "tasks:read",
-    "tasks:create",
-    "tasks:write",
-    "interactions:create",
-  ];
   assert(
-    apiTokenCreateInput.safeParse({ name: "Connector", scopes }).success,
-    "all delivered grants may be selected together",
+    apiTokenCreateInput.safeParse({
+      name: "Connector",
+      scopes: [...API_TOKEN_SCOPES],
+    }).success,
+    "every grant may be selected together",
   );
   for (
-    const invalid of [[], ["people:read", "people:read"], ["people:write"], [
+    const invalid of [[], ["people:read", "people:read"], [NEVER_A_SCOPE], [
       "calendar.read",
     ]]
   ) {
@@ -105,9 +169,6 @@ Deno.test("personal tokens deliberately accept multiple distinct supported grant
       JSON.stringify(API_TOKEN_SCOPES),
     "transport and pure domain share the closed vocabulary",
   );
-});
-
-Deno.test("capture contracts offer one independent grant on exactly three routes", () => {
   assert(
     apiTokenCreateInput.safeParse({
       name: "Capture",
@@ -115,57 +176,6 @@ Deno.test("capture contracts offer one independent grant on exactly three routes
     }).success,
     "capture-only grant can be issued",
   );
-  const document = buildOpenApiDocument() as {
-    paths: Record<
-      string,
-      Record<
-        string,
-        {
-          security: Record<string, string[]>[];
-          description?: string;
-          parameters?: { name: string; required?: boolean }[];
-        }
-      >
-    >;
-  };
-  for (
-    const [path, method] of [["/api/v1/interactions", "post"], [
-      "/api/v1/interaction-options",
-      "get",
-    ], ["/api/v1/communication-options", "get"]]
-  ) {
-    const operation = document.paths[path!]?.[method!];
-    assert(
-      operation && operation.description?.includes("interactions:create"),
-      "capture grant described",
-    );
-    assert(
-      JSON.stringify(operation.security) ===
-        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
-      "personal bearer security published",
-    );
-    if (method === "post") {
-      assert(
-        operation.parameters?.find((p) => p.name === "Origin")?.required ===
-          false,
-        "bearer Origin optional",
-      );
-    }
-  }
-  for (
-    const path of [
-      "/api/v1/people/{personId}/activity-report",
-      "/api/v1/people/{personId}/communications",
-      "/api/v1/today/favorite-notes",
-      "/api/v1/today/recent-activity",
-    ]
-  ) {
-    assert(
-      JSON.stringify(document.paths[path]?.get?.security) ===
-        JSON.stringify([{ kinship_session: [] }]),
-      "historic projections stay session-only",
-    );
-  }
 });
 
 Deno.test("task client exposes detail and keeps dueBefore on filtered pagination", async () => {
@@ -234,45 +244,6 @@ Deno.test("generated minimal identity client uses the scoped route and workspace
   } finally {
     globalThis.fetch = original;
   }
-});
-
-Deno.test("person reads document domain grants with HTTP bearer security and leave aggregates session-only", () => {
-  const document = buildOpenApiDocument() as {
-    paths: Record<
-      string,
-      Record<
-        string,
-        { security: Record<string, string[]>[]; description?: string }
-      >
-    >;
-  };
-  for (
-    const [path, grant] of [
-      ["/api/v1/people", "people:read"],
-      ["/api/v1/people/{personId}/identity", "people:profile:read"],
-      ["/api/v1/people/{personId}/dates", "people:profile:read"],
-      ["/api/v1/people/{personId}/facts/{section}", "people:profile:read"],
-      ["/api/v1/people/{personId}/relationships", "relationships:read"],
-      ["/api/v1/relationship-types", "relationships:read"],
-    ]
-  ) {
-    const operation = document.paths[path!]?.get;
-    assert(
-      operation && operation.description?.includes(grant!),
-      "required domain grant described",
-    );
-    assert(
-      JSON.stringify(operation.security) ===
-        JSON.stringify([{ kinship_session: [] }, { kinship_api_token: [] }]),
-      "HTTP bearer schemes have empty scope arrays",
-    );
-  }
-  assert(
-    JSON.stringify(
-      document.paths["/api/v1/people/{personId}"]?.get?.security,
-    ) === JSON.stringify([{ kinship_session: [] }]),
-    "full profile never accepts a personal token",
-  );
 });
 
 Deno.test("API-001 contract returns the one-time secret and generates token management calls", async () => {

@@ -24,7 +24,11 @@ Deno.test("scoped person reads accept only their explicit bearer grant and never
       authenticate: (token, scope: string, workspaceId) =>
         Promise.resolve(
           token === "profile" && scope === "people:profile:read" && !workspaceId
-            ? { actor, status: "authenticated" as const }
+            ? {
+              actor,
+              status: "authenticated" as const,
+              tokenId: "00000000-0000-4000-8000-0000000000aa",
+            }
             : { status: "invalid" as const },
         ),
     },

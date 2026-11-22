@@ -164,6 +164,9 @@ function operation(route: RouteDescriptor): Record<string, unknown> {
     operationId: route.operationId,
     ...(route.description ? { description: route.description } : {}),
     ...(route.security ? { security: route.security } : {}),
+    // The one scope a personal token needs here (MCP-A1), machine-readable
+    // for clients and the tool catalog; the prose says it in words.
+    ...(route.tokenScope ? { "x-kinship-token-scope": route.tokenScope } : {}),
     ...(Object.keys(parameters).length > 0
       ? { requestParams: parameters }
       : {}),

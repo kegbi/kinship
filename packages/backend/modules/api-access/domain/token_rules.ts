@@ -26,6 +26,24 @@ export const API_TOKEN_SCOPES = [
   "tasks:create",
   "tasks:write",
   "interactions:create",
+  "people:write",
+  "people:delete",
+  "people:merge",
+  "relationships:write",
+  "interactions:read",
+  "interactions:write",
+  "reminders:read",
+  "reminders:write",
+  "journal:read",
+  "journal:write",
+  "gifts:read",
+  "gifts:write",
+  "files:read",
+  "files:write",
+  "search:read",
+  "today:read",
+  "vocabularies:read",
+  "vocabularies:write",
 ] as const;
 export type ApiTokenScope = typeof API_TOKEN_SCOPES[number];
 
@@ -178,6 +196,19 @@ export function validateApiToken(
   return { ...(expiresAt ? { expiresAt } : {}), name, scopes };
 }
 
+/** Whether a token is neither revoked nor expired, and acts where asked. */
+function current(command: {
+  readonly now: Date;
+  readonly record: ApiTokenRecord;
+  readonly requestedWorkspaceId?: string;
+  readonly workspaceId: string;
+}): boolean {
+  const { now, record, requestedWorkspaceId } = command;
+  return !record.revokedAt &&
+    (!record.expiresAt || Date.parse(record.expiresAt) > now.getTime()) &&
+    (!requestedWorkspaceId || command.workspaceId === requestedWorkspaceId);
+}
+
 /** Everything about a presented token that can be decided without hashing. */
 export function usable(command: {
   readonly now: Date;
@@ -186,9 +217,32 @@ export function usable(command: {
   readonly requiredScope: StoredTokenScope;
   readonly workspaceId: string;
 }): boolean {
-  const { now, record, requestedWorkspaceId, requiredScope } = command;
-  return !record.revokedAt &&
-    (!record.expiresAt || Date.parse(record.expiresAt) > now.getTime()) &&
-    record.scopes.includes(requiredScope) &&
-    (!requestedWorkspaceId || command.workspaceId === requestedWorkspaceId);
+  return current(command) &&
+    command.record.scopes.includes(command.requiredScope);
+}
+
+/** The personal grants a stored row carries, in the order it stores them. */
+export function personalScopes(
+  record: ApiTokenRecord,
+): readonly ApiTokenScope[] {
+  return record.scopes.filter((scope): scope is ApiTokenScope =>
+    (API_TOKEN_SCOPES as readonly string[]).includes(scope)
+  );
+}
+
+/**
+ * The same cheap decision for a route that asks what a token is rather than
+ * what it may do (MCP-A1): any current personal token passes, whatever grant
+ * it carries. A calendar feed's row never does, even presented under the
+ * personal prefix, because its secret is a URL and not an agent's credential.
+ */
+export function usableWithAnyGrant(command: {
+  readonly now: Date;
+  readonly record: ApiTokenRecord;
+  readonly requestedWorkspaceId?: string;
+  readonly workspaceId: string;
+}): boolean {
+  return current(command) &&
+    !command.record.scopes.includes(CALENDAR_FEED_SCOPE) &&
+    personalScopes(command.record).length > 0;
 }

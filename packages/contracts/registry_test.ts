@@ -13,13 +13,18 @@
 
 import { z } from "zod";
 import {
+  checkTokenScopes,
   collectRoutes,
   defineRoute,
   honoPath,
   pathParameters,
   routeKey,
 } from "./registry.ts";
-import { assert, assertThrows } from "../backend/testing/assert.ts";
+import {
+  assert,
+  assertEquals,
+  assertThrows,
+} from "../backend/testing/assert.ts";
 import { uuid } from "./schemas/shared.ts";
 import document from "./openapi/openapi.json" with { type: "json" };
 
@@ -231,4 +236,61 @@ Deno.test("[GAP-023] every paged list publishes the one page convention", () => 
       );
     }
   }
+});
+
+Deno.test("[MCP-A1] a route names a token scope exactly when it admits a token", () => {
+  const route = (
+    operationId: string,
+    security: readonly Record<string, readonly string[]>[],
+    tokenScope?: string,
+  ) =>
+    defineRoute({
+      method: "get",
+      path: `/api/v1/${operationId}`,
+      operationId,
+      security,
+      ...(tokenScope ? { tokenScope } : {}),
+      responses: answered,
+    });
+  const pair = [{ kinship_session: [] }, { kinship_api_token: [] }];
+  const vocabulary = { anyToken: ["context"], scopes: ["people:read"] };
+  const good = [
+    route("scoped", pair, "people:read"),
+    route("session", [{ kinship_session: [] }]),
+    route("context", [{ kinship_api_token: [] }]),
+  ];
+  assertEquals(checkTokenScopes(good, vocabulary), good, "a valid registry");
+  const refused = (routes: ReturnType<typeof route>[], expected: string) => {
+    let message = "";
+    try {
+      checkTokenScopes(routes, vocabulary);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    assertEquals(message, expected, expected);
+  };
+  refused(
+    [route("unscoped", pair), good[2]!],
+    "unscoped accepts a personal token and names no scope",
+  );
+  refused(
+    [route("stray", [{ kinship_session: [] }], "people:read"), good[2]!],
+    "stray names people:read and accepts no personal token",
+  );
+  refused(
+    [route("unknown", pair, "people:write"), good[2]!],
+    "unknown names people:write, which is not a token scope",
+  );
+  refused(
+    [route("context", pair)],
+    "context accepts any token and must admit only a token",
+  );
+  refused(
+    [route("context", [{ kinship_api_token: [] }], "people:read")],
+    "context accepts any token and names people:read",
+  );
+  refused(
+    [good[0]!],
+    "context accepts any token and is not registered",
+  );
 });

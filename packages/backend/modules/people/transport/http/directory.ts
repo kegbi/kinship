@@ -7,8 +7,8 @@
  * strip that reads those views back.
  *
  * The directory accepts an API token as well as a session cookie, which is
- * what `requireTokenOrSessionActor` is for: an `Authorization` header
- * commits the request to the token path with the `people:read` scope, so a
+ * what `scopedRouteActor` is for: an `Authorization` header commits the
+ * request to the token path with the scope `listPeople` names, so a
  * token that lacks it is refused rather than a silent fall back onto
  * whatever cookie the same request happened to carry.
  *
@@ -39,10 +39,10 @@ import {
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
   requireActor,
-  requireTokenOrSessionActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
@@ -65,9 +65,6 @@ export type PeopleDirectoryHttpServices = Pick<
   | "tagOptions"
   | "todayRecentPeople"
 >;
-
-/** The scope an API token needs to read the people directory. */
-const DIRECTORY_SCOPE = "people:read" as const;
 
 export const PEOPLE_QUERY_INVALID: ProblemDefinition = {
   code: "people_query_invalid",
@@ -178,6 +175,10 @@ export function createDirectoryRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
+  const directoryActor = scopedRouteActor(listPeople, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
   const origin = requireMatchingOrigin(services.browserSecurity);
 
   mount(routes, listPeople, session, async (context) => {
@@ -185,10 +186,7 @@ export function createDirectoryRoutes(
     if ("errors" in parsed) {
       return definedProblem(context, PEOPLE_QUERY_INVALID);
     }
-    const actor = await requireTokenOrSessionActor(context, {
-      scope: DIRECTORY_SCOPE,
-      ...(services.apiTokens ? { tokens: services.apiTokens } : {}),
-    });
+    const actor = await directoryActor(context);
     if (actor instanceof Response) return actor;
     const result = await services.directory.list(actor, {
       ...(parsed.data.cursor ? { cursor: parsed.data.cursor } : {}),

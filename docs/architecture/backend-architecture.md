@@ -475,6 +475,32 @@ replace application permissions. OpenAPI describes required domain grants in
 operation prose and uses empty scope arrays for the HTTP bearer security scheme,
 because personal tokens are not OAuth credentials.
 
+A token-enabled route names its one required grant on its route descriptor as
+`tokenScope` (MCP-A1,
+[ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)). The registry
+refuses to load when a route admits `kinship_api_token` without naming a grant
+of the contract vocabulary, or names one without admitting a token; the few
+routes that accept any valid token are listed by operation id in
+`packages/contracts/routes/mod.ts` and are token-only. Handlers obtain their
+actor from `scopedRouteActor(descriptor, …)` in `packages/http-kit`, which reads
+the grant from the descriptor when the route mounts, so the enforced grant, the
+prose, and the published `x-kinship-token-scope` operation extension cannot
+disagree. Every module's route factory receives the one personal-token
+authority, typed over the whole contract vocabulary.
+
+A token-authenticated request carries the token's id on its actor's correlation
+beside the request id, and every audit event it writes stores it as
+`payload.apiTokenId`. Only the token admission sets it, so a cookie-admitted
+change names no token, and a module payload can neither set nor overwrite it.
+Audit history treats it as operational correlation and never shows it.
+
+`GET /api/v1/me` (`getTokenContext`) accepts any valid personal token without a
+required grant and answers with the token's id, name, grants, and expiry and the
+workspace, member, and role it acts as. It applies every other token check —
+revoked, expired, bound workspace, current membership, secret — records the use,
+runs the legal guard, and never reads a session cookie. A calendar feed's secret
+is never accepted there, even under the personal prefix.
+
 The public reference at `/docs/api` is static and available without an account.
 Its operation catalog and `/docs/api/openapi.json` download consume the
 generated bearer-only projection `packages/contracts/openapi/external.json`.

@@ -23,13 +23,23 @@
  */
 export interface Correlation {
   readonly requestId?: string | undefined;
+  /**
+   * The personal API token the request authenticated with (MCP-A1), when it
+   * did. Only the HTTP kit's token admission sets it, so a request admitted
+   * by its session cookie never carries one, and the audit event a change
+   * writes names the credential that made it as `payload.apiTokenId`.
+   */
+  readonly apiTokenId?: string | undefined;
 }
 
-/** The correlation a source carries, spelled as a member that may be absent. */
+/** The correlation a source carries, spelled as members that may be absent. */
 export function correlationOf(
   source: Correlation,
-): { readonly requestId?: string } {
-  return source.requestId ? { requestId: source.requestId } : {};
+): { readonly apiTokenId?: string; readonly requestId?: string } {
+  return {
+    ...(source.requestId ? { requestId: source.requestId } : {}),
+    ...(source.apiTokenId ? { apiTokenId: source.apiTokenId } : {}),
+  };
 }
 
 /** One API request, answered or failed, as the HTTP kit reports it. */

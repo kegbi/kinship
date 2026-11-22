@@ -120,7 +120,7 @@ const sections = [
         <section id="grants" aria-labelledby="grants-heading">
           <p class="eyebrow">02 / Choose access deliberately</p><h2 id="grants-heading">Tokens & grants</h2>
           <p>Each token is bound to its issuing user and workspace. Every request revalidates the active user, membership, and workspace; grants also remain subject to application permissions and enabled profile sections. Only owners and administrators can issue or manage tokens. Revoke unused tokens from API access.</p>
-          <p>These seven grants are independent. None implies another. Select all three task grants for the complete task example.</p>
+          <p>These grants are independent. None implies another. Select all three task grants for the complete task example.</p>
           <dl class="grant-list">{API_TOKEN_SCOPE_CHOICES.map(({ scope, label, detail }) => <div><dt><code>{scope}</code><span>{label}</span></dt><dd>{detail}</dd></div>)}</dl>
           <p><code>people:read</code> covers the directory only. The profile grant reads minimal identity, profile facts and their options, and important dates. The relationship grant reads directional relationships and type lookup. Full profiles, timeline, search, history, files, administration, and other mutations remain outside this token API.</p>
           <p>The optional <code>X-Workspace-Id</code> header must match the token's workspace; it cannot switch the token to another workspace. Any Authorization header selects token authentication exclusively, with no session-cookie fallback. Expired, revoked, wrong-workspace, and wrong-grant tokens are refused with <code>401</code>.</p>

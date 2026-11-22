@@ -310,7 +310,7 @@ Deno.test("API tokens reject invalid grants and stop authenticating after revoca
   assertEquals(
     await state.management.create(owner, {
       name: "Too broad",
-      scopes: ["people:write" as never],
+      scopes: ["not a scope" as never],
     }),
     { status: "invalid" },
   );
@@ -327,7 +327,11 @@ Deno.test("API tokens reject invalid grants and stop authenticating after revoca
       "people:read",
       owner.workspaceId,
     ),
-    { actor: owner, status: "authenticated" },
+    {
+      actor: owner,
+      status: "authenticated",
+      tokenId: "10000000-0000-4000-8000-000000000004",
+    },
   );
   assertEquals(
     await state.management.authenticate(
@@ -355,6 +359,72 @@ Deno.test("API tokens reject invalid grants and stop authenticating after revoca
     status: "invalid",
   });
   assertEquals(state.audit.actions, ["created", "revoked"]);
+});
+
+Deno.test("[MCP-A1] introspection accepts any current personal token and names it", async () => {
+  const state = fixture();
+  await state.management.create(owner, {
+    expiresAt: "2026-09-24T10:00:00.000Z",
+    name: "Agent",
+    scopes: ["tasks:write", "people:read"],
+  });
+  const id = "10000000-0000-4000-8000-000000000004";
+  const secret = `kin_pat_${id}.first-secret-with-enough-entropy`;
+  const expected = {
+    actor: owner,
+    status: "authenticated",
+    token: {
+      expiresAt: "2026-09-24T10:00:00.000Z",
+      id,
+      name: "Agent",
+      scopes: ["tasks:write", "people:read"],
+    },
+  };
+  assertEquals(await state.management.introspect(secret), expected);
+  assertEquals(
+    await state.management.introspect(secret, owner.workspaceId),
+    expected,
+  );
+  for (
+    const [presented, workspaceId, reason] of [
+      [secret, crypto.randomUUID(), "another workspace"],
+      ["malformed", undefined, "not a token"],
+      [
+        `kin_pat_${id}.different-secret-with-enough-entropy`,
+        undefined,
+        "the wrong secret",
+      ],
+      [
+        `kin_cal_${id}.first-secret-with-enough-entropy`,
+        undefined,
+        "a feed spelling",
+      ],
+    ] as const
+  ) {
+    assertEquals(
+      await state.management.introspect(presented, workspaceId),
+      { status: "invalid" },
+      reason,
+    );
+  }
+  const record = state.records.get(id)!;
+  for (
+    const [changed, reason] of [
+      [
+        { ...record, scopes: ["calendar.read" as const] },
+        "a calendar feed row",
+      ],
+      [{ ...record, expiresAt: "2026-08-24T09:59:59.000Z" }, "expired"],
+      [{ ...record, revokedAt: "2026-08-24T09:00:00.000Z" }, "revoked"],
+    ] as const
+  ) {
+    state.records.set(id, changed);
+    assertEquals(
+      await state.management.introspect(secret),
+      { status: "invalid" },
+      reason,
+    );
+  }
 });
 
 Deno.test("[AUD-M4] a caller who lost their standing reaches no token, and an unknown one is not found", async () => {

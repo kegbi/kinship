@@ -197,7 +197,11 @@ function sanitizeDetail(
   // The request or job run that caused the event (GAP-039) is operational
   // correlation the governance writer adds to every correlated payload. It is
   // not product history, so it is dropped without marking the event redacted.
-  if (key === "requestId") return { accepted: false, redacted: false };
+  // So is the personal API token a change was made with (MCP-A1): it names a
+  // credential for operators, not something that happened to a person.
+  if (key === "requestId" || key === "apiTokenId") {
+    return { accepted: false, redacted: false };
+  }
   if (eventAction === "people.person-created" && key === "isPartial") {
     return booleanDetail(value);
   }
