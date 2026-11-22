@@ -556,7 +556,7 @@ export class PostgresReminderRepository implements ReminderRepository {
   }
 
   /**
-   * Only a member's own reminder at the revision they read is written: the
+   * Only a reminder about a person, at the revision read, is written: the
    * statement repeats the use case's source check, so a row its source took
    * over in between is left alone and answered as changed.
    */
@@ -707,6 +707,68 @@ export class PostgresReminderRepository implements ReminderRepository {
       order by occurrence.deliver_at, occurrence.id
     `.execute(database);
     return result.rows.map(occurrence);
+  }
+
+  /**
+   * Mints the window of every other member who holds occurrences of the
+   * reminder (MCP-D2), as the worker's top-up would, inside the caller's
+   * transaction. The caller already holds the workspace row, through the
+   * actor's revalidation, and the reminder row it just wrote, which is what
+   * orders this against a zone change and against the worker. So, unlike the
+   * worker, it takes no settings or preference locks: a preference change
+   * holds its row while it waits for the workspace row, and taking that
+   * preference row here, after the workspace row, would deadlock against it.
+   */
+  async refillOtherMembers(
+    command: Parameters<ReminderRepository["refillOtherMembers"]>[0],
+  ): Promise<void> {
+    const database = databaseFromSession(command.transaction);
+    const holders = await sql<Omit<ShortWindowRow, "workspace_id">>`
+      select distinct occurrence.member_id::text as member_id,
+        reminder.id::text as reminder_id,
+        (case when reminder.target_kind = 'person_date' then 1 + (
+          select count(*) from crm.reminder_rules rule
+          where rule.workspace_id = reminder.workspace_id and rule.is_active
+            and rule.days_before <> 0
+        ) else 1 end)::int as notices
+      from crm.reminders reminder
+      join crm.reminder_occurrences occurrence
+        on occurrence.reminder_id = reminder.id
+      where reminder.id = ${command.reminderId}::uuid
+        and reminder.workspace_id = ${command.workspaceId}::uuid
+        and occurrence.member_id <> ${command.memberId}::uuid
+      order by 1
+    `.execute(database);
+    if (holders.rows.length === 0) return;
+    const eligible = (await this.recipients.filterEligible({
+      memberIds: holders.rows.map((row) => row.member_id),
+      transaction: command.transaction,
+    })).filter((recipient) => recipient.workspaceId === command.workspaceId);
+    const windows = holders.rows
+      .filter((row) =>
+        eligible.some((recipient) => recipient.memberId === row.member_id)
+      )
+      .map((row) => ({
+        memberId: row.member_id,
+        reminderId: row.reminder_id,
+        rows: REMINDER_WINDOW_OCCURRENCES * row.notices,
+        workspaceId: command.workspaceId,
+      }));
+    if (windows.length === 0) return;
+    const channels = await recipientChannels(
+      this.preferences,
+      command.transaction,
+      eligible,
+    );
+    for (const batch of topUpBatches(windows)) {
+      await mintWindows(
+        database,
+        command.workspaceId,
+        batch,
+        channels,
+        command.now,
+      );
+    }
   }
 
   async setReminderActive(
@@ -1304,11 +1366,34 @@ async function topUpWindows(
     eligible.some((recipient) => recipient.memberId === window.memberId)
   );
   if (current.length === 0) return;
+  await mintWindows(transaction, workspaceId, current, channels, now);
+}
+
+/**
+ * Mints the dates one workspace's `windows` lack from `now`, in each member's
+ * zone and on the channels given, in one set-based insert.
+ *
+ * A date that still has a live, delivered, or in-flight row of the same
+ * notice, on any channel, is left alone. A row that was cancelled before it
+ * was ever attempted (by a disable, or by an edit replacing the schedule)
+ * does not hold its date: it is revived in place with the new instant and
+ * title, the way `upsertOccurrences` revives one, so a date the new schedule
+ * keeps is neither lost nor sent twice. Every other cancelled row stays as it
+ * is. A one-off reminder's single date is minted the same way.
+ */
+async function mintWindows(
+  transaction: Kysely<ApplicationDatabase>,
+  workspaceId: string,
+  windows: readonly Pick<ShortReminderWindow, "memberId" | "reminderId">[],
+  channels: ReadonlyMap<string, readonly DeliveryChannel[]>,
+  now: Date,
+): Promise<void> {
   // An important date notifies on the day plus each active lead rule. The
   // definitions are held FOR SHARE while their dates are minted (MCP-D2): an
   // edit or delete committing meanwhile is waited for and its schedule read,
   // and one that starts later waits for these rows and then cancels them, so
-  // a top-up never mints the old schedule after an edit replaced it.
+  // a top-up never mints the old schedule after an edit replaced it. An edit
+  // minting in its own transaction already holds these rows.
   const candidates = await sql<ReplenishmentRow>`
     select reminder.id::text as reminder_id,
       short.member_id::text as member_id, reminder.anchor_on::text,
@@ -1320,8 +1405,8 @@ async function topUpWindows(
       coalesce(preference.timezone, setting.default_timezone, 'UTC')
         as timezone
     from unnest(
-      ${current.map((window) => window.reminderId)}::uuid[],
-      ${current.map((window) => window.memberId)}::uuid[]
+      ${windows.map((window) => window.reminderId)}::uuid[],
+      ${windows.map((window) => window.memberId)}::uuid[]
     ) as short(reminder_id, member_id)
     join crm.reminders reminder on reminder.id = short.reminder_id
       and reminder.workspace_id = ${workspaceId}::uuid
@@ -1341,13 +1426,26 @@ async function topUpWindows(
         and rule.workspace_id = reminder.workspace_id and rule.is_active
     ) lead
     where reminder.is_active and reminder.deleted_at is null
-      and reminder.recurrence_unit <> 'none'
       and person.archived_at is null and person.deleted_at is null
     for share of reminder
   `.execute(transaction);
-  const rows = windowRows(candidates.rows, channels, now);
+  // One row per unique key, so the revival below never meets a row twice.
+  const rows = [
+    ...new Map(
+      windowRows(candidates.rows, channels, now).map((row) => [
+        [
+          row.reminderId,
+          row.memberId,
+          row.occursOn,
+          row.channel,
+          row.leadTimeDays,
+        ].join("|"),
+        row,
+      ]),
+    ).values(),
+  ];
   if (rows.length === 0) return;
-  // A date generated earlier keeps its rows, whatever their channel;
+  // A date generated earlier keeps its live rows, whatever their channel;
   // `rechannelWaiting` moves them onto the channels chosen now.
   await sql`
     insert into crm.reminder_occurrences (
@@ -1378,8 +1476,23 @@ async function topUpWindows(
         and existing.occurs_on = candidate.occurs_on
         and coalesce(existing.lead_time_days, -1) =
           candidate.lead_time_days
+        and existing.status <> 'cancelled'
     )
-    on conflict do nothing
+    on conflict (
+      reminder_id, member_id, occurs_on, channel,
+      (coalesce(lead_time_days, -1))
+    ) do update set
+      deliver_at = excluded.deliver_at, status = 'pending',
+      title_snapshot = excluded.title_snapshot,
+      body_snapshot = excluded.body_snapshot,
+      claim_token = null, claim_owner = null, lease_expires_at = null,
+      next_attempt_at = null, error = null, updated_at = excluded.updated_at
+    where reminder_occurrences.status = 'cancelled'
+      and reminder_occurrences.attempt_count = 0
+      and reminder_occurrences.provider_result_state = 'unattempted'
+      and reminder_occurrences.provider_receipt is null
+      and reminder_occurrences.provider_effect_at is null
+      and reminder_occurrences.visible_at is null
   `.execute(transaction);
 }
 
@@ -1492,9 +1605,13 @@ export class PostgresReminderDeliveryRepository
       ), windows as (
         select reminder.workspace_id, reminder.id as reminder_id,
           occurrence.member_id, reminder.target_kind,
+          -- A cancelled row is not a date ahead: a disable or an edit left
+          -- it, and counting it would keep a member's window looking full
+          -- until the old schedule's dates passed (MCP-D2).
           count(distinct occurrence.occurs_on) filter (
             where coalesce(occurrence.lead_time_days, 0) = 0
               and occurrence.deliver_at >= ${command.now}
+              and occurrence.status <> 'cancelled'
           ) as ahead
         from crm.reminders reminder
         join crm.people person on person.id = reminder.person_id

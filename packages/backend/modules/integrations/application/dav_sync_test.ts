@@ -731,3 +731,197 @@ Deno.test("DAV synchronize tells a held claim, a disabled subscription, and an u
     "disabled",
   );
 });
+
+Deno.test("DAV settles a remote change to an object deleted here and keeps the subscription moving", async () => {
+  const actions: string[] = [];
+  const changes: import("../domain/dav_rules.ts").DavRemoteChange[] = [
+    {
+      changeType: "update",
+      etag: '"task-2"',
+      href: "/deleted-task.ics",
+      kind: "task",
+      payload: { title: "Edited remotely" },
+      uid: "deleted-task",
+    },
+    {
+      changeType: "update",
+      etag: '"person-2"',
+      href: "/deleted-person.vcf",
+      kind: "person",
+      payload: { givenName: "Edited remotely" },
+      uid: "deleted-person",
+    },
+    {
+      changeType: "create",
+      etag: '"recreated-1"',
+      href: "/recreated.ics",
+      kind: "task",
+      payload: { title: "Deleted before it was mapped" },
+      uid: "recreated",
+    },
+    {
+      changeType: "update",
+      etag: '"live-2"',
+      href: "/live.vcf",
+      kind: "person",
+      payload: { givenName: "Applied" },
+      uid: "live",
+    },
+  ];
+  const deletedHere = new Set(["deleted-task-id", "deleted-person-id"]);
+  const answer = (action: string, id: string, live: string) => {
+    actions.push(`${action}:${id}`);
+    return Promise.resolve({
+      status: deletedHere.has(id) ? "not-found" : live,
+    });
+  };
+  const { management, objects } = fixture({
+    changes,
+    objects: [
+      {
+        coreId: "deleted-task-id",
+        etag: '"task-1"',
+        href: "/deleted-task.ics",
+        kind: "task",
+        status: "synced",
+      },
+      {
+        coreId: "deleted-person-id",
+        etag: '"person-1"',
+        href: "/deleted-person.vcf",
+        kind: "person",
+        status: "synced",
+      },
+      {
+        coreId: "live-person-id",
+        etag: '"live-1"',
+        href: "/live.vcf",
+        kind: "person",
+        status: "synced",
+      },
+    ],
+    people: {
+      archive: (_actor, id) => answer("person-archive", id, "archived"),
+      ensure: () => {
+        actions.push("person-ensure");
+        return Promise.resolve({ status: "forbidden" as const });
+      },
+      restore: (_actor, id) => answer("person-restore", id, "restored"),
+      update: (_actor, id) => answer("person-update", id, "updated"),
+    },
+    tasks: {
+      complete: (_actor, id) => answer("task-complete", id, "saved"),
+      create: () => {
+        actions.push("task-create");
+        return Promise.resolve({ status: "request-deleted" as const });
+      },
+      reopen: (_actor, id) => answer("task-reopen", id, "saved"),
+      update: (_actor, id) => answer("task-update", id, "saved"),
+    },
+  });
+  const created = await management.configure(actor, {
+    name: "Deleted here",
+    password: "secret",
+    remoteUrl: "https://dav.example.test/",
+  });
+  if (created.status !== "configured") throw new Error("fixture setup failed");
+
+  // The local deletion wins: the change is recorded as handled, nothing is
+  // recreated, the next object is applied, and the collection token moves.
+  const first = await management.synchronize(actor, created.subscription.id);
+  assertEquals(first.status, "success");
+  if (first.status !== "success") return;
+  assertEquals(first.subscription.remoteSyncToken, "sync-2");
+  assertEquals(objects.get("/deleted-task.ics"), {
+    coreId: "deleted-task-id",
+    etag: '"task-2"',
+    kind: "task",
+    status: "deleted",
+  });
+  assertEquals(objects.get("/deleted-person.vcf")?.status, "deleted");
+  assertEquals(objects.get("/deleted-person.vcf")?.etag, '"person-2"');
+  assertEquals(objects.get("/live.vcf")?.etag, '"live-2"');
+  assertEquals(objects.has("/recreated.ics"), false);
+  assertEquals(actions, [
+    "task-update:deleted-task-id",
+    "person-update:deleted-person-id",
+    "task-create",
+    "person-update:live-person-id",
+  ]);
+
+  // A remote delete, and a remote update that would restore the object,
+  // settle the same way rather than stopping the run.
+  actions.length = 0;
+  changes.splice(
+    0,
+    changes.length,
+    {
+      changeType: "update",
+      etag: '"task-3"',
+      href: "/deleted-task.ics",
+      kind: "task",
+      payload: { title: "Back remotely" },
+      uid: "deleted-task",
+    },
+    {
+      changeType: "delete",
+      etag: '"person-deleted"',
+      href: "/deleted-person.vcf",
+      kind: "person",
+      uid: "deleted-person",
+    },
+  );
+  const second = await management.synchronize(actor, created.subscription.id);
+  assertEquals(second.status, "success");
+  assertEquals(actions, [
+    "task-reopen:deleted-task-id",
+    "person-archive:deleted-person-id",
+  ]);
+  assertEquals(objects.get("/deleted-task.ics")?.etag, '"task-3"');
+  assertEquals(objects.get("/deleted-person.vcf")?.etag, '"person-deleted"');
+
+  // Any other refusal on a live object still stops the run as partial and
+  // keeps the token, as before.
+  actions.length = 0;
+  deletedHere.clear();
+  changes.splice(0, changes.length, {
+    changeType: "update",
+    etag: '"live-3"',
+    href: "/live.vcf",
+    kind: "person",
+    payload: { givenName: "Refused" },
+    uid: "live",
+  });
+  const refusing = fixture({
+    changes,
+    objects: [{
+      coreId: "live-person-id",
+      etag: '"live-2"',
+      href: "/live.vcf",
+      kind: "person",
+      status: "synced",
+    }],
+    people: {
+      archive: () => Promise.resolve({ status: "archived" }),
+      ensure: () => Promise.resolve({ status: "forbidden" as const }),
+      restore: () => Promise.resolve({ status: "restored" }),
+      update: () => Promise.resolve({ status: "archived-write-rejected" }),
+    },
+  });
+  const refusedSubscription = await refusing.management.configure(actor, {
+    name: "Refusing",
+    password: "secret",
+    remoteUrl: "https://dav.example.test/",
+  });
+  if (refusedSubscription.status !== "configured") {
+    throw new Error("fixture setup failed");
+  }
+  const partial = await refusing.management.synchronize(
+    actor,
+    refusedSubscription.subscription.id,
+  );
+  assertEquals(partial.status, "partial");
+  if (partial.status !== "partial") return;
+  assertEquals(partial.subscription.remoteSyncToken, undefined);
+  assertEquals(refusing.objects.get("/live.vcf")?.etag, '"live-2"');
+});

@@ -151,9 +151,9 @@ export interface ReminderRepository {
     | undefined
   >;
   /**
-   * Applies the patch to a member's own reminder while it still carries
-   * `expectedUpdatedAt`; undefined when it has changed or is not theirs to
-   * edit.
+   * Applies the patch to a reminder about a person that no source, such as
+   * an important date, manages, while it still carries `expectedUpdatedAt`;
+   * undefined when it has changed or its source manages it.
    */
   saveReminder(
     command: PlanningActor & {
@@ -165,9 +165,10 @@ export interface ReminderRepository {
     },
   ): Promise<ReminderDefinitionRecord | undefined>;
   /**
-   * Soft-deletes and disables a member's own reminder while it still carries
-   * `expectedUpdatedAt`. Its occurrences stay: `deleted_at` keeps every one,
-   * delivered or in flight, where a hard delete would cascade them away.
+   * Soft-deletes and disables a reminder about a person that no source
+   * manages, while it still carries `expectedUpdatedAt`. Its occurrences
+   * stay: `deleted_at` keeps every one, delivered or in flight, where a hard
+   * delete would cascade them away.
    */
   deleteReminder(
     command: PlanningActor & {
@@ -199,6 +200,23 @@ export interface ReminderRepository {
     | undefined
   >;
   cancelFutureOccurrences(
+    command: PlanningActor & {
+      readonly now: Date;
+      readonly reminderId: string;
+      readonly transaction: PlanningTransaction;
+    },
+  ): Promise<void>;
+  /**
+   * Mints, for every member other than the actor who holds occurrences of a
+   * live reminder, the window the worker's replenishment would mint from
+   * `now`: in each member's own zone, on their chosen channels, reviving a
+   * cancelled row that was never attempted and never adding a date that
+   * still has a live, delivered, or in-flight row. An edit or a re-enable
+   * calls it after cancelling, so a reminder one member changes keeps
+   * reaching everybody it reached (MCP-D2); the actor's own window is the
+   * use case's to mint, because it answers with the next firing.
+   */
+  refillOtherMembers(
     command: PlanningActor & {
       readonly now: Date;
       readonly reminderId: string;

@@ -28,8 +28,15 @@ import { PostgresActorRevalidation } from "../../packages/backend/modules/worksp
 import { PostgresReminderDeliveryPreferences } from "../../packages/backend/modules/workspaces/adapters/postgres/reminder_delivery_preferences.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
-import type { HttpMethod, SignedInFixture } from "../support/api.ts";
-import { requireWorkerDatabaseUrl } from "../support/database.ts";
+import {
+  type HttpMethod,
+  sessionCookie,
+  type SignedInFixture,
+} from "../support/api.ts";
+import {
+  addMembership,
+  requireWorkerDatabaseUrl,
+} from "../support/database.ts";
 import { composeTokenSuite } from "../support/tokens.ts";
 
 const suite = composeTokenSuite();
@@ -904,6 +911,293 @@ Deno.test("[MCP-D2] PostgreSQL a top-up waits for an edit rather than minting th
     `the refilled window follows the edited weekly schedule: ${
       JSON.stringify(pending)
     }`,
+  );
+});
+
+/**
+ * A second member of `owner`'s workspace, signed in there: registered with a
+ * workspace of their own, then added to this one and signed into it.
+ */
+async function joinedMember(
+  owner: SignedInFixture,
+  email: string,
+): Promise<SignedInFixture> {
+  const joined = await register(email, "Elsewhere");
+  const memberId = await addMembership(
+    sql,
+    joined.userId,
+    owner.workspaceId,
+    "member",
+  );
+  const signed = await api.signIn(email, { workspaceId: owner.workspaceId });
+  const cookie = sessionCookie(signed);
+  assert(signed.status === 200 && cookie, `${email} signs in to the workspace`);
+  return {
+    cookie,
+    memberId,
+    role: "member",
+    userId: joined.userId,
+    workspaceId: owner.workspaceId,
+  };
+}
+
+/** One member's occurrences of a reminder, with their local send time. */
+async function memberOccurrences(reminderId: string, memberId: string) {
+  return await sql<{
+    readonly id: string;
+    readonly local_time: string;
+    readonly occurs_on: string;
+    readonly status: string;
+    readonly title_snapshot: string | null;
+  }[]>`
+    select occurrence.id::text, occurrence.occurs_on::text, occurrence.status,
+      occurrence.title_snapshot,
+      to_char(occurrence.deliver_at at time zone coalesce(
+        preference.timezone, setting.default_timezone, 'UTC'), 'HH24:MI')
+        as local_time
+    from crm.reminder_occurrences occurrence
+    join crm.reminders reminder on reminder.id = occurrence.reminder_id
+    join crm.workspace_settings setting
+      on setting.workspace_id = reminder.workspace_id
+    left join crm.member_preferences preference
+      on preference.member_id = occurrence.member_id
+    where occurrence.reminder_id = ${reminderId}::uuid
+      and occurrence.member_id = ${memberId}::uuid
+    order by occurrence.occurs_on, occurrence.channel, occurrence.id`;
+}
+
+/**
+ * Asserts a member's pending occurrences are exactly `dates`, once each,
+ * under `title` at `time`: nothing pending from another schedule, and no
+ * date twice.
+ */
+async function assertWindow(
+  reminderId: string,
+  member: SignedInFixture,
+  dates: readonly string[],
+  title: string,
+  time: string,
+  label: string,
+) {
+  const rows = await memberOccurrences(reminderId, member.memberId);
+  const pending = rows.filter((row) => row.status === "pending");
+  assert(
+    JSON.stringify(pending.map((row) => row.occurs_on)) ===
+        JSON.stringify(dates) &&
+      pending.every((row) =>
+        row.title_snapshot === title && row.local_time === time
+      ),
+    `${label}: expected ${JSON.stringify(dates)} under ${title} at ${time}, ` +
+      `found ${JSON.stringify(rows)}`,
+  );
+  return rows;
+}
+
+async function revision(
+  fixture: SignedInFixture,
+  personId: string,
+  id: string,
+) {
+  const listed = await personReminders(fixture, personId);
+  const reminder = listed.reminders.find((item) => item.id === id);
+  assert(reminder, "the reminder is listed");
+  return reminder.updatedAt;
+}
+
+Deno.test("[MCP-D2] PostgreSQL refills every member after another member re-enables or edits a reminder", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(
+    `reminder-members-${suffix}@example.test`,
+    "Two",
+  );
+  const other = await joinedMember(
+    owner,
+    `reminder-members-other-${suffix}@example.test`,
+  );
+  const personId = await createPerson(owner, "Grace");
+  const weeklyTitle = `Weekly ${suffix}`;
+  const reminder = await createReminder(owner, personId, weeklyTitle);
+  const weekly = Array.from({ length: 8 }, (_, index) => soon(2 + 7 * index));
+  await assertWindow(
+    reminder.id,
+    owner,
+    weekly,
+    weeklyTitle,
+    "09:00",
+    "the creator's weekly window",
+  );
+
+  // Disabling cancels everybody's waiting work; re-enabling by the other
+  // member gives the creator their window back, not only the other member.
+  await expect(
+    await cookie(other, `/api/v1/reminders/${reminder.id}/active`, "PUT", {
+      active: false,
+    }),
+    200,
+    "the other member disables the reminder",
+  );
+  await expect(
+    await cookie(other, `/api/v1/reminders/${reminder.id}/active`, "PUT", {
+      active: true,
+    }),
+    200,
+    "and enables it again",
+  );
+  for (const member of [owner, other]) {
+    await assertWindow(
+      reminder.id,
+      member,
+      weekly,
+      weeklyTitle,
+      "09:00",
+      `after re-enabling, ${member === owner ? "the creator" : "the other"}`,
+    );
+  }
+
+  // The creator's first date is delivered; the other member then edits the
+  // schedule. Every member's waiting work moves onto the daily schedule under
+  // the new title and time, and the delivered date is not minted again.
+  const [first] = await memberOccurrences(reminder.id, owner.memberId);
+  await markSent(first!.id);
+  const dailyTitle = `Daily ${suffix}`;
+  await expect(
+    await cookie(other, `/api/v1/reminders/${reminder.id}`, "PATCH", {
+      expectedUpdatedAt: await revision(other, personId, reminder.id),
+      recurrenceUnit: "day",
+      sendTime: "10:30",
+      title: dailyTitle,
+    }),
+    200,
+    "the other member edits the schedule",
+  );
+  const daily = Array.from({ length: 8 }, (_, index) => soon(2 + index));
+  const ownerRows = await assertWindow(
+    reminder.id,
+    owner,
+    daily.slice(1),
+    dailyTitle,
+    "10:30",
+    "the creator follows the other member's edit",
+  );
+  assert(
+    ownerRows.find((row) => row.id === first!.id)?.status === "sent" &&
+      ownerRows.filter((row) => row.occurs_on === first!.occurs_on).length ===
+        1,
+    `the delivered date keeps its one row: ${JSON.stringify(ownerRows)}`,
+  );
+  await assertWindow(
+    reminder.id,
+    other,
+    daily,
+    dailyTitle,
+    "10:30",
+    "the editor's own window",
+  );
+
+  // The worker's next replenishment finds both windows full.
+  await deliveryRepository.replenish({ now: new Date() });
+  await assertWindow(
+    reminder.id,
+    owner,
+    daily.slice(1),
+    dailyTitle,
+    "10:30",
+    "the creator after a replenishment",
+  );
+  await assertWindow(
+    reminder.id,
+    other,
+    daily,
+    dailyTitle,
+    "10:30",
+    "the editor after a replenishment",
+  );
+
+  // A member left with only cancelled rows on the dates their schedule keeps
+  // is short, not full, and the worker revives those never-attempted rows.
+  await sql`
+    update crm.reminder_occurrences set status = 'cancelled',
+      updated_at = now()
+    where reminder_id = ${reminder.id}::uuid
+      and member_id = ${owner.memberId}::uuid and status = 'pending'`;
+  await deliveryRepository.replenish({ now: new Date() });
+  await assertWindow(
+    reminder.id,
+    owner,
+    daily.slice(1),
+    dailyTitle,
+    "10:30",
+    "the worker revives the creator's cancelled dates",
+  );
+});
+
+Deno.test("[MCP-D2] PostgreSQL a yearly reminder another member edits keeps the creator's window", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(
+    `reminder-yearly-${suffix}@example.test`,
+    "Year",
+  );
+  const other = await joinedMember(
+    owner,
+    `reminder-yearly-other-${suffix}@example.test`,
+  );
+  const personId = await createPerson(owner, "Ada");
+  const title = `Yearly ${suffix}`;
+  const reminder = await createReminder(owner, personId, title, "year");
+  const years = (anchor: string) =>
+    Array.from(
+      { length: 8 },
+      (_, index) =>
+        Temporal.PlainDate.from(anchor).add({ years: index }).toString(),
+    );
+  await assertWindow(
+    reminder.id,
+    owner,
+    years(soon(2)),
+    title,
+    "09:00",
+    "the creator's yearly window",
+  );
+  const anchorOn = soon(40);
+  await expect(
+    await cookie(other, `/api/v1/reminders/${reminder.id}`, "PATCH", {
+      anchorOn,
+      expectedUpdatedAt: await revision(other, personId, reminder.id),
+    }),
+    200,
+    "the other member moves the anniversary",
+  );
+  await assertWindow(
+    reminder.id,
+    owner,
+    years(anchorOn),
+    title,
+    "09:00",
+    "the creator's years move with the edit",
+  );
+
+  // Eight cancelled years of the old date are still ahead. They are not a
+  // window: a creator down to one new date is short, and is refilled on the
+  // new date rather than waiting years for the old ones to pass.
+  await sql`
+    delete from crm.reminder_occurrences
+    where reminder_id = ${reminder.id}::uuid
+      and member_id = ${owner.memberId}::uuid and status = 'pending'
+      and occurs_on > ${anchorOn}::date`;
+  await deliveryRepository.replenish({ now: new Date() });
+  const rows = await assertWindow(
+    reminder.id,
+    owner,
+    years(anchorOn),
+    title,
+    "09:00",
+    "the worker refills the creator's yearly window",
+  );
+  assert(
+    rows.filter((row) => row.status === "cancelled").every((row) =>
+      years(soon(2)).includes(row.occurs_on)
+    ),
+    `the old years stay cancelled: ${JSON.stringify(rows)}`,
   );
 });
 

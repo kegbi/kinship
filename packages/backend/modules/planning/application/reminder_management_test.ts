@@ -55,6 +55,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
   const interactions: string[][] = [];
   let cancellations = 0;
   let regenerations = 0;
+  let refills = 0;
   const management = planning.createReminderManagement({
     actors: {
       revalidate: () =>
@@ -88,6 +89,10 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
         return Promise.resolve();
       },
       rechannelMember: () => Promise.resolve(),
+      refillOtherMembers: () => {
+        refills += 1;
+        return Promise.resolve();
+      },
       regenerateForWorkspaceTimezone: () => Promise.resolve(),
       setReminderActive: (command) =>
         Promise.resolve(
@@ -263,6 +268,9 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
     interactions.length !== 1 ||
     interactions[0]?.join(",") !== [personId, reminder.id].sort().join(",") ||
     regenerations !== 1 ||
+    // Re-enabling refills every other member who held the reminder's work;
+    // disabling does not.
+    refills !== 1 ||
     !audits.includes("cadence-created") || !audits.includes("disabled")
   ) {
     throw new Error(JSON.stringify({
@@ -272,6 +280,7 @@ Deno.test("PLANNING-002 management preserves validation, authorization, replay, 
       audits,
       cancellations,
       conflict,
+      refills,
       changedCadenceReplay,
       createdCadence,
       crossPersonCadenceReplay,
@@ -489,6 +498,10 @@ Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by
           reminder?.id === command.id ? { reminder, source } : undefined,
         ),
       lockRequest: () => Promise.resolve(),
+      refillOtherMembers: (command) => {
+        steps.push(`refill:${command.reminderId}:${command.memberId}`);
+        return Promise.resolve();
+      },
       reminderDeleted: (command) =>
         Promise.resolve(command.id === deletedReminderId),
       saveReminder: (command) => {
@@ -592,7 +605,8 @@ Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by
     throw new Error(`edit: ${JSON.stringify(edited)}`);
   }
   // The person is locked before the reminder, as a create does, and the
-  // future is replaced the way disabling and re-enabling would replace it.
+  // future is replaced the way disabling and re-enabling would replace it:
+  // for every other member who held it, then for the editor.
   if (
     JSON.stringify(steps) !== JSON.stringify([
         `person:${personId}:true`,
@@ -600,6 +614,7 @@ Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by
           JSON.stringify({ recurrenceUnit: "week", title: "Call Ada weekly" })
         }`,
         `cancel:${id}`,
+        `refill:${id}:${actor.memberId}`,
         "mint:Call Ada weekly:8",
       ]) ||
     edited.reminder.recurrenceUnit !== "week" ||
@@ -613,7 +628,7 @@ Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by
   });
   if (
     inactive.status !== "saved" ||
-    steps.some((step) => step.startsWith("mint:"))
+    steps.some((step) => step.startsWith("mint:") || step.startsWith("refill:"))
   ) throw new Error(`a disabled reminder minted: ${JSON.stringify(steps)}`);
   statuses.deleteStale = (await management.deleteReminder(actor, id, {
     expectedUpdatedAt: revision,
@@ -624,7 +639,8 @@ Deno.test("[MCP-D2] a member edits and deletes their own reminder and cadence by
   });
   if (
     deleted.status !== "deleted" || deleted.reminderId !== id ||
-    !steps.includes(`cancel:${id}`)
+    !steps.includes(`cancel:${id}`) ||
+    steps.some((step) => step.startsWith("refill:"))
   ) throw new Error(`delete: ${JSON.stringify({ deleted, steps })}`);
   statuses.deletedAgain = (await management.deleteReminder(actor, id, {
     expectedUpdatedAt: revision,

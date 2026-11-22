@@ -55,8 +55,14 @@ const keyset = {
 };
 
 class DurableDav implements DavRemoteClient {
-  mode: "auth" | "conflict" | "delete" | "good" | "partial" | "updated" =
-    "good";
+  mode:
+    | "auth"
+    | "conflict"
+    | "delete"
+    | "good"
+    | "partial"
+    | "task-first"
+    | "updated" = "good";
   pulls: Array<string | undefined> = [];
   pull(command: Parameters<DavRemoteClient["pull"]>[0]) {
     this.pulls.push(command.remoteSyncToken);
@@ -96,6 +102,22 @@ class DurableDav implements DavRemoteClient {
         payload: { title: "Write updated notes" },
         uid: "notes",
       }]
+      : this.mode === "task-first"
+      ? [{
+        changeType: "update",
+        etag: '"task-settled"',
+        href: "/notes.ics",
+        kind: "task",
+        payload: { title: "Edited after the local delete" },
+        uid: "notes",
+      }, {
+        changeType: "update",
+        etag: '"ada-settled"',
+        href: "/ada.vcf",
+        kind: "person",
+        payload: { familyName: "Settled", givenName: "Ada" },
+        uid: "ada",
+      }]
       : this.mode === "partial"
       ? [{
         changeType: "create",
@@ -126,7 +148,11 @@ class DurableDav implements DavRemoteClient {
       }];
     return Promise.resolve({
       changes,
-      remoteSyncToken: this.mode === "partial" ? "token-partial" : "token-2",
+      remoteSyncToken: this.mode === "partial"
+        ? "token-partial"
+        : this.mode === "task-first"
+        ? "token-settled"
+        : "token-2",
     });
   }
 }
@@ -906,6 +932,106 @@ Deno.test({
     } finally {
       await connection.destroy();
     }
+  },
+});
+// --- MCP-D2 --------------------------------------------------------------
+
+Deno.test({
+  name:
+    "[INTEGRATION-001] MCP-D2 a DAV task deleted through the API settles later remote changes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const suffix = crypto.randomUUID();
+    const owner = await register(`dav-deleted-${suffix}@example.test`, "DAV");
+    const created = await request(
+      owner,
+      "/api/v1/settings/integrations/dav",
+      "POST",
+      {
+        name: "Deleted task DAV",
+        password: "remote-secret",
+        remoteUrl: "https://dav.example.test/deleted/",
+        username: "ada",
+      },
+    );
+    const { subscription } = await created.json() as {
+      subscription: { id: string };
+    };
+    const sync = async () =>
+      await (await request(
+        owner,
+        `/api/v1/settings/integrations/dav/${subscription.id}/sync`,
+        "POST",
+      )).text();
+    remote.mode = "good";
+    assert((await sync()).includes('"status":"success"'), "first sync");
+    const [mapped] = await sql<{ task_id: string }[]>`
+      select task_id::text from crm.dav_objects
+      where subscription_id=${subscription.id}::uuid and object_kind='task'
+    `;
+    assert(mapped, "the remote to-do became a task");
+    const read = await request(owner, `/api/v1/tasks/${mapped.task_id}`);
+    const { task } = await read.json() as { task: { updatedAt: string } };
+    const deleted = await request(
+      owner,
+      `/api/v1/tasks/${mapped.task_id}`,
+      "DELETE",
+      { expectedUpdatedAt: task.updatedAt },
+    );
+    assert(deleted.status === 200, `task deleted (${deleted.status})`);
+
+    // The next pull carries a change to the deleted task before a change to
+    // the person: the first is settled, the second applied, the token moves.
+    remote.mode = "task-first";
+    const settled = await sync();
+    assert(settled.includes('"status":"success"'), `settled sync: ${settled}`);
+    const [state] = await sql<
+      {
+        etag: string;
+        family_name: string;
+        live_tasks: number;
+        sync_status: string;
+        tasks: number;
+        title: string;
+        token: string;
+      }[]
+    >`
+      select object.etag, object.sync_status, task.title,
+        (select count(*)::int from crm.tasks
+          where workspace_id=${owner.workspaceId}::uuid) tasks,
+        (select count(*)::int from crm.tasks
+          where workspace_id=${owner.workspaceId}::uuid
+            and deleted_at is null) live_tasks,
+        (select person.family_name from crm.people person
+          join crm.dav_objects card on card.person_id=person.id
+          where card.subscription_id=${subscription.id}::uuid) family_name,
+        (select remote_sync_token from crm.dav_address_book_subscriptions
+          where id=${subscription.id}::uuid) token
+      from crm.dav_objects object
+      join crm.tasks task on task.id=object.task_id
+      where object.subscription_id=${subscription.id}::uuid
+        and object.object_kind='task'
+    `;
+    assert(
+      state?.sync_status === "deleted" && state.etag === '"task-settled"',
+      `the remote change is recorded as handled (${JSON.stringify(state)})`,
+    );
+    assert(
+      state.tasks === 1 && state.live_tasks === 0 &&
+        state.title === "Write notes",
+      "the local deletion wins: nothing is written or recreated",
+    );
+    assert(state.family_name === "Settled", "the following change applied");
+    assert(state.token === "token-settled", "the collection token advanced");
+
+    // A remote delete of the same object settles too.
+    remote.mode = "delete";
+    assert(
+      (await sync()).includes('"status":"success"'),
+      "a remote delete of a task deleted here settles",
+    );
+    remote.mode = "good";
   },
 });
 Deno.test({

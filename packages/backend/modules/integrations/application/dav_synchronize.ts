@@ -15,6 +15,16 @@
  * that has never been seen is created under an identifier derived from its
  * remote identity, so seeing it twice cannot make it twice.
  *
+ * A change to an object whose person or task was deleted here (MCP-D2) is
+ * settled rather than refused: the local deletion wins. The owning module
+ * answers such a row as not found, so the object is recorded as deleted at
+ * the remote's new etag, nothing is written to the core, nothing is
+ * recreated, and the run goes on to the next change and advances the
+ * collection token. Without that, the same refusal would be pulled and thrown
+ * again on every run and the subscription would never move past it. A create
+ * the task boundary refuses because that request's task was deleted is
+ * skipped the same way.
+ *
  * Every core refusal becomes a thrown error rather than a status, because the
  * write is inside the repository's claimed transaction: unwinding it is how a
  * checkpoint that would have lied about what was stored is never written.
@@ -42,6 +52,19 @@ export function createDavSynchronize(dependencies: DavSyncDependencies) {
       change.href,
       async (existing, transaction) => {
         if (existing?.etag === change.etag) return undefined;
+        // The remote object has no live local counterpart any more: deleted
+        // remotely, or deleted here, which wins over any remote change.
+        const settled = (
+          object: { coreId: string; kind: "person" | "task" },
+        ) => ({
+          coreId: object.coreId,
+          etag: change.etag,
+          href: change.href,
+          kind: object.kind,
+          payload: "",
+          status: "deleted" as const,
+          uid: change.uid,
+        });
         if (change.changeType === "delete") {
           if (!existing) return undefined;
           const deleted = existing.kind === "person"
@@ -55,25 +78,19 @@ export function createDavSynchronize(dependencies: DavSyncDependencies) {
               existing.coreId,
               transaction,
             );
+          if (deleted.status === "not-found") return settled(existing);
           if (!["archived", "saved", "unchanged"].includes(deleted.status)) {
             throw new Error("core-delete");
           }
-          return {
-            coreId: existing.coreId,
-            etag: change.etag,
-            href: change.href,
-            kind: existing.kind,
-            payload: "",
-            status: "deleted" as const,
-            uid: change.uid,
-          };
+          return settled(existing);
         }
         let coreId = existing?.coreId;
-        if (coreId) {
-          if (existing?.status === "deleted") {
+        if (existing && coreId) {
+          if (existing.status === "deleted") {
             const restored = change.kind === "person"
               ? await dependencies.people.restore(actor, coreId, transaction)
               : await dependencies.tasks.reopen(actor, coreId, transaction);
+            if (restored.status === "not-found") return settled(existing);
             if (!["restored", "saved", "unchanged"].includes(restored.status)) {
               throw new Error("core-restore");
             }
@@ -91,6 +108,7 @@ export function createDavSynchronize(dependencies: DavSyncDependencies) {
               change.payload,
               transaction,
             );
+          if (updated.status === "not-found") return settled(existing);
           if (!["updated", "saved", "unchanged"].includes(updated.status)) {
             throw new Error("core-update");
           }
@@ -107,6 +125,7 @@ export function createDavSynchronize(dependencies: DavSyncDependencies) {
               ...change.payload,
               requestId,
             }, transaction);
+          if (created.status === "request-deleted") return undefined;
           coreId = "person" in created
             ? created.person.id
             : "task" in created

@@ -8,20 +8,38 @@
  * when it is the same proposal and refused as a conflict when it is not.
  *
  * Enabling and disabling are not symmetric. Disabling cancels the future
- * occurrences the window had already minted, because a member who turned a
- * reminder off must stop hearing from it; re-enabling mints a fresh window
+ * occurrences the window had already minted, for every member, because a
+ * reminder turned off must stop sending; re-enabling mints a fresh window
  * from now, and only when the reminder was actually off, so toggling a live
  * reminder on again neither duplicates occurrences nor audits a generation.
+ * The fresh window is every member's who held the reminder's work, not only
+ * the actor's (MCP-D2): the others' cancelled rows would otherwise stay
+ * cancelled.
  *
  * Editing and deleting (MCP-D2) take the reminder's `updatedAt` as their
- * revision and touch only a member's own reminder: one an important date
- * generated is refused as `managed-reminder`, because the date would
- * regenerate it. An edit replaces the future the way disabling and then
- * re-enabling would, so the occurrence rules stay the recurrence domain's; a
- * delete is a soft delete that disables the reminder and cancels the same
- * unattempted work, keeping every delivered or in-flight occurrence as
- * evidence. The deleted reminder keeps its derived identifier, so a create
+ * revision. A reminder about a person is workspace data, so any member the
+ * permission admits may change it; one an important date generated is
+ * refused as `managed-reminder`, because the date would regenerate it. An
+ * edit replaces the future the way disabling and then re-enabling would, for
+ * every member who held it, so the occurrence rules stay the recurrence
+ * domain's; a delete is a soft delete that disables the reminder and cancels
+ * the same unattempted work, keeping every delivered or in-flight occurrence
+ * as evidence. The deleted reminder keeps its derived identifier, so a create
  * retried with its request identifier is refused as `request-deleted`.
+ *
+ * Lock order. Every write here first revalidates the actor, which holds the
+ * workspace row `FOR NO KEY UPDATE`; an edit or delete then locks the person;
+ * each then writes the reminder row, and only then cancels or mints
+ * occurrence rows. The refill of the other members adds no lock beyond those
+ * occurrence rows; it reads their zones and channels unlocked. A member's
+ * zone change and a workspace
+ * schedule change take that same workspace row before they rewrite
+ * occurrences, so they run wholly before or after this transaction; the
+ * worker's top-up holds the reminder row `FOR SHARE` before it inserts, so
+ * it waits for this one. A delivery-only change takes no workspace lock: a
+ * window refilled while one commits may keep the old channel until the
+ * worker's next replenishment re-channels it, as the actor's own window
+ * already could.
  *
  * The two time-zone entry points are events, not requests: a member or a
  * workspace changed zone, and the occurrences already minted have to be
@@ -90,7 +108,7 @@ export function createReminderDefinitions(
   dependencies: ReminderManagementDependencies,
 ) {
   /**
-   * The member's own live reminder an edit or delete may change, read after
+   * The live reminder an edit or delete may change, read after
    * the actor stands and refused in a fixed order: missing, owned by its
    * source, read at another revision, then its person not writable. The
    * person is locked before the reminder row is written, as a create locks
@@ -251,6 +269,12 @@ export function createReminderDefinitions(
             transaction,
           });
         } else if (!changed.wasActive && zone?.status === "ready") {
+          await dependencies.repository.refillOtherMembers({
+            ...actor,
+            now: occurredAt,
+            reminderId: reminder.id,
+            transaction,
+          });
           return {
             reminder: await regenerateWindow(
               dependencies,
@@ -314,15 +338,24 @@ export function createReminderDefinitions(
         });
         if (!saved) return { status: "stale" };
         // The future is replaced exactly as disabling and re-enabling would
-        // replace it: unattempted work is cancelled, a delivered or claimed
-        // occurrence is left alone, and the window is minted again from now
-        // under the new schedule when the reminder is live.
+        // replace it: unattempted work is cancelled for every member, a
+        // delivered or claimed occurrence is left alone, and when the
+        // reminder is live the window is minted again from now under the new
+        // schedule, for every other member who held it and for the editor.
         await dependencies.repository.cancelFutureOccurrences({
           ...actor,
           now: occurredAt,
           reminderId: id,
           transaction,
         });
+        if (saved.isActive) {
+          await dependencies.repository.refillOtherMembers({
+            ...actor,
+            now: occurredAt,
+            reminderId: id,
+            transaction,
+          });
+        }
         await dependencies.audit.record({
           action: "edited",
           actor,
