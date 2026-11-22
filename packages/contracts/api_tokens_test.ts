@@ -83,8 +83,13 @@ Deno.test("[MCP-A1] every token-enabled route publishes its one scope and the be
       `${name} describes the ${scope} grant it requires`,
     );
     if (!SAFE_METHODS.has(route.method)) {
+      // The shared optional Origin and workspace members; a write with
+      // headers of its own (the file upload) extends the same pair.
+      const headers = route.request?.headers?.shape ?? {};
       assert(
-        route.request?.headers === tokenOrSessionWriteHeaders,
+        headers.Origin === tokenOrSessionWriteHeaders.shape.Origin &&
+          headers["X-Workspace-Id"] ===
+            tokenOrSessionWriteHeaders.shape["X-Workspace-Id"],
         `${name} takes the Origin a bearer write may omit`,
       );
       assert(

@@ -395,3 +395,303 @@ Deno.test("[PEOPLE-007] D3: an avatar's content is cached privately for a day; a
     );
   }
 });
+
+const tokenId = "00000000-0000-4000-8000-0000000000aa";
+const tokenActor = {
+  memberId: "00000000-0000-4000-8000-000000000004",
+  role: "member" as const,
+  userId: "00000000-0000-4000-8000-000000000005",
+  workspaceId,
+};
+
+/**
+ * The file routes behind a fake personal-token authority that accepts a
+ * token whose secret is the scope asked for, and a coordinator that records
+ * every cookie session it was asked to resolve.
+ */
+function tokenApp(files: Partial<PersonFileManagement>) {
+  const asked: string[] = [];
+  const resolved: string[] = [];
+  const session = {
+    memberId: tokenActor.memberId,
+    role: tokenActor.role,
+    userId: tokenActor.userId,
+    workspaceId,
+    workspaceName: "Files",
+  };
+  const routes = createFileRoutes({
+    apiTokens: {
+      authenticate: (token: string, scope: string) => {
+        asked.push(scope);
+        return Promise.resolve(
+          token === scope
+            ? { actor: tokenActor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        );
+      },
+    },
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    files: files as PersonFileManagement,
+    protectedSessions: {
+      resolve: (command) => {
+        resolved.push(command.sessionToken);
+        return Promise.resolve({ ...session, accessibleWorkspaces: [session] });
+      },
+    },
+    storageSettings: {
+      get: () => Promise.resolve({ status: "forbidden" }),
+    } as StorageSettings,
+  });
+  return { asked, resolved, routes };
+}
+
+/** A one-chunk body that records whether anybody pulled it. */
+function watchedBody(bytes: Uint8Array) {
+  const watch = { pulled: false };
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      watch.pulled = true;
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  }, { highWaterMark: 0 });
+  return { body, watch };
+}
+
+const uploadHeaders = {
+  "content-type": "application/pdf",
+  "X-File-Kind": "document",
+  "X-File-Name": encodeURIComponent("care plan.pdf"),
+  "X-File-Title": encodeURIComponent("Care plan"),
+};
+
+Deno.test("[MCP-B8] file grants admit bearer reads and writes independently and never borrow the cookie", async () => {
+  const acted: (string | undefined)[] = [];
+  const answer = (value: unknown) => (who: { apiTokenId?: string }) => {
+    acted.push(who.apiTokenId);
+    return Promise.resolve(value);
+  };
+  const { asked, resolved, routes } = tokenApp({
+    download: answer({
+      bytes: new Uint8Array([37, 80, 68, 70]),
+      file: visibleFile,
+      status: "ready",
+    }) as never,
+    list: answer({ files: [visibleFile], status: "ready" }) as never,
+    remove: answer({ fileId, status: "removed" }) as never,
+    upload: answer({ file: visibleFile, status: "created" }) as never,
+  });
+  const base = `http://localhost/api/v1/people/${personId}/files`;
+  const cases = [
+    ["GET", base, "files:read", 200],
+    ["GET", `${base}/${fileId}/content`, "files:read", 200],
+    ["POST", base, "files:write", 201],
+    ["DELETE", `${base}/${fileId}`, "files:write", 200],
+  ] as const;
+  for (const [method, path, grant, status] of cases) {
+    const label = `${method} ${path}`;
+    const send = (headers: Record<string, string>) => {
+      const upload = method === "POST"
+        ? watchedBody(new Uint8Array([37, 80, 68, 70]))
+        : undefined;
+      return {
+        response: routes.request(path, {
+          ...(upload ? { body: upload.body } : {}),
+          headers: { ...(upload ? uploadHeaders : {}), ...headers },
+          method,
+        }),
+        watch: upload?.watch,
+      };
+    };
+    acted.length = 0;
+    resolved.length = 0;
+    const granted = send({ authorization: `Bearer ${grant}` });
+    const admitted = await granted.response;
+    assert(
+      admitted.status === status && acted[0] === tokenId,
+      `${label} bearer without Origin or cookie answered ${admitted.status}`,
+    );
+    assert(
+      granted.watch === undefined || granted.watch.pulled,
+      `${label} an admitted upload reads its body`,
+    );
+    if (path.endsWith("/content")) {
+      assert(
+        admitted.headers.get("content-type") === "application/pdf" &&
+          admitted.headers.get("content-length") === "4" &&
+          admitted.headers.get("content-disposition")?.startsWith(
+            `attachment; filename="care plan.pdf"`,
+          ) &&
+          admitted.headers.get("cache-control") === "private, no-store",
+        `${label} bearer download keeps its headers`,
+      );
+      assert(
+        (await admitted.arrayBuffer()).byteLength === 4,
+        `${label} bearer download carries the bytes`,
+      );
+    } else {
+      await admitted.body?.cancel();
+    }
+    for (
+      const wrong of [
+        "files:read",
+        "files:write",
+        "people:write",
+        "gifts:write",
+        "revoked",
+      ].filter((scope) => scope !== grant)
+    ) {
+      const refused = send({
+        authorization: `Bearer ${wrong}`,
+        cookie: "kinship_session=valid",
+        origin: "http://localhost",
+      });
+      const response = await refused.response;
+      await response.body?.cancel();
+      assert(
+        response.status === 401,
+        `${label} admitted ${wrong}: ${response.status}`,
+      );
+      assert(
+        refused.watch === undefined || !refused.watch.pulled,
+        `${label} read the body of a refused ${wrong} token`,
+      );
+    }
+    assert(
+      resolved.length === 0,
+      `${label} bearer requests resolved a cookie session`,
+    );
+    if (method === "GET") continue;
+    for (const origin of [undefined, "http://attacker.test"]) {
+      const foreign = await send({
+        cookie: "kinship_session=valid",
+        ...(origin ? { origin } : {}),
+      }).response;
+      await foreign.body?.cancel();
+      assert(
+        foreign.status === 403,
+        `${label} cookie write with Origin ${origin} answered ${foreign.status}`,
+      );
+    }
+    acted.length = 0;
+    const cookie = await send({
+      cookie: "kinship_session=valid",
+      origin: "http://localhost",
+    }).response;
+    await cookie.body?.cancel();
+    assert(
+      cookie.status === status && acted[0] === undefined,
+      `${label} cookie write answered ${cookie.status}`,
+    );
+  }
+  assert(
+    asked.includes("files:read") && asked.includes("files:write"),
+    `each grant was checked: ${asked}`,
+  );
+});
+
+Deno.test("[MCP-B8] a refused bearer upload is answered before its headers or body are judged", async () => {
+  const { routes } = tokenApp({
+    upload: () => Promise.reject(new Error("must not run")),
+  });
+  const refused = watchedBody(new Uint8Array(32));
+  const response = await routes.request(
+    "http://localhost/api/v1/people/not-a-uuid/files",
+    {
+      body: refused.body,
+      headers: { authorization: "Bearer files:read" },
+      method: "POST",
+    },
+  );
+  assertStatus(response, 401, "a token without files:write is refused first");
+  assert(!refused.watch.pulled, "the refused upload body was never read");
+  const granted = watchedBody(new Uint8Array(32));
+  const invalid = await routes.request(
+    `http://localhost/api/v1/people/${personId}/files`,
+    {
+      body: granted.body,
+      headers: { authorization: "Bearer files:write" },
+      method: "POST",
+    },
+  );
+  assertStatus(invalid, 400, "an admitted bearer still needs the file headers");
+  assert(!granted.watch.pulled, "headers are judged before the body is read");
+});
+
+Deno.test("[MCP-B8] cookie file routes keep their check order", async () => {
+  const nobody = createFileRoutes({
+    browserSecurity: { origin: "http://localhost", secureCookie: false },
+    files: {} as PersonFileManagement,
+    protectedSessions: { resolve: () => Promise.resolve(undefined) },
+  });
+  const code = async (response: Response | Promise<Response>) => {
+    const answered = await response;
+    const body = await answered.json() as { readonly code?: string };
+    return `${answered.status} ${body.code}`;
+  };
+  const base = `http://localhost/api/v1/people/${personId}/files`;
+  const upload = (headers: Record<string, string>) =>
+    nobody.request(base, {
+      body: new Uint8Array([1]),
+      headers,
+      method: "POST",
+    });
+  const uploads = [
+    await code(upload({ origin: "http://attacker.test" })),
+    await code(upload({
+      origin: "http://localhost",
+      "x-workspace-id": "not-a-workspace",
+    })),
+    await code(upload({ origin: "http://localhost" })),
+    await code(upload({ origin: "http://localhost", ...uploadHeaders })),
+  ];
+  assert(
+    JSON.stringify(uploads) === JSON.stringify([
+      "403 origin_invalid",
+      "400 workspace_header_invalid",
+      "400 file_invalid",
+      "401 session_invalid",
+    ]),
+    `cookie upload order changed: ${uploads}`,
+  );
+  const remove = (path: string, origin: string) =>
+    nobody.request(path, { headers: { origin }, method: "DELETE" });
+  const removals = [
+    await code(remove(`${base}/${fileId}`, "http://attacker.test")),
+    await code(remove(`${base}/not-a-uuid`, "http://localhost")),
+    await code(remove(`${base}/${fileId}`, "http://localhost")),
+  ];
+  assert(
+    JSON.stringify(removals) === JSON.stringify([
+      "403 origin_invalid",
+      "404 person_file_not_found",
+      "401 session_invalid",
+    ]),
+    `cookie removal order changed: ${removals}`,
+  );
+  const reads = [
+    await code(nobody.request("http://localhost/api/v1/people/x/files")),
+    await code(nobody.request(`${base}?limit=0`)),
+    await code(nobody.request(`${base}/x/content`)),
+    await code(nobody.request(`${base}/${fileId}/content`)),
+  ];
+  assert(
+    JSON.stringify(reads) === JSON.stringify([
+      "404 person_file_not_found",
+      "400 file_query_invalid",
+      "404 person_file_not_found",
+      "401 session_invalid",
+    ]),
+    `cookie read order changed: ${reads}`,
+  );
+});
+
+Deno.test("[MCP-B8] storage diagnostics stay session-only", async () => {
+  const { asked, routes } = tokenApp({});
+  const response = await routes.request(
+    "http://localhost/api/v1/settings/storage",
+    { headers: { authorization: "Bearer files:read" } },
+  );
+  assertStatus(response, 401, "a bearer alone never reads storage settings");
+  assert(asked.length === 0, "storage settings never ask the token authority");
+});

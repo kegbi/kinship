@@ -1,4 +1,5 @@
 import { buildOpenApiDocument } from "../../tools/contracts/document.ts";
+import { buildExternalOpenApiDocument } from "../../tools/contracts/external.ts";
 import * as client from "./generated/auth-client.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -86,4 +87,42 @@ Deno.test("[FILES-001] generated contract exposes opaque person file operations"
       "image/webp",
     ]
   ) assert(downloadMedia[media], `${media} download is documented`);
+});
+
+Deno.test("[MCP-B8] the bearer document keeps the upload's file headers and leaves storage settings out", () => {
+  interface Operation {
+    readonly parameters?: readonly {
+      readonly in: string;
+      readonly name: string;
+      readonly required?: boolean;
+    }[];
+    readonly security?: unknown;
+  }
+  type Paths = Readonly<Record<string, Readonly<Record<string, Operation>>>>;
+  const internal = buildOpenApiDocument() as unknown as { paths: Paths };
+  const external = buildExternalOpenApiDocument() as unknown as {
+    paths: Paths;
+  };
+  const upload = external.paths["/api/v1/people/{personId}/files"]?.post;
+  const headers = (upload?.parameters ?? []).filter((each) =>
+    each.in === "header"
+  );
+  const required = (name: string) =>
+    headers.find((each) => each.name === name)?.required === true;
+  assert(
+    required("X-File-Kind") && required("X-File-Name") &&
+      required("X-File-Title"),
+    `the bearer upload documents its file headers: ${JSON.stringify(headers)}`,
+  );
+  assert(
+    !headers.some((each) => each.name === "Origin"),
+    "the bearer upload document asks for no Origin",
+  );
+  assert(
+    JSON.stringify(
+          internal.paths["/api/v1/settings/storage"]?.get?.security,
+        ) === JSON.stringify([{ kinship_session: [] }]) &&
+      external.paths["/api/v1/settings/storage"] === undefined,
+    "storage diagnostics stay session-only",
+  );
 });

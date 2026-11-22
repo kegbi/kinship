@@ -10,8 +10,8 @@
 import { z } from "zod";
 import { defineRoute, type RouteDescriptor } from "../registry.ts";
 import {
-  originAndWorkspaceHeaders,
   problemResponses,
+  tokenOrSessionWriteHeaders,
   workspaceHeaders,
 } from "./common.ts";
 import {
@@ -29,7 +29,10 @@ export const listPersonFiles = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/files",
   operationId: "listPersonFiles",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require files:read. Lists one person's photos and then documents, a page at a time, with each file's metadata and availability (available, missing, processing, or quarantined); a person's avatar image and removed files are never listed. Does not return file bytes, which only the REST download route serves, and does not grant uploading or removing.",
+  tokenScope: "files:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
@@ -52,19 +55,15 @@ export const uploadPersonFile = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/files",
   operationId: "uploadPersonFile",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require files:write. Stores one document or photo for a person from the raw request body, whose Content-Type must be one of the listed media types, up to 10485760 bytes; the kind travels in X-File-Kind and the percent-encoded filename and title in X-File-Name and X-File-Title. A token without files:write is refused before the body is read. Does not grant listing or downloading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "files:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: z.object({
-      Origin: z.url().meta({
-        description: "Must exactly match the configured public web origin.",
-      }),
-      "X-Workspace-Id": z.uuid().optional().meta({
-        description:
-          "Optional requested workspace; validated against active membership.",
-      }),
+    headers: tokenOrSessionWriteHeaders.extend({
       "X-File-Kind": personFileKind,
       "X-File-Name": z.string().max(500),
       "X-File-Title": z.string().max(500),
@@ -97,13 +96,16 @@ export const removePersonFile = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}/files/{fileId}",
   operationId: "removePersonFile",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require files:write. Removes one of the person's documents or photos: its stored bytes and its link to the person are deleted and its metadata is kept as deleted, so it stops being listed or downloadable. There is no revision check; a file still being processed answers 409, and an avatar image, a file of another person, or a file of an archived person answers 404. A gift that links the file keeps its attachmentFileId, and a debt settlement whose photo it was reports that photo as unavailable. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "files:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       fileId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
   },
   responses: {
     200: {
@@ -123,7 +125,10 @@ export const downloadPersonFile = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/files/{fileId}/content",
   operationId: "downloadPersonFile",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require files:read. Answers the file's bytes as an attachment, with its stored media type, length, and filename, and records the read of a document or photo in the audit history; it also serves the person's avatar image, unrecorded. A removed file, or a file of another person, answers 404; one whose stored bytes are missing answers 410, one still being processed 409, and a quarantined one 423. Does not grant uploading or removing.",
+  tokenScope: "files:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,

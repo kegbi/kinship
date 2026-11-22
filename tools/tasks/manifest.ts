@@ -733,6 +733,8 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/person_merge_postgres_test.ts",
       "tests/integration/people_bulk_postgres_test.ts",
       "tests/integration/files_object_store_postgres_test.ts",
+      // MCP-B8: personal tokens on a person's files.
+      "tests/integration/api_tokens_files_postgres_test.ts",
       "tests/integration/governance_postgres_test.ts",
       "tests/integration/interactions_activities_postgres_test.ts",
       "tests/integration/interactions_communications_postgres_test.ts",

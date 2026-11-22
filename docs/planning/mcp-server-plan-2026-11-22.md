@@ -166,7 +166,7 @@ matrix or architecture prose; MCP-C4 does that once.
 - [x] **MCP-B6 Journal.** `journal:read`, `journal:write`, and the life-event
       writes under `people:write`.
 - [x] **MCP-B7 Gifts and debts.** `gifts:read`, `gifts:write`.
-- [ ] **MCP-B8 Files.** `files:read`, `files:write`, including the binary upload
+- [x] **MCP-B8 Files.** `files:read`, `files:write`, including the binary upload
       and download over REST.
 - [x] **MCP-B9 Vocabularies.** `vocabularies:read`, `vocabularies:write` on the
       personalization routes. The owner/admin rule stays in the use case.

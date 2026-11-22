@@ -11,6 +11,11 @@
  * the running total passes it, so a browser that ignores the declared length
  * is stopped by what it actually sent rather than by what it claimed; the
  * composition root exempts this route from the global cap for that reason.
+ *
+ * The four person-file routes also admit a personal token (MCP-B8): reads
+ * with `files:read`, the upload and the removal with `files:write`, through
+ * `routeAdmission`, which refuses a token without the grant before the upload
+ * headers are judged or its body read. Storage diagnostics stay session-only.
  */
 
 import { Hono } from "hono";
@@ -39,7 +44,6 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
 import { mount } from "../../../../../http-kit/route.ts";
 import {
   type ActorEnv,
@@ -47,6 +51,7 @@ import {
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseQuery, parseValue } from "../../../../../http-kit/validate.ts";
+import { routeAdmission } from "./admission.ts";
 
 type ProtectedSessions = ReturnType<typeof createProtectedSessionCoordinator>;
 
@@ -183,7 +188,14 @@ function decodedHeader(value: string | undefined): string | undefined {
 export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  const tokens = {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  };
+  const upload = routeAdmission(uploadPersonFile, tokens);
+  const list = routeAdmission(listPersonFiles, tokens);
+  const download = routeAdmission(downloadPersonFile, tokens);
+  const remove = routeAdmission(removePersonFile, tokens);
 
   mount(routes, getStorageSettings, session, async (context) => {
     const query = parseQuery(context, getStorageSettingsQuery);
@@ -206,7 +218,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     uploadPersonFile,
-    origin,
+    upload.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -222,7 +234,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
         "errors" in personId || "errors" in fileKind || !filename || !title ||
         !mimeType
       ) return failure(context, "validation-error");
-      const actor = await requireActor(context);
+      const actor = await upload.actor(context);
       if (actor instanceof Response) return actor;
       const bytes = await readBoundedBody(
         context.req.raw,
@@ -242,12 +254,12 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
     },
   );
 
-  mount(routes, listPersonFiles, session, async (context) => {
+  mount(routes, listPersonFiles, list.gate, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
     if ("errors" in personId) return failure(context, "not-found");
     const query = parseQuery(context, listPersonFilesQuery);
     if ("errors" in query) return failure(context, "query-invalid");
-    const actor = await requireActor(context);
+    const actor = await list.actor(context);
     if (actor instanceof Response) return actor;
     const result = await services.files.list(actor, personId.data, {
       ...(query.data.cursor ? { cursor: query.data.cursor } : {}),
@@ -270,6 +282,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     downloadPersonFile,
+    download.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -277,7 +290,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in fileId) {
         return failure(context, "not-found");
       }
-      const actor = await requireActor(context);
+      const actor = await download.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.files.download(
         actor,
@@ -298,7 +311,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
   mount(
     routes,
     removePersonFile,
-    origin,
+    remove.gate,
     session,
     async (context) => {
       const personId = parseValue(uuid, context.req.param("personId"));
@@ -306,7 +319,7 @@ export function createFileRoutes(services: FileHttpServices): Hono<ActorEnv> {
       if ("errors" in personId || "errors" in fileId) {
         return failure(context, "not-found");
       }
-      const actor = await requireActor(context);
+      const actor = await remove.actor(context);
       if (actor instanceof Response) return actor;
       const result = await services.files.remove(
         actor,
