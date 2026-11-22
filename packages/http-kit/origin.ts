@@ -69,3 +69,20 @@ export function requireMatchingOrigin(
     await next();
   };
 }
+
+/**
+ * The same refusal for a route that also admits a personal token: a request
+ * presenting `Authorization` is committed to token admission, which needs no
+ * `Origin` (`scopedRouteActor`), so only a cookie write is asked for one. It
+ * stands where `requireMatchingOrigin` stood, so a cookie request's checks
+ * still answer in the order they did.
+ */
+export function requireCookieWriteOrigin(
+  policy: BrowserSecurityPolicy,
+): MiddlewareHandler {
+  const origin = requireMatchingOrigin(policy);
+  return async (context, next) => {
+    if (context.req.header("Authorization") !== undefined) return await next();
+    return await origin(context, next);
+  };
+}

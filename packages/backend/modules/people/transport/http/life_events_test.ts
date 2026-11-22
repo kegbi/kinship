@@ -134,3 +134,73 @@ Deno.test("[PEOPLE-003] HTTP returns the non-disclosing hidden life-event projec
     "hidden life-event history must disclose neither retained rows nor failure",
   );
 });
+
+Deno.test("[MCP-B2] the life-event list admits a people:profile:read bearer and nothing else", async () => {
+  const personId = fixtures.personId();
+  let sessionCalls = 0;
+  let reads = 0;
+  const base = services(
+    { create: () => Promise.reject(new Error("must not create")) },
+    undefined,
+    undefined,
+    {
+      listLifeEvents: (resolved) => {
+        reads++;
+        assert(
+          resolved.workspaceId === actor.workspaceId,
+          "the token's workspace reaches the read model",
+        );
+        return Promise.resolve({ events: [], status: "ready", types: [] });
+      },
+    },
+  );
+  const app = createPeopleRoutes({
+    ...base,
+    apiTokens: {
+      authenticate: (token, scope: string) =>
+        Promise.resolve(
+          (token === "profile" && scope === "people:profile:read") ||
+            (token === "write" && scope === "people:write")
+            ? {
+              actor,
+              status: "authenticated" as const,
+              tokenId: "00000000-0000-4000-8000-0000000000bb",
+            }
+            : { status: "invalid" as const },
+        ),
+    },
+    protectedSessions: {
+      resolve: () => {
+        sessionCalls++;
+        return Promise.resolve(actor);
+      },
+    },
+  });
+  const path = `http://localhost/api/v1/people/${personId}/life-events`;
+
+  const accepted = await app.request(path, {
+    headers: { authorization: "Bearer profile" },
+  });
+  assertStatus(accepted, 200, "a people:profile:read bearer reads life events");
+  assert(
+    accepted.headers.get("cache-control") === "private, no-store",
+    "a bearer read is never publicly cacheable",
+  );
+  for (
+    const authorization of ["Bearer write", "Bearer directory", "Basic x"]
+  ) {
+    assertStatus(
+      await app.request(path, {
+        headers: { authorization, cookie: headers.cookie },
+      }),
+      401,
+      `${authorization} is refused and never borrows the cookie`,
+    );
+  }
+  assert(reads === 1 && sessionCalls === 0, "no refused bearer read anything");
+  assertStatus(
+    await app.request(path, { headers }),
+    200,
+    "the cookie read is unchanged",
+  );
+});

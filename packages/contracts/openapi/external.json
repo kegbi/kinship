@@ -2611,6 +2611,395 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createImportantDate",
+        "description": "Personal tokens require people:write. Adds an important date carrying exactly the components its precision declares; a person has at most one birthday, deceased, and first-met date. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportantDateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Important date created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/dates/{dateId}": {
+      "delete": {
+        "operationId": "deleteImportantDate",
+        "description": "Personal tokens require people:write. Removes an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "dateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonTransitionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Important date deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateImportantDate",
+        "description": "Personal tokens require people:write. Replaces an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "dateId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportantDateUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Important date updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportantDateChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/people/{personId}/deletion-impact": {
@@ -2855,6 +3244,419 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createProfileFact",
+        "description": "Personal tokens require people:write. Adds a fact to one profile section. first-meeting, food-preferences, and tags hold at most one fact, whose id is the person's id; creating one that exists answers stale, and tags always exists, so it is changed with updateProfileFact. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/ProfileFactSectionId"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{personId}/facts/{section}/{factId}": {
+      "delete": {
+        "operationId": "deleteProfileFact",
+        "description": "Personal tokens require people:write. Removes one fact, or clears first-meeting or food-preferences, at expectedUpdatedAt, the record's updatedAt; tags are cleared with updateProfileFact and an empty tagIds. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections and archived people are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/ProfileFactSectionId"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "factId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactDeleteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateProfileFact",
+        "description": "Personal tokens require people:write. Replaces one fact at expectedUpdatedAt, the record's updatedAt; the body's id must be the path's factId. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:write",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "section",
+            "schema": {
+              "$ref": "#/components/schemas/ProfileFactSectionId"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "factId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFactUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile fact updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileFactChanged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/people/{personId}/identity": {
@@ -2953,6 +3755,99 @@
       }
     },
     "/api/v1/people/{personId}/life-events": {
+      "get": {
+        "operationId": "listPersonLifeEvents",
+        "description": "Personal tokens require people:profile:read. Reads at most 100 precision-aware life events of a person in the active workspace, archived people included, with the workspace's life-event types. A hidden section returns no saved events.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "x-kinship-token-scope": "people:profile:read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "personId",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional; must match the token's bound workspace. Cannot switch workspaces.",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded precision-aware life-event history from the person profile read model",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonLifeEventsReady"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "createPersonLifeEvent",
         "description": "Personal tokens require people:write. Records a life event on a person of the token's workspace; a retry records a second one. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
@@ -6008,6 +6903,272 @@
         ],
         "additionalProperties": false
       },
+      "AddressFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "addresses"
+          }
+        },
+        "required": [
+          "isPrimary",
+          "labelIds",
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "city"
+            ],
+            "properties": {
+              "city": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "country"
+            ],
+            "properties": {
+              "country": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "displayName"
+            ],
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "postalCode"
+            ],
+            "properties": {
+              "postalCode": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "region"
+            ],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "street"
+            ],
+            "properties": {
+              "street": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "AddressFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "addresses"
+          }
+        },
+        "required": [
+          "isPrimary",
+          "labelIds",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "city"
+            ],
+            "properties": {
+              "city": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "country"
+            ],
+            "properties": {
+              "country": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "displayName"
+            ],
+            "properties": {
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "postalCode"
+            ],
+            "properties": {
+              "postalCode": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "region"
+            ],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "street"
+            ],
+            "properties": {
+              "street": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
       "ApiTokenContext": {
         "type": "object",
         "properties": {
@@ -6395,6 +7556,108 @@
         ],
         "additionalProperties": false
       },
+      "ContactMethodFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "contact-methods"
+          }
+        },
+        "required": [
+          "isPrimary",
+          "labelIds",
+          "typeId",
+          "value",
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "ContactMethodFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "isPrimary": {
+            "type": "boolean"
+          },
+          "labelIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "typeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "contact-methods"
+          }
+        },
+        "required": [
+          "isPrimary",
+          "labelIds",
+          "typeId",
+          "value",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "section"
+        ],
+        "additionalProperties": false
+      },
       "ConversationInteraction": {
         "type": "object",
         "properties": {
@@ -6554,6 +7817,136 @@
         ],
         "additionalProperties": false
       },
+      "FirstMeetingFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "introducedByPersonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "placeText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "first-meeting"
+          }
+        },
+        "required": [
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "introducedByPersonId"
+            ]
+          },
+          {
+            "required": [
+              "notes"
+            ],
+            "properties": {
+              "notes": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "placeText"
+            ],
+            "properties": {
+              "placeText": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "FirstMeetingFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "introducedByPersonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "placeText": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "first-meeting"
+          }
+        },
+        "required": [
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "introducedByPersonId"
+            ]
+          },
+          {
+            "required": [
+              "notes"
+            ],
+            "properties": {
+              "notes": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          },
+          {
+            "required": [
+              "placeText"
+            ],
+            "properties": {
+              "placeText": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
       "FoodPreferencesFact": {
         "type": "object",
         "properties": {
@@ -6568,6 +7961,64 @@
           }
         },
         "required": [
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "FoodPreferencesFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "foodPreferences": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "food-preferences"
+          }
+        },
+        "required": [
+          "foodPreferences",
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "FoodPreferencesFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "foodPreferences": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "food-preferences"
+          }
+        },
+        "required": [
+          "foodPreferences",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
           "section"
         ],
         "additionalProperties": false
@@ -6662,6 +8113,105 @@
         ],
         "additionalProperties": false
       },
+      "ImportantDateChanged": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "$ref": "#/components/schemas/ImportantDate"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ImportantDateDeleted": {
+        "type": "object",
+        "properties": {
+          "dateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "deleted"
+          }
+        },
+        "required": [
+          "dateId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ImportantDateInput": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "isAgeBased": {
+            "type": "boolean"
+          },
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "custom",
+              "deceased",
+              "first_met"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          }
+        },
+        "required": [
+          "isAgeBased",
+          "isYearApproximate",
+          "kind",
+          "precision"
+        ],
+        "additionalProperties": false
+      },
       "ImportantDateList": {
         "type": "object",
         "properties": {
@@ -6682,6 +8232,73 @@
         "required": [
           "dates",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "ImportantDateUpdateInput": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "isAgeBased": {
+            "type": "boolean"
+          },
+          "isYearApproximate": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "custom",
+              "deceased",
+              "first_met"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "day",
+              "full",
+              "month",
+              "month_day",
+              "unknown",
+              "year",
+              "year_month"
+            ]
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "isAgeBased",
+          "isYearApproximate",
+          "kind",
+          "precision",
+          "expectedUpdatedAt"
         ],
         "additionalProperties": false
       },
@@ -7385,6 +9002,112 @@
         "required": [
           "isCurrent",
           "title",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "OccupationFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "endOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "startOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "work"
+          }
+        },
+        "required": [
+          "isCurrent",
+          "title",
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "OccupationFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "endOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "startOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "work"
+          }
+        },
+        "required": [
+          "isCurrent",
+          "title",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
           "section"
         ],
         "additionalProperties": false
@@ -8237,6 +9960,23 @@
         ],
         "additionalProperties": false
       },
+      "PersonLifeEventType": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
       "PersonLifeEventUpdateInput": {
         "type": "object",
         "properties": {
@@ -8287,6 +10027,38 @@
         "required": [
           "precision",
           "expectedUpdatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "PersonLifeEventsReady": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonLifeEvent"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "hidden",
+              "ready"
+            ]
+          },
+          "types": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonLifeEventType"
+            }
+          }
+        },
+        "required": [
+          "events",
+          "status",
+          "types"
         ],
         "additionalProperties": false
       },
@@ -8579,6 +10351,112 @@
         ],
         "additionalProperties": false
       },
+      "PetFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "pets"
+          }
+        },
+        "required": [
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "categoryId"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
+      "PetFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "pets"
+          }
+        },
+        "required": [
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
+          "section"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "categoryId"
+            ]
+          },
+          {
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              }
+            }
+          }
+        ]
+      },
       "Problem": {
         "type": "object",
         "properties": {
@@ -8617,6 +10495,108 @@
           "status",
           "detail",
           "code"
+        ],
+        "additionalProperties": false
+      },
+      "ProfileFactChanged": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "saved"
+          },
+          "personUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "record": {
+            "$ref": "#/components/schemas/ProfileFactRecord"
+          }
+        },
+        "required": [
+          "status",
+          "personUpdatedAt",
+          "record"
+        ],
+        "additionalProperties": false
+      },
+      "ProfileFactCreateInput": {
+        "discriminator": {
+          "propertyName": "section",
+          "mapping": {
+            "addresses": "#/components/schemas/AddressFactCreateInput",
+            "contact-methods": "#/components/schemas/ContactMethodFactCreateInput",
+            "first-meeting": "#/components/schemas/FirstMeetingFactCreateInput",
+            "food-preferences": "#/components/schemas/FoodPreferencesFactCreateInput",
+            "pets": "#/components/schemas/PetFactCreateInput",
+            "tags": "#/components/schemas/TagsFactCreateInput",
+            "work": "#/components/schemas/OccupationFactCreateInput"
+          }
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AddressFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/ContactMethodFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FirstMeetingFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FoodPreferencesFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/PetFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/TagsFactCreateInput"
+          },
+          {
+            "$ref": "#/components/schemas/OccupationFactCreateInput"
+          }
+        ]
+      },
+      "ProfileFactDeleteInput": {
+        "type": "object",
+        "properties": {
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "$ref": "#/components/schemas/ProfileFactSectionId"
+          }
+        },
+        "required": [
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "ProfileFactDeleted": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "deleted"
+          },
+          "factId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "personUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "factId",
+          "personUpdatedAt"
         ],
         "additionalProperties": false
       },
@@ -8733,6 +10713,43 @@
           "pets",
           "tags",
           "work"
+        ]
+      },
+      "ProfileFactUpdateInput": {
+        "discriminator": {
+          "propertyName": "section",
+          "mapping": {
+            "addresses": "#/components/schemas/AddressFactUpdateInput",
+            "contact-methods": "#/components/schemas/ContactMethodFactUpdateInput",
+            "first-meeting": "#/components/schemas/FirstMeetingFactUpdateInput",
+            "food-preferences": "#/components/schemas/FoodPreferencesFactUpdateInput",
+            "pets": "#/components/schemas/PetFactUpdateInput",
+            "tags": "#/components/schemas/TagsFactUpdateInput",
+            "work": "#/components/schemas/OccupationFactUpdateInput"
+          }
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AddressFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/ContactMethodFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FirstMeetingFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/FoodPreferencesFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/PetFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/TagsFactUpdateInput"
+          },
+          {
+            "$ref": "#/components/schemas/OccupationFactUpdateInput"
+          }
         ]
       },
       "ProfileFactValue": {
@@ -9403,6 +11420,68 @@
         },
         "required": [
           "tagIds",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "TagsFactCreateInput": {
+        "type": "object",
+        "properties": {
+          "tagIds": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "section": {
+            "const": "tags"
+          }
+        },
+        "required": [
+          "tagIds",
+          "expectedPersonUpdatedAt",
+          "section"
+        ],
+        "additionalProperties": false
+      },
+      "TagsFactUpdateInput": {
+        "type": "object",
+        "properties": {
+          "tagIds": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedPersonUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "section": {
+            "const": "tags"
+          }
+        },
+        "required": [
+          "tagIds",
+          "expectedPersonUpdatedAt",
+          "expectedUpdatedAt",
+          "id",
           "section"
         ],
         "additionalProperties": false

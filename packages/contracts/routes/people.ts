@@ -603,12 +603,15 @@ export const createImportantDate = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/dates",
   operationId: "createImportantDate",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Adds an important date carrying exactly the components its precision declares; a person has at most one birthday, deceased, and first-met date. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -631,13 +634,16 @@ export const deleteImportantDate = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}/dates/{dateId}",
   operationId: "deleteImportantDate",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Removes an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       dateId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -660,13 +666,16 @@ export const updateImportantDate = defineRoute({
   method: "patch",
   path: "/api/v1/people/{personId}/dates/{dateId}",
   operationId: "updateImportantDate",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Replaces an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       dateId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -765,13 +774,16 @@ export const createProfileFact = defineRoute({
   method: "post",
   path: "/api/v1/people/{personId}/facts/{section}",
   operationId: "createProfileFact",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Adds a fact to one profile section. first-meeting, food-preferences, and tags hold at most one fact, whose id is the person's id; creating one that exists answers stale, and tags always exists, so it is changed with updateProfileFact. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       section: profileFactSectionId,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -794,14 +806,17 @@ export const deleteProfileFact = defineRoute({
   method: "delete",
   path: "/api/v1/people/{personId}/facts/{section}/{factId}",
   operationId: "deleteProfileFact",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Removes one fact, or clears first-meeting or food-preferences, at expectedUpdatedAt, the record's updatedAt; tags are cleared with updateProfileFact and an empty tagIds. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections and archived people are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       section: profileFactSectionId,
       factId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -824,14 +839,17 @@ export const updateProfileFact = defineRoute({
   method: "put",
   path: "/api/v1/people/{personId}/facts/{section}/{factId}",
   operationId: "updateProfileFact",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:write. Replaces one fact at expectedUpdatedAt, the record's updatedAt; the body's id must be the path's factId. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+  tokenScope: "people:write",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,
       section: profileFactSectionId,
       factId: uuid,
     }),
-    headers: originAndWorkspaceHeaders,
+    headers: tokenOrSessionWriteHeaders,
     body: {
       required: true,
       content: {
@@ -854,7 +872,10 @@ export const listPersonLifeEvents = defineRoute({
   method: "get",
   path: "/api/v1/people/{personId}/life-events",
   operationId: "listPersonLifeEvents",
-  security: [{ kinship_session: [] }],
+  description:
+    "Personal tokens require people:profile:read. Reads at most 100 precision-aware life events of a person in the active workspace, archived people included, with the workspace's life-event types. A hidden section returns no saved events.",
+  tokenScope: "people:profile:read",
+  security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
     params: z.object({
       personId: uuid,

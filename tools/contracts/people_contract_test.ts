@@ -803,11 +803,9 @@ Deno.test("[PEOPLE-003] OpenAPI publishes bounded person life-event history", ()
   }).schemas;
 
   assert(
-    JSON.stringify(read?.security) ===
-        JSON.stringify([{ kinship_session: [] }]) &&
-      read?.parameters?.some((parameter) => parameter.name === "personId") &&
+    read?.parameters?.some((parameter) => parameter.name === "personId") &&
       read.parameters.some((parameter) => parameter.name === "X-Workspace-Id"),
-    "life-event history requires session and resolved workspace context",
+    "life-event history requires resolved workspace context",
   );
   assert(
     ["200", "400", "401", "403", "404", "503"].every((status) =>

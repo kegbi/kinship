@@ -331,3 +331,166 @@ Deno.test("PEOPLE-006 HTTP refreshes one strict profile-fact section", async () 
     "food preferences expose an explicit clear command",
   );
 });
+
+Deno.test("[MCP-B2] profile-fact writes admit only a people:write bearer and keep the cookie Origin", async () => {
+  const personId = fixtures.personId();
+  const factId = "00000000-0000-4000-8000-000000000200";
+  const tokenId = "00000000-0000-4000-8000-0000000000bb";
+  const revision = "2026-08-16T12:00:00.000000Z";
+  const record = {
+    id: factId,
+    section: "pets" as const,
+    updatedAt: revision,
+    value: { name: "Byron" },
+  };
+  const calls: string[] = [];
+  const saved =
+    (use: string) => (resolved: { apiTokenId?: string | undefined }) => {
+      calls.push(`${use}:${resolved.apiTokenId}`);
+      return Promise.resolve({
+        personUpdatedAt: revision,
+        record,
+        status: "saved" as const,
+      });
+    };
+  const profileFacts: ProfileFactManagement = {
+    create: saved("create"),
+    delete: (resolved) => {
+      calls.push(`delete:${resolved.apiTokenId}`);
+      return Promise.resolve({
+        factId,
+        personUpdatedAt: revision,
+        status: "deleted",
+      });
+    },
+    list: () => Promise.reject(new Error("a write grant must not read")),
+    update: saved("update"),
+  };
+  let sessionCalls = 0;
+  const base = services(
+    { create: () => Promise.reject(new Error("must not create person")) },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    profileFacts,
+  );
+  const app = createPeopleRoutes({
+    ...base,
+    apiTokens: {
+      authenticate: (token, scope: string) =>
+        Promise.resolve(
+          (token === "write" && scope === "people:write") ||
+            (token === "profile" && scope === "people:profile:read")
+            ? { actor, status: "authenticated" as const, tokenId }
+            : { status: "invalid" as const },
+        ),
+    },
+    protectedSessions: {
+      resolve: () => {
+        sessionCalls++;
+        return Promise.resolve(actor);
+      },
+    },
+  });
+  const pet = {
+    expectedPersonUpdatedAt: revision,
+    name: "Byron",
+    section: "pets",
+  };
+  const writes = [
+    ["POST", `facts/pets`, pet],
+    ["PUT", `facts/pets/${factId}`, {
+      ...pet,
+      expectedUpdatedAt: revision,
+      id: factId,
+    }],
+    ["DELETE", `facts/pets/${factId}`, {
+      expectedPersonUpdatedAt: revision,
+      expectedUpdatedAt: revision,
+      section: "pets",
+    }],
+  ] as const;
+  const send = (
+    method: string,
+    suffix: string,
+    body: unknown,
+    extra: Record<string, string>,
+  ) =>
+    app.request(`http://localhost/api/v1/people/${personId}/${suffix}`, {
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", ...extra },
+      method,
+    });
+
+  for (const [method, suffix, body] of writes) {
+    assertStatus(
+      await send(method, suffix, body, { authorization: "Bearer write" }),
+      200,
+      `${method} ${suffix}: a people:write bearer needs no Origin or cookie`,
+    );
+    for (
+      const authorization of [
+        "Bearer profile",
+        "Bearer directory",
+        "Bearer malformed",
+      ]
+    ) {
+      assertStatus(
+        await send(method, suffix, body, {
+          authorization,
+          cookie: headers.cookie,
+          origin: headers.origin,
+        }),
+        401,
+        `${method} ${suffix}: ${authorization} is refused and never borrows the cookie`,
+      );
+    }
+    assertStatus(
+      await send(method, suffix, { section: "pets" }, {
+        authorization: "Bearer write",
+      }),
+      400,
+      `${method} ${suffix}: a bearer write keeps the body validation answer`,
+    );
+  }
+  assert(
+    JSON.stringify(calls) ===
+        JSON.stringify(
+          ["create", "update", "delete"].map((use) => `${use}:${tokenId}`),
+        ) && sessionCalls === 0,
+    "only the granted bearer reached the use cases, naming its token, and no cookie was read",
+  );
+  assertStatus(
+    await app.request(
+      `http://localhost/api/v1/people/${personId}/facts/pets`,
+      { headers: { authorization: "Bearer write" } },
+    ),
+    401,
+    "a write grant does not imply the people:profile:read list",
+  );
+
+  for (const [method, suffix, body] of writes) {
+    assertStatus(
+      await send(method, suffix, body, { cookie: headers.cookie }),
+      403,
+      `${method} ${suffix}: a cookie write still needs the exact Origin`,
+    );
+    assertStatus(
+      await send(method, suffix, { section: "pets" }, {
+        cookie: headers.cookie,
+        origin: "http://attacker.test",
+      }),
+      403,
+      `${method} ${suffix}: a cookie write answers its Origin before its body`,
+    );
+    assertStatus(
+      await send(method, suffix, body, {
+        cookie: headers.cookie,
+        origin: headers.origin,
+      }),
+      200,
+      `${method} ${suffix}: a same-origin cookie write is unchanged`,
+    );
+  }
+});

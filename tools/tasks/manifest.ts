@@ -743,6 +743,7 @@ export const MODULES: readonly TaskModule[] = [
       "tests/integration/api_tokens_people_identity_postgres_test.ts",
       "tests/integration/people_dates_postgres_test.ts",
       "tests/integration/people_facts_postgres_test.ts",
+      "tests/integration/api_tokens_people_profile_postgres_test.ts",
       "tests/integration/people_relationships_postgres_test.ts",
       "tests/integration/settings_preferences_postgres_test.ts",
       "tests/integration/settings_personalization_postgres_test.ts",

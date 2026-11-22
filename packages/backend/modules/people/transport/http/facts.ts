@@ -32,7 +32,7 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
+import { requireCookieWriteOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -41,7 +41,6 @@ import { mount } from "../../../../../http-kit/route.ts";
 import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import {
@@ -189,11 +188,15 @@ export function createFactsRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const factsActor = scopedRouteActor(listProfileFacts, {
+  const tokens = {
     browserSecurity: services.browserSecurity,
     tokens: services.apiTokens,
-  });
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  };
+  const factsActor = scopedRouteActor(listProfileFacts, tokens);
+  const createActor = scopedRouteActor(createProfileFact, tokens);
+  const updateActor = scopedRouteActor(updateProfileFact, tokens);
+  const deleteActor = scopedRouteActor(deleteProfileFact, tokens);
+  const origin = requireCookieWriteOrigin(services.browserSecurity);
 
   mount(
     routes,
@@ -265,7 +268,7 @@ export function createFactsRoutes(
       if ("errors" in input || input.data.section !== section.data) {
         return definedProblem(context, PROFILE_FACT_BODY_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await createActor(context);
       if (actor instanceof Response) return actor;
       const { section: _inputSection, ...factInput } = input.data;
       const result = await services.profileFacts?.create(
@@ -307,7 +310,7 @@ export function createFactsRoutes(
         "errors" in input || input.data.section !== section.data ||
         input.data.id !== factId.data
       ) return definedProblem(context, PROFILE_FACT_VERSION_INVALID);
-      const actor = await requireActor(context);
+      const actor = await updateActor(context);
       if (actor instanceof Response) return actor;
       const { section: _inputSection, ...factInput } = input.data;
       const result = await services.profileFacts?.update(
@@ -343,7 +346,7 @@ export function createFactsRoutes(
         "errors" in personId || "errors" in factId || "errors" in section ||
         "errors" in input || input.data.section !== section.data
       ) return definedProblem(context, PROFILE_FACT_DELETE_INVALID);
-      const actor = await requireActor(context);
+      const actor = await deleteActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.profileFacts?.delete(
         actor,

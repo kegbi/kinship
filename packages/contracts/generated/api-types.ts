@@ -743,6 +743,7 @@ export interface paths {
         /** @description Personal tokens require people:profile:read. Reads important dates, including archived people, preserving stored date precision. */
         readonly get: operations["listImportantDates"];
         readonly put?: never;
+        /** @description Personal tokens require people:write. Adds an important date carrying exactly the components its precision declares; a person has at most one birthday, deceased, and first-met date. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createImportantDate"];
         readonly delete?: never;
         readonly options?: never;
@@ -760,9 +761,11 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         readonly post?: never;
+        /** @description Personal tokens require people:write. Removes an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly delete: operations["deleteImportantDate"];
         readonly options?: never;
         readonly head?: never;
+        /** @description Personal tokens require people:write. Replaces an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly patch: operations["updateImportantDate"];
         readonly trace?: never;
     };
@@ -858,6 +861,7 @@ export interface paths {
         /** @description Personal tokens require people:profile:read. Reads one profile-fact section and its lookup options when requested. Hidden sections return no saved records or options; archived people remain readable. Existing person, section, revision, and option-search cursor checks apply. */
         readonly get: operations["listProfileFacts"];
         readonly put?: never;
+        /** @description Personal tokens require people:write. Adds a fact to one profile section. first-meeting, food-preferences, and tags hold at most one fact, whose id is the person's id; creating one that exists answers stale, and tags always exists, so it is changed with updateProfileFact. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly post: operations["createProfileFact"];
         readonly delete?: never;
         readonly options?: never;
@@ -873,8 +877,10 @@ export interface paths {
             readonly cookie?: never;
         };
         readonly get?: never;
+        /** @description Personal tokens require people:write. Replaces one fact at expectedUpdatedAt, the record's updatedAt; the body's id must be the path's factId. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly put: operations["updateProfileFact"];
         readonly post?: never;
+        /** @description Personal tokens require people:write. Removes one fact, or clears first-meeting or food-preferences, at expectedUpdatedAt, the record's updatedAt; tags are cleared with updateProfileFact and an empty tagIds. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections and archived people are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
         readonly delete: operations["deleteProfileFact"];
         readonly options?: never;
         readonly head?: never;
@@ -985,6 +991,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
+        /** @description Personal tokens require people:profile:read. Reads at most 100 precision-aware life events of a person in the active workspace, archived people included, with the workspace's life-event types. A hidden section returns no saved events. */
         readonly get: operations["listPersonLifeEvents"];
         readonly put?: never;
         /** @description Personal tokens require people:write. Records a life event on a person of the token's workspace; a retry records a second one. Does not grant reading life events. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin. */
@@ -9024,9 +9031,9 @@ export interface operations {
     readonly createImportantDate: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9118,9 +9125,9 @@ export interface operations {
     readonly deleteImportantDate: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9213,9 +9220,9 @@ export interface operations {
     readonly updateImportantDate: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9809,9 +9816,9 @@ export interface operations {
     readonly createProfileFact: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -9904,9 +9911,9 @@ export interface operations {
     readonly updateProfileFact: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };
@@ -10000,9 +10007,9 @@ export interface operations {
     readonly deleteProfileFact: {
         readonly parameters: {
             readonly query?: never;
-            readonly header: {
-                /** @description Must exactly match the configured public web origin. */
-                readonly Origin: string;
+            readonly header?: {
+                /** @description Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes. */
+                readonly Origin?: string;
                 /** @description Optional requested workspace; validated against active membership. */
                 readonly "X-Workspace-Id"?: string;
             };

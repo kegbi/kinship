@@ -24,6 +24,7 @@ import {
   type ProblemDefinition,
 } from "../../../../../http-kit/problem.ts";
 import { mount } from "../../../../../http-kit/route.ts";
+import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
   requireActor,
@@ -42,7 +43,7 @@ import { publicProfileFact } from "./fact_schemas.ts";
 /** What one person's read-only page is served from. */
 export type PersonProfileHttpServices = Pick<
   PeopleHttpServices,
-  "browserSecurity" | "profile" | "protectedSessions"
+  "apiTokens" | "browserSecurity" | "profile" | "protectedSessions"
 >;
 
 export const LIFE_EVENTS_UNAVAILABLE: ProblemDefinition = {
@@ -165,6 +166,10 @@ export function createProfileRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
+  const lifeEventsActor = scopedRouteActor(listPersonLifeEvents, {
+    browserSecurity: services.browserSecurity,
+    tokens: services.apiTokens,
+  });
 
   mount(
     routes,
@@ -175,7 +180,7 @@ export function createProfileRoutes(
       if ("errors" in parsed) {
         return definedProblem(context, PERSON_ID_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await lifeEventsActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.profile.listLifeEvents(actor, parsed.data)
         .catch(() => undefined);

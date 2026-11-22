@@ -33,7 +33,7 @@ import {
   failureResponder,
   type FailureTable,
 } from "../../../../../http-kit/failures.ts";
-import { requireMatchingOrigin } from "../../../../../http-kit/origin.ts";
+import { requireCookieWriteOrigin } from "../../../../../http-kit/origin.ts";
 import {
   definedProblem,
   type ProblemDefinition,
@@ -42,7 +42,6 @@ import { mount } from "../../../../../http-kit/route.ts";
 import { scopedRouteActor } from "../../../../../http-kit/scoped_actor.ts";
 import {
   type ActorEnv,
-  requireActor,
   sessionActor,
 } from "../../../../../http-kit/session.ts";
 import { parseJsonBody, parseValue } from "../../../../../http-kit/validate.ts";
@@ -184,11 +183,15 @@ export function createDatesRoutes(
 ): Hono<ActorEnv> {
   const routes = new Hono<ActorEnv>();
   const session = sessionActor(services);
-  const datesActor = scopedRouteActor(listImportantDates, {
+  const tokens = {
     browserSecurity: services.browserSecurity,
     tokens: services.apiTokens,
-  });
-  const origin = requireMatchingOrigin(services.browserSecurity);
+  };
+  const datesActor = scopedRouteActor(listImportantDates, tokens);
+  const createActor = scopedRouteActor(createImportantDate, tokens);
+  const updateActor = scopedRouteActor(updateImportantDate, tokens);
+  const deleteActor = scopedRouteActor(deleteImportantDate, tokens);
+  const origin = requireCookieWriteOrigin(services.browserSecurity);
 
   mount(routes, listImportantDates, session, async (context) => {
     const personId = parseValue(uuid, context.req.param("personId"));
@@ -224,7 +227,7 @@ export function createDatesRoutes(
       if ("errors" in personId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_CREATE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await createActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.importantDates?.create(
         actor,
@@ -253,7 +256,7 @@ export function createDatesRoutes(
       if ("errors" in personId || "errors" in dateId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_UPDATE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await updateActor(context);
       if (actor instanceof Response) return actor;
       const { expectedUpdatedAt, ...value } = input.data;
       const result = await services.importantDates?.update(
@@ -284,7 +287,7 @@ export function createDatesRoutes(
       if ("errors" in personId || "errors" in dateId || "errors" in input) {
         return definedProblem(context, IMPORTANT_DATE_DELETE_INVALID);
       }
-      const actor = await requireActor(context);
+      const actor = await deleteActor(context);
       if (actor instanceof Response) return actor;
       const result = await services.importantDates?.delete(
         actor,

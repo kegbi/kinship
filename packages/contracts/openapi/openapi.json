@@ -5998,11 +5998,16 @@
       },
       "post": {
         "operationId": "createImportantDate",
+        "description": "Personal tokens require people:write. Adds an important date carrying exactly the components its precision declares; a person has at most one birthday, deceased, and first-met date. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -6020,8 +6025,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -6131,11 +6136,16 @@
     "/api/v1/people/{personId}/dates/{dateId}": {
       "delete": {
         "operationId": "deleteImportantDate",
+        "description": "Personal tokens require people:write. Removes an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -6162,8 +6172,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -6271,11 +6281,16 @@
       },
       "patch": {
         "operationId": "updateImportantDate",
+        "description": "Personal tokens require people:write. Replaces an important date at expectedUpdatedAt, the date's updatedAt from listImportantDates. Archived people are read-only. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -6302,8 +6317,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -7181,11 +7196,16 @@
       },
       "post": {
         "operationId": "createProfileFact",
+        "description": "Personal tokens require people:write. Adds a fact to one profile section. first-meeting, food-preferences, and tags hold at most one fact, whose id is the person's id; creating one that exists answers stale, and tags always exists, so it is changed with updateProfileFact. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -7211,8 +7231,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -7322,11 +7342,16 @@
     "/api/v1/people/{personId}/facts/{section}/{factId}": {
       "delete": {
         "operationId": "deleteProfileFact",
+        "description": "Personal tokens require people:write. Removes one fact, or clears first-meeting or food-preferences, at expectedUpdatedAt, the record's updatedAt; tags are cleared with updateProfileFact and an empty tagIds. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections and archived people are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -7361,8 +7386,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -7470,11 +7495,16 @@
       },
       "put": {
         "operationId": "updateProfileFact",
+        "description": "Personal tokens require people:write. Replaces one fact at expectedUpdatedAt, the record's updatedAt; the body's id must be the path's factId. expectedPersonUpdatedAt is the personUpdatedAt that listProfileFacts or the last fact write returned. Hidden sections, archived people, and options that are inactive or outside the workspace are refused. Does not grant reads. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:write",
         "parameters": [
           {
             "in": "path",
@@ -7509,8 +7539,8 @@
               "type": "string",
               "format": "uri"
             },
-            "required": true,
-            "description": "Must exactly match the configured public web origin."
+            "description": "Required for cookie-authenticated writes and must exactly match the configured public web origin. Not required for bearer-authenticated writes.",
+            "required": false
           },
           {
             "in": "header",
@@ -8713,11 +8743,16 @@
     "/api/v1/people/{personId}/life-events": {
       "get": {
         "operationId": "listPersonLifeEvents",
+        "description": "Personal tokens require people:profile:read. Reads at most 100 precision-aware life events of a person in the active workspace, archived people included, with the workspace's life-event types. A hidden section returns no saved events.",
         "security": [
           {
             "kinship_session": []
+          },
+          {
+            "kinship_api_token": []
           }
         ],
+        "x-kinship-token-scope": "people:profile:read",
         "parameters": [
           {
             "in": "path",

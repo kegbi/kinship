@@ -8,6 +8,7 @@ import {
   matchingOrigin,
   ORIGIN_INVALID,
   rejectForeignOrigin,
+  requireCookieWriteOrigin,
   requireMatchingOrigin,
   UNSAFE_METHODS,
 } from "./origin.ts";
@@ -96,4 +97,29 @@ Deno.test("[GAP-019] the inline check answers the same 403 the middleware does",
     (await asked.json() as { readonly matching: boolean }).matching,
     "the predicate agrees with the responder",
   );
+});
+
+Deno.test("[MCP-B2] the cookie-write check leaves a bearer write to its token admission", async () => {
+  const app = new Hono();
+  app.use(requireCookieWriteOrigin(policy));
+  app.all("/thing", (context) => context.json({ reached: true }));
+
+  const bearer = await app.request("http://localhost/thing", {
+    headers: { Authorization: "Bearer anything" },
+    method: "POST",
+  });
+  const cookie = await app.request("http://localhost/thing", {
+    headers: { Cookie: "kinship_session=current" },
+    method: "POST",
+  });
+  const sameOrigin = await app.request("http://localhost/thing", {
+    headers: { Origin: policy.origin },
+    method: "DELETE",
+  });
+  const read = await app.request("http://localhost/thing");
+
+  assertStatus(bearer, 200, "a request presenting Authorization passes on");
+  assertStatus(cookie, 403, "a cookie write without Origin is refused");
+  assertStatus(sameOrigin, 200, "a same-origin cookie write passes");
+  assertStatus(read, 200, "a read is not asked for an origin");
 });

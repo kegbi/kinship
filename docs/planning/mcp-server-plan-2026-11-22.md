@@ -156,7 +156,7 @@ matrix or architecture prose; MCP-C4 does that once.
 - [x] **MCP-B1 People identity.** `people:write`, `people:delete`,
       `people:merge`, the `people:read` lookups, `search:read`, and
       `getTodayRecentPeople`.
-- [ ] **MCP-B2 People profile.** Fact and important-date writes, and the
+- [x] **MCP-B2 People profile.** Fact and important-date writes, and the
       life-event list.
 - [ ] **MCP-B3 Relationships.** `relationships:write`.
 - [x] **MCP-B4 Interactions.** `interactions:read` and the two interaction Today
