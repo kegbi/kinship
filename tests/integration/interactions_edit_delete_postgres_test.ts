@@ -342,13 +342,14 @@ Deno.test("[MCP-D1] PostgreSQL edits each kind by cookie and token at its revisi
       !favorites.includes(`Edit note ${w.suffix}`),
     "every read shows the edited note",
   );
-  assert(
+  assertEquals(
     (await expect(
       await api.request(w.own, "/api/v1/today/favorite-notes"),
       200,
       "favorites",
-    )).items.some((item: Json) => item.id === records.note.id),
-    "the favourite reaches Today",
+    )).items.find((item: Json) => item.id === records.note.id)?.updatedAt,
+    favorited.record.updatedAt,
+    "the favourite reaches Today with the revision an edit names",
   );
   const unfavorited = await expect(
     await api.request(w.own, notePath, "PATCH", {
@@ -698,6 +699,183 @@ Deno.test("[MCP-D1] PostgreSQL deletes each kind at its revision and every depen
       `Edit message ${w.suffix}`,
     ].some((text) => after.includes(text)),
     "no read lists a deleted record",
+  );
+});
+
+/** Soft-deletes a person the way the product does, with its confirmation. */
+async function softDelete(fixture: SignedInFixture, personId: string) {
+  const impact = await expect(
+    await api.request(fixture, `/api/v1/people/${personId}/deletion-impact`),
+    200,
+    "deletion impact",
+  );
+  await expect(
+    await api.request(fixture, `/api/v1/people/${personId}`, "DELETE", {
+      confirmation: impact.impact.confirmation,
+      expectedUpdatedAt: impact.impact.person.updatedAt,
+    }),
+    200,
+    "person deleted",
+  );
+}
+
+async function reportIds(fixture: SignedInFixture, personId: string) {
+  const report = await expect(
+    await api.request(fixture, `/api/v1/people/${personId}/activity-report`),
+    200,
+    "activity report",
+  );
+  return report.items.map((item: Json) => item.id) as string[];
+}
+
+Deno.test("[MCP-D1] PostgreSQL an activity whose participant was deleted is edited and deleted for the people who remain", async () => {
+  const w = await world("removed");
+  const writer = await tokens.mint(w.own, ["interactions:write"]);
+  const kept = await record(w.own, {
+    happenedAt: "2026-10-01T18:00:00.000Z",
+    kind: "activity",
+    participantIds: [w.ada, w.grace],
+    summary: `Removed dinner ${w.suffix}`,
+  });
+  const dropped = await record(w.own, {
+    happenedAt: "2026-10-02T18:00:00.000Z",
+    kind: "activity",
+    participantIds: [w.ada, w.grace],
+    summary: `Removed lunch ${w.suffix}`,
+  });
+  await softDelete(w.own, w.grace);
+
+  const path = `/api/v1/interactions/activity/${kept.id}`;
+  const edited = await expect(
+    await bearer(writer, path, "PATCH", {
+      expectedUpdatedAt: kept.updatedAt,
+      summary: `Removed supper ${w.suffix}`,
+    }),
+    200,
+    "summary-only edit of an activity with a deleted participant",
+  );
+  assertEquals(
+    edited.record.participants.map((entry: Json) => entry.id),
+    [w.ada],
+  );
+  const report = await expect(
+    await api.request(w.own, `/api/v1/people/${w.ada}/activity-report`),
+    200,
+    "Ada's report",
+  );
+  const read = report.items.find((item: Json) => item.id === kept.id);
+  assert(
+    read?.summary === `Removed supper ${w.suffix}` &&
+      read.updatedAt === edited.record.updatedAt &&
+      read.participants.map((entry: Json) => entry.id).join() === w.ada,
+    `the report reads the edit back for Ada: ${JSON.stringify(read)}`,
+  );
+  assertEquals(
+    (await expect(
+      await api.request(w.own, "/api/v1/today/recent-activity"),
+      200,
+      "recent activity",
+    )).items.find((item: Json) => item.id === kept.id)?.updatedAt,
+    edited.record.updatedAt,
+    "Today's recent activity names the revision an edit needs",
+  );
+  const [rows] = await sql<{ readonly links: number }[]>`
+    select count(*)::int as links from crm.activity_participants
+    where activity_id = ${kept.id}::uuid`;
+  assertEquals(rows?.links, 2, "the deleted person's row is left alone");
+  const [audit] = await audits(w.own.workspaceId, kept.id);
+  assertEquals(audit?.payload.participantIds, [w.ada]);
+  await expect(
+    await bearer(writer, path, "PATCH", {
+      expectedUpdatedAt: edited.record.updatedAt,
+      participantIds: [w.ada, w.grace],
+    }),
+    404,
+    "a deleted person the change names is refused",
+  );
+
+  assertEquals(
+    await expect(
+      await bearer(
+        writer,
+        `/api/v1/interactions/activity/${dropped.id}`,
+        "DELETE",
+        {
+          expectedUpdatedAt: dropped.updatedAt,
+        },
+      ),
+      200,
+      "delete of an activity with a deleted participant",
+    ),
+    { id: dropped.id, kind: "activity", status: "deleted" },
+  );
+  assert(
+    !(await reportIds(w.own, w.ada)).includes(dropped.id),
+    "the deleted activity left Ada's report",
+  );
+  const [removal] = await audits(w.own.workspaceId, dropped.id);
+  assertEquals(removal?.payload.participantIds, [w.ada]);
+});
+
+Deno.test("[MCP-D1] PostgreSQL a contact method on another channel is refused and a shared activity's delete reaches every participant", async () => {
+  const w = await world("channel");
+  const adaPhone = crypto.randomUUID();
+  await sql`insert into crm.person_contact_methods (id, person_id, type_id, value, workspace_id) values
+    (${adaPhone}::uuid, ${w.ada}::uuid, ${w.otherChannelTypeId}::uuid, '+15550100', ${w.own.workspaceId}::uuid)`;
+  const records = await recordAll(w);
+  await expect(
+    await api.request(
+      w.own,
+      `/api/v1/interactions/conversation/${records.conversation.id}`,
+      "PATCH",
+      {
+        contactMethodId: adaPhone,
+        expectedUpdatedAt: records.conversation.updatedAt,
+      },
+    ),
+    404,
+    "Ada's contact method on another channel",
+  );
+  const create = {
+    happenedAt: "2026-10-03T18:00:00.000Z",
+    kind: "activity",
+    participantIds: [w.ada, w.grace, w.lin],
+    requestId: crypto.randomUUID(),
+    summary: `Shared walk ${w.suffix}`,
+  };
+  const shared = (await expect(
+    await api.request(w.own, "/api/v1/interactions", "POST", create),
+    201,
+    "shared activity recorded",
+  )).record;
+  for (const id of [w.ada, w.grace, w.lin]) {
+    assert((await reportIds(w.own, id)).includes(shared.id), "listed before");
+  }
+  await expect(
+    await api.request(
+      w.own,
+      `/api/v1/interactions/activity/${shared.id}`,
+      "DELETE",
+      { expectedUpdatedAt: shared.updatedAt },
+    ),
+    200,
+    "shared activity deleted",
+  );
+  for (const id of [w.ada, w.grace, w.lin]) {
+    assert(
+      !(await reportIds(w.own, id)).includes(shared.id),
+      `the shared activity left ${id}'s report`,
+    );
+  }
+  const replayed = await expect(
+    await api.request(w.own, "/api/v1/interactions", "POST", create),
+    201,
+    "re-sending the original create after the delete",
+  );
+  assertEquals(
+    replayed.record.id,
+    shared.id,
+    "no tombstone: the same requestId records the activity again",
   );
 });
 

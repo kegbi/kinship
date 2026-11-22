@@ -441,6 +441,107 @@ Deno.test("[MCP-D1] an activity edit revalidates vocabulary and people and re-ad
   }
 });
 
+Deno.test("[MCP-D1] an activity whose participant was deleted stays editable for the people who remain", async () => {
+  const subject = harness({ visible: [ada, lin] });
+  const result = await subject.changes.changeInteraction(actor, activityId, {
+    expectedUpdatedAt: revision,
+    kind: "activity",
+    summary: "Supper",
+  });
+  assert(
+    result.status === "saved" && result.record.kind === "activity" &&
+      result.record.summary === "Supper",
+    `summary-only edit saved: ${JSON.stringify(result)}`,
+  );
+  assertEquals(
+    result.record.kind === "activity" ? result.record.participants : [],
+    [{ id: ada, name: "Ada" }],
+  );
+  assertEquals(subject.saved, [{ kind: "activity", summary: "Supper" }]);
+  assertEquals(
+    (subject.records.get(activityId) as unknown as {
+      participantIds: string[];
+    }).participantIds,
+    [ada, grace],
+    "the stored participant rows are left alone",
+  );
+  assertEquals(subject.audits[0]?.participantIds, [ada]);
+  assertEquals(subject.published, [], "the summary moved nothing");
+  const moved = await subject.changes.changeInteraction(actor, activityId, {
+    expectedUpdatedAt: savedRevision,
+    happenedAt: "2026-08-17T09:00:00Z",
+    kind: "activity",
+  });
+  assertEquals(moved.status, "saved");
+  assertEquals(subject.published, [{
+    happenedAt: "2026-08-17T09:00:00.000Z",
+    personIds: [ada],
+  }]);
+  assertEquals(subject.audits[1]?.participantIds, [ada]);
+  assertEquals(
+    await subject.changes.changeInteraction(actor, activityId, {
+      expectedUpdatedAt: subject.records.get(activityId)!.updatedAt!,
+      kind: "activity",
+      participantIds: [ada, grace],
+    }),
+    { status: "not-found" },
+    "a deleted person the change names is still refused",
+  );
+  const archived = harness({ archived: [ada], visible: [ada] });
+  assertEquals(
+    await archived.changes.changeInteraction(actor, activityId, {
+      expectedUpdatedAt: revision,
+      kind: "activity",
+      summary: "Archived",
+    }),
+    { status: "archived-write-rejected" },
+    "a visible archived participant still freezes the record",
+  );
+  const removal = harness({ visible: [ada] });
+  assertEquals(
+    await removal.changes.removeInteraction(
+      actor,
+      "activity",
+      activityId,
+      revision,
+    ),
+    { id: activityId, kind: "activity", status: "deleted" },
+  );
+  assertEquals(removal.audits[0]?.participantIds, [ada]);
+});
+
+Deno.test("[MCP-D1] a single-person record whose person was deleted is not found", async () => {
+  for (
+    const [id, kind, input] of [
+      [noteId, "note", { body: "Gone" }],
+      [callId, "call", { content: "Gone" }],
+      [conversationId, "conversation", { title: "Gone" }],
+    ] as const
+  ) {
+    const subject = harness({ visible: [grace] });
+    assertEquals(
+      await subject.changes.changeInteraction(
+        actor,
+        id,
+        {
+          expectedUpdatedAt: revision,
+          kind,
+          ...input,
+        } as Parameters<typeof subject.changes.changeInteraction>[2],
+      ),
+      { status: "not-found" },
+      `${kind} edit`,
+    );
+    assertEquals(
+      await subject.changes.removeInteraction(actor, kind, id, revision),
+      { status: "not-found" },
+      `${kind} delete`,
+    );
+    assert(subject.records.has(id), `${kind} kept`);
+    assertEquals(subject.audits, []);
+  }
+});
+
 Deno.test("[MCP-D1] a call edit re-advances the cadence when its time moves", async () => {
   const subject = harness();
   const result = await subject.changes.changeInteraction(actor, callId, {
@@ -548,6 +649,17 @@ Deno.test("[MCP-D1] a conversation edit keeps its contact method on its channel 
     );
     assertEquals(refused.saved, [], `${label} wrote nothing`);
   }
+  const otherChannel = harness({ contactTypeId: otherChannelId });
+  assertEquals(
+    await otherChannel.changes.changeInteraction(actor, conversationId, {
+      contactMethodId,
+      expectedUpdatedAt: revision,
+      kind: "conversation",
+    }),
+    { status: "not-found" },
+    "a contact method on another channel than the conversation's",
+  );
+  assertEquals(otherChannel.saved, []);
   const moved = harness();
   const rechanneled = await moved.changes.changeInteraction(
     actor,

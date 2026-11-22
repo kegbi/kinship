@@ -350,17 +350,12 @@ export function changedFields(change: CheckedChange): readonly string[] {
   return Object.keys(change).filter((key) => key !== "kind").sort();
 }
 
-/** The people a record names once the change is applied. */
-export function participantsOf(
-  stored: StoredRecord,
-  change: CheckedChange,
-): readonly string[] {
-  if (stored.kind === "activity") {
-    return change.kind === "activity" && change.participantIds
-      ? change.participantIds
-      : stored.participantIds;
-  }
-  return [stored.personId];
+/**
+ * The people a stored record names, whether or not each is still visible. A
+ * change that supplies an activity's participants replaces this list whole.
+ */
+export function participantsOf(stored: StoredRecord): readonly string[] {
+  return stored.kind === "activity" ? stored.participantIds : [stored.personId];
 }
 
 /**

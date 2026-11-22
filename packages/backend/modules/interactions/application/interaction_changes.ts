@@ -134,20 +134,22 @@ async function vocabularyStands(
 }
 
 /**
- * Whether every person the record names before and after the change may be
- * written. A person who is no longer visible (deleted) is ignored on the
- * stored side, so an activity is not frozen because one participant was
- * removed; a record that names nobody visible is not found, and every person
- * the change adds must be visible. Anyone archived makes the record read-only.
+ * Whether the people the record names, before and after the change, may be
+ * written, and who it names afterwards. A stored person who is no longer
+ * visible (deleted) is ignored, so an activity is not frozen because one
+ * participant was removed: that person's row stays untouched and is neither
+ * audited nor told to planning. A record that names nobody visible is not
+ * found, and every person the change itself supplies must be visible. Anyone
+ * visible and archived makes the record read-only.
  */
 async function peopleStand(
   dependencies: InteractionChangeDependencies,
   actor: InteractionActor,
-  before: readonly string[],
-  after: readonly string[],
+  stored: readonly string[],
+  supplied: readonly string[] | undefined,
   transaction: InteractionTransaction,
-): Promise<"ready" | Refusal> {
-  const touched = [...new Set([...before, ...after])].sort();
+): Promise<{ readonly participants: readonly string[] } | Refusal> {
+  const touched = [...new Set([...stored, ...supplied ?? []])].sort();
   const visible = new Set(
     (await dependencies.people.summarize({
       ...actor,
@@ -156,8 +158,8 @@ async function peopleStand(
     })).map((person) => person.id),
   );
   if (
-    !before.some((id) => visible.has(id)) ||
-    after.some((id) => !visible.has(id))
+    !stored.some((id) => visible.has(id)) ||
+    supplied?.some((id) => !visible.has(id))
   ) return { status: "not-found" };
   const inspected = await dependencies.people.inspect({
     ...actor,
@@ -165,7 +167,11 @@ async function peopleStand(
     personIds: touched.filter((id) => visible.has(id)),
     transaction,
   });
-  if (inspected.status === "ready") return "ready";
+  if (inspected.status === "ready") {
+    return {
+      participants: supplied ?? stored.filter((id) => visible.has(id)),
+    };
+  }
   return inspected.status === "archived"
     ? { status: "archived-write-rejected" }
     : { status: "not-found" };
@@ -279,15 +285,15 @@ export function createInteractionChanges(
           transaction,
         );
         if (vocabulary !== "ready") return vocabulary;
-        const participants = participantsOf(stored, change);
         const people = await peopleStand(
           dependencies,
           canonical,
-          participantsOf(stored, { kind: change.kind } as CheckedChange),
-          participants,
+          participantsOf(stored),
+          change.kind === "activity" ? change.participantIds : undefined,
           transaction,
         );
-        if (people !== "ready") return people;
+        if ("status" in people) return people;
+        const { participants } = people;
         if (
           !await contactMethodStands(
             dependencies,
@@ -382,15 +388,15 @@ export function createInteractionChanges(
           transaction,
         );
         if (section !== "ready") return section;
-        const participants = participantsOf(stored, nothing);
         const people = await peopleStand(
           dependencies,
           canonical,
-          participants,
-          [],
+          participantsOf(stored),
+          undefined,
           transaction,
         );
-        if (people !== "ready") return people;
+        if ("status" in people) return people;
+        const { participants } = people;
         const removed = await dependencies.repository.remove({
           expectedUpdatedAt,
           id,

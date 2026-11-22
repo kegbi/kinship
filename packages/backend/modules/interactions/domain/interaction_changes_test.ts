@@ -347,12 +347,11 @@ Deno.test("[MCP-D1] the changed fields, people, and occurrence follow what was s
     "participantIds",
     "summary",
   ]);
-  assertEquals(participantsOf(activity, moved), [grace]);
   assertEquals(occurrenceOf(activity, moved), "2026-08-20T10:00:00.000Z");
   const unchanged = { kind: "activity", summary: "Lunch" } as const;
-  assertEquals(participantsOf(activity, unchanged), [ada.toLowerCase()]);
+  assertEquals(participantsOf(activity), [ada.toLowerCase()]);
   assertEquals(occurrenceOf(activity, unchanged), activity.happenedAt);
-  assertEquals(participantsOf(note, { body: "x", kind: "note" }), [grace]);
+  assertEquals(participantsOf(note), [grace]);
   assertEquals(occurrenceOf(note, { body: "x", kind: "note" }), undefined);
   assertEquals(
     occurrenceOf(call, {
@@ -366,5 +365,5 @@ Deno.test("[MCP-D1] the changed fields, people, and occurrence follow what was s
     occurrenceOf(conversation, { kind: "conversation", title: null }),
     conversation.happenedAt,
   );
-  assertEquals(participantsOf(conversation, { kind: "conversation" }), [grace]);
+  assertEquals(participantsOf(conversation), [grace]);
 });

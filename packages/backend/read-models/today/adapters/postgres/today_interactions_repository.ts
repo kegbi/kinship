@@ -21,6 +21,7 @@ interface TodayRow {
     readonly name: string;
   }[];
   readonly summary: string | null;
+  readonly updated_at: string;
 }
 
 function item(row: TodayRow): ActivityReportItem | undefined {
@@ -33,6 +34,7 @@ function item(row: TodayRow): ActivityReportItem | undefined {
       kind: "activity",
       participants: row.participants,
       summary: row.summary,
+      updatedAt: row.updated_at,
     };
   }
   const participant = row.participants[0];
@@ -44,6 +46,7 @@ function item(row: TodayRow): ActivityReportItem | undefined {
       isFavorited: row.is_favorited === true,
       kind: "note",
       participants: [participant],
+      updatedAt: row.updated_at,
     }
     : undefined;
 }
@@ -68,14 +71,14 @@ export class PostgresTodayInteractionsRepository
         const rows = await sql<TodayRow>`
       with recent_activity as (
         select activity.id, activity.activity_type_id, activity.summary,
-          activity.happened_at
+          activity.happened_at, activity.updated_at
         from crm.activities activity
         where activity.workspace_id = ${command.workspaceId}::uuid
         order by activity.happened_at desc, activity.id desc
         limit ${command.recentLimit}
       ), recent_note as (
         select note.id, note.person_id, note.body, note.is_favorited,
-          note.created_at
+          note.created_at, note.updated_at
         from crm.notes note
         where note.workspace_id = ${command.workspaceId}::uuid
           and exists (select 1 from crm.people person
@@ -90,7 +93,7 @@ export class PostgresTodayInteractionsRepository
             nullif(activity_type.name, ''), activity_type.translation_key
           ) as activity_type,
           null::text as body, null::boolean as is_favorited,
-          activity.happened_at,
+          activity.happened_at, activity.updated_at,
           coalesce(participants.value, '[]'::jsonb) as participants
         from recent_activity activity
         left join crm.activity_types activity_type
@@ -109,7 +112,7 @@ export class PostgresTodayInteractionsRepository
         ) participants on true
         union all
         select note.id, 'note'::text, null::text, null::text, note.body,
-          note.is_favorited, note.created_at,
+          note.is_favorited, note.created_at, note.updated_at,
           jsonb_build_array(jsonb_build_object(
             'id', person.id::text,
             'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
@@ -120,7 +123,8 @@ export class PostgresTodayInteractionsRepository
       )
       select id::text, kind, summary, activity_type, body, is_favorited,
         participants,
-        ${instantColumn("projection.happened_at")} as happened_at
+        ${instantColumn("projection.happened_at")} as happened_at,
+        ${instantColumn("projection.updated_at")} as updated_at
       from projection
       order by projection.happened_at desc, projection.id desc
       limit ${command.recentLimit}
@@ -152,7 +156,8 @@ export class PostgresTodayInteractionsRepository
           'id', person.id::text,
           'name', ${sql.raw(personDisplayNameSql(UNNAMED_PERSON, "person"))}
         )) as participants,
-        ${instantColumn("note.created_at")} as happened_at
+        ${instantColumn("note.created_at")} as happened_at,
+        ${instantColumn("note.updated_at")} as updated_at
       from crm.notes note
       join crm.people person on person.id = note.person_id
         and person.workspace_id = note.workspace_id

@@ -255,7 +255,7 @@ export const deleteNote = defineRoute({
   path: "/api/v1/interactions/note/{interactionId}",
   operationId: "deleteNote",
   description:
-    "Requires a browser session or a personal token with interactions:write. Permanently deletes one note; it leaves the activity report, search, the person's timeline, and Today's favorite notes. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one note; it leaves the activity report, search, the person's timeline, and Today's favorite notes. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo and no tombstone: the record's id derives from its create's requestId, so re-sending that original create records it again; do not replay old creates. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
   tokenScope: "interactions:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -317,7 +317,7 @@ export const deleteActivity = defineRoute({
   path: "/api/v1/interactions/activity/{interactionId}",
   operationId: "deleteActivity",
   description:
-    "Requires a browser session or a personal token with interactions:write. Permanently deletes one activity, its participants and emotions, and the journal entry that links it; it leaves the activity report, search, the timeline, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one activity for every participant, not only the person it was found through, with its emotions and the journal entry that links it; it leaves every participant's activity report and timeline, search, the journal, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo and no tombstone: the record's id derives from its create's requestId, so re-sending that original create records it again; do not replay old creates. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
   tokenScope: "interactions:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -379,7 +379,7 @@ export const deleteCall = defineRoute({
   path: "/api/v1/interactions/call/{interactionId}",
   operationId: "deleteCall",
   description:
-    "Requires a browser session or a personal token with interactions:write. Permanently deletes one call and its emotions; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one call and its emotions; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo and no tombstone: the record's id derives from its create's requestId, so re-sending that original create records it again; do not replay old creates. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
   tokenScope: "interactions:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -441,7 +441,7 @@ export const deleteConversation = defineRoute({
   path: "/api/v1/interactions/conversation/{interactionId}",
   operationId: "deleteConversation",
   description:
-    "Requires a browser session or a personal token with interactions:write. Permanently deletes one conversation and its messages; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
+    "Requires a browser session or a personal token with interactions:write. Permanently deletes one conversation and its messages; it leaves the person's communications, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt as last read; a stale revision is refused with 409. There is no undo and no tombstone: the record's id derives from its create's requestId, so re-sending that original create records it again; do not replay old creates. A record of an archived person is read-only. Grants no read or capture access. Bearer requests need no Cookie or Origin; cookie writes require the exact configured public Origin.",
   tokenScope: "interactions:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
