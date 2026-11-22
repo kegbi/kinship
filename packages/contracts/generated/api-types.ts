@@ -414,6 +414,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/mcp": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** @description Model Context Protocol over Streamable HTTP, stateless, for 2025-era (initialize) and 2026-07-28 clients. Accepts any valid personal token in Authorization: Bearer and never reads a session cookie; a missing or refused token answers 401 with WWW-Authenticate: Bearer. tools/list returns only the tools the token's scopes allow, and tools/call sends the tool's own route an in-process request with the same token, so that route's scope, role, workspace, legal, validation, retry, and audit rules apply unchanged. Every answer is one JSON body; there is no session and no server-initiated stream, and GET and DELETE answer 405. */
+        readonly post: operations["mcp"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/me": {
         readonly parameters: {
             readonly query?: never;
@@ -3270,6 +3287,28 @@ export interface components {
             /** @constant */
             readonly status: "ready";
             readonly members: readonly components["schemas"]["ManagedMember"][];
+        };
+        readonly McpMessage: {
+            /** @constant */
+            readonly jsonrpc: "2.0";
+            readonly id?: (string | number) | null;
+            /** @description The MCP method, such as initialize, tools/list, or tools/call. Absent on a response. */
+            readonly method?: string;
+            readonly params?: {
+                readonly [key: string]: unknown;
+            };
+            readonly result?: {
+                readonly [key: string]: unknown;
+            };
+            readonly error?: {
+                readonly code: number;
+                readonly message: string;
+                readonly data?: unknown;
+            } & {
+                readonly [key: string]: unknown;
+            };
+        } & {
+            readonly [key: string]: unknown;
         };
         readonly MemberUiState: {
             /** Format: date-time */
@@ -7101,6 +7140,79 @@ export interface operations {
             };
             /** @description RFC 9457 problem details */
             readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    readonly mcp: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: {
+                /** @description Optional requested workspace; validated against active membership. */
+                readonly "X-Workspace-Id"?: string;
+                /** @description Optional. MCP clients send none; a request that carries one other than the configured public web origin is refused with 403. */
+                readonly Origin?: string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["McpMessage"];
+            };
+        };
+        readonly responses: {
+            /** @description The JSON-RPC response to a request, a tool's result included; a refused or failed tool call is a result with isError set */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["McpMessage"];
+                };
+            };
+            /** @description A JSON-RPC notification or response, accepted */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A malformed X-Workspace-Id (RFC 9457 problem), or a message the protocol refuses (a JSON-RPC error) */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["McpMessage"];
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description RFC 9457 problem details */
+            readonly 415: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

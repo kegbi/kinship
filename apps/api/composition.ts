@@ -232,6 +232,7 @@ import {
 } from "../../packages/http-kit/request_id.ts";
 import { apiSecureHeaders } from "../../packages/http-kit/secure_headers.ts";
 import { sessionResolution } from "../../packages/http-kit/session.ts";
+import { createMcpRoutes } from "../../packages/mcp-kit/endpoint.ts";
 import {
   createAuthenticationResponseEqualizer,
   DEFAULT_AUTHENTICATION_RESPONSE_FLOOR_MS,
@@ -729,6 +730,19 @@ export function createApiApp(services?: ApiServices): Hono<RequestIdEnv> {
             ? { todayReminders: services.todayReminders }
             : {}),
           todayTasks: services.todayTasks,
+        }),
+      );
+    }
+    // The MCP endpoint (ADR 0009) answers a tool call by sending this same
+    // app the tool's route request, so the call passes every middleware above
+    // and the route's own admission, exactly as a REST request would.
+    if (services.apiTokens) {
+      api.route(
+        "/",
+        createMcpRoutes({
+          browserSecurity: services.browserSecurity,
+          dispatch: (request) => api.fetch(request),
+          tokens: services.apiTokens,
         }),
       );
     }

@@ -77,6 +77,12 @@ layerRules:
   ]
   # `contracts` is `packages/contracts` (route descriptors and schemas) and
   # `http-kit` is `packages/http-kit` (mounting, sessions, problems, cookies).
+  # `mcp-kit` is `packages/mcp-kit` (ADR 0009): the MCP endpoint, built only
+  # from the contracts, the HTTP kit, Hono, Zod, and the MCP SDK, which no
+  # other code imports. Only a composition root mounts it; no module layer,
+  # read model, or `apps/web` imports it. Its tool catalog,
+  # `packages/contracts/tools`, is contract data importing only the contracts
+  # and Zod, and `apps/web` never imports it either.
   # `source-read-model-public` is a read model's facade when that read model
   # names the module among its `sourceModules`.
   transportMayImport: [
@@ -96,6 +102,7 @@ layerRules:
     platform,
     bootstrap,
     http-kit,
+    mcp-kit,
   ]
   frontendMayImport: [
     contracts-generated,

@@ -501,6 +501,27 @@ revoked, expired, bound workspace, current membership, secret — records the us
 runs the legal guard, and never reads a session cookie. A calendar feed's secret
 is never accepted there, even under the personal prefix.
 
+### The MCP endpoint
+
+`POST /api/v1/mcp` (`mcp`, MCP-C1,
+[ADR 0009](decisions/0009-mcp-endpoint-over-the-token-api.md)) serves the Model
+Context Protocol over Streamable HTTP, statelessly, to 2025-era and 2026-07-28
+clients alike, with one JSON body per request; `GET`, `DELETE`, and every other
+method answer 405. It accepts any valid personal token, introspected as
+`GET /api/v1/me` does with the legal guard, never reads a cookie, answers a
+missing or refused token with 401 and `WWW-Authenticate: Bearer`, and refuses a
+present `Origin` other than the configured web origin with 403. Each request
+builds a fresh server holding only the tools whose scope the token carries. A
+tool is declared with `defineTool` in `packages/contracts/tools/` over one
+token-enabled JSON route; calling it builds that route's request from the flat
+arguments (path, query, and a flattened object body), adds the caller's bearer
+token, request id, and client address but no cookie or `Origin`, and sends it to
+the same Hono application in process. The route then makes every decision it
+makes for a REST client, so the endpoint holds no authorization logic and calls
+no module facade. A route's JSON is the tool's structured content, and its RFC
+9457 problem is an error result with the code and field messages. The machinery
+is `packages/mcp-kit/`, mounted only by `apps/api/composition.ts`.
+
 The public reference at `/docs/api` is static and available without an account.
 Its operation catalog and `/docs/api/openapi.json` download consume the
 generated bearer-only projection `packages/contracts/openapi/external.json`.

@@ -72,8 +72,10 @@ packages/
     client/               source of the generated client
     openapi/              checked-in internal and bearer-only external OpenAPI
     generated/            generated client and API types
+    tools/                the MCP tool catalog: defineTool, one file per area
     registry.ts           defineRoute and the route registry
   http-kit/               shared HTTP machinery for module routes
+  mcp-kit/                the MCP endpoint over the token API (ADR 0009)
 
 gateway/                  nginx configuration for the public entry point
 
@@ -251,6 +253,19 @@ logging, secure headers, downloads, the health probe, and the browser security
 policy shape. It depends on Hono, Zod, the shared kernel, `packages/contracts`,
 and the session types and actor admission on the workspaces facade. It never
 depends on an app.
+
+### The MCP kit
+
+`packages/mcp-kit/` serves `POST /api/v1/mcp` (ADR 0009): it authenticates the
+personal token, builds a per-request MCP server holding the tools of
+`packages/contracts/tools/` that the token's scopes allow, turns each tool call
+into an in-process request to the tool's own route, and turns the route's answer
+into the tool result. It depends on `packages/contracts`, `packages/http-kit`,
+Hono, Zod, and `@modelcontextprotocol/server`, the one place that library is
+imported. Only `apps/api/composition.ts` mounts it; no module, read model, or
+`apps/web` imports it. The tool catalog under `packages/contracts/tools/` is
+contract data importing only the contracts and Zod.
+`tools/architecture/check_boundaries.ts` enforces both.
 
 ### Read models
 

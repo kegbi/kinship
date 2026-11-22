@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/yaml@1.2.0": "1.2.0",
+    "npm:@modelcontextprotocol/server@2.4.0": "2.4.0",
     "npm:fast-xml-parser@5.11.0": "5.11.0",
     "npm:hono@4.13.5": "4.13.5",
     "npm:ipaddr.js@2.5.0": "2.5.0",
@@ -31,6 +32,19 @@
     },
     "@babel/helper-validator-identifier@7.29.7": {
       "integrity": "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg=="
+    },
+    "@modelcontextprotocol/core@2.4.0": {
+      "integrity": "sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "@modelcontextprotocol/server@2.4.0": {
+      "integrity": "sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==",
+      "dependencies": [
+        "@modelcontextprotocol/core",
+        "zod"
+      ]
     },
     "@nodable/entities@3.0.0": {
       "integrity": "sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw=="
@@ -525,6 +539,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/yaml@1.2.0",
+      "npm:@modelcontextprotocol/server@2.4.0",
       "npm:hono@4.13.5",
       "npm:kysely-codegen@0.20.0",
       "npm:kysely-postgres-js@3.0.0",

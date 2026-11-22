@@ -30,10 +30,15 @@
  *    `apps/web` never imports `packages/backend`, reaches the generated client
  *    and the contract schemas only through the `layerRules.frontendMayImport`
  *    tokens that open them, and never imports the route descriptors, the
- *    client internals, or the HTTP kit; only declared composition
- *    roots reach into another unit's `adapters/` or mount its
- *    `transport/http/routes.ts`. `sharedKernel.path` is a unit of its own:
- *    every layer may import it, and it may import nothing outside itself.
+ *    client internals, the tool catalog, the HTTP kit, or the MCP kit; only
+ *    declared composition roots reach into another unit's `adapters/` or
+ *    mount its `transport/http/routes.ts`. `sharedKernel.path` is a unit of
+ *    its own: every layer may import it, and it may import nothing outside
+ *    itself. The MCP kit (`packages/mcp-kit`, ADR 0009) imports only the
+ *    contracts, the HTTP kit, Hono, Zod, and the MCP SDK, which nothing else
+ *    imports; only a composition root mounts the kit; and the tool catalog
+ *    (`packages/contracts/tools`) is contract data that imports only the
+ *    contracts and Zod.
  * 4. `table-access` and `table-foreign-read` — every `crm.<table>` token inside
  *    a module's `adapters/` is measured against the module's `ownsTables` and
  *    the owned tables of its `allowedModuleDependencies`. A token owned by
@@ -461,6 +466,7 @@ export function resolveSpecifier(
 // --- Rules ---------------------------------------------------------------
 
 const INFRASTRUCTURE_IMPORTS = [
+  "@modelcontextprotocol/server",
   "kysely",
   "kysely-postgres-js",
   "postgres",
@@ -614,7 +620,9 @@ const FRONTEND_FORBIDDEN_PATHS = [
   "packages/contracts/openapi/",
   "packages/contracts/registry.ts",
   "packages/contracts/routes/",
+  "packages/contracts/tools/",
   "packages/http-kit/",
+  "packages/mcp-kit/",
 ];
 
 /** Why `apps/web` may not import `resolved`, or `undefined` when it may. */
@@ -899,6 +907,97 @@ function transportViolations(
     violations.push(violation(
       `the transport layer imports ${resolved}, which is outside the HTTP kit, the contracts, the shared kernel, and the module and read-model facades`,
     ));
+  }
+  return violations;
+}
+
+/** The MCP kit: the endpoint's machinery (ADR 0009). */
+const MCP_KIT_PATH = "packages/mcp-kit/";
+
+/** The agent tool catalog: contract data beside the route descriptors. */
+const TOOL_CATALOG_PATH = "packages/contracts/tools/";
+
+/** The one library that speaks the protocol, kept inside the kit. */
+const MCP_SDK = "@modelcontextprotocol/server";
+
+/** What the kit is built from besides itself. */
+const MCP_KIT_SUPPORT_PATHS = [
+  "packages/contracts/",
+  "packages/http-kit/",
+  MCP_KIT_PATH,
+];
+const MCP_KIT_LIBRARIES = ["hono", "zod", MCP_SDK];
+
+/** A bare specifier's package name, scope included, without a version. */
+function packageName(specifier: string): string {
+  const bare = specifier.replace(/^(npm|jsr):/, "");
+  const parts = bare.split("/");
+  const name = bare.startsWith("@")
+    ? `${parts[0] ?? ""}/${parts[1] ?? ""}`
+    : parts[0] ?? "";
+  return name.replace(/(.)@[^/@]*$/, "$1");
+}
+
+/**
+ * The MCP endpoint's boundaries (ADR 0009, MCP-C1).
+ *
+ * The kit is a delivery adapter over the token API, so it is built only from
+ * the route contracts, the HTTP kit, Hono, Zod, and the MCP SDK, and only a
+ * declared composition root mounts it: no module, read model, platform
+ * adapter, or app reaches it, and nothing outside it speaks the protocol. The
+ * tool catalog is contract data that the kit reads, so it imports nothing
+ * but the contracts and Zod.
+ */
+function mcpViolations(
+  input: BoundaryInput,
+  manifest: Manifest,
+): Violation[] {
+  const violations: Violation[] = [];
+  const roots = new Set(manifest.compositionRoots);
+  for (const file of input.files) {
+    const violation = (detail: string) =>
+      violations.push({ rule: "layer", subject: file.path, detail });
+    for (const specifier of importSpecifiers(file.text)) {
+      const resolved = resolveSpecifier(file.path, specifier);
+      // Prose such as `from "the route"` in a comment is no specifier.
+      if (resolved === undefined && /\s/.test(specifier)) continue;
+      const library = resolved === undefined
+        ? packageName(specifier)
+        : undefined;
+      if (file.path.startsWith(MCP_KIT_PATH)) {
+        const allowed = resolved !== undefined
+          ? MCP_KIT_SUPPORT_PATHS.some((path) => resolved.startsWith(path))
+          : MCP_KIT_LIBRARIES.includes(library ?? "");
+        if (!allowed) {
+          violation(
+            `the MCP kit imports ${
+              resolved ?? specifier
+            }, which is outside the contracts, the HTTP kit, Hono, Zod, and the MCP SDK`,
+          );
+        }
+        continue;
+      }
+      if (library === MCP_SDK) {
+        violation(`${file.path} imports ${MCP_SDK} outside the MCP kit`);
+      }
+      if (resolved?.startsWith(MCP_KIT_PATH) && !roots.has(file.path)) {
+        violation(
+          `${resolved} is the MCP kit, which only a declared composition root mounts`,
+        );
+      }
+      if (file.path.startsWith(TOOL_CATALOG_PATH)) {
+        const allowed = resolved !== undefined
+          ? resolved.startsWith("packages/contracts/")
+          : library === "zod";
+        if (!allowed) {
+          violation(
+            `the tool catalog imports ${
+              resolved ?? specifier
+            }; it is contract data and imports only the contracts and Zod`,
+          );
+        }
+      }
+    }
   }
   return violations;
 }
@@ -1197,6 +1296,7 @@ export function inspectBoundaries(input: BoundaryInput): Violation[] {
   return sortViolations([
     ...tableOwnershipViolations(input, manifest),
     ...layerViolations(input, manifest, units),
+    ...mcpViolations(input, manifest),
     ...tableAccessViolations(input, manifest),
     ...cycleViolations(input, manifest, units),
     ...compositionViolations(input, manifest, units),

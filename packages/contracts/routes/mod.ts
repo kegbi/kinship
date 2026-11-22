@@ -40,6 +40,7 @@ import { RELATIONSHIPS_ROUTES } from "./relationships.ts";
 import { INTERACTIONS_ROUTES } from "./interactions.ts";
 import { GOVERNANCE_ROUTES } from "./governance.ts";
 import { PLANNING_ROUTES } from "./planning.ts";
+import { MCP_ROUTES } from "./mcp.ts";
 
 /**
  * The routes that accept any valid personal API token and so name no
@@ -48,6 +49,7 @@ import { PLANNING_ROUTES } from "./planning.ts";
  */
 export const ANY_TOKEN_OPERATIONS: readonly string[] = [
   "getTokenContext",
+  "mcp",
 ];
 
 /** The whole mounted surface, probes included. */
@@ -74,6 +76,7 @@ export const API_ROUTES: readonly RouteDescriptor[] = checkTokenScopes(
     INTERACTIONS_ROUTES,
     GOVERNANCE_ROUTES,
     PLANNING_ROUTES,
+    MCP_ROUTES,
   ]),
   { anyToken: ANY_TOKEN_OPERATIONS, scopes: apiTokenScope.options },
 );

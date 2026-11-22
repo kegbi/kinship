@@ -61,6 +61,7 @@ implementation manifests and lockfiles.
 | Password hashing   | Deno Web Crypto Argon2id                       | Deno 2.9 provides a runtime-native implementation without npm native addons or FFI. Store a versioned encoded representation and test parameter upgrades.                      |
 | Telemetry          | Deno OpenTelemetry export to an OTLP collector | Built-in traces, metrics, and logs reduce application instrumentation dependencies.                                                                                            |
 | API client         | Generated client/types from checked-in OpenAPI | Prevents the frontend from importing backend internals. `openapi-typescript` and `openapi-fetch` are suitable candidates.                                                      |
+| MCP server         | `@modelcontextprotocol/server` (v2 SDK line)   | Official MCP SDK (ADR 0009): its core package and Zod 4 at runtime, Web Standard `Request`/`Response`, no environment reads. Imported only by `packages/mcp-kit`.              |
 | Frontend lint      | `astro check` plus targeted ESLint plugins     | Deno lint covers TS/JS/TSX but not `.astro` templates. Use `eslint-plugin-astro`, its accessibility preset, and React's official hooks plugin for checks Deno cannot express.  |
 
 Hono's RPC client may be useful within a single repository, but it must not

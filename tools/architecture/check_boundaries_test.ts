@@ -1408,3 +1408,134 @@ Deno.test("[GAP-005] the folded ticket boundaries are not hidden in the baseline
     );
   }
 });
+
+// --- MCP-C1 --------------------------------------------------------------
+
+Deno.test("[MCP-C1] the MCP kit is built only from the contracts, the HTTP kit, and its libraries", async () => {
+  const clean = await fixture([{
+    path: "packages/mcp-kit/endpoint.ts",
+    text: [
+      'import { McpServer } from "@modelcontextprotocol/server";',
+      'import { Hono } from "hono";',
+      'import { z } from "zod";',
+      'import { mcp } from "../contracts/routes/mcp.ts";',
+      'import { mount } from "../http-kit/route.ts";',
+      'import { toolResult } from "./tool_call.ts";',
+    ].join("\n"),
+  }]);
+  assert(clean.length === 0, `expected no violation: ${render(clean)}`);
+
+  const reaching = await fixture([{
+    path: "packages/mcp-kit/endpoint.ts",
+    text: [
+      'import { createTaskManagement } from "../backend/modules/people/public.ts";',
+      'import postgres from "postgres";',
+    ].join("\n"),
+  }]);
+  for (
+    const target of ["packages/backend/modules/people/public.ts", "postgres"]
+  ) {
+    assert(
+      reaching.some((violation) =>
+        violation.detail ===
+          `the MCP kit imports ${target}, which is outside the contracts, the HTTP kit, Hono, Zod, and the MCP SDK`
+      ),
+      `expected a violation for ${target}, got ${render(reaching)}`,
+    );
+  }
+});
+
+Deno.test("[MCP-C1] only a composition root mounts the MCP kit, and nothing else speaks the protocol", async () => {
+  const mounted = await fixture([{
+    path: "apps/api/composition.ts",
+    text:
+      'import { createMcpRoutes } from "../../packages/mcp-kit/endpoint.ts";',
+  }]);
+  assert(mounted.length === 0, `a root may mount it: ${render(mounted)}`);
+
+  const stray = await fixture([
+    {
+      path: "packages/backend/modules/people/application/people.ts",
+      text:
+        'import { createMcpRoutes } from "../../../../mcp-kit/endpoint.ts";',
+    },
+    {
+      path: "packages/http-kit/route.ts",
+      text:
+        'import { McpServer } from "npm:@modelcontextprotocol/server@2.4.0";',
+    },
+    {
+      path: "apps/web/src/islands/agent.tsx",
+      text:
+        'import { toolResult } from "../../../../packages/mcp-kit/tool_call.ts";',
+    },
+  ]);
+  for (
+    const detail of [
+      "packages/mcp-kit/endpoint.ts is the MCP kit, which only a declared composition root mounts",
+      "packages/http-kit/route.ts imports @modelcontextprotocol/server outside the MCP kit",
+      "apps/web imports packages/mcp-kit/tool_call.ts, which is not a frontend import surface",
+    ]
+  ) {
+    assert(
+      stray.some((violation) => violation.detail === detail),
+      `expected "${detail}", got ${render(stray)}`,
+    );
+  }
+  const application = await fixture([{
+    path: "packages/backend/modules/people/application/people.ts",
+    text: 'import { McpServer } from "@modelcontextprotocol/server";',
+  }]);
+  assert(
+    application.some((violation) =>
+      violation.detail ===
+        "the application layer imports @modelcontextprotocol/server"
+    ),
+    `the SDK is infrastructure to a use case: ${render(application)}`,
+  );
+});
+
+Deno.test("[MCP-C1] the tool catalog is contract data", async () => {
+  const clean = await fixture([{
+    path: "packages/contracts/tools/planning.ts",
+    text: [
+      'import { z } from "zod";',
+      'import { createTask } from "../routes/planning.ts";',
+      'import { defineTool } from "./define.ts";',
+    ].join("\n"),
+  }]);
+  assert(clean.length === 0, `expected no violation: ${render(clean)}`);
+  const reaching = await fixture([{
+    path: "packages/contracts/tools/planning.ts",
+    text: [
+      'import { Hono } from "hono";',
+      'import { mount } from "../../http-kit/route.ts";',
+    ].join("\n"),
+  }]);
+  for (const target of ["hono", "packages/http-kit/route.ts"]) {
+    assert(
+      reaching.some((violation) =>
+        violation.detail ===
+          `the tool catalog imports ${target}; it is contract data and imports only the contracts and Zod`
+      ),
+      `expected a violation for ${target}, got ${render(reaching)}`,
+    );
+  }
+});
+
+Deno.test("[MCP-C1] the real MCP kit, catalog, and mount are inside their boundaries", async () => {
+  const violations = await repository([
+    "apps/api/composition.ts",
+    "packages/mcp-kit/endpoint.ts",
+    "packages/mcp-kit/server.ts",
+    "packages/mcp-kit/tool_call.ts",
+    "packages/contracts/tools/define.ts",
+    "packages/contracts/tools/mod.ts",
+    "packages/contracts/tools/interactions.ts",
+  ]);
+  refuse(
+    violations,
+    ["MCP kit", "MCP SDK", "tool catalog", "@modelcontextprotocol"],
+    "the MCP boundaries hold for the real files",
+  );
+});

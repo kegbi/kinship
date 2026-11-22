@@ -1162,6 +1162,31 @@ export const MODULES: readonly TaskModule[] = [
     },
   },
   {
+    // The MCP endpoint (ADR 0009, MCP-C1): the kit that serves it, the tool
+    // catalog it serves, and the PostgreSQL suite that drives it over the
+    // real composition as an MCP client would.
+    id: "mcp",
+    unit: {
+      tests: [
+        "packages/mcp-kit/endpoint_test.ts",
+        "packages/mcp-kit/tool_call_test.ts",
+        "packages/contracts/tools/define_test.ts",
+        "packages/contracts/tools/mod_test.ts",
+      ],
+    },
+    integration: ["tests/integration/mcp_postgres_test.ts"],
+    coverage: {
+      directory: "mcp",
+      tests: [
+        "packages/mcp-kit/endpoint_test.ts",
+        "packages/mcp-kit/tool_call_test.ts",
+        "packages/contracts/tools/define_test.ts",
+        "packages/contracts/tools/mod_test.ts",
+      ],
+      include: ["packages/mcp-kit", "packages/contracts/tools"],
+    },
+  },
+  {
     id: "integrations",
     unit: {
       tests: [
@@ -2364,6 +2389,7 @@ export const TEST_AGGREGATE: readonly string[] = [
   "people",
   "api",
   "api-access",
+  "mcp",
   "integrations",
   "planning",
   "relationships",
@@ -2401,6 +2427,7 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
   "api",
   "api-access",
   "api-access-domain",
+  "mcp",
   "integrations",
   "integrations-domain",
   "planning",

@@ -83,6 +83,7 @@
     "ops": "DENO_NO_PACKAGE_JSON=1 deno run --allow-read --allow-run=deno,docker,pnpm tools/tasks/run.ts ops"
   },
   "imports": {
+    "@modelcontextprotocol/server": "npm:@modelcontextprotocol/server@2.4.0",
     "@std/yaml": "jsr:@std/yaml@1.2.0",
     "hono": "npm:hono@4.13.5",
     "kysely": "npm:kysely@0.29.4",

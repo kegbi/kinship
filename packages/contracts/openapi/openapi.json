@@ -3103,6 +3103,109 @@
         }
       }
     },
+    "/api/v1/mcp": {
+      "post": {
+        "operationId": "mcp",
+        "description": "Model Context Protocol over Streamable HTTP, stateless, for 2025-era (initialize) and 2026-07-28 clients. Accepts any valid personal token in Authorization: Bearer and never reads a session cookie; a missing or refused token answers 401 with WWW-Authenticate: Bearer. tools/list returns only the tools the token's scopes allow, and tools/call sends the tool's own route an in-process request with the same token, so that route's scope, role, workspace, legal, validation, retry, and audit rules apply unchanged. Every answer is one JSON body; there is no session and no server-initiated stream, and GET and DELETE answer 405.",
+        "security": [
+          {
+            "kinship_api_token": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Workspace-Id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional requested workspace; validated against active membership.",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "Origin",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Optional. MCP clients send none; a request that carries one other than the configured public web origin is refused with 403.",
+            "required": false
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpMessage"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The JSON-RPC response to a request, a tool's result included; a refused or failed tool call is a result with isError set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpMessage"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A JSON-RPC notification or response, accepted"
+          },
+          "400": {
+            "description": "A malformed X-Workspace-Id (RFC 9457 problem), or a message the protocol refuses (a JSON-RPC error)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpMessage"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "RFC 9457 problem details",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "operationId": "getTokenContext",
@@ -22452,6 +22555,67 @@
           "members"
         ],
         "additionalProperties": false
+      },
+      "McpMessage": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "const": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "description": "The MCP method, such as initialize, tools/list, or tools/call. Absent on a response.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "data": {}
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "jsonrpc"
+        ],
+        "additionalProperties": {}
       },
       "MemberUiState": {
         "type": "object",

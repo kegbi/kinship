@@ -31,6 +31,7 @@ import {
 import { problemResponse } from "../../packages/contracts/routes/common.ts";
 import { EXACTLY_ONE } from "../../packages/contracts/schemas/shared.ts";
 import { invitationToken } from "../../packages/contracts/schemas/invitations.ts";
+import { API_VERSION } from "../../packages/contracts/version.ts";
 
 /** How a caller proves who they are, as the published document names it. */
 export const SECURITY_SCHEMES = {
@@ -205,7 +206,7 @@ export function buildOpenApiDocument(): Record<string, unknown> {
   }
   const document = createDocument({
     openapi: "3.1.0",
-    info: { title: "Kinship API", version: "1.0.0" },
+    info: { title: "Kinship API", version: API_VERSION },
     paths,
     components: {
       securitySchemes: SECURITY_SCHEMES,

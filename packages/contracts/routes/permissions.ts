@@ -119,6 +119,9 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RoutePermission>> = {
   getApiTokens: "api-tokens.manage",
   // Any member's token reads what it is; it changes nothing (MCP-A1).
   getTokenContext: "workspace.read",
+  // The MCP endpoint lists tools and forwards each call to its own route,
+  // which makes that route's decision; the endpoint itself reads (MCP-C1).
+  mcp: "workspace.read",
   createApiToken: "api-tokens.manage",
   revokeApiToken: "api-tokens.manage",
   getCalendarFeed: "calendar-feed.manage",

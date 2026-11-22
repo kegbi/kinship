@@ -170,7 +170,7 @@ matrix or architecture prose; MCP-C4 does that once.
       and download over REST.
 - [ ] **MCP-B9 Vocabularies.** `vocabularies:read`, `vocabularies:write` on the
       personalization routes. The owner/admin rule stays in the use case.
-- [ ] **MCP-C1 MCP endpoint.** The dependency, `packages/mcp-kit/`,
+- [x] **MCP-C1 MCP endpoint.** The dependency, `packages/mcp-kit/`,
       `packages/contracts/tools/` with `defineTool`, the `mcp` route, its mount,
       the boundary and manifest entries, and tools for the routes that are
       token-enabled at A1 plus `get_context`. Unit tests for the kit, and a
