@@ -409,8 +409,8 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
     }
   }
 
-  // The accepted moderate advisories in docs/architecture/quality-gates.md are
-  // an explicit exception, not a silenced audit: the full report still runs.
+  // The advisories docs/architecture/quality-gates.md lists stay visible: the
+  // full report still runs, and the gate fails on high and critical ones.
   const gates = jobCommands(jobOrFail(document, "static"), "static");
   assert(
     gates.some((command) => /deno task deps:audit\s*$/.test(command)),
@@ -428,7 +428,7 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
   assert(
     tasks["deps:audit:gate"] ===
       "DENO_NO_PACKAGE_JSON=1 deno run --allow-run=deno tools/dependency_audit_gate.ts",
-    "the audit gate must apply only the documented tooling exception",
+    "the audit gate must run the repository's exception-free gate",
   );
 
   const chromium = jobCommands(

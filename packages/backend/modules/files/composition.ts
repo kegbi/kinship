@@ -8,7 +8,6 @@ import { PostgresFileBusinessImportBoundary } from "./adapters/postgres/import_b
  * the S3 client wiring.
  */
 
-import { Client as MinioClient } from "minio";
 import type { SharedComposition } from "../../platform/composition.ts";
 import { type Logger, silentLogger } from "../../shared-kernel/telemetry.ts";
 import { PostgresFilePersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
@@ -17,7 +16,7 @@ import {
   WebCryptoObjectKeys,
 } from "./adapters/crypto/file_identifiers.ts";
 import {
-  createObjectStorageRequestTransport,
+  createS3CompatibleClient,
   S3CompatibleObjectStorage,
 } from "./adapters/object_storage/s3_compatible_object_storage.ts";
 import { PostgresExportFileBoundary } from "./adapters/postgres/export_file_boundary.ts";
@@ -51,18 +50,9 @@ export function composeObjectStorage(
   options: ObjectStorageOptions,
 ): ObjectStorage {
   return new S3CompatibleObjectStorage(
-    new MinioClient({
-      accessKey: options.accessKey,
-      endPoint: options.host,
-      port: options.port,
-      secretKey: options.secretKey,
-      transport: createObjectStorageRequestTransport(
-        options.useSsl,
-        options.requestTimeoutMs,
-      ),
-      useSSL: options.useSsl,
-    }) as unknown as ConstructorParameters<typeof S3CompatibleObjectStorage>[0],
+    createS3CompatibleClient(options),
     options.bucket,
+    options.requestTimeoutMs,
   );
 }
 

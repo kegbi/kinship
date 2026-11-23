@@ -1,8 +1,15 @@
 import postgres from "postgres";
-import { Client as S3Client } from "minio";
-import { Buffer } from "node:buffer";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  HeadBucketCommand,
+  ListBucketsCommand,
+  PutObjectCommand,
+  type S3Client,
+} from "@aws-sdk/client-s3";
 import {
   createBackup,
+  createRecoveryS3Client,
   PostgresRecovery,
   privateProductionArchivePath,
   restoreBackup,
@@ -119,7 +126,7 @@ async function applyCanonicalSchema(
 async function waitForS3(client: S3Client): Promise<void> {
   for (let attempt = 0; attempt < 60; attempt++) {
     try {
-      await client.listBuckets();
+      await client.send(new ListBucketsCommand({}));
       return;
     } catch {
       if (attempt === 59) {
@@ -248,37 +255,36 @@ Deno.test({
       `;
       await sourceSql.end();
 
-      const sourceClient = new S3Client({
+      const sourceClient = createRecoveryS3Client({
         accessKey,
-        endPoint: "127.0.0.1",
+        host: "127.0.0.1",
         port: sourceObjectPort,
         secretKey,
-        useSSL: false,
+        useSsl: false,
       });
-      const targetClient = new S3Client({
+      const targetClient = createRecoveryS3Client({
         accessKey,
-        endPoint: "127.0.0.1",
+        host: "127.0.0.1",
         port: targetObjectPort,
         secretKey,
-        useSSL: false,
+        useSsl: false,
       });
       await Promise.all([
         waitForS3(sourceClient),
         waitForS3(targetClient),
       ]);
-      await sourceClient.makeBucket("attachments");
-      await sourceClient.putObject(
-        "attachments",
-        "wanted",
-        Buffer.from("wanted"),
-        6,
+      await sourceClient.send(
+        new CreateBucketCommand({ Bucket: "attachments" }),
       );
-      await sourceClient.putObject(
-        "attachments",
-        "extra",
-        Buffer.from("extra"),
-        5,
-      );
+      for (const key of ["wanted", "extra"]) {
+        await sourceClient.send(
+          new PutObjectCommand({
+            Body: new TextEncoder().encode(key),
+            Bucket: "attachments",
+            Key: key,
+          }),
+        );
+      }
 
       const sourceDatabase = new PostgresRecovery(sourceUrl, {
         dump: {
@@ -345,9 +351,20 @@ Deno.test({
         rejectedState?.crm_present === false && rejectedState.sentinel_present,
         "rejected restore preserves sentinel and creates no CRM schema",
       );
+      const targetBucket = await targetClient.send(
+        new HeadBucketCommand({ Bucket: "attachments" }),
+      ).then(
+        () => "exists",
+        (error: unknown) =>
+          error instanceof Error && error.name === "NotFound"
+            ? "missing"
+            : error,
+      );
       assert(
-        !(await targetClient.bucketExists("attachments")),
-        "rejected restore creates no target object bucket",
+        targetBucket === "missing",
+        `rejected restore creates no target object bucket: ${
+          String(targetBucket)
+        }`,
       );
       const result = await restoreBackup({
         archiveId: completeArchiveId,
@@ -396,7 +413,9 @@ Deno.test({
         "object restore must preserve bytes",
       );
 
-      await sourceClient.removeObject("attachments", "wanted");
+      await sourceClient.send(
+        new DeleteObjectCommand({ Bucket: "attachments", Key: "wanted" }),
+      );
       let missingFailure: unknown;
       try {
         await createBackup({

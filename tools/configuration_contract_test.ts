@@ -3,6 +3,8 @@ import {
   COVERAGE_AGGREGATE,
   INTEGRATION_PERMISSIONS,
   moduleById,
+  OBJECT_STORAGE_SDK_IGNORED_ENV,
+  permissionFlags,
   TEST_AGGREGATE,
 } from "./tasks/manifest.ts";
 
@@ -367,7 +369,6 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
     );
     for (
       const name of [
-        "READABLE_STREAM",
         "OBJECT_STORAGE_ACCESS_KEY",
         "OBJECT_STORAGE_BUCKET",
         "OBJECT_STORAGE_HOST",
@@ -402,6 +403,39 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
     !/from "\.\.\/\.\.\/\.\.\/[a-z-]+\/public\.ts"/.test(auditAdapter),
     "governance keeps its accepted dependency manifest",
   );
+});
+
+Deno.test("[FILES-001] MCP-E4 every process that loads the S3 SDK ignores its probes and is granted no AWS name", async () => {
+  const read = (path: string) =>
+    Deno.readTextFile(new URL(`../${path}`, import.meta.url));
+  const ignored = `--ignore-env=${OBJECT_STORAGE_SDK_IGNORED_ENV.join(",")}`;
+  const compose = await read("compose.yaml");
+  const tasks = (JSON.parse(await read("deno.json")) as {
+    readonly tasks: Readonly<Record<string, string>>;
+  }).tasks;
+  const commands = [
+    ["the API image", (await read("Dockerfile.api")).split("\nCMD ")[1] ?? ""],
+    [
+      "the worker service",
+      compose.slice(
+        compose.indexOf("\n  worker:"),
+        compose.indexOf("\n  web:"),
+      ),
+    ],
+    ["the development API", tasks["dev:api"] ?? ""],
+    ["every task-runner set", permissionFlags().join(" ")],
+  ] as const;
+  for (const [label, command] of commands) {
+    assert(command.includes(ignored), `${label} must ignore ${ignored}`);
+    const granted = /--allow-env=([A-Za-z0-9_,]+)/.exec(command)?.[1] ?? "";
+    assert(
+      !granted.split(",").some((name) =>
+        name.startsWith("AWS_") || name === "HOME" ||
+        name === "USERPROFILE"
+      ),
+      `${label} must grant no SDK fallback name: ${granted}`,
+    );
+  }
 });
 
 Deno.test("[REL-011] root development rebuilds the current migration bundle", async () => {
@@ -463,7 +497,6 @@ Deno.test("[REL-008] worker receives exact production runtime authority", async 
   for (
     const name of [
       "APP_ENV",
-      "READABLE_STREAM",
       "OBJECT_STORAGE_ACCESS_KEY",
       "OBJECT_STORAGE_BUCKET",
       "OBJECT_STORAGE_HOST",

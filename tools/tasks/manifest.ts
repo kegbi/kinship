@@ -157,7 +157,6 @@ export const REMINDER_MAIL_ENV = [
  */
 export const WORKER_RUNTIME_ENV = [
   "APP_ENV",
-  "READABLE_STREAM",
   "DATABASE_URL",
   ...POSTGRES_ENV,
   "WORKER_INSTANCE_ID",
@@ -186,7 +185,6 @@ export const SCHEMA_READS = [
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
 export const APPLICATION_DATABASE_ENV = [
-  "READABLE_STREAM",
   "APP_ENV",
   ...AUTH_ENV,
   "DATABASE_URL",
@@ -374,7 +372,6 @@ export const OPERATOR_SCRIPTS: readonly OperatorScript[] = [
     script: "tools/operations/private_production_recovery.ts",
     permissions: {
       env: [
-        "READABLE_STREAM",
         "DATABASE_URL",
         "RECOVERY_DATABASE_URL",
         "PRIVATE_PRODUCTION_WRITES_QUIESCED",
@@ -675,7 +672,7 @@ export const MODULES: readonly TaskModule[] = [
         ],
         // `tools/e2e_tls_test.ts` writes and removes one run's TLS material.
         write: [".tls/e2e"],
-        env: ["CI", "READABLE_STREAM"],
+        env: ["CI"],
         // `tools/e2e_test.ts` drives the launcher's process helpers, which
         // spawn `ps` and `kill` off Windows (REL-040).
         run: E2E_PROCESS_BINARIES,
@@ -1124,7 +1121,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/api-access/application/request_log_retention_test.ts",
         "packages/contracts/api_tokens_test.ts",
       ],
-      permissions: { env: ["READABLE_STREAM"] },
     },
     integration: [
       "tests/integration/api_tokens_postgres_test.ts",
@@ -1482,7 +1478,6 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/governance/adapters/postgres/audit_event_recorder_test.ts",
         "tools/contracts/governance_contract_test.ts",
       ],
-      permissions: { env: ["READABLE_STREAM"] },
     },
     contract: [
       "packages/backend/modules/governance/transport/http/routes_test.ts",
@@ -1490,7 +1485,6 @@ export const MODULES: readonly TaskModule[] = [
     ],
     coverage: {
       directory: "governance",
-      permissions: { env: ["READABLE_STREAM"] },
       tests: [
         "packages/backend/modules/workspaces/transport/http/authentication_test.ts",
         "packages/backend/modules/governance/transport/http/routes_test.ts",
@@ -1608,10 +1602,8 @@ export const MODULES: readonly TaskModule[] = [
         "packages/backend/modules/files/application/person_files_test.ts",
       ],
       permissions: {
-        // The object-storage suite runs the S3 transport against a loopback
-        // HTTP server it starts itself, and through the S3 client, whose
-        // stream library reads `READABLE_STREAM` when it loads (GAP-037).
-        env: ["READABLE_STREAM"],
+        // The object-storage suite runs the S3 client against loopback
+        // servers it starts itself (GAP-037, MCP-E4).
         net: ["127.0.0.1"],
       },
     },
@@ -1634,7 +1626,6 @@ export const MODULES: readonly TaskModule[] = [
     },
     coverage: {
       directory: "storage",
-      permissions: { env: ["READABLE_STREAM"] },
       tests: [
         "packages/backend/modules/files/application/storage_settings_test.ts",
         "packages/backend/modules/files/transport/http/routes_test.ts",
@@ -2284,7 +2275,6 @@ export const MODULES: readonly TaskModule[] = [
       tests: [
         "tools/tasks/manifest_test.ts",
         "tools/pipeline_contract_test.ts",
-        "tools/dependency_audit_gate_test.ts",
         "tools/source_hygiene_test.ts",
         // MCP-R3: no production UUID check narrows the accepted versions.
         "tools/uuid_version_contract_test.ts",
@@ -2352,7 +2342,6 @@ export const MODULES: readonly TaskModule[] = [
         "tools/operations/dokploy_storage_init_test.ts",
       ],
       permissions: {
-        env: ["READABLE_STREAM"],
         read: [
           "docs/planning/private-production-profile.json",
           "docs/planning/mvp-capacity-profile.json",
@@ -2383,7 +2372,7 @@ export const MODULES: readonly TaskModule[] = [
     unit: {
       tests: ["tools/operations/private_production_recovery_boundary_test.ts"],
       permissions: {
-        env: ["READABLE_STREAM", "DATABASE_URL", ...POSTGRES_ENV],
+        env: ["DATABASE_URL", ...POSTGRES_ENV],
         net: ["127.0.0.1"],
         run: ["docker", "deno"],
         read: [
@@ -2565,6 +2554,19 @@ export function includeMatches(include: string, file: string): boolean {
   return file === include || file.startsWith(`${include}/`);
 }
 
+/**
+ * The environment names the S3 SDK (`@aws-sdk/client-s3`) reads however it is
+ * configured: two Lambda probes in `@aws/lambda-invoke-store` when it loads,
+ * and its Node-version warning switch whenever it builds a client. A process
+ * that loads the SDK ignores exactly these, so they read as unset; none is
+ * granted (MCP-E4). The API and worker commands carry the same list.
+ */
+export const OBJECT_STORAGE_SDK_IGNORED_ENV = [
+  "AWS_LAMBDA_BENCHMARK_MODE",
+  "AWS_LAMBDA_NODEJS_NO_GLOBAL_AWSLAMBDA",
+  "AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED",
+] as const;
+
 function scopeFlag(name: string, scope: PermissionScope | undefined): string[] {
   if (scope === undefined) return [];
   if (scope === "all") return [`--allow-${name}`];
@@ -2572,12 +2574,17 @@ function scopeFlag(name: string, scope: PermissionScope | undefined): string[] {
   return [`--allow-${name}=${scope.join(",")}`];
 }
 
-/** Renders a permission set as Deno command-line flags. */
+/**
+ * Renders a permission set as Deno command-line flags. Any Deno set may load
+ * the S3 SDK through a composition root, and ignoring a name grants nothing,
+ * so every set ignores the SDK's unconditional probes alike.
+ */
 export function permissionFlags(permissions: Permissions = {}): string[] {
   return [
     ...scopeFlag("read", permissions.read),
     ...scopeFlag("write", permissions.write),
     ...scopeFlag("env", permissions.env),
+    `--ignore-env=${OBJECT_STORAGE_SDK_IGNORED_ENV.join(",")}`,
     ...scopeFlag("net", permissions.net),
     ...scopeFlag("run", permissions.run),
   ];

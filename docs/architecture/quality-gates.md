@@ -116,7 +116,7 @@ proving every test file is reachable from root `test`.
 | `deno task contracts:generate`, `deno task contracts:check` | the generated OpenAPI document and TypeScript client                               |
 | `deno task deps:deno`, `deno task deps:node`                | frozen dependency installation                                                     |
 | `deno task deps:audit`                                      | `deno audit`                                                                       |
-| `deno task deps:audit:gate`                                 | high/critical audit gate with the exact temporary tooling exception below          |
+| `deno task deps:audit:gate`                                 | high/critical audit gate, with no exception                                        |
 | `deno task dev`, `deno task dev:api`, `deno task dev:web`   | the local run targets                                                              |
 | `deno task migration:apply`                                 | the versioned migration bundle                                                     |
 | `deno task ops <script>`                                    | the operator scripts `probe`, `recovery`, and `preflight`                          |
@@ -216,48 +216,33 @@ explicitly, and `deno.json` keeps an empty `allowScripts`.
 
 ### Accepted dependency advisories
 
-As of 2026-10-04, `deno task deps:audit` reports three moderate advisories and
-one high advisory. The full report remains unfiltered:
+As of 2026-11-23, `deno task deps:audit` reports eight advisories: two low and
+six moderate, none high or critical. The full report remains unfiltered:
 
-- `stream-json` <= 3.4.0 and `decode-uri-component` <= 0.4.2, both transitive
-  through `minio`. `minio` uses `stream-json` only to parse bucket-notification
-  streams from the workspace's own object store, and reaches
-  `decode-uri-component` only through `query-string`'s parser, which it never
-  calls (it only stringifies queries).
-- `hono` < 4.13.7, `GHSA-hxh3-vqpv-xpqv`, is a moderate JSX boundary escaping
-  advisory. The backend does not import Hono's JSX renderer.
+- `hono` 4.13.5 carries seven advisories, one low and six moderate, each fixed
+  by 4.13.16. Among them, `GHSA-hxh3-vqpv-xpqv` concerns Hono's JSX renderer,
+  which the backend does not import.
+- `fast-xml-parser` <= 5.11.2, `GHSA-474x-hrwr-fgx4`, is a low quadratic-CPU
+  advisory, fixed in 5.12.0. The DAV client in
+  `packages/backend/modules/integrations/adapters/dav/http_dav_client.ts`
+  imports `fast-xml-parser` 5.11.0 directly. It is reported, not accepted, and
+  remains until the DAV client moves to a fixed release.
 
-Neither MinIO transitive advisory has a fix the lockfile can reach. `minio`
-8.0.7 is its latest release and requires `stream-json` ^1.8.0 and, through
-`query-string` ^7.1.3, `decode-uri-component` ^0.2.2. The fixed releases
-(`stream-json` 3.5.0, `decode-uri-component` 0.5.0) are ESM-only majors, and
-`stream-json` 3 drops the `jsonl/Parser.js` module that `minio` requires on
-import. Deno reads npm `overrides` only from `package.json`, which the Deno
-tasks deliberately ignore. The exception ends when a `minio` release moves to
-fixed versions.
-
-On 2026-10-04 the user explicitly approved a temporary tooling-only exception
-for `braces` 3.0.3,
-[`GHSA-vfj7-8cjw-p6xm`](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
-(`CVE-2026-93687`). No patched version is published. Deno reaches it only
-through `kysely-codegen > micromatch`, with the repository-owned `crm.*` include
-pattern in `tools/schema/database_types.ts`. pnpm reaches it through the Astro
-ESLint parser and shadcn's `fast-glob`/`ts-morph` tooling. These paths do not
-process user-supplied glob patterns. The web image currently contains the
-tooling packages because it copies the full dependency tree; this exception does
-not claim they have been removed from the image. Remove the exception when a
-compatible patched package is available, and reassess it before allowing
-user-controlled patterns into any of these paths.
+Six advisories reached the graph through `minio`: two for
+`decode-uri-component`, one of them high, three for `stream-json`, and the
+`fast-xml-parser` one. When MCP-E4 replaced `minio` with `@aws-sdk/client-s3`,
+which adds none, the first five left the graph; the last stays only through the
+DAV client's own import.
 
 CI prints the complete report and then runs `deno task deps:audit:gate`, which
-fails on every other high or critical advisory and on registry failures. Deno
-2.9.5 exposes no JSON audit output, and its native ignore flag did not exclude
-this advisory by GHSA or CVE ID. The small gate therefore accepts only the exact
-`braces` high finding and a summary with one high and zero critical findings;
-additional output or an unfamiliar format fails closed. The exception remains
-visible in the gate output as well as the complete report. A developer still
-runs the ungated `deno task deps:audit` locally. No pnpm audit suppression is
-configured; its full report still identifies the same tooling advisory.
+runs `deno audit --level=high` and fails on every high or critical advisory and
+on every audit or registry error. The gate carries no exception. The temporary
+tooling exception for `braces` 3.0.3,
+[`GHSA-vfj7-8cjw-p6xm`](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm),
+approved on 2026-10-04, ended on 2026-11-23: neither `deno audit` nor
+`pnpm audit` reports it any longer, so the gate's special case for it was
+removed. A developer still runs the ungated `deno task deps:audit` locally. No
+pnpm audit suppression is configured.
 
 The user also explicitly approved an exact release-age exemption on 2026-10-04
 for `http-cache-semantics@4.3.0`, fixing `GHSA-ch52-4w7c-c8xp`. Its version and
@@ -498,15 +483,15 @@ request, on pushes to `main`, nightly at 03:00 UTC, and on manual dispatch. Each
 job installs the pinned runtimes, bootstraps dependencies from the lockfiles,
 and then runs the same `deno task` verbs a developer runs locally.
 
-| Job                | When                    | Gates                                                                                                                                                                                                 |
-| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `static`           | every run               | `fmt:check`, `lint`, `check:architecture`, `check`, `contracts:check`, `test:contract`, `deps:audit` (full report), and `deps:audit:gate` (high severity with the exact documented tooling exception) |
-| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                                                                                          |
-| `integration`      | every run               | `test:integration` on its own disposable PostgreSQL 18.4 project: the migrations, the Kysely type drift check, then the suites                                                                        |
-| `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                                                                     |
-| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                                                                       |
-| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                                                                        |
-| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api` and of the `web` and `gateway` targets of `Dockerfile.web`                                                                                                      |
+| Job                | When                    | Gates                                                                                                                                                                   |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `static`           | every run               | `fmt:check`, `lint`, `check:architecture`, `check`, `contracts:check`, `test:contract`, `deps:audit` (full report), and `deps:audit:gate` (high severity, no exception) |
+| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                                                            |
+| `integration`      | every run               | `test:integration` on its own disposable PostgreSQL 18.4 project: the migrations, the Kysely type drift check, then the suites                                          |
+| `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                                       |
+| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                                         |
+| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                                          |
+| `images`           | `main`, nightly, manual | production builds of `Dockerfile.api` and of the `web` and `gateway` targets of `Dockerfile.web`                                                                        |
 
 `static`, `unit`, `integration`, and `schema` run in parallel; the three
 expensive jobs wait for `static`. Coverage is never split in a way that lets

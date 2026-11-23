@@ -153,9 +153,19 @@ data, not a durable queue. A transactional outbox or persistent job queue would
 change the data model and therefore requires a synchronized new schema version.
 
 Development, test, and disposable recovery boundaries run the pinned RustFS
-server image. The existing `minio` npm package is retained only as an
-S3-protocol client SDK, which RustFS supports; no MinIO server image is part of
-the accepted topology.
+server image; no MinIO server image is part of the accepted topology. The
+backend's S3-protocol client is the official `@aws-sdk/client-s3`, which the
+product owner approved on 2026-11-23 in place of the `minio` npm package, whose
+latest release pinned transitive packages with advisories the lockfile could not
+fix (MCP-E4). The client is built only from this application's object-storage
+configuration: static credentials, the configured endpoint addressed by path,
+the `us-east-1` region, one attempt per operation, and every other setting the
+SDK would otherwise read from `AWS_*` variables or the shared `~/.aws` files
+stated explicitly, so it never builds its default credential chain or asks
+instance metadata. The SDK still reads three environment names whatever it is
+given (two Lambda probes and its Node-version warning switch); every process
+that loads it runs with `--ignore-env` for exactly those names, so they read as
+unset and none is granted.
 
 ## Deno Responsibilities
 

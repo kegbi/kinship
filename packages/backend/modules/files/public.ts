@@ -42,7 +42,6 @@ export type {
   RemovePersonFileResult,
   UploadPersonFileResult,
 } from "./application/person_file_writes.ts";
-export type { ObjectStorageRequestTransport } from "./adapters/object_storage/s3_compatible_object_storage.ts";
 export { createStorageSettings } from "./application/storage_settings.ts";
 export type {
   StorageSettings,

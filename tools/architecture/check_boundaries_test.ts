@@ -494,6 +494,25 @@ Deno.test("[GAP-005] the application layer keeps infrastructure out", async () =
     `expected an infrastructure import, got ${render(kysely)}`,
   );
 
+  // MCP-E4: the scoped S3 SDK is caught with or without an npm version.
+  for (
+    const specifier of [
+      "@aws-sdk/client-s3",
+      "npm:@aws-sdk/client-s3@3.1173.0",
+    ]
+  ) {
+    const s3 = await fixture([{
+      path: "packages/backend/modules/files/application/person_files.ts",
+      text: `import { S3Client } from "${specifier}";`,
+    }]);
+    assert(
+      s3.some((violation) =>
+        violation.detail === `the application layer imports ${specifier}`
+      ),
+      `expected the S3 SDK to be infrastructure, got ${render(s3)}`,
+    );
+  }
+
   const environment = await fixture([{
     path: "packages/backend/modules/gifts/application/gift_management.ts",
     text: "const host = Deno.env.get('PGHOST');",
@@ -1032,7 +1051,9 @@ Deno.test("[GAP-006] the shared kernel imports nothing outside itself", async ()
     `the kernel must not import a read model, got ${render(readModel)}`,
   );
 
-  for (const vendor of ["kysely", "postgres", "hono", "minio", "zod"]) {
+  for (
+    const vendor of ["kysely", "postgres", "hono", "@aws-sdk/client-s3", "zod"]
+  ) {
     const violations = await fixture([{
       path: "packages/backend/shared-kernel/clock.ts",
       text: `import { thing } from "${vendor}";`,

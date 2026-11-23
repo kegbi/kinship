@@ -21,8 +21,8 @@ const ROOT = new URL("../../", import.meta.url);
 
 /** The maximum stable verb vocabulary `deno.json` may expose. */
 // GAP-005 raised the budget from 25 to 26 for `check:architecture`.
-// The 2026-10-04 approved tooling exception keeps its gate separate from the
-// complete, unfiltered dependency audit report.
+// The high-severity audit gate stays a task apart from the complete,
+// unfiltered dependency audit report.
 const TASK_BUDGET = 27;
 
 async function repositoryTests(): Promise<string[]> {
@@ -225,7 +225,7 @@ Deno.test(
     const required =
       /--allow-env=([A-Z0-9_,]+)/.exec(service)?.[1]?.split(",") ?? [];
     assert(
-      required.includes("READABLE_STREAM"),
+      required.includes("OBJECT_STORAGE_HOST"),
       "worker runtime authority must declare its environment names",
     );
 

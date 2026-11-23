@@ -9,7 +9,6 @@ import {
 } from "../../apps/api/composition.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
-import { Client as MinioClient } from "minio";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -32,7 +31,7 @@ import {
   PostgresActorRevalidation,
 } from "../../packages/backend/modules/workspaces/adapters/postgres/actor_revalidation.ts";
 import {
-  createObjectStorageRequestTransport,
+  createS3CompatibleClient,
   S3CompatibleObjectStorage,
 } from "../../packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
@@ -452,19 +451,17 @@ Deno.test("[FILES-001] a stalled object removal aborts and rolls back for a clea
     response.once("close", abort);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const timeoutClient = createS3CompatibleClient({
+    accessKey: "access",
+    host: "127.0.0.1",
+    port: (server.address() as AddressInfo).port,
+    secretKey: "secret-value",
+    useSsl: false,
+  });
   const timeoutStorage = new S3CompatibleObjectStorage(
-    new MinioClient({
-      accessKey: "access",
-      endPoint: "127.0.0.1",
-      port: (server.address() as AddressInfo).port,
-      region: "us-east-1",
-      secretKey: "secret-value",
-      transport: createObjectStorageRequestTransport(false, 100),
-      useSSL: false,
-    }) as unknown as ConstructorParameters<
-      typeof S3CompatibleObjectStorage
-    >[0],
+    timeoutClient,
     "timeout-files",
+    100,
   );
   const timeoutConfigured = createConfiguredApiApp(
     databaseUrl,
@@ -537,6 +534,8 @@ Deno.test("[FILES-001] a stalled object removal aborts and rolls back for a clea
       "retry performs exactly one object deletion",
     );
   } finally {
+    // The client keeps its connections alive; close them so the server can.
+    timeoutClient.destroy();
     await Promise.all([
       timeoutConfigured.close(),
       new Promise<void>((resolve, reject) =>

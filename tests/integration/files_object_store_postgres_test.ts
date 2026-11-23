@@ -2,7 +2,7 @@
  * Person files against a real S3-compatible store (GAP-037): a disposable,
  * pinned RustFS container started with `docker run`, the way the recovery
  * boundary suite starts its own, reached through the product's
- * `S3CompatibleObjectStorage` and request-timeout transport, and driven through
+ * `S3CompatibleObjectStorage` and its request timeout, and driven through
  * the files API. Three faults the product already names are observed here:
  *
  * - a store that stops answering mid-read trips the configured request
@@ -15,7 +15,7 @@
  * suite removes its container in its final test.
  */
 
-import { Client as MinioClient } from "minio";
+import { DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -23,7 +23,7 @@ import {
 import { resolveObjectStorageConfiguration } from "../../apps/api/file_storage_config.ts";
 import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import {
-  createObjectStorageRequestTransport,
+  createS3CompatibleClient,
   S3CompatibleObjectStorage,
 } from "../../packages/backend/modules/files/adapters/object_storage/s3_compatible_object_storage.ts";
 import { assert } from "../../packages/backend/testing/assert.ts";
@@ -104,22 +104,11 @@ async function startStore() {
           OBJECT_STORAGE_USE_SSL: "false",
         } as Readonly<Record<string, string>>)[name],
     });
-    const client = new MinioClient({
-      accessKey: configuration.accessKey,
-      endPoint: configuration.host,
-      port: configuration.port,
-      secretKey: configuration.secretKey,
-      transport: createObjectStorageRequestTransport(
-        configuration.useSsl,
-        configuration.requestTimeoutMs,
-      ),
-      useSSL: configuration.useSsl,
-    });
+    const client = createS3CompatibleClient(configuration);
     const storage = new S3CompatibleObjectStorage(
-      client as unknown as ConstructorParameters<
-        typeof S3CompatibleObjectStorage
-      >[0],
+      client,
       configuration.bucket,
+      configuration.requestTimeoutMs,
     );
 
     // RustFS answers its health check before it serves S3 requests; the
@@ -298,7 +287,12 @@ Deno.test({
   async fn() {
     const { owner, personId } = await fixture("missing");
     const file = await upload(owner, personId, PDF);
-    await client.removeObject(BUCKET, await storedKey(file.fileId));
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET,
+        Key: await storedKey(file.fileId),
+      }),
+    );
 
     const missing = await download(owner, personId, file.fileId);
     const state = await fileState(file.fileId);
@@ -330,7 +324,12 @@ Deno.test({
       personId,
       new TextEncoder().encode("not a pdf"),
     );
-    const stat = await client.statObject(BUCKET, await storedKey(file.fileId));
+    const stat = await client.send(
+      new HeadObjectCommand({
+        Bucket: BUCKET,
+        Key: await storedKey(file.fileId),
+      }),
+    );
 
     const refused = await download(owner, personId, file.fileId);
     const state = await fileState(file.fileId);
@@ -340,7 +339,7 @@ Deno.test({
         and action = 'files.file-uploaded'
     `;
     assert(
-      file.status === "quarantined" && stat.size === 9 &&
+      file.status === "quarantined" && stat.ContentLength === 9 &&
         refused.status === 423 && refused.code === "file_quarantined" &&
         state.status === "quarantined" && state.reads === 0 &&
         uploaded?.count === 1,
@@ -356,6 +355,7 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
+    client.destroy();
     await Promise.all([configured.close(), sql.end()]);
     await docker(["rm", "--force", container]);
   },

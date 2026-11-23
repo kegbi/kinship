@@ -471,7 +471,7 @@ const INFRASTRUCTURE_IMPORTS = [
   "kysely-postgres-js",
   "postgres",
   "hono",
-  "minio",
+  "@aws-sdk/client-s3",
   "zod",
 ];
 

@@ -1,7 +1,13 @@
 import postgres from "postgres";
-// The MinIO package is an S3 protocol client; local/test servers are RustFS.
-import { Client as S3Client } from "minio";
-import { Buffer } from "node:buffer";
+// The AWS SDK is an S3 protocol client; local/test servers are RustFS.
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { applyCanonicalSchema } from "../migrations/baseline.ts";
 import { readCanonicalArtifacts } from "../migrations/main.ts";
 import {
@@ -558,14 +564,72 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
   }
 }
 
+/**
+ * An S3 client for an operator-named store, configured only from that store's
+ * endpoint: every setting the SDK would otherwise read from `AWS_*` or the
+ * shared `~/.aws` files is stated, as the files module's object-storage
+ * adapter states it (MCP-E4), so the recovery CLI consults nothing else.
+ */
+export function createRecoveryS3Client(endpoint: {
+  readonly accessKey: string;
+  readonly host: string;
+  readonly port: number;
+  readonly secretKey: string;
+  readonly useSsl: boolean;
+}): S3Client {
+  const client = new S3Client({
+    credentials: {
+      accessKeyId: endpoint.accessKey,
+      secretAccessKey: endpoint.secretKey,
+    },
+    endpoint: `${
+      endpoint.useSsl ? "https" : "http"
+    }://${endpoint.host}:${endpoint.port}`,
+    // A private store host has no `<bucket>.<host>` name to resolve.
+    forcePathStyle: true,
+    region: "us-east-1",
+    maxAttempts: 1,
+    retryMode: "standard",
+    requestChecksumCalculation: "WHEN_SUPPORTED",
+    responseChecksumValidation: "WHEN_SUPPORTED",
+    authSchemePreference: [],
+    defaultsMode: "legacy",
+    disableClockSkewCorrection: false,
+    disableS3ExpressSessionAuth: true,
+    useArnRegion: false,
+    useDualstackEndpoint: false,
+    useFipsEndpoint: false,
+    userAgentAppId: "",
+    // The default user agent reads `AWS_EXECUTION_ENV` and the OS release.
+    defaultUserAgentProvider: () => Promise.resolve([["kinship"]]),
+  });
+  // Lambda trace propagation reads Lambda's environment on every request.
+  client.middlewareStack.remove("recursionDetectionMiddleware");
+  return client;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : "";
+}
+
 export class S3Recovery implements ObjectRecoveryPort {
   constructor(
     private readonly client: S3Client,
     private readonly bucket: string,
   ) {}
 
+  async #bucketExists(): Promise<boolean> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      return true;
+    } catch (error) {
+      if (errorName(error) === "NotFound") return false;
+      throw error;
+    }
+  }
+
   async assertEmpty(): Promise<void> {
-    if (!(await this.client.bucketExists(this.bucket))) return;
+    if (!(await this.#bucketExists())) return;
     if ((await this.list()).length > 0) {
       throw new Error("Restore object bucket is not empty.");
     }
@@ -573,22 +637,15 @@ export class S3Recovery implements ObjectRecoveryPort {
 
   async get(key: string): Promise<Uint8Array | undefined> {
     try {
-      const stream = await this.client.getObject(this.bucket, key);
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of stream) chunks.push(new Uint8Array(chunk));
-      const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-      const bytes = new Uint8Array(size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return bytes;
+      const output = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return output.Body
+        ? await output.Body.transformToByteArray()
+        : new Uint8Array();
     } catch (error) {
-      const code = error && typeof error === "object" && "code" in error
-        ? String(error.code)
-        : "";
-      if (code === "NoSuchKey" || code === "NotFound") return undefined;
+      const name = errorName(error);
+      if (name === "NoSuchKey" || name === "NotFound") return undefined;
       throw error;
     }
   }
@@ -596,25 +653,43 @@ export class S3Recovery implements ObjectRecoveryPort {
   async list(): Promise<
     readonly { readonly key: string; readonly size: number }[]
   > {
-    if (!(await this.client.bucketExists(this.bucket))) {
+    if (!(await this.#bucketExists())) {
       throw new Error("Object bucket does not exist.");
     }
     const objects: { key: string; size: number }[] = [];
-    for await (const item of this.client.listObjectsV2(this.bucket, "", true)) {
-      if (item.name) objects.push({ key: item.name, size: item.size });
-    }
+    let continuationToken: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          ...(continuationToken
+            ? { ContinuationToken: continuationToken }
+            : {}),
+        }),
+      );
+      for (const item of page.Contents ?? []) {
+        if (item.Key) objects.push({ key: item.Key, size: item.Size ?? 0 });
+      }
+      continuationToken = page.IsTruncated
+        ? page.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
     return objects.sort((a, b) => a.key.localeCompare(b.key));
   }
 
   async put(key: string, bytes: Uint8Array): Promise<void> {
-    if (!(await this.client.bucketExists(this.bucket))) {
-      await this.client.makeBucket(this.bucket);
+    if (!(await this.#bucketExists())) {
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
-    await this.client.putObject(
-      this.bucket,
-      key,
-      Buffer.from(bytes),
-      bytes.byteLength,
+    await this.client.send(
+      new PutObjectCommand({
+        Body: bytes,
+        Bucket: this.bucket,
+        ContentLength: bytes.byteLength,
+        // What the previous client stored when it was given no type.
+        ContentType: "application/octet-stream",
+        Key: key,
+      }),
     );
   }
 }
@@ -647,12 +722,12 @@ function s3(
   return {
     bucket,
     port: new S3Recovery(
-      new S3Client({
+      createRecoveryS3Client({
         accessKey,
-        endPoint: host,
+        host,
         port: numericPort,
         secretKey,
-        useSSL,
+        useSsl: useSSL,
       }),
       bucket,
     ),
