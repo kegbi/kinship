@@ -20,7 +20,8 @@
   "column_mapping_rows": 823,
   "field_catalog_rows": 911,
   "live_postgresql_versions": [
-    "18.4"
+    "18.4",
+    "17.10"
   ],
   "errors": [],
   "warnings": [],
