@@ -11,10 +11,13 @@ import type { ApplicationDatabase } from "./database.ts";
 import { databaseFromSession } from "./session.ts";
 import {
   inWorkspace,
+  lockWorkspaceLifecycle,
   PostgresTransactionRunner,
   readOnlyWithin,
+  sharingWorkspaceLifecycle,
   workspaceScopeStatement,
 } from "./transactions.ts";
+import type { TransactionScope } from "../../shared-kernel/transaction.ts";
 import { assert } from "../../testing/assert.ts";
 
 /** A module's opaque handle, declared the way every module declares one. */
@@ -240,6 +243,100 @@ Deno.test("[AUD-V2] a failed visit keeps the work's error when the restore fails
   assert(
     restoreError === aborted,
     "a failed restore after successful work went unreported",
+  );
+  await database.destroy();
+});
+
+/** A Kysely that records each statement it is sent and answers no rows. */
+function recordingDatabase(): {
+  readonly database: Kysely<ApplicationDatabase>;
+  readonly statements: {
+    readonly parameters: unknown[];
+    readonly sql: string;
+  }[];
+} {
+  const statements: { parameters: unknown[]; sql: string }[] = [];
+  const connection: DatabaseConnection = {
+    executeQuery<Row>(query: CompiledQuery) {
+      statements.push({ parameters: [...query.parameters], sql: query.sql });
+      return Promise.resolve({ rows: [] as Row[] });
+    },
+    streamQuery() {
+      throw new Error("not streamed");
+    },
+  };
+  const driver: Driver = {
+    acquireConnection: () => Promise.resolve(connection),
+    beginTransaction: () => Promise.resolve(),
+    commitTransaction: () => Promise.resolve(),
+    destroy: () => Promise.resolve(),
+    init: () => Promise.resolve(),
+    releaseConnection: () => Promise.resolve(),
+    rollbackTransaction: () => Promise.resolve(),
+  };
+  const database = new Kysely<ApplicationDatabase>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => driver,
+      createIntrospector: (db) => new PostgresIntrospector(db),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  return { database, statements };
+}
+
+Deno.test("[MCP-F3] a workspace's lifecycle lock is one advisory key, exclusive or shared", async () => {
+  const { database, statements } = recordingDatabase();
+  const workspaceId = "00000000-0000-4000-8000-00000000000a";
+  await lockWorkspaceLifecycle(database, workspaceId, "exclusive");
+  await lockWorkspaceLifecycle(database, workspaceId, "shared");
+  assert(
+    statements.length === 2 &&
+      statements[0]!.sql ===
+        "select pg_advisory_xact_lock(hashtextextended($1, 7))" &&
+      statements[1]!.sql ===
+        "select pg_advisory_xact_lock_shared(hashtextextended($1, 7))" &&
+      statements.every((statement) =>
+        statement.parameters.length === 1 &&
+        statement.parameters[0] === workspaceId
+      ),
+    `the lifecycle lock statements: ${JSON.stringify(statements)}`,
+  );
+  await database.destroy();
+});
+
+Deno.test("[MCP-F3] a sharing runner holds the lifecycle lock first in a workspace, and takes none outside one", async () => {
+  const { database, statements } = recordingDatabase();
+  const workspaceId = "00000000-0000-4000-8000-00000000000b";
+  const scopes: (TransactionScope | undefined)[] = [];
+  const runner = sharingWorkspaceLifecycle<PeopleTransaction>({
+    run: (work, scope) => {
+      scopes.push(scope);
+      return work({ opaque: database });
+    },
+  });
+  const seen: number[] = [];
+  const scoped = await runner.run((transaction) => {
+    seen.push(statements.length);
+    return Promise.resolve(transaction.opaque === database);
+  }, { workspaceId });
+  const unscoped = await runner.run(() => {
+    seen.push(statements.length);
+    return Promise.resolve("account-level");
+  });
+  assert(
+    scoped && unscoped === "account-level" &&
+      JSON.stringify(scopes) === JSON.stringify([{ workspaceId }, undefined]),
+    `the runner passed its work and scope through: ${JSON.stringify(scopes)}`,
+  );
+  assert(
+    JSON.stringify(seen) === "[1,1]" &&
+      statements[0]!.sql ===
+        "select pg_advisory_xact_lock_shared(hashtextextended($1, 7))" &&
+      statements[0]!.parameters[0] === workspaceId,
+    `the scoped work ran after the shared lock alone: ${
+      JSON.stringify({ seen, statements })
+    }`,
   );
   await database.destroy();
 });

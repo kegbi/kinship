@@ -1,4 +1,7 @@
-import { writeWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
+import {
+  lockWorkspaceLifecycle,
+  writeWithinWorkspace,
+} from "../../../../platform/postgres/transactions.ts";
 import { type Kysely, sql } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
@@ -1569,13 +1572,16 @@ export class PostgresReminderDeliveryRepository
    * notice on a date still to come — so a deployment whose windows are full
    * gets an empty answer and inserts nothing. That question takes no lock.
    * Each top-up transaction then covers one workspace and about
-   * `TOP_UP_CHUNK_ROWS` rows per channel: it holds that workspace's settings
-   * and its members' preferences, and only under them asks `workspaces` who
-   * may still be delivered to and on which channels, then reads their zones
-   * and inserts. A time-zone or delivery change therefore waits milliseconds,
-   * never the whole deployment's replenishment, and a window is never
-   * committed in a zone or on a channel that was being replaced. The waiting
-   * notices are re-channelled the same way, one workspace at a time.
+   * `TOP_UP_CHUNK_ROWS` rows per channel: it holds that workspace's
+   * lifecycle lock shared, so a reset or delete there and the top-up wait for
+   * each other before either holds a row (MCP-F3); then that workspace's
+   * settings and its members' preferences, and only under them asks
+   * `workspaces` who may still be delivered to and on which channels, then
+   * reads their zones and inserts. A time-zone or delivery change therefore
+   * waits milliseconds, never the whole deployment's replenishment, and a
+   * window is never committed in a zone or on a channel that was being
+   * replaced. The waiting notices are re-channelled the same way, one
+   * workspace at a time.
    */
   async replenish(
     command: Parameters<ReminderDeliveryRepository["replenish"]>[0],
@@ -1671,17 +1677,21 @@ export class PostgresReminderDeliveryRepository
     }));
     for (const batch of topUpBatches(windows)) {
       // One short transaction per batch, in the batch's one workspace, so
-      // the rows it inserts belong there (ADR 0008).
-      await writeWithinWorkspace(this.database, batch[0]!.workspaceId, (
+      // the rows it inserts belong there (ADR 0008). It holds the
+      // workspace's lifecycle lock shared before any row (MCP-F3).
+      const workspaceId = batch[0]!.workspaceId;
+      await writeWithinWorkspace(this.database, workspaceId, async (
         transaction,
-      ) =>
-        topUpWindows(
+      ) => {
+        await lockWorkspaceLifecycle(transaction, workspaceId, "shared");
+        await topUpWindows(
           transaction,
           this.recipients,
           this.preferences,
           batch,
           command.now,
-        ));
+        );
+      });
     }
     // Withdrawn only now, so a date whose sole notices belonged to a removed
     // rule was still short above and kept its day-of notice.
@@ -1696,6 +1706,7 @@ export class PostgresReminderDeliveryRepository
       await writeWithinWorkspace(this.database, workspaceId, async (
         transaction,
       ) => {
+        await lockWorkspaceLifecycle(transaction, workspaceId, "shared");
         const current = await lockedRecipients(
           transaction,
           this.recipients,

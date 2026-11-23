@@ -1,7 +1,10 @@
 import { type Kysely, type RawBuilder, sql, type Transaction } from "kysely";
 import type { ApplicationDatabase } from "../../../../platform/postgres/database.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
-import { writeWithinWorkspace } from "../../../../platform/postgres/transactions.ts";
+import {
+  lockWorkspaceLifecycle,
+  writeWithinWorkspace,
+} from "../../../../platform/postgres/transactions.ts";
 import type {
   WorkspaceLifecycleCounts,
   WorkspaceLifecycleSnapshot,
@@ -69,8 +72,21 @@ export class PostgresWorkspaceLifecycleRepository
   ): Promise<WorkspaceLifecycleSnapshot | undefined> {
     const database = databaseFromSession(command.transaction);
     if (command.lock) {
+      // Before any row of the workspace (MCP-F3): the lifecycle lock, which
+      // the worker's work there holds shared; then the member-administration
+      // lock a member change and an account deletion take first; then every
+      // member row, in the mode and the member-before-workspace order of the
+      // actor revalidation, so a write that holds its member row is waited
+      // for here rather than left waiting for the workspace row below.
+      await lockWorkspaceLifecycle(database, command.workspaceId, "exclusive");
       await sql`
-        select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, 7))
+        select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, 2))
+      `.execute(database);
+      await sql`
+        select id from crm.workspace_members
+        where workspace_id = ${command.workspaceId}::uuid
+        order by id
+        for no key update
       `.execute(database);
     }
     const result = await sql<SnapshotRow>`

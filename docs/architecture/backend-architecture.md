@@ -344,10 +344,20 @@ Workspace isolation is a security boundary, not a repository filter convention.
   other actor — built by hand, authenticated by an API token, or kept past the
   admission's 15-second window — is revalidated. A write always revalidates with
   a lock inside its own transaction (AUD-K3). A use case that revalidates this
-  way does so before it writes or locks a row of its own. That lock holds the
-  workspace row, so those writes meet there first rather than taking their other
-  rows in opposite orders; a member's preference save, which once wrote its row
-  first, does the same (MCP-E2).
+  way does so before it writes or locks a row of its own. That lock takes the
+  actor's account row, then their member row, then the workspace row, so those
+  writes meet at the workspace row rather than taking their other rows in
+  opposite orders; a member's preference save does the same (MCP-E2).
+- A workspace reset or delete holds the owner's account row from its password
+  check. It then takes, before any other row of the workspace, the workspace's
+  lifecycle advisory lock exclusively, the member-administration advisory lock
+  that a member change and an account deletion take first, and every member row
+  in the revalidation's mode; only then the workspace row. A write that holds
+  its member row is waited for, never left waiting for a reset that will delete
+  that row. The worker's reminder top-ups, and every transaction its runners
+  open in a workspace, take the lifecycle lock shared as their first statement,
+  so a reset and that work wait for each other while neither holds a row
+  (MCP-F3).
 - Pass typed principal/workspace context explicitly to application services.
 - Application services reject unauthorized or cross-workspace identifiers before
   persistence.

@@ -23,6 +23,7 @@ import {
   isConnectionLost,
   isDriverFault,
 } from "../../packages/backend/platform/postgres/errors.ts";
+import { sharingWorkspaceLifecycle } from "../../packages/backend/platform/postgres/transactions.ts";
 import { jsonLogger } from "../../packages/backend/platform/telemetry/json_logger.ts";
 import type { Logger } from "../../packages/backend/shared-kernel/telemetry.ts";
 import type { SharedComposition } from "../../packages/backend/platform/composition.ts";
@@ -180,15 +181,23 @@ export function createConfiguredReminderWorker(
     logger,
   });
   const compose = (connection: DatabaseConnection): TickWorker => {
+    // Every transaction these runners open in a workspace holds that
+    // workspace's lifecycle lock shared first, so a reset or delete there
+    // and the worker's work wait for each other before either holds a row
+    // (MCP-F3).
     const shared: SharedComposition = {
       actors: workspaceActors(),
       audit: governanceAuditRecorder(),
       clock: { now: () => new Date() },
       database: connection.db,
       ids: { create: () => crypto.randomUUID() },
-      peopleTransaction: peopleTransactionRunner(connection.db),
+      peopleTransaction: sharingWorkspaceLifecycle(
+        peopleTransactionRunner(connection.db),
+      ),
       tombstones: governanceRequestTombstones(),
-      transaction: workspaceTransactionRunner(connection.db),
+      transaction: sharingWorkspaceLifecycle(
+        workspaceTransactionRunner(connection.db),
+      ),
       workspaceEntry: activeWorkspaceResolver(),
     };
     const authentication = composeAuthenticationRetention(shared);

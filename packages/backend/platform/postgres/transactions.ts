@@ -264,6 +264,50 @@ export async function inWorkspace<Result>(
   return result;
 }
 
+/**
+ * Takes the advisory lock of `workspaceId`'s lifecycle until the transaction
+ * ends (MCP-F3). A workspace reset or delete takes it `exclusive` before any
+ * row of the workspace. The worker's work in a workspace takes it `shared` as
+ * its first statement, so a reset waits for the worker's work while holding
+ * no row, and the worker's next work waits for the reset while holding none.
+ */
+export async function lockWorkspaceLifecycle(
+  database: ReturnType<typeof databaseFromSession>,
+  workspaceId: string,
+  mode: "exclusive" | "shared",
+): Promise<void> {
+  const lock = sql.raw(
+    mode === "exclusive"
+      ? "pg_advisory_xact_lock"
+      : "pg_advisory_xact_lock_shared",
+  );
+  await sql`select ${lock}(hashtextextended(${workspaceId}, 7))`
+    .execute(database);
+}
+
+/**
+ * `runner`, with every transaction it opens in a workspace holding that
+ * workspace's lifecycle lock shared first: the worker's runners (MCP-F3).
+ */
+export function sharingWorkspaceLifecycle<
+  Session extends { readonly opaque: unknown },
+>(runner: TransactionRunner<Session>): TransactionRunner<Session> {
+  return {
+    run: (work, scope) =>
+      scope === undefined ? runner.run(work) : runner.run(
+        async (transaction) => {
+          await lockWorkspaceLifecycle(
+            transaction.opaque as Kysely<ApplicationDatabase>,
+            scope.workspaceId,
+            "shared",
+          );
+          return await work(transaction);
+        },
+        scope,
+      ),
+  };
+}
+
 /** The answer a conflicting write gives instead of throwing. */
 export const UNIQUE_CONFLICT: unique symbol = Symbol(
   "postgres-unique-conflict",
