@@ -29,13 +29,20 @@ import {
   deliveryRepository,
   deliveryTransaction,
   DurableFakeProvider,
+  type Fixture,
   futureReminderAnchor,
   register,
   request,
+  signInTo,
   sql,
 } from "./planning.test-helper.ts";
 import { closeResources } from "./planning.test-helper.ts";
-import { openSql, waitingBehind } from "../support/database.ts";
+import {
+  addMembership,
+  holdRows,
+  openSql,
+  waitingBehind,
+} from "../support/database.ts";
 
 Deno.test("PLANNING-002 reminder fixture remains future at the UTC date boundary", () => {
   const now = Temporal.Instant.from("2026-08-22T23:02:00Z");
@@ -1809,6 +1816,228 @@ for (
     );
   });
 }
+
+/** How many of a member's pending dates of a reminder fall at 09:00 in `zone`. */
+async function pendingIn(
+  reminderId: string,
+  memberId: string,
+  zone: string,
+): Promise<{ readonly elsewhere: number; readonly inZone: number }> {
+  const [window] = await sql<{
+    readonly elsewhere: number;
+    readonly inZone: number;
+  }[]>`
+    select
+      count(*) filter (where deliver_at =
+        (occurs_on + time '09:00') at time zone ${zone})::int as "inZone",
+      count(*) filter (where deliver_at <>
+        (occurs_on + time '09:00') at time zone ${zone})::int as elsewhere
+    from crm.reminder_occurrences
+    where reminder_id = ${reminderId}::uuid
+      and member_id = ${memberId}::uuid and status = 'pending'
+  `;
+  return window!;
+}
+
+/** A daily reminder at 09:00 whose generated dates have all been delivered. */
+async function deliveredDailyReminder(fixture: Fixture): Promise<string> {
+  const personId = await createPerson(fixture, "Reminded daily");
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Daily",
+  });
+  assert(created.status === 201, `daily reminder created: ${created.status}`);
+  const reminderId = (await created.json() as CreatedReminder).reminder.id;
+  await sql`
+    update crm.reminder_occurrences set occurs_on = occurs_on - 30,
+      deliver_at = deliver_at - interval '30 days', status = 'sent',
+      sent_at = now(), attempt_count = 1, provider_result_state = 'confirmed',
+      provider_receipt = 'in-app', provider_effect_at = now(),
+      visible_at = now()
+    where reminder_id = ${reminderId}::uuid
+  `;
+  return reminderId;
+}
+
+/** A settled call's answer, or why it failed, for an assertion message. */
+async function outcome(
+  settled: PromiseSettledResult<Response | void>,
+): Promise<string> {
+  if (settled.status === "rejected") return String(settled.reason);
+  return settled.value
+    ? `${settled.value.status} ${await settled.value.text()}`
+    : "ok";
+}
+
+Deno.test("[MCP-F4] a member change, a workspace settings save, and the worker's top-up take the member rows in one order", async () => {
+  const suffix = crypto.randomUUID();
+  const fixture = await register(
+    `ring-owner-${suffix}@example.test`,
+    "Ring circle",
+  );
+  const adminEmail = `ring-admin-${suffix}@example.test`;
+  const adminHome = await register(adminEmail, "Ring admin home");
+  const adminMemberId = await addMembership(
+    sql,
+    adminHome.userId,
+    fixture.workspaceId,
+    "admin",
+  );
+  const admin = await signInTo(adminEmail, fixture.workspaceId);
+  // The owner's window has passed, so the top-up mints a whole one for them.
+  const reminderId = await deliveredDailyReminder(fixture);
+  const zone = "Pacific/Kiritimati";
+  // A third session holds the owner's preferences, so the top-up stops with
+  // the workspace's settings already held `for share`.
+  const holder = await holdRows(databaseUrl, (transaction) =>
+    transaction`
+      select member_id from crm.member_preferences
+      where member_id = ${fixture.memberId}::uuid
+      for update
+    `);
+  const pending: Promise<Response | void>[] = [];
+  try {
+    const toppingUp = deliveryRepository.replenish({ now: new Date() });
+    pending.push(toppingUp);
+    const topUpPid = await waitingBehind(sql, holder.pid);
+    // The admin's save holds the admin's member row and waits for the
+    // settings row the top-up holds.
+    const saving = request(admin, "/api/v1/settings/workspace", "PUT", {
+      defaultLocale: "en",
+      defaultReminderTime: "09:00",
+      defaultTimezone: zone,
+      name: "Ring circle",
+    });
+    pending.push(saving);
+    const savePid = await waitingBehind(sql, topUpPid, [holder.pid]);
+    // The owner's change of the admin holds the owner's member row and waits
+    // for the admin's, which the save holds; the top-up then mints for the
+    // owner, and its foreign key needs the owner's member row.
+    const changing = request(
+      fixture,
+      `/api/v1/settings/members/${adminMemberId}`,
+      "PATCH",
+      { role: "member", status: "active" },
+    );
+    pending.push(changing);
+    await waitingBehind(sql, savePid, [holder.pid, topUpPid]);
+    await holder.release();
+    const [toppedUp, saved, changed] = await Promise.allSettled([
+      toppingUp,
+      saving,
+      changing,
+    ]);
+    assert(
+      toppedUp.status === "fulfilled" && saved.status === "fulfilled" &&
+        saved.value.status === 200 && changed.status === "fulfilled" &&
+        changed.value.status === 200,
+      `all three commit: top-up ${await outcome(
+        toppedUp,
+      )}, save ${await outcome(
+        saved,
+      )}, change ${await outcome(changed)}`,
+    );
+  } finally {
+    await holder.release();
+    // Every call settles before the test ends, so a wait that failed above
+    // reports itself rather than a request left running.
+    for (const settled of await Promise.allSettled(pending)) {
+      if (
+        settled.status === "fulfilled" && settled.value instanceof Response &&
+        !settled.value.bodyUsed
+      ) {
+        await settled.value.body?.cancel();
+      }
+    }
+  }
+  const [member] = await sql<{ readonly role: string }[]>`
+    select role from crm.workspace_members where id = ${adminMemberId}::uuid
+  `;
+  assert(member?.role === "member", `the admin was demoted: ${member?.role}`);
+  // The save waited for the top-up, then moved what it minted.
+  const window = await pendingIn(reminderId, fixture.memberId, zone);
+  assert(
+    window.inZone === 8 && window.elsewhere === 0,
+    `the minted window is in the new zone: ${JSON.stringify(window)}`,
+  );
+});
+
+Deno.test("[MCP-F4] a workspace settings save reschedules against the zone it replaces, read under its lock", async () => {
+  const fixture = await register(
+    `stale-zone-${crypto.randomUUID()}@example.test`,
+    "Stale zone circle",
+  );
+  const reminderId = await deliveredDailyReminder(fixture);
+  const save = (defaultTimezone: string) =>
+    request(fixture, "/api/v1/settings/workspace", "PUT", {
+      defaultLocale: "en",
+      defaultReminderTime: "09:00",
+      defaultTimezone,
+      name: "Stale zone circle",
+    });
+  const home = "America/New_York";
+  const away = "Pacific/Kiritimati";
+  const first = await save(home);
+  assert(first.status === 200, `the first zone saves: ${first.status}`);
+  await first.body?.cancel();
+  await deliveryRepository.replenish({ now: new Date() });
+  const before = await pendingIn(reminderId, fixture.memberId, home);
+  assert(
+    before.inZone > 0 && before.elsewhere === 0,
+    `the window starts in the first zone: ${JSON.stringify(before)}`,
+  );
+  // A third session holds the settings row, so the save that moves away stops
+  // after its first read, and the save that moves back reads the zone before
+  // the first commits and then waits for it.
+  const holder = await holdRows(databaseUrl, (transaction) =>
+    transaction`
+      select workspace_id from crm.workspace_settings
+      where workspace_id = ${fixture.workspaceId}::uuid
+      for update
+    `);
+  const pending: Promise<Response>[] = [];
+  try {
+    const movingAway = save(away);
+    pending.push(movingAway);
+    const awayPid = await waitingBehind(sql, holder.pid);
+    const movingBack = save(home);
+    pending.push(movingBack);
+    await waitingBehind(sql, awayPid, [holder.pid]);
+    await holder.release();
+    const [moved, back] = await Promise.all([movingAway, movingBack]);
+    const answers = [await moved.text(), await back.text()];
+    assert(
+      moved.status === 200 && back.status === 200,
+      `both saves commit: ${moved.status} ${back.status} ${
+        JSON.stringify(answers)
+      }`,
+    );
+  } finally {
+    await holder.release();
+    for (const result of await Promise.allSettled(pending)) {
+      if (result.status === "fulfilled" && !result.value.bodyUsed) {
+        await result.value.body?.cancel();
+      }
+    }
+  }
+  const [setting] = await sql<{ readonly zone: string | null }[]>`
+    select default_timezone as zone from crm.workspace_settings
+    where workspace_id = ${fixture.workspaceId}::uuid
+  `;
+  assert(setting?.zone === home, `the last save wins: ${setting?.zone}`);
+  const after = await pendingIn(reminderId, fixture.memberId, home);
+  assert(
+    after.inZone === before.inZone && after.elsewhere === 0,
+    `the window is back in the zone the setting names: ${
+      JSON.stringify(after)
+    }`,
+  );
+});
 
 Deno.test("[AUD-W3] a person's reminders answer 404 for an unknown or foreign person", async () => {
   const suffix = crypto.randomUUID();

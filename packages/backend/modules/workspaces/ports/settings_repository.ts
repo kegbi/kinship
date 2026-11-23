@@ -43,12 +43,20 @@ export interface WorkspaceSettingsRepository {
       readonly transaction: SettingsTransaction;
     },
   ): Promise<WorkspaceConfiguration | "forbidden" | undefined>;
+  /**
+   * Saves the workspace's configuration, answering it with the configuration
+   * it replaced. That one is read once the save holds the workspace's rows, so
+   * whether reminders move is decided against what was really there.
+   */
   updateWorkspace(
     command: SettingsActor & WorkspaceConfiguration & {
       readonly transaction: SettingsTransaction;
     },
   ): Promise<
-    | WorkspaceConfiguration
+    | {
+      readonly previous: WorkspaceConfiguration;
+      readonly workspace: WorkspaceConfiguration;
+    }
     | "conflict"
     | "forbidden"
     | "invalid-currency"

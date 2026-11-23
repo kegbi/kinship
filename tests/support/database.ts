@@ -238,3 +238,54 @@ export async function waitingBehind(
   }
   throw new Error(`no session waited behind backend ${blocker}`);
 }
+
+/** A session that holds rows until it is released. */
+export interface HeldRows {
+  /** Its backend, for `waitingBehind`. */
+  readonly pid: number;
+  /** Ends its transaction and closes it; calling it again does nothing. */
+  release(): Promise<void>;
+}
+
+/**
+ * A third session that takes whatever `lock` locks in an open transaction and
+ * holds it until `release`, so a test can stop another transaction at that
+ * row and start the next one only once the first is provably waiting there.
+ */
+export async function holdRows(
+  databaseUrl: string,
+  lock: (transaction: postgres.TransactionSql) => Promise<unknown>,
+): Promise<HeldRows> {
+  const holder = openSql(databaseUrl, { max: 1 });
+  let resolveRelease!: () => void;
+  const released = new Promise<void>((resolve) => resolveRelease = resolve);
+  let resolveHeld!: (pid: number) => void;
+  const held = new Promise<number>((resolve) => resolveHeld = resolve);
+  const done = holder.begin(async (transaction) => {
+    const [backend] = await transaction<{ readonly pid: number }[]>`
+      select pg_backend_pid() as pid
+    `;
+    await lock(transaction);
+    resolveHeld(backend!.pid);
+    await released;
+  });
+  let ended: Promise<void> | undefined;
+  const release = () =>
+    ended ??= (async () => {
+      resolveRelease();
+      await done.catch(() => undefined);
+      await holder.end();
+    })();
+  try {
+    const pid = await Promise.race([
+      held,
+      done.then((): never => {
+        throw new Error("the holding session ended before it held the rows");
+      }),
+    ]);
+    return { pid, release };
+  } catch (error) {
+    await release();
+    throw error;
+  }
+}

@@ -184,10 +184,10 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
     // another save of the workspace still waits for this one, but a reminder
     // top-up that holds the settings row below can still insert occurrences,
     // whose foreign key takes `for key share` of the member row (MCP-F2).
-    // The identity's user row is not locked here, because a member update
-    // reads it `for share` after it has locked the member row.
-    const authorization = await sql<{ readonly authorized: boolean }>`
-      select true as authorized from crm.workspace_members wm
+    // The identity's user row is not locked here: nothing this save writes
+    // depends on it.
+    const authorization = await sql<Pick<WorkspaceRow, "name" | "slug">>`
+      select w.name, w.slug from crm.workspace_members wm
       join crm.workspaces w on w.id = wm.workspace_id
       where wm.id = ${command.memberId}::uuid
         and wm.user_id = ${command.userId}::uuid
@@ -196,13 +196,24 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         and wm.left_at is null and w.status = 'active' and w.deleted_at is null
       for no key update of wm, w
     `.execute(database);
-    if (authorization.rows[0]?.authorized !== true) return "forbidden";
-    const settings = await sql<{ readonly exists: boolean }>`
-      select true as exists from crm.workspace_settings
+    const named = authorization.rows[0];
+    if (!named) return "forbidden";
+    // What this save replaces is read from the rows it now holds, so a save
+    // that committed while this one waited is what it compares against.
+    const settings = await sql<
+      Omit<WorkspaceRow, "name" | "slug">
+    >`
+      select default_locale as "defaultLocale",
+        default_timezone as "defaultTimezone",
+        default_currency_code::text as "defaultCurrencyCode",
+        default_reminder_time::text as "defaultReminderTime"
+      from crm.workspace_settings
       where workspace_id = ${command.workspaceId}::uuid
       for update
     `.execute(database);
-    if (settings.rows[0]?.exists !== true) return undefined;
+    const stored = settings.rows[0];
+    if (!stored) return undefined;
+    const previous = workspace({ ...named, ...stored });
     if (command.defaultCurrencyCode) {
       const supported = await sql<{ readonly supported: boolean }>`
         select true as supported from crm.currencies
@@ -248,7 +259,9 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         default_currency_code::text as "defaultCurrencyCode",
         default_reminder_time::text as "defaultReminderTime"
     `.execute(database);
-    return updated.rows[0] ? workspace(updated.rows[0]) : undefined;
+    return updated.rows[0]
+      ? { previous, workspace: workspace(updated.rows[0]) }
+      : undefined;
   }
 
   async listMembers(
@@ -282,13 +295,19 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
     const database = databaseFromSession(command.transaction);
     await sql`select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, 2))`
       .execute(database);
+    // Both member rows are held `for no key update`, the mode the update
+    // below takes, since it changes no key column. Another member change, a
+    // settings save, an actor revalidation, and a reset or delete still wait
+    // for them, but an insert whose foreign key takes `for key share` of
+    // either row does not, so the worker's top-up, already holding the
+    // settings a waiting save needs, can finish (MCP-F4).
     const actor = await sql<{ readonly role: "admin" | "owner" }>`
       select role from crm.workspace_members
       where id = ${command.memberId}::uuid
         and user_id = ${command.userId}::uuid
         and workspace_id = ${command.workspaceId}::uuid
         and role in ('owner', 'admin') and status = 'active' and left_at is null
-      for update
+      for no key update
     `.execute(database);
     const actingRole = actor.rows[0]?.role;
     if (!actingRole) return "forbidden";
@@ -298,7 +317,7 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
       where id = ${command.targetMemberId}::uuid
         and workspace_id = ${command.workspaceId}::uuid
         and status in ('active', 'suspended') and left_at is null
-      for update
+      for no key update
     `.execute(database);
     const target = targetResult.rows[0];
     if (!target) return "not-found";

@@ -12,7 +12,9 @@
  * member's timezone, or the workspace's timezone or default reminder time,
  * moves when reminders are due; planning owns that, so it is told inside the
  * same transaction and only when the value actually changed — a save that
- * re-sends the same timezone must not reschedule everybody.
+ * re-sends the same timezone must not reschedule everybody. "Changed" is judged
+ * against the value the save replaced, read under the save's own locks, never
+ * against one read before them: a concurrent save may have committed between.
  *
  * Both writes refuse an unschedulable timezone before they open a
  * transaction, because a name the calendar cannot resolve would otherwise be
@@ -291,16 +293,13 @@ export function createSettingsManagement(
         return Promise.resolve("invalid-timezone" as const);
       }
       return dependencies.transaction.run(async (transaction) => {
-        const previous = await dependencies.workspace.getWorkspace({
-          ...actor,
-          transaction,
-        });
-        const result = await dependencies.workspace.updateWorkspace({
+        const saved = await dependencies.workspace.updateWorkspace({
           ...actor,
           ...input,
           transaction,
         });
-        if (typeof result === "string" || !result) return result;
+        if (typeof saved === "string" || !saved) return saved;
+        const result = saved.workspace;
         await audit(
           transaction,
           actor,
@@ -308,10 +307,7 @@ export function createSettingsManagement(
           "workspace",
           actor.workspaceId,
         );
-        if (
-          typeof previous !== "string" &&
-          workspaceScheduleChanged(previous, result)
-        ) {
+        if (workspaceScheduleChanged(saved.previous, result)) {
           await dependencies.planningPublisher?.workspaceTimezoneChanged(
             actor,
             result.defaultTimezone ?? FALLBACK_TIMEZONE,

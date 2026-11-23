@@ -25,6 +25,13 @@ Deno.test("workspace settings adapter does not read identity-owned storage", asy
   );
 });
 
+const storedWorkspace = {
+  defaultLocale: "en",
+  defaultReminderTime: "09:00",
+  defaultTimezone: "UTC",
+  name: "Old name",
+};
+
 function fixture(
   revokeResult:
     | { readonly current: boolean; readonly status: "revoked" }
@@ -138,12 +145,7 @@ function fixture(
         throw new Error("unused");
       },
       getWorkspace() {
-        return Promise.resolve({
-          defaultLocale: "en",
-          defaultReminderTime: "09:00",
-          defaultTimezone: "UTC",
-          name: "Old name",
-        });
+        return Promise.resolve(storedWorkspace);
       },
       listMembers() {
         effects.push("workspace:list");
@@ -178,13 +180,16 @@ function fixture(
       },
       updateWorkspace(command) {
         return Promise.resolve({
-          defaultLocale: command.defaultLocale,
-          defaultReminderTime: command.defaultReminderTime,
-          ...(command.defaultTimezone
-            ? { defaultTimezone: command.defaultTimezone }
-            : {}),
-          name: command.name,
-          ...(command.slug ? { slug: command.slug } : {}),
+          previous: storedWorkspace,
+          workspace: {
+            defaultLocale: command.defaultLocale,
+            defaultReminderTime: command.defaultReminderTime,
+            ...(command.defaultTimezone
+              ? { defaultTimezone: command.defaultTimezone }
+              : {}),
+            name: command.name,
+            ...(command.slug ? { slug: command.slug } : {}),
+          },
         });
       },
     },
@@ -233,6 +238,60 @@ Deno.test("PLANNING-002 workspace default reminder time regenerates inherited in
     `workspace default-time coordination is atomic: ${effects.join(",")}`,
   );
 });
+
+for (
+  const [replaced, earlier, moves] of [
+    ["UTC", "Europe/Belgrade", true],
+    ["Europe/Belgrade", "UTC", false],
+  ] as const
+) {
+  Deno.test(
+    `[MCP-F4] a workspace save from ${replaced} to Europe/Belgrade ${
+      moves ? "reschedules" : "does not reschedule"
+    }, whatever an earlier read said`,
+    async () => {
+      const { dependencies, effects } = fixture();
+      // A read before the save's locks may be stale; only the zone the save
+      // replaced, which its repository read under them, decides.
+      const service = createSettingsManagement({
+        ...dependencies,
+        workspace: {
+          ...dependencies.workspace,
+          getWorkspace: () =>
+            Promise.resolve({ ...storedWorkspace, defaultTimezone: earlier }),
+          updateWorkspace: (command) =>
+            Promise.resolve({
+              previous: { ...storedWorkspace, defaultTimezone: replaced },
+              workspace: {
+                defaultLocale: command.defaultLocale,
+                defaultReminderTime: command.defaultReminderTime,
+                defaultTimezone: command.defaultTimezone!,
+                name: command.name,
+              },
+            }),
+        },
+      });
+      const result = await service.updateWorkspace(actor, {
+        defaultLocale: "en",
+        defaultReminderTime: "09:00",
+        defaultTimezone: "Europe/Belgrade",
+        name: "Old name",
+      });
+      assert(
+        typeof result !== "string" &&
+          result?.defaultTimezone === "Europe/Belgrade",
+        `the save answers what it wrote: ${JSON.stringify(result)}`,
+      );
+      const expected = moves
+        ? "tx:begin,audit:workspace.configuration-changed,planning:workspace-timezone:Europe/Belgrade,tx:commit"
+        : "tx:begin,audit:workspace.configuration-changed,tx:commit";
+      assert(
+        effects.join(",") === expected,
+        `rescheduled only when the replaced zone differs: ${effects.join(",")}`,
+      );
+    },
+  );
+}
 
 Deno.test("[GAP-020] a time zone the calendar cannot resolve is refused before any write", async () => {
   const { effects, service } = fixture();

@@ -43,6 +43,13 @@ export class PostgresInvitationIdentity implements InvitationIdentityFacade {
     return result.rows[0]?.eligible === true;
   }
 
+  /**
+   * Names and addresses to show beside members, tokens, and invitations. It
+   * takes no row lock: a member change reads it while it holds member rows,
+   * and a write by that member holds their account row and then waits for
+   * their member row, so a lock here would wait for that write in the
+   * opposite order (MCP-F4). No caller decides anything from what it reads.
+   */
   async listIdentityDisplaySummaries(
     command: Parameters<
       InvitationIdentityFacade["listIdentityDisplaySummaries"]
@@ -54,7 +61,6 @@ export class PostgresInvitationIdentity implements InvitationIdentityFacade {
         trim(concat(first_name, ' ', last_name)) as name
       from crm.users
       where id = any(${command.userIds}::uuid[])
-      for share
     `.execute(databaseFromSession(command.transaction));
     return result.rows;
   }

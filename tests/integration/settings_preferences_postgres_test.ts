@@ -33,6 +33,7 @@ import {
 } from "./settings.test-helper.ts";
 import { closeResources } from "./settings.test-helper.ts";
 import {
+  holdRows,
   openSql,
   resetDatabase,
   revocableActor,
@@ -1031,6 +1032,109 @@ Deno.test({
     assert(
       workspace?.name === "Demotion circle" && workspace.audits === 0,
       `the refused save changed nothing: ${JSON.stringify(workspace)}`,
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[MCP-F4] a member change and a write by the member it changes take the account row and the member row in one order",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const suffix = crypto.randomUUID();
+    const owner = await register(
+      `order-owner-${suffix}@example.test`,
+      "Lock order circle",
+    );
+    const adminEmail = `order-admin-${suffix}@example.test`;
+    const adminIdentity = await register(adminEmail, "Lock order admin home");
+    const adminMemberId = await addMembership(
+      adminIdentity,
+      owner.workspaceId,
+      "admin",
+    );
+    const adminSignIn = await signIn(adminEmail, owner.workspaceId);
+    const adminCookie = adminSignIn.headers.get("set-cookie")?.split(";")[0];
+    assert(adminSignIn.status === 200 && adminCookie, "the admin signs in");
+    await adminSignIn.body?.cancel();
+    // The admin's pending invitation, which the demotion revokes after it has
+    // changed the admin's membership and before it reads the members' names.
+    const [invitation] = await sql<{ readonly id: string }[]>`
+      insert into crm.workspace_invitations (
+        workspace_id, invited_by_member_id, email, token_hash
+      ) values (
+        ${owner.workspaceId}::uuid, ${adminMemberId}::uuid,
+        ${`invitee-${suffix}@example.test`}, ${`order-${suffix}`}
+      )
+      returning id::text
+    `;
+    // A third session holds that invitation, so the demotion stops holding
+    // the admin's member row, and the admin's write is started only once the
+    // demotion is provably waiting there.
+    const holder = await holdRows(databaseUrl, (transaction) =>
+      transaction`
+        select id from crm.workspace_invitations
+        where id = ${invitation!.id}::uuid
+        for update
+      `);
+    const requests: Promise<Response>[] = [];
+    try {
+      const demoting = settingsRequest(
+        owner.cookie,
+        `/api/v1/settings/members/${adminMemberId}`,
+        { method: "PATCH", body: { role: "member", status: "active" } },
+      );
+      requests.push(demoting);
+      const demotionPid = await waitingBehind(sql, holder.pid);
+      // The admin's write revalidates them under lock: it holds their
+      // account row and waits for their member row, which the demotion holds.
+      const writing = settingsRequest(adminCookie, "/api/v1/people", {
+        method: "POST",
+        body: {
+          givenName: `Written while demoted ${suffix}`,
+          isPartial: false,
+        },
+        workspaceId: owner.workspaceId,
+      });
+      requests.push(writing);
+      await waitingBehind(sql, demotionPid, [holder.pid]);
+      await holder.release();
+      const [demoted, written] = await Promise.all([demoting, writing]);
+      const bodies = [await demoted.text(), await written.text()];
+      assert(
+        demoted.status === 200 && written.status === 403,
+        `the demotion commits and the write is then refused: demotion ${demoted.status}, write ${written.status} ${
+          JSON.stringify(bodies)
+        }`,
+      );
+    } finally {
+      await holder.release();
+      for (const settled of await Promise.allSettled(requests)) {
+        if (settled.status === "fulfilled" && !settled.value.bodyUsed) {
+          await settled.value.body?.cancel();
+        }
+      }
+    }
+    const [state] = await sql<{
+      readonly invitation: string;
+      readonly people: number;
+      readonly role: string;
+    }[]>`
+      select wm.role,
+        (select status from crm.workspace_invitations
+          where id = ${invitation!.id}::uuid) as invitation,
+        (select count(*)::int from crm.people
+          where workspace_id = wm.workspace_id
+            and given_name = ${`Written while demoted ${suffix}`}) as people
+      from crm.workspace_members wm where wm.id = ${adminMemberId}::uuid
+    `;
+    assert(
+      state?.role === "member" && state.invitation === "revoked" &&
+        state.people === 0,
+      `the admin is a member, their invitation ended, and nothing was written: ${
+        JSON.stringify(state)
+      }`,
     );
   },
 });
