@@ -262,7 +262,7 @@ describe("INTERACTION-001 Quick capture", () => {
       screen.getByRole("dialog", { name: "Record an activity or note" }),
     ).toBe(dialog());
     fireEvent.click(cancel());
-    expect(isOpen()).toBe(false);
+    await waitFor(() => expect(isOpen()).toBe(false));
     fireEvent.click(activityOpener());
     await waitFor(() => expect(isOpen()).toBe(true));
     expect(count(api, "/api/v1/people")).toBe(1);
@@ -280,7 +280,7 @@ describe("INTERACTION-001 Quick capture", () => {
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     expect(kind().value).toBe("activity");
     fireEvent.click(cancel());
-    expect(isOpen()).toBe(false);
+    await waitFor(() => expect(isOpen()).toBe(false));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(isOpen(), "the loading click opens it only once").toBe(false);
   });
@@ -585,7 +585,7 @@ describe("INTERACTION-001 Quick capture", () => {
     fireEvent.click(cancel());
     fireEvent.keyDown(activityOpener(), { key: "Tab" });
     fireEvent.keyDown(activityOpener(), { key: " ", repeat: true });
-    expect(isOpen()).toBe(false);
+    await waitFor(() => expect(isOpen()).toBe(false));
   });
 
   it("handles Escape with clean, dirty, and saving capture state", async () => {

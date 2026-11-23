@@ -575,9 +575,12 @@ export function moduleSpecifiers(source: string): string[] {
     /(?:^|[;}])\s*import\s*["']([^"']+)["']/gm,
     /\bimport\(\s*["']([^"']+)["']\s*\)/g,
   ];
+  // The bundle keeps the JSDoc of the modules it inlines, whose usage examples
+  // spell imports. No statement starts a line with `*` or `//`.
+  const code = source.replace(/^\s*(?:\*|\/\/).*$/gm, "");
   const found = new Set<string>();
   for (const pattern of patterns) {
-    for (const [, specifier] of source.matchAll(pattern)) found.add(specifier!);
+    for (const [, specifier] of code.matchAll(pattern)) found.add(specifier!);
   }
   return [...found].sort();
 }
@@ -591,6 +594,11 @@ Deno.test("[AUD-G5] the server-module reader finds static, re-exported, and dyna
     'const c = () => import("./chunks/c.mjs");',
     'const text = "not an import from here";',
     'const data = { "import": "./not-a-module.mjs" };',
+    "/**",
+    "* import { createApp } from 'astro/app/entrypoint';",
+    ' * import "./documented-side-effect.mjs";',
+    " */",
+    '// import { d } from "./commented.mjs";',
   ].join("\n");
   assert(
     JSON.stringify(moduleSpecifiers(source)) ===

@@ -900,6 +900,9 @@ describe("RELATIONSHIP-001 relationships island", () => {
         expect(foreign.hidden).toBe(true);
         expect(form().hidden).toBe(false);
         decline = false;
+        // The typed draft is an unsaved change, so the page guard asks too;
+        // the person now accepts the discard there as well.
+        confirm.mockReturnValue(true);
       } else {
         expect(state().textContent).toBe("Type lookup failed");
       }

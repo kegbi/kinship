@@ -1,4 +1,4 @@
-import { XMLParser } from "npm:fast-xml-parser@5.11.0";
+import { XMLParser } from "npm:fast-xml-parser@5.12.1";
 import ipaddr from "npm:ipaddr.js@2.5.0";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";

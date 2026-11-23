@@ -216,22 +216,39 @@ explicitly, and `deno.json` keeps an empty `allowScripts`.
 
 ### Accepted dependency advisories
 
-As of 2026-11-23, `deno task deps:audit` reports eight advisories: two low and
-six moderate, none high or critical. The full report remains unfiltered:
+As of 2026-11-23, `deno task deps:audit` reports no advisories. The backend pins
+`hono` 4.13.19 in `deno.json`, past the seven advisories fixed by 4.13.16, and
+the DAV client in
+`packages/backend/modules/integrations/adapters/dav/http_dav_client.ts` imports
+`fast-xml-parser` 5.12.1, past `GHSA-474x-hrwr-fgx4`. A version imported by an
+inline `npm:` specifier stays in `deno.lock` after the import moves, so a bump
+of such an import regenerates the lockfile rather than adding to it.
 
-- `hono` 4.13.5 carries seven advisories, one low and six moderate, each fixed
-  by 4.13.16. Among them, `GHSA-hxh3-vqpv-xpqv` concerns Hono's JSX renderer,
-  which the backend does not import.
-- `fast-xml-parser` <= 5.11.2, `GHSA-474x-hrwr-fgx4`, is a low quadratic-CPU
-  advisory, fixed in 5.12.0. The DAV client in
-  `packages/backend/modules/integrations/adapters/dav/http_dav_client.ts`
-  imports `fast-xml-parser` 5.11.0 directly. It is reported, not accepted, and
-  remains until the DAV client moves to a fixed release.
+As of the same date, `pnpm audit` reports three advisories in the web and
+tooling tree, two high and one moderate. Nothing gates on this report:
+
+- `happy-dom` 20.14.6, the test DOM for the web unit suites, carries
+  `GHSA-834v-8h66-3h79` and `GHSA-c8p4-j97h-3vg8`, both high. The first is fixed
+  only in 21.0.4. The second names 20.14.7 as its fix, but no 20.x release after
+  20.14.6 is published. Both remain until the web suites move to `happy-dom` 21,
+  a major upgrade that needs its own change. `happy-dom` runs only under Vitest
+  and never ships.
+- `minimatch` 10.2.6, `GHSA-g3hv-75wg-m249`, is a moderate denial-of-service
+  advisory fixed only in 11.0.1. It reaches the tree only through the `shadcn`
+  4.23.0 CLI, whose `ts-morph` 26 asks for `@ts-morph/common` 0.27 and thus
+  `minimatch` ^10. The CLI is a developer tool and never ships. It remains until
+  a `shadcn` release moves off that line; an override across the major is not
+  used.
+
+`pnpm-workspace.yaml` carries one override: `fast-uri@3` resolves to 3.1.9.
+`ajv` 8.20.0 asks for `fast-uri` ^3.0.1 and is shared as a peer of
+`@hookform/resolvers`, so `pnpm update` keeps the locked release instead of
+moving it to the fixed one. The override stays inside the major line `ajv` asks
+for and is removed once `ajv` resolves a fixed release unaided.
 
 Five advisories left the graph when MCP-E4 replaced `minio` with
 `@aws-sdk/client-s3`, which adds none: two for `decode-uri-component`, one of
-them high, and three for `stream-json`. The `fast-xml-parser` advisory is
-unchanged, because the DAV client imports that package itself.
+them high, and three for `stream-json`.
 
 CI prints the complete report and then runs `deno task deps:audit:gate`, which
 runs `deno audit --level=high` and fails on every high or critical advisory and

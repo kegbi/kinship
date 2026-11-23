@@ -14,7 +14,6 @@ autoInstallPeers: false
 strictDepBuilds: true
 dangerouslyAllowAllBuilds: false
 allowBuilds:
-  esbuild@0.28.2: true
   fsevents@2.3.2: false
   fsevents@2.3.3: false
   # Lefthook's postinstall runs `lefthook install`, which writes .git/hooks.
@@ -27,3 +26,9 @@ supportedArchitectures:
   cpu:
     - x64
     - arm64
+overrides:
+  # ajv@8.20.0 asks for fast-uri ^3.0.1 and is shared as a peer of
+  # @hookform/resolvers, so `pnpm update` keeps the locked 3.1.7, which carries
+  # GHSA-w74x-v6f9-j3xg and four further advisories. 3.1.9 is the fixed release
+  # of the same major line; remove this entry once ajv resolves it unaided.
+  fast-uri@3: 3.1.9

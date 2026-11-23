@@ -346,6 +346,21 @@ function mountStyles(): void {
   document.head.append(style);
 }
 
+/**
+ * The values the mounted top-level rules matching `element` declare for
+ * `property`. A computed `inherit` is already resolved to the parent's value,
+ * and the test DOM has no built-in control styles for it to differ from, so a
+ * reset to `inherit` is read from the rules themselves.
+ */
+function declaredValues(element: Element, property: string): string[] {
+  return [...document.styleSheets]
+    .flatMap((sheet) => [...sheet.cssRules])
+    .filter((rule): rule is CSSStyleRule =>
+      rule instanceof CSSStyleRule && element.matches(rule.selectorText)
+    )
+    .map((rule) => rule.style.getPropertyValue(property));
+}
+
 afterEach(() => {
   document.head.innerHTML = "";
   document.body.innerHTML = "";
@@ -605,8 +620,8 @@ describe("application control presentation", () => {
     for (const select of [single, multiple]) {
       const computed = getComputedStyle(select);
       expect(computed.minHeight).toBe("44px");
-      expect(computed.font).toBe("inherit");
-      expect(computed.color).toBe("inherit");
+      expect(declaredValues(select, "font")).toContain("inherit");
+      expect(declaredValues(select, "color")).toContain("inherit");
       expect(computed.backgroundColor).toBe("#ffffff");
       expect(computed.borderTopWidth).toBe("1px");
       expect(computed.borderRadius).toBe("8px");

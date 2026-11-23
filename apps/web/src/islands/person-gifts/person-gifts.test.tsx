@@ -505,9 +505,7 @@ describe("GIFTS-001 debt reopening and permanent removal", () => {
         }),
       )
     );
-    expect(
-      screen.queryByRole("dialog"),
-    ).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(card("debt").queryByRole("button", { name: "Reopen Lunch" }))
       .toBeNull();
     act(() =>
