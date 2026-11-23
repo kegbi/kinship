@@ -181,10 +181,9 @@ export function createConfiguredReminderWorker(
     logger,
   });
   const compose = (connection: DatabaseConnection): TickWorker => {
-    // Every transaction these runners open in a workspace holds that
-    // workspace's lifecycle lock shared first, so a reset or delete there
-    // and the worker's work wait for each other before either holds a row
-    // (MCP-F3).
+    // Every transaction these two runners open in a workspace takes that
+    // workspace's lifecycle lock shared as its first statement (MCP-F3). The
+    // transactions the worker's repositories open themselves do not.
     const shared: SharedComposition = {
       actors: workspaceActors(),
       audit: governanceAuditRecorder(),

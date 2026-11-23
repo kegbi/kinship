@@ -359,14 +359,22 @@ Workspace isolation is a security boundary, not a repository filter convention.
   from identity without a row lock, so it never waits for the account row of a
   member whose write holds that row and waits for their member row.
 - A workspace reset or delete holds the owner's account row from its password
-  check. It then takes, before any other row of the workspace, the workspace's
-  lifecycle advisory lock exclusively, the member-administration advisory lock
-  that a member change and an account deletion take first, and every member row
-  in the revalidation's mode; only then the workspace row. A write that holds
-  its member row is waited for, never left waiting for a reset that will delete
-  that row. The worker's reminder top-ups, and every transaction its runners
-  open in a workspace, take the lifecycle lock shared as their first statement,
-  so a reset and that work wait for each other while neither holds a row
+  check and its own attempt-budget row. It then takes, before any row of the
+  workspace, the workspace's lifecycle advisory lock exclusively, the
+  member-administration advisory lock, and every member row in the
+  revalidation's mode; only then the workspace row. A write that holds its
+  member row is waited for, never left waiting for a reset that will delete that
+  row. A member change, leaving, and an account deletion take the
+  member-administration lock exclusively, and an invitation's inspection and
+  acceptance take it shared, each before it locks any row of the workspace. The
+  worker's reminder top-ups and re-channels, and every transaction its two
+  shared transaction runners open in a workspace, take the lifecycle lock shared
+  as their first statement. The transactions the worker's repositories open
+  themselves, such as claiming, leasing, and recording deliveries, withdrawing
+  retired lead notices, and completing a lifecycle cleanup, do not. A password
+  check, a password reset, and a second sign-in factor lock the account row
+  `for no key update`: a reset re-inserts every membership, which needs
+  `for key share` on each member's account row, and `for update` would block it
   (MCP-F3).
 - Pass typed principal/workspace context explicitly to application services.
 - Application services reject unauthorized or cross-workspace identifiers before

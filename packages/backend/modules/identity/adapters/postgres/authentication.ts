@@ -202,6 +202,10 @@ export class PostgresIdentityAuthentication
    * password (SECA-06). An attempt locks the user, then the challenge row, the
    * order a password reset takes them in, so attempts on one challenge are
    * counted one at a time and a reset either revokes the row first or waits.
+   * Both hold the user `for no key update`. The two locks conflict, but
+   * neither conflicts with the `for key share` a row inserted to reference
+   * the user takes, such as the membership a workspace reset re-inserts after
+   * it has revoked this challenge (MCP-F3).
    */
   async completeMfa(command: {
     readonly challengeToken: string;
@@ -225,7 +229,7 @@ export class PostgresIdentityAuthentication
       from crm.users u join crm.user_mfa_totp mfa on mfa.user_id = u.id
       where u.id = ${userId}::uuid and u.status = 'active'
         and mfa.confirmed_at is not null
-      for update of u, mfa
+      for no key update of u for update of mfa
     `.execute(database);
     const mfa = mfaResult.rows[0];
     const challengeResult = await sql<{

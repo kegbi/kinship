@@ -5,11 +5,19 @@
  * A reset or delete holds the workspace for its whole transaction and then
  * deletes every row of it. Anything that holds a row of the workspace and then
  * waits for one the reset holds would deadlock against it. Each test forces
- * the losing interleaving: a third session holds the person the reset is about
- * to erase, so the reset stops there with its locks taken; the other side is
- * started only once the reset is provably waiting, and is itself let in only
- * once it is provably waiting behind the reset. Then the third session lets
- * go, and both must answer without PostgreSQL reporting a deadlock.
+ * the losing interleaving: a third session holds a row the reset is about to
+ * lock or erase, so the reset stops there with its earlier locks taken; the
+ * other side is started only once the reset is provably waiting, and is itself
+ * let in only once it is provably waiting behind the reset. Then the third
+ * session lets go, and both must answer.
+ *
+ * A deadlock aborts one of the two waiting sides, so both answers are checked
+ * first. PostgreSQL's deadlock count is the second witness. A backend keeps
+ * the deadlock it detected in its own pending statistics for up to ten
+ * seconds, and flushes them as it exits, before it leaves `pg_stat_activity`.
+ * The count is therefore read only once every API and worker backend has
+ * exited: the third session and this file's own connections never wait for a
+ * lock, so they can be in no cycle, and every deadlock is counted by then.
  */
 
 import {
@@ -29,25 +37,60 @@ import {
 } from "../support/database.ts";
 import {
   apiSupport,
+  originHeaders,
   PASSWORD,
   sessionCookie,
   type SignedInFixture,
 } from "../support/api.ts";
 import { createPerson, submitPerson } from "../support/fixtures.ts";
+import {
+  AesGcmMfaSecretBox,
+  generateTotp,
+} from "../../packages/backend/modules/identity/adapters/crypto/totp.ts";
+import { WebCryptoRandomSource } from "../../packages/backend/modules/identity/adapters/crypto/secure_tokens.ts";
+import type postgres from "postgres";
 
 const databaseUrl = requireDatabaseUrl();
 const sql = openSql(databaseUrl, { max: 4, prepare: false });
 const mail = new CapturedVerificationMail();
-const configured = createConfiguredApiApp(
-  databaseUrl,
-  mail,
-  browserSecurityPolicy("test", "http://localhost"),
-);
-const api = apiSupport(configured.app, mail, sql);
+const mfaKeyset = {
+  activeKeyId: "test",
+  keys: new Map([["test", new Uint8Array(32).fill(0x4b)]]),
+};
+const MFA_SECRET = "JBSWY3DPEHPK3PXP";
+const configure = () =>
+  createConfiguredApiApp(
+    databaseUrl,
+    mail,
+    browserSecurityPolicy("test", "http://localhost"),
+    mfaKeyset,
+  );
+let configured = configure();
+let api = apiSupport(configured.app, mail, sql);
 
 type Action = "delete" | "reset";
 
-async function deadlocks(): Promise<number> {
+/**
+ * PostgreSQL's deadlock count once every backend the API and the worker
+ * opened has exited, so each has flushed what it counted. The API is closed
+ * for that and composed again before this returns.
+ */
+async function settledDeadlocks(): Promise<number> {
+  await configured.close();
+  for (let attempt = 0;; attempt++) {
+    const [open] = await sql<{ readonly count: number }[]>`
+      select count(*)::int as count from pg_stat_activity
+      where datname = current_database() and backend_type = 'client backend'
+        and usename <> current_user
+    `;
+    if (open!.count === 0) break;
+    if (attempt === 500) {
+      throw new Error(`${open!.count} API or worker backend(s) did not exit`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  configured = configure();
+  api = apiSupport(configured.app, mail, sql);
   const [row] = await sql<{ readonly count: number }[]>`
     select deadlocks::int as count from pg_stat_database
     where datname = current_database()
@@ -73,11 +116,37 @@ async function waitingBehind(
   throw new Error(`no session waited behind backend ${blocker}`);
 }
 
+/** A row a third session holds, which the reset or delete must wait for. */
+type Holding = (transaction: postgres.TransactionSql) => Promise<unknown>;
+
+/** A person, which stops a reset or delete where it erases the people. */
+const person = (personId: string): Holding => (transaction) =>
+  transaction`
+    select id from crm.people where id = ${personId}::uuid for key share
+  `;
+
 /**
- * A third session holding `personId` the way a reader would, which stops a
- * reset or delete at the statement that erases the workspace's people.
+ * The workspace row, which stops a reset or delete after it has locked every
+ * member row and before it holds the workspace row.
  */
-async function holdPerson(personId: string): Promise<{
+const workspace = (workspaceId: string): Holding => (transaction) =>
+  transaction`
+    select id from crm.workspaces where id = ${workspaceId}::uuid
+    for key share
+  `;
+
+/**
+ * The workspace's settings, which stop a reset after it has revoked its sole
+ * members' sessions and before it re-inserts the member rows.
+ */
+const settings = (workspaceId: string): Holding => (transaction) =>
+  transaction`
+    select workspace_id from crm.workspace_settings
+    where workspace_id = ${workspaceId}::uuid for key share
+  `;
+
+/** A third session holding a row until it is released. */
+async function hold(lock: Holding): Promise<{
   readonly done: Promise<void>;
   readonly pid: number;
   readonly release: () => void;
@@ -92,9 +161,7 @@ async function holdPerson(personId: string): Promise<{
     const [backend] = await transaction<{ readonly pid: number }[]>`
       select pg_backend_pid() as pid
     `;
-    await transaction`
-      select id from crm.people where id = ${personId}::uuid for key share
-    `;
+    await lock(transaction);
     holding(backend!.pid);
     await released;
   }).then(() => undefined);
@@ -174,16 +241,26 @@ async function signInTo(
   };
 }
 
-/** A second member of `owner`'s workspace, signed in there. */
+/**
+ * A second member of `owner`'s workspace, signed in there. With `homeless`,
+ * the workspace they registered is gone, so theirs is the only membership.
+ */
 async function colleague(
   owner: SignedInFixture,
   name: string,
-  role: "admin" | "member",
-): Promise<SignedInFixture> {
+  role: "admin" | "member" | "owner",
+  options: { readonly homeless?: boolean } = {},
+): Promise<SignedInFixture & { readonly email: string }> {
   const email = `${name}-${crypto.randomUUID()}@example.test`;
   const own = await api.register(email, `${name} home`);
   await addMembership(sql, own.userId, owner.workspaceId, role);
-  return await signInTo(email, own.userId, owner.workspaceId);
+  if (options.homeless) {
+    await sql`delete from crm.workspaces where id = ${own.workspaceId}::uuid`;
+  }
+  return {
+    ...await signInTo(email, own.userId, owner.workspaceId),
+    email,
+  };
 }
 
 /** What a request or worker tick answered, read before it is let go. */
@@ -198,12 +275,13 @@ async function answered(
 
 /**
  * Runs `action` against the losing interleaving with `other`: the reset or
- * delete is stopped with its locks taken, `other` starts and is seen waiting
- * behind it, and only then is the reset let go. Both settle before it returns.
+ * delete is stopped at `holding` with its earlier locks taken, `other` starts
+ * and is seen waiting behind it, and only then is the reset let go. Both
+ * settle before it returns.
  */
 async function interleave(
   owner: SignedInFixture,
-  personId: string,
+  holding: Holding,
   action: Action,
   other: () => Promise<unknown>,
 ): Promise<{
@@ -211,8 +289,8 @@ async function interleave(
   readonly lifecycle: { readonly body: string; readonly status: number };
   readonly other: string;
 }> {
-  const before = await deadlocks();
-  const holder = await holdPerson(personId);
+  const before = await settledDeadlocks();
+  const holder = await hold(holding);
   const started: Promise<unknown>[] = [];
   try {
     const destroying = lifecycle(owner, action);
@@ -227,15 +305,16 @@ async function interleave(
       destroying,
       running,
     ]);
-    assert(destroyed.status === "fulfilled", `${action} request failed`);
-    return {
-      deadlocks: await deadlocks() - before,
-      lifecycle: {
-        body: await destroyed.value.text(),
-        status: destroyed.value.status,
-      },
+    const outcome = {
+      lifecycle: destroyed.status === "fulfilled"
+        ? {
+          body: await destroyed.value.text(),
+          status: destroyed.value.status,
+        }
+        : { body: `rejected: ${destroyed.reason}`, status: 0 },
       other: await answered(settled),
     };
+    return { ...outcome, deadlocks: await settledDeadlocks() - before };
   } finally {
     await holder.end();
     for (const settled of await Promise.allSettled(started)) {
@@ -247,6 +326,19 @@ async function interleave(
       }
     }
   }
+}
+
+/** Neither side failed and PostgreSQL counted no deadlock. */
+function assertNoDeadlock(
+  description: string,
+  result: Awaited<ReturnType<typeof interleave>>,
+  lifecycleStatus = 200,
+): void {
+  assert(
+    result.deadlocks === 0 && result.lifecycle.status === lifecycleStatus &&
+      !/^(5|rejected)/.test(result.other),
+    `${description}: ${result.deadlocks} deadlock(s), lifecycle ${result.lifecycle.status} ${result.lifecycle.body}, other ${result.other}`,
+  );
 }
 
 /**
@@ -282,7 +374,11 @@ async function ownerWithShortWindow(
   return { owner, personId };
 }
 
-/** One tick of a freshly configured worker, whose first tick replenishes. */
+/**
+ * One tick of a freshly configured worker, whose first tick replenishes. A
+ * top-up runs inside `replenish`, which catches nothing, and the tick awaits
+ * it, so a top-up that fails rejects the tick.
+ */
 async function workerTick(): Promise<void> {
   const worker = createConfiguredReminderWorker(
     requireWorkerDatabaseUrl(),
@@ -296,6 +392,21 @@ async function workerTick(): Promise<void> {
   }
 }
 
+/** An owner, with a person a reset or delete erases. */
+async function ownerWithPerson(
+  name: string,
+): Promise<{ readonly owner: SignedInFixture; readonly personId: string }> {
+  await resetDatabase(sql);
+  const owner = await api.register(
+    `${name}-${crypto.randomUUID()}@example.test`,
+    `${name} circle`,
+  );
+  return {
+    owner,
+    personId: await createPerson(api, owner, "Erased by the reset"),
+  };
+}
+
 for (const action of ["reset", "delete"] as const) {
   Deno.test({
     name:
@@ -306,12 +417,56 @@ for (const action of ["reset", "delete"] as const) {
       const { owner, personId } = await ownerWithShortWindow(
         `${action}-top-up`,
       );
-      const result = await interleave(owner, personId, action, workerTick);
-      assert(
-        result.deadlocks === 0 && result.lifecycle.status === 200 &&
-          result.other === "fulfilled",
-        `${action} beside a top-up: ${result.deadlocks} deadlock(s), ${action} ${result.lifecycle.status} ${result.lifecycle.body}, tick ${result.other}`,
+      const result = await interleave(
+        owner,
+        person(personId),
+        action,
+        workerTick,
       );
+      assertNoDeadlock(`${action} beside a top-up`, result);
+      assert(result.other === "fulfilled", `tick ${result.other}`);
+    },
+  });
+
+  Deno.test({
+    name:
+      `[MCP-F3] a workspace ${action} and an invitation acceptance in it cannot deadlock`,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+      const { owner } = await ownerWithPerson(`${action}-invitation`);
+      // Only an address verified for a day may invite (SECA-03).
+      await sql`
+        update crm.users set email_verified_at = now() - interval '25 hours'
+        where id = ${owner.userId}::uuid
+      `;
+      const inviteeEmail =
+        `${action}-invitee-${crypto.randomUUID()}@example.test`;
+      const invitee = await api.register(inviteeEmail, "Invitee home");
+      const invited = await api.request(
+        owner,
+        "/api/v1/workspace-invitations",
+        "POST",
+        { email: inviteeEmail, role: "member" },
+      );
+      assert(invited.status === 201, `invitation sent: ${invited.status}`);
+      const token = mail.latestInvitationToken(inviteeEmail);
+      assert(token, "the invitation token is delivered");
+      const result = await interleave(
+        owner,
+        workspace(owner.workspaceId),
+        action,
+        async () =>
+          await configured.app.request(
+            "http://localhost/api/v1/workspace-invitations/accept",
+            {
+              method: "POST",
+              headers: { ...originHeaders, cookie: invitee.cookie },
+              body: JSON.stringify({ token }),
+            },
+          ),
+      );
+      assertNoDeadlock(`${action} beside an invitation acceptance`, result);
     },
   });
 }
@@ -322,25 +477,15 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await resetDatabase(sql);
-    const owner = await api.register(
-      `reset-owner-${crypto.randomUUID()}@example.test`,
-      "Reset beside a colleague",
-    );
-    const personId = await createPerson(api, owner, "Erased by the reset");
+    const { owner, personId } = await ownerWithPerson("reset-owner");
     const admin = await colleague(owner, "reset-colleague", "admin");
     const result = await interleave(
       owner,
-      personId,
+      person(personId),
       "reset",
       () => submitPerson(api, admin, "Added meanwhile"),
     );
-    const other = result.other;
-    assert(
-      result.deadlocks === 0 && result.lifecycle.status === 200 &&
-        !/^5/.test(other),
-      `reset beside a colleague's write: ${result.deadlocks} deadlock(s), reset ${result.lifecycle.status} ${result.lifecycle.body}, write ${other}`,
-    );
+    assertNoDeadlock("reset beside a colleague's write", result);
   },
 });
 
@@ -350,17 +495,12 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await resetDatabase(sql);
-    const owner = await api.register(
-      `reset-roles-${crypto.randomUUID()}@example.test`,
-      "Reset beside a role change",
-    );
-    const personId = await createPerson(api, owner, "Erased by the reset");
+    const { owner, personId } = await ownerWithPerson("reset-roles");
     const admin = await colleague(owner, "reset-admin", "admin");
     const member = await colleague(owner, "reset-member", "member");
     const result = await interleave(
       owner,
-      personId,
+      person(personId),
       "reset",
       () =>
         api.request(
@@ -370,12 +510,7 @@ Deno.test({
           { role: "admin", status: "active" },
         ),
     );
-    const other = result.other;
-    assert(
-      result.deadlocks === 0 && result.lifecycle.status === 200 &&
-        !/^5/.test(other),
-      `reset beside a member change: ${result.deadlocks} deadlock(s), reset ${result.lifecycle.status} ${result.lifecycle.body}, change ${other}`,
-    );
+    assertNoDeadlock("reset beside a member change", result);
   },
 });
 
@@ -385,23 +520,172 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
-    await resetDatabase(sql);
-    const owner = await api.register(
-      `reset-twice-${crypto.randomUUID()}@example.test`,
-      "Reset beside its owner",
-    );
-    const personId = await createPerson(api, owner, "Erased by the reset");
+    const { owner, personId } = await ownerWithPerson("reset-twice");
     const result = await interleave(
       owner,
-      personId,
+      person(personId),
       "reset",
       () => submitPerson(api, owner, "Added meanwhile"),
     );
-    const other = result.other;
+    assertNoDeadlock("reset beside its owner's write", result);
+  },
+});
+
+Deno.test({
+  name: "[MCP-F3] two owners resetting one workspace at once cannot deadlock",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const { owner, personId } = await ownerWithPerson("reset-first-owner");
+    const second = await colleague(owner, "reset-second-owner", "owner");
+    const result = await interleave(
+      owner,
+      person(personId),
+      "reset",
+      () => lifecycle(second, "reset"),
+    );
+    assertNoDeadlock("two owners resetting", result);
     assert(
-      result.deadlocks === 0 && result.lifecycle.status === 200 &&
-        !/^5/.test(other),
-      `reset beside its owner's write: ${result.deadlocks} deadlock(s), reset ${result.lifecycle.status} ${result.lifecycle.body}, write ${other}`,
+      result.other.startsWith("409 "),
+      `the second reset finds the workspace changed: ${result.other}`,
+    );
+  },
+});
+
+for (const step of ["leave", "delete"] as const) {
+  Deno.test({
+    name: `[MCP-F3] a workspace reset and a member's ${
+      step === "leave" ? "leaving" : "account deletion"
+    } cannot deadlock`,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    async fn() {
+      const { owner, personId } = await ownerWithPerson(`reset-${step}`);
+      const member = await colleague(owner, `reset-${step}-member`, "member", {
+        homeless: true,
+      });
+      const result = await interleave(
+        owner,
+        person(personId),
+        "reset",
+        () =>
+          step === "leave"
+            ? api.request(
+              member,
+              "/api/v1/settings/personal-lifecycle/leave",
+              "POST",
+              {
+                confirmation: "LEAVE reset-leave circle",
+                password: PASSWORD,
+              },
+            )
+            : api.request(
+              member,
+              "/api/v1/settings/personal-lifecycle",
+              "DELETE",
+              { confirmation: `DELETE ${member.email}`, password: PASSWORD },
+            ),
+      );
+      assertNoDeadlock(`reset beside a member's ${step}`, result);
+      assert(
+        result.other.startsWith("200 "),
+        `the member's ${step} completes after the reset: ${result.other}`,
+      );
+    },
+  });
+}
+
+Deno.test({
+  name:
+    "[MCP-F3] a workspace reset and a member's password reset cannot deadlock",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const { owner } = await ownerWithPerson("reset-recovery");
+    const member = await colleague(owner, "reset-recovery-member", "member", {
+      homeless: true,
+    });
+    const requested = await api.request(
+      member,
+      "/api/v1/password-reset-requests",
+      "POST",
+      { email: member.email },
+    );
+    assert(requested.status === 202, `reset requested: ${requested.status}`);
+    const token = mail.latestPasswordResetToken(member.email);
+    assert(token, "the password reset token is delivered");
+    const result = await interleave(
+      owner,
+      settings(owner.workspaceId),
+      "reset",
+      async () =>
+        await configured.app.request(
+          "http://localhost/api/v1/password-resets",
+          {
+            method: "POST",
+            headers: originHeaders,
+            body: JSON.stringify({
+              password: "another correct horse battery staple",
+              token,
+            }),
+          },
+        ),
+    );
+    assertNoDeadlock("reset beside a password reset", result);
+    assert(
+      result.other.startsWith("200 "),
+      `the password reset completes after the workspace reset: ${result.other}`,
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[MCP-F3] a workspace reset and a member's second sign-in factor cannot deadlock",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const { owner } = await ownerWithPerson("reset-factor");
+    const member = await colleague(owner, "reset-factor-member", "member", {
+      homeless: true,
+    });
+    const box = new AesGcmMfaSecretBox(mfaKeyset, new WebCryptoRandomSource());
+    await sql`
+      insert into crm.user_mfa_totp (
+        user_id, encrypted_secret, confirmed_at, created_at, updated_at
+      ) values (
+        ${member.userId}::uuid, ${await box.encrypt(
+      MFA_SECRET,
+      member.userId,
+    )},
+        now(), now(), now()
+      )
+    `;
+    const signed = await api.signIn(member.email);
+    const challenge = signed.headers.get("set-cookie")?.match(
+      /kinship_mfa=([^;,]+)/,
+    )?.[1];
+    assert(signed.status === 202 && challenge, "the password step challenges");
+    const code = await generateTotp(MFA_SECRET, new Date());
+    assert(code, "a current code");
+    const result = await interleave(
+      owner,
+      settings(owner.workspaceId),
+      "reset",
+      async () =>
+        await configured.app.request(
+          "http://localhost/api/v1/mfa-challenges",
+          {
+            method: "POST",
+            headers: { ...originHeaders, cookie: `kinship_mfa=${challenge}` },
+            body: JSON.stringify({ factor: code }),
+          },
+        ),
+    );
+    assertNoDeadlock("reset beside a second factor", result);
+    assert(
+      result.other.startsWith("410 "),
+      `the reset revoked the challenge it waited for: ${result.other}`,
     );
   },
 });

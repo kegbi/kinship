@@ -30,6 +30,17 @@ export class PostgresIdentityPersonalLifecycle
     return result.rows[0];
   }
 
+  /**
+   * Holds the account row `for no key update` until the transaction ends.
+   * That conflicts with every change to the row, so a second request of the
+   * same account, a password change, and a deletion wait for this one. It
+   * does not conflict with the `for key share` a row referencing the account
+   * takes, so a workspace reset that re-inserts this person's membership, or
+   * any other insert naming them, is not left waiting for a transaction that
+   * may itself be waiting for that reset's workspace (MCP-F3). An account
+   * deletion changes the address, a key, and takes the stronger lock with
+   * that update, once it holds every workspace it leaves.
+   */
   async verifyPassword(
     command: Parameters<IdentityPersonalLifecycleFacade["verifyPassword"]>[0],
   ): Promise<boolean> {
@@ -38,7 +49,7 @@ export class PostgresIdentityPersonalLifecycle
       from crm.users
       where id = ${command.userId}::uuid and status = 'active'
         and deleted_at is null
-      for update
+      for no key update
     `.execute(databaseFromSession(command.transaction));
     const passwordHash = result.rows[0]?.passwordHash;
     return passwordHash

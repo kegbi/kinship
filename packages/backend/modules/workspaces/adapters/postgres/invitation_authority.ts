@@ -22,6 +22,14 @@
  * membership's foreign keys wait for the workspace and the inviter.
  * Membership changes already lock in that order; `lockInvitationAuthority`
  * is how inspection and acceptance do before they lock the invitation.
+ *
+ * Before the workspace, inspection and acceptance take the workspace's
+ * member-administration advisory lock shared. A member change, leaving, an
+ * account deletion, and a workspace reset or delete take it exclusively
+ * before any row of the workspace, and a reset or delete then locks every
+ * member row before the workspace row (MCP-F3). Without it, an acceptance
+ * could hold the workspace row and wait for its inviter's member row while a
+ * reset held that member row and waited for the workspace row.
  */
 
 import { sql } from "kysely";
@@ -40,12 +48,13 @@ export const INVITER_HOLDS_AUTHORITY = sql<boolean>`exists (
 )`;
 
 /**
- * Takes the locks that come before the invitation's own: its workspace, which
- * leaving and account deletion lock first and the new membership's key needs,
- * then its inviter's membership, which demotion and suspension lock. An
- * invitation's workspace and inviter never change, so reading them unlocked
- * is safe; a membership change already waiting here commits its revocation
- * before the caller reads the invitation.
+ * Takes the locks that come before the invitation's own: the workspace's
+ * member-administration lock, shared; its workspace, which leaving and
+ * account deletion lock first and the new membership's key needs; then its
+ * inviter's membership, which demotion and suspension lock. An invitation's
+ * workspace and inviter never change, so reading them unlocked is safe; a
+ * membership change already waiting here commits its revocation before the
+ * caller reads the invitation.
  */
 export async function lockInvitationAuthority(
   transaction: { readonly opaque: unknown },
@@ -67,6 +76,11 @@ export async function lockInvitationAuthority(
   `.execute(database);
   const found = invitation.rows[0];
   if (!found) return;
+  await sql`
+    select pg_advisory_xact_lock_shared(
+      hashtextextended(${found.workspaceId}, 2)
+    )
+  `.execute(database);
   await sql`
     select id from crm.workspaces where id = ${found.workspaceId}::uuid
     for key share

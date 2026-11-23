@@ -76,6 +76,9 @@ export class PostgresPasswordRecoveryRepository
     `.execute(database);
     const request = candidate.rows[0];
     if (!request?.user_id || request.used_at !== null) return "invalid";
+    // Every other change to the account waits for this one; a row inserted to
+    // reference it does not, such as the membership a workspace reset
+    // re-inserts after it has revoked the sessions revoked below (MCP-F3).
     const user = await sql<{ readonly email: string; readonly valid: boolean }>`
       select u.email::text email, (
         u.status = 'active' and u.email_verified_at is not null
@@ -84,7 +87,8 @@ export class PostgresPasswordRecoveryRepository
           where evt.user_id = u.id and evt.used_at is not null
         )
       ) valid
-      from crm.users u where u.id = ${request.user_id}::uuid for update
+      from crm.users u where u.id = ${request.user_id}::uuid
+      for no key update
     `.execute(database);
     const lockedRequest = await sql<{
       readonly expires_at: Date;

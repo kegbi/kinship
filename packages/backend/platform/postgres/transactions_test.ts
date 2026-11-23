@@ -305,6 +305,31 @@ Deno.test("[MCP-F3] a workspace's lifecycle lock is one advisory key, exclusive 
   await database.destroy();
 });
 
+Deno.test("[MCP-F3] a workspace's lifecycle lock hashes the id the scope sets, and refuses anything else", async () => {
+  const { database, statements } = recordingDatabase();
+  const workspaceId = "00000000-0000-4000-8000-00000000000A";
+  await lockWorkspaceLifecycle(database, workspaceId, "shared");
+  assert(
+    statements.length === 1 &&
+      statements[0]!.parameters[0] === workspaceId.toLowerCase() &&
+      workspaceScopeStatement(workspaceId).endsWith(
+        `'${statements[0]!.parameters[0]}'`,
+      ),
+    `the lifecycle key is the scope's id: ${JSON.stringify(statements)}`,
+  );
+  let refused: unknown;
+  try {
+    await lockWorkspaceLifecycle(database, "not-a-workspace", "exclusive");
+  } catch (error) {
+    refused = error;
+  }
+  assert(
+    refused instanceof RangeError && statements.length === 1,
+    `a malformed id takes no lock: ${refused}`,
+  );
+  await database.destroy();
+});
+
 Deno.test("[MCP-F3] a sharing runner holds the lifecycle lock first in a workspace, and takes none outside one", async () => {
   const { database, statements } = recordingDatabase();
   const workspaceId = "00000000-0000-4000-8000-00000000000b";

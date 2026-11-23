@@ -73,11 +73,13 @@ export class PostgresWorkspaceLifecycleRepository
     const database = databaseFromSession(command.transaction);
     if (command.lock) {
       // Before any row of the workspace (MCP-F3): the lifecycle lock, which
-      // the worker's work there holds shared; then the member-administration
-      // lock a member change and an account deletion take first; then every
-      // member row, in the mode and the member-before-workspace order of the
-      // actor revalidation, so a write that holds its member row is waited
-      // for here rather than left waiting for the workspace row below.
+      // the worker's top-ups and runners there hold shared; then the
+      // member-administration lock, which a member change, leaving, and an
+      // account deletion take exclusively and an invitation's inspection and
+      // acceptance shared, each before it locks a row of the workspace; then
+      // every member row, in the mode and the member-before-workspace order
+      // of the actor revalidation, so a write that holds its member row is
+      // waited for here rather than left waiting for the workspace row below.
       await lockWorkspaceLifecycle(database, command.workspaceId, "exclusive");
       await sql`
         select pg_advisory_xact_lock(hashtextextended(${command.workspaceId}, 2))

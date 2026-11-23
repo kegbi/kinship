@@ -266,10 +266,16 @@ export async function inWorkspace<Result>(
 
 /**
  * Takes the advisory lock of `workspaceId`'s lifecycle until the transaction
- * ends (MCP-F3). A workspace reset or delete takes it `exclusive` before any
- * row of the workspace. The worker's work in a workspace takes it `shared` as
- * its first statement, so a reset waits for the worker's work while holding
- * no row, and the worker's next work waits for the reset while holding none.
+ * ends (MCP-F3). The key is the id the scope statement sets, so a caller's
+ * spelling of the id cannot name a different lock.
+ *
+ * A workspace reset or delete takes it `exclusive` before any row of the
+ * workspace; by then it holds only the owner's account row, from the password
+ * check, and its own attempt-budget row. The worker's reminder top-ups and
+ * re-channels, and the transactions a runner given to
+ * `sharingWorkspaceLifecycle` opens in a workspace, take it `shared` as their
+ * first statement. Whichever comes second waits there, before it holds any
+ * row of the workspace.
  */
 export async function lockWorkspaceLifecycle(
   database: ReturnType<typeof databaseFromSession>,
@@ -281,13 +287,16 @@ export async function lockWorkspaceLifecycle(
       ? "pg_advisory_xact_lock"
       : "pg_advisory_xact_lock_shared",
   );
-  await sql`select ${lock}(hashtextextended(${workspaceId}, 7))`
-    .execute(database);
+  await sql`select ${lock}(hashtextextended(${
+    checkedWorkspaceId(workspaceId)
+  }, 7))`.execute(database);
 }
 
 /**
  * `runner`, with every transaction it opens in a workspace holding that
- * workspace's lifecycle lock shared first: the worker's runners (MCP-F3).
+ * workspace's lifecycle lock shared first (MCP-F3). The worker composes its
+ * shared transaction runners this way; a transaction a repository opens
+ * itself, not through one of them, takes no lifecycle lock.
  */
 export function sharingWorkspaceLifecycle<
   Session extends { readonly opaque: unknown },
