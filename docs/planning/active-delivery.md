@@ -57,10 +57,11 @@ its "Delivered, and what is left" section lists the open follow-ups.
       full coverage pass; the Chromium browser suite passes 89 of 91 with one
       skipped and the known `IMPORT-002` assertion failure (REL-108). The plan
       records the details.
-- [ ] Follow-ups approved on 2026-11-23 (MCP-E1 to MCP-E3): the person revision
-      on the identity answers, one lock order for a preference save, and request
+- [ ] Follow-ups approved on 2026-11-23 (MCP-E1 to MCP-E4): the person revision
+      on the identity answers, one lock order for a preference save, request
       tombstones at schema v16 for keyed creates replayed after a permanent
-      delete.
+      delete, and the object-storage client moved from `minio` to
+      `@aws-sdk/client-s3`.
 - [ ] Release gates still open: the all-browser E2E matrix, and the dependency
       audit once the `decode-uri-component` advisory through `minio` is decided.
 

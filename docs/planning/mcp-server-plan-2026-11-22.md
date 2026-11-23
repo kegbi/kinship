@@ -247,6 +247,10 @@ is a separate decision.
       a retry key. A keyed create of a journal post, note, activity, call,
       conversation, gift, debt, or recurring debt whose derived id has a
       tombstone is refused, and `gifts` stops asking the audit history.
+- [ ] **MCP-E4 Object-storage client.** The backend's S3 client moves from the
+      `minio` package to the official `@aws-sdk/client-s3`, behind the unchanged
+      `ObjectStorage` port, which removes the `decode-uri-component`,
+      `stream-json`, and `fast-xml-parser` advisories `minio` brought in.
 
 ## Delivered, and what is left
 
