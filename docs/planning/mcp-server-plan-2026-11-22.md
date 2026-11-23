@@ -232,6 +232,22 @@ is a separate decision.
       delivered, with `API-001` to `API-003` passing in Chromium; full coverage
       and the all-browser run remain for the integration checkpoint below.
 
+### Phase E — Follow-ups the product owner approved on 2026-11-23 (parallel)
+
+- [ ] **MCP-E1 Person revision on the identity answers.** `PersonIdentity`
+      carries `updatedAt`, so `get_person` and `create_person` hand an agent the
+      revision `update_person`, `archive_person`, `restore_person`, and
+      `delete_person` require.
+- [ ] **MCP-E2 One lock order for a preference save.** A member's preference
+      save holds the workspace row before it writes its preference row, the
+      order every other write takes, so it cannot deadlock against a person
+      restore refilling reminders. Proven by a PostgreSQL concurrency test.
+- [ ] **MCP-E3 Request tombstones (schema v16).** A workspace-owned tombstone
+      table records the id of a permanently deleted record that was created with
+      a retry key. A keyed create of a journal post, note, activity, call,
+      conversation, gift, debt, or recurring debt whose derived id has a
+      tombstone is refused, and `gifts` stops asking the audit history.
+
 ## Delivered, and what is left
 
 Delivered: every ticket of Part 4. Personal tokens reach the routes of Part 3
