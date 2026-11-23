@@ -8,12 +8,16 @@
  * answers, as `deleted`, because the identifier a request derived stays taken
  * by the row its first attempt wrote. `assertCreatedPostcondition` is the other half of the
  * same discipline — the write is read back inside the transaction, so a
- * creation that silently did nothing fails loudly.
+ * creation that silently did nothing fails loudly. Every identity the port
+ * answers carries the stored revision, rendered in SQL to the microsecond the
+ * lifecycle writes compare, so the creation and the identity read hand a
+ * caller the `expectedUpdatedAt` its next write needs.
  */
 
 import type { Failure } from "../../../shared-kernel/result.ts";
 import type {
   CreatePersonInput,
+  NewPersonIdentity,
   PersonIdentity,
   PossibleDuplicate,
 } from "../domain/person_identity.ts";
@@ -53,12 +57,12 @@ export interface PeopleRepository {
     },
   ): Promise<RequestedPersonLookup>;
   create(
-    command: PeopleActor & PersonIdentity & {
+    command: PeopleActor & NewPersonIdentity & {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<PersonIdentity | undefined>;
   assertCreatedPostcondition(
-    command: PeopleActor & PersonIdentity & {
+    command: PeopleActor & NewPersonIdentity & {
       readonly transaction: PeopleTransaction;
     },
   ): Promise<void>;

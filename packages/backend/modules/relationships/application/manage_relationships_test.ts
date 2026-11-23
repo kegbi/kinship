@@ -205,6 +205,7 @@ function fixture(
             givenName: input.givenName,
             id: targetId,
             isPartial: input.isPartial,
+            updatedAt: "2026-10-25T10:00:00.000000Z",
           },
           status: "created",
         });

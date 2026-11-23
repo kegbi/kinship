@@ -579,7 +579,7 @@
       "name": "get_person",
       "area": "people",
       "title": "Get a person's name",
-      "description": "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived, but not their revision: list_profile_facts answers that as personUpdatedAt. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
+      "description": "Reads one person's id, names (given, middle, family, nickname, and whether the record is partial), whether they are archived, and updatedAt, their current revision: pass it as expectedUpdatedAt to update_person, archive_person, or restore_person. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
       "scope": "people:profile:read",
       "annotations": {
         "readOnlyHint": true,
@@ -612,7 +612,7 @@
       "name": "create_person",
       "area": "people",
       "title": "Create a person",
-      "description": "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
+      "description": "Creates a person from their names and returns the new person's id and updatedAt, the revision update_person, archive_person, and restore_person need. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, at their current revision, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -669,7 +669,7 @@
       "name": "update_person",
       "area": "people",
       "title": "Update a person",
-      "description": "Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId, and isDeceased are kept when left out, and an empty string clears the description or the gender. genderOptionId comes from list_vocabulary_entries (section gender-options), which requires vocabularies:read and an owner or admin; a token or member without them cannot obtain one. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again. An archived person cannot be edited until restore_person.",
+      "description": "Replaces a person's names, and optionally their description, gender, and deceased flag. The names are replaced whole, so send every name to keep; description, genderOptionId, and isDeceased are kept when left out, and an empty string clears the description or the gender. genderOptionId comes from list_vocabulary_entries (section gender-options), which requires vocabularies:read and an owner or admin; a token or member without them cannot obtain one. expectedUpdatedAt is the person's current revision: person.updatedAt from get_person, from create_person, or from the last update_person, archive_person, or restore_person answer. get_person requires people:profile:read; without it, a token has only the revisions create_person and those answers return. A stale revision is refused as a conflict: read it again with get_person. An archived person cannot be edited until restore_person.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -749,7 +749,7 @@
       "name": "archive_person",
       "area": "people",
       "title": "Archive a person",
-      "description": "Archives a person: they leave the active directory and their profile becomes read-only until restore_person. Nothing is deleted. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.",
+      "description": "Archives a person: they leave the active directory and their profile becomes read-only until restore_person. Nothing is deleted. expectedUpdatedAt is the person's current revision: person.updatedAt from get_person, from create_person, or from the last update_person, archive_person, or restore_person answer. get_person requires people:profile:read; without it, a token has only the revisions create_person and those answers return. A stale revision is refused as a conflict: read it again with get_person.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,
@@ -788,7 +788,7 @@
       "name": "restore_person",
       "area": "people",
       "title": "Restore an archived person",
-      "description": "Returns an archived person to the active directory and makes their profile writable again. expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.",
+      "description": "Returns an archived person to the active directory and makes their profile writable again. expectedUpdatedAt is the person's current revision: person.updatedAt from get_person, from create_person, or from the last update_person, archive_person, or restore_person answer. get_person requires people:profile:read; without it, a token has only the revisions create_person and those answers return. A stale revision is refused as a conflict: read it again with get_person.",
       "scope": "people:write",
       "annotations": {
         "readOnlyHint": false,

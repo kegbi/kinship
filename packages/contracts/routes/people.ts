@@ -121,7 +121,7 @@ export const createPerson = defineRoute({
   path: "/api/v1/people",
   operationId: "createPerson",
   description:
-    "Creates a person in the workspace. Personal tokens require the people:write grant. Send a client-generated requestId and reuse it when retrying: the same requestId and names return the person it created (201), and the same requestId with different names, or after that person was deleted, is refused (409). duplicateOverride is not compared, so a create warned as a possible duplicate may be retried with duplicateOverride and the same requestId. Without a requestId every call creates a new person. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
+    "Creates a person in the workspace and answers their id and updatedAt, the revision editPerson, archivePerson, restorePerson, and deletePerson accept as expectedUpdatedAt. Personal tokens require the people:write grant. Send a client-generated requestId and reuse it when retrying: the same requestId and names return the person it created at their current revision (201), and the same requestId with different names, or after that person was deleted, is refused (409). duplicateOverride is not compared, so a create warned as a possible duplicate may be retried with duplicateOverride and the same requestId. Without a requestId every call creates a new person. A name that already exists in the workspace answers a possible duplicate (409) unless the request sets duplicateOverride.",
   tokenScope: "people:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -150,7 +150,7 @@ export const getPersonIdentity = defineRoute({
   path: "/api/v1/people/{personId}/identity",
   operationId: "getPersonIdentity",
   description:
-    "Minimal person name and identifier, including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data.",
+    "Minimal person name, identifier, and revision (updatedAt, the expectedUpdatedAt editPerson, archivePerson, restorePerson, and deletePerson accept), including archived people. Personal tokens require people:profile:read. Returns no profile aggregate, notes, timeline, tasks, or file data.",
   tokenScope: "people:profile:read",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: { params: z.object({ personId: uuid }), headers: workspaceHeaders },

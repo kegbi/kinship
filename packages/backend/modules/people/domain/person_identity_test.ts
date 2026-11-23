@@ -108,6 +108,7 @@ Deno.test("[GAP-015] a replayed identity matches only when every part does", () 
     isPartial: false,
     middleName: "Augusta",
     nickname: "Addy",
+    updatedAt: "2026-11-23T10:00:00.000000Z",
   };
   assert(sameIdentity(stored, ada), "the same parts are the same identity");
   for (

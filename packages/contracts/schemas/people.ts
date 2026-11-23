@@ -555,6 +555,11 @@ export const peopleTagFacet = z.strictObject({
   truncated: z.boolean(),
 }).meta({ id: "PeopleTagFacet" });
 
+/**
+ * A person as a create, the identity read, and a related-person create answer
+ * them. `updatedAt` is the person's revision, rendered exactly as an edit,
+ * archive, restore, or delete accepts it as `expectedUpdatedAt`.
+ */
 export const personIdentity = z.strictObject({
   familyName: z.string().optional(),
   givenName: z.string(),
@@ -562,6 +567,7 @@ export const personIdentity = z.strictObject({
   isPartial: z.boolean(),
   middleName: z.string().optional(),
   nickname: z.string().optional(),
+  updatedAt: z.iso.datetime({ offset: true }),
 }).meta({ id: "PersonIdentity" });
 
 export const personCreated = z.strictObject({

@@ -80,6 +80,7 @@ function dependencies(options: {
               givenName: "Ada",
               id: command.personId,
               isPartial: false,
+              updatedAt: "2026-08-15T11:00:00.000000Z",
             },
             status: "ready",
           });
@@ -96,6 +97,7 @@ function dependencies(options: {
             isPartial: command.isPartial,
             ...(command.middleName ? { middleName: command.middleName } : {}),
             ...(command.nickname ? { nickname: command.nickname } : {}),
+            updatedAt: "2026-08-15T12:00:00.000000Z",
           });
         },
         assertCreatedPostcondition() {
@@ -338,6 +340,7 @@ function storedPeople() {
           isPartial: command.isPartial,
           ...(command.middleName ? { middleName: command.middleName } : {}),
           ...(command.nickname ? { nickname: command.nickname } : {}),
+          updatedAt: "2026-11-22T12:00:00.000000Z",
         };
         rows.set(command.id, { person, state: "ready" });
         return Promise.resolve(person);
@@ -386,6 +389,25 @@ Deno.test("MCP-D4 a person created with a requestId is created once and replayed
   assert(
     store.effects.filter((effect) => effect === "duplicates").length === 1,
     "a replay is answered before duplicate detection",
+  );
+});
+
+Deno.test("MCP-E1 a replayed request answers the stored person's current revision", async () => {
+  const store = storedPeople();
+  const people = createPeopleManagement(store.dependencies);
+  const input = { givenName: "Ada", isPartial: false, requestId: REQUEST };
+  const first = await people.create(actor, input);
+  assert(first.status === "created", `first create: ${first.status}`);
+  const moved = "2026-11-22T12:00:00.000001Z";
+  store.rows.set(first.person.id, {
+    person: { ...first.person, updatedAt: moved },
+    state: "ready",
+  });
+  const replay = await people.create(actor, input);
+  assert(replay.status === "created", `replay: ${replay.status}`);
+  assert(
+    replay.person.updatedAt === moved,
+    `the replay answers the revision now stored: ${replay.person.updatedAt}`,
   );
 });
 

@@ -36,6 +36,7 @@ import type {
 import {
   type CreatePersonInput,
   derivePersonId,
+  type NewPersonIdentity,
   normalizeCreatePersonInput,
   type PersonIdentity,
   personIdentityFrom,
@@ -110,7 +111,7 @@ export function createPeopleManagement(
   /** Writes the person, records the event, and reads both back. */
   const persist = async (
     actor: PeopleActor,
-    person: PersonIdentity,
+    person: NewPersonIdentity,
     transaction: PeopleTransaction,
   ): Promise<PersonIdentity | undefined> => {
     const created = await dependencies.repository.create({

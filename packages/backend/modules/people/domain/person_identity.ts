@@ -30,14 +30,27 @@ export interface CreatePersonInput {
   readonly nickname?: string;
 }
 
-/** A person as the module identifies them once they exist. */
-export interface PersonIdentity {
+/**
+ * A person as the module identifies them, before the row that stores them is
+ * written.
+ */
+export interface NewPersonIdentity {
   readonly familyName?: string;
   readonly givenName: string;
   readonly id: string;
   readonly isPartial: boolean;
   readonly middleName?: string;
   readonly nickname?: string;
+}
+
+/**
+ * A stored person as the module identifies them: the names, and the revision
+ * (`updatedAt`, six fractional digits in UTC) every later edit, archive,
+ * restore, and delete of them is decided against, so a caller that has just
+ * read or created a person can change them without a second read.
+ */
+export interface PersonIdentity extends NewPersonIdentity {
+  readonly updatedAt: string;
 }
 
 /** A person already in the workspace who may be the one being created. */
@@ -66,7 +79,7 @@ export function derivePersonId(
  * mistake, not the same creation, which is why every part is compared.
  */
 export function sameIdentity(
-  left: PersonIdentity,
+  left: NewPersonIdentity,
   right: CreatePersonInput,
 ): boolean {
   return left.givenName === right.givenName &&
@@ -121,7 +134,7 @@ export function validateCreatePersonInput(
 export function personIdentityFrom(
   id: string,
   input: CreatePersonInput,
-): PersonIdentity {
+): NewPersonIdentity {
   return {
     ...(input.familyName ? { familyName: input.familyName } : {}),
     givenName: input.givenName,

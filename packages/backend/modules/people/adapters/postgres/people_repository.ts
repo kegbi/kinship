@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { pickDefined } from "../../../../platform/postgres/rows.ts";
+import { instantColumn } from "../../../../platform/postgres/timestamps.ts";
 import { databaseFromSession } from "../../../../platform/postgres/session.ts";
 import { PostgresTransactionRunner } from "../../../../platform/postgres/transactions.ts";
 import { displayName } from "../../domain/person_name.ts";
@@ -21,15 +22,20 @@ interface DuplicateRow {
   readonly nickname: string | null;
 }
 
-interface IdentityRow {
-  readonly archived_at: Date | null;
-  readonly deleted_at: Date | null;
+/** The columns a stored identity is answered from; `updated_at` as text. */
+interface StoredIdentityRow {
   readonly family_name: string | null;
   readonly given_name: string;
   readonly id: string;
   readonly is_partial: boolean;
   readonly middle_name: string | null;
   readonly nickname: string | null;
+  readonly updated_at: string;
+}
+
+interface IdentityRow extends StoredIdentityRow {
+  readonly archived_at: Date | null;
+  readonly deleted_at: Date | null;
 }
 
 /**
@@ -42,7 +48,8 @@ async function identityRow(
   const result = await sql<IdentityRow>`
     select person.id::text, person.given_name, person.middle_name,
       person.family_name, person.nickname, person.is_partial,
-      person.archived_at, person.deleted_at
+      person.archived_at, person.deleted_at,
+      ${instantColumn("person.updated_at")} as updated_at
     from crm.people person
     where person.id = ${command.personId}::uuid
       and person.workspace_id = ${command.workspaceId}::uuid
@@ -50,15 +57,21 @@ async function identityRow(
   return result.rows[0];
 }
 
+/** The identity a stored row names, with the revision it was read at. */
+function storedIdentity(row: StoredIdentityRow): PersonIdentity {
+  return {
+    ...pickDefined({ familyName: row.family_name }),
+    givenName: row.given_name,
+    id: row.id,
+    isPartial: row.is_partial,
+    ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
+    updatedAt: row.updated_at,
+  };
+}
+
 function identityLookup(row: IdentityRow): PersonIdentityLookup {
   return {
-    person: {
-      ...pickDefined({ familyName: row.family_name }),
-      givenName: row.given_name,
-      id: row.id,
-      isPartial: row.is_partial,
-      ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-    },
+    person: storedIdentity(row),
     status: row.archived_at ? "archived" : "ready",
   };
 }
@@ -119,14 +132,7 @@ export class PostgresPeopleRepository implements PeopleRepository {
   async create(
     command: Parameters<PeopleRepository["create"]>[0],
   ): Promise<PersonIdentity | undefined> {
-    const result = await sql<{
-      readonly family_name: string | null;
-      readonly given_name: string;
-      readonly id: string;
-      readonly is_partial: boolean;
-      readonly middle_name: string | null;
-      readonly nickname: string | null;
-    }>`
+    const result = await sql<StoredIdentityRow>`
       insert into crm.people (
         id, workspace_id, created_by_member_id, given_name, middle_name,
         family_name, nickname, is_partial, created_at, updated_at
@@ -138,18 +144,10 @@ export class PostgresPeopleRepository implements PeopleRepository {
         ${command.nickname ?? null}, ${command.isPartial}, now(), now()
       )
       returning id::text, given_name, middle_name, family_name, nickname,
-        is_partial
+        is_partial, ${instantColumn("updated_at")} as updated_at
     `.execute(databaseFromSession(command.transaction));
     const row = result.rows[0];
-    return row
-      ? {
-        ...pickDefined({ familyName: row.family_name }),
-        givenName: row.given_name,
-        id: row.id,
-        isPartial: row.is_partial,
-        ...pickDefined({ middleName: row.middle_name, nickname: row.nickname }),
-      }
-      : undefined;
+    return row ? storedIdentity(row) : undefined;
   }
 
   async assertCreatedPostcondition(

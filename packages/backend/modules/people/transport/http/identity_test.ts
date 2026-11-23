@@ -14,7 +14,12 @@ const FOREIGN_WORKSPACE = "00000000-0000-4000-8000-00000000f0f0";
 
 Deno.test("scoped person reads accept only their explicit bearer grant and never fall back to cookies", async () => {
   const personId = "00000000-0000-4000-8000-000000000100";
-  const person = { givenName: "Ada", id: personId, isPartial: false };
+  const person = {
+    givenName: "Ada",
+    id: personId,
+    isPartial: false,
+    updatedAt: "2026-10-25T10:00:00.123456Z",
+  };
   let sessionCalls = 0;
   let readCalls = 0;
   const base = services({ create: () => Promise.reject(new Error("unused")) });
@@ -226,6 +231,7 @@ Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async
           givenName: "Ada",
           id: "00000000-0000-4000-8000-000000000100",
           isPartial: false,
+          updatedAt: "2026-10-25T10:00:00.123456Z",
         },
         status: "created",
       });
@@ -240,8 +246,15 @@ Deno.test("PEOPLE-001 HTTP creates in only the resolved active workspace", async
     headers,
     method: "POST",
   });
-  const body = await response.json() as { readonly next: string };
+  const body = await response.json() as {
+    readonly next: string;
+    readonly person: { readonly updatedAt: string };
+  };
   assertStatus(response, 201, "created response");
+  assert(
+    body.person.updatedAt === "2026-10-25T10:00:00.123456Z",
+    "the created person carries its revision, to the microsecond",
+  );
   assert(
     body.next === "/app/people/00000000-0000-4000-8000-000000000100",
     "canonical next route returned",
@@ -347,6 +360,7 @@ Deno.test("MCP-D4 createPerson forwards a requestId, refuses a malformed one, an
       givenName: "Ada",
       id: "00000000-0000-4000-8000-000000000100",
       isPartial: false,
+      updatedAt: "2026-10-25T10:00:00.000000Z",
     },
     status: "created",
   };

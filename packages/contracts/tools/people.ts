@@ -3,9 +3,9 @@
  * bulk changes, duplicates, merging, and deletion.
  *
  * A person's id comes from `list_people`. Identity edits, archiving, and
- * restoring are decided against the person's revision, which the identity
- * read does not carry: it is the `personUpdatedAt` every profile-fact read
- * and write answers, or the `updatedAt` of the last lifecycle answer.
+ * restoring are decided against the person's revision: the `updatedAt` that
+ * `get_person`, `create_person`, and every lifecycle answer carry, which is the
+ * same value as the `personUpdatedAt` the profile-fact tools answer.
  */
 
 import { peopleBulkInput } from "../schemas/people.ts";
@@ -32,7 +32,7 @@ import { type AgentTool, defineTool } from "./define.ts";
 
 /** Where a person's revision comes from, for every tool that checks it. */
 export const PERSON_REVISION =
-  "expectedUpdatedAt is the person's current revision: personUpdatedAt from list_profile_facts (any section) or the last profile-fact write, or person.updatedAt from the last update_person, archive_person, or restore_person answer. get_person does not return it, and list_profile_facts requires people:profile:read: a token without that grant cannot obtain one. A stale revision is refused as a conflict; read it again.";
+  "expectedUpdatedAt is the person's current revision: person.updatedAt from get_person, from create_person, or from the last update_person, archive_person, or restore_person answer. get_person requires people:profile:read; without it, a token has only the revisions create_person and those answers return. A stale revision is refused as a conflict: read it again with get_person.";
 
 const BULK =
   "Names 1 to 100 distinct people (personIds from list_people). Each person is changed on their own and answered in request order as done, unchanged, skipped, or failed with a code, so one refusal does not undo the others; only a malformed request or lost access refuses them all. No revision is needed.";
@@ -63,14 +63,14 @@ export const PEOPLE_TOOLS: readonly AgentTool[] = [
     name: "get_person",
     title: "Get a person's name",
     description:
-      "Reads one person's id and names (given, middle, family, nickname, and whether the record is partial) and whether they are archived, but not their revision: list_profile_facts answers that as personUpdatedAt. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
+      "Reads one person's id, names (given, middle, family, nickname, and whether the record is partial), whether they are archived, and updatedAt, their current revision: pass it as expectedUpdatedAt to update_person, archive_person, or restore_person. It returns no profile, notes, or timeline: use list_profile_facts, list_important_dates, list_relationships, and the other area tools for those. Use it to confirm which person an id names before writing about them.",
     route: getPersonIdentity,
   }),
   defineTool({
     name: "create_person",
     title: "Create a person",
     description:
-      "Creates a person from their names and returns the new person's id. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
+      "Creates a person from their names and returns the new person's id and updatedAt, the revision update_person, archive_person, and restore_person need. isPartial marks an incomplete record; send false for an ordinary person. A person whose name matches someone already in the workspace is refused as a possible duplicate (409): check list_people first, and resend with duplicateOverride true only when it really is someone else, with the same requestId. Pass your own requestId and reuse it when you retry: the same requestId and names return the person it created, at their current revision, while different names under it, or a retry after that person was deleted, are refused as a conflict (person_request_conflict).",
     route: createPerson,
     minted: { requestId: "uuid" },
   }),

@@ -92,7 +92,8 @@ export interface PeopleHttpServices {
   readonly todayRecentPeople?: TodayRecentPeople;
 }
 
-export function identity(person: PersonIdentity) {
+/** The names every person answer starts with. */
+function names(person: Omit<PersonIdentity, "updatedAt">) {
   return {
     ...(person.familyName ? { familyName: person.familyName } : {}),
     givenName: person.givenName,
@@ -101,6 +102,11 @@ export function identity(person: PersonIdentity) {
     ...(person.middleName ? { middleName: person.middleName } : {}),
     ...(person.nickname ? { nickname: person.nickname } : {}),
   };
+}
+
+/** A created or read person: the names, and the revision to edit them at. */
+export function identity(person: PersonIdentity) {
+  return { ...names(person), updatedAt: person.updatedAt };
 }
 
 /**
@@ -176,7 +182,7 @@ export function withStoredAvatarDescriptor<
 
 export function lifecycleIdentity(person: PersonLifecycleRecord) {
   return {
-    ...identity(person),
+    ...names(person),
     ...(person.description ? { description: person.description } : {}),
     ...(person.genderOptionId ? { genderOptionId: person.genderOptionId } : {}),
     isDeceased: person.isDeceased,

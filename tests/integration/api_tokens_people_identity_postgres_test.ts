@@ -1142,6 +1142,134 @@ Deno.test("[MCP-R3] PostgreSQL a person created with a requestId can be recorded
   );
 });
 
+Deno.test("[MCP-E1] PostgreSQL the create and identity answers carry the revision an edit, archive, and restore accept", async () => {
+  const own = await owner("Revision");
+  const agent = await tokens.mint(own, ["people:write", "people:profile:read"]);
+  const ada = {
+    familyName: "Lovelace",
+    givenName: "Ada",
+    isPartial: false,
+    requestId: crypto.randomUUID(),
+  };
+  const created = expect(
+    await bearer(agent, "/api/v1/people", "POST", ada),
+    201,
+    "a bearer creates a person",
+  );
+  const personId = created.body.person.id as string;
+  const createdRevision = created.body.person.updatedAt as string;
+  assertEquals(
+    createdRevision,
+    await revision(own, personId),
+    "the create answers the stored revision, to the microsecond",
+  );
+  const { requestId: _requestId, ...names } = ada;
+  const edited = expect(
+    await bearer(agent, `/api/v1/people/${personId}`, "PATCH", {
+      ...names,
+      description: "First edit",
+      expectedUpdatedAt: createdRevision,
+    }),
+    200,
+    "the created revision is accepted by an edit as it was answered",
+  );
+  expect(
+    await bearer(agent, `/api/v1/people/${personId}`, "PATCH", {
+      ...names,
+      description: "Stale edit",
+      expectedUpdatedAt: createdRevision,
+    }),
+    409,
+    "the created revision is stale once the person moved",
+  );
+
+  const read = expect(
+    await bearer(agent, `/api/v1/people/${personId}/identity`),
+    200,
+    "the identity read answers",
+  );
+  assertEquals(
+    read.body.person.updatedAt,
+    edited.body.person.updatedAt,
+    "the identity read answers the revision the edit left",
+  );
+  const reEdited = expect(
+    await bearer(agent, `/api/v1/people/${personId}`, "PATCH", {
+      ...names,
+      description: "Second edit",
+      expectedUpdatedAt: read.body.person.updatedAt,
+    }),
+    200,
+    "the identity revision is accepted by an edit as it was answered",
+  );
+
+  const replay = expect(
+    await bearer(agent, "/api/v1/people", "POST", ada),
+    201,
+    "a keyed retry answers as the create did",
+  );
+  assertEquals(replay.body.person.id, personId, "the retry names the person");
+  assertEquals(
+    replay.body.person.updatedAt,
+    reEdited.body.person.updatedAt,
+    "a keyed retry answers the person's current revision, not the first one",
+  );
+  const archived = expect(
+    await bearer(agent, `/api/v1/people/${personId}/archive`, "POST", {
+      expectedUpdatedAt: replay.body.person.updatedAt,
+    }),
+    200,
+    "the replayed revision is accepted by an archive",
+  );
+  const archivedRead = expect(
+    await bearer(agent, `/api/v1/people/${personId}/identity`),
+    200,
+    "an archived person's identity still answers",
+  );
+  assertEquals(archivedRead.body.status, "archived", "it says archived");
+  assertEquals(
+    archivedRead.body.person.updatedAt,
+    archived.body.person.updatedAt,
+    "and carries the revision the archive left",
+  );
+  expect(
+    await bearer(agent, `/api/v1/people/${personId}/restore`, "POST", {
+      expectedUpdatedAt: archivedRead.body.person.updatedAt,
+    }),
+    200,
+    "the archived identity's revision is accepted by a restore",
+  );
+
+  const types = expect(
+    await browser(own, "/api/v1/relationship-types"),
+    200,
+    "relationship types listed",
+  );
+  const related = expect(
+    await browser(
+      own,
+      `/api/v1/people/${personId}/relationships/related-person`,
+      "POST",
+      {
+        person: { givenName: "Byron", isPartial: false },
+        relationshipTypeId: types.body.options[0].id,
+      },
+    ),
+    201,
+    "a related person is created",
+  );
+  expect(
+    await bearer(agent, `/api/v1/people/${related.body.person.id}`, "PATCH", {
+      expectedUpdatedAt: related.body.person.updatedAt,
+      givenName: "Byron",
+      isPartial: false,
+      nickname: "George",
+    }),
+    200,
+    "the related person's revision is accepted by an edit",
+  );
+});
+
 Deno.test({
   name: "close the people-identity token fixture",
   sanitizeOps: false,
