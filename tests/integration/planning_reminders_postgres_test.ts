@@ -24,6 +24,7 @@ import {
   type CreatedReminder,
   createPerson,
   createReminder,
+  databaseUrl,
   deliveryConnection,
   deliveryRepository,
   deliveryTransaction,
@@ -34,6 +35,7 @@ import {
   sql,
 } from "./planning.test-helper.ts";
 import { closeResources } from "./planning.test-helper.ts";
+import { openSql } from "../support/database.ts";
 
 Deno.test("PLANNING-002 reminder fixture remains future at the UTC date boundary", () => {
   const now = Temporal.Instant.from("2026-08-22T23:02:00Z");
@@ -1525,6 +1527,150 @@ Deno.test("[AUD-W1] a restored person's recurring reminder has its next date at 
   assert(
     ahead!.count === 8,
     `the restore refills the window at once: ${ahead!.count} dates ahead`,
+  );
+});
+
+/**
+ * The backend another session waits behind, polled from the catalog rather
+ * than guessed from a delay: the first one `blocker` blocks that is not in
+ * `except`.
+ */
+async function waitingBehind(
+  blocker: number,
+  except: readonly number[] = [],
+): Promise<number> {
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const [row] = await sql<{ readonly pid: number }[]>`
+      select pid from pg_stat_activity
+      where ${blocker}::int = any(pg_blocking_pids(pid))
+        and not (pid = any(${[...except]}::int[]))
+      order by pid limit 1
+    `;
+    if (row) return row.pid;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`no session waited behind backend ${blocker}`);
+}
+
+Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the workspace row in one order", async () => {
+  const fixture = await register(
+    `restore-zone-${crypto.randomUUID()}@example.test`,
+    "Restore against a zone change",
+  );
+  const personId = await createPerson(fixture, "Restored while moving");
+  const created = await request(fixture, "/api/v1/reminders", "POST", {
+    anchorOn: futureReminderAnchor(),
+    personId,
+    recurrenceInterval: 1,
+    recurrenceUnit: "day",
+    requestId: crypto.randomUUID(),
+    sendTime: "09:00",
+    title: "Daily across a move",
+  });
+  assert(created.status === 201, `daily reminder created: ${created.status}`);
+  const reminderId = (await created.json() as CreatedReminder).reminder.id;
+  const personRevision = async () => {
+    const read = await request(fixture, `/api/v1/people/${personId}`);
+    const { person } = await read.json() as {
+      readonly person: { readonly updatedAt: string };
+    };
+    return person.updatedAt;
+  };
+  const archived = await request(
+    fixture,
+    `/api/v1/people/${personId}/archive`,
+    "POST",
+    { expectedUpdatedAt: await personRevision() },
+  );
+  assert(archived.status === 200, `archive: ${archived.status}`);
+  // Every date the window held has passed, delivered, so the restore has a
+  // whole window to refill and nothing is left due for a worker to claim.
+  await sql`
+    update crm.reminder_occurrences set occurs_on = occurs_on - 30,
+      deliver_at = deliver_at - interval '30 days', status = 'sent',
+      sent_at = now(), attempt_count = 1, provider_result_state = 'confirmed',
+      provider_receipt = 'in-app', provider_effect_at = now(),
+      visible_at = now()
+    where reminder_id = ${reminderId}::uuid
+  `;
+  const expectedUpdatedAt = await personRevision();
+  const zone = "Pacific/Kiritimati";
+  const deadlocks = async () =>
+    (await sql<{ readonly count: number }[]>`
+      select deadlocks::int as count from pg_stat_database
+      where datname = current_database()
+    `)[0]!.count;
+  const deadlocksBefore = await deadlocks();
+  // A third session holds the workspace's settings, so the restore stops at
+  // its refill with the workspace row already held, and the preference save
+  // is started only once the restore is provably waiting there.
+  const holder = openSql(databaseUrl, { max: 1 });
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => release = resolve);
+  let holding!: (pid: number) => void;
+  const held = new Promise<number>((resolve) => holding = resolve);
+  const holderDone = holder.begin(async (transaction) => {
+    const [backend] = await transaction<{ readonly pid: number }[]>`
+      select pg_backend_pid() as pid
+    `;
+    await transaction`
+      select workspace_id from crm.workspace_settings
+      where workspace_id = ${fixture.workspaceId}::uuid
+      for update
+    `;
+    holding(backend!.pid);
+    await released;
+  });
+  try {
+    const holderPid = await held;
+    const restoring = request(
+      fixture,
+      `/api/v1/people/${personId}/restore`,
+      "POST",
+      { expectedUpdatedAt },
+    );
+    const restorePid = await waitingBehind(holderPid);
+    const saving = request(fixture, "/api/v1/settings/preferences", "PUT", {
+      contactNameOrder: "given_family_nickname",
+      contactSortOrder: "given_name_asc",
+      fluidLayout: false,
+      locale: "en",
+      measurementSystem: "metric",
+      temperatureScale: "celsius",
+      timezone: zone,
+    });
+    await waitingBehind(restorePid, [holderPid]);
+    release();
+    await holderDone;
+    const [restored, saved] = await Promise.all([restoring, saving]);
+    const bodies = [await restored.text(), await saved.text()];
+    assert(
+      restored.status === 200 && saved.status === 200,
+      `both commit: restore ${restored.status}, save ${saved.status}, ${
+        await deadlocks() - deadlocksBefore
+      } deadlock(s) detected ${JSON.stringify(bodies)}`,
+    );
+  } finally {
+    release();
+    await holderDone.catch(() => undefined);
+    await holder.end();
+  }
+  const [window] = await sql<{
+    readonly elsewhere: number;
+    readonly inZone: number;
+  }[]>`
+    select
+      count(*) filter (where deliver_at =
+        (occurs_on + time '09:00') at time zone ${zone})::int as "inZone",
+      count(*) filter (where deliver_at <>
+        (occurs_on + time '09:00') at time zone ${zone})::int as elsewhere
+    from crm.reminder_occurrences
+    where reminder_id = ${reminderId}::uuid
+      and member_id = ${fixture.memberId}::uuid and status = 'pending'
+  `;
+  assert(
+    window!.inZone === 8 && window!.elsewhere === 0,
+    `the refilled window is in the new zone: ${JSON.stringify(window)}`,
   );
 });
 

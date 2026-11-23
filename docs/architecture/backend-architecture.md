@@ -328,7 +328,10 @@ Workspace isolation is a security boundary, not a repository filter convention.
   so a read use case handed that same actor does not revalidate it, while any
   other actor — built by hand, authenticated by an API token, or kept past the
   admission's 15-second window — is revalidated. A write always revalidates with
-  a lock inside its own transaction (AUD-K3).
+  a lock inside its own transaction (AUD-K3), before it writes or locks a row of
+  its own. That lock holds the workspace row, so writes in one workspace meet
+  there first rather than taking their other rows in opposite orders; a member's
+  preference save, which once wrote its row first, does the same (MCP-E2).
 - Pass typed principal/workspace context explicitly to application services.
 - Application services reject unauthorized or cross-workspace identifiers before
   persistence.

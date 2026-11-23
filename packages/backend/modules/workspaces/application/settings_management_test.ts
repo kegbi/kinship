@@ -4,6 +4,7 @@ import {
   type SettingsManagementDependencies,
 } from "./settings_management.ts";
 import type { SettingsTransaction } from "../ports/context.ts";
+import type { ActorStanding } from "../ports/actors.ts";
 import { assert } from "../../../testing/assert.ts";
 import { fixedClock } from "../../../testing/fakes.ts";
 
@@ -31,10 +32,21 @@ function fixture(
       current: false,
       status: "revoked",
     },
+  standing: ActorStanding = "active",
 ) {
   const effects: string[] = [];
   const transaction: SettingsTransaction = { opaque: {} };
   const dependencies: SettingsManagementDependencies = {
+    actors: {
+      revalidate(command) {
+        assert(
+          command.transaction === transaction,
+          "revalidation shares the save's transaction",
+        );
+        effects.push(`actors:revalidate:lock=${command.lock}`);
+        return Promise.resolve(standing);
+      },
+    },
     audit: {
       record(command) {
         effects.push(`audit:${command.action}`);
@@ -177,7 +189,11 @@ function fixture(
       },
     },
   };
-  return { effects, service: createSettingsManagement(dependencies) };
+  return {
+    dependencies,
+    effects,
+    service: createSettingsManagement(dependencies),
+  };
 }
 
 Deno.test("PLANNING-002 workspace default timezone regenerates inherited reminder instants", async () => {
@@ -248,6 +264,76 @@ Deno.test("[GAP-020] a time zone the calendar cannot resolve is refused before a
   assert(
     effects.length === 0,
     `neither refusal opened a transaction: ${effects.join(",")}`,
+  );
+});
+
+const preferenceInput = {
+  contactNameOrder: "given_family_nickname",
+  contactSortOrder: "given_name_asc",
+  fluidLayout: false,
+  locale: "en",
+  measurementSystem: "metric" as const,
+  temperatureScale: "celsius" as const,
+  timezone: "Europe/Belgrade",
+};
+
+/** A fixture whose preference reads and writes are recorded, not refused. */
+function preferenceFixture(standing: ActorStanding) {
+  const built = fixture(undefined, standing);
+  const { effects } = built;
+  const before = {
+    contactNameOrder: "given_family_nickname",
+    contactSortOrder: "given_name_asc",
+    effectiveTimezone: "UTC",
+    fluidLayout: false,
+    locale: "en",
+    measurementSystem: "metric" as const,
+    reminderDelivery: "in_app" as const,
+    temperatureScale: "celsius" as const,
+  };
+  const service = createSettingsManagement({
+    ...built.dependencies,
+    workspace: {
+      ...built.dependencies.workspace,
+      getPreferences() {
+        effects.push("workspace:preferences:read");
+        return Promise.resolve(before);
+      },
+      updatePreferences(command) {
+        effects.push("workspace:preferences:write");
+        return Promise.resolve({
+          ...before,
+          effectiveTimezone: command.timezone!,
+          timezone: command.timezone!,
+        });
+      },
+    },
+  });
+  return { effects, service };
+}
+
+Deno.test("[MCP-E2] a preference save holds the workspace row before it writes its own", async () => {
+  const { effects, service } = preferenceFixture("active");
+
+  const saved = await service.updatePreferences(actor, preferenceInput);
+
+  assert(saved.status === "ready", `the save succeeds: ${saved.status}`);
+  assert(
+    effects.join(",") ===
+      "tx:begin,actors:revalidate:lock=true,workspace:preferences:read,workspace:preferences:write,audit:member.preferences-updated,planning:member-timezone,tx:commit",
+    `the locked revalidation comes first: ${effects.join(",")}`,
+  );
+});
+
+Deno.test("[MCP-E2] a member no longer active is refused before any preference is read or written", async () => {
+  const { effects, service } = preferenceFixture("revoked");
+
+  const saved = await service.updatePreferences(actor, preferenceInput);
+
+  assert(saved.status === "not-found", `refused as before: ${saved.status}`);
+  assert(
+    effects.join(",") === "tx:begin,actors:revalidate:lock=true,tx:commit",
+    `nothing was read or written: ${effects.join(",")}`,
   );
 });
 

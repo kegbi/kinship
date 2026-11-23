@@ -18,6 +18,12 @@
  * transaction, because a name the calendar cannot resolve would otherwise be
  * stored and only discovered when a reminder came due. The route checked this
  * with its own copy of the rule until GAP-020.
+ *
+ * A member's preference save revalidates the actor under lock before it
+ * writes the preference row (MCP-E2). That holds the workspace row first, the
+ * order every other write in the workspace takes, so the save cannot deadlock
+ * against a write that already holds the workspace row and then reads member
+ * preferences `for share`, such as a person restore refilling reminders.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
@@ -34,6 +40,7 @@ import {
   workspaceScheduleChanged,
 } from "../domain/settings_rules.ts";
 import { privileged, type WorkspaceRole } from "../domain/roles.ts";
+import type { ActorRevalidation } from "../ports/actors.ts";
 import type {
   SettingsActor,
   SettingsTransaction,
@@ -82,6 +89,8 @@ function memberSession(session: IdentitySessionSummary): MemberSessionSummary {
 }
 
 export interface SettingsManagementDependencies {
+  /** Holds the actor's rows, and so the workspace row, before a save writes. */
+  readonly actors: ActorRevalidation;
   readonly audit: SettingsAudit;
   readonly clock: Clock;
   /** The currencies a preference or workspace default may name. */
@@ -181,6 +190,12 @@ export function createSettingsManagement(
         return Promise.resolve({ status: "invalid-timezone" as const });
       }
       return dependencies.transaction.run(async (transaction) => {
+        const standing = await dependencies.actors.revalidate({
+          ...actor,
+          lock: true,
+          transaction,
+        });
+        if (standing === "revoked") return { status: "not-found" as const };
         const previous = await dependencies.workspace.getPreferences({
           ...actor,
           transaction,

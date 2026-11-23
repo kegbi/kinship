@@ -365,6 +365,7 @@ export function composeWorkspaces(
       registrationDependencies,
     ),
     settings: createSettingsManagement({
+      actors: shared.actors,
       audit: settingsAuditFrom(shared.audit),
       clock: shared.clock,
       currencies: workspaceCurrencies(),

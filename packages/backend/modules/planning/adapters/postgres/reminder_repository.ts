@@ -714,10 +714,12 @@ export class PostgresReminderRepository implements ReminderRepository {
    * reminder (MCP-D2), as the worker's top-up would, inside the caller's
    * transaction. The caller already holds the workspace row, through the
    * actor's revalidation, and the reminder row it just wrote, which is what
-   * orders this against a zone change and against the worker. So, unlike the
-   * worker, it takes no settings or preference locks: a preference change
-   * holds its row while it waits for the workspace row, and taking that
-   * preference row here, after the workspace row, would deadlock against it.
+   * orders this against a zone change and against the worker. A member's
+   * preference save takes the workspace row the same way before it writes its
+   * preference row (MCP-E2), so it either committed first and its zone and
+   * channels are read here, or it waits for this transaction and then
+   * regenerates or re-channels what was minted. So, unlike the worker, this
+   * needs no settings or preference locks.
    */
   async refillOtherMembers(
     command: Parameters<ReminderRepository["refillOtherMembers"]>[0],
