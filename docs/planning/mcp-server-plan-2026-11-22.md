@@ -263,20 +263,38 @@ is a separate decision.
 
 ### Phase F — Follow-ups the product owner approved on 2026-11-23 (parallel)
 
-- [ ] **MCP-F1 Dependency advisories.** Raise the pinned versions that carry a
-      reported advisory in both dependency trees: `hono` and `fast-xml-parser`
-      in the Deno graph, and the web and tooling tree `pnpm audit` reports on
-      (`astro`, `@astrojs/node`, `vite`, `vitest`, `happy-dom`, `shadcn`, and
-      their transitive packages). The release-age rule and the frozen lockfiles
-      stay as they are; an advisory no released version fixes is recorded, not
-      hidden.
-- [ ] **MCP-F2 One lock order for a workspace settings update.** A workspace
-      settings update must not deadlock against the worker's reminder top-up.
-      Reproduce it in PostgreSQL first, then fix the order.
-- [ ] **MCP-F3 One lock order for a workspace reset and delete.** A workspace
-      reset or delete must not deadlock against the worker's reminder top-up or
-      against a write in the same workspace. Reproduce each cycle in PostgreSQL
-      first, then fix the order.
+- [x] **MCP-F1 Dependency advisories.** `hono` 4.13.19 and `fast-xml-parser`
+      5.12.1 in the Deno graph, where `deno audit` now reports nothing. In the
+      web and tooling tree: `astro` 7.4.13, `@astrojs/node` 11.1.14, `vite`
+      8.3.8, `vitest` 4.1.12, `shadcn` 4.23.0, `@typescript-eslint/parser`
+      8.73.0, the transitive packages inside their ranges, and one exact
+      override, `fast-uri@3` at 3.1.9. The release-age rule, the build-script
+      permissions, and the frozen lockfiles are unchanged.
+- [x] **MCP-F2 One lock order for a workspace settings update.** The save
+      deadlocked against the worker's reminder top-up, reproduced through the
+      real route and the worker's entry point. It now takes the saver's member
+      row and the workspace row `for no key update`, which a top-up's
+      foreign-key insert does not wait for.
+- [x] **MCP-F3 One lock order for a workspace reset and delete.** Reproduced and
+      fixed: a reset or delete against the worker's top-up, another member's
+      write, an admin's member change, an invitation acceptance, a second owner
+      resetting, a member leaving or deleting their account, a password reset,
+      and the second sign-in step. A reset or delete takes the lifecycle
+      advisory lock, the member-administration lock, and every member row before
+      the workspace row; the worker's top-ups and shared runners take the
+      lifecycle lock shared first; an invitation acceptance takes the
+      member-administration lock shared; and the password check, the password
+      reset, and the second sign-in step hold the account row
+      `for no key update`.
+- [x] **MCP-F4 One lock order for a member change.** Found while reviewing
+      MCP-F2 and reproduced: a member change, a settings save, and the top-up
+      waiting in a ring; a member change against a write by the member being
+      changed; and two settings saves leaving reminders in the wrong time zone.
+      A member change takes member rows `for no key update`, the read of
+      members' names takes no lock, and a settings save decides whether to
+      reschedule from the values it reads under its lock.
+- [x] **MCP-F5 Test DOM.** `happy-dom` 21.0.4, the first release past its two
+      high advisories. The web suite passes unchanged.
 
 ## Delivered, and what is left
 
@@ -292,11 +310,9 @@ production-like stack. The authorization matrix,
 
 Open, each needing its own ticket or decision:
 
-- **Dependency advisories below the gate.** `deps:audit:gate` passes with no
-  exception. `deno audit` still reports seven `hono` advisories, each fixed by
-  4.13.16, and one low `fast-xml-parser` advisory fixed by 5.12.0, which the DAV
-  client imports directly. `pnpm audit` reports findings in the web and tooling
-  tree that nothing gates on and nobody has triaged.
+- **One dependency advisory.** `deno audit` reports nothing. `pnpm audit`
+  reports one moderate `minimatch` advisory under the `shadcn` CLI, which no
+  released `shadcn` fixes; the CLI is a developer tool and never ships.
 - **Keyed creates that still accept a replay.** A stay-in-touch cadence can be
   set again by its old `requestId` after it was deleted; the agent instructions
   say so. A workspace reset removes tombstones with the records, so a key may
@@ -306,14 +322,16 @@ Open, each needing its own ticket or decision:
 - **Removed files keep their gift links.** `removePersonFile` deletes the bytes
   and the person link, but a gift keeps its `attachmentFileId` and a debt
   settlement reports its photo as unavailable.
-- **Two more lock orders, read from the code and not reproduced (from MCP-E2).**
-  A workspace settings update holds the admin's member row `for update` and then
-  waits for `workspace_settings`, which the worker's reminder top-up holds
-  `for share` while its inserts need `for key share` on member rows; taking the
-  member row `for no key update`, as the locked revalidation does, would likely
-  remove it. A workspace reset holds the actor's member row the same way while
-  its cascade waits on preference rows the worker holds; it is owner-only and
-  has no small fix.
+- **Lock orders read from the code and not reproduced (from Phase F).** The
+  worker transactions that open outside its shared runners take no lifecycle
+  lock: claiming and renewing deliveries, marking an attempt, recording an
+  in-app notice, withdrawing retired lead notices, and completing a lifecycle
+  cleanup. Any of them could cross a reset's cascade over reminder occurrences.
+  An invitation acceptance whose address already belongs to the owner who is
+  resetting reads that account row `for share` while the reset waits for the
+  member-administration lock. A writer that locks another member's row after its
+  own revalidation can meet that member's sign-in, which takes member before
+  workspace.
 - **A role change during a save.** A preference save now revalidates the actor
   like every other write, so a save made in the moments after the member's role
   changed is refused instead of accepted.
@@ -345,6 +363,15 @@ Open, each needing its own ticket or decision:
   Chromium passes 89 of 91 with one skipped and the same `IMPORT-002` failure
   (REL-108). The first coverage run caught one failure from this phase: the
   agent instructions had grown past their 150-word limit, fixed in `a9a0fcc5`.
+  Still to run at release: the all-browser E2E matrix.
+
+- **Integration checkpoint for Phase F, run on 2026-11-23 at `d09ba8a4`.**
+  `check`, `lint`, `check:architecture`, `contracts:check`, both frozen
+  installs, and `deps:audit:gate` pass. Every PostgreSQL integration suite
+  passes (515 tests), and full `test:coverage` passes every threshold with the
+  web suite at 1,906 tests. `build` passes 34 of 34. The whole browser suite in
+  Chromium passes 89 of 91 with one skipped and the same `IMPORT-002` failure
+  (REL-108). No schema change was made, so the schema matrix was not rerun.
   Still to run at release: the all-browser E2E matrix.
 
 ## Part 5 — Acceptance
