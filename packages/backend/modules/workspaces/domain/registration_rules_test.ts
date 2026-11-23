@@ -5,6 +5,7 @@ import {
   VERIFICATION_WINDOW_MS,
   VerificationDeliveryError,
   verificationExpiry,
+  WORKSPACE_LOCK_SEEDS_IN_USE,
 } from "./registration_rules.ts";
 
 Deno.test("[GAP-018] a verification link works for a day", () => {
@@ -18,6 +19,11 @@ Deno.test("[GAP-018] a verification link works for a day", () => {
 Deno.test("[GAP-018] every workspace starts with the same vocabulary, in order", () => {
   const { types, version } = DEFAULT_RELATIONSHIP_TYPE_VOCABULARY;
   assertEquals(version, 1);
+  assertEquals(
+    WORKSPACE_LOCK_SEEDS_IN_USE.includes(version),
+    false,
+    "the version seeds the provisioning lock and must not share a seed",
+  );
   assertEquals(types.length, 26);
   assertEquals(types[0], {
     forwardLabel: "partner",

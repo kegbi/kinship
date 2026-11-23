@@ -73,24 +73,30 @@ type Action = "delete" | "reset";
 /**
  * PostgreSQL's deadlock count once every backend the API and the worker
  * opened has exited, so each has flushed what it counted. The API is closed
- * for that and composed again before this returns.
+ * for that and composed again before this returns. The test's own connection
+ * is told apart by its role, so this needs the administrator connection the
+ * integration task provides, not the application's.
  */
 async function settledDeadlocks(): Promise<number> {
   await configured.close();
-  for (let attempt = 0;; attempt++) {
-    const [open] = await sql<{ readonly count: number }[]>`
-      select count(*)::int as count from pg_stat_activity
-      where datname = current_database() and backend_type = 'client backend'
-        and usename <> current_user
-    `;
-    if (open!.count === 0) break;
-    if (attempt === 500) {
-      throw new Error(`${open!.count} API or worker backend(s) did not exit`);
+  try {
+    for (let attempt = 0;; attempt++) {
+      const [open] = await sql<{ readonly count: number }[]>`
+        select count(*)::int as count from pg_stat_activity
+        where datname = current_database() and backend_type = 'client backend'
+          and usename <> current_user
+      `;
+      if (open!.count === 0) break;
+      if (attempt === 500) {
+        throw new Error(`${open!.count} API or worker backend(s) did not exit`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    // A wait that gives up must not leave the later tests a closed API.
+    configured = configure();
+    api = apiSupport(configured.app, mail, sql);
   }
-  configured = configure();
-  api = apiSupport(configured.app, mail, sql);
   const [row] = await sql<{ readonly count: number }[]>`
     select deadlocks::int as count from pg_stat_database
     where datname = current_database()

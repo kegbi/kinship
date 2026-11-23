@@ -37,7 +37,24 @@ export function verificationExpiry(now: Date): Date {
   return new Date(now.getTime() + VERIFICATION_WINDOW_MS);
 }
 
-/** The relationship vocabulary every workspace is provisioned with. */
+/** The seeds already paired with a workspace id in an advisory lock key. */
+export const WORKSPACE_LOCK_SEEDS_IN_USE: readonly number[] = [
+  2, // member administration
+  7, // workspace lifecycle
+  23, // contact method types and personalization
+  29, // tags
+  31, // reminder rules
+];
+
+/**
+ * The relationship vocabulary every workspace is provisioned with.
+ *
+ * Provisioning serialises on an advisory lock keyed by the workspace id with
+ * `version` as its seed. Other workspace locks use the same key with the
+ * seeds in `WORKSPACE_LOCK_SEEDS_IN_USE`, so a new version must avoid them:
+ * sharing a seed with member administration or the workspace lifecycle would
+ * make provisioning wait on, or deadlock with, a reset.
+ */
 export const DEFAULT_RELATIONSHIP_TYPE_VOCABULARY = {
   version: 1,
   types: [
