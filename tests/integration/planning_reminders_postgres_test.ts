@@ -35,7 +35,7 @@ import {
   sql,
 } from "./planning.test-helper.ts";
 import { closeResources } from "./planning.test-helper.ts";
-import { openSql } from "../support/database.ts";
+import { openSql, waitingBehind } from "../support/database.ts";
 
 Deno.test("PLANNING-002 reminder fixture remains future at the UTC date boundary", () => {
   const now = Temporal.Instant.from("2026-08-22T23:02:00Z");
@@ -1530,28 +1530,6 @@ Deno.test("[AUD-W1] a restored person's recurring reminder has its next date at 
   );
 });
 
-/**
- * The backend another session waits behind, polled from the catalog rather
- * than guessed from a delay: the first one `blocker` blocks that is not in
- * `except`.
- */
-async function waitingBehind(
-  blocker: number,
-  except: readonly number[] = [],
-): Promise<number> {
-  for (let attempt = 0; attempt < 500; attempt++) {
-    const [row] = await sql<{ readonly pid: number }[]>`
-      select pid from pg_stat_activity
-      where ${blocker}::int = any(pg_blocking_pids(pid))
-        and not (pid = any(${[...except]}::int[]))
-      order by pid limit 1
-    `;
-    if (row) return row.pid;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`no session waited behind backend ${blocker}`);
-}
-
 Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the workspace row in one order", async () => {
   const fixture = await register(
     `restore-zone-${crypto.randomUUID()}@example.test`,
@@ -1637,7 +1615,7 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
       { expectedUpdatedAt },
     );
     requests.push(restoring);
-    const restorePid = await waitingBehind(holderPid);
+    const restorePid = await waitingBehind(sql, holderPid);
     const saving = request(fixture, "/api/v1/settings/preferences", "PUT", {
       contactNameOrder: "given_family_nickname",
       contactSortOrder: "given_name_asc",
@@ -1648,7 +1626,7 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
       timezone: zone,
     });
     requests.push(saving);
-    await waitingBehind(restorePid, [holderPid]);
+    await waitingBehind(sql, restorePid, [holderPid]);
     release();
     await holderDone;
     const [restored, saved] = await Promise.all([restoring, saving]);
@@ -1689,6 +1667,148 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
     `the refilled window is in the new zone: ${JSON.stringify(window)}`,
   );
 });
+
+for (
+  const [save, slug] of [
+    ["that keeps its slug", undefined],
+    ["that changes its slug", `top-up-${crypto.randomUUID().slice(0, 8)}`],
+  ] as const
+) {
+  Deno.test(`[MCP-F2] a workspace settings save ${save} and the worker's top-up take the member row in one order`, async () => {
+    const fixture = await register(
+      `settings-top-up-${crypto.randomUUID()}@example.test`,
+      "Settings against a top-up",
+    );
+    const personId = await createPerson(fixture, "Topped up while moving");
+    const created = await request(fixture, "/api/v1/reminders", "POST", {
+      anchorOn: futureReminderAnchor(),
+      personId,
+      recurrenceInterval: 1,
+      recurrenceUnit: "day",
+      requestId: crypto.randomUUID(),
+      sendTime: "09:00",
+      title: "Daily across a workspace move",
+    });
+    assert(created.status === 201, `daily reminder created: ${created.status}`);
+    const reminderId = (await created.json() as CreatedReminder).reminder.id;
+    // Every date the window held has passed, delivered, so the worker's
+    // top-up has a whole window to mint for the owner.
+    await sql`
+      update crm.reminder_occurrences set occurs_on = occurs_on - 30,
+        deliver_at = deliver_at - interval '30 days', status = 'sent',
+        sent_at = now(), attempt_count = 1, provider_result_state = 'confirmed',
+        provider_receipt = 'in-app', provider_effect_at = now(),
+        visible_at = now()
+      where reminder_id = ${reminderId}::uuid
+    `;
+    const zone = "Pacific/Kiritimati";
+    const deadlocks = async () =>
+      (await sql<{ readonly count: number }[]>`
+        select deadlocks::int as count from pg_stat_database
+        where datname = current_database()
+      `)[0]!.count;
+    const deadlocksBefore = await deadlocks();
+    // A third session holds the owner's preferences, so the top-up stops
+    // with the workspace's settings already held, and the save is started
+    // only once the top-up is provably waiting there.
+    const holder = openSql(databaseUrl, { max: 1 });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => release = resolve);
+    let holding!: (pid: number) => void;
+    const held = new Promise<number>((resolve) => holding = resolve);
+    const holderDone = holder.begin(async (transaction) => {
+      const [backend] = await transaction<{ readonly pid: number }[]>`
+        select pg_backend_pid() as pid
+      `;
+      await transaction`
+        select member_id from crm.member_preferences
+        where member_id = ${fixture.memberId}::uuid
+        for update
+      `;
+      holding(backend!.pid);
+      await released;
+    });
+    const pending: Promise<unknown>[] = [];
+    try {
+      const holderPid = await Promise.race([
+        held,
+        holderDone.then((): never => {
+          throw new Error("the holding session ended before it held the row");
+        }),
+      ]);
+      const toppingUp = deliveryRepository.replenish({ now: new Date() });
+      pending.push(toppingUp);
+      const topUpPid = await waitingBehind(sql, holderPid);
+      const saving = request(fixture, "/api/v1/settings/workspace", "PUT", {
+        defaultLocale: "en",
+        defaultReminderTime: "09:00",
+        defaultTimezone: zone,
+        name: "Moved while topping up",
+        ...(slug ? { slug } : {}),
+      });
+      pending.push(saving);
+      await waitingBehind(sql, topUpPid, [holderPid]);
+      release();
+      await holderDone;
+      const [toppedUp, saved] = await Promise.allSettled([toppingUp, saving]);
+      const answer = saved.status === "fulfilled"
+        ? `${saved.value.status} ${await saved.value.text()}`
+        : String(saved.reason);
+      assert(
+        toppedUp.status === "fulfilled" && saved.status === "fulfilled" &&
+          saved.value.status === 200,
+        `both commit: top-up ${
+          toppedUp.status === "fulfilled" ? "ok" : String(toppedUp.reason)
+        }, save ${answer}, ${
+          await deadlocks() - deadlocksBefore
+        } deadlock(s) detected`,
+      );
+    } finally {
+      release();
+      await holderDone.catch(() => undefined);
+      // Both settle before the test ends, so a wait that failed above
+      // reports itself rather than a request left running.
+      for (const settled of await Promise.allSettled(pending)) {
+        if (
+          settled.status === "fulfilled" && settled.value instanceof Response &&
+          !settled.value.bodyUsed
+        ) {
+          await settled.value.body?.cancel();
+        }
+      }
+      await holder.end();
+    }
+    assert(
+      await deadlocks() === deadlocksBefore,
+      "no deadlock was detected",
+    );
+    const [workspace] = await sql<{ readonly slug: string | null }[]>`
+      select slug from crm.workspaces where id = ${fixture.workspaceId}::uuid
+    `;
+    assert(
+      workspace!.slug === (slug ?? null),
+      `the saved slug: ${workspace!.slug}`,
+    );
+    // The save waited for the top-up, then moved what it minted.
+    const [window] = await sql<{
+      readonly elsewhere: number;
+      readonly inZone: number;
+    }[]>`
+      select
+        count(*) filter (where deliver_at =
+          (occurs_on + time '09:00') at time zone ${zone})::int as "inZone",
+        count(*) filter (where deliver_at <>
+          (occurs_on + time '09:00') at time zone ${zone})::int as elsewhere
+      from crm.reminder_occurrences
+      where reminder_id = ${reminderId}::uuid
+        and member_id = ${fixture.memberId}::uuid and status = 'pending'
+    `;
+    assert(
+      window!.inZone === 8 && window!.elsewhere === 0,
+      `the minted window is in the new zone: ${JSON.stringify(window)}`,
+    );
+  });
+}
 
 Deno.test("[AUD-W3] a person's reminders answer 404 for an unknown or foreign person", async () => {
   const suffix = crypto.randomUUID();

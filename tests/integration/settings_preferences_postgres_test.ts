@@ -33,9 +33,11 @@ import {
 } from "./settings.test-helper.ts";
 import { closeResources } from "./settings.test-helper.ts";
 import {
+  openSql,
   resetDatabase,
   revocableActor,
   revokeMembership,
+  waitingBehind,
 } from "../support/database.ts";
 
 Deno.test({
@@ -910,6 +912,125 @@ Deno.test({
     assert(
       (await stored())?.digest_time === null,
       "a null digest time clears the digest",
+    );
+  },
+});
+
+Deno.test({
+  name:
+    "[MCP-F2] an admin's workspace save waits for their demotion and is then refused",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const suffix = crypto.randomUUID();
+    const owner = await register(
+      `demotion-owner-${suffix}@example.test`,
+      "Demotion circle",
+    );
+    const adminEmail = `demotion-admin-${suffix}@example.test`;
+    const adminIdentity = await register(adminEmail, "Demoted admin home");
+    const adminMemberId = await addMembership(
+      adminIdentity,
+      owner.workspaceId,
+      "admin",
+    );
+    const adminSignIn = await signIn(adminEmail, owner.workspaceId);
+    const adminCookie = adminSignIn.headers.get("set-cookie")?.split(";")[0];
+    assert(adminSignIn.status === 200 && adminCookie, "the admin signs in");
+    // The admin's pending invitation, which the demotion revokes in its own
+    // transaction after it has changed the admin's membership.
+    const [invitation] = await sql<{ readonly id: string }[]>`
+      insert into crm.workspace_invitations (
+        workspace_id, invited_by_member_id, email, token_hash
+      ) values (
+        ${owner.workspaceId}::uuid, ${adminMemberId}::uuid,
+        ${`invitee-${suffix}@example.test`}, ${`demotion-${suffix}`}
+      )
+      returning id::text
+    `;
+    // A third session holds that invitation, so the demotion stops with the
+    // admin's membership already changed, and the save is started only once
+    // the demotion is provably waiting there.
+    const holder = openSql(databaseUrl, { max: 1 });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => release = resolve);
+    let holding!: (pid: number) => void;
+    const held = new Promise<number>((resolve) => holding = resolve);
+    const holderDone = holder.begin(async (transaction) => {
+      const [backend] = await transaction<{ readonly pid: number }[]>`
+        select pg_backend_pid() as pid
+      `;
+      await transaction`
+        select id from crm.workspace_invitations
+        where id = ${invitation!.id}::uuid
+        for update
+      `;
+      holding(backend!.pid);
+      await released;
+    });
+    const requests: Promise<Response>[] = [];
+    try {
+      const holderPid = await Promise.race([
+        held,
+        holderDone.then((): never => {
+          throw new Error("the holding session ended before it held the row");
+        }),
+      ]);
+      const demoting = settingsRequest(
+        owner.cookie,
+        `/api/v1/settings/members/${adminMemberId}`,
+        { method: "PATCH", body: { role: "member", status: "active" } },
+      );
+      requests.push(demoting);
+      const demotionPid = await waitingBehind(sql, holderPid);
+      const saving = settingsRequest(
+        adminCookie,
+        "/api/v1/settings/workspace",
+        {
+          method: "PUT",
+          body: {
+            defaultLocale: "en",
+            defaultReminderTime: "09:00",
+            name: "Renamed by a demoted admin",
+          },
+          workspaceId: owner.workspaceId,
+        },
+      );
+      requests.push(saving);
+      // The save waits for the demotion rather than reading around it.
+      await waitingBehind(sql, demotionPid, [holderPid]);
+      release();
+      await holderDone;
+      const [demoted, saved] = await Promise.all([demoting, saving]);
+      const bodies = [await demoted.text(), await saved.text()];
+      assert(
+        demoted.status === 200 && saved.status === 403,
+        `the demotion commits and the save is refused: demotion ${demoted.status}, save ${saved.status} ${
+          JSON.stringify(bodies)
+        }`,
+      );
+    } finally {
+      release();
+      await holderDone.catch(() => undefined);
+      for (const settled of await Promise.allSettled(requests)) {
+        if (settled.status === "fulfilled" && !settled.value.bodyUsed) {
+          await settled.value.body?.cancel();
+        }
+      }
+      await holder.end();
+    }
+    const [workspace] = await sql<{
+      readonly audits: number;
+      readonly name: string;
+    }[]>`
+      select w.name, (select count(*)::int from crm.audit_events
+          where workspace_id = w.id
+            and action = 'workspace.configuration-changed') as audits
+      from crm.workspaces w where w.id = ${owner.workspaceId}::uuid
+    `;
+    assert(
+      workspace?.name === "Demotion circle" && workspace.audits === 0,
+      `the refused save changed nothing: ${JSON.stringify(workspace)}`,
     );
   },
 });

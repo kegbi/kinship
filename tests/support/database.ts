@@ -215,3 +215,26 @@ export async function assertCrossWorkspaceRefused(
     );
   }
 }
+
+/**
+ * The backend another session waits behind, polled from the catalog rather
+ * than guessed from a delay: the first one `blocker` blocks that is not in
+ * `except`.
+ */
+export async function waitingBehind(
+  sql: Sql,
+  blocker: number,
+  except: readonly number[] = [],
+): Promise<number> {
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const [row] = await sql<{ readonly pid: number }[]>`
+      select pid from pg_stat_activity
+      where ${blocker}::int = any(pg_blocking_pids(pid))
+        and not (pid = any(${[...except]}::int[]))
+      order by pid limit 1
+    `;
+    if (row) return row.pid;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`no session waited behind backend ${blocker}`);
+}

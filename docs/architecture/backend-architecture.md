@@ -347,7 +347,13 @@ Workspace isolation is a security boundary, not a repository filter convention.
   way does so before it writes or locks a row of its own. That lock takes the
   actor's account row, then their member row, then the workspace row, so those
   writes meet at the workspace row rather than taking their other rows in
-  opposite orders; a member's preference save does the same (MCP-E2).
+  opposite orders; a member's preference save does the same (MCP-E2). A
+  workspace settings save takes the same lock on the actor's member row and the
+  workspace row in its adapter, before the settings row (MCP-F2). Both take
+  `FOR NO KEY UPDATE`, which waits for and blocks every other write of those
+  rows but not the `FOR KEY SHARE` an insert's foreign key takes, so a reminder
+  top-up that holds the workspace settings `FOR SHARE` can finish inserting
+  occurrences for a member whose row such a write holds.
 - A workspace reset or delete holds the owner's account row from its password
   check. It then takes, before any other row of the workspace, the workspace's
   lifecycle advisory lock exclusively, the member-administration advisory lock

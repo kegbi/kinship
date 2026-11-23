@@ -180,6 +180,12 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
   ): ReturnType<WorkspaceSettingsRepository["updateWorkspace"]> {
     if (command.role === "member") return "forbidden";
     const database = databaseFromSession(command.transaction);
+    // `for no key update`, like the actor revalidation: a role change or
+    // another save of the workspace still waits for this one, but a reminder
+    // top-up that holds the settings row below can still insert occurrences,
+    // whose foreign key takes `for key share` of the member row (MCP-F2).
+    // The identity's user row is not locked here, because a member update
+    // reads it `for share` after it has locked the member row.
     const authorization = await sql<{ readonly authorized: boolean }>`
       select true as authorized from crm.workspace_members wm
       join crm.workspaces w on w.id = wm.workspace_id
@@ -188,7 +194,7 @@ export class PostgresWorkspaceSettings implements WorkspaceSettingsRepository {
         and wm.workspace_id = ${command.workspaceId}::uuid
         and wm.role in ('owner', 'admin') and wm.status = 'active'
         and wm.left_at is null and w.status = 'active' and w.deleted_at is null
-      for update of wm, w
+      for no key update of wm, w
     `.execute(database);
     if (authorization.rows[0]?.authorized !== true) return "forbidden";
     const settings = await sql<{ readonly exists: boolean }>`
