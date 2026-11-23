@@ -1,11 +1,20 @@
+import process from "node:process";
+import {
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  type S3Client,
+} from "@aws-sdk/client-s3";
 import {
   createBackup,
+  createRecoveryS3Client,
   type DatabaseRecoveryPort,
   type ObjectRecoveryPort,
   privateProductionArchivePath,
   restoreBackup,
   runPrivateProductionRecoveryCli,
+  S3Recovery,
 } from "./private_production_recovery.ts";
+import { OBJECT_STORAGE_SDK_IGNORED_ENV } from "../tasks/manifest.ts";
 import type { PrivateProductionProfile } from "./private_production_probe.ts";
 
 const PROFILE_PATH = "docs/planning/private-production-profile.json";
@@ -699,4 +708,121 @@ Deno.test("OPS-001C operator CLI serializes backup then isolated restore without
   } finally {
     await removeArchives(archiveId, invalidArchiveId);
   }
+});
+
+/** A store that exists and answers each listing request with the next page. */
+function listingClient(pages: readonly Record<string, unknown>[]): {
+  readonly client: S3Client;
+  readonly tokens: (string | undefined)[];
+} {
+  const tokens: (string | undefined)[] = [];
+  let next = 0;
+  const client = {
+    send(command: unknown): Promise<unknown> {
+      if (command instanceof HeadBucketCommand) return Promise.resolve({});
+      if (command instanceof ListObjectsV2Command) {
+        tokens.push(command.input.ContinuationToken);
+        return Promise.resolve(pages[next++] ?? {});
+      }
+      return Promise.reject(new Error("unexpected command"));
+    },
+  } as unknown as S3Client;
+  return { client, tokens };
+}
+
+Deno.test("OPS-001C MCP-E4 the object listing follows every page", async () => {
+  const { client, tokens } = listingClient([
+    {
+      Contents: [{ Key: "objects/b", Size: 2 }],
+      IsTruncated: true,
+      NextContinuationToken: "page-2",
+    },
+    { Contents: [{ Key: "objects/a", Size: 1 }], IsTruncated: false },
+  ]);
+  assertEquals(await new S3Recovery(client, "attachments").list(), [
+    { key: "objects/a", size: 1 },
+    { key: "objects/b", size: 2 },
+  ]);
+  assertEquals(tokens, [undefined, "page-2"]);
+});
+
+Deno.test("OPS-001C MCP-E4 a truncated listing without a continuation fails closed", async () => {
+  const { client } = listingClient([
+    { Contents: [{ Key: "objects/a", Size: 1 }], IsTruncated: true },
+  ]);
+  let failure: unknown;
+  try {
+    await new S3Recovery(client, "attachments").list();
+  } catch (error) {
+    failure = error;
+  }
+  assert(
+    failure instanceof Error && failure.message.includes("truncated"),
+    "a short listing is never returned as complete",
+  );
+});
+
+Deno.test("OPS-001C MCP-E4 the recovery S3 client reads no environment beyond the ignored SDK probes", async () => {
+  const listing = `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+    "<Name>quiet-recovery</Name><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys>" +
+    "<IsTruncated>false</IsTruncated>" +
+    "<Contents><Key>objects/a</Key><Size>3</Size></Contents>" +
+    "</ListBucketResult>";
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", onListen: () => undefined, port: 0 },
+    async (request) => {
+      await request.arrayBuffer();
+      if (request.method !== "GET") return new Response(null);
+      return new URL(request.url).searchParams.has("list-type")
+        ? new Response(listing, {
+          headers: { "content-type": "application/xml" },
+        })
+        : new Response(new Uint8Array([7, 8, 9]));
+    },
+  );
+  // The same proof the files adapter's client carries: every SDK fallback
+  // starts by reading the process environment, so recording every read shows
+  // this copy of the configuration consults nothing it was not given.
+  const environment = process.env;
+  const read: string[] = [];
+  process.env = new Proxy(environment, {
+    get(target, name, receiver) {
+      if (typeof name === "string") read.push(name);
+      return Reflect.get(target, name, receiver);
+    },
+    has(target, name) {
+      if (typeof name === "string") read.push(name);
+      return Reflect.has(target, name);
+    },
+    ownKeys(target) {
+      read.push("<every name>");
+      return Reflect.ownKeys(target);
+    },
+  });
+  const client = createRecoveryS3Client({
+    accessKey: "access",
+    host: "127.0.0.1",
+    port: server.addr.port,
+    secretKey: "secret-value",
+    useSsl: false,
+  });
+  try {
+    const recovery = new S3Recovery(client, "quiet-recovery");
+    await recovery.put("objects/a", new Uint8Array([7, 8, 9]));
+    const bytes = await recovery.get("objects/a");
+    assertEquals([...bytes ?? []], [7, 8, 9]);
+    assertEquals(await recovery.list(), [{ key: "objects/a", size: 3 }]);
+  } finally {
+    process.env = environment;
+    client.destroy();
+    await server.shutdown();
+  }
+  const consulted = [...new Set(read)].filter((name) =>
+    !(OBJECT_STORAGE_SDK_IGNORED_ENV as readonly string[]).includes(name)
+  );
+  assert(
+    consulted.length === 0,
+    `the recovery S3 client read the environment: ${consulted.join(", ")}`,
+  );
 });

@@ -596,6 +596,7 @@ export function createRecoveryS3Client(endpoint: {
     defaultsMode: "legacy",
     disableClockSkewCorrection: false,
     disableS3ExpressSessionAuth: true,
+    sigv4aSigningRegionSet: ["us-east-1"],
     useArnRegion: false,
     useDualstackEndpoint: false,
     useFipsEndpoint: false,
@@ -669,6 +670,11 @@ export class S3Recovery implements ObjectRecoveryPort {
       );
       for (const item of page.Contents ?? []) {
         if (item.Key) objects.push({ key: item.Key, size: item.Size ?? 0 });
+      }
+      // A truncated page without a token would end the listing short, and a
+      // backup verified against a short listing would pass; fail instead.
+      if (page.IsTruncated && !page.NextContinuationToken) {
+        throw new Error("Object listing was truncated without a continuation.");
       }
       continuationToken = page.IsTruncated
         ? page.NextContinuationToken

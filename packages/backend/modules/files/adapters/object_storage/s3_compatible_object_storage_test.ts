@@ -146,6 +146,33 @@ Deno.test("[FILES-001] S3-compatible adapter creates its private bucket once and
   );
 });
 
+Deno.test("[FILES-001] MCP-E4 a bucket check that fails on first use is tried again by the next operation", async () => {
+  const client = new FakeS3Client();
+  const send = client.send.bind(client);
+  let failures = 1;
+  client.send = (command) =>
+    command instanceof HeadBucketCommand && failures-- > 0
+      ? Promise.reject(new Error("connection reset"))
+      : send(command);
+  const storage = new S3CompatibleObjectStorage(
+    client as unknown as Client,
+    "private-files",
+    1_000,
+  );
+  const first = await settled(
+    storage.put({ bytes: new Uint8Array([1]), key: "objects/first" }),
+  );
+  assert(first instanceof Error, "the failed bucket check reaches the caller");
+  const second = await settled(
+    storage.put({ bytes: new Uint8Array([2]), key: "objects/second" }),
+  );
+  assert(
+    second === "resolved" && client.made === 1 &&
+      client.objects.has("objects/second"),
+    `one transient failure does not disable the store: ${String(second)}`,
+  );
+});
+
 Deno.test("[FILES-001] MCP-E4 the S3 client resolves only the configuration it is given", async () => {
   const client = createS3CompatibleClient({ ...ENDPOINT, port: 9000 });
   const config = client.config;

@@ -2349,6 +2349,8 @@ export const MODULES: readonly TaskModule[] = [
           ".artifacts/private-production-recovery",
         ],
         write: [".artifacts/private-production-recovery"],
+        // The recovery client's isolation test talks to a loopback store.
+        net: ["127.0.0.1"],
       },
     },
   },

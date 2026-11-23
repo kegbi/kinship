@@ -228,11 +228,10 @@ six moderate, none high or critical. The full report remains unfiltered:
   imports `fast-xml-parser` 5.11.0 directly. It is reported, not accepted, and
   remains until the DAV client moves to a fixed release.
 
-Six advisories reached the graph through `minio`: two for
-`decode-uri-component`, one of them high, three for `stream-json`, and the
-`fast-xml-parser` one. When MCP-E4 replaced `minio` with `@aws-sdk/client-s3`,
-which adds none, the first five left the graph; the last stays only through the
-DAV client's own import.
+Five advisories left the graph when MCP-E4 replaced `minio` with
+`@aws-sdk/client-s3`, which adds none: two for `decode-uri-component`, one of
+them high, and three for `stream-json`. The `fast-xml-parser` advisory is
+unchanged, because the DAV client imports that package itself.
 
 CI prints the complete report and then runs `deno task deps:audit:gate`, which
 runs `deno audit --level=high` and fails on every high or critical advisory and

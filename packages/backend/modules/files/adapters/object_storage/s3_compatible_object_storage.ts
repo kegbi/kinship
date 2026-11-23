@@ -62,6 +62,9 @@ export function createS3CompatibleClient(
     defaultsMode: "legacy",
     disableClockSkewCorrection: false,
     disableS3ExpressSessionAuth: true,
+    // Read only when a request is signed with SigV4a, which a plain bucket
+    // name never is; stated so that path has nothing to look up either.
+    sigv4aSigningRegionSet: ["us-east-1"],
     useArnRegion: false,
     useDualstackEndpoint: false,
     useFipsEndpoint: false,
@@ -86,7 +89,7 @@ function isMissing(error: unknown): boolean {
 }
 
 export class S3CompatibleObjectStorage implements ObjectStorage {
-  #ready?: Promise<void>;
+  #ready: Promise<void> | undefined;
   readonly provider = "s3";
 
   constructor(
@@ -149,6 +152,11 @@ export class S3CompatibleObjectStorage implements ObjectStorage {
     }
   }
 
+  /**
+   * Checks for the bucket once and remembers the answer. A check that fails
+   * is not remembered: the next operation asks again, so one slow or refused
+   * request at first use does not disable the store until a restart.
+   */
   #ensureBucket(): Promise<void> {
     this.#ready ??= (async () => {
       if (!(await this.#bucketExists())) {
@@ -158,7 +166,10 @@ export class S3CompatibleObjectStorage implements ObjectStorage {
           })
         );
       }
-    })();
+    })().catch((error: unknown) => {
+      this.#ready = undefined;
+      throw error;
+    });
     return this.#ready;
   }
 
