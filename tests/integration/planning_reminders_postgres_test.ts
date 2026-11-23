@@ -1621,14 +1621,22 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
     holding(backend!.pid);
     await released;
   });
+  const requests: Promise<Response>[] = [];
   try {
-    const holderPid = await held;
+    // A holder that fails before it holds the row fails the test here.
+    const holderPid = await Promise.race([
+      held,
+      holderDone.then((): never => {
+        throw new Error("the holding session ended before it held the row");
+      }),
+    ]);
     const restoring = request(
       fixture,
       `/api/v1/people/${personId}/restore`,
       "POST",
       { expectedUpdatedAt },
     );
+    requests.push(restoring);
     const restorePid = await waitingBehind(holderPid);
     const saving = request(fixture, "/api/v1/settings/preferences", "PUT", {
       contactNameOrder: "given_family_nickname",
@@ -1639,6 +1647,7 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
       temperatureScale: "celsius",
       timezone: zone,
     });
+    requests.push(saving);
     await waitingBehind(restorePid, [holderPid]);
     release();
     await holderDone;
@@ -1653,6 +1662,13 @@ Deno.test("[MCP-E2] a restore and a time-zone save in one workspace take the wor
   } finally {
     release();
     await holderDone.catch(() => undefined);
+    // Both requests settle before the test ends, so a wait that failed above
+    // reports itself rather than a request left running.
+    for (const settled of await Promise.allSettled(requests)) {
+      if (settled.status === "fulfilled" && !settled.value.bodyUsed) {
+        await settled.value.body?.cancel();
+      }
+    }
     await holder.end();
   }
   const [window] = await sql<{
