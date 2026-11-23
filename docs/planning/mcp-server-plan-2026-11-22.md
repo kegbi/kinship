@@ -234,23 +234,32 @@ is a separate decision.
 
 ### Phase E — Follow-ups the product owner approved on 2026-11-23 (parallel)
 
-- [ ] **MCP-E1 Person revision on the identity answers.** `PersonIdentity`
+- [x] **MCP-E1 Person revision on the identity answers.** `PersonIdentity`
       carries `updatedAt`, so `get_person` and `create_person` hand an agent the
       revision `update_person`, `archive_person`, `restore_person`, and
-      `delete_person` require.
-- [ ] **MCP-E2 One lock order for a preference save.** A member's preference
+      `delete_person` require. A replayed keyed create answers the current
+      revision, and the related-person create answers it too.
+- [x] **MCP-E2 One lock order for a preference save.** A member's preference
       save holds the workspace row before it writes its preference row, the
       order every other write takes, so it cannot deadlock against a person
-      restore refilling reminders. Proven by a PostgreSQL concurrency test.
-- [ ] **MCP-E3 Request tombstones (schema v16).** A workspace-owned tombstone
-      table records the id of a permanently deleted record that was created with
+      restore refilling reminders. A PostgreSQL test reproduces the deadlock
+      through the real routes: before the change the save answered 503 and
+      PostgreSQL counted one deadlock.
+- [x] **MCP-E3 Request tombstones (schema v16).** `crm.request_tombstones`,
+      owned by `governance` and reached through the kernel's `RequestTombstones`
+      port, records the id of a permanently deleted record that was created with
       a retry key. A keyed create of a journal post, note, activity, call,
       conversation, gift, debt, or recurring debt whose derived id has a
-      tombstone is refused, and `gifts` stops asking the audit history.
-- [ ] **MCP-E4 Object-storage client.** The backend's S3 client moves from the
-      `minio` package to the official `@aws-sdk/client-s3`, behind the unchanged
-      `ObjectStorage` port, which removes the `decode-uri-component`,
-      `stream-json`, and `fast-xml-parser` advisories `minio` brought in.
+      tombstone answers 409 (`journal_request_deleted`,
+      `interaction_request_deleted`, and the unchanged `gift_request_deleted`),
+      and `gifts` no longer asks the audit history.
+- [x] **MCP-E4 Object-storage client.** The backend's S3 client moved from the
+      `minio` package to the official `@aws-sdk/client-s3` 3.1173.0, behind the
+      unchanged `ObjectStorage` port. The `decode-uri-component` and
+      `stream-json` advisories left with `minio`, no high advisory remains, and
+      the audit gate carries no exception. The API and worker ignore the three
+      environment names the SDK probes (`--ignore-env`) instead of being granted
+      them.
 
 ## Delivered, and what is left
 
@@ -266,40 +275,31 @@ production-like stack. The authorization matrix,
 
 Open, each needing its own ticket or decision:
 
-- **Dependency audit.** `deps:audit:gate` fails: `deno audit` now reports a high
-  advisory for `decode-uri-component` (`GHSA-qr28-fpjm-wq7f`), still reached
-  only through `minio` and `query-string`, which the gate's one accepted
-  exception does not cover. The product owner decides between a documented
-  exception in `quality-gates.md`, replacing `minio`, or waiting for a `minio`
-  release. The same report lists new moderate `hono` advisories, which the gate
-  does not fail on.
-- **Replay after a hard delete.** Re-sending a journal post's, note's,
-  activity's, call's, or conversation's original create with its `requestId`
-  after the record was deleted records it again, because the id derives from the
-  key and no tombstone is kept; the route descriptions say so. Refusing it needs
-  a schema-level tombstone at a new schema version.
-- **Gift retry keys and audit retention.** A gift, debt, or recurring-debt
-  create replayed after a delete is refused only because its audit events are
-  kept for the life of the workspace, and the lookup scans that action's events;
-  an index on `audit_events (workspace_id, subject_id)` at the next schema
-  version is the known remedy (see backend architecture, "Gift retry keys depend
-  on the audit history").
+- **Dependency advisories below the gate.** `deps:audit:gate` passes with no
+  exception. `deno audit` still reports seven `hono` advisories, each fixed by
+  4.13.16, and one low `fast-xml-parser` advisory fixed by 5.12.0, which the DAV
+  client imports directly. `pnpm audit` reports findings in the web and tooling
+  tree that nothing gates on and nobody has triaged.
+- **Keyed creates that still accept a replay.** A stay-in-touch cadence can be
+  set again by its old `requestId` after it was deleted; the agent instructions
+  say so. A workspace reset removes tombstones with the records, so a key may
+  create its record again afterwards, as documented.
 - **Gift attachments.** `createGift` and `updateGift` require an attachment to
   be an available, non-avatar file of the workspace, not of the gift's person.
 - **Removed files keep their gift links.** `removePersonFile` deletes the bytes
   and the person link, but a gift keeps its `attachmentFileId` and a debt
   settlement reports its photo as unavailable.
-- **Person revision on the identity read.** `getPersonIdentity` (`get_person`)
-  returns no `updatedAt`, so an agent takes a person's revision from
-  `personUpdatedAt` in `list_profile_facts` or the last lifecycle answer before
-  `update_person`, `archive_person`, or `restore_person`.
-- **Restore against a time-zone change (pre-existing).** A person restore
-  refills reminders through the worker's top-up inside its own transaction,
-  which already holds the workspace row and then takes member preference rows
-  `FOR SHARE`; a preference change holds its row while it waits for the
-  workspace row. The MCP-D2 refill avoids that order for exactly this reason
-  (`refillOtherMembers` in `reminder_repository.ts`); the restore path, from
-  AUD-W1, still takes it and may deadlock.
+- **Two more lock orders, read from the code and not reproduced (from MCP-E2).**
+  A workspace settings update holds the admin's member row `for update` and then
+  waits for `workspace_settings`, which the worker's reminder top-up holds
+  `for share` while its inserts need `for key share` on member rows; taking the
+  member row `for no key update`, as the locked revalidation does, would likely
+  remove it. A workspace reset holds the actor's member row the same way while
+  its cascade waits on preference rows the worker holds; it is owner-only and
+  has no small fix.
+- **A role change during a save.** A preference save now revalidates the actor
+  like every other write, so a save made in the moments after the member's role
+  changed is refused instead of accepted.
 - **A short reminder window.** The top-up no longer counts cancelled rows ahead
   and revives only a cancelled row that was never attempted. A cancelled row
   that had already been attempted keeps its date, so that date is neither
@@ -316,9 +316,17 @@ Open, each needing its own ticket or decision:
   executable; through the npm shim the largest set still exceeds the Windows
   command length (REL-105). The whole browser suite in Chromium passes 89 of 91
   with one skipped; the one failure is `IMPORT-002`'s status assertion matching
-  two elements, already tracked as REL-108 and untouched by this work. Still to
-  run at release: the all-browser E2E matrix and the dependency audit gate, once
-  the dependency item above is settled.
+  two elements, already tracked as REL-108 and untouched by this work.
+- **Integration checkpoint for Phase E, run on 2026-11-23 at `a9a0fcc5`.**
+  `check`, `lint`, `check:architecture`, `contracts:check`, the frozen install,
+  and `deps:audit:gate` pass. The schema harness passes on PostgreSQL 18.4 and
+  17.10, including the v15-to-v16 upgrade. Every PostgreSQL integration suite
+  passes (496 tests), and full `test:coverage` passes every threshold with the
+  web suite at 1,906 tests. `build` passes 34 of 34. The whole browser suite in
+  Chromium passes 89 of 91 with one skipped and the same `IMPORT-002` failure
+  (REL-108). The first coverage run caught one failure from this phase: the
+  agent instructions had grown past their 150-word limit, fixed in `a9a0fcc5`.
+  Still to run at release: the all-browser E2E matrix.
 
 ## Part 5 — Acceptance
 
