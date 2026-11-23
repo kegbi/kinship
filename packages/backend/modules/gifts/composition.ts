@@ -53,6 +53,7 @@ export function composeGifts(shared: SharedComposition, ports: GiftPorts) {
       ids: { next: () => shared.ids.create() },
       recurringDebts: new PostgresRecurringDebtRepository(),
       repository: new PostgresGiftRepository(),
+      tombstones: shared.tombstones,
       transaction: shared.peopleTransaction,
     }),
     lifecycleImpact: PostgresGiftWorkspaceLifecycleImpact,

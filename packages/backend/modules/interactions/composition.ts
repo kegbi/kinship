@@ -60,6 +60,7 @@ export function composeInteractions(
     clock: shared.clock,
     people: ports.people,
     publisher: ports.publisher,
+    tombstones: shared.tombstones,
     transaction: shared.peopleTransaction,
     workspace: ports.workspace,
   };

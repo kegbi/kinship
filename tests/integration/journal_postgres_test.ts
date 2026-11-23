@@ -1,3 +1,4 @@
+import { PostgresRequestTombstones } from "../../packages/backend/modules/governance/adapters/postgres/request_tombstones.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
 import { createJournalManagement } from "../../packages/backend/modules/journal/public.ts";
 import { journalAuditFrom } from "../../packages/backend/modules/journal/public.ts";
@@ -280,6 +281,7 @@ Deno.test({
         clock: { now: () => new Date() },
         ids: { next: () => crypto.randomUUID() },
         repository: new PostgresJournalRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       });
 

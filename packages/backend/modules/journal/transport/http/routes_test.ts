@@ -5,7 +5,7 @@ import {
 } from "../../public.ts";
 import { createJournalTimeline } from "../../../../read-models/journal-timeline/public.ts";
 import * as fixtures from "../../../../testing/fixtures.ts";
-import { fixedClock } from "../../../../testing/fakes.ts";
+import { fixedClock, memoryTombstones } from "../../../../testing/fakes.ts";
 
 const id = "00000000-0000-4000-8000-000000000010";
 const actor = fixtures.actor();
@@ -73,6 +73,7 @@ Deno.test("[JOURNAL-001] journal HTTP routes protect and expose the complete CRU
     clock: fixedClock(now),
     ids: { next: () => id },
     repository,
+    tombstones: memoryTombstones(),
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   const timeline = createJournalTimeline({
@@ -193,6 +194,7 @@ Deno.test("[JOURNAL-001] journal HTTP failures preserve concealment and problem 
     clock: fixedClock(now),
     ids: { next: () => id },
     repository,
+    tombstones: memoryTombstones(),
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   const timeline = createJournalTimeline({

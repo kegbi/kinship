@@ -16,6 +16,7 @@
 import { assert, assertEquals } from "../../packages/backend/testing/assert.ts";
 import type { HttpMethod, SignedInFixture } from "../support/api.ts";
 import { composeTokenSuite, type MintedToken } from "../support/tokens.ts";
+import { holdWorkspaceWrites } from "../support/workspace_write_queue.ts";
 
 const suite = composeTokenSuite();
 const { api, register, sql, tokens } = suite;
@@ -869,14 +870,190 @@ Deno.test("[MCP-D1] PostgreSQL a contact method on another channel is refused an
   }
   const replayed = await expect(
     await api.request(w.own, "/api/v1/interactions", "POST", create),
-    201,
+    409,
     "re-sending the original create after the delete",
   );
   assertEquals(
-    replayed.record.id,
-    shared.id,
-    "no tombstone: the same requestId records the activity again",
+    replayed.code,
+    "interaction_request_deleted",
+    "the delete's tombstone refuses the same requestId (MCP-E3)",
   );
+  const [kept] = await sql<{ count: number }[]>`
+    select count(*)::int as count from crm.activities
+    where id = ${shared.id}::uuid`;
+  assertEquals(kept?.count, 0, "the activity is not recorded again");
+});
+
+/** The table each kind lives in, for the row counts below. */
+const TABLES = {
+  activity: "crm.activities",
+  call: "crm.calls",
+  conversation: "crm.conversation_threads",
+  note: "crm.notes",
+} as const;
+
+async function rows(kind: keyof typeof TABLES, id: string): Promise<number> {
+  const [row] = await sql<{ count: number }[]>`
+    select count(*)::int as count from ${sql(TABLES[kind])}
+    where id = ${id}::uuid`;
+  return row?.count ?? -1;
+}
+
+/** One create of each kind, with its own fixed requestId. */
+function keyedCreates(w: World) {
+  return {
+    activity: {
+      happenedAt: "2026-10-02T18:00:00.000Z",
+      kind: "activity",
+      participantIds: [w.ada],
+      requestId: crypto.randomUUID(),
+      summary: `Keyed walk ${w.suffix}`,
+    },
+    call: {
+      calledAt: "2026-10-02T19:00:00.000Z",
+      contactWasCaller: true,
+      kind: "call",
+      personId: w.ada,
+      requestId: crypto.randomUUID(),
+    },
+    conversation: {
+      channelTypeId: w.channelTypeId,
+      happenedAt: "2026-10-02T20:00:00.000Z",
+      kind: "conversation",
+      messages: [{
+        content: `Keyed message ${w.suffix}`,
+        direction: "outbound",
+        writtenAt: "2026-10-02T20:00:00.000Z",
+      }],
+      personId: w.ada,
+      requestId: crypto.randomUUID(),
+    },
+    note: {
+      body: `Keyed note ${w.suffix}`,
+      kind: "note",
+      personId: w.ada,
+      requestId: crypto.randomUUID(),
+    },
+  } as const;
+}
+
+Deno.test("[MCP-E3] PostgreSQL every interaction kind's create replayed after its delete is refused by the tombstone", async () => {
+  const w = await world("tombstone");
+  const writer = await tokens.mint(w.own, ["interactions:create"]);
+  for (const [kind, create] of Object.entries(keyedCreates(w))) {
+    const typed = kind as keyof typeof TABLES;
+    const created = (await expect(
+      await tokens.bearer(writer.secret, "/api/v1/interactions", {
+        body: create,
+        method: "POST",
+      }),
+      201,
+      `${kind} recorded`,
+    )).record;
+    const replay = await expect(
+      await api.request(w.own, "/api/v1/interactions", "POST", create),
+      201,
+      `${kind} replayed before its delete`,
+    );
+    assertEquals(replay.record.id, created.id, `${kind} replay returns it`);
+    await expect(
+      await api.request(
+        w.own,
+        `/api/v1/interactions/${kind}/${created.id}`,
+        "DELETE",
+        { expectedUpdatedAt: created.updatedAt },
+      ),
+      200,
+      `${kind} deleted`,
+    );
+    const [tombstone] = await sql<{ record_type: string }[]>`
+      select record_type from crm.request_tombstones
+      where workspace_id = ${w.own.workspaceId}::uuid
+        and record_id = ${created.id}::uuid`;
+    assertEquals(tombstone?.record_type, kind, `${kind} left its tombstone`);
+    for (
+      const response of [
+        await api.request(w.own, "/api/v1/interactions", "POST", create),
+        await tokens.bearer(writer.secret, "/api/v1/interactions", {
+          body: create,
+          method: "POST",
+        }),
+      ]
+    ) {
+      const refused = await expect(response, 409, `${kind} replay refused`);
+      assertEquals(refused.code, "interaction_request_deleted", kind);
+    }
+    assertEquals(
+      await rows(typed, created.id),
+      0,
+      `${kind} not recorded again`,
+    );
+  }
+  // The tombstones are the workspace's: another workspace's key names its own
+  // record, and its replay is untouched.
+  const foreignNote = {
+    body: "Foreign keyed note",
+    kind: "note",
+    personId: w.foreignPerson,
+    requestId: keyedCreates(w).note.requestId,
+  };
+  await expect(
+    await api.request(w.foreign, "/api/v1/interactions", "POST", foreignNote),
+    201,
+    "another workspace records under its own derived id",
+  );
+});
+
+/**
+ * A note's delete and its create's replay, queued on the workspace row in both
+ * orders (MCP-E3): the replay that runs first returns the note, which the
+ * delete then removes; the replay that runs second is refused. Neither order
+ * records the note again.
+ */
+Deno.test("[MCP-E3] PostgreSQL an interaction delete racing its create's replay never records it again", async () => {
+  const w = await world("tombstone-race");
+  for (const first of ["delete", "replay"] as const) {
+    const create = { ...keyedCreates(w).note, body: `Raced note ${first}` };
+    const created = (await expect(
+      await api.request(w.own, "/api/v1/interactions", "POST", create),
+      201,
+      "note recorded",
+    )).record;
+    const remove = () =>
+      api.request(w.own, `/api/v1/interactions/note/${created.id}`, "DELETE", {
+        expectedUpdatedAt: created.updatedAt,
+      });
+    const replay = () =>
+      api.request(w.own, "/api/v1/interactions", "POST", create);
+    const queue = await holdWorkspaceWrites(sql, w.own.workspaceId);
+    let deleted: Promise<Response>;
+    let replayed: Promise<Response>;
+    try {
+      if (first === "delete") {
+        deleted = remove();
+        await queue.queued(1);
+        replayed = replay();
+        await queue.queued(2);
+      } else {
+        replayed = replay();
+        await queue.queued(1);
+        deleted = remove();
+        await queue.queued(2);
+      }
+    } finally {
+      await queue.release();
+    }
+    await expect(await deleted!, 200, `${first} first: the delete`);
+    const answer = await replayed!;
+    if (first === "delete") {
+      const refused = await expect(answer, 409, "the later replay");
+      assertEquals(refused.code, "interaction_request_deleted");
+    } else {
+      const returned = await expect(answer, 201, "the earlier replay");
+      assertEquals(returned.record.id, created.id, "it returned the note");
+    }
+    assertEquals(await rows("note", created.id), 0, `${first} first: gone`);
+  }
 });
 
 Deno.test({

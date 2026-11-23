@@ -42,6 +42,7 @@ export function composeJournal(
       clock: shared.clock,
       ids: { next: () => shared.ids.create() },
       repository: new PostgresJournalRepository(),
+      tombstones: shared.tombstones,
       transaction: shared.peopleTransaction,
     }),
     lifeEvents: createLifeEventManagement({

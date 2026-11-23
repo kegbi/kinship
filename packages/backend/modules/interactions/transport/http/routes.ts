@@ -132,6 +132,13 @@ export const INTERACTION_FAILURES: FailureTable = {
         "A selected person, activity type, or emotion does not exist in the active workspace.",
       title: "Interaction unavailable",
     },
+    "request-deleted": {
+      code: "interaction_request_deleted",
+      detail:
+        "The record this request identifier created was deleted. Use a new request identifier to record it again.",
+      status: 409,
+      title: "Request identifier already used",
+    },
     "stale-cursor": {
       code: "interaction_cursor_stale",
       detail: "Restart this bounded option or report search.",

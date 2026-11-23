@@ -29,7 +29,10 @@ import type { SharedComposition } from "../../packages/backend/platform/composit
 import { composeRequestLogRetention } from "../../packages/backend/modules/api-access/composition.ts";
 import { composeObjectStorage } from "../../packages/backend/modules/files/composition.ts";
 import { composeRecurringDebtCharging } from "../../packages/backend/modules/gifts/composition.ts";
-import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
+import {
+  governanceAuditRecorder,
+  governanceRequestTombstones,
+} from "../../packages/backend/modules/governance/composition.ts";
 import { composeAuthenticationRetention } from "../../packages/backend/modules/identity/composition.ts";
 import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
 import { composeReminderDelivery } from "../../packages/backend/modules/planning/composition.ts";
@@ -184,6 +187,7 @@ export function createConfiguredReminderWorker(
       database: connection.db,
       ids: { create: () => crypto.randomUUID() },
       peopleTransaction: peopleTransactionRunner(connection.db),
+      tombstones: governanceRequestTombstones(),
       transaction: workspaceTransactionRunner(connection.db),
       workspaceEntry: activeWorkspaceResolver(),
     };

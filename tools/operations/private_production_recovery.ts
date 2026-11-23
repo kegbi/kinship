@@ -438,7 +438,7 @@ async function runPostgresTool(
   const child = new Deno.Command(command.executable, {
     args: [
       ...command.argsPrefix,
-      // Owners and privileges travel with the archive: schema v15's grants,
+      // Owners and privileges travel with the archive: schema v16's grants,
       // row-level security roles, and SECURITY DEFINER function owners are
       // part of the canonical catalog (ADR 0008). A restore without them
       // would hand the definer functions to the restoring superuser. The
@@ -549,7 +549,7 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
           as present
       `;
       if (!row?.present) {
-        throw new Error("Database is not the canonical schema v15.");
+        throw new Error("Database is not the canonical schema v16.");
       }
     } finally {
       await sql.end();
@@ -558,8 +558,8 @@ export class PostgresRecovery implements DatabaseRecoveryPort {
       this.databaseUrl,
       await readCanonicalArtifacts(),
     );
-    if (action !== "verify-v15") {
-      throw new Error("Database is not the canonical schema v15.");
+    if (action !== "verify-v16") {
+      throw new Error("Database is not the canonical schema v16.");
     }
   }
 }

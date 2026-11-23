@@ -122,7 +122,7 @@ export const deleteJournalItem = defineRoute({
   path: "/api/v1/journal/items/{itemId}",
   operationId: "deleteJournalItem",
   description:
-    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Deleting an activity item removes its journal link, not the activity. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Deleting an activity item removes its journal link, not the activity. A deleted post keeps its id as a request tombstone, so a createJournalPost retried with the requestId that made it answers 409 journal_request_deleted. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
   tokenScope: "journal:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {
@@ -172,7 +172,7 @@ export const createJournalPost = defineRoute({
   path: "/api/v1/journal/posts",
   operationId: "createJournalPost",
   description:
-    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Send a client-generated requestId and reuse it when retrying: the same requestId and post return the post it created (201), and the same requestId with a different body, title, or occurredAt is refused (409). A deleted post leaves no record, so a retry after its deletion writes it again. Without a requestId every call creates a new post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
+    "Personal tokens require journal:write. Journal posts and day ratings are workspace-wide, not private to their author: any member, and so any token, can read, edit, or delete any of them. Send a client-generated requestId and reuse it when retrying: the same requestId and post return the post it created (201), and the same requestId with a different body, title, or occurredAt is refused (409). Once the post is deleted, the same requestId answers 409 journal_request_deleted rather than writing it again. Without a requestId every call creates a new post. Does not grant reading. Cookie-authenticated writes require the exact configured Origin; bearer writes require no Cookie or Origin.",
   tokenScope: "journal:write",
   security: [{ kinship_session: [] }, { kinship_api_token: [] }],
   request: {

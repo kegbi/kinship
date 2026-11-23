@@ -89,6 +89,18 @@ export async function readCanonicalArtifacts(): Promise<
   CanonicalSchemaArtifacts
 > {
   return {
+    v16Sql: await Deno.readTextFile(
+      new URL(
+        "../../personal-crm-schema/v16/personal_crm_schema_v16.sql",
+        import.meta.url,
+      ),
+    ),
+    migrationV15ToV16: await Deno.readTextFile(
+      new URL(
+        "../../personal-crm-schema/v16/migrations/0016_add_request_tombstones.sql",
+        import.meta.url,
+      ),
+    ),
     v15Sql: await Deno.readTextFile(
       new URL(
         "../../personal-crm-schema/v15/personal_crm_schema_v15.sql",
@@ -171,7 +183,7 @@ export async function readCanonicalArtifacts(): Promise<
   };
 }
 
-/** Brings the configured database to canonical schema v15, or refuses. */
+/** Brings the configured database to canonical schema v16, or refuses. */
 export async function runMigration(
   environment: { get(name: string): string | undefined },
 ): Promise<Exclude<SchemaAction, "reject">> {
@@ -188,5 +200,5 @@ export async function runMigration(
 }
 
 if (import.meta.main) {
-  console.log(`Canonical schema v15: ${await runMigration(Deno.env)}`);
+  console.log(`Canonical schema v16: ${await runMigration(Deno.env)}`);
 }

@@ -67,6 +67,7 @@ const V11_UPGRADE_DATABASE = "crm_v11_upgrade_test";
 const V12_UPGRADE_DATABASE = "crm_v12_upgrade_test";
 const V13_UPGRADE_DATABASE = "crm_v13_upgrade_test";
 const V14_UPGRADE_DATABASE = "crm_v14_upgrade_test";
+const V15_UPGRADE_DATABASE = "crm_v15_upgrade_test";
 const MIGRATION_ROLLBACK_DATABASE = "crm_migration_rollback_test";
 const DATABASE_USER = "crm_test";
 
@@ -74,10 +75,10 @@ const scriptDirectory = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
 );
 const repositoryRoot = resolve(scriptDirectory, "../..");
-const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v15");
+const schemaDirectory = resolve(repositoryRoot, "personal-crm-schema/v16");
 const validationPath = resolve(
   schemaDirectory,
-  "personal_crm_schema_v15_validation.json",
+  "personal_crm_schema_v16_validation.json",
 );
 
 /**
@@ -99,6 +100,7 @@ const IMMUTABLE_BASELINES = [
   ["v12", "personal_crm_schema_v12_validation.json"],
   ["v13", "personal_crm_schema_v13_validation.json"],
   ["v14", "personal_crm_schema_v14_validation.json"],
+  ["v15", "personal_crm_schema_v15_validation.json"],
 ] as const;
 
 function parsePostgresImage(args: readonly string[]): string {
@@ -171,20 +173,20 @@ async function verifyArtifacts(
     validation.status !== "pending-live-validation" &&
     validation.status !== "passed"
   ) {
-    throw new Error(`Schema v15 validation status is ${validation.status}`);
+    throw new Error(`Schema v16 validation status is ${validation.status}`);
   }
 
   for (const [filename, expectedHash] of Object.entries(validation.sha256)) {
     const actualHash = await sha256(resolve(schemaDirectory, filename));
     if (actualHash !== expectedHash) {
       throw new Error(
-        `Schema v15 artifact hash mismatch for ${filename}: ${actualHash}`,
+        `Schema v16 artifact hash mismatch for ${filename}: ${actualHash}`,
       );
     }
   }
 
   const ddl = await Deno.readTextFile(
-    resolve(schemaDirectory, "personal_crm_schema_v15.sql"),
+    resolve(schemaDirectory, "personal_crm_schema_v16.sql"),
   );
   const migration = await Deno.readTextFile(
     resolve(
@@ -498,9 +500,49 @@ async function verifyArtifacts(
   ) {
     contractErrors.push("the global catalog seeds are missing");
   }
+  // v16 (MCP-E3) adds the request tombstones and nothing else: the same
+  // workspace-owned table, policy, and append-only privileges in the DDL and
+  // in 0016, with no backfill.
+  const tombstoneMigration = await Deno.readTextFile(
+    resolve(schemaDirectory, "migrations/0016_add_request_tombstones.sql"),
+  );
+  const tombstoneColumns = tableColumns("request_tombstones");
+  if (
+    tombstoneColumns.join(",") !==
+      "workspace_id,record_id,record_type,deleted_at"
+  ) {
+    contractErrors.push(
+      `request tombstone shape mismatch: ${tombstoneColumns.join(",")}`,
+    );
+  }
+  for (
+    const text of [
+      "PRIMARY KEY (workspace_id, record_id)",
+      "request_tombstones_record_type_ck",
+      "ALTER TABLE request_tombstones FORCE ROW LEVEL SECURITY;",
+      "CREATE POLICY workspace_isolation ON request_tombstones",
+    ]
+  ) {
+    if (!ddl.includes(text) || !tombstoneMigration.includes(text)) {
+      contractErrors.push(`${text} is missing from the DDL or migration`);
+    }
+  }
+  if (
+    !ddl.includes(
+      "REVOKE UPDATE, DELETE ON request_tombstones FROM kinship_app;",
+    ) ||
+    !tombstoneMigration.includes(
+      "GRANT SELECT, INSERT ON request_tombstones TO kinship_app;",
+    ) ||
+    /^\s*(INSERT|UPDATE|DELETE)\b/im.test(tombstoneMigration)
+  ) {
+    contractErrors.push(
+      "request tombstones must be append-only for the API and not backfilled",
+    );
+  }
   if (contractErrors.length > 0) {
     throw new Error(
-      `Schema v15 synchronized contract: ${contractErrors.join("; ")}`,
+      `Schema v16 synchronized contract: ${contractErrors.join("; ")}`,
     );
   }
 }
@@ -623,7 +665,7 @@ async function copyFixture(
 async function readValidation(): Promise<SchemaValidation> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile(validationPath));
   if (typeof parsed !== "object" || parsed === null || !("sha256" in parsed)) {
-    throw new Error("Invalid schema v15 validation JSON");
+    throw new Error("Invalid schema v16 validation JSON");
   }
   return parsed as SchemaValidation;
 }
@@ -676,21 +718,21 @@ async function assertArtifactCounts(
   assertEqual(
     "table mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_table_mapping_v15.csv"),
+      resolve(schemaDirectory, "monica_table_mapping_v16.csv"),
     ),
     validation.table_mapping_rows,
   );
   assertEqual(
     "column mapping rows",
     await countCsvRows(
-      resolve(schemaDirectory, "monica_column_mapping_v15.csv"),
+      resolve(schemaDirectory, "monica_column_mapping_v16.csv"),
     ),
     validation.column_mapping_rows,
   );
   assertEqual(
     "field catalog rows",
     await countCsvRows(
-      resolve(schemaDirectory, "personal_crm_field_catalog_v15.csv"),
+      resolve(schemaDirectory, "personal_crm_field_catalog_v16.csv"),
     ),
     validation.field_catalog_rows,
   );
@@ -700,7 +742,7 @@ async function applySchema(database: string): Promise<void> {
   await runPsql(database, [
     "--single-transaction",
     "-f",
-    "/tmp/personal_crm_schema_v15.sql",
+    "/tmp/personal_crm_schema_v16.sql",
   ], { quiet: true });
 }
 
@@ -715,7 +757,7 @@ async function assertRollback(): Promise<void> {
       "-c",
       "BEGIN",
       "-f",
-      "/tmp/personal_crm_schema_v15.sql",
+      "/tmp/personal_crm_schema_v16.sql",
       "-c",
       "ROLLBACK",
     ], { quiet: true });
@@ -756,6 +798,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       V12_UPGRADE_DATABASE,
       V13_UPGRADE_DATABASE,
       V14_UPGRADE_DATABASE,
+      V15_UPGRADE_DATABASE,
       MIGRATION_ROLLBACK_DATABASE,
     ]
   ) {
@@ -801,6 +844,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const upgraded = await runPsql(UPGRADE_DATABASE, [
       "-A",
@@ -864,6 +909,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v2Upgraded = await runPsql(V2_UPGRADE_DATABASE, [
       "-A",
@@ -908,6 +955,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v3Upgraded = await runPsql(V3_UPGRADE_DATABASE, [
       "-A",
@@ -948,6 +997,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v4Upgraded = await runPsql(V4_UPGRADE_DATABASE, [
       "-A",
@@ -1009,6 +1060,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v5Upgraded = await runPsql(V5_UPGRADE_DATABASE, [
       "-A",
@@ -1070,6 +1123,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v6Upgraded = await runPsql(V6_UPGRADE_DATABASE, [
       "-A",
@@ -1118,6 +1173,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v7Upgraded = await runPsql(V7_UPGRADE_DATABASE, [
       "-A",
@@ -1168,6 +1225,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v8Upgraded = await runPsql(V8_UPGRADE_DATABASE, [
       "-A",
@@ -1215,6 +1274,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v9Upgraded = await runPsql(V9_UPGRADE_DATABASE, [
       "-A",
@@ -1355,6 +1416,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
     ], { quiet: true });
     const v12Upgraded = await runPsql(V12_UPGRADE_DATABASE, [
       "-A",
@@ -1389,6 +1452,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
       "-c",
       "SELECT 1 / 0;",
     ], { allowFailure: true, quiet: true });
@@ -1607,6 +1672,99 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       );
     }
 
+    // An exact v15 database with tenant data keeps every row, gains the
+    // request tombstones under forced row-level security and append-only API
+    // privileges, and holds no tombstone, since nothing is backfilled
+    // (MCP-E3).
+    const v15Fixture = `
+      INSERT INTO crm.users (id,email) VALUES ('00000000-0000-4000-8000-000000001501','v16-upgrade@example.test');
+      INSERT INTO crm.workspaces (id,name,created_by_user_id) VALUES ('00000000-0000-4000-8000-000000001502','V16 upgrade','00000000-0000-4000-8000-000000001501');
+      INSERT INTO crm.people (id,workspace_id,given_name) VALUES ('00000000-0000-4000-8000-000000001503','00000000-0000-4000-8000-000000001502','Ann');
+      INSERT INTO crm.notes (id,workspace_id,person_id,body) VALUES ('00000000-0000-8000-8000-000000001504','00000000-0000-4000-8000-000000001502','00000000-0000-4000-8000-000000001503','Kept');
+      INSERT INTO crm.journal_posts (id,workspace_id,body) VALUES ('00000000-0000-8000-8000-000000001505','00000000-0000-4000-8000-000000001502','Kept');
+      INSERT INTO crm.gifts (id,workspace_id,person_id,name) VALUES ('00000000-0000-8000-8000-000000001506','00000000-0000-4000-8000-000000001502','00000000-0000-4000-8000-000000001503','Lamp');
+      INSERT INTO crm.audit_events (workspace_id,subject_type,subject_id,action) VALUES ('00000000-0000-4000-8000-000000001502','gift','00000000-0000-8000-8000-000000001506','gifts.gift-created-or-state-changed');
+    `;
+    const v15Rows = `
+      SELECT string_agg(row_text, ' | ' ORDER BY row_text) FROM (
+        SELECT 'workspaces ' || (to_jsonb(t))::text AS row_text FROM crm.workspaces t
+        UNION ALL SELECT 'people ' || (to_jsonb(t))::text FROM crm.people t
+        UNION ALL SELECT 'notes ' || (to_jsonb(t))::text FROM crm.notes t
+        UNION ALL SELECT 'journal_posts ' || (to_jsonb(t))::text FROM crm.journal_posts t
+        UNION ALL SELECT 'gifts ' || (to_jsonb(t))::text FROM crm.gifts t
+        UNION ALL SELECT 'audit_events ' || (to_jsonb(t))::text FROM crm.audit_events t
+      ) rows;`;
+    await runPsql(V15_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/personal_crm_schema_v15.sql",
+      "-c",
+      v15Fixture,
+    ], { quiet: true });
+    const v15Before = await runPsql(V15_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      v15Rows,
+    ], { quiet: true });
+    await runPsql(V15_UPGRADE_DATABASE, [
+      "--single-transaction",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
+    ], { quiet: true });
+    const v15After = await runPsql(V15_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      v15Rows,
+    ], { quiet: true });
+    const v15Upgraded = await runPsql(V15_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT (SELECT count(*) FROM crm.request_tombstones) = 0
+        AND (SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'crm'::regnamespace AND c.relforcerowsecurity) = 76
+        AND (SELECT relforcerowsecurity FROM pg_class WHERE oid = 'crm.request_tombstones'::regclass)
+        AND EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'crm.request_tombstones'::regclass AND polname = 'workspace_isolation')
+        AND has_table_privilege('kinship_app', 'crm.request_tombstones', 'SELECT')
+        AND has_table_privilege('kinship_app', 'crm.request_tombstones', 'INSERT')
+        AND NOT has_table_privilege('kinship_app', 'crm.request_tombstones', 'UPDATE')
+        AND NOT has_table_privilege('kinship_app', 'crm.request_tombstones', 'DELETE')
+        AND NOT has_table_privilege('kinship_worker', 'crm.request_tombstones', 'SELECT')
+        AND pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'request_tombstones_pkey')) = 'PRIMARY KEY (workspace_id, record_id)';`,
+    ], { quiet: true });
+    if (v15Upgraded !== "t" || v15Before !== v15After || v15Before === "") {
+      throw new Error(
+        "v15-to-v16 did not keep every row and add the forced tombstones.",
+      );
+    }
+    await runPsql(V15_UPGRADE_DATABASE, [
+      "-c",
+      "DROP SCHEMA crm CASCADE;",
+      "-f",
+      "/tmp/personal_crm_schema_v15.sql",
+      "-c",
+      v15Fixture,
+    ], { quiet: true });
+    await runPsql(V15_UPGRADE_DATABASE, [
+      "-c",
+      "BEGIN",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
+      "-c",
+      "SELECT 1 / 0",
+    ], { allowFailure: true, quiet: true });
+    const v16RolledBack = await runPsql(V15_UPGRADE_DATABASE, [
+      "-A",
+      "-t",
+      "-c",
+      `SELECT to_regclass('crm.request_tombstones') IS NULL
+        AND (SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'crm'::regnamespace AND c.relforcerowsecurity) = 75;`,
+    ], { quiet: true });
+    if (v16RolledBack !== "t") {
+      throw new Error("failed v15-to-v16 migration did not roll back.");
+    }
+
     await runPsql(MIGRATION_ROLLBACK_DATABASE, [
       "--single-transaction",
       "-f",
@@ -1731,6 +1889,8 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
       "/tmp/0014_enforce_workspace_isolation.sql",
       "-f",
       "/tmp/0015_backstop_single_parent_children.sql",
+      "-f",
+      "/tmp/0016_add_request_tombstones.sql",
       "-c",
       "SELECT 1 / 0",
     ], { allowFailure: true, quiet: true });
@@ -1765,6 +1925,7 @@ async function assertV1UpgradeAndFailureRollback(): Promise<void> {
         V12_UPGRADE_DATABASE,
         V13_UPGRADE_DATABASE,
         V14_UPGRADE_DATABASE,
+        V15_UPGRADE_DATABASE,
         MIGRATION_ROLLBACK_DATABASE,
       ]
     ) {
@@ -1794,6 +1955,10 @@ async function main(): Promise<void> {
     await runCompose(["up", "--detach", "--wait", "--wait-timeout", "90"]);
     started = true;
 
+    await copyFixture(
+      "personal-crm-schema/v16/personal_crm_schema_v16.sql",
+      "/tmp/personal_crm_schema_v16.sql",
+    );
     await copyFixture(
       "personal-crm-schema/v15/personal_crm_schema_v15.sql",
       "/tmp/personal_crm_schema_v15.sql",
@@ -1847,8 +2012,8 @@ async function main(): Promise<void> {
       "/tmp/personal_crm_schema_v2.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
-      "/tmp/personal_crm_field_catalog_v15.csv",
+      "personal-crm-schema/v16/personal_crm_field_catalog_v16.csv",
+      "/tmp/personal_crm_field_catalog_v16.csv",
     );
     await copyFixture(
       "personal-crm-schema/v1/personal_crm_rewrite_schema_v3.sql",
@@ -1887,28 +2052,32 @@ async function main(): Promise<void> {
       "/tmp/0009_add_search_indexes_and_duplicate_dismissals.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0010_add_recurring_debts.sql",
+      "personal-crm-schema/v16/migrations/0010_add_recurring_debts.sql",
       "/tmp/0010_add_recurring_debts.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0011_add_debt_settlements.sql",
+      "personal-crm-schema/v16/migrations/0011_add_debt_settlements.sql",
       "/tmp/0011_add_debt_settlements.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0012_reword_member_reminder_delivery_comment.sql",
+      "personal-crm-schema/v16/migrations/0012_reword_member_reminder_delivery_comment.sql",
       "/tmp/0012_reword_member_reminder_delivery_comment.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0013_index_queries_and_seed_catalogs.sql",
+      "personal-crm-schema/v16/migrations/0013_index_queries_and_seed_catalogs.sql",
       "/tmp/0013_index_queries_and_seed_catalogs.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0014_enforce_workspace_isolation.sql",
+      "personal-crm-schema/v16/migrations/0014_enforce_workspace_isolation.sql",
       "/tmp/0014_enforce_workspace_isolation.sql",
     );
     await copyFixture(
-      "personal-crm-schema/v15/migrations/0015_backstop_single_parent_children.sql",
+      "personal-crm-schema/v16/migrations/0015_backstop_single_parent_children.sql",
       "/tmp/0015_backstop_single_parent_children.sql",
+    );
+    await copyFixture(
+      "personal-crm-schema/v16/migrations/0016_add_request_tombstones.sql",
+      "/tmp/0016_add_request_tombstones.sql",
     );
     await copyFixture(
       "personal-crm-schema/v10/personal_crm_schema_v10.sql",
@@ -1944,7 +2113,7 @@ async function main(): Promise<void> {
 
     await assertV1UpgradeAndFailureRollback();
     console.log(
-      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14 upgrades and failed migration rollback",
+      "PASS exact v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15 upgrades and failed migration rollback",
     );
 
     await applySchema(SCHEMA_DATABASE);

@@ -31,6 +31,7 @@ import {
   AttachmentFailure,
   type GiftManagementDependencies,
   type GiftMutationFailure,
+  leaveTombstone,
   mutationFailure,
   represent,
   staleRevision,
@@ -198,6 +199,14 @@ export function createGiftEdits(dependencies: GiftManagementDependencies) {
             transaction,
           });
           if (deleted.status !== "deleted") return deleted;
+          await leaveTombstone(
+            dependencies,
+            actor,
+            "gift",
+            deleted.gift.id,
+            occurredAt,
+            transaction,
+          );
           await dependencies.audit.record({
             action: "deleted",
             actor,

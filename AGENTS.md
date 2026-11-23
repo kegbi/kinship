@@ -142,13 +142,13 @@ only `/privacy` and `/terms` render on demand.
 amended 2026-11-08, is implemented by schemas v14 and v15: the API and worker
 connect as least-privilege roles without `BYPASSRLS`, every tenant-to-tenant
 reference is a workspace-bound composite key, and every workspace-owned table
-forces row-level security — each table with a `workspace_id`, and since v15
-(REL-120) the root `workspaces` table on its own id. Every tenant statement,
-including one that reads or writes `workspaces`, runs in a transaction scoped
-with `set local app.workspace_id`, through the transaction runners' scope; the
-few cross-workspace paths use only the narrow means the ADR lists. It does not
-replace application authorization. Do not add code that depends on a superuser
-or `BYPASSRLS` database connection.
+forces row-level security — each table with a `workspace_id`, since v15
+(REL-120) the root `workspaces` table on its own id, and since v16 (MCP-E3) the
+request tombstones. Every tenant statement, including one that reads or writes
+`workspaces`, runs in a transaction scoped with `set local app.workspace_id`,
+through the transaction runners' scope; the few cross-workspace paths use only
+the narrow means the ADR lists. It does not replace application authorization.
+Do not add code that depends on a superuser or `BYPASSRLS` database connection.
 
 [ADR 0009](docs/architecture/decisions/0009-mcp-endpoint-over-the-token-api.md)
 makes the MCP endpoint, `POST /api/v1/mcp`, a delivery adapter over the
@@ -260,26 +260,26 @@ silently resolve it by violating an accepted constraint.
 
 ## Canonical Personal CRM Schema
 
-- [personal-crm-schema/v15/README.md](personal-crm-schema/v15/README.md) is the
+- [personal-crm-schema/v16/README.md](personal-crm-schema/v16/README.md) is the
   starting point and current repository database baseline.
-- [personal-crm-schema/v15/personal_crm_schema_v15.sql](personal-crm-schema/v15/personal_crm_schema_v15.sql)
+- [personal-crm-schema/v16/personal_crm_schema_v16.sql](personal-crm-schema/v16/personal_crm_schema_v16.sql)
   is the canonical PostgreSQL DDL.
-- [personal-crm-schema/v15/personal_crm_schema_spec_v15.md](personal-crm-schema/v15/personal_crm_schema_spec_v15.md)
+- [personal-crm-schema/v16/personal_crm_schema_spec_v16.md](personal-crm-schema/v16/personal_crm_schema_spec_v16.md)
   is the human-readable schema and behavioral contract.
-- [personal-crm-schema/v15/personal_crm_field_catalog_v15.csv](personal-crm-schema/v15/personal_crm_field_catalog_v15.csv)
+- [personal-crm-schema/v16/personal_crm_field_catalog_v16.csv](personal-crm-schema/v16/personal_crm_field_catalog_v16.csv)
   is the field-level catalog.
-- [personal-crm-schema/v15/monica_table_mapping_v15.csv](personal-crm-schema/v15/monica_table_mapping_v15.csv)
+- [personal-crm-schema/v16/monica_table_mapping_v16.csv](personal-crm-schema/v16/monica_table_mapping_v16.csv)
   and
-  [personal-crm-schema/v15/monica_column_mapping_v15.csv](personal-crm-schema/v15/monica_column_mapping_v15.csv)
+  [personal-crm-schema/v16/monica_column_mapping_v16.csv](personal-crm-schema/v16/monica_column_mapping_v16.csv)
   are the complete Monica import mappings.
-- [personal-crm-schema/v15/personal_crm_schema_v15_changes.md](personal-crm-schema/v15/personal_crm_schema_v15_changes.md)
+- [personal-crm-schema/v16/personal_crm_schema_v16_changes.md](personal-crm-schema/v16/personal_crm_schema_v16_changes.md)
   and
-  [personal-crm-schema/v15/personal_crm_schema_v15_validation.json](personal-crm-schema/v15/personal_crm_schema_v15_validation.json)
+  [personal-crm-schema/v16/personal_crm_schema_v16_validation.json](personal-crm-schema/v16/personal_crm_schema_v16_validation.json)
   contain the change rationale and machine validation.
 
-Treat `personal-crm-schema/v15` as one synchronized, versioned unit. Repository
-v1 through v14 remain immutable prior baselines; the external audit does not
-cover the repository-reviewed v2 through v15 deltas. Do not update the SQL,
+Treat `personal-crm-schema/v16` as one synchronized, versioned unit. Repository
+v1 through v15 remain immutable prior baselines; the external audit does not
+cover the repository-reviewed v2 through v16 deltas. Do not update the SQL,
 specification, catalogs, mappings, migration, or validation independently.
 
 The canonical Personal CRM schema is the application's own data model. The

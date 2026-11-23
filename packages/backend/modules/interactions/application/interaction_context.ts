@@ -9,6 +9,7 @@
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { RequestTombstones } from "../../../shared-kernel/request_tombstone.ts";
 import type { InteractionAudit } from "../ports/audit.ts";
 import type {
   InteractionActor,
@@ -30,6 +31,8 @@ export interface InteractionDependencies {
   readonly people: InteractionPersonBoundary;
   readonly publisher?: InteractionRecordedPublisher;
   readonly repository: InteractionRepository;
+  /** Governance's request tombstones, read by a keyed create (MCP-E3). */
+  readonly tombstones: RequestTombstones;
   readonly transaction: InteractionTransactionRunner;
   readonly workspace: InteractionWorkspaceBoundary;
 }

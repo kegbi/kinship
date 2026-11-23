@@ -24,18 +24,6 @@ export interface GiftAudit {
     readonly recordType: "debt" | "gift" | "recurring-debt";
     readonly transaction: GiftTransaction;
   }): Promise<string>;
-  /**
-   * Whether this module ever audited a record with this id. Gifts, debts,
-   * and rules are deleted permanently, so the audit history is the one
-   * durable trace that a retried create's record existed and was removed
-   * (MCP-D3).
-   */
-  recorded(command: {
-    readonly actor: GiftActor;
-    readonly recordType: "debt" | "gift" | "recurring-debt";
-    readonly subjectId: string;
-    readonly transaction: GiftTransaction;
-  }): Promise<boolean>;
   /** A debt a recurring rule charged on the worker's schedule. */
   recordCharged(command: {
     readonly debt: StoredDebt;

@@ -9,6 +9,7 @@
  * edit, with no settlement orphaned or duplicated.
  */
 
+import { PostgresRequestTombstones } from "../../packages/backend/modules/governance/adapters/postgres/request_tombstones.ts";
 import { PostgresGiftAttachmentBoundary } from "../../packages/backend/modules/files/adapters/postgres/gift_attachment_boundary.ts";
 import { PostgresGiftAttachmentTarget } from "../../packages/backend/modules/gifts/adapters/postgres/gift_attachment_target.ts";
 import { PostgresGiftRepository } from "../../packages/backend/modules/gifts/adapters/postgres/gift_repository.ts";
@@ -32,6 +33,7 @@ import {
 } from "../support/api.ts";
 import { requireDatabaseUrl, revocableActor } from "../support/database.ts";
 import { composeTokenSuite } from "../support/tokens.ts";
+import { holdWorkspaceWrites } from "../support/workspace_write_queue.ts";
 
 const suite = composeTokenSuite();
 const { api, register, sql, tokens } = suite;
@@ -741,6 +743,16 @@ Deno.test("[MCP-D3] PostgreSQL token creates are retry-safe, revisions are check
     `changed:${writer.record.id}`,
     `deleted:${writer.record.id}`,
   ]);
+  assertEquals(await tombstoneOf(own.workspaceId, one.gift.id), "gift");
+  // The refusal is the tombstone's, not the audit history's (MCP-E3): with
+  // the gift's events gone the replay is still refused.
+  await sql`delete from crm.audit_events where subject_id = ${one.gift.id}::uuid`;
+  await refused(
+    await send(`${root}/gifts`, "POST", giftBody),
+    409,
+    "gift_request_deleted",
+    "a replay after the history is pruned",
+  );
 
   // A settled debt retried concurrently settles once.
   const debtKey = crypto.randomUUID();
@@ -784,6 +796,7 @@ Deno.test("[MCP-D3] PostgreSQL token creates are retry-safe, revisions are check
     "gift_request_deleted",
     "a deleted debt is not recreated",
   );
+  assertEquals(await tombstoneOf(own.workspaceId, settled.debt.id), "debt");
 
   // A rule retried concurrently charges its due periods once.
   const ruleKey = crypto.randomUUID();
@@ -832,6 +845,7 @@ Deno.test("[MCP-D3] PostgreSQL token creates are retry-safe, revisions are check
     "gift_request_deleted",
     "a deleted rule is not recreated and charges nothing",
   );
+  assertEquals(await tombstoneOf(own.workspaceId, ruleId), "recurring_debt");
   const [kept] = await sql<{ count: number }[]>`
     select count(*)::int as count from crm.debts
     where person_id = ${personId}::uuid and direction = 'i_owe'`;
@@ -963,7 +977,91 @@ Deno.test("[MCP-D3] PostgreSQL an unconditional settle racing a fresh edit never
   }
 });
 
-Deno.test("[MCP-D3] PostgreSQL a workspace reset removes the audit history, so a replayed key creates its record again", async () => {
+/** The kind a record's request tombstone names, if it left one (MCP-E3). */
+async function tombstoneOf(
+  workspaceId: string,
+  recordId: string,
+): Promise<string | undefined> {
+  const [row] = await sql<{ record_type: string }[]>`
+    select record_type from crm.request_tombstones
+    where workspace_id = ${workspaceId}::uuid
+      and record_id = ${recordId}::uuid`;
+  return row?.record_type;
+}
+
+/**
+ * A gift's delete and its create's replay, queued on the workspace row in both
+ * orders (MCP-E3): the replay that runs first returns the gift, which the
+ * delete then removes; the replay that runs second is refused. Neither order
+ * records the gift again.
+ */
+Deno.test("[MCP-E3] PostgreSQL a gift delete racing its create's replay never records the gift again", async () => {
+  const suffix = crypto.randomUUID();
+  const own = await register(`gift-race-${suffix}@example.test`, "Gift race");
+  const personId = await person(own, "Ada");
+  const writer = await tokens.mint(own, ["gifts:write"]);
+  const root = `/api/v1/people/${personId}/gifts`;
+  for (const first of ["delete", "replay"] as const) {
+    const body = {
+      name: `Raced lamp ${first} ${suffix}`,
+      requestId: crypto.randomUUID(),
+      status: "idea",
+    };
+    const { gift } = await expect<{ gift: Gift }>(
+      await tokens.bearer(writer.secret, root, { body, method: "POST" }),
+      201,
+      "the keyed create",
+    );
+    const remove = () =>
+      tokens.bearer(writer.secret, `${root}/${gift.id}`, {
+        body: { expectedUpdatedAt: gift.updatedAt },
+        method: "DELETE",
+      });
+    const replay = () =>
+      tokens.bearer(writer.secret, root, { body, method: "POST" });
+    const queue = await holdWorkspaceWrites(sql, own.workspaceId);
+    let deleted: Promise<Response>;
+    let replayed: Promise<Response>;
+    try {
+      if (first === "delete") {
+        deleted = remove();
+        await queue.queued(1);
+        replayed = replay();
+        await queue.queued(2);
+      } else {
+        replayed = replay();
+        await queue.queued(1);
+        deleted = remove();
+        await queue.queued(2);
+      }
+    } finally {
+      await queue.release();
+    }
+    await expect(await deleted!, 200, `${first} first: the delete`);
+    if (first === "delete") {
+      await refused(
+        await replayed!,
+        409,
+        "gift_request_deleted",
+        "the later replay",
+      );
+    } else {
+      const returned = await expect<{ gift: Gift }>(
+        await replayed!,
+        201,
+        "the earlier replay",
+      );
+      assertEquals(returned.gift.id, gift.id, "it returned the gift");
+    }
+    assertEquals(
+      (await sql`select 1 from crm.gifts where id = ${gift.id}::uuid`).length,
+      0,
+      `${first} first: the gift is gone`,
+    );
+  }
+});
+
+Deno.test("[MCP-E3] PostgreSQL a workspace reset removes the request tombstones, so a replayed key creates its record again", async () => {
   const suffix = crypto.randomUUID();
   const email = `gift-reset-${suffix}@example.test`;
   const own = await register(email, "Reset retries");
@@ -989,7 +1087,7 @@ Deno.test("[MCP-D3] PostgreSQL a workspace reset removes the audit history, so a
     await api.request(own, `/api/v1/people/${firstPerson}/gifts`, "POST", body),
     409,
     "gift_request_deleted",
-    "before the reset the audit trail refuses the replay",
+    "before the reset the tombstone refuses the replay",
   );
   const shown = await expect<{
     confirmations: { resetWorkspace: string };
@@ -1013,10 +1111,11 @@ Deno.test("[MCP-D3] PostgreSQL a workspace reset removes the audit history, so a
     200,
     "the owner resets the workspace",
   );
-  const [history] = await sql<{ count: number }[]>`
-    select count(*)::int as count from crm.audit_events
-    where subject_id = ${gift.id}::uuid`;
-  assertEquals(history?.count, 0, "the reset removed the gift's history");
+  assertEquals(
+    await tombstoneOf(own.workspaceId, gift.id),
+    undefined,
+    "the reset removed the gift's tombstone",
+  );
   const signedIn = await api.signIn(email, { workspaceId: own.workspaceId });
   const cookie = sessionCookie(signedIn);
   assert(signedIn.status === 200 && cookie, `sign-in ${signedIn.status}`);
@@ -1075,6 +1174,7 @@ Deno.test({
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       });
       // Each record's revisions so far: every write must pass the last one.

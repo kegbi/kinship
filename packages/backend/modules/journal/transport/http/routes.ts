@@ -106,6 +106,13 @@ export const JOURNAL_FAILURES: FailureTable = {
       status: 400,
       title: "Invalid journal query",
     },
+    "request-deleted": {
+      code: "journal_request_deleted",
+      detail:
+        "The post this requestId created was deleted. Use a new requestId to write it again.",
+      status: 409,
+      title: "Request identifier already used",
+    },
     stale: {
       code: "journal_post_stale",
       detail: "The post changed since it was read. Refresh it and edit again.",

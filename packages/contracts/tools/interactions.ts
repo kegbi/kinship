@@ -37,7 +37,7 @@ import {
 import { type AgentTool, defineTool } from "./define.ts";
 
 const RETRY =
-  "Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.";
+  "Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. Once that record is deleted, its requestId stays used: replaying the create is refused as a conflict (interaction_request_deleted) rather than recording it again.";
 
 /** How every interaction edit reads its fields. */
 const EDIT =
@@ -60,7 +60,7 @@ const COMMUNICATION_REVISION =
 const ARCHIVED = "A record about an archived person is read-only.";
 
 const NO_TOMBSTONE =
-  "There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made.";
+  "There is no undo. Its requestId stays used: replaying the record call that made it is refused as a conflict (interaction_request_deleted) rather than recording it again.";
 
 const MOVES_CADENCE =
   "Moving it later advances the person's stay-in-touch cadence as recording it would.";

@@ -1,4 +1,8 @@
-import { deterministicId, type IdGenerator } from "./ids.ts";
+import {
+  deterministicId,
+  type IdGenerator,
+  isRequestDerivedId,
+} from "./ids.ts";
 import { assert } from "../testing/assert.ts";
 
 const UUID =
@@ -139,4 +143,27 @@ Deno.test("[GAP-006] an id generator is any create() source", () => {
     generator.create() !== generator.create(),
     "the injected generator issues fresh identifiers",
   );
+});
+
+Deno.test("[MCP-E3] only a derived identifier is told apart as one a retry key can reach", async () => {
+  const derived = await deterministicId("kinship.journal.post-id.v1", [
+    workspaceId,
+    requestId,
+  ]);
+  assert(isRequestDerivedId(derived), "a derived id is version 8");
+  assert(
+    isRequestDerivedId(derived.toUpperCase()),
+    "the check ignores case",
+  );
+  for (
+    const other of [
+      crypto.randomUUID(),
+      "00000000-0000-4000-8000-000000000003",
+      "00000000-0000-8000-7000-000000000003",
+      derived.slice(0, -1),
+      "not-a-uuid",
+    ]
+  ) {
+    assert(!isRequestDerivedId(other), `${other} is not derived`);
+  }
 });

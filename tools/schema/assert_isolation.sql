@@ -1,6 +1,6 @@
--- Schema v14 (ADR 0008): the database backstops workspace isolation, and v15
+-- Schema v14 (ADR 0008): the database backstops workspace isolation, v15
 -- (REL-120) brings the root workspaces table and its single-parent children
--- under it.
+-- under it, and v16 (MCP-E3) adds the request tombstones.
 -- Runs as the scratch cluster's superuser against a database holding the
 -- canonical DDL, and acts as the service roles with SET ROLE, which binds
 -- row-level security exactly as a login as that role would.
@@ -68,8 +68,20 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'crm'
-      WHERE c.relkind = 'r' AND c.relforcerowsecurity) <> 75 THEN
-    RAISE EXCEPTION 'expected 75 tenant tables under forced row-level security';
+      WHERE c.relkind = 'r' AND c.relforcerowsecurity) <> 76 THEN
+    RAISE EXCEPTION 'expected 76 tenant tables under forced row-level security';
+  END IF;
+
+  -- Request tombstones (v16, MCP-E3) are append-only for the API, and the
+  -- worker cannot reach them.
+  IF NOT has_table_privilege('kinship_app', 'crm.request_tombstones', 'SELECT')
+    OR NOT has_table_privilege('kinship_app', 'crm.request_tombstones', 'INSERT')
+    OR has_table_privilege('kinship_app', 'crm.request_tombstones', 'UPDATE')
+    OR has_table_privilege('kinship_app', 'crm.request_tombstones', 'DELETE')
+    OR has_table_privilege('kinship_app', 'crm.request_tombstones', 'TRUNCATE')
+    OR has_table_privilege('kinship_worker', 'crm.request_tombstones', 'SELECT')
+    OR has_table_privilege('kinship_worker', 'crm.request_tombstones', 'INSERT') THEN
+    RAISE EXCEPTION 'request tombstones are not append-only for the API alone';
   END IF;
 
   -- Every reference between two tenant tables carries the workspace, apart

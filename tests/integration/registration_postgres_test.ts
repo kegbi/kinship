@@ -693,7 +693,7 @@ Deno.test({
     const artifacts = await readCanonicalArtifacts();
     assert(
       await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
-        "verify-v15",
+        "verify-v16",
       "unmodified canonical catalog verifies",
     );
     await sql`
@@ -862,8 +862,8 @@ Deno.test({
     `;
     assert(
       await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
-        "upgrade-v1-to-v15",
-      "exact repository v1 upgrades transactionally to v15",
+        "upgrade-v1-to-v16",
+      "exact repository v1 upgrades transactionally to v16",
     );
     const [upgraded] = await sql<{
       readonly digest_column: boolean;
@@ -882,8 +882,8 @@ Deno.test({
     );
     assert(
       await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
-        "verify-v15",
-      "upgraded repository v15 verifies idempotently",
+        "verify-v16",
+      "upgraded repository v16 verifies idempotently",
     );
     await expectStructuralDrift(
       () =>

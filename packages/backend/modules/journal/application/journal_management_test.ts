@@ -9,6 +9,7 @@ import * as fixtures from "../../../testing/fixtures.ts";
 import {
   fixedClock,
   inMemoryRepository,
+  memoryTombstones,
   sequentialIds,
 } from "../../../testing/fakes.ts";
 
@@ -84,6 +85,7 @@ Deno.test("[JOURNAL-001] posts and same-day ratings remain one ordered journal",
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: sequentialIds(),
     repository,
+    tombstones: memoryTombstones(),
     transaction: { run: (work) => work({ opaque: {} }) },
   });
 
@@ -132,6 +134,7 @@ Deno.test("[JOURNAL-001] journal validation and dependency failures do not write
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000099" },
     repository,
+    tombstones: memoryTombstones(),
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   const results = await Promise.all([
@@ -183,6 +186,7 @@ Deno.test("[JOURNAL-001] deletion audit uses the stored journal item type", asyn
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
     ids: { next: () => "00000000-0000-4000-8000-000000000099" },
     repository,
+    tombstones: memoryTombstones(),
     transaction: { run: (work) => work({ opaque: {} }) },
   });
 
@@ -220,12 +224,14 @@ function storedJournal(clock = "2026-11-22T10:00:00.000Z") {
       posts.save(post);
       return Promise.resolve({ post, status: "created" });
     },
-    deleteItem: (command) =>
-      Promise.resolve(
+    deleteItem: (command) => {
+      effects.push(`delete:${command.itemId}`);
+      return Promise.resolve(
         posts.delete(command.itemId)
-          ? { itemType: "post", status: "deleted" }
+          ? { itemType: "post", postId: command.itemId, status: "deleted" }
           : { status: "not-found" },
-      ),
+      );
+    },
     findPost: (command) => {
       effects.push(`find:${command.id}:${command.lock ? "lock" : "read"}`);
       return Promise.resolve(posts.find(command.id));
@@ -253,6 +259,18 @@ function storedJournal(clock = "2026-11-22T10:00:00.000Z") {
     },
   };
   const audits: string[] = [];
+  const kept = memoryTombstones();
+  const tombstones = {
+    entries: kept.entries,
+    record: (command: Parameters<typeof kept.record>[0]) => {
+      effects.push(`tombstone:${command.kind}:${command.recordId}`);
+      return kept.record(command);
+    },
+    recorded: (command: Parameters<typeof kept.recorded>[0]) => {
+      effects.push(`tombstone?:${command.recordId}`);
+      return kept.recorded(command);
+    },
+  };
   const journal = createJournalManagement({
     actors: { revalidate: () => Promise.resolve("active" as const) },
     activities: { inspect: () => Promise.resolve({ status: "not-found" }) },
@@ -265,6 +283,7 @@ function storedJournal(clock = "2026-11-22T10:00:00.000Z") {
     clock: { now: () => now },
     ids: sequentialIds(),
     repository,
+    tombstones,
     transaction: { run: (work) => work({ opaque: {} }) },
   });
   return {
@@ -275,6 +294,7 @@ function storedJournal(clock = "2026-11-22T10:00:00.000Z") {
     effects,
     journal,
     posts,
+    tombstones,
   };
 }
 
@@ -428,5 +448,79 @@ Deno.test("MCP-D4 a journal update without expectedUpdatedAt overwrites as befor
   }
   if (store.effects.some((effect) => effect.startsWith("find:"))) {
     throw new Error("no revision read without expectedUpdatedAt");
+  }
+});
+
+Deno.test("MCP-E3 a deleted keyed journal post leaves a tombstone, and its replay is refused rather than recorded again", async () => {
+  const store = storedJournal();
+  const derived = await deriveJournalPostId(actor.workspaceId, JOURNAL_REQUEST);
+  const first = await store.journal.createPost(actor, {
+    ...POST,
+    requestId: JOURNAL_REQUEST,
+  });
+  if (first.status !== "created") throw new Error(first.status);
+  const removed = await store.journal.deleteItem(actor, first.post.id);
+  if (removed.status !== "deleted") throw new Error(removed.status);
+  if (
+    JSON.stringify(store.tombstones.entries) !== JSON.stringify([{
+      kind: "journal_post",
+      recordId: derived,
+      workspaceId: actor.workspaceId,
+    }])
+  ) {
+    throw new Error(`tombstones: ${JSON.stringify(store.tombstones.entries)}`);
+  }
+  store.effects.length = 0;
+  const replay = await store.journal.createPost(actor, {
+    ...POST,
+    requestId: JOURNAL_REQUEST,
+  });
+  if (replay.status !== "request-deleted") {
+    throw new Error(`replay: ${JSON.stringify(replay)}`);
+  }
+  if (store.posts.size !== 0 || store.audits.length !== 2) {
+    throw new Error("a refused replay writes and audits nothing");
+  }
+  // The row is read before the tombstone: a delete that commits between the
+  // two is then seen by the later read (READ COMMITTED), never missed by both.
+  if (
+    store.effects.join(" ") !==
+      `lock:${derived} find:${derived}:read tombstone?:${derived}`
+  ) {
+    throw new Error(`order: ${store.effects.join(" ")}`);
+  }
+});
+
+Deno.test("MCP-E3 a journal replay of a stored post never asks for a tombstone", async () => {
+  const store = storedJournal();
+  await store.journal.createPost(actor, {
+    ...POST,
+    requestId: JOURNAL_REQUEST,
+  });
+  store.effects.length = 0;
+  const replay = await store.journal.createPost(actor, {
+    ...POST,
+    requestId: JOURNAL_REQUEST,
+  });
+  if (replay.status !== "created") throw new Error(replay.status);
+  if (store.effects.some((effect) => effect.startsWith("tombstone"))) {
+    throw new Error(`effects: ${store.effects.join(" ")}`);
+  }
+  const plain = await store.journal.createPost(actor, POST);
+  if (plain.status !== "created") throw new Error(plain.status);
+  if (store.effects.some((effect) => effect.startsWith("tombstone"))) {
+    throw new Error("a create without a requestId asks for no tombstone");
+  }
+});
+
+Deno.test("MCP-E3 deleting a missing journal item leaves no tombstone", async () => {
+  const store = storedJournal();
+  const removed = await store.journal.deleteItem(
+    actor,
+    "00000000-0000-8000-8000-0000000000ff",
+  );
+  if (removed.status !== "not-found") throw new Error(removed.status);
+  if (store.tombstones.entries.length !== 0) {
+    throw new Error("a delete that removed nothing leaves no tombstone");
   }
 });

@@ -1,4 +1,5 @@
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
+import { PostgresRequestTombstones } from "../../packages/backend/modules/governance/adapters/postgres/request_tombstones.ts";
 import {
   createGiftManagement,
   createRecurringDebtCharging,
@@ -211,7 +212,6 @@ Deno.test({
         audit: {
           record: () => Promise.reject(new Error("audit unavailable")),
           recordCharged: () => Promise.reject(new Error("unused")),
-          recorded: () => Promise.reject(new Error("unused")),
         },
         calendar: new PostgresWorkspaceCalendarBoundary(),
         clock: { now: () => new Date() },
@@ -219,6 +219,7 @@ Deno.test({
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       });
       const actor = {
@@ -320,6 +321,7 @@ Deno.test({
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       };
       const gifts = createGiftManagement(dependencies);
@@ -666,6 +668,7 @@ Deno.test({
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       });
 
@@ -1229,6 +1232,7 @@ Deno.test({
         ids: { next: () => crypto.randomUUID() },
         recurringDebts: new PostgresRecurringDebtRepository(),
         repository: new PostgresGiftRepository(),
+        tombstones: new PostgresRequestTombstones(),
         transaction: new PostgresPeopleTransaction(connection.db),
       };
       const management = createGiftManagement(dependencies);

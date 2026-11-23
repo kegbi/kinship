@@ -181,6 +181,7 @@ export const SCHEMA_READS = [
   "personal-crm-schema/v13",
   "personal-crm-schema/v14",
   "personal-crm-schema/v15",
+  "personal-crm-schema/v16",
 ] as const;
 
 /** Environment authority shared by every PostgreSQL-backed application set. */
@@ -294,6 +295,7 @@ export const ARCHITECTURE_PERMISSIONS: Permissions = {
     "personal-crm-schema/v13",
     "personal-crm-schema/v14",
     "personal-crm-schema/v15",
+    "personal-crm-schema/v16",
     "tools",
   ],
 };
@@ -661,8 +663,11 @@ export const MODULES: readonly TaskModule[] = [
       permissions: {
         read: [
           ...API_CONFIGURATION_READS,
-          "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
-          "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
+          "personal-crm-schema/v16/personal_crm_field_catalog_v16.csv",
+          "personal-crm-schema/v16/personal_crm_schema_spec_v16.md",
+          "personal-crm-schema/v16/personal_crm_schema_v16.sql",
+          // MCP-E3: v16 is proven to be v15 plus 0016's table and nothing else.
+          "personal-crm-schema/v16/migrations/0016_add_request_tombstones.sql",
           "personal-crm-schema/v15/personal_crm_schema_v15.sql",
           "packages/contracts",
           // The role table reads the matrix it executes (AUD-K5).
@@ -2302,6 +2307,7 @@ export const MODULES: readonly TaskModule[] = [
           "personal-crm-schema/v13",
           "personal-crm-schema/v14",
           "personal-crm-schema/v15",
+          "personal-crm-schema/v16",
           "apps",
           "packages",
           "tools",

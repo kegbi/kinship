@@ -11,6 +11,7 @@
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { RequestTombstones } from "../../../shared-kernel/request_tombstone.ts";
 import {
   callRecord,
   type CommunicationRecord,
@@ -38,6 +39,8 @@ export interface CommunicationDependencies {
   readonly people: InteractionPersonBoundary;
   readonly publisher?: InteractionRecordedPublisher;
   readonly repository: CommunicationRepository;
+  /** Governance's request tombstones, read by a keyed create (MCP-E3). */
+  readonly tombstones: RequestTombstones;
   readonly transaction: InteractionTransactionRunner;
   readonly workspace: CommunicationWorkspaceBoundary;
 }

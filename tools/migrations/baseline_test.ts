@@ -10,11 +10,11 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("schema v15 migration classifies only exact empty and v1-v15 states", () => {
+Deno.test("schema v16 migration classifies only exact empty and v1-v16 states", () => {
   assert(
     decideSchemaAction({ crmSchemaExists: false, state: "empty" }) ===
-      "apply-v15",
-    "empty target applies the full v15 schema",
+      "apply-v16",
+    "empty target applies the full v16 schema",
   );
   for (
     const version of [
@@ -32,18 +32,19 @@ Deno.test("schema v15 migration classifies only exact empty and v1-v15 states", 
       "v12",
       "v13",
       "v14",
+      "v15",
     ] as const
   ) {
     assert(
       decideSchemaAction({ crmSchemaExists: true, state: version }) ===
-        `upgrade-${version}-to-v15`,
+        `upgrade-${version}-to-v16`,
       `exact ${version} target upgrades`,
     );
   }
   assert(
-    decideSchemaAction({ crmSchemaExists: true, state: "v15" }) ===
-      "verify-v15",
-    "exact v15 target verifies idempotently",
+    decideSchemaAction({ crmSchemaExists: true, state: "v16" }) ===
+      "verify-v16",
+    "exact v16 target verifies idempotently",
   );
   assert(
     decideSchemaAction({ crmSchemaExists: true, state: "drift" }) ===
@@ -91,18 +92,18 @@ Deno.test("baseline verification requires the complete canonical table catalog",
   );
 });
 
-Deno.test("schema v15 specification reports its exact canonical metrics", async () => {
+Deno.test("schema v16 specification reports its exact canonical metrics", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
+    "personal-crm-schema/v16/personal_crm_schema_spec_v16.md",
   );
   assert(
-    specification.includes("SQL tables parsed: **92**") &&
-      specification.includes("SQL columns parsed: **907**") &&
+    specification.includes("SQL tables parsed: **93**") &&
+      specification.includes("SQL columns parsed: **911**") &&
       specification.includes("Explicit indexes: **158**"),
-    "v15 specification metrics drifted from canonical SQL and validation JSON",
+    "v16 specification metrics drifted from canonical SQL and validation JSON",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v15/personal_crm_schema_v15.sql",
+    "personal-crm-schema/v16/personal_crm_schema_v16.sql",
   );
   assert(
     sql.includes("'transactional-failure'") &&
@@ -122,7 +123,7 @@ Deno.test("schema v15 specification reports its exact canonical metrics", async 
   const deliveryComment =
     "Channels for every reminder occurrence not yet sent, including those already scheduled: in_app, email, or both; email requires a verified address.";
   const catalog = await Deno.readTextFile(
-    "personal-crm-schema/v15/personal_crm_field_catalog_v15.csv",
+    "personal-crm-schema/v16/personal_crm_field_catalog_v16.csv",
   );
   assert(
     sql.includes(
@@ -179,10 +180,10 @@ Deno.test("schema v15 specification reports its exact canonical metrics", async 
 
 Deno.test("schema v13 declares the query indexes, the MFA challenge purpose, and the catalog seeds", async () => {
   const specification = await Deno.readTextFile(
-    "personal-crm-schema/v15/personal_crm_schema_spec_v15.md",
+    "personal-crm-schema/v16/personal_crm_schema_spec_v16.md",
   );
   const sql = await Deno.readTextFile(
-    "personal-crm-schema/v15/personal_crm_schema_v15.sql",
+    "personal-crm-schema/v16/personal_crm_schema_v16.sql",
   );
   for (
     const index of [
@@ -280,4 +281,65 @@ Deno.test("[REL-118] the runner strips exactly a file's own transaction wrapper"
       `uncontainable transaction control was accepted: ${contained}`,
     );
   }
+});
+
+Deno.test("[MCP-E3] schema v16 is v15 plus the request tombstones and nothing else", async () => {
+  const v15 = await Deno.readTextFile(
+    "personal-crm-schema/v15/personal_crm_schema_v15.sql",
+  );
+  const v16 = await Deno.readTextFile(
+    "personal-crm-schema/v16/personal_crm_schema_v16.sql",
+  );
+  const migration = await Deno.readTextFile(
+    "personal-crm-schema/v16/migrations/0016_add_request_tombstones.sql",
+  );
+  const table =
+    /CREATE TABLE request_tombstones \([\s\S]*?\n\);\n(?:COMMENT ON [^\n]*\n)+\n/
+      .exec(v16)?.[0];
+  const policy =
+    /-- MCP-E3 \(v16\)[\s\S]*?CREATE POLICY workspace_isolation ON request_tombstones\n[^\n]*\n[^\n]*\n\n/
+      .exec(v16)?.[0];
+  const privileges = /\n-- Request tombstones \(v16, MCP-E3\)[\s\S]*$/.exec(v16)
+    ?.[0];
+  assert(table && policy && privileges, "v16 declares the three blocks");
+  assert(
+    v16.replace(table, "").replace(policy, "").replace(privileges, "") ===
+      v15,
+    "v16 changes nothing in v15 beyond the request tombstones",
+  );
+  assert(
+    table.includes("PRIMARY KEY (workspace_id, record_id)") &&
+      table.includes(
+        "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE",
+      ) &&
+      privileges.includes(
+        "REVOKE UPDATE, DELETE ON request_tombstones FROM kinship_app;",
+      ),
+    "the table is workspace-owned, keyed for a point lookup, and append-only",
+  );
+  // The migration carries the same table, comments, and policy, and leaves the
+  // API the privileges the canonical DDL does.
+  for (const block of [table, policy.replace(/^(?:--[^\n]*\n)+/, "")]) {
+    assert(migration.includes(block), `0016 differs from the DDL: ${block}`);
+  }
+  assert(
+    migration.includes(
+      "GRANT SELECT, INSERT ON request_tombstones TO kinship_app;",
+    ) &&
+      !/\bkinship_worker\b/.test(migration.replace(/^--.*$/gm, "")),
+    "0016 grants the API read and insert and the worker nothing",
+  );
+  const catalog = await Deno.readTextFile(
+    "personal-crm-schema/v16/personal_crm_field_catalog_v16.csv",
+  );
+  const specification = await Deno.readTextFile(
+    "personal-crm-schema/v16/personal_crm_schema_spec_v16.md",
+  );
+  assert(
+    catalog.split("\n").filter((line) =>
+          line.startsWith("Audit,core_domain,request_tombstones,")
+        ).length === 4 &&
+      specification.includes("### `request_tombstones`"),
+    "the catalog and specification describe the new table",
+  );
 });

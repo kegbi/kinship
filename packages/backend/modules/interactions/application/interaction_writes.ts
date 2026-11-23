@@ -4,6 +4,10 @@
  * The write is idempotent by construction: the request's identifier derives
  * the aggregate's, the row under it is locked before anything else is read,
  * and a request that already landed is read back instead of written again.
+ * A request whose record a member deleted finds no row but a tombstone the
+ * delete left (MCP-E3), and is refused as `request-deleted` rather than
+ * recorded again; the row is read before the tombstone, so a delete
+ * committing between the two reads is seen by the second.
  * Everything that decides — the derivation, what counts as the same request,
  * and what a replayed record looks like — is in `domain/interaction_rules.ts`;
  * what is left here is the order the ports are called in and the transaction
@@ -35,7 +39,7 @@ export type RecordInteractionResult =
   | { readonly record: InteractionRecord; readonly status: "created" }
   | Failure<
     "archived-write-rejected" | "forbidden" | "not-found",
-    "hidden" | "idempotency-conflict"
+    "hidden" | "idempotency-conflict" | "request-deleted"
   >
   | ValidationFailure;
 
@@ -108,6 +112,13 @@ export function createInteractionWrites(dependencies: InteractionDependencies) {
             status: "created" as const,
           };
         }
+        if (
+          await dependencies.tombstones.recorded({
+            recordId: id,
+            transaction,
+            workspaceId: canonical.workspaceId,
+          })
+        ) return { status: "request-deleted" as const };
         const workspace = await dependencies.workspace.inspect({
           ...canonical,
           ...(input.kind === "activity" && checked.activityTypeId

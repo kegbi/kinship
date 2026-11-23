@@ -6,7 +6,7 @@ import {
   type StoredRecord,
 } from "../public.ts";
 import { assert, assertEquals } from "../../../testing/assert.ts";
-import { fixedClock } from "../../../testing/fakes.ts";
+import { fixedClock, memoryTombstones } from "../../../testing/fakes.ts";
 
 const actor = {
   memberId: "00000000-0000-4000-8000-0000000000a2",
@@ -166,6 +166,7 @@ function harness(options: {
         emotions: emotionIds.map(option),
         status: "ready" as const,
       };
+  const tombstones = memoryTombstones();
   const changes = createInteractionChanges({
     actors: {
       revalidate: () => Promise.resolve(options.actorStatus ?? "active"),
@@ -219,6 +220,7 @@ function harness(options: {
       },
     },
     repository,
+    tombstones,
     transaction: {
       run: async (work, scope) => {
         transactions += 1;
@@ -258,6 +260,7 @@ function harness(options: {
     records,
     saved,
     scopes,
+    tombstones,
     transactions: () => transactions,
   };
 }
@@ -724,6 +727,11 @@ Deno.test("[MCP-D1] a removal deletes at the expected revision and audits withou
       }],
     );
     assertEquals(subject.published, [], "a removal advances no cadence");
+    assertEquals(
+      subject.tombstones.entries,
+      [{ kind, recordId: id, workspaceId: actor.workspaceId }],
+      `${kind} leaves its request tombstone (MCP-E3)`,
+    );
   }
   const subject = harness();
   assertEquals(
@@ -784,4 +792,5 @@ Deno.test("[MCP-D1] a removal deletes at the expected revision and audits withou
   assert(invalid.status === "validation-error", "removal validated first");
   assert(subject.records.has(callId), "nothing was removed");
   assertEquals(subject.audits, []);
+  assertEquals(subject.tombstones.entries, [], "a refusal leaves no tombstone");
 });

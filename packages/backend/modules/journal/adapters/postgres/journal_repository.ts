@@ -101,7 +101,9 @@ export class PostgresJournalRepository implements JournalRepository {
         .execute(database);
     } else {await sql`delete from crm.journal_items where id = ${command.itemId}::uuid and workspace_id = ${command.workspaceId}::uuid`
         .execute(database);}
-    return { itemType, status: "deleted" };
+    return item.journal_post_id
+      ? { itemType, postId: item.journal_post_id, status: "deleted" }
+      : { itemType, status: "deleted" };
   }
 
   async findPost(

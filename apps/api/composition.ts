@@ -59,6 +59,7 @@ import {
   auditPersonMergeParticipant,
   composeGovernance,
   governanceAuditRecorder,
+  governanceRequestTombstones,
   historicalAuditImportBoundary,
 } from "../../packages/backend/modules/governance/composition.ts";
 import type { LegalAcceptance } from "../../packages/backend/modules/governance/public.ts";
@@ -1056,6 +1057,7 @@ export function composeApiServices(
     database,
     ids: { create: () => crypto.randomUUID() },
     peopleTransaction: peopleTransactionRunner(database),
+    tombstones: governanceRequestTombstones(),
     transaction: workspaceTransactionRunner(database),
     workspaceEntry: activeWorkspaceResolver(),
   };

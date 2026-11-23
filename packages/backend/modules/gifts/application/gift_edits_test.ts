@@ -2,7 +2,8 @@
  * Gift and debt edits, gift deletion, retry-safe creates, and revision checks
  * on the status changes (MCP-D3), against an in-memory store that keeps the
  * schema's rules: a gift's file links go with it, a settlement history is
- * append-only, and the audit history outlives the rows it describes.
+ * append-only, and a deleted record leaves only its request tombstone
+ * (MCP-E3); the audit history is never asked.
  */
 
 import {
@@ -12,8 +13,7 @@ import {
   type StoredGift,
 } from "../public.ts";
 import { assert, assertEquals } from "../../../testing/assert.ts";
-import { recordingAudit, sequentialIds } from "../../../testing/fakes.ts";
-import { giftAuditAction, giftAuditFrom } from "./audit_events.ts";
+import { memoryTombstones, sequentialIds } from "../../../testing/fakes.ts";
 
 const actor = {
   memberId: "50000000-0000-4000-8000-000000000001",
@@ -49,6 +49,7 @@ function fixture(options: { readonly archived?: boolean } = {}) {
     subjectId: string;
   }[] = [];
   const locks: string[] = [];
+  const tombstones = memoryTombstones();
   let archived = options.archived ?? false;
   let now = Date.parse("2026-08-23T10:00:00.000Z");
   const clock = { now: () => new Date(now) };
@@ -123,13 +124,6 @@ function fixture(options: { readonly archived?: boolean } = {}) {
         return Promise.resolve("audit");
       },
       recordCharged: () => Promise.resolve("audit"),
-      recorded: (command) =>
-        Promise.resolve(
-          audits.some((event) =>
-            event.recordType === command.recordType &&
-            event.subjectId === command.subjectId
-          ),
-        ),
     },
     calendar: { timezones: () => Promise.resolve(new Map()) },
     clock,
@@ -353,6 +347,7 @@ function fixture(options: { readonly archived?: boolean } = {}) {
         return Promise.resolve({ debt, status: "deleted" as const });
       },
     },
+    tombstones,
     transaction: { run: (work) => work({ opaque: "transaction" }) },
   };
   return {
@@ -368,6 +363,7 @@ function fixture(options: { readonly archived?: boolean } = {}) {
     management: createGiftManagement(dependencies),
     settlements,
     tick,
+    tombstones,
   };
 }
 
@@ -797,6 +793,11 @@ Deno.test("[MCP-D3] a gift create retried with its request id returns the origin
     "a deleted gift is not recreated by its replay",
   );
   assertEquals(context.gifts.size, 0);
+  assertEquals(context.tombstones.entries, [{
+    kind: "gift",
+    recordId: first.gift.id,
+    workspaceId: actor.workspaceId,
+  }]);
   await createdGift(context);
   await createdGift(context);
   assertEquals(context.gifts.size, 2, "no request id: every create records");
@@ -839,6 +840,11 @@ Deno.test("[MCP-D3] a debt create retried with its request id never settles twic
     );
   }
   await context.management.deleteDebt(actor, personId, first.debt.id);
+  assertEquals(context.tombstones.entries, [{
+    kind: "debt",
+    recordId: first.debt.id,
+    workspaceId: actor.workspaceId,
+  }]);
   assertEquals(
     await context.management.createDebt(actor, personId, input),
     { status: "request-deleted" },
@@ -930,39 +936,30 @@ Deno.test("[MCP-D3] an edit that changes nothing still answers a finished debt a
   );
 });
 
-Deno.test("[MCP-D3] the audit trail is asked about the action every gift event is written under", async () => {
-  for (const recordType of ["debt", "gift", "recurring-debt"] as const) {
-    const recorder = recordingAudit();
-    const audit = giftAuditFrom(recorder);
-    const subjectId = "50000000-0000-4000-8000-0000000000bb";
-    const transaction = { opaque: recordType };
-    const ask = (type: typeof recordType) =>
-      audit.recorded({ actor, recordType: type, subjectId, transaction });
-    assertEquals(await ask(recordType), false, `${recordType} before`);
-    await audit.record({
-      action: "deleted",
+Deno.test("[MCP-E3] a refused gift delete leaves no tombstone, and a plain gift's delete leaves one the adapter may drop", async () => {
+  const context = fixture();
+  const kept = await createdGift(context);
+  assertEquals(
+    await context.management.deleteGift(actor, personId, kept.id, {
+      expectedUpdatedAt: "2026-08-23T09:00:00.000Z",
+    }),
+    { status: "stale" },
+  );
+  assertEquals(
+    await context.management.deleteDebt(
       actor,
-      occurredAt: new Date("2026-08-23T10:00:00.000Z"),
-      record: {
-        amount: "1",
-        createdAt: "2026-08-23T10:00:00.000000Z",
-        direction: "they_owe",
-        id: subjectId,
-        personId,
-        status: "open",
-        updatedAt: "2026-08-23T10:00:00.000000Z",
-      },
-      recordType,
-      transaction,
-    });
-    assertEquals(recorder.actions, [giftAuditAction(recordType)]);
-    assertEquals(await ask(recordType), true, `${recordType} after`);
-    for (
-      const other of (["debt", "gift", "recurring-debt"] as const).filter(
-        (type) => type !== recordType,
-      )
-    ) {
-      assertEquals(await ask(other), false, `${other} is another record`);
-    }
-  }
+      personId,
+      "50000000-0000-8000-8000-0000000000ff",
+    ),
+    { status: "not-found" },
+  );
+  assertEquals(context.tombstones.entries, [], "nothing was deleted");
+  await context.management.deleteGift(actor, personId, kept.id, {
+    expectedUpdatedAt: kept.updatedAt,
+  });
+  // The use case leaves every deleted record's tombstone; keeping only an id
+  // a key could derive is the PostgreSQL adapter's rule.
+  assertEquals(context.tombstones.entries.map((entry) => entry.recordId), [
+    kept.id,
+  ]);
 });

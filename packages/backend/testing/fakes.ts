@@ -14,17 +14,19 @@
  * a framework.
  *
  * The fakes are typed against the shared kernel's contracts (`Clock`,
- * `IdGenerator`, `AuditEventRecorder`, `Logger`) and otherwise structurally, so the
+ * `IdGenerator`, `AuditEventRecorder`, `RequestTombstones`, `Logger`) and
+ * otherwise structurally, so the
  * package imports no module, reaches into no unit's private code, and adds
  * nothing to a test's runtime module graph — every import below is a type.
  */
 
 import type { Clock } from "../shared-kernel/clock.ts";
 import type { IdGenerator } from "../shared-kernel/ids.ts";
+import type { AuditEventWrite } from "../shared-kernel/audit_event.ts";
 import type {
-  AuditEvent,
-  AuditEventWrite,
-} from "../shared-kernel/audit_event.ts";
+  RequestTombstoneKind,
+  RequestTombstones,
+} from "../shared-kernel/request_tombstone.ts";
 import type { LogEvent, Logger } from "../shared-kernel/telemetry.ts";
 
 // --- Time ----------------------------------------------------------------
@@ -90,16 +92,6 @@ export interface RecordingAudit<Command, Id extends string | void = string> {
     command: Command & { readonly when: boolean },
   ): Promise<Id | undefined>;
   assertRecorded(command: Command): Promise<void>;
-  /**
-   * Whether a kernel event with this action and subject was recorded here; a
-   * module's own audit command names no subject and never matches.
-   */
-  subjectRecorded(command: {
-    readonly action: string;
-    readonly subjectId: string;
-    readonly subjectType: string;
-    readonly workspaceId: string;
-  }): Promise<boolean>;
   assertPostcondition(command: Command): Promise<void>;
   assertFailurePostcondition(command: Command): Promise<void>;
 }
@@ -145,17 +137,52 @@ export function recordingAudit<
     recordWhen: (command) =>
       command.when ? record(command) : Promise.resolve(undefined),
     assertRecorded: () => Promise.resolve(),
-    subjectRecorded: (query) =>
-      Promise.resolve(commands.some((command) => {
-        const event = (command as { readonly event?: Partial<AuditEvent> })
-          .event;
-        return event?.action === query.action &&
-          event.subjectId === query.subjectId &&
-          event.subjectType === query.subjectType &&
-          event.workspaceId === query.workspaceId;
-      })),
     assertPostcondition: () => Promise.resolve(),
     assertFailurePostcondition: () => Promise.resolve(),
+  };
+}
+
+// --- Request tombstones ------------------------------------------------------
+
+/** One tombstone a fake was asked to leave. */
+export interface RecordedTombstone {
+  readonly kind: RequestTombstoneKind;
+  readonly recordId: string;
+  readonly workspaceId: string;
+}
+
+/** Request tombstones kept in memory, with every write in order. */
+export interface MemoryTombstones extends RequestTombstones {
+  readonly entries: readonly RecordedTombstone[];
+}
+
+/**
+ * Keeps every tombstone it is asked to leave, whatever the id, and answers
+ * from them; the derived-id rule is the PostgreSQL adapter's, proven against
+ * the real table. Identifiers are compared without case, as `uuid` columns
+ * compare them.
+ */
+export function memoryTombstones(): MemoryTombstones {
+  const entries: RecordedTombstone[] = [];
+  const same = (left: string, right: string) =>
+    left.toLowerCase() === right.toLowerCase();
+  return {
+    entries,
+    record: (command) => {
+      entries.push({
+        kind: command.kind,
+        recordId: command.recordId,
+        workspaceId: command.workspaceId,
+      });
+      return Promise.resolve();
+    },
+    recorded: (query) =>
+      Promise.resolve(
+        entries.some((entry) =>
+          same(entry.recordId, query.recordId) &&
+          same(entry.workspaceId, query.workspaceId)
+        ),
+      ),
   };
 }
 

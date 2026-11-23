@@ -5,7 +5,9 @@
  * is one member's and the repository scopes each row by the workspace the
  * caller's standing was just established in. `deleteItem` answers with the
  * kind of item it removed rather than with nothing, because the audit event
- * has to name what went away and the row is gone by the time it is written.
+ * has to name what went away and the row is gone by the time it is written;
+ * a removed post also names the post's own id, which its request tombstone
+ * records (MCP-E3).
  *
  * `lockRequest` and `findPost` are the retry and revision gates (MCP-D4): the
  * advisory lock a derived post identifier names serializes two retries of one
@@ -49,6 +51,8 @@ export interface JournalRepository {
   ): Promise<
     | {
       readonly itemType: JournalItemType;
+      /** The removed post's id, when the item was a post. */
+      readonly postId?: string;
       readonly status: "deleted";
     }
     | Failure<"forbidden" | "not-found">

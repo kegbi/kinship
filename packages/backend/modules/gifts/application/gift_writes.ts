@@ -15,7 +15,8 @@
  * A create may carry a retry key (MCP-D3). It derives the record's id, a lock
  * on that id serializes retries of one request, and a retry finds the record
  * the first attempt wrote: the same proposal returns it, a different one is a
- * conflict, and a record since deleted is never written again. A status
+ * conflict, and a record since deleted is never written again: its delete
+ * left a request tombstone (MCP-E3) the retry finds. A status
  * change may carry the revision it was read at, and a stale one changes
  * nothing.
  */
@@ -50,6 +51,7 @@ import {
   AttachmentFailure,
   type GiftManagementDependencies,
   type GiftMutationFailure,
+  leaveTombstone,
   mutationFailure,
   recordId,
   represent,
@@ -89,7 +91,6 @@ async function replayedGift(
   return await unreplayable(
     dependencies,
     actor,
-    "gift",
     id,
     () => dependencies.repository.giftExists({ ...actor, id, transaction }),
     transaction,
@@ -143,7 +144,6 @@ async function replayedDebt(
   return await unreplayable(
     dependencies,
     actor,
-    "debt",
     id,
     () => dependencies.repository.debtExists({ ...actor, id, transaction }),
     transaction,
@@ -167,6 +167,14 @@ export function createGiftWrites(dependencies: GiftManagementDependencies) {
             transaction,
           });
           if (deleted.status !== "deleted") return deleted;
+          await leaveTombstone(
+            dependencies,
+            actor,
+            "debt",
+            deleted.debt.id,
+            occurredAt,
+            transaction,
+          );
           await dependencies.audit.record({
             action: "deleted",
             actor,

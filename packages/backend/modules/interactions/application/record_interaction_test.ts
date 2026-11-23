@@ -10,7 +10,11 @@ import {
   type StoredInteraction,
 } from "../public.ts";
 import { assert } from "../../../testing/assert.ts";
-import { fixedClock, inMemoryRepository } from "../../../testing/fakes.ts";
+import {
+  fixedClock,
+  inMemoryRepository,
+  memoryTombstones,
+} from "../../../testing/fakes.ts";
 
 function deepEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
@@ -57,6 +61,16 @@ function harness(overrides: {
   );
   let committed = false;
   let findRequests = 0;
+  const kept = memoryTombstones();
+  const tombstoneQueries: string[] = [];
+  const tombstones = {
+    entries: kept.entries,
+    record: kept.record,
+    recorded: (command: Parameters<typeof kept.recorded>[0]) => {
+      tombstoneQueries.push(command.recordId);
+      return kept.recorded(command);
+    },
+  };
   const repository: InteractionRepository = {
     lockRequest() {
       return Promise.resolve();
@@ -191,6 +205,7 @@ function harness(overrides: {
         }))),
     },
     repository,
+    tombstones,
     transaction: {
       async run(work) {
         const result = await work({ opaque: "transaction" });
@@ -313,6 +328,7 @@ function harness(overrides: {
         }))),
     },
     repository: communicationRepository,
+    tombstones,
     transaction: {
       async run(work) {
         const result = await work({ opaque: "transaction" });
@@ -357,8 +373,12 @@ function harness(overrides: {
   return {
     calls,
     committed: () => committed,
+    communicationRequests,
     findRequests: () => findRequests,
     management: { ...management, ...communication },
+    requests,
+    tombstoneQueries,
+    tombstones,
   };
 }
 
@@ -763,5 +783,123 @@ Deno.test("INTERACTION-001 reauthorizes inside the transaction before replay loo
     current.calls.join("|") === "authorize" &&
       current.findRequests() === authorizedLookups,
     "repository replay lookup ran before transaction-scoped authorization",
+  );
+});
+
+Deno.test("[MCP-E3] a note or activity whose request was deleted is refused, after the row lookup, and never recorded again", async () => {
+  for (const kind of ["note", "activity"] as const) {
+    const current = harness();
+    const input = kind === "note"
+      ? { body: "Kept once", kind, personId: ada, requestId }
+      : {
+        happenedAt: "2026-08-17T10:00:00.000Z",
+        kind,
+        participantIds: [ada],
+        requestId,
+        summary: "Walk",
+      };
+    const first = await current.management.record(actor, input);
+    if (first.status !== "created") throw new Error(first.status);
+    // What the delete use case leaves behind: no row, and a tombstone.
+    current.requests.delete(first.record.id);
+    await current.tombstones.record({
+      deletedAt: new Date("2026-08-17T13:00:00.000Z"),
+      kind,
+      recordId: first.record.id,
+      transaction: { opaque: "transaction" },
+      workspaceId: actor.workspaceId,
+    });
+    current.calls.length = 0;
+    current.tombstoneQueries.length = 0;
+    const lookups = current.findRequests();
+    const replay = await current.management.record(actor, input);
+    assert(
+      replay.status === "request-deleted",
+      `${kind} replay after delete: ${JSON.stringify(replay)}`,
+    );
+    assert(
+      current.calls.join(" ") === "authorize" &&
+        current.findRequests() === lookups + 1 &&
+        current.tombstoneQueries.join(" ") === first.record.id,
+      `${kind} reads its row, then the tombstone, and writes nothing: ${
+        current.calls.join(" ")
+      }`,
+    );
+    assert(current.requests.size === 0, `${kind} was not recorded again`);
+  }
+});
+
+Deno.test("[MCP-E3] a call or conversation whose request was deleted is refused and never recorded again", async () => {
+  for (const kind of ["call", "conversation"] as const) {
+    const current = harness();
+    const input = kind === "call"
+      ? {
+        calledAt: "2026-08-17T10:00:00.000Z",
+        contactWasCaller: false,
+        emotionIds: [],
+        kind,
+        personId: ada,
+        requestId,
+      }
+      : {
+        channelTypeId,
+        happenedAt: "2026-08-17T10:00:00.000Z",
+        kind,
+        messages: [{
+          content: "Hello",
+          direction: "outbound" as const,
+          writtenAt: "2026-08-17T10:00:00.000Z",
+        }],
+        personId: ada,
+        requestId,
+      };
+    const first = await current.management.recordCommunication(actor, input);
+    if (first.status !== "created") throw new Error(first.status);
+    current.communicationRequests.delete(first.record.id);
+    await current.tombstones.record({
+      deletedAt: new Date("2026-08-17T13:00:00.000Z"),
+      kind,
+      recordId: first.record.id,
+      transaction: { opaque: "transaction" },
+      workspaceId: actor.workspaceId,
+    });
+    current.calls.length = 0;
+    current.tombstoneQueries.length = 0;
+    const replay = await current.management.recordCommunication(actor, input);
+    assert(
+      replay.status === "request-deleted",
+      `${kind} replay after delete: ${JSON.stringify(replay)}`,
+    );
+    assert(
+      current.calls.join(" ") === "authorize" &&
+        current.tombstoneQueries.join(" ") === first.record.id,
+      `${kind} writes nothing: ${current.calls.join(" ")}`,
+    );
+    assert(
+      current.communicationRequests.size === 0,
+      `${kind} was not recorded again`,
+    );
+  }
+});
+
+Deno.test("[MCP-E3] an ordinary interaction replay returns the stored record without asking for a tombstone", async () => {
+  const current = harness();
+  const input = {
+    body: "Stable",
+    kind: "note" as const,
+    personId: ada,
+    requestId,
+  };
+  const first = await current.management.record(actor, input);
+  if (first.status !== "created") throw new Error(first.status);
+  current.tombstoneQueries.length = 0;
+  const replay = await current.management.record(actor, input);
+  assert(
+    replay.status === "created" && replay.record.id === first.record.id,
+    "the stored note is returned",
+  );
+  assert(
+    current.tombstoneQueries.length === 0,
+    "a found row needs no tombstone",
   );
 });

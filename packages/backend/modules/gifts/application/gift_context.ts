@@ -14,6 +14,10 @@
 import type { Clock } from "../../../shared-kernel/clock.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { deterministicId } from "../../../shared-kernel/ids.ts";
+import type {
+  RequestTombstoneKind,
+  RequestTombstones,
+} from "../../../shared-kernel/request_tombstone.ts";
 import { uuid } from "../../../shared-kernel/validation.ts";
 import {
   hydrateGifts,
@@ -46,6 +50,8 @@ export interface GiftManagementDependencies {
   readonly ids: { next(): string };
   readonly recurringDebts: RecurringDebtRepository;
   readonly repository: GiftRepository;
+  /** Governance's request tombstones, for a deleted keyed record (MCP-E3). */
+  readonly tombstones: RequestTombstones;
   readonly transaction: GiftTransactionRunner;
 }
 
@@ -106,21 +112,26 @@ export async function recordId(
     : dependencies.ids.next();
 }
 
+/** The request tombstone kind of each record this module deletes. */
+export const TOMBSTONE_KIND: Readonly<
+  Record<"debt" | "gift" | "recurring-debt", RequestTombstoneKind>
+> = { debt: "debt", gift: "gift", "recurring-debt": "recurring_debt" };
+
 /**
  * Why a retried create whose record is not under this person cannot proceed,
  * or nothing when it is the first attempt.
  *
  * A row with the derived id elsewhere in the workspace — under another
  * person, or moved by a merge — is the key reused for something else. No row
- * but an audit event about the id means the record was created and then
- * deleted: rows here are deleted permanently, so the audit history is the
- * one trace left, and recreating the record would bring back what a member
- * removed.
+ * but a request tombstone under the id means the record was created and then
+ * deleted (MCP-E3): rows here are deleted permanently, each delete leaves its
+ * tombstone in the same transaction, and recreating the record would bring
+ * back what a member removed. The rows are read before the tombstone, so a
+ * delete that commits between the two reads is seen by the second.
  */
 export async function unreplayable(
-  dependencies: Pick<GiftManagementDependencies, "audit">,
+  dependencies: Pick<GiftManagementDependencies, "tombstones">,
   actor: GiftActor,
-  recordType: "debt" | "gift" | "recurring-debt",
   id: string,
   exists: () => Promise<boolean>,
   transaction: GiftTransaction,
@@ -128,14 +139,31 @@ export async function unreplayable(
   Failure<never, "idempotency-conflict" | "request-deleted"> | undefined
 > {
   if (await exists()) return { status: "idempotency-conflict" };
-  return await dependencies.audit.recorded({
-      actor,
-      recordType,
-      subjectId: id,
+  return await dependencies.tombstones.recorded({
+      recordId: id,
       transaction,
+      workspaceId: actor.workspaceId,
     })
     ? { status: "request-deleted" }
     : undefined;
+}
+
+/** Leaves a permanently deleted record's request tombstone (MCP-E3). */
+export async function leaveTombstone(
+  dependencies: Pick<GiftManagementDependencies, "tombstones">,
+  actor: GiftActor,
+  recordType: "debt" | "gift" | "recurring-debt",
+  id: string,
+  deletedAt: Date,
+  transaction: GiftTransaction,
+): Promise<void> {
+  await dependencies.tombstones.record({
+    deletedAt,
+    kind: TOMBSTONE_KIND[recordType],
+    recordId: id,
+    transaction,
+    workspaceId: actor.workspaceId,
+  });
 }
 
 /** The failure an attachment boundary reports, carried out of a transaction. */

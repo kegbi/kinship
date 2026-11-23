@@ -9,6 +9,7 @@ import {
 import { assertEquals } from "../../../testing/assert.ts";
 import {
   fixedClock,
+  memoryTombstones,
   recordingAudit,
   sequentialIds,
 } from "../../../testing/fakes.ts";
@@ -89,7 +90,6 @@ function fixture(
     audit: {
       record: (command) => audit.record(command),
       recordCharged: () => Promise.resolve("charged-audit"),
-      recorded: () => Promise.resolve(false),
     },
     calendar: { timezones: () => Promise.resolve(new Map()) },
     clock: fixedClock("2026-08-23T10:00:00.000Z"),
@@ -226,6 +226,7 @@ function fixture(
         return Promise.resolve({ gift, status: "saved" });
       },
     },
+    tombstones: memoryTombstones(),
     transaction: {
       run: async (work) => {
         const giftsBefore = new Map(gifts);

@@ -22,7 +22,10 @@ import { browserSecurityPolicy } from "../../apps/api/security_config.ts";
 import { composeFiles } from "../../packages/backend/modules/files/composition.ts";
 import type { ObjectStorage } from "../../packages/backend/modules/files/public.ts";
 import { giftAttachmentTarget } from "../../packages/backend/modules/gifts/composition.ts";
-import { governanceAuditRecorder } from "../../packages/backend/modules/governance/composition.ts";
+import {
+  governanceAuditRecorder,
+  governanceRequestTombstones,
+} from "../../packages/backend/modules/governance/composition.ts";
 import { PostgresPersonAvatarRepository } from "../../packages/backend/modules/people/adapters/postgres/person_avatar_repository.ts";
 import { peopleTransactionRunner } from "../../packages/backend/modules/people/composition.ts";
 import {
@@ -546,6 +549,7 @@ Deno.test("[PEOPLE-007] a replacement that cannot be linked is discarded whateve
       database: connection.db,
       ids: { create: () => crypto.randomUUID() },
       peopleTransaction: peopleTransactionRunner(connection.db),
+      tombstones: governanceRequestTombstones(),
       transaction: workspaceTransactionRunner(connection.db),
       workspaceEntry: activeWorkspaceResolver(),
     };
@@ -651,6 +655,7 @@ Deno.test("[REL-082] an upload refused once its bytes are stored leaves no proce
       database: connection.db,
       ids: { create: () => crypto.randomUUID() },
       peopleTransaction: peopleTransactionRunner(connection.db),
+      tombstones: governanceRequestTombstones(),
       transaction: workspaceTransactionRunner(connection.db),
       workspaceEntry: activeWorkspaceResolver(),
     };

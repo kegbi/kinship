@@ -5,7 +5,7 @@
     "method": "POST",
     "path": "/api/v1/mcp"
   },
-  "instructions": "Kinship is a personal relationship manager: people and their profiles, relationships, notes and activities, tasks, reminders, a journal, and gifts and debts, in one workspace. Only the tools this token's scopes allow are listed, and the member's role can still refuse a call. Call get_context first to see the workspace, role, and scopes. Find a person's id with list_people or search_workspace before reading or writing about them. Read before you update: updates and deletes take expectedUpdatedAt or another revision from the matching list or get tool, and a stale one is refused as a conflict, so read again. On creates that take a requestId, pass your own UUID and reuse it when you retry, but never replay a create after deleting what it made. A refused call returns isError with the problem code and field messages; correct the arguments rather than retrying unchanged.",
+  "instructions": "Kinship is a personal relationship manager: people and their profiles, relationships, notes and activities, tasks, reminders, a journal, and gifts and debts, in one workspace. Only the tools this token's scopes allow are listed, and the member's role can still refuse a call. Call get_context first to see the workspace, role, and scopes. Find a person's id with list_people or search_workspace before reading or writing about them. Read before you update: updates and deletes take expectedUpdatedAt or another revision from the matching list or get tool, and a stale one is refused as a conflict, so read again. On creates that take a requestId, pass your own UUID and reuse it when you retry; once what it made is deleted, its requestId stays used and a replay is refused as a conflict (a stay-in-touch cadence is the exception: an old requestId sets it again), so use a new one to make it again. A refused call returns isError with the problem code and field messages; correct the arguments rather than retrying unchanged.",
   "areas": [
     {
       "id": "context",
@@ -3098,7 +3098,7 @@
       "name": "record_note",
       "area": "interactions",
       "title": "Record a note",
-      "description": "Adds a note to one person's profile and returns it with its id. isFavorited pins it to the Today page's favourite notes. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again. update_note and delete_note change it under interactions:write.",
+      "description": "Adds a note to one person's profile and returns it with its id. isFavorited pins it to the Today page's favourite notes. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. Once that record is deleted, its requestId stays used: replaying the create is refused as a conflict (interaction_request_deleted) rather than recording it again. update_note and delete_note change it under interactions:write.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3146,7 +3146,7 @@
       "name": "record_activity",
       "area": "interactions",
       "title": "Record an activity",
-      "description": "Records something done together with one or more people (participantIds from list_people): when it happened (an ISO instant with offset), a short summary, and optionally a description, an activity type, and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
+      "description": "Records something done together with one or more people (participantIds from list_people): when it happened (an ISO instant with offset), a short summary, and optionally a description, an activity type, and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. Once that record is deleted, its requestId stays used: replaying the create is refused as a conflict (interaction_request_deleted) rather than recording it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3221,7 +3221,7 @@
       "name": "record_call",
       "area": "interactions",
       "title": "Record a call",
-      "description": "Records a phone call with one person: when it happened (calledAt), whether they called you (contactWasCaller), and optionally what was said and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
+      "description": "Records a phone call with one person: when it happened (calledAt), whether they called you (contactWasCaller), and optionally what was said and emotions from list_activity_options. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. Once that record is deleted, its requestId stays used: replaying the create is refused as a conflict (interaction_request_deleted) rather than recording it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3284,7 +3284,7 @@
       "name": "record_conversation",
       "area": "interactions",
       "title": "Record a conversation",
-      "description": "Records a written conversation with one person on a channel (channelTypeId from list_conversation_options), optionally with a title, the contact method used (contactMethodId from list_profile_facts, section contact-methods, which requires people:profile:read), and its messages in order. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. A delete leaves no tombstone: the same requestId after the record was deleted records it again.",
+      "description": "Records a written conversation with one person on a channel (channelTypeId from list_conversation_options), optionally with a title, the contact method used (contactMethodId from list_profile_facts, section contact-methods, which requires people:profile:read), and its messages in order. It counts as being in touch: when it happened after a person's last contact, their stay-in-touch cadence's last contact moves to it and its next due date follows. Pass your own requestId (a UUID v4) and reuse it when you retry, so the retry returns the original record instead of adding a second one. Once that record is deleted, its requestId stays used: replaying the create is refused as a conflict (interaction_request_deleted) rather than recording it again.",
       "scope": "interactions:create",
       "annotations": {
         "readOnlyHint": false,
@@ -3514,7 +3514,7 @@
       "name": "delete_note",
       "area": "interactions",
       "title": "Delete a note",
-      "description": "Permanently deletes one note: it leaves the person's notes, timeline, search, and Today's favourite notes. interactionId is the note's id. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity or get_today_favorite_notes, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "description": "Permanently deletes one note: it leaves the person's notes, timeline, search, and Today's favourite notes. interactionId is the note's id. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity or get_today_favorite_notes, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo. Its requestId stays used: replaying the record call that made it is refused as a conflict (interaction_request_deleted) rather than recording it again. A record about an archived person is read-only.",
       "scope": "interactions:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3647,7 +3647,7 @@
       "name": "delete_activity",
       "area": "interactions",
       "title": "Delete an activity",
-      "description": "Permanently deletes one activity for every participant, not only the person you found it through, with its emotions and its journal entry: it leaves every participant's activities and timeline, search, the journal, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "description": "Permanently deletes one activity for every participant, not only the person you found it through, with its emotions and its journal entry: it leaves every participant's activities and timeline, search, the journal, and Today. Stay-in-touch cadences it advanced are not moved back. expectedUpdatedAt is the record's updatedAt from list_notes_and_activities, which requires interactions:read, or from get_today_recent_activity, which requires today:read, or from the last edit's answer; a token with neither grant cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo. Its requestId stays used: replaying the record call that made it is refused as a conflict (interaction_request_deleted) rather than recording it again. A record about an archived person is read-only.",
       "scope": "interactions:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3756,7 +3756,7 @@
       "name": "delete_call",
       "area": "interactions",
       "title": "Delete a call",
-      "description": "Permanently deletes one call and its emotions: it leaves the person's calls, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "description": "Permanently deletes one call and its emotions: it leaves the person's calls, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo. Its requestId stays used: replaying the record call that made it is refused as a conflict (interaction_request_deleted) rather than recording it again. A record about an archived person is read-only.",
       "scope": "interactions:write",
       "annotations": {
         "readOnlyHint": false,
@@ -3903,7 +3903,7 @@
       "name": "delete_conversation",
       "area": "interactions",
       "title": "Delete a conversation",
-      "description": "Permanently deletes one conversation and its messages: it leaves the person's conversations, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo and no tombstone: replaying the record call that made it, with its old requestId, records it again, so never replay a create after deleting what it made. A record about an archived person is read-only.",
+      "description": "Permanently deletes one conversation and its messages: it leaves the person's conversations, last-contact date, and timeline. A stay-in-touch cadence it advanced is not moved back. expectedUpdatedAt is the record's updatedAt from list_calls_and_conversations or the last edit's answer; list_calls_and_conversations requires interactions:read, and a token without it cannot obtain one. A stale revision is refused as a conflict: read it again. There is no undo. Its requestId stays used: replaying the record call that made it is refused as a conflict (interaction_request_deleted) rather than recording it again. A record about an archived person is read-only.",
       "scope": "interactions:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4672,7 +4672,7 @@
       "name": "create_journal_post",
       "area": "journal",
       "title": "Write a journal post",
-      "description": "Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it. Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. A deleted post leaves no record, so the same requestId after delete_journal_item writes it again.",
+      "description": "Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it. Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. Once delete_journal_item removes the post, its requestId stays used: replaying the create is refused as a conflict (journal_request_deleted) rather than writing it again.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,
@@ -4855,7 +4855,7 @@
       "name": "delete_journal_item",
       "area": "journal",
       "title": "Delete a journal item",
-      "description": "Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. There is no revision check. list_journal_items and get_journal_item require journal:read; a token without it cannot obtain one. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
+      "description": "Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. A deleted post's requestId stays used: replaying the create_journal_post call that made it is refused as a conflict (journal_request_deleted). There is no revision check. list_journal_items and get_journal_item require journal:read; a token without it cannot obtain one. The journal is workspace-wide, not private to its author: every member can read, edit, and delete it.",
       "scope": "journal:write",
       "annotations": {
         "readOnlyHint": false,

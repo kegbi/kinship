@@ -9,6 +9,7 @@
  * instance in its final test, most of them through `closeResources()`.
  */
 
+import { PostgresRequestTombstones } from "../../packages/backend/modules/governance/adapters/postgres/request_tombstones.ts";
 import {
   CapturedVerificationMail,
   createConfiguredApiApp,
@@ -77,6 +78,7 @@ export const directInteractions = createInteractionManagement({
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),
   repository: new PostgresInteractionRepository(),
+  tombstones: new PostgresRequestTombstones(),
   transaction: new PostgresPeopleTransaction(directConnection.db),
   workspace: new PostgresInteractionWorkspaceBoundary(),
 });
@@ -86,6 +88,7 @@ export const directCommunications = createCommunicationManagement({
   clock: { now: () => new Date("2026-08-17T12:30:00.000Z") },
   people: new PostgresRelationshipPersonBoundary(),
   repository: new PostgresCommunicationRepository(),
+  tombstones: new PostgresRequestTombstones(),
   transaction: new PostgresPeopleTransaction(directConnection.db),
   workspace: new PostgresInteractionWorkspaceBoundary(),
 });

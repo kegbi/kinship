@@ -17,12 +17,7 @@ import type { GiftAudit } from "../ports/audit.ts";
 /** The three kinds of record this module audits. */
 type GiftRecordType = Parameters<GiftAudit["record"]>[0]["recordType"];
 
-/**
- * The action every event about a record of this type is stored under. It is
- * the one spelling both the writes and the replay-after-delete lookup use: if
- * the two ever differed, the lookup would find nothing and a retried create
- * would quietly recreate a record a member deleted.
- */
+/** The action every event about a record of this type is stored under. */
 export function giftAuditAction(recordType: GiftRecordType): string {
   return `gifts.${recordType}-created-or-state-changed`;
 }
@@ -90,16 +85,6 @@ export function describeChargedDebtEvent(
 
 export function giftAuditFrom(recorder: AuditEventRecorder): GiftAudit {
   return {
-    // Asked under the same action and subject type the events above are
-    // written with, so a deleted record's history is always found.
-    recorded: (command) =>
-      recorder.subjectRecorded({
-        action: giftAuditAction(command.recordType),
-        subjectId: command.subjectId,
-        subjectType: giftSubjectType(command.recordType),
-        transaction: command.transaction,
-        workspaceId: command.actor.workspaceId,
-      }),
     record: (command) =>
       recorder.record({
         event: describeGiftEvent(command),

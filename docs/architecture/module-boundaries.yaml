@@ -1,13 +1,15 @@
 schemaVersion: 1
 decisionStatus: accepted
-schemaSource: personal-crm-schema/v15/personal_crm_schema_v15.sql
+schemaSource: personal-crm-schema/v16/personal_crm_schema_v16.sql
 
-# Beside the categories below, reviewed tickets placed four contracts in the
+# Beside the categories below, reviewed tickets placed five contracts in the
 # kernel: text and value validation (`validation.ts`, GAP-006), the transaction
 # port and its unavailable-failure runner (`transaction.ts`, GAP-007), the audit
-# event recorder contract (`audit_event.ts`, GAP-011), and the `Logger` port
-# with its closed event catalogue (`telemetry.ts`, GAP-039). All are pure types
-# or I/O-free functions. They are not yet reflected in `allowedContents`;
+# event recorder contract (`audit_event.ts`, GAP-011), the `Logger` port with
+# its closed event catalogue (`telemetry.ts`, GAP-039), and the request
+# tombstone port (`request_tombstone.ts`, MCP-E3), through which every module
+# reaches the table governance owns, as it reaches `audit_events`. All are pure
+# types or I/O-free functions. They are not yet reflected in `allowedContents`;
 # extending the allowlist needs architecture review.
 sharedKernel:
   path: packages/backend/shared-kernel
@@ -386,9 +388,12 @@ modules:
   - id: governance
     path: packages/backend/modules/governance
     kind: core
-    description: Product audit history, legal documents, and immutable acceptances.
+    description: Product audit history, request tombstones, legal documents, and immutable acceptances.
     ownsTables:
       - audit_events
+      # Schema v16 (MCP-E3): the ids of permanently deleted keyed records,
+      # written and read only through the kernel's `RequestTombstones` port.
+      - request_tombstones
       - legal_documents
       - legal_acceptances
     publicEntryPoints: [packages/backend/modules/governance/public.ts]

@@ -1,5 +1,5 @@
 /**
- * Every reference between two tenant tables, generated from the schema v15
+ * Every reference between two tenant tables, generated from the schema v16
  * foreign-key catalog (ADR 0008). Do not edit by hand: regenerate it from a
  * migrated database with the catalog query in
  * `tests/integration/workspace_isolation_postgres_test.ts`, which fails while

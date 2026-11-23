@@ -430,6 +430,11 @@ async function seedEverything(
     await tx`insert into crm.audit_events
       (workspace_id, actor_member_id, person_id, action)
       values (${w}, ${m}, ${ada}, 'erasure.seeded')`;
+    // v16 (MCP-E3): a reset or a delete removes the request tombstones with
+    // the workspace, so a key may create its record again after a reset.
+    await tx`insert into crm.request_tombstones
+      (workspace_id, record_id, record_type)
+      values (${w}, ${crypto.randomUUID()}, 'note')`;
     await tx`insert into crm.statistics_snapshots (workspace_id, scope, counters)
       values (${w}, 'workspace', '{}'::jsonb)`;
     await tx`insert into crm.api_tokens (user_id, workspace_id, name, token_hash)

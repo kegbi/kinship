@@ -7,7 +7,6 @@ import {
   type AuditEventRecorder,
   type AuditEventWrite,
   auditPayload,
-  type AuditSubjectQuery,
   type ConditionalAuditEventWrite,
 } from "../../../../shared-kernel/audit_event.ts";
 
@@ -138,24 +137,5 @@ export class PostgresAuditEventRecorder
     if (result.rows[0]?.count !== (command.matches ?? 1)) {
       throw new Error(command.failure ?? "Audit event postcondition failed.");
     }
-  }
-
-  /**
-   * Served by the `(workspace_id, action)` index, which yields every event of
-   * that action in the workspace; the subject is then a filter over those
-   * rows, so the cost grows with that action's history. An index on
-   * `(workspace_id, subject_id)` at the next schema version is the remedy.
-   */
-  async subjectRecorded(command: AuditSubjectQuery): Promise<boolean> {
-    const result = await sql<{ readonly found: boolean }>`
-      select exists (
-        select 1 from crm.audit_events event
-        where event.workspace_id = ${command.workspaceId}::uuid
-          and event.action = ${command.action}
-          and event.subject_type = ${command.subjectType}
-          and event.subject_id = ${command.subjectId}::uuid
-      ) as found
-    `.execute(databaseFromSession(command.transaction));
-    return result.rows[0]?.found === true;
   }
 }

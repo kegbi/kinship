@@ -14,9 +14,18 @@
  * when it is not. A post edited with `expectedUpdatedAt` is read under lock
  * first and refused as `stale` when that is no longer its revision. Without
  * either field both writes are exactly what they were.
+ *
+ * A post is deleted permanently, so its delete leaves a request tombstone in
+ * the same transaction (MCP-E3), and a keyed create that finds no row under
+ * its derived identifier asks for one and is refused as `request-deleted`
+ * rather than recording the post again. The row is read before the tombstone:
+ * under READ COMMITTED each statement sees every delete committed before it
+ * began, and a delete removes the row and writes its tombstone in one commit,
+ * so a create that missed the row cannot also miss the tombstone.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { RequestTombstones } from "../../../shared-kernel/request_tombstone.ts";
 import type { Failure } from "../../../shared-kernel/result.ts";
 import { runOrUnavailable } from "../../../shared-kernel/transaction.ts";
 import { isInstant, uuid } from "../../../shared-kernel/validation.ts";
@@ -47,6 +56,8 @@ export interface JournalManagementDependencies {
   readonly clock: Clock;
   readonly ids: { next(): string };
   readonly repository: JournalRepository;
+  /** Governance's request tombstones, for a deleted keyed post (MCP-E3). */
+  readonly tombstones: RequestTombstones;
   readonly transaction: JournalTransactionRunner;
 }
 
@@ -104,6 +115,13 @@ export function createJournalManagement(
               ? { post: replay, status: "created" as const }
               : { status: "idempotency-conflict" as const };
           }
+          if (
+            await dependencies.tombstones.recorded({
+              recordId: id,
+              transaction,
+              workspaceId: actor.workspaceId,
+            })
+          ) return { status: "request-deleted" as const };
         }
         const result = await dependencies.repository.createPost({
           ...actor,
@@ -136,6 +154,15 @@ export function createJournalManagement(
           transaction,
         });
         if (result.status === "deleted") {
+          if (result.postId) {
+            await dependencies.tombstones.record({
+              deletedAt: now,
+              kind: "journal_post",
+              recordId: result.postId,
+              transaction,
+              workspaceId: actor.workspaceId,
+            });
+          }
           await dependencies.audit.record({
             action: "deleted",
             actor,
@@ -145,7 +172,9 @@ export function createJournalManagement(
             transaction,
           });
         }
-        return result;
+        return result.status === "deleted"
+          ? { itemType: result.itemType, status: result.status }
+          : result;
       }),
     linkActivity: async (actor: JournalActor, activityId: string) =>
       await execute(actor, async (transaction, now) => {

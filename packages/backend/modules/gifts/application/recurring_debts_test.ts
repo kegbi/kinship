@@ -8,7 +8,11 @@ import {
 } from "../public.ts";
 import { describeChargedDebtEvent, describeGiftEvent } from "./audit_events.ts";
 import { assert, assertEquals } from "../../../testing/assert.ts";
-import { fixedClock, sequentialIds } from "../../../testing/fakes.ts";
+import {
+  fixedClock,
+  memoryTombstones,
+  sequentialIds,
+} from "../../../testing/fakes.ts";
 
 const actor = {
   memberId: "10000000-0000-4000-8000-000000000001",
@@ -205,7 +209,7 @@ function fixture(
 ) {
   const memory = memoryRepository(options);
   const audits: string[] = [];
-  const audited = new Set<string>();
+  const tombstones = memoryTombstones();
   const dependencies: GiftManagementDependencies = {
     actors: {
       revalidate: () =>
@@ -215,13 +219,8 @@ function fixture(
     audit: {
       record: (command) => {
         audits.push(`${command.recordType}:${command.action}`);
-        audited.add(`${command.recordType}:${command.record.id}`);
         return Promise.resolve("audit");
       },
-      recorded: (command) =>
-        Promise.resolve(
-          audited.has(`${command.recordType}:${command.subjectId}`),
-        ),
       recordCharged: (command) => {
         audits.push(
           `charged:${command.workspaceId}:${command.debt.occurrenceOn}`,
@@ -248,11 +247,13 @@ function fixture(
     ids: sequentialIds({ prefix: "20000000-0000-4000-8000-" }),
     recurringDebts: memory.repository,
     repository: {} as never,
+    tombstones,
     transaction: { run: (work) => work({ opaque: "transaction" }) },
   };
   return {
     ...memory,
     audits,
+    tombstones,
     charging: createRecurringDebtCharging(dependencies),
     management: createGiftManagement(dependencies),
   };
@@ -923,7 +924,7 @@ Deno.test("[GIFTS-001] a rule and a charged debt describe their own audit rows",
 });
 
 Deno.test("[MCP-D3] a rule create retried with its request id never charges twice", async () => {
-  const { audits, debts, management, rules } = fixture();
+  const { audits, debts, management, rules, tombstones } = fixture();
   const requestId = "20000000-0000-4000-8000-0000000000aa";
   const created = await management.createRecurringDebt(actor, personId, {
     ...monthlyRent,
@@ -978,6 +979,11 @@ Deno.test("[MCP-D3] a rule create retried with its request id never charges twic
     "a deleted rule is not recreated, and charges nothing",
   );
   assertEquals([rules.size, debts.length], [0, 3]);
+  assertEquals(tombstones.entries, [{
+    kind: "recurring_debt",
+    recordId: created.recurringDebt.id,
+    workspaceId: actor.workspaceId,
+  }]);
 });
 
 Deno.test("[MCP-D3] a rule change at a stale revision changes and charges nothing", async () => {

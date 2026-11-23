@@ -6,10 +6,12 @@
  */
 
 import type { AuditEventRecorder } from "../../shared-kernel/audit_event.ts";
+import type { RequestTombstones } from "../../shared-kernel/request_tombstone.ts";
 import type { SharedComposition } from "../../platform/composition.ts";
 import { PostgresConnectionRunner } from "../../platform/postgres/transactions.ts";
 import { PostgresAuditPersonMergeParticipant } from "./adapters/postgres/person_merge_participant.ts";
 import { PostgresAuditEventRecorder } from "./adapters/postgres/audit_event_recorder.ts";
+import { PostgresRequestTombstones } from "./adapters/postgres/request_tombstones.ts";
 import { PostgresGovernanceWorkspaceLifecycleImpact } from "./adapters/postgres/workspace_lifecycle_impact.ts";
 import { PostgresLegalAcceptanceRepository } from "./adapters/postgres/legal_acceptance_repository.ts";
 import {
@@ -25,6 +27,15 @@ import {
  */
 export function governanceAuditRecorder(): AuditEventRecorder {
   return new PostgresAuditEventRecorder();
+}
+
+/**
+ * The one reader and writer of `crm.request_tombstones` (MCP-E3). A delete of
+ * a keyed record leaves its tombstone through it and a keyed create asks it,
+ * so a root builds it before the shared context, as it builds the recorder.
+ */
+export function governanceRequestTombstones(): RequestTombstones {
+  return new PostgresRequestTombstones();
 }
 
 export function composeGovernance(shared: SharedComposition) {

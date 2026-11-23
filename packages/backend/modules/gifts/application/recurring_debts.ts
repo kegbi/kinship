@@ -50,6 +50,7 @@ import {
   active,
   type GiftManagementDependencies,
   type GiftMutationFailure,
+  leaveTombstone,
   recordId,
   requestKey,
   type Revision,
@@ -230,7 +231,6 @@ export function createRecurringDebtWrites(
             const refused = await unreplayable(
               dependencies,
               actor,
-              "recurring-debt",
               id,
               () =>
                 dependencies.recurringDebts.exists({
@@ -412,6 +412,14 @@ export function createRecurringDebtWrites(
               transaction,
             })
           ) return { status: "not-found" as const };
+          await leaveTombstone(
+            dependencies,
+            actor,
+            "recurring-debt",
+            found.recurringDebt.id,
+            occurredAt,
+            transaction,
+          );
           await dependencies.audit.record({
             action: "deleted",
             actor,

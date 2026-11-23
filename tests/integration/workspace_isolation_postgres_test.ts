@@ -1,7 +1,8 @@
 /**
  * Schema v14 makes the database backstop workspace isolation (AUD-V2, ADR
- * 0008; SECT-01, SECT-02), and schema v15 brings the root `workspaces` table
- * and its single-parent children under it too (REL-120). These suites connect the way the deployed services
+ * 0008; SECT-01, SECT-02), schema v15 brings the root `workspaces` table
+ * and its single-parent children under it too (REL-120), and schema v16 adds
+ * the request tombstones under the same policy (MCP-E3). These suites connect the way the deployed services
  * do — the API as `kinship_app`, the worker as `kinship_worker` — and seed as
  * the disposable project's superuser, which row-level security does not bind.
  *
@@ -108,7 +109,7 @@ Deno.test({
           and c.relforcerowsecurity
         order by c.relname
       `;
-      assert(tables.length === 75, `${tables.length} tenant tables are forced`);
+      assert(tables.length === 76, `${tables.length} tenant tables are forced`);
       const visible = async () => {
         const seen: string[] = [];
         for (const { name } of tables) {
@@ -725,6 +726,103 @@ Deno.test({
           JSON.stringify(caught)
         }`,
       );
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "[MCP-E3] a request tombstone is invisible and unwritable from another workspace, and the API may only read and add one",
+  sanitizeResources: false,
+  async fn() {
+    const a = await revocableActor(sql, `mcp-e3-a-${crypto.randomUUID()}`);
+    const b = await revocableActor(sql, `mcp-e3-b-${crypto.randomUUID()}`);
+    const app = serviceSql(databaseUrl);
+    const worker = serviceSql(requireWorkerDatabaseUrl());
+    const recordId = "00000000-0000-8000-8000-00000000e301";
+    const scoped = <T>(
+      service: Sql,
+      workspaceId: string,
+      work: (transaction: postgres.TransactionSql) => Promise<T>,
+    ) =>
+      service.begin(async (transaction) => {
+        await transaction`select set_config('app.workspace_id', ${workspaceId}, true)`;
+        return await work(transaction);
+      }) as Promise<T>;
+    try {
+      await scoped(app, a.workspaceId, (transaction) =>
+        transaction`
+          insert into crm.request_tombstones (workspace_id, record_id, record_type)
+          values (${a.workspaceId}, ${recordId}, 'note')
+        `);
+      const count = (service: Sql, workspaceId: string) =>
+        scoped(service, workspaceId, async (transaction) => {
+          const [row] = await transaction<{ readonly count: number }[]>`
+            select count(*)::int as count from crm.request_tombstones
+            where record_id = ${recordId}
+          `;
+          return row?.count ?? -1;
+        });
+      assert(await count(app, a.workspaceId) === 1, "A reads its tombstone");
+      assert(await count(app, b.workspaceId) === 0, "B sees no tombstone of A");
+      const [unscoped] = await app<{ readonly count: number }[]>`
+        select count(*)::int as count from crm.request_tombstones
+      `;
+      assert(unscoped?.count === 0, "an unscoped statement sees none");
+      // B can neither write a tombstone into A nor reach A's by its key.
+      assert(
+        await failureCode(() =>
+          scoped(app, b.workspaceId, (transaction) =>
+            transaction`
+              insert into crm.request_tombstones (workspace_id, record_id, record_type)
+              values (${a.workspaceId}, ${crypto.randomUUID()}, 'gift')
+            `)
+        ) === "42501",
+        "B wrote a tombstone into A",
+      );
+      // Append-only: the API changes and removes none, in its own workspace
+      // either, and the worker has no privilege on the table.
+      for (
+        const statement of [
+          "update crm.request_tombstones set record_type = 'gift'",
+          "delete from crm.request_tombstones",
+        ]
+      ) {
+        assert(
+          await failureCode(() =>
+            scoped(
+              app,
+              a.workspaceId,
+              (transaction) => transaction.unsafe(statement),
+            )
+          ) === "42501",
+          `the API ran: ${statement}`,
+        );
+      }
+      assert(
+        await failureCode(() =>
+          scoped(
+            worker,
+            a.workspaceId,
+            (transaction) => transaction`select 1 from crm.request_tombstones`,
+          )
+        ) === "42501",
+        "the worker read the tombstones",
+      );
+      assert(
+        await failureCode(() =>
+          scoped(app, a.workspaceId, (transaction) =>
+            transaction`
+              insert into crm.request_tombstones (workspace_id, record_id, record_type)
+              values (${a.workspaceId}, ${crypto.randomUUID()}, 'person')
+            `)
+        ) === "23514",
+        "a kind outside the eight was accepted",
+      );
+      assert(await count(app, a.workspaceId) === 1, "A's tombstone stands");
+    } finally {
+      await app.end();
+      await worker.end();
     }
   },
 });

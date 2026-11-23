@@ -43,7 +43,7 @@ export const JOURNAL_TOOLS: readonly AgentTool[] = [
     name: "create_journal_post",
     title: "Write a journal post",
     description:
-      `Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. ${SHARED} Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. A deleted post leaves no record, so the same requestId after delete_journal_item writes it again.`,
+      `Writes a journal post — a body, the instant it is about (occurredAt), and an optional title — and returns it with its id, which is also its journal item id. ${SHARED} Pass your own requestId and reuse it when you retry: the same requestId and post return the post it created, and a changed body, title, or occurredAt under it is refused as a conflict. Once delete_journal_item removes the post, its requestId stays used: replaying the create is refused as a conflict (journal_request_deleted) rather than writing it again.`,
     route: createJournalPost,
     minted: { requestId: "uuid" },
   }),
@@ -72,7 +72,7 @@ export const JOURNAL_TOOLS: readonly AgentTool[] = [
     name: "delete_journal_item",
     title: "Delete a journal item",
     description:
-      `Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. There is no revision check. ${JOURNAL_READ} ${SHARED}`,
+      `Permanently deletes one journal item by its id from list_journal_items: a post or a day rating is deleted, while for an activity only its place on the journal is removed and the activity itself stays. A deleted post's requestId stays used: replaying the create_journal_post call that made it is refused as a conflict (journal_request_deleted). There is no revision check. ${JOURNAL_READ} ${SHARED}`,
     route: deleteJournalItem,
   }),
 ];

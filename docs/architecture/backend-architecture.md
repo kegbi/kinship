@@ -296,22 +296,37 @@ GAP-053 (`PEOPLE-010`, `TODAY-002`) adds no table and no schema change.
   interface-state use case, which validates it and only moves it forward.
   Workspace-admin-only items, such as a member leaving, are left out.
 
-### Gift retry keys depend on the audit history (MCP-D3)
+### Request tombstones (MCP-E3)
 
-Gifts, debts, and recurring debt rules are deleted permanently, so when a create
-retried with its `requestId` finds no row, `gifts` asks the audit history
-whether a record with the derived id ever existed
-(`AuditEventRecorder.subjectRecorded`, inside the create's workspace-scoped
-transaction): an event answers 409 `gift_request_deleted`, none lets the create
-proceed. That answer is only correct while every audit event for gifts, debts,
-and recurring debts is kept for the life of the workspace. Any future audit
-retention, pruning, or purge must first replace this dependency, for instance
-with a tombstone the module owns at a new schema version; a workspace reset,
-which removes the history with the records, already makes a replayed key create
-its record again, and the create routes say so. The lookup is served by the
-`(workspace_id, action)` index and then filters that action's events by subject,
-so its cost grows with the workspace's gift, debt, or rule history; an index on
-`(workspace_id, subject_id)` at the next schema version is the known remedy.
+A create that carries a retry key (`requestId`) derives its record's id from the
+workspace and the key (`deterministicId`), locks that id, and returns a record
+already stored under it. Journal posts, notes, activities, calls, conversations,
+gifts, debts, and recurring debt rules are deleted permanently, so after a
+delete nothing is left to find. Schema v16 keeps a tombstone instead:
+`crm.request_tombstones`, keyed `(workspace_id, record_id)`, workspace-owned
+under forced row-level security, and owned by `governance`, which every module
+reaches through the kernel's `RequestTombstones` port
+(`shared-kernel/request_tombstone.ts`) as it reaches `audit_events` through
+`AuditEventRecorder`.
+
+- Each module's permanent delete of one of the eight kinds writes the record's
+  id to the table in the delete's own transaction. Only an id a retry key
+  derived (a version-8 UUID, `isRequestDerivedId`) is kept, since a random id is
+  never reached by a keyed create.
+- A keyed create that finds no row under its derived id asks for the tombstone,
+  a point lookup, and answers 409 when it is there: `journal_request_deleted`,
+  `interaction_request_deleted`, or `gift_request_deleted`. No create asks the
+  audit history any more, so audit retention can be decided on its own.
+- A delete and a replayed create cannot leave the record created again. Both
+  revalidate their actor first with `FOR NO KEY UPDATE` of the workspace row, so
+  they serialize; and independently, the delete removes the row and writes its
+  tombstone in one commit while the create reads the row before the tombstone,
+  each statement under READ COMMITTED seeing every earlier commit.
+- Person merge moves records and person deletion is soft, so neither writes a
+  tombstone. A workspace reset or deletion removes the tombstones with the
+  records, so after a reset a replayed key creates its record again, and the
+  create routes say so. The API role may only read and add tombstones; the
+  worker has no privilege on them.
 
 The first implementation milestone must execute the audited baseline against a
 supported real PostgreSQL image. It must verify clean apply, teardown or
@@ -346,17 +361,18 @@ Workspace isolation is a security boundary, not a repository filter convention.
 
 The database enforces the same boundary as defense in depth
 ([ADR 0008](decisions/0008-database-enforced-workspace-isolation.md), schemas
-v14 and v15):
+v14 through v16):
 
 - The API connects as `kinship_app` and the worker as `kinship_worker`; neither
   is a superuser or `BYPASSRLS`. Only the migrate job uses the schema owner.
 - Every tenant-to-tenant reference is a composite `(workspace_id, …)` key, and
   link tables carry a denormalized `workspace_id` that defaults from the
   transaction's scope.
-- Every table with a `workspace_id` (74) forces row-level security on
+- Every table with a `workspace_id` (75 since v16 added `request_tombstones`)
+  forces row-level security on
   `workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid`,
   and since v15 (REL-120) the root `workspaces` table does on
-  `id = nullif(current_setting('app.workspace_id', true), '')::uuid`: 75 forced
+  `id = nullif(current_setting('app.workspace_id', true), '')::uuid`: 76 forced
   tables, every workspace-owned table. Single-parent children (`pets`, the
   emotion tags, import entities and reports, member preferences, billing
   subscriptions and items, the weather cache, romantic details) carry their

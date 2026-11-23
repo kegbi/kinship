@@ -8,6 +8,8 @@
  * that derivation; this is the single one.
  */
 
+import { isUuid } from "./validation.ts";
+
 /** The injected source of fresh identifiers. */
 export interface IdGenerator {
   create(): string;
@@ -17,6 +19,19 @@ function hex(bytes: Uint8Array): string {
   return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join(
     "",
   );
+}
+
+/**
+ * Whether `id` could have come from `deterministicId`: a canonical UUID whose
+ * version nibble is 8. Fresh identifiers are random version-4 UUIDs (the
+ * injected generator and PostgreSQL's `gen_random_uuid()`), so an id that
+ * fails this was never derived from a retry key and no keyed create can reach
+ * it (MCP-E3).
+ */
+export function isRequestDerivedId(id: string): boolean {
+  // `isUuid` admits every RFC 9562 version; the version is then the first
+  // digit of the third group, which `deterministicId` sets to 8.
+  return isUuid(id) && id[14] === "8";
 }
 
 /**

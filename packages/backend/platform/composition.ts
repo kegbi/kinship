@@ -24,6 +24,7 @@ import type { ApplicationDatabase } from "./postgres/database.ts";
 import type { AuditEventRecorder } from "../shared-kernel/audit_event.ts";
 import type { Clock } from "../shared-kernel/clock.ts";
 import type { IdGenerator } from "../shared-kernel/ids.ts";
+import type { RequestTombstones } from "../shared-kernel/request_tombstone.ts";
 import type { TransactionRunner } from "../shared-kernel/transaction.ts";
 import type { PeopleTransaction } from "../modules/people/public.ts";
 import type {
@@ -50,6 +51,11 @@ export interface SharedComposition {
   readonly ids: IdGenerator;
   /** The people-owned transaction the person-scoped modules share. */
   readonly peopleTransaction: TransactionRunner<PeopleTransaction>;
+  /**
+   * Governance owns `crm.request_tombstones`; this is its one reader and
+   * writer, which a keyed create asks and a permanent delete writes (MCP-E3).
+   */
+  readonly tombstones: RequestTombstones;
   /** The workspaces-owned transaction the account-scoped modules share. */
   readonly transaction: TransactionRunner<RegistrationTransaction>;
   /** The workspace an authenticated identity may enter. */

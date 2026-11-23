@@ -4,7 +4,8 @@
  * The write is idempotent by construction: the request's identifier derives
  * the communication's, the row under it is locked before anything else is
  * read, and a request that already landed is hydrated and handed back instead
- * of written again. The derivation, the canonical message order, what counts
+ * of written again; one whose record a member deleted is refused as
+ * `request-deleted` by the tombstone the delete left (MCP-E3). The derivation, the canonical message order, what counts
  * as the same request, and the input rules are all in
  * `domain/communication_rules.ts`; what is left here is the order the ports
  * are called in and the transaction they share.
@@ -38,7 +39,7 @@ export type RecordCommunicationResult =
   | ValidationFailure
   | Failure<
     "archived-write-rejected" | "forbidden" | "not-found",
-    "hidden" | "idempotency-conflict"
+    "hidden" | "idempotency-conflict" | "request-deleted"
   >;
 
 export function createCommunicationWrites(
@@ -84,6 +85,13 @@ export function createCommunicationWrites(
             ? { record, status: "created" as const }
             : { status: "not-found" as const };
         }
+        if (
+          await dependencies.tombstones.recorded({
+            recordId: id,
+            transaction,
+            workspaceId: canonical.workspaceId,
+          })
+        ) return { status: "request-deleted" as const };
         const emotionIds = input.kind === "call"
           ? canonicalEmotionIds(input.emotionIds)
           : [];

@@ -18,9 +18,14 @@
  * create does, and planning ignores a time earlier than the one it holds. A
  * removal publishes nothing and pulls no cadence back. Nothing a cadence
  * stores points at the record, so neither leaves a dangling reference.
+ *
+ * A removal is permanent, so it leaves the record's request tombstone in the
+ * same transaction (MCP-E3): the create that made it, re-sent with its
+ * `requestId`, is then refused instead of recording it again.
  */
 
 import type { Clock } from "../../../shared-kernel/clock.ts";
+import type { RequestTombstones } from "../../../shared-kernel/request_tombstone.ts";
 import type {
   Failure,
   ValidationFailure,
@@ -68,6 +73,8 @@ export interface InteractionChangeDependencies {
   readonly people: InteractionPersonBoundary;
   readonly publisher?: InteractionRecordedPublisher;
   readonly repository: InteractionChangeRepository;
+  /** Governance's request tombstones, left by a removal (MCP-E3). */
+  readonly tombstones: RequestTombstones;
   readonly transaction: InteractionTransactionRunner;
   readonly workspace:
     & CommunicationWorkspaceBoundary
@@ -405,12 +412,20 @@ export function createInteractionChanges(
           workspaceId: canonical.workspaceId,
         });
         if (!removed) return { status: "stale" };
+        const occurredAt = dependencies.clock.now();
+        await dependencies.tombstones.record({
+          deletedAt: occurredAt,
+          kind,
+          recordId: id,
+          transaction,
+          workspaceId: canonical.workspaceId,
+        });
         await audited(dependencies, {
           action: "delete",
           actor: canonical,
           fields: [],
           kind,
-          occurredAt: dependencies.clock.now(),
+          occurredAt,
           participantIds: participants,
           subjectId: id,
           transaction,

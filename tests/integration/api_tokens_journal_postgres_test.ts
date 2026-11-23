@@ -10,6 +10,7 @@
 import { assert } from "../../packages/backend/testing/assert.ts";
 import type { HttpMethod, SignedInFixture } from "../support/api.ts";
 import { composeTokenSuite } from "../support/tokens.ts";
+import { holdWorkspaceWrites } from "../support/workspace_write_queue.ts";
 
 const suite = composeTokenSuite();
 const { api, register, sql, tokens } = suite;
@@ -689,19 +690,109 @@ Deno.test("[MCP-D4] PostgreSQL journal post creates are retry-safe by token and 
     "without a request identifier each create is a new post",
   );
 
-  // Schema v15 deletes a post outright and keeps nothing of it, so a retry
-  // after the deletion finds no row and writes the post again, under the same
-  // identifier and never as a second copy (documented on the route).
+  // Schema v16 (MCP-E3): the delete leaves the post's request tombstone, so
+  // a retry after it is refused rather than writing the post again.
   await json(writer.secret, {
     method: "DELETE",
     path: `/api/v1/journal/items/${createdId}`,
   }, 200);
-  const recreated = await json(writer.secret, create(post), 201);
+  const [tombstone] = await sql<{ record_type: string }[]>`
+    select record_type from crm.request_tombstones
+    where workspace_id = ${owner.workspaceId}::uuid
+      and record_id = ${createdId}::uuid`;
+  assert(tombstone?.record_type === "journal_post", "the delete left one");
+  const refused = await json(writer.secret, create(post), 409);
   assert(
-    (recreated.post as { id: string }).id === createdId &&
-      (await postRows(owner.workspaceId, post.body)).length === 1,
-    "a retry after deletion writes the post once, under the same identifier",
+    refused.code === "journal_request_deleted",
+    `replay after delete: ${JSON.stringify(refused)}`,
   );
+  await browserJson(owner, create(post), 409);
+  assert(
+    (await postRows(owner.workspaceId, post.body)).length === 0,
+    "a retry after deletion writes nothing",
+  );
+  // The tombstone is this workspace's: the same key there still names the
+  // foreign workspace's own post.
+  await json(foreignWriter.secret, create(post), 201);
+  // A plain post's id was never derived from a key, so its delete leaves no
+  // tombstone (the adapter keeps only derived ids).
+  const plainId = (await postRows(owner.workspaceId, plain.body))[0]!.id;
+  await json(writer.secret, {
+    method: "DELETE",
+    path: `/api/v1/journal/items/${plainId}`,
+  }, 200);
+  const [plainTombstones] = await sql<{ count: number }[]>`
+    select count(*)::int as count from crm.request_tombstones
+    where record_id = ${plainId}::uuid`;
+  assert(plainTombstones?.count === 0, "a random id leaves no tombstone");
+});
+
+/**
+ * A delete and a replay of the create that made the post, queued on the
+ * workspace row in both orders (MCP-E3): the replay that runs first returns
+ * the post, which the delete then removes; the replay that runs second is
+ * refused. Neither order writes the post again.
+ */
+Deno.test("[MCP-E3] PostgreSQL a journal delete racing its create's replay never records the post again", async () => {
+  const suffix = crypto.randomUUID();
+  const owner = await register(`journal-race-${suffix}@example.test`, "Race");
+  const writer = await tokens.mint(owner, ["journal:write"]);
+  for (const first of ["delete", "replay"] as const) {
+    const post = {
+      body: `Raced entry ${first} ${suffix}`,
+      occurredAt,
+      requestId: crypto.randomUUID(),
+    };
+    const create: Call = {
+      body: post,
+      method: "POST",
+      path: "/api/v1/journal/posts",
+    };
+    const created = await json(writer.secret, create, 201);
+    const postId = (created.post as { id: string }).id;
+    const remove: Call = {
+      method: "DELETE",
+      path: `/api/v1/journal/items/${postId}`,
+    };
+    const queue = await holdWorkspaceWrites(sql, owner.workspaceId);
+    let deleted: Promise<number>;
+    let replayed: Promise<Response>;
+    try {
+      if (first === "delete") {
+        deleted = status(writer.secret, remove);
+        await queue.queued(1);
+        replayed = tokens.bearer(writer.secret, create.path, {
+          body: create.body,
+          method: create.method,
+        });
+        await queue.queued(2);
+      } else {
+        replayed = tokens.bearer(writer.secret, create.path, {
+          body: create.body,
+          method: create.method,
+        });
+        await queue.queued(1);
+        deleted = status(writer.secret, remove);
+        await queue.queued(2);
+      }
+    } finally {
+      await queue.release();
+    }
+    const replay = await replayed!;
+    const replayBody = await replay.json();
+    assert(await deleted! === 200, `${first} first: the delete answered`);
+    assert(
+      first === "delete"
+        ? replay.status === 409 &&
+          replayBody.code === "journal_request_deleted"
+        : replay.status === 201 && replayBody.post?.id === postId,
+      `${first} first: ${replay.status} ${JSON.stringify(replayBody)}`,
+    );
+    assert(
+      (await postRows(owner.workspaceId, post.body)).length === 0,
+      `${first} first: the post was recorded again`,
+    );
+  }
 });
 
 Deno.test("[MCP-D4] PostgreSQL journal post updates refuse a stale expectedUpdatedAt by token and by cookie", async () => {
