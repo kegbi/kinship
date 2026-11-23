@@ -67,6 +67,10 @@ its "Delivered, and what is left" section lists the open follow-ups.
       PostgreSQL integration suite (496 tests), full coverage, and the build
       pass; the Chromium browser suite passes 89 of 91 with one skipped and the
       known `IMPORT-002` failure (REL-108).
+- [ ] Follow-ups approved on 2026-11-23 (MCP-F1 to MCP-F3): the reported
+      dependency advisories in both trees, and one lock order for a workspace
+      settings update and for a workspace reset or delete against the worker's
+      reminder top-up.
 - [ ] Release gate still open: the all-browser E2E matrix. The dependency audit
       gate passes since MCP-E4.
 

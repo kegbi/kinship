@@ -261,6 +261,23 @@ is a separate decision.
       environment names the SDK probes (`--ignore-env`) instead of being granted
       them.
 
+### Phase F — Follow-ups the product owner approved on 2026-11-23 (parallel)
+
+- [ ] **MCP-F1 Dependency advisories.** Raise the pinned versions that carry a
+      reported advisory in both dependency trees: `hono` and `fast-xml-parser`
+      in the Deno graph, and the web and tooling tree `pnpm audit` reports on
+      (`astro`, `@astrojs/node`, `vite`, `vitest`, `happy-dom`, `shadcn`, and
+      their transitive packages). The release-age rule and the frozen lockfiles
+      stay as they are; an advisory no released version fixes is recorded, not
+      hidden.
+- [ ] **MCP-F2 One lock order for a workspace settings update.** A workspace
+      settings update must not deadlock against the worker's reminder top-up.
+      Reproduce it in PostgreSQL first, then fix the order.
+- [ ] **MCP-F3 One lock order for a workspace reset and delete.** A workspace
+      reset or delete must not deadlock against the worker's reminder top-up or
+      against a write in the same workspace. Reproduce each cycle in PostgreSQL
+      first, then fix the order.
+
 ## Delivered, and what is left
 
 Delivered: every ticket of Part 4. Personal tokens reach the routes of Part 3
@@ -305,10 +322,12 @@ Open, each needing its own ticket or decision:
   that had already been attempted keeps its date, so that date is neither
   counted nor minted again and the member's window stays one date short until it
   passes.
+- **Who issues tokens: decided on 2026-11-23.** Only owners and admins issue
+  personal tokens for now. `api-tokens.manage` keeps its roles and no code
+  changes; member-issued tokens would need a new decision.
 - **Product decisions not taken.** OAuth for MCP clients that cannot send a
-  static bearer header (ADR 0009); member-issued tokens, which changes
-  `api-tokens.manage`; and per-token rate limits beyond the gateway's
-  per-address limits.
+  static bearer header (ADR 0009), and per-token rate limits beyond the
+  gateway's per-address limits.
 - **Integration checkpoint, run on 2026-11-22 at `ea12b2a6`.** `check`, `lint`,
   `check:architecture`, `contracts:check`, every unit set, the web suite, and
   `build` pass. Every PostgreSQL integration suite passes (487 tests). Full
