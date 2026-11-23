@@ -1163,6 +1163,11 @@ Deno.test("[MCP-E1] PostgreSQL the create and identity answers carry the revisio
     await revision(own, personId),
     "the create answers the stored revision, to the microsecond",
   );
+  assertEquals(
+    /\.\d{6}Z$/.test(createdRevision),
+    true,
+    `the revision is rendered with six fractional digits: ${createdRevision}`,
+  );
   const { requestId: _requestId, ...names } = ada;
   const edited = expect(
     await bearer(agent, `/api/v1/people/${personId}`, "PATCH", {
