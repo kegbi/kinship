@@ -224,21 +224,18 @@ the DAV client in
 inline `npm:` specifier stays in `deno.lock` after the import moves, so a bump
 of such an import regenerates the lockfile rather than adding to it.
 
-As of the same date, `pnpm audit` reports three advisories in the web and
-tooling tree, two high and one moderate. Nothing gates on this report:
+As of the same date, `pnpm audit` reports one moderate advisory in the web and
+tooling tree. Nothing gates on this report. `minimatch` 10.2.6,
+`GHSA-g3hv-75wg-m249`, is a denial-of-service advisory fixed only in 11.0.1. It
+reaches the tree only through the `shadcn` 4.23.0 CLI, whose `ts-morph` 26 asks
+for `@ts-morph/common` 0.27 and thus `minimatch` ^10. The CLI is a developer
+tool and never ships. It remains until a `shadcn` release moves off that line;
+an override across the major is not used.
 
-- `happy-dom` 20.14.6, the test DOM for the web unit suites, carries
-  `GHSA-834v-8h66-3h79` and `GHSA-c8p4-j97h-3vg8`, both high. The first is fixed
-  only in 21.0.4. The second names 20.14.7 as its fix, but no 20.x release after
-  20.14.6 is published. Both remain until the web suites move to `happy-dom` 21,
-  a major upgrade that needs its own change. `happy-dom` runs only under Vitest
-  and never ships.
-- `minimatch` 10.2.6, `GHSA-g3hv-75wg-m249`, is a moderate denial-of-service
-  advisory fixed only in 11.0.1. It reaches the tree only through the `shadcn`
-  4.23.0 CLI, whose `ts-morph` 26 asks for `@ts-morph/common` 0.27 and thus
-  `minimatch` ^10. The CLI is a developer tool and never ships. It remains until
-  a `shadcn` release moves off that line; an override across the major is not
-  used.
+The web unit suites run on `happy-dom` 21.0.4, past `GHSA-c8p4-j97h-3vg8` (fixed
+in 21.0.0) and `GHSA-834v-8h66-3h79` (fixed in 21.0.4). From 21.0.0, `happy-dom`
+loads neither stylesheet links nor iframe pages unless a test enables them; no
+web suite does. `happy-dom` runs only under Vitest and never ships.
 
 `pnpm-workspace.yaml` carries one override: `fast-uri@3` resolves to 3.1.9.
 `ajv` 8.20.0 asks for `fast-uri` ^3.0.1 and is shared as a peer of
