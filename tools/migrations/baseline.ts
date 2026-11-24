@@ -465,6 +465,70 @@ function currencyCatalogMatches(
   });
 }
 
+/** What one canonical baseline looks like once applied to a server. */
+export interface ExpectedCatalog {
+  readonly currencies: readonly CurrencyCatalogRow[];
+  readonly structure: readonly string[];
+}
+
+/**
+ * Expected catalogs by baseline version, 1 to 16.
+ *
+ * Each costs a full build of that baseline in a scratch schema. A baseline's
+ * SQL is immutable and checksum-verified, so on one server it always gives the
+ * same catalog. A runner process builds the ones it needs and discards them.
+ * A caller that runs the runner many times against databases of one server
+ * with the same roles, as the integration suites do, may pass one map to every
+ * run so that each baseline is built once.
+ */
+export type ExpectedCatalogs = Map<number, ExpectedCatalog>;
+
+type CatalogState = Parameters<typeof decideSchemaAction>[0]["state"];
+
+interface ObservedSchema {
+  readonly crmSchemaExists: boolean;
+  readonly crmTableCount: number;
+  readonly structure: readonly string[];
+}
+
+/** Reads the `crm` schema as it is. The caller's search_path is `public`. */
+async function observeSchema(
+  transaction: postgres.TransactionSql,
+): Promise<ObservedSchema> {
+  const [state] = await transaction<StateRow[]>`
+    select
+      exists(select 1 from pg_namespace where nspname = 'crm') as crm_schema_exists,
+      (select count(*)::int from information_schema.tables where table_schema = 'crm' and table_type = 'BASE TABLE') as crm_table_count
+  `;
+  if (!state) throw new Error("Could not inspect database state.");
+  return {
+    crmSchemaExists: state.crm_schema_exists,
+    crmTableCount: state.crm_table_count,
+    structure: state.crm_schema_exists
+      ? await catalogStructure(transaction, "crm")
+      : [],
+  };
+}
+
+/**
+ * The baseline `observed` is exactly, among the catalogs built so far. No two
+ * baselines share a catalog; the oldest is tried first, as it always was, so
+ * the answer does not depend on the order the catalogs were built in.
+ */
+function classifySchema(
+  observed: ObservedSchema,
+  expected: ExpectedCatalogs,
+): CatalogState {
+  if (!observed.crmSchemaExists && observed.crmTableCount === 0) return "empty";
+  const oldestFirst = [...expected].sort(([left], [right]) => left - right);
+  for (const [version, catalog] of oldestFirst) {
+    if (structuresMatch(observed.structure, catalog.structure)) {
+      return `v${version}` as CatalogState;
+    }
+  }
+  return "drift";
+}
+
 export interface CanonicalSchemaArtifacts {
   readonly migrationV1ToV2: string;
   readonly migrationV2ToV3: string;
@@ -501,11 +565,14 @@ export interface CanonicalSchemaArtifacts {
 
 /**
  * Brings the database at `databaseUrl` to canonical schema v16, or refuses.
- * Every artifact checksum is verified before the runner connects.
+ * Every artifact checksum is verified before the runner connects. `expected`
+ * carries catalogs an earlier run built on the same server; see
+ * `ExpectedCatalogs`.
  */
 export async function applyCanonicalSchema(
   databaseUrl: string,
   artifacts: CanonicalSchemaArtifacts,
+  expected: ExpectedCatalogs = new Map(),
 ): Promise<Exclude<SchemaAction, "reject">> {
   await verifyCanonicalArtifacts(artifacts);
   const client = postgres(databaseUrl, {
@@ -516,7 +583,7 @@ export async function applyCanonicalSchema(
     prepare: false,
   });
   try {
-    return await migrateCanonicalSchema(client, artifacts);
+    return await migrateCanonicalSchema(client, artifacts, expected);
   } finally {
     await client.end({ timeout: 2 });
   }
@@ -530,9 +597,10 @@ export async function applyCanonicalSchema(
 export async function applyCanonicalSchemaWith(
   client: postgres.Sql,
   artifacts: CanonicalSchemaArtifacts,
+  expected: ExpectedCatalogs = new Map(),
 ): Promise<Exclude<SchemaAction, "reject">> {
   await verifyCanonicalArtifacts(artifacts);
-  return await migrateCanonicalSchema(client, artifacts);
+  return await migrateCanonicalSchema(client, artifacts, expected);
 }
 
 async function verifyCanonicalArtifacts(
@@ -710,12 +778,40 @@ async function restoreSessionSearchPath(
 async function migrateCanonicalSchema(
   client: postgres.Sql,
   artifacts: CanonicalSchemaArtifacts,
+  expected: ExpectedCatalogs,
 ): Promise<Exclude<SchemaAction, "reject">> {
-  const expectedCatalog = async (sqlText: string, version: string) => {
-    const schema = `kinship_expected_${version}_${
+  // Newest first: the order the runner builds them in.
+  const [current, ...older] = [
+    [16, artifacts.v16Sql],
+    [15, artifacts.v15Sql],
+    [14, artifacts.v14Sql],
+    [13, artifacts.v13Sql],
+    [12, artifacts.v12Sql],
+    [11, artifacts.v11Sql],
+    [10, artifacts.v10Sql],
+    [9, artifacts.v9Sql],
+    [8, artifacts.v8Sql],
+    [7, artifacts.v7Sql],
+    [6, artifacts.v6Sql],
+    [5, artifacts.v5Sql],
+    [4, artifacts.v4Sql],
+    [3, artifacts.v3Sql],
+    [2, artifacts.v2Sql],
+    [1, artifacts.v1Sql],
+  ] as const;
+  // Each expected catalog is built in its own short transaction. This releases
+  // relation locks between versions and keeps the production verifier within
+  // PostgreSQL's default max_locks_per_transaction setting.
+  const expectedCatalog = async (
+    version: number,
+    sqlText: string,
+  ): Promise<ExpectedCatalog> => {
+    const built = expected.get(version);
+    if (built) return built;
+    const schema = `kinship_expected_v${version}_${
       crypto.randomUUID().replaceAll("-", "")
     }`;
-    return await client.begin(async (transaction) => {
+    const catalog = await client.begin(async (transaction) => {
       const searchPath = await sessionSearchPath(transaction);
       await transaction.unsafe(canonicalSqlForSchema(sqlText, schema));
       await restoreSessionSearchPath(transaction, searchPath);
@@ -724,79 +820,47 @@ async function migrateCanonicalSchema(
       await transaction.unsafe(`drop schema ${schema} cascade`);
       return { currencies, structure };
     });
+    expected.set(version, catalog);
+    return catalog;
   };
-  // Build each immutable expected catalog in its own short transaction. This
-  // releases relation locks between versions and keeps the production
-  // verifier within PostgreSQL's default max_locks_per_transaction setting.
-  const expectedV1 = await expectedCatalog(artifacts.v1Sql, "v1");
-  const expectedV2 = await expectedCatalog(artifacts.v2Sql, "v2");
-  const expectedV3 = await expectedCatalog(artifacts.v3Sql, "v3");
-  const expectedV4 = await expectedCatalog(artifacts.v4Sql, "v4");
-  const expectedV5 = await expectedCatalog(artifacts.v5Sql, "v5");
-  const expectedV6 = await expectedCatalog(artifacts.v6Sql, "v6");
-  const expectedV7 = await expectedCatalog(artifacts.v7Sql, "v7");
-  const expectedV8 = await expectedCatalog(artifacts.v8Sql, "v8");
-  const expectedV9 = await expectedCatalog(artifacts.v9Sql, "v9");
-  const expectedV10 = await expectedCatalog(artifacts.v10Sql, "v10");
-  const expectedV11 = await expectedCatalog(artifacts.v11Sql, "v11");
-  const expectedV12 = await expectedCatalog(artifacts.v12Sql, "v12");
-  const expectedV13 = await expectedCatalog(artifacts.v13Sql, "v13");
-  const expectedV14 = await expectedCatalog(artifacts.v14Sql, "v14");
-  const expectedV15 = await expectedCatalog(artifacts.v15Sql, "v15");
-  const expectedV16 = await expectedCatalog(artifacts.v16Sql, "v16");
+  // Building all sixteen baselines dominates a run, and almost every run finds
+  // the current schema or the one before it. So the runner reads the database
+  // first, without its lock, and builds the current baseline and then older
+  // ones only until the database matches one. The transaction below takes the
+  // lock, reads the database again, and classifies it among the catalogs built
+  // here; it never trusts this first reading.
+  const observed = await client.begin(async (transaction) => {
+    await transaction`set local search_path = public`;
+    return await observeSchema(transaction);
+  });
+  const expectedCurrent = await expectedCatalog(current[0], current[1]);
+  for (const [version, sqlText] of older) {
+    if (classifySchema(observed, expected) !== "drift") break;
+    await expectedCatalog(version, sqlText);
+  }
   return await client.begin(async (transaction) => {
     await transaction`set local lock_timeout = '5s'`;
     await transaction`set local statement_timeout = '120s'`;
     await transaction`select pg_advisory_xact_lock(492337110)`;
     const searchPath = await sessionSearchPath(transaction);
     await transaction`set local search_path = public`;
-    const [state] = await transaction<StateRow[]>`
-        select
-          exists(select 1 from pg_namespace where nspname = 'crm') as crm_schema_exists,
-          (select count(*)::int from information_schema.tables where table_schema = 'crm' and table_type = 'BASE TABLE') as crm_table_count
-      `;
-    if (!state) throw new Error("Could not inspect database state.");
-    const actual = state.crm_schema_exists
-      ? await catalogStructure(transaction, "crm")
-      : [];
-    const catalogState = !state.crm_schema_exists &&
-        state.crm_table_count === 0
-      ? "empty"
-      : structuresMatch(actual, expectedV1.structure)
-      ? "v1"
-      : structuresMatch(actual, expectedV2.structure)
-      ? "v2"
-      : structuresMatch(actual, expectedV3.structure)
-      ? "v3"
-      : structuresMatch(actual, expectedV4.structure)
-      ? "v4"
-      : structuresMatch(actual, expectedV5.structure)
-      ? "v5"
-      : structuresMatch(actual, expectedV6.structure)
-      ? "v6"
-      : structuresMatch(actual, expectedV7.structure)
-      ? "v7"
-      : structuresMatch(actual, expectedV8.structure)
-      ? "v8"
-      : structuresMatch(actual, expectedV9.structure)
-      ? "v9"
-      : structuresMatch(actual, expectedV10.structure)
-      ? "v10"
-      : structuresMatch(actual, expectedV11.structure)
-      ? "v11"
-      : structuresMatch(actual, expectedV12.structure)
-      ? "v12"
-      : structuresMatch(actual, expectedV13.structure)
-      ? "v13"
-      : structuresMatch(actual, expectedV14.structure)
-      ? "v14"
-      : structuresMatch(actual, expectedV15.structure)
-      ? "v15"
-      : structuresMatch(actual, expectedV16.structure)
-      ? "v16"
-      : "drift";
+    const locked = await observeSchema(transaction);
+    const catalogState = classifySchema(locked, expected);
+    // Schema versions only move forward and the current catalog is always
+    // built, so another runner finishing first leaves a state this run can
+    // classify. Anything else that changed the schema since the first reading
+    // may have left a baseline this run did not build.
+    if (
+      catalogState === "drift" &&
+      (locked.crmSchemaExists !== observed.crmSchemaExists ||
+        !structuresMatch(locked.structure, observed.structure))
+    ) {
+      throw new Error(
+        "The database schema changed while the runner classified it; run the migration again.",
+      );
+    }
     const action = decideSchemaAction({
-      crmSchemaExists: state.crm_schema_exists,
+      crmSchemaExists: locked.crmSchemaExists,
       state: catalogState,
     });
     if (action === "reject") {
@@ -830,18 +894,18 @@ async function migrateCanonicalSchema(
     }
     await restoreSessionSearchPath(transaction, searchPath);
     const finalStructure = await catalogStructure(transaction, "crm");
-    if (!structuresMatch(finalStructure, expectedV16.structure)) {
+    if (!structuresMatch(finalStructure, expectedCurrent.structure)) {
       const mismatch = finalStructure.findIndex((item, index) =>
-        item !== expectedV16.structure[index]
+        item !== expectedCurrent.structure[index]
       );
       throw new Error(
         `Canonical schema v16 structural verification failed at ${mismatch}: actual=${
           finalStructure[mismatch] ?? "<missing>"
-        }; expected=${expectedV16.structure[mismatch] ?? "<missing>"}.`,
+        }; expected=${expectedCurrent.structure[mismatch] ?? "<missing>"}.`,
       );
     }
     const actualCurrencies = await currencyCatalog(transaction, "crm");
-    if (!currencyCatalogMatches(actualCurrencies, expectedV16.currencies)) {
+    if (!currencyCatalogMatches(actualCurrencies, expectedCurrent.currencies)) {
       throw new Error(
         "Canonical schema v16 currency reference-data verification failed.",
       );

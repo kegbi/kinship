@@ -12,6 +12,7 @@ import {
   applyCanonicalSchema,
   applyCanonicalSchemaWith,
   canonicalTableNames,
+  type ExpectedCatalogs,
 } from "../../tools/migrations/baseline.ts";
 import {
   readCanonicalArtifacts,
@@ -28,6 +29,12 @@ import {
 // the gate itself proves the migrate job as kinship_migrator (ADR 0008).
 const databaseUrl = requireAdminDatabaseUrl();
 const artifacts = await readCanonicalArtifacts();
+// Every case migrates a scratch database of the one disposable server, where
+// an immutable baseline always gives the same catalog. The cases above the
+// [REL-129] ones share the catalogs they build, so each baseline is built once
+// for the file and not on every run. The [REL-129] cases start from maps of
+// their own, as a runner process does.
+const builtCatalogs: ExpectedCatalogs = new Map();
 
 /** Runs `work` against a fresh, empty database that is dropped afterwards. */
 async function withScratchDatabase(
@@ -102,7 +109,8 @@ for (const [version, baselineSql] of priorBaselines) {
       `;
 
       assert(
-        await runMigration(environment(url)) === `upgrade-${version}-to-v16`,
+        await runMigration(environment(url), builtCatalogs) ===
+          `upgrade-${version}-to-v16`,
         `an exact ${version} database was not classified for the upgrade`,
       );
 
@@ -122,10 +130,10 @@ for (const [version, baselineSql] of priorBaselines) {
         preserved?.email === `${version}-runner@example.test`,
         `the upgrade lost a ${version} row`,
       );
-      // The runner verified the structure against a freshly built v16 catalog
-      // before it committed; a second run finds exactly that catalog.
+      // The runner verified the structure against the v16 catalog before it
+      // committed; a second run finds exactly that catalog.
       assert(
-        await runMigration(environment(url)) === "verify-v16",
+        await runMigration(environment(url), builtCatalogs) === "verify-v16",
         `an upgraded ${version} database is not recognised as exact v16`,
       );
     });
@@ -176,7 +184,9 @@ Deno.test("[REL-118] a v1 upgrade that fails after 0004 leaves the database unch
       select count(*)::int as found from crm.currencies
     `;
 
-    const message = await refusal(() => runMigration(environment(url)));
+    const message = await refusal(() =>
+      runMigration(environment(url), builtCatalogs)
+    );
     assert(
       message.includes("notes_person_id_fkey"),
       `the bridging note did not fail the upgrade in 0014: ${message}`,
@@ -217,10 +227,13 @@ Deno.test("[REL-118] the v1 upgrade and a v16 verification leave the connection'
   await withScratchDatabase(async ({ sql, url }) => {
     await sql.unsafe(artifacts.v1Sql);
     const client = openSql(url, { max: 1, prepare: false });
+    // Catalogs of its own: the scratch builds set search_path too, and they
+    // run on this connection only when the catalogs are not built yet.
+    const ownCatalogs: ExpectedCatalogs = new Map();
     try {
       const original = await searchPath(client);
       assert(
-        await applyCanonicalSchemaWith(client, artifacts) ===
+        await applyCanonicalSchemaWith(client, artifacts, ownCatalogs) ===
           "upgrade-v1-to-v16",
         "an exact v1 database was not upgraded on the caller's connection",
       );
@@ -230,7 +243,8 @@ Deno.test("[REL-118] the v1 upgrade and a v16 verification leave the connection'
         `the upgrade changed search_path from ${original} to ${afterUpgrade}`,
       );
       assert(
-        await applyCanonicalSchemaWith(client, artifacts) === "verify-v16",
+        await applyCanonicalSchemaWith(client, artifacts, ownCatalogs) ===
+          "verify-v16",
         "the upgraded database is not recognised as exact v16",
       );
       const afterVerify = await searchPath(client);
@@ -305,7 +319,8 @@ Deno.test("[REL-120] the v14-to-v16 upgrade keeps every child row and gives it i
     const [before] = await snapshot();
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v14-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v14-to-v16",
       "an exact v14 database was not classified for the v14-to-v16 upgrade",
     );
     const [after] = await snapshot();
@@ -335,7 +350,7 @@ Deno.test("[REL-120] the v14-to-v16 upgrade keeps every child row and gives it i
       }`,
     );
     assert(
-      await runMigration(environment(url)) === "verify-v16",
+      await runMigration(environment(url), builtCatalogs) === "verify-v16",
       "an upgraded v14 database is not recognised as exact v16",
     );
   });
@@ -379,7 +394,8 @@ Deno.test("[MCP-E3] the v15-to-v16 upgrade keeps every row and adds an empty, fo
       `;
     const [before] = await snapshot();
     assert(
-      await runMigration(environment(url)) === "upgrade-v15-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v15-to-v16",
       "an exact v15 database was not classified for the v15-to-v16 upgrade",
     );
     const [after] = await snapshot();
@@ -399,7 +415,7 @@ Deno.test("[MCP-E3] the v15-to-v16 upgrade keeps every row and adds an empty, fo
       `the tombstones are not forced and empty: ${JSON.stringify(table)}`,
     );
     assert(
-      await runMigration(environment(url)) === "verify-v16",
+      await runMigration(environment(url), builtCatalogs) === "verify-v16",
       "an upgraded v15 database is not recognised as exact v16",
     );
   });
@@ -412,7 +428,8 @@ Deno.test("[REL-118] a fresh v16 database applies once and then verifies as exac
     try {
       const original = await searchPath(client);
       assert(
-        await applyCanonicalSchemaWith(client, artifacts) === "apply-v16",
+        await applyCanonicalSchemaWith(client, artifacts, new Map()) ===
+          "apply-v16",
         "an empty database was not given the v16 schema",
       );
       const afterApply = await searchPath(client);
@@ -424,7 +441,7 @@ Deno.test("[REL-118] a fresh v16 database applies once and then verifies as exac
       await client.end();
     }
     assert(
-      await runMigration(environment(url)) === "verify-v16",
+      await runMigration(environment(url), builtCatalogs) === "verify-v16",
       "a fresh v16 database is not recognised as exact v16",
     );
     assert(
@@ -451,7 +468,8 @@ Deno.test("[GAP-044] the upgrade from v11 rewords only the reminder-delivery col
     );
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v11-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v11-to-v16",
       "an exact v11 database was not classified for the v11-to-v16 upgrade",
     );
     const [after] = await columnComment(sql);
@@ -488,7 +506,8 @@ Deno.test("[REL-061] the v12-to-v16 upgrade keeps imported catalog rows, seeds t
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v12-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v12-to-v16",
       "an exact v12 database was not classified for the v12-to-v16 upgrade",
     );
     const [catalogs] = await sql<{
@@ -517,7 +536,7 @@ Deno.test("[REL-061] the v12-to-v16 upgrade keeps imported catalog rows, seeds t
         now() + interval '5 minutes')
     `;
     assert(
-      await runMigration(environment(url)) === "verify-v16",
+      await runMigration(environment(url), builtCatalogs) === "verify-v16",
       "an upgraded v12 database is not recognised as exact v16",
     );
   });
@@ -546,7 +565,8 @@ Deno.test("[GAP-044] the upgrade from v7 keeps every member on in-app delivery w
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v7-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v7-to-v16",
       "an exact v7 database was not classified for the v7 upgrade",
     );
     const [preference] = await sql<{
@@ -606,7 +626,8 @@ Deno.test("[REL-061] the v8-to-v9 upgrade indexes existing text and dismisses pa
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v8-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v8-to-v16",
       "an exact v8 database was not classified for the v8 upgrade",
     );
     const [indexed] = await sql<{ readonly found: number }[]>`
@@ -665,7 +686,8 @@ Deno.test("[GIFTS-001] the v9-to-v16 upgrade keeps hand-recorded debts and charg
     `;
 
     assert(
-      await runMigration(environment(url)) === "upgrade-v9-to-v16",
+      await runMigration(environment(url), builtCatalogs) ===
+        "upgrade-v9-to-v16",
       "an exact v9 database was not classified for the v9-to-v16 upgrade",
     );
     const [kept] = await sql<
@@ -723,7 +745,9 @@ Deno.test("[GAP-037] the migration runner refuses a drifted catalog and leaves i
     await sql.unsafe(artifacts.v10Sql);
     await sql`alter table crm.users add column drifted_note text`;
 
-    const message = await refusal(() => runMigration(environment(url)));
+    const message = await refusal(() =>
+      runMigration(environment(url), builtCatalogs)
+    );
     assert(
       message === "Refusing ambiguous or drifted database state.",
       `a drifted catalog was not refused: ${message}`,
@@ -742,7 +766,9 @@ Deno.test("[GAP-037] the migration runner refuses a crm schema that matches no b
     await sql`create schema crm`;
     await sql`create table crm.users (id uuid primary key)`;
 
-    const message = await refusal(() => runMigration(environment(url)));
+    const message = await refusal(() =>
+      runMigration(environment(url), builtCatalogs)
+    );
     assert(
       message === "Refusing ambiguous or drifted database state.",
       `an ambiguous crm schema was not refused: ${message}`,
@@ -784,4 +810,201 @@ Deno.test("[GAP-037] the migration runner requires a database configuration", as
     message === "DATABASE_URL or complete PG connection fields are required",
     `an unconfigured runner was not refused: ${message}`,
   );
+});
+
+function builtVersions(expected: ExpectedCatalogs): readonly number[] {
+  return [...expected.keys()].sort((left, right) => left - right);
+}
+
+// A baseline's expected catalog costs a full build of that schema. The runner
+// builds the current one, then older ones only until the database matches, so
+// an up-to-date database or the previous version does not pay for sixteen.
+Deno.test("[REL-129] the runner builds only the baselines it needs to classify a database", async () => {
+  await withScratchDatabase(async ({ url }) => {
+    const fresh: ExpectedCatalogs = new Map();
+    assert(
+      await applyCanonicalSchema(url, artifacts, fresh) === "apply-v16",
+      "an empty database was not given the v16 schema",
+    );
+    assert(
+      JSON.stringify(builtVersions(fresh)) === "[16]",
+      `an empty database built more than v16: ${builtVersions(fresh)}`,
+    );
+    const current: ExpectedCatalogs = new Map();
+    assert(
+      await applyCanonicalSchema(url, artifacts, current) === "verify-v16",
+      "a current database was not verified",
+    );
+    assert(
+      JSON.stringify(builtVersions(current)) === "[16]",
+      `a current database built more than v16: ${builtVersions(current)}`,
+    );
+  });
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v13Sql);
+    const older: ExpectedCatalogs = new Map();
+    assert(
+      await applyCanonicalSchema(url, artifacts, older) ===
+        "upgrade-v13-to-v16",
+      "an exact v13 database was not upgraded",
+    );
+    assert(
+      JSON.stringify(builtVersions(older)) === "[13,14,15,16]",
+      `a v13 database built other baselines: ${builtVersions(older)}`,
+    );
+  });
+});
+
+// One server gives one catalog per immutable baseline, so a caller that runs
+// the runner repeatedly may hand every run the catalogs an earlier run built.
+Deno.test("[REL-129] catalogs an earlier run built are reused, and a drifted database is still refused", async () => {
+  const shared: ExpectedCatalogs = new Map();
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v15Sql);
+    assert(
+      await applyCanonicalSchema(url, artifacts, shared) ===
+        "upgrade-v15-to-v16",
+      "an exact v15 database was not upgraded",
+    );
+  });
+  const [v15, v16] = [shared.get(15), shared.get(16)];
+  assert(
+    v15 !== undefined && v16 !== undefined && shared.size === 2,
+    `the first run did not leave v15 and v16: ${builtVersions(shared)}`,
+  );
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v15Sql);
+    assert(
+      await applyCanonicalSchema(url, artifacts, shared) ===
+        "upgrade-v15-to-v16",
+      "a second v15 database was not upgraded from the reused catalogs",
+    );
+    assert(
+      shared.get(15) === v15 && shared.get(16) === v16 && shared.size === 2,
+      "the second run rebuilt a catalog it was given",
+    );
+    await sql`alter table crm.users add column drifted_note text`;
+    const message = await refusal(() =>
+      applyCanonicalSchema(url, artifacts, shared)
+    );
+    assert(
+      message === "Refusing ambiguous or drifted database state.",
+      `a drifted catalog was not refused with reused catalogs: ${message}`,
+    );
+    assert(
+      shared.get(16) === v16 && builtVersions(shared).length === 16,
+      `a drift refusal did not compare every baseline: ${
+        builtVersions(shared)
+      }`,
+    );
+  });
+  // Classification names the one baseline a database equals, which holds only
+  // while no two baselines have the same catalog.
+  const distinct = new Set(
+    [...shared.values()].map((catalog) => catalog.structure.join("\n")),
+  );
+  assert(
+    distinct.size === 16,
+    `two baselines have the same catalog: ${distinct.size} distinct of 16`,
+  );
+});
+
+/** Resolves once a session of `sql`'s database waits for an advisory lock. */
+async function advisoryLockWaiter(sql: Sql): Promise<void> {
+  for (let attempt = 0; attempt < 800; attempt += 1) {
+    const [row] = await sql<{ readonly waiting: number }[]>`
+      select count(*)::int as waiting from pg_locks
+      where locktype = 'advisory' and not granted and database =
+        (select oid from pg_database where datname = current_database())
+    `;
+    if ((row?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("no session waited for the migration advisory lock");
+}
+
+/**
+ * Starts a runner on `url` while `sql` holds the migration lock, runs `change`
+ * once the runner waits for it, and returns what the runner answered. The
+ * runner waits at most five seconds, so `change` is one small statement.
+ */
+async function whileRunnerWaits(
+  sql: Sql,
+  url: string,
+  expected: ExpectedCatalogs,
+  change: () => Promise<unknown>,
+): Promise<string> {
+  await sql`select pg_advisory_lock(492337110)`;
+  const run = applyCanonicalSchema(url, artifacts, expected).catch((error) =>
+    error instanceof Error ? error.message : String(error)
+  );
+  try {
+    await advisoryLockWaiter(sql);
+    await change();
+  } finally {
+    await sql`select pg_advisory_unlock(492337110)`;
+    await run;
+  }
+  return await run;
+}
+
+// The runner classifies before it takes its lock, to build only what it needs.
+// It classifies again under the lock, so a database another session changed in
+// between is never acted on as the state the runner first saw.
+Deno.test("[REL-129] a database that drifts between classification and the lock is refused, and verifies once restored", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    const expected: ExpectedCatalogs = new Map();
+    assert(
+      await applyCanonicalSchema(url, artifacts, expected) === "apply-v16",
+      "an empty database was not given the v16 schema",
+    );
+    const answer = await whileRunnerWaits(
+      sql,
+      url,
+      expected,
+      () => sql`alter table crm.users add column drifted_note text`,
+    );
+    assert(
+      answer ===
+        "The database schema changed while the runner classified it; run the migration again.",
+      `a database changed under the runner was not refused: ${answer}`,
+    );
+    assert(
+      JSON.stringify(builtVersions(expected)) === "[16]",
+      `the refused run built baselines after its first reading: ${
+        builtVersions(expected)
+      }`,
+    );
+    await sql`alter table crm.users drop column drifted_note`;
+    assert(
+      await applyCanonicalSchema(url, artifacts, expected) === "verify-v16",
+      "the restored database was not verified on the next run",
+    );
+  });
+});
+
+// A migrate job that read v15 and then waited while another job upgraded the
+// database verifies the v16 it finds under the lock; it does not upgrade again.
+Deno.test("[REL-129] a runner that read v15 and waited while the database was upgraded verifies v16", async () => {
+  await withScratchDatabase(async ({ sql, url }) => {
+    await sql.unsafe(artifacts.v15Sql);
+    await sql`select set_config('search_path', 'public', false)`;
+    const expected: ExpectedCatalogs = new Map();
+    const answer = await whileRunnerWaits(sql, url, expected, async () => {
+      await sql.unsafe(artifacts.migrationV15ToV16);
+      await sql`select set_config('search_path', 'public', false)`;
+    });
+    assert(
+      answer === "verify-v16",
+      `a runner that waited through an upgrade answered: ${answer}`,
+    );
+    assert(
+      JSON.stringify(builtVersions(expected)) === "[15,16]",
+      `the waiting runner had not read v15 first: ${builtVersions(expected)}`,
+    );
+    assert(
+      (await crmTables(sql)).length === 93,
+      "the waiting runner did not leave the v16 catalog",
+    );
+  });
 });

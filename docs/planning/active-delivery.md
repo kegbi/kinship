@@ -72,8 +72,19 @@ its "Delivered, and what is left" section lists the open follow-ups.
       settings update, a member change, and a workspace reset or delete against
       the worker's reminder top-up and against concurrent account and workspace
       writes.
-- [ ] Release gate still open: the all-browser E2E matrix. The dependency audit
-      gate passes since MCP-E4.
+- [x] Merged to `main` and deployed on 2026-11-24 at `2cee1b76`. The private
+      production origin answers ready on schema v16.
+- [x] Main CI run `45304750920` on `2cee1b76`: the static gates (with the
+      dependency audit gate), PostgreSQL integration, the canonical schema, and
+      the production images pass. The unit-and-coverage job was cancelled at its
+      60-minute limit with every test passing; REL-129 removes the cause.
+- [ ] Release gate still open: the all-browser E2E matrix. The same run passed
+      252 cases, skipped 11, and failed 10: `IMPORT-002` in all three browsers
+      (REL-108); in WebKit, four `style-src-elem` refusals and `API-002`
+      (REL-119, REL-104); and two cases not recorded before, Firefox `GIFTS-001`
+      (the debt amount field never appeared after "Add debt") and WebKit
+      `EXPORT-001` ("WebKit encountered an internal error" on navigation).
+      Neither was rerun.
 
 This work takes priority over the sections below.
 
@@ -2371,6 +2382,44 @@ Playwright test carrying its stable flow ID.
       make the focus assertions robust to an inactive window without hiding a
       real focus regression, for example by asserting `document.activeElement`
       within the page or bringing the page to the front. Do not add retries.
+
+- [x] **REL-129 — The migration runner builds every baseline on every run.**
+      Found on 2026-11-24 when main CI run `45304750920` cancelled the
+      unit-and-coverage job at its 60-minute limit. To classify a database the
+      runner applied each of the sixteen canonical baselines into a scratch
+      schema, about 0.85 s each on the Windows host and about 1.5 s under
+      coverage on that runner, whatever the database held.
+      `tests/integration/migrations_postgres_test.ts` ran it 47 times and one
+      case of `tests/integration/registration_postgres_test.ts` 22 times, which
+      took 19.6 and 9.6 of the main coverage set's 38 minutes. Delivered: the
+      runner reads the database once before its lock, builds the current
+      baseline and then older ones only until that reading matches one,
+      classifies again under the lock among the catalogs it built, and refuses a
+      database that drifted in between. `applyCanonicalSchema`,
+      `applyCanonicalSchemaWith`, and `runMigration` accept the catalogs an
+      earlier run built on the same server, and the two suites pass one map per
+      file. `[REL-129]` cases prove which baselines a run builds, the reuse, a
+      refusal after a drift under the lock, a runner that read v15 and finds v16
+      under the lock, and that no two baselines share a catalog. Measured on the
+      Windows host: a run on a current database 14.2 s to 1.3 s and on v15 to
+      2.5 s (a v1 database still builds all sixteen, 14.6 s); the migration
+      suite about 11 min to 1 min 17 s; the registration case about 5 min to 26
+      s; `test:integration` 25 min 43 s to 11 min 19 s with 519 tests; the main
+      coverage set 24 min 32 s to 10 min 26 s, every threshold met. No schema
+      file changed.
+
+- [ ] **REL-130 — Two migrate jobs started together on a brand-new database: one
+      fails.** Found while testing REL-129 and reproduced at `2cee1b76`, before
+      it. Each job builds its expected catalogs before it takes the advisory
+      lock, the canonical DDL runs `CREATE EXTENSION IF NOT EXISTS`, and on a
+      database with no extensions the two builds collide: the loser exits with
+      `duplicate key value violates unique constraint
+      "pg_extension_name_index"`,
+      the other applies v16, and a rerun verifies. Nothing wrong is committed,
+      and Compose starts one migrate job. If it is worth closing, take the lock
+      before the first scratch build, as a session lock released in a `finally`,
+      and keep the five-second wait in mind: a second job would then wait
+      through the first one's builds.
 
 ## Just-In-Time Technical Capabilities
 

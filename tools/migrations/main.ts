@@ -1,6 +1,7 @@
 import {
   applyCanonicalSchema,
   type CanonicalSchemaArtifacts,
+  type ExpectedCatalogs,
   type SchemaAction,
 } from "./baseline.ts";
 import { resolveDatabaseUrl } from "../../packages/backend/platform/postgres/config.ts";
@@ -183,9 +184,13 @@ export async function readCanonicalArtifacts(): Promise<
   };
 }
 
-/** Brings the configured database to canonical schema v16, or refuses. */
+/**
+ * Brings the configured database to canonical schema v16, or refuses.
+ * `expected` reuses catalogs an earlier run built on the same server.
+ */
 export async function runMigration(
   environment: { get(name: string): string | undefined },
+  expected?: ExpectedCatalogs,
 ): Promise<Exclude<SchemaAction, "reject">> {
   const databaseUrl = resolveDatabaseUrl(environment);
   if (!databaseUrl) {
@@ -196,6 +201,7 @@ export async function runMigration(
   return await applyCanonicalSchema(
     databaseUrl,
     await readCanonicalArtifacts(),
+    expected,
   );
 }
 

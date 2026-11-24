@@ -51,7 +51,10 @@ runner creates it.
 
 1. Verify backup/restore readiness for a persistent environment.
 2. Start the one-shot `migrate` service.
-3. Acquire the migration lock and verify current checksums/schema state.
+3. Acquire the migration lock and verify current checksums/schema state. The
+   runner may read the schema once before the lock, only to choose which
+   baselines to build for the comparison; it acts on the reading it takes under
+   the lock.
 4. Apply pending migrations and their postconditions.
 5. Release the lock and exit successfully.
 6. Start or mark ready API and worker processes compatible with that state.

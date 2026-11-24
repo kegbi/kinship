@@ -9,7 +9,10 @@ import {
   DEFAULT_RELATIONSHIP_TYPE_VOCABULARY,
 } from "../../packages/backend/modules/workspaces/public.ts";
 import { connectDatabase } from "../../packages/backend/platform/postgres/database.ts";
-import { applyCanonicalSchema } from "../../tools/migrations/baseline.ts";
+import {
+  applyCanonicalSchema,
+  type ExpectedCatalogs,
+} from "../../tools/migrations/baseline.ts";
 import {
   PostgresIdentityRegistration,
 } from "../../packages/backend/modules/identity/adapters/postgres/identity_repository.ts";
@@ -691,8 +694,16 @@ Deno.test({
     // The runner as the migrate job runs it, over every canonical artifact;
     // the scratch catalog is inspected as the project superuser.
     const artifacts = await readCanonicalArtifacts();
+    // The runs below all read this one database, where an immutable baseline
+    // always gives the same catalog, so they share the catalogs they build
+    // (REL-129). Each refusal still compares the live catalog with all of them.
+    const builtCatalogs: ExpectedCatalogs = new Map();
     assert(
-      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+      await applyCanonicalSchema(
+        requireAdminDatabaseUrl(),
+        artifacts,
+        builtCatalogs,
+      ) ===
         "verify-v16",
       "unmodified canonical catalog verifies",
     );
@@ -703,7 +714,11 @@ Deno.test({
     try {
       let driftRejected = false;
       try {
-        await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts);
+        await applyCanonicalSchema(
+          requireAdminDatabaseUrl(),
+          artifacts,
+          builtCatalogs,
+        );
       } catch {
         driftRejected = true;
       }
@@ -726,7 +741,11 @@ Deno.test({
       try {
         let rejected = false;
         try {
-          await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts);
+          await applyCanonicalSchema(
+            requireAdminDatabaseUrl(),
+            artifacts,
+            builtCatalogs,
+          );
         } catch {
           rejected = true;
         }
@@ -861,7 +880,11 @@ Deno.test({
       values ('GET', '/upgrade-fixture', '127.0.0.1'::inet, 200)
     `;
     assert(
-      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+      await applyCanonicalSchema(
+        requireAdminDatabaseUrl(),
+        artifacts,
+        builtCatalogs,
+      ) ===
         "upgrade-v1-to-v16",
       "exact repository v1 upgrades transactionally to v16",
     );
@@ -881,7 +904,11 @@ Deno.test({
       "v1 upgrade preserves rows and adds the v2 field",
     );
     assert(
-      await applyCanonicalSchema(requireAdminDatabaseUrl(), artifacts) ===
+      await applyCanonicalSchema(
+        requireAdminDatabaseUrl(),
+        artifacts,
+        builtCatalogs,
+      ) ===
         "verify-v16",
       "upgraded repository v16 verifies idempotently",
     );
