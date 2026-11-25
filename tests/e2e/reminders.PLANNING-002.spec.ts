@@ -7,6 +7,7 @@ import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu } from "./support/profile.ts";
 import { signIn } from "./support/sign-in.ts";
 import { saveNewPerson } from "./support/directory.ts";
+import { bringReminderDue, upcomingSendTime } from "./support/reminders.ts";
 
 test(
   "[PLANNING-002] creates calendar reminders and cadence and delivers once",
@@ -24,7 +25,7 @@ test(
     await signIn(page, email);
     const profilePath = await saveNewPerson(page, "Ada", "Lovelace");
 
-    const target = new Date(Date.now() + 75_000);
+    const target = upcomingSendTime();
     const targetDate = target.toISOString().slice(0, 10);
     const targetTime = target.toISOString().slice(11, 16);
     await settlePersonWorkspace(page);
@@ -73,6 +74,7 @@ test(
     ).toBeDisabled();
     await page.getByRole("button", { name: "Restore person" }).click();
 
+    bringReminderDue(email, "Call Ada once", target);
     await expect.poll(async () => {
       const response = await page.request.get(
         `${origin}/api/v1/today/reminders`,

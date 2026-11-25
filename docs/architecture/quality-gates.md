@@ -130,7 +130,7 @@ aggregate order and skip on-demand modules such as `web-build` (run by `build`)
 and `repro-astro-readiness` (run by `test:repro:astro-readiness`). The web
 modules run Vitest; every other module runs `deno test` with the permissions the
 manifest declares for it. `integration`, and each coverage set that measures
-integration suites, run inside a disposable PostgreSQL Compose project.
+integration suites, run inside disposable PostgreSQL Compose projects.
 
 Tests run through the test verbs, never by appending targets, redirections,
 shell separators, or fallback commands to `deno task check`.
@@ -364,10 +364,11 @@ kept whole at the module root. No `_test.ts` sits at a module or read-model
 root; `tools/tasks/manifest_test.ts` fails a suite placed there. Moving a suite
 keeps its single unit home and the coverage sets that run it.
 
-Run Playwright against Chromium, Firefox, and WebKit in CI. Add automated
-accessibility checks such as axe to each representative page state, plus
-keyboard-only workflow assertions. Accessibility checks complement, rather than
-replace, semantic component tests.
+Run Playwright against Chromium, Firefox, and WebKit in CI (see
+[CI Stages](#ci-stages) for when each runs). Add automated accessibility checks
+such as axe to each representative page state, plus keyboard-only workflow
+assertions. Accessibility checks complement, rather than replace, semantic
+component tests.
 
 - Hydration budget: each island's hydrated bytes are measured and recorded in
   its candidate's evidence, and static and public pages ship no React
@@ -455,8 +456,8 @@ Deno has no Git-hook manager. Use Lefthook only to invoke repository tasks:
   files (`deno fmt --check`, `deno lint`, and ESLint for Astro templates);
 - pre-push: the whole-repository `deno task fmt:check`, `deno task lint`, and
   `deno task check`, then `deno task test:unit` and `deno task test:contract`;
-- CI: the authoritative full suite, including all E2E browsers and
-  security/dependency gates.
+- CI: the authoritative full suite, including security/dependency gates, with
+  all E2E browsers nightly and on manual runs.
 
 Pre-commit must not format, fix, stage, or restage files. `deno task fix` is an
 explicit developer action. Target less than 15 seconds for pre-commit and less
@@ -498,16 +499,41 @@ and then runs the same `deno task` verbs a developer runs locally.
 | Job                | When                    | Gates                                                                                                                                                                   |
 | ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `static`           | every run               | `fmt:check`, `lint`, `check:architecture`, `check`, `contracts:check`, `test:contract`, `deps:audit` (full report), and `deps:audit:gate` (high severity, no exception) |
-| `unit`             | every run               | `test:unit`, then `test:coverage` against the 80% thresholds                                                                                                            |
-| `integration`      | every run               | `test:integration` on its own disposable PostgreSQL 18.4 project: the migrations, the Kysely type drift check, then the suites                                          |
+| `unit`             | every run               | `test:unit --uncovered`: the unit suites no coverage set runs; then `test:coverage --module=web`                                                                        |
+| `coverage`         | every run               | `test:coverage --except=web`: every other unit and PostgreSQL suite, against the 80% thresholds                                                                         |
+| `integration`      | every run               | `test:integration --uncovered` on a disposable PostgreSQL 18.4 project: the migrations, the Kysely type drift check, then the PostgreSQL suites no coverage set runs    |
 | `schema`           | every run               | `test:schema` against the pinned PostgreSQL image                                                                                                                       |
-| `e2e-chromium`     | pull requests           | `test:e2e --project=chromium` against the Compose stack, uploading Playwright traces on failure                                                                         |
-| `e2e-all-browsers` | `main`, nightly, manual | the whole Chromium, Firefox, and WebKit matrix                                                                                                                          |
+| `e2e-chromium`     | pull requests, `main`   | `test:e2e --project=chromium` against the Compose stack, in two shards, uploading Playwright traces on failure                                                          |
+| `e2e-all-browsers` | nightly, manual         | the whole Chromium, Firefox, and WebKit matrix, one job with its own stack for each browser and each of two shards                                                      |
 | `images`           | `main`, nightly, manual | production builds of `Dockerfile.api` and of the `web` and `gateway` targets of `Dockerfile.web`                                                                        |
 
-`static`, `unit`, `integration`, and `schema` run in parallel; the three
+`static`, `unit`, `coverage`, `integration`, and `schema` run in parallel; the
 expensive jobs wait for `static`. Coverage is never split in a way that lets
 uncovered code evade the aggregate threshold.
+
+A push to `main` runs Chromium alone; Firefox and WebKit run nightly, so a
+failure only they show is reported within a day. Run the workflow by hand on a
+branch or on `main` to have every browser before a release or after a change to
+browser-dependent behavior. The nightly run skips its jobs (`nightly`) when its
+commit has already passed a nightly or manual run, which ran every browser; a
+failed lookup skips nothing. A date-dependent failure or a new advisory on an
+unchanged `main` is therefore reported by the next commit or manual run.
+
+A suite asserts the same with and without coverage, so CI runs each one once.
+`--uncovered` leaves out exactly the suites `test:coverage` runs, computed from
+the manifest. A coverage set may also name the sets it `reuses`: its report then
+reads their raw coverage as well, and their suites do not run again for it. The
+narrower permissions of the unit sets are checked by the pre-push hook, which
+runs the whole `test:unit`.
+
+`test:integration` and `test:coverage` run their PostgreSQL suites in up to
+three lanes at once, two on two cores
+([`tools/tasks/lanes.ts`](../../tools/tasks/lanes.ts)). Each lane has a
+disposable PostgreSQL project of its own, so lanes share no database, and a
+coverage set's report reads the raw data of all its lanes together. A suite that
+runs far longer than its file size suggests is named there, so the lanes stay
+even, and so is a suite that holds a read to a time, which runs after the lanes
+with nothing beside it. Each output line starts with its lane's name.
 
 [`tools/pipeline_contract_test.ts`](../../tools/pipeline_contract_test.ts) is
 the executable consumer of this workflow and of `lefthook.yml`. It proves the

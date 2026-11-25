@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test } from "./support/test.ts";
+import { captureScreenshot } from "./support/screenshot.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -111,7 +112,7 @@ test(
         await expect(page.locator("#protected-shell")).toBeVisible();
         await expect(page.locator("header [data-quick-capture]")).toBeEnabled();
         await page.waitForLoadState("networkidle");
-        await page.screenshot({
+        await captureScreenshot(page, {
           path: join(
             artifactDirectory,
             `${screenshotPhase}-${browserName}-${name}-${width}.png`,
@@ -203,7 +204,7 @@ test(
     await page.keyboard.press("Tab");
     await expect(page.getByLabel("Active workspace")).toBeFocused();
     await expect(page.getByLabel("Active workspace")).toBeInViewport();
-    await page.screenshot({
+    await captureScreenshot(page, {
       path: join(
         artifactDirectory,
         `${screenshotPhase}-${browserName}-menu-320-short.png`,
@@ -277,7 +278,7 @@ test(
     await expect(capture).toBeEnabled();
     await keyboardReachMemberMenuToggle(page);
     await expect(page.locator(".app-header")).toHaveCSS("position", "sticky");
-    await page.screenshot({
+    await captureScreenshot(page, {
       path: join(
         artifactDirectory,
         `${screenshotPhase}-${browserName}-today-1280.png`,

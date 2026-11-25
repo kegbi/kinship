@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { captureScreenshot } from "./support/screenshot.ts";
 import { expect, test } from "./support/test.ts";
 
 /*
@@ -14,6 +15,10 @@ test("the policy-violation collector reports injected inline styles", async ({ p
     "data-page-id",
     "public.home",
   );
+  expect(await policyViolations.take()).toEqual([]);
+
+  // What Playwright itself adds to take a screenshot is not the product's.
+  await captureScreenshot(page);
   expect(await policyViolations.take()).toEqual([]);
 
   await page.evaluate(() => {

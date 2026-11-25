@@ -1,5 +1,6 @@
 import { expect, test } from "./support/test.ts";
 import { waitForIsland } from "./support/islands.ts";
+import { settlePersonWorkspace } from "./support/navigation.ts";
 import { registerVerified } from "./support/api.ts";
 import { createPersonThroughUi } from "./support/directory.ts";
 import { origin } from "./support/env.ts";
@@ -193,6 +194,7 @@ test(
     );
 
     await page.goto(`${adaPath}?section=notes`);
+    await settlePersonWorkspace(page);
     const adaNotes = page.locator("#profile-section-notes");
     const addNote = adaNotes.getByRole("button", { name: "Add note" });
     await addNote.focus();

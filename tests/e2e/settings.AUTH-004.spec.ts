@@ -10,6 +10,7 @@ import {
   recordPolicyViolations,
 } from "./support/page-checks.ts";
 import { openMemberPopover } from "./support/shell.ts";
+import { captureScreenshot } from "./support/screenshot.ts";
 import { signIn } from "./support/sign-in.ts";
 
 async function registerAccount(
@@ -74,16 +75,16 @@ test(
       page.locator(selector).evaluate((element) =>
         element.getBoundingClientRect().width
       );
-    const noOverflow = async () =>
-      expect(
-        await page.evaluate(() =>
-          document.documentElement.scrollWidth <= innerWidth
-        ),
+    // Polled: a workspace switch or a resize lays the page out again after
+    // the attribute that announces it has changed.
+    const noOverflow = () =>
+      expect.poll(() =>
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
       ).toBe(true);
     const snapshotDirectory = ".artifacts/apr-010-review";
     mkdirSync(snapshotDirectory, { recursive: true });
     const snapshot = (name: string) =>
-      page.screenshot({
+      captureScreenshot(page, {
         path: `${snapshotDirectory}/${browserName}-${name}.png`,
         fullPage: true,
       });

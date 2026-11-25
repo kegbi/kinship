@@ -32,6 +32,7 @@ const REQUIRED_JOBS = [
     ],
   },
   { id: "unit", tasks: ["test:unit", "test:coverage"] },
+  { id: "coverage", tasks: ["test:coverage"] },
   { id: "integration", tasks: ["test:integration"] },
   { id: "schema", tasks: ["test:schema"] },
   { id: "e2e-chromium", tasks: ["test:e2e"] },
@@ -335,6 +336,54 @@ function jobOrFail(
   return asMap(job, `${WORKFLOW_PATH} job ${id}`);
 }
 
+Deno.test("the nightly run skips only a commit a full run has passed", async () => {
+  const document = await workflow();
+  const nightly = jobOrFail(document, "nightly");
+  assert(
+    asText(nightly["if"]) === "github.event_name == 'schedule'",
+    "only the nightly run may be skipped",
+  );
+  const lookup = jobCommands(nightly, "nightly").join("\n");
+  assert(
+    lookup.includes("head_sha=$GITHUB_SHA") &&
+      lookup.includes("status=success"),
+    "a skipped commit must itself have passed",
+  );
+  // A push run leaves out Firefox and WebKit, so it does not stand in for a
+  // full one. A skipped nightly run does: its commit had passed a full run.
+  assert(
+    lookup.includes('"schedule"') && lookup.includes('"workflow_dispatch"') &&
+      !lookup.includes('"push"') && !lookup.includes('"pull_request"'),
+    "only a run of every browser stands in for the nightly run",
+  );
+
+  for (const id of ["static", "unit", "coverage", "integration", "schema"]) {
+    const job = jobOrFail(document, id);
+    assert(
+      asList(job["needs"], `${id} needs`).includes("nightly") &&
+        asText(job["if"]) ===
+          "${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}",
+      `the ${id} job must run unless the nightly commit has passed, also when the lookup fails`,
+    );
+  }
+});
+
+/** The strategy matrix of a job. */
+function matrixOf(
+  document: { readonly [key: string]: YamlValue },
+  id: string,
+): { readonly [key: string]: YamlValue } {
+  const strategy = asMap(
+    jobOrFail(document, id)["strategy"],
+    `${WORKFLOW_PATH} job ${id} strategy`,
+  );
+  assert(
+    strategy["fail-fast"] === "false",
+    `${id} must let every matrix job report`,
+  );
+  return asMap(strategy["matrix"], `${WORKFLOW_PATH} job ${id} matrix`);
+}
+
 /** Every shell line a job runs, in step order. */
 function jobCommands(
   job: { readonly [key: string]: YamlValue },
@@ -431,6 +480,28 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
     "the audit gate must run the repository's exception-free gate",
   );
 
+  const coverage = jobCommands(jobOrFail(document, "coverage"), "coverage");
+  assert(
+    coverage.includes("deno task test:coverage --except=web") &&
+      jobCommands(jobOrFail(document, "unit"), "unit").includes(
+        "deno task test:coverage --module=web",
+      ),
+    "the two coverage runs must measure every set, each whole in one job",
+  );
+  // The unit and integration jobs leave out what the coverage job runs, and
+  // nothing else: a module selection would leave suites in no job at all.
+  for (
+    const [id, command] of [
+      ["unit", "deno task test:unit --uncovered"],
+      ["integration", "deno task test:integration --uncovered"],
+    ] as const
+  ) {
+    assert(
+      jobCommands(jobOrFail(document, id), id).includes(command),
+      `the ${id} job must run ${command}`,
+    );
+  }
+
   const chromium = jobCommands(
     jobOrFail(document, "e2e-chromium"),
     "e2e-chromium",
@@ -439,26 +510,54 @@ Deno.test("[GAP-004] CI runs every repository gate on the right events", async (
     chromium.some((command) => command.includes("test:e2e --project=chromium")),
     "the pull-request E2E job must run the Chromium project only",
   );
-  const everyBrowser = jobCommands(
-    jobOrFail(document, "e2e-all-browsers"),
-    "e2e-all-browsers",
+  const everyBrowser = matrixOf(document, "e2e-all-browsers");
+  assert(
+    asList(everyBrowser["browser"], "the E2E browser matrix").join() ===
+      "chromium,firefox,webkit",
+    "the all-browser E2E jobs must run the whole Playwright matrix",
   );
   assert(
-    everyBrowser.some((command) =>
-      /deno task test:e2e(\s|$)/.test(command) && !command.includes("--project")
-    ),
-    "the all-browser E2E job must run the whole Playwright matrix",
+    jobCommands(jobOrFail(document, "e2e-all-browsers"), "e2e-all-browsers")
+      .some((command) =>
+        command.includes("test:e2e --project=${{ matrix.browser }} ")
+      ),
+    "each all-browser E2E job must run the browser its matrix names",
   );
-
-  for (const id of ["e2e-all-browsers", "images"] as const) {
-    const condition = asText(jobOrFail(document, id)[`if`]);
+  for (const id of ["e2e-chromium", "e2e-all-browsers"] as const) {
+    const shards = asList(matrixOf(document, id)["shard"], `${id} shards`);
     assert(
-      condition.includes("push") && condition.includes("schedule"),
-      `the ${id} job must be reserved for main and the nightly run`,
+      shards.join() === shards.map((_, index) => String(index + 1)).join(),
+      `${id} must number its shards from one`,
     );
     assert(
-      !condition.includes("pull_request"),
-      `the ${id} job must not run on every pull request`,
+      jobCommands(jobOrFail(document, id), id).some((command) =>
+        command.endsWith(
+          `--shard=\${{ matrix.shard }}/${shards.length}`,
+        )
+      ),
+      `${id} must run every one of its shards, or tests run in none`,
+    );
+  }
+
+  // Each event that runs the suites runs each job it owns, and no other.
+  for (
+    const [id, events] of [
+      ["e2e-chromium", ["pull_request", "push"]],
+      ["e2e-all-browsers", ["schedule", "workflow_dispatch"]],
+      ["images", ["push", "schedule", "workflow_dispatch"]],
+    ] as const
+  ) {
+    const condition = asText(jobOrFail(document, id)["if"]);
+    const named = [
+      ...condition.matchAll(/github\.event_name == '([a-z_]+)'/g),
+    ].map((match) => match[1] ?? "");
+    assert(
+      named.sort().join() === events.join(),
+      `the ${id} job must run on ${events.join(", ")}, not ${named.join(", ")}`,
+    );
+    assert(
+      condition.includes("needs.static.result == 'success'"),
+      `the ${id} job must wait for the static gates to pass`,
     );
   }
 
@@ -619,7 +718,15 @@ Deno.test("[GAP-004] the pipeline installs dependencies from frozen lockfiles", 
     }`,
   );
 
-  for (const id of ["static", "unit", "integration", "schema"] as const) {
+  for (
+    const id of [
+      "static",
+      "unit",
+      "coverage",
+      "integration",
+      "schema",
+    ] as const
+  ) {
     const commandsForJob = jobCommands(jobOrFail(document, id), id);
     const installs = taskNames(commandsForJob).filter((name) =>
       name.startsWith("deps:")

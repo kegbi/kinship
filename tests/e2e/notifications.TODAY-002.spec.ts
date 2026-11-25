@@ -11,6 +11,7 @@ import {
   expectAccessible,
   recordPolicyViolations,
 } from "./support/page-checks.ts";
+import { bringReminderDue, upcomingSendTime } from "./support/reminders.ts";
 import { signIn } from "./support/sign-in.ts";
 
 test(
@@ -49,12 +50,12 @@ test(
     await expect(panel).toBeHidden();
     await expect(bell).toBeFocused();
 
-    // A reminder due in a minute and a finished export of their own.
+    // A reminder that comes due and a finished export of their own.
     const ada = await createPerson(page.request, {
       familyName: "Lovelace",
       givenName: "Ada",
     });
-    const target = new Date(Date.now() + 75_000);
+    const target = upcomingSendTime();
     const created = await page.request.post(`${origin}/api/v1/reminders`, {
       data: {
         anchorOn: target.toISOString().slice(0, 10),
@@ -90,6 +91,7 @@ test(
     `);
 
     // The worker delivers the reminder.
+    bringReminderDue(email, "Call Ada soon", target);
     await expect.poll(async () => {
       const response = await page.request.get(
         `${origin}/api/v1/notifications`,

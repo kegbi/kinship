@@ -24,7 +24,9 @@ export default defineConfig({
   use: {
     baseURL: process.env.TEST_WEB_ORIGIN ?? "http://127.0.0.1:4321",
     ignoreHTTPSErrors: true,
-    trace: "retain-on-failure",
+    // Every test records one, so a trace holds only what a diagnosis needs:
+    // DOM snapshots, network, and actions, without the film strip.
+    trace: { mode: "retain-on-failure", screenshots: false },
   },
   projects: [
     {

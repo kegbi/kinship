@@ -21,8 +21,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether the nightly run's commit has passed a run of every browser. Runs on
+  # other events skip this job, and a lookup that fails skips nothing.
+  nightly:
+    name: Nightly commit
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      unchanged: ${{ steps.passed.outputs.unchanged }}
+    steps:
+      - name: Look for a full run this commit passed
+        id: passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A nightly run skipped here counts as passed, because its commit was.
+        run: |
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=100" --jq '[.workflow_runs[] | select(.event == "schedule" or .event == "workflow_dispatch")] | length') || runs=0
+          if [ "$runs" -gt 0 ]; then echo "unchanged=true" >> "$GITHUB_OUTPUT"; fi
+
   static:
     name: Static gates
+    needs: [nightly]
+    if: ${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -65,9 +88,11 @@ jobs:
         run: deno task deps:audit:gate
 
   unit:
-    name: Unit suites and coverage
+    name: Unit suites outside coverage, and web
+    needs: [nightly]
+    if: ${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - name: Check out the candidate
         uses: actions/checkout@v5
@@ -88,14 +113,49 @@ jobs:
           deno task deps:deno
           deno task deps:node
       - name: Unit suites
-        run: deno task test:unit
+        # The coverage job runs every other unit suite, with the same
+        # assertions, so no suite runs twice.
+        run: deno task test:unit --uncovered
+      - name: Web suites and coverage thresholds
+        run: deno task test:coverage --module=web
+
+  # Every set but the web one, which the unit job measures. Each is collected
+  # and reported whole in its one job: the lanes it runs in
+  # (tools/tasks/lanes.ts) are joined before its threshold is applied.
+  coverage:
+    name: Suites and coverage thresholds
+    needs: [nightly]
+    if: ${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@v5
+      - name: Install the pinned Deno runtime
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.5
+          cache: true
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - name: Install dependencies from the lockfiles
+        run: |
+          deno task deps:deno
+          deno task deps:node
       - name: Coverage thresholds
-        run: deno task test:coverage
+        run: deno task test:coverage --except=web
 
   integration:
-    name: PostgreSQL integration
+    name: PostgreSQL integration outside coverage
+    needs: [nightly]
+    if: ${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Check out the candidate
         uses: actions/checkout@v5
@@ -106,15 +166,18 @@ jobs:
           cache: true
       - name: Install Deno dependencies from the lockfile
         run: deno task deps:deno
-      # The suite provisions its own disposable PostgreSQL 18.4 project through
+      # Each lane provisions its own disposable PostgreSQL 18.4 project through
       # Docker Compose (tools/postgres_gate.ts), applies the versioned
       # migrations, and proves the project leaves nothing behind. A runner
       # services block would be a second, untested database contract.
       - name: Integration suites
-        run: deno task test:integration
+        # As in the unit job, the coverage job runs the rest.
+        run: deno task test:integration --uncovered
 
   schema:
     name: Canonical schema
+    needs: [nightly]
+    if: ${{ !cancelled() && needs.nightly.outputs.unchanged != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -130,12 +193,18 @@ jobs:
       - name: Schema harness
         run: deno task test:schema
 
+  # A skipped `nightly` would skip every job behind it, so the jobs below ask
+  # for the result of `static` themselves.
   e2e-chromium:
-    name: E2E (Chromium)
-    if: github.event_name == 'pull_request'
+    name: E2E (chromium, ${{ matrix.shard }} of 2)
+    if: ${{ !cancelled() && needs.static.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'push') }}
     needs: [static]
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Check out the candidate
         uses: actions/checkout@v5
@@ -158,21 +227,28 @@ jobs:
       - name: Install the Chromium browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright flows
-        run: deno task test:e2e --project=chromium
+        run: deno task test:e2e --project=chromium --shard=${{ matrix.shard }}/2
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-chromium
+          name: playwright-chromium-${{ matrix.shard }}
           path: .artifacts/playwright
           retention-days: 7
 
   e2e-all-browsers:
-    name: E2E (Chromium, Firefox, WebKit)
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: E2E (${{ matrix.browser }}, ${{ matrix.shard }} of 2)
+    if: ${{ !cancelled() && needs.static.result == 'success' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     needs: [static]
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 40
+    # Every job has a stack of its own, so browsers and shards share nothing.
+    # One failing job never hides what the others would have reported.
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+        shard: [1, 2]
     steps:
       - name: Check out the candidate
         uses: actions/checkout@v5
@@ -192,21 +268,21 @@ jobs:
         run: |
           deno task deps:deno
           deno task deps:node
-      - name: Install every browser
-        run: pnpm exec playwright install --with-deps
+      - name: Install the browser
+        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
       - name: Playwright flows
-        run: deno task test:e2e
+        run: deno task test:e2e --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/2
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-all-browsers
+          name: playwright-${{ matrix.browser }}-${{ matrix.shard }}
           path: .artifacts/playwright
           retention-days: 7
 
   images:
     name: Production images
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: ${{ !cancelled() && needs.static.result == 'success' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     needs: [static]
     runs-on: ubuntu-24.04
     timeout-minutes: 45

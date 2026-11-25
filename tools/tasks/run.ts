@@ -8,20 +8,34 @@
  * Usage:
  *   deno run ... tools/tasks/run.ts <verb> [--module=<id>] [extra arguments]
  *
+ * `coverage` takes `--except=<id>`, which leaves one module's set to another
+ * run of the verb. `unit` and `integration` take `--uncovered`, which leaves out every suite
+ * `coverage` runs. CI runs `coverage` beside them, so it needs no suite twice.
+ *
  * Verbs: all, unit, integration, contract, coverage, architecture, check,
  * build, ops, schema-types.
  */
 
 import { withDisposablePostgres } from "../postgres_gate.ts";
 import {
+  type Lane,
+  MAX_LANES,
+  planLanes,
+  runLanes,
+  runPool,
+  suiteWeight,
+} from "./lanes.ts";
+import {
   ARCHITECTURE_CHECKER,
   ARCHITECTURE_PERMISSIONS,
   COVERAGE_AGGREGATE,
   type CoverageSet,
+  coveredSuites,
   DEFAULT_COVERAGE_THRESHOLD,
   expandGlobPattern,
   INTEGRATION_PERMISSIONS,
   isGlob,
+  listRepositoryTestFiles,
   MODULES,
   OPERATOR_SCRIPTS,
   permissionFlags,
@@ -44,34 +58,80 @@ class TaskFailure extends Error {
   }
 }
 
+/** Copies a child's output line by line, each line behind its lane's name. */
+async function copyLines(
+  source: ReadableStream<Uint8Array>,
+  lane: string,
+): Promise<void> {
+  let rest = "";
+  for await (const chunk of source.pipeThrough(new TextDecoderStream())) {
+    const lines = (rest + chunk).split("\n");
+    rest = lines.pop() ?? "";
+    for (const line of lines) console.log(`[${lane}] ${line}`);
+  }
+  if (rest.length > 0) console.log(`[${lane}] ${rest}`);
+}
+
+/**
+ * Runs one command. With a `lane`, which a command running beside others has,
+ * its output is copied behind that name so the two stay readable.
+ */
 async function execute(
   executable: string,
   args: readonly string[],
   environment: Readonly<Record<string, string>> = {},
+  lane?: string,
 ): Promise<void> {
   const label = `${executable} ${args.join(" ")}`;
-  console.log(`\n> ${label}\n`);
-  const result = await new Deno.Command(executable, {
-    args: [...args],
-    cwd: ROOT,
-    env: { ...environment },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  if (!result.success) {
-    throw new TaskFailure(result.code || 1, `${label} exited ${result.code}`);
+  console.log(`\n> ${lane === undefined ? "" : `[${lane}] `}${label}\n`);
+  const options = { args: [...args], cwd: ROOT, env: { ...environment } };
+  let status: Deno.CommandStatus;
+  if (lane === undefined) {
+    status = await new Deno.Command(executable, {
+      ...options,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).spawn().status;
+  } else {
+    const child = new Deno.Command(executable, {
+      ...options,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "piped",
+    }).spawn();
+    [status] = await Promise.all([
+      child.status,
+      copyLines(child.stdout, lane),
+      copyLines(child.stderr, lane),
+    ]);
+  }
+  if (!status.success) {
+    throw new TaskFailure(status.code || 1, `${label} exited ${status.code}`);
   }
 }
 
 function deno(
   args: readonly string[],
   environment: Readonly<Record<string, string>> = {},
+  lane?: string,
 ): Promise<void> {
-  return execute("deno", args, {
-    DENO_NO_PACKAGE_JSON: "1",
-    ...environment,
-  });
+  return execute(
+    "deno",
+    args,
+    { DENO_NO_PACKAGE_JSON: "1", ...environment },
+    lane,
+  );
+}
+
+/** A set's suites split over database lanes, balanced by what they weigh. */
+async function postgresLanes(suites: readonly string[]): Promise<Lane[]> {
+  const weights = new Map<string, number>();
+  for (const suite of suites) {
+    const { size } = await Deno.stat(new URL(suite, ROOT));
+    weights.set(suite, suiteWeight(suite, size));
+  }
+  return planLanes(suites, (suite) => weights.get(suite) ?? 0);
 }
 
 function pnpm(args: readonly string[]): Promise<void> {
@@ -109,32 +169,42 @@ function selection(requested: string | undefined, order: readonly string[]) {
   return order.map(moduleOrFail);
 }
 
+/** The suites a verb leaves out, because a coverage set runs them. */
+type LeftOut = ReadonlySet<string>;
+
+/** What `--uncovered` leaves out; nothing without it. */
+async function leftOut(args: readonly string[]): Promise<LeftOut> {
+  return args.includes("--uncovered")
+    ? coveredSuites(await listRepositoryTestFiles(ROOT))
+    : new Set();
+}
+
 async function runUnitSet(
   module: TaskModule,
-  environment: Readonly<Record<string, string>> = {},
+  skipped: LeftOut = new Set(),
 ): Promise<void> {
   const set = module.unit;
   if (!set) return;
+  const tests = (await resolveTests(set)).filter((test) => !skipped.has(test));
+  if (tests.length === 0) return;
   if (set.runner === "vitest") {
     await pnpm(["exec", "vitest", "run"]);
     return;
   }
-  const tests = await resolveTests(set);
-  await denoOver(
-    ["test", ...permissionFlags(set.permissions)],
-    tests,
-    environment,
-  );
+  await denoOver(["test", ...permissionFlags(set.permissions)], tests);
 }
 
-async function runUnit(requested: string | undefined): Promise<void> {
+async function runUnit(
+  requested: string | undefined,
+  skipped: LeftOut = new Set(),
+): Promise<void> {
   for (const module of selection(requested, TEST_AGGREGATE)) {
     if (!module.unit) {
       if (requested === undefined) continue;
       throw new TaskFailure(1, `Module ${module.id} declares no unit suite.`);
     }
     if (module.onDemand && requested === undefined) continue;
-    await runUnitSet(module);
+    await runUnitSet(module, skipped);
   }
 }
 
@@ -166,26 +236,40 @@ async function runSchemaTypes(check: boolean): Promise<void> {
   );
 }
 
-async function runIntegration(requested: string | undefined): Promise<void> {
+async function runIntegration(
+  requested: string | undefined,
+  skipped: LeftOut = new Set(),
+): Promise<void> {
   const modules = requested === undefined
     ? MODULES.filter((module) => module.integration?.length)
     : [moduleOrFail(requested)];
-  const suites = modules.flatMap((module) => module.integration ?? []);
+  const suites = modules.flatMap((module) => module.integration ?? [])
+    .filter((suite) => !skipped.has(suite));
   if (suites.length === 0) {
     throw new TaskFailure(
       1,
       `No integration suite is declared for ${requested ?? "the repository"}.`,
     );
   }
-  await withDisposablePostgres(async (environment) => {
-    // The freshly migrated database is the canonical DDL, so the committed
-    // types must match it before any suite writes a row.
-    await deno(databaseTypesArguments(true), environment);
-    await deno(
-      ["test", ...permissionFlags(INTEGRATION_PERMISSIONS), ...suites],
-      environment,
-    );
-  });
+  const lanes = await postgresLanes(suites);
+  await runLanes(lanes.map((lane, index) => ({
+    alone: lane.alone,
+    run: () =>
+      withDisposablePostgres(async (environment) => {
+        const name = lanes.length === 1 ? undefined : `lane ${index + 1}`;
+        // A freshly migrated database is the canonical DDL, so the committed
+        // types must match it before any suite of that lane writes a row.
+        // Every lane migrates the same DDL; one comparison is enough.
+        if (index === 0) {
+          await deno(databaseTypesArguments(true), environment, name);
+        }
+        await deno(
+          ["test", ...permissionFlags(INTEGRATION_PERMISSIONS), ...lane.suites],
+          environment,
+          name,
+        );
+      }),
+  })));
 }
 
 async function runContract(requested: string | undefined): Promise<void> {
@@ -204,60 +288,112 @@ async function runContract(requested: string | undefined): Promise<void> {
   await contractsCheck();
 }
 
-/** The `deno test` arguments that collect raw coverage for one set. */
-export async function coverageCollectionArguments(
+/** Where one lane of a set writes its raw coverage. */
+function coverageDirectory(set: CoverageSet, lane: number): string {
+  return `.coverage/${set.directory}${lane === 0 ? "" : `-lane-${lane + 1}`}`;
+}
+
+/** The `deno test` arguments that collect raw coverage for one lane. */
+export function coverageCollectionArguments(
   set: CoverageSet,
-): Promise<string[]> {
+  suites: readonly string[],
+  lane = 0,
+): string[] {
   return [
     "test",
     "--clean",
-    `--coverage=.coverage/${set.directory}`,
+    `--coverage=${coverageDirectory(set, lane)}`,
     "--coverage-raw-data-only",
     ...permissionFlags(set.permissions),
-    ...await resolveTests(set),
+    ...suites,
   ];
 }
 
-/** The `deno coverage` arguments that enforce one set's threshold. */
-export function coverageReportArguments(set: CoverageSet): string[] {
+/** Every directory the lanes of one set write. */
+export function coverageDirectories(set: CoverageSet, lanes = 1): string[] {
+  return Array.from(
+    { length: lanes },
+    (_, lane) => coverageDirectory(set, lane),
+  );
+}
+
+/**
+ * The `deno coverage` arguments that enforce one set's threshold. They read
+ * every lane the set ran in, and those of the sets it reuses, so the report is
+ * the set's whole coverage.
+ */
+export function coverageReportArguments(
+  set: CoverageSet,
+  directories: readonly string[] = coverageDirectories(set),
+): string[] {
   return [
     "coverage",
     ...set.include.map((path) => `--include=${path}`),
     ...(set.exclude ?? []).map((pattern) => `--exclude=${pattern}`),
     `--threshold=${set.threshold ?? DEFAULT_COVERAGE_THRESHOLD}`,
-    `.coverage/${set.directory}`,
+    ...directories,
   ];
 }
 
-async function runCoverageSet(
-  set: CoverageSet,
-  environment: Readonly<Record<string, string>> = {},
+/**
+ * Collects every set first, the lanes of all sets side by side, and then
+ * reports each set over everything it collected or reuses.
+ */
+async function runCoverage(
+  requested: string | undefined,
+  excepted?: string,
 ): Promise<void> {
-  if (set.runner === "vitest") {
-    await pnpm(["exec", "vitest", "run", "--coverage"]);
-    return;
+  if (excepted !== undefined) moduleOrFail(excepted);
+  const reported = selection(requested, COVERAGE_AGGREGATE)
+    .filter((module) => module.id !== excepted);
+  if (requested !== undefined && !reported[0]?.coverage) {
+    throw new TaskFailure(1, `Module ${requested} declares no coverage suite.`);
   }
-  await deno(await coverageCollectionArguments(set), environment);
-  await deno(coverageReportArguments(set));
-}
+  // One requested module collects the sets it reuses as well.
+  const collected = new Set(
+    reported.flatMap((module) => [
+      module,
+      ...(module.coverage?.reuses ?? []).map(moduleOrFail),
+    ]),
+  );
 
-async function runCoverage(requested: string | undefined): Promise<void> {
-  for (const module of selection(requested, COVERAGE_AGGREGATE)) {
+  const collect: { alone: boolean; run: () => Promise<void> }[] = [];
+  const directories = new Map<string, string[]>();
+  for (const module of collected) {
     const set = module.coverage;
-    if (!set) {
-      if (requested === undefined) continue;
-      throw new TaskFailure(
-        1,
-        `Module ${module.id} declares no coverage suite.`,
-      );
-    }
-    if (set.postgres) {
-      await withDisposablePostgres((environment) =>
-        runCoverageSet(set, environment)
-      );
-      continue;
-    }
-    await runCoverageSet(set);
+    if (!set || set.runner === "vitest") continue;
+    const suites = await resolveTests(set);
+    const lanes = set.postgres
+      ? await postgresLanes(suites)
+      : [{ alone: false, suites }];
+    directories.set(module.id, coverageDirectories(set, lanes.length));
+    lanes.forEach((lane, index) => {
+      const name = lanes.length === 1 ? module.id : `${module.id} ${index + 1}`;
+      const run = (environment: Readonly<Record<string, string>> = {}) =>
+        deno(
+          coverageCollectionArguments(set, lane.suites, index),
+          environment,
+          name,
+        );
+      collect.push({
+        alone: lane.alone,
+        run: () => set.postgres ? withDisposablePostgres(run) : run(),
+      });
+    });
+  }
+  await runLanes(collect);
+
+  const report = reported.flatMap(({ id, coverage: set }) => {
+    if (!set || set.runner === "vitest") return [];
+    const read = [id, ...(set.reuses ?? [])]
+      .flatMap((module) => directories.get(module) ?? []);
+    return [() => deno(coverageReportArguments(set, read), {}, id)];
+  });
+  await runPool(report, MAX_LANES);
+
+  // Vitest spreads over every core by itself, so it runs alone.
+  if (reported.some((module) => module.coverage?.runner === "vitest")) {
+    await pnpm(["exec", "vitest", "run", "--coverage"]);
   }
 }
 
@@ -392,25 +528,28 @@ async function runOperator(args: readonly string[]): Promise<void> {
   ]);
 }
 
-function requestedModule(args: readonly string[]): string | undefined {
-  const flag = args.find((argument) => argument.startsWith("--module="));
-  return flag?.slice("--module=".length);
+function flagValue(args: readonly string[], name: string): string | undefined {
+  const flag = args.find((argument) => argument.startsWith(`${name}=`));
+  return flag?.slice(name.length + 1);
 }
 
 async function main(): Promise<void> {
   const [verb, ...rest] = Deno.args;
-  const requested = requestedModule(rest);
+  const requested = flagValue(rest, "--module");
   switch (verb) {
     case "all":
       return await runAll();
     case "unit":
-      return await runUnit(requested);
+      return await runUnit(requested, await leftOut(rest));
     case "integration":
-      return await runIntegration(requested);
+      return await runIntegration(requested, await leftOut(rest));
     case "contract":
       return await runContract(requested);
     case "coverage":
-      return await runCoverage(requested);
+      return await runCoverage(
+        requested,
+        flagValue(rest, "--except"),
+      );
     case "architecture":
       return await runArchitecture();
     case "check":

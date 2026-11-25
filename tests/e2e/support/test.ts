@@ -5,6 +5,7 @@ import {
   expect,
   test as base,
 } from "@playwright/test";
+import { takePlaywrightStyle } from "./screenshot.ts";
 
 /*
  * The `test` every spec uses (AUD-G3). Each test's browser contexts report
@@ -49,8 +50,10 @@ async function collectPolicyViolations(
 ): Promise<void> {
   await context.exposeBinding(
     BINDING,
-    (_source, violation: PolicyViolation) => {
-      sink.push(violation);
+    ({ page }, violation: PolicyViolation) => {
+      const playwrightStyle = violation.directive === "style-src-elem" &&
+        violation.blocked === "inline" && takePlaywrightStyle(page);
+      if (!playwrightStyle) sink.push(violation);
     },
   );
   // Init scripts run in every document before its own scripts and markup are

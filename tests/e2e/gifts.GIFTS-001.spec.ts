@@ -6,6 +6,7 @@ import { origin } from "./support/env.ts";
 import { bareToken } from "./support/mail.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu } from "./support/profile.ts";
+import { captureScreenshot } from "./support/screenshot.ts";
 import { submitSignIn } from "./support/sign-in.ts";
 
 /** The same rendered compact style, including the CSS outside the island. */
@@ -177,10 +178,19 @@ test(
     ).toBe(409);
 
     const debts = page.locator('[data-person-gifts="debt"]');
-    await debts.getByRole("button", { name: "Add debt" }).click();
-    await debts.locator('[data-gift-form] input[name="amount"]').fill(
-      "24.5000",
-    );
+    const debtAmount = debts.locator('[data-gift-form] input[name="amount"]');
+    // Scrolling to the button can bring the unread Timeline cards above it
+    // within reach. They draw and move the button, so a click that started
+    // before that can end off it.
+    await expect(async () => {
+      if (!await debtAmount.isVisible()) {
+        await debts.getByRole("button", { name: "Add debt" }).click({
+          timeout: 2_000,
+        });
+      }
+      await expect(debtAmount).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await debtAmount.fill("24.5000");
     await debts.getByLabel("Currency").selectOption("EUR");
     await debts.getByLabel("Reason (optional)").fill("Lunch");
     await debts.getByRole("button", { name: "Save" }).click();
@@ -409,7 +419,7 @@ test(
         "Changing the schedule later may charge deleted periods again.",
       );
       if (width === 320 && browserName === "chromium") {
-        await page.screenshot({
+        await captureScreenshot(page, {
           path: ".artifacts/local/debt-confirmation-mobile.png",
         });
       }

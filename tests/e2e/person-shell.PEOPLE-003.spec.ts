@@ -383,7 +383,10 @@ test(
   async ({ browserName, page, request }) => {
     test.setTimeout(180_000);
     page.setDefaultTimeout(20_000);
-    await page.setViewportSize({ height: 900, width: 1280 });
+    // Tall enough that all three lower cards are well inside the activation
+    // margin whatever the platform's fonts measure; at 900 the calls card sat
+    // on its edge.
+    await page.setViewportSize({ height: 1400, width: 1280 });
     const email = `short-timeline-${browserName}-${Date.now()}@example.test`;
     await registerVerified(request, {
       email,

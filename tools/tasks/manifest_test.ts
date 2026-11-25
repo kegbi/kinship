@@ -1,6 +1,7 @@
 import { E2E_PROCESS_BINARIES } from "../e2e.ts";
 import {
   COVERAGE_AGGREGATE,
+  coveredSuites,
   expandTests,
   includeMatches,
   isGlob,
@@ -138,6 +139,47 @@ Deno.test("[GAP-003] aggregates reach every declared set exactly once", () => {
       `root coverage names ${id}, which measures nothing`,
     );
   }
+});
+
+Deno.test("a reused coverage set is measured, and repeats no suite of its reader", async () => {
+  const files = await repositoryTests();
+  let reuses = 0;
+  for (const module of MODULES) {
+    const set = module.coverage;
+    if (!set) continue;
+    const own = new Set(expandTests(set.tests, files));
+    for (const id of set.reuses ?? []) {
+      reuses += 1;
+      const reused = MODULES.find((candidate) => candidate.id === id)?.coverage;
+      assert(
+        reused && COVERAGE_AGGREGATE.includes(id) && !reused.reuses,
+        `${module.id} reuses ${id}, which collects nothing of its own`,
+      );
+      const twice = expandTests(reused.tests, files).filter((test) =>
+        test.startsWith("tests/integration/") && own.has(test)
+      );
+      assert(
+        twice.length === 0,
+        `${module.id} runs suites again that ${id} ran: ${twice.join(", ")}`,
+      );
+    }
+  }
+  assert(reuses > 0, "some set reuses another's raw coverage");
+});
+
+Deno.test("what --uncovered leaves out is exactly what test:coverage runs", async () => {
+  const files = await repositoryTests();
+  const covered = coveredSuites(files);
+  for (const id of COVERAGE_AGGREGATE) {
+    const module = MODULES.find((candidate) => candidate.id === id);
+    for (const test of expandTests(module?.coverage?.tests ?? [], files)) {
+      assert(covered.has(test), `${test} would run in neither`);
+    }
+  }
+  assert(
+    !covered.has("tools/pipeline_contract_test.ts"),
+    "a suite no coverage set runs must stay in the unit verb",
+  );
 });
 
 Deno.test("[GAP-003] every integration file belongs to exactly one module", async () => {

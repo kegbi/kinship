@@ -23,7 +23,8 @@ async function openNewImport(page: Page, source: "CSV" | "vCard") {
 async function commit(page: Page, expected: string) {
   await page.getByLabel("I confirm this validated import").check();
   await page.getByRole("button", { name: "Commit import" }).click();
-  await expect(page.getByText(expected)).toBeVisible();
+  // The status line: a toast repeats the same sentence for a few seconds.
+  await expect(page.locator("[data-import-state]")).toContainText(expected);
 }
 
 test("[IMPORT-002] imports contacts from vCard and CSV without duplicates", {

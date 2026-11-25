@@ -47,14 +47,12 @@ Playwright test carrying its stable flow ID.
 
 ## Release Gates
 
-- [ ] **All-browser E2E matrix.** Main CI run `45304750920` on `2cee1b76` passed
-      the static gates, PostgreSQL integration, the canonical schema, and the
-      production images. Its browser matrix passed 252 cases, skipped 11, and
-      failed 10: `IMPORT-002` in all three browsers (REL-108); in WebKit, four
-      `style-src-elem` refusals and `API-002` (REL-119, REL-104); and two cases
-      not recorded before, Firefox `GIFTS-001` (the debt amount field never
-      appeared after "Add debt") and WebKit `EXPORT-001` ("WebKit encountered an
-      internal error" on navigation). Neither was rerun.
+- [ ] **All-browser E2E matrix.** Main CI run `45614836377` on `fd7a9ffe` passed
+      every job but the browser matrix, which passed 253 cases, skipped 11, and
+      failed 9. Their causes are fixed and each case was rerun on Playwright's
+      Linux browsers; the matrix still has to pass whole on one manual or
+      nightly run. WebKit `EXPORT-001` ("WebKit encountered an internal error"
+      on navigation) failed once in run `45304750920` and has not failed since.
 - [ ] **OPS-001E — Deployment rollout, rollback, and post-deploy verification.**
 - [ ] **Phase 11 accepted:** the named environment independently passes every
       required security, privacy, accessibility, performance, observability,
@@ -204,16 +202,6 @@ Playwright test carrying its stable flow ID.
       dependency test spawns `deno` by the name its permission grants. Still
       open: `test:coverage` (its `--clean` forbids batching), `tools/dev.ts`,
       and `tools/dependency_audit_gate.ts`.
-- [ ] **REL-108 — The IMPORT-002 status assertion matches two elements.**
-      Observed during the 2026-11-07 audit-remediation run on the REL-105
-      Windows host; unrelated to the remediation tickets.
-      `tests/e2e/contacts-import.IMPORT-002.spec.ts:25`
-      (`await expect(page.getByText(expected)).toBeVisible()` in `commit`,
-      reached from `importVCard`) fails with "strict mode violation:
-      getByText('2 created, 0 reused') resolved to 2 elements". The checkpoint
-      C1 Chromium run on `c7d88daa` reported 76 passed, 1 skipped, and this
-      failure; one run on `b387d1cf` reproduces the same error. Repair the
-      locator or the duplicate status text without weakening the assertion.
 - [ ] **REL-109 — A workspace settings save can deadlock with reminder
       occurrence inserts.** Found by the AUD-W1 re-check during the 2026-11-07
       audit-remediation run on the REL-105 Windows host; the risk predates
@@ -331,24 +319,16 @@ Playwright test carrying its stable flow ID.
       later. After its commit, the import job runs `analyze` on the tables it
       bulk-loaded; prove that the worker's claim plan uses
       `reminder_occurrences_due_idx` right after an import.
-- [ ] **REL-119 — WebKit refuses some styles under the CSP, and Firefox and
-      WebKit each fail one more E2E case.** Found during AUD-V2's all-browser
-      E2E run in the 2026-11-07 audit-remediation run on the REL-105 Windows
-      host, and reproduced at `54a9b31c`, before AUD-V2. AUD-G3 verified its
-      `securitypolicyviolation` fixture (`tests/e2e/support/test.ts`) under
-      `style-src 'self'` (`gateway/security_headers.conf:1`) on the Chromium
-      project only. WebKit reports `style-src-elem` refusals in
-      `tests/e2e/settings.AUTH-004.spec.ts`, in the APP-002C leaves of
-      `tests/e2e/shell.TODAY-001.spec.ts` (`:73`, `:322`), and in two
-      `tests/e2e/profile-facts.PEOPLE-006.spec.ts` cases. WebKit also fails
-      "[API-002] visitors read and download the reference without JavaScript"
-      (`tests/e2e/api-reference.API-002.spec.ts:9`) at its native download
-      (`:92–94`), the symptom REL-104 records; treat it as REL-104 unless
-      diagnosis shows otherwise. Firefox fails "[PEOPLE-006] PRF-001 scans
-      profile blocks and edits long facts across screen sizes"
-      (`profile-facts.PEOPLE-006.spec.ts:1298`) at its section-menu bound
-      (`:1555–1558`). Diagnose each per browser and name the exact WebKit cases;
-      do not weaken the CSP or the assertions.
+- [ ] **REL-119 — Firefox fails one E2E case on the Windows host.** Found during
+      AUD-V2's all-browser E2E run in the 2026-11-07 audit-remediation run on
+      the REL-105 Windows host, and reproduced at `54a9b31c`, before AUD-V2.
+      Firefox fails "[PEOPLE-006] PRF-001 scans profile blocks and edits long
+      facts across screen sizes" (`tests/e2e/profile-facts.PEOPLE-006.spec.ts`)
+      at its section-menu bound. Firefox passes it on Linux, in CI and in
+      Playwright's container. Diagnose it; do not weaken the assertion. The
+      WebKit style refusals first recorded here were Playwright's own screenshot
+      preparation, which the policy guard now leaves out, and WebKit's `API-002`
+      download on that host is REL-104.
 - [ ] **REL-121 — Some web remount and failure tests no longer discriminate.**
       Found in the AUD-F1 review and the AUD-F5 final re-check during the
       2026-11-07 audit-remediation run on the REL-105 Windows host. Since

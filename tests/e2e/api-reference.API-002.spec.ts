@@ -9,6 +9,8 @@ import { signInAcceptingCompliance } from "./support/sign-in.ts";
 test("[API-002] visitors read and download the reference without JavaScript", {
   annotation: { type: "flow", description: "API-002" },
 }, async ({ browser, page: accessibilityPage }) => {
+  // The reference is the longest page there is, and axe reads all of it.
+  test.setTimeout(120_000);
   const context = await browser.newContext({
     javaScriptEnabled: false,
     baseURL: origin,
@@ -63,13 +65,13 @@ test("[API-002] visitors read and download the reference without JavaScript", {
     // The served document is the bearer surface the registry derives; its
     // size grows with every token-enabled route, so only its rendering is pinned.
     expect(operations.length).toBeGreaterThan(0);
-    await expect(page.locator("[data-api-operation]")).toHaveCount(
-      operations.length,
-    );
+    // Read in one round trip: the page renders each operation exactly once.
+    expect(
+      (await page.locator("[data-api-operation]").evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("data-api-operation"))
+      )).sort(),
+    ).toEqual(operations.map(({ operationId }) => operationId).sort());
     for (const operation of operations) {
-      await expect(
-        page.locator(`[data-api-operation="${operation.operationId}"]`),
-      ).toHaveCount(1);
       expect(operation.security).toEqual([{ kinship_api_token: [] }]);
       expect(operation.parameters?.some(({ name }) => name === "Origin"))
         .toBeFalsy();

@@ -878,6 +878,21 @@ Deno.test({
           JSON.stringify(duringRendererOutage)
         }`,
       );
+      await docker(
+        [...E2E_COMPOSE_ARGS, "start", "web"],
+        false,
+        environment,
+      );
+      // Answered by the renderer again, whatever it makes of a document this
+      // fixture never published, rather than by the gateway's outage page.
+      const recovery = Date.now() + 15_000;
+      let recovered = 0;
+      while (recovered < 200 || recovered === 502 || recovered === 503) {
+        assert(Date.now() < recovery, `no recovery: /terms ${recovered}`);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        recovered =
+          (await pageThroughGateway(gatewayContainer, "/terms")).status;
+      }
       for (
         const secret of [
           "readiness-query-secret",

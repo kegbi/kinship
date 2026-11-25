@@ -14,6 +14,7 @@ import { registerVerified } from "./support/api.ts";
 import { databaseSql, databaseValue, sqlLiteral } from "./support/database.ts";
 import { expectAccessible } from "./support/page-checks.ts";
 import { openPersonMenu, routePersonRail } from "./support/profile.ts";
+import { captureScreenshot } from "./support/screenshot.ts";
 import { signIn } from "./support/sign-in.ts";
 import { createPersonThroughUi, saveNewPerson } from "./support/directory.ts";
 
@@ -517,13 +518,13 @@ test(
         const screenshotPath = testInfo.outputPath(
           "mobile-sheet-390-short.png",
         );
-        await page.screenshot({ path: screenshotPath });
+        await captureScreenshot(page, { path: screenshotPath });
         await testInfo.attach("mobile-sheet-390-short", {
           path: screenshotPath,
           contentType: "image/png",
         });
         await page.emulateMedia({ forcedColors: "active" });
-        await page.screenshot({
+        await captureScreenshot(page, {
           path: testInfo.outputPath("mobile-sheet-forced-colors.png"),
         });
       }
@@ -1558,7 +1559,7 @@ test(
       }
       await page.evaluate(() => globalThis.scrollTo(0, 0));
       await testInfo.attach(`profile-blocks-${width}`, {
-        body: await page.screenshot({ fullPage: true }),
+        body: await captureScreenshot(page, { fullPage: true }),
         contentType: "image/png",
       });
       if (width === 1440) {

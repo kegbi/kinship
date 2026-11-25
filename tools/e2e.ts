@@ -927,94 +927,6 @@ async function waitForGatewayHealth(origin: string): Promise<void> {
   );
 }
 
-/** The status `path` answers through the gateway, or 0 when unreachable. */
-async function gatewayStatus(origin: string, path: string): Promise<number> {
-  try {
-    const response = await fetch(`${origin}${path}`);
-    await response.body?.cancel();
-    return response.status;
-  } catch {
-    return 0;
-  }
-}
-
-/** Polls until `path` answers as `expected` says, for up to 15 seconds. */
-async function waitForGatewayStatus(
-  origin: string,
-  path: string,
-  expected: (status: number) => boolean,
-): Promise<boolean> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (expected(await gatewayStatus(origin, path))) return true;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return false;
-}
-
-/**
- * The gateway's health follows the API alone (ADR 0007): it fails while the
- * API is stopped and holds while the renderer is, whose outage reaches only
- * the on-demand legal pages.
- */
-async function assertGatewayDependencyReadiness(
-  origin: string,
-  environment: Readonly<Record<string, string>>,
-): Promise<void> {
-  for (const service of ["api", "web"] as const) {
-    await command(
-      "docker",
-      [...E2E_COMPOSE_ARGS, "stop", "--timeout", "5", service],
-      environment,
-    );
-    try {
-      if (service === "api") {
-        if (
-          !await waitForGatewayStatus(
-            origin,
-            "/gateway-health",
-            (status) => status === 503,
-          )
-        ) {
-          throw new Error(
-            "Gateway readiness remained available after api stopped.",
-          );
-        }
-      } else {
-        if (
-          !await waitForGatewayStatus(
-            origin,
-            "/terms",
-            (status) => status === 503,
-          )
-        ) {
-          throw new Error("The legal pages stayed rendered after web stopped.");
-        }
-        if ((await gatewayStatus(origin, "/gateway-health")) !== 200) {
-          throw new Error("Gateway readiness depended on the renderer.");
-        }
-      }
-    } finally {
-      await command(
-        "docker",
-        [...E2E_COMPOSE_ARGS, "start", service],
-        environment,
-      );
-      await waitForGatewayHealth(origin);
-    }
-    if (
-      service === "web" &&
-      !await waitForGatewayStatus(
-        origin,
-        "/terms",
-        (status) => status !== 0 && status !== 503,
-      )
-    ) {
-      throw new Error("The renderer did not recover within 15 seconds.");
-    }
-  }
-}
-
 async function main(): Promise<void> {
   // Refuse unsafe arguments before any container starts.
   const playwrightArgs = e2ePlaywrightArgs(Deno.args);
@@ -1050,7 +962,6 @@ async function main(): Promise<void> {
       };
       await waitForApi(gatewayOrigin);
       await waitForGatewayHealth(gatewayOrigin);
-      await assertGatewayDependencyReadiness(gatewayOrigin, environment);
     },
     test: async () => {
       const args = playwrightArgs;

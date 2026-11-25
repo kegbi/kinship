@@ -25,6 +25,7 @@ import {
 import { moduleById } from "./tasks/manifest.ts";
 import {
   coverageCollectionArguments,
+  coverageDirectories,
   coverageReportArguments,
 } from "./tasks/run.ts";
 
@@ -739,7 +740,7 @@ Deno.test({
   },
 });
 
-Deno.test("root coverage passes portable production include arguments", async () => {
+Deno.test("root coverage passes portable production include arguments", () => {
   const api = moduleById("api");
   assert(api?.coverage, "the task manifest declares an api coverage set");
   const includes = api.coverage.include;
@@ -763,7 +764,10 @@ Deno.test("root coverage passes portable production include arguments", async ()
     ),
     "coverage filtering cannot depend on platform-specific shell quoting",
   );
-  const collection = await coverageCollectionArguments(api.coverage);
+  const collection = coverageCollectionArguments(
+    api.coverage,
+    api.coverage.tests,
+  );
   assert(
     collection.includes("--coverage-raw-data-only"),
     "collection defers threshold enforcement to the scoped report",
@@ -776,6 +780,25 @@ Deno.test("root coverage passes portable production include arguments", async ()
   assert(
     includes.every((path) => report.includes(`--include=${path}`)),
     "each production prefix reaches the report as its own argument",
+  );
+});
+
+Deno.test("a coverage report reads every lane its set collected in", () => {
+  const set = moduleById("api")?.coverage;
+  assert(set, "the task manifest declares an api coverage set");
+  const directories = [0, 1, 2].map((lane) => {
+    const flag = coverageCollectionArguments(set, ["a_test.ts"], lane)
+      .find((argument) => argument.startsWith("--coverage="));
+    return flag?.slice("--coverage=".length);
+  });
+  assert(
+    new Set(directories).size === 3,
+    "each lane empties its own directory, so lanes never share one",
+  );
+  assert(
+    coverageReportArguments(set, coverageDirectories(set, 3)).slice(-3)
+      .join() === directories.join(),
+    "the threshold must hold over all lanes together, never over a share",
   );
 });
 

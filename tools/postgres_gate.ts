@@ -157,7 +157,10 @@ export function disposableRolePasswords(password: string): {
 export async function withDisposablePostgres(
   suite: (environment: Readonly<Record<string, string>>) => Promise<void>,
 ): Promise<void> {
-  const project = `kinship-pg-${Deno.pid}-${Date.now()}`;
+  // Lanes start their projects together, so the clock alone is not unique.
+  const project = `kinship-pg-${Deno.pid}-${Date.now()}-${
+    crypto.randomUUID().slice(0, 8)
+  }`;
   const password = `test-${crypto.randomUUID()}`;
   const environment = disposablePostgresEnvironment(project, password);
   await runPostgresGate({

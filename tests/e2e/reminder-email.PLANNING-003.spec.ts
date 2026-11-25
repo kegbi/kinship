@@ -6,41 +6,53 @@ import { mailOrigin, origin } from "./support/env.ts";
 import { bareToken } from "./support/mail.ts";
 import { settlePersonWorkspace } from "./support/navigation.ts";
 import { expectAccessible } from "./support/page-checks.ts";
+import {
+  ageDueReminder,
+  bringReminderDue,
+  upcomingSendTime,
+} from "./support/reminders.ts";
 import { signIn } from "./support/sign-in.ts";
 
 /**
- * How long past its due time a reminder email may take to arrive: a few
- * five-second worker ticks, the SMTP hand-off, and Mailpit indexing it.
+ * How long a due reminder's email may take to arrive: a few five-second worker
+ * ticks, the SMTP hand-off, and Mailpit indexing it.
  */
 const DELIVERY_MARGIN_MS = 60_000;
 
-/**
- * Polls Mailpit until a message to `email` matches `pattern`, for as long as
- * the worker needs to bring the reminder due at `due`, and returns its text.
- */
+/** Longer than two worker ticks, each of which would claim what is due. */
+const HELD_MS = 12_000;
+
+/** The text of a message to `email` in Mailpit that matches `pattern`. */
+async function findMail(
+  request: APIRequestContext,
+  email: string,
+  pattern: RegExp,
+): Promise<string | undefined> {
+  const response = await request.get(
+    `${mailOrigin}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`,
+  );
+  const body = await response.json() as { messages?: Array<{ ID: string }> };
+  for (const message of body.messages ?? []) {
+    const detail = await request.get(
+      `${mailOrigin}/api/v1/message/${message.ID}`,
+    );
+    const content = await detail.json() as { Text?: string };
+    if (content.Text && pattern.test(content.Text)) return content.Text;
+  }
+  return undefined;
+}
+
+/** Polls Mailpit for that message while the worker delivers it. */
 async function reminderMail(
   request: APIRequestContext,
   email: string,
   pattern: RegExp,
-  due: Date,
 ): Promise<string> {
   let text: string | undefined;
   await expect.poll(async () => {
-    const response = await request.get(
-      `${mailOrigin}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`,
-    );
-    const body = await response.json() as { messages?: Array<{ ID: string }> };
-    for (const message of body.messages ?? []) {
-      const detail = await request.get(
-        `${mailOrigin}/api/v1/message/${message.ID}`,
-      );
-      const content = await detail.json() as { Text?: string };
-      if (content.Text && pattern.test(content.Text)) text = content.Text;
-    }
+    text = await findMail(request, email, pattern);
     return text;
-  }, {
-    timeout: Math.max(0, due.getTime() - Date.now()) + DELIVERY_MARGIN_MS,
-  }).toBeTruthy();
+  }, { timeout: DELIVERY_MARGIN_MS }).toBeTruthy();
   return text!;
 }
 
@@ -97,7 +109,7 @@ test(
   "[PLANNING-003] delivers a reminder email with the person link, then a daily digest",
   { annotation: { type: "flow", description: "PLANNING-003" } },
   async ({ browserName, page, request }) => {
-    test.setTimeout(480_000);
+    test.setTimeout(240_000);
     page.setDefaultTimeout(15_000);
     const email = `reminder-email-${browserName}-${Date.now()}@example.test`;
     await registerVerified(request, {
@@ -113,28 +125,27 @@ test(
     // Immediate email: no digest time, so the reminder is sent when due.
     await chooseDelivery(page, "email", "");
     await expectAccessible(page);
-    const immediateAt = new Date(Date.now() + 75_000);
+    const immediateAt = upcomingSendTime();
     await addReminder(page, profilePath, "Email Ada once", immediateAt);
-    const immediate = await reminderMail(
-      request,
-      email,
-      /Email Ada once/,
-      immediateAt,
-    );
+    bringReminderDue(email, "Email Ada once", immediateAt);
+    const immediate = await reminderMail(request, email, /Email Ada once/);
     expect(immediate).toContain(personLink);
 
-    // Digest: reminders due before the next digest time arrive together then.
-    const due = new Date(Date.now() + 75_000);
-    const digestAt = new Date(
-      Math.ceil((due.getTime() + 60_000) / 60_000) * 60_000,
-    );
+    // Digest: a reminder due since the last digest time waits for the next
+    // one, and those due before a digest time arrive together then. Five
+    // minutes ago is the latest digest time throughout, read in UTC.
+    const digestAt = new Date(Date.now() - 5 * 60_000);
     await chooseDelivery(page, "email", digestAt.toISOString().slice(11, 16));
-    await addReminder(page, profilePath, "Digest Ada later", due);
+    const digestDue = upcomingSendTime();
+    await addReminder(page, profilePath, "Digest Ada later", digestDue);
+    bringReminderDue(email, "Digest Ada later", digestDue);
+    await page.waitForTimeout(HELD_MS);
+    expect(await findMail(request, email, /Digest Ada later/)).toBeUndefined();
+    ageDueReminder(email, "Digest Ada later");
     const digest = await reminderMail(
       request,
       email,
       /You have 1 reminder due\.[\s\S]*Digest Ada later/,
-      digestAt,
     );
     expect(digest).toContain(personLink);
     expect(digest).not.toContain("Email Ada once");

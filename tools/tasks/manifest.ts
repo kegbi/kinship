@@ -40,6 +40,11 @@ export interface CoverageSet extends TestSet {
   /** Production paths measured by this set. */
   readonly include: readonly string[];
   /**
+   * Modules whose coverage sets this set's report reads as well, so a suite
+   * they run is not run here a second time. Their whole raw coverage counts.
+   */
+  readonly reuses?: readonly string[];
+  /**
    * Source patterns the report leaves out, replacing Deno's own default
    * rather than adding to it. A set declares this only when the tree it
    * measures carries shared test scaffolding.
@@ -763,6 +768,13 @@ export const MODULES: readonly TaskModule[] = [
     coverage: {
       directory: "deno",
       postgres: true,
+      reuses: [
+        "planning",
+        "search",
+        "calendar-feed",
+        "notifications",
+        "lifecycle",
+      ],
       include: [
         "apps/api",
         "packages/backend",
@@ -1090,24 +1102,12 @@ export const MODULES: readonly TaskModule[] = [
         "tests/integration/people_dates_postgres_test.ts",
         "tests/integration/people_facts_postgres_test.ts",
         "tests/integration/people_relationships_postgres_test.ts",
-        "tests/integration/personal_lifecycle_postgres_test.ts",
-        "tests/integration/planning_tasks_postgres_test.ts",
-        "tests/integration/planning_today_postgres_test.ts",
-        "tests/integration/planning_reminders_postgres_test.ts",
-        "tests/integration/planning_cadences_postgres_test.ts",
-        "tests/integration/planning_delivery_postgres_test.ts",
-        "tests/integration/planning_email_delivery_postgres_test.ts",
-        "tests/integration/planning_edit_delete_postgres_test.ts",
         "tests/integration/settings_preferences_postgres_test.ts",
         "tests/integration/settings_personalization_postgres_test.ts",
         "tests/integration/time_preferences_postgres_test.ts",
         "tests/integration/migrations_postgres_test.ts",
         "tests/integration/workspace_isolation_postgres_test.ts",
         "tests/integration/read_models_reports_postgres_test.ts",
-        "tests/integration/read_models_today_postgres_test.ts",
-        "tests/integration/search_postgres_test.ts",
-        "tests/integration/calendar_feed_postgres_test.ts",
-        "tests/integration/notifications_postgres_test.ts",
       ],
     },
   },
@@ -2279,6 +2279,7 @@ export const MODULES: readonly TaskModule[] = [
     id: "tasks",
     unit: {
       tests: [
+        "tools/tasks/lanes_test.ts",
         "tools/tasks/manifest_test.ts",
         "tools/pipeline_contract_test.ts",
         "tools/source_hygiene_test.ts",
@@ -2508,6 +2509,15 @@ export const COVERAGE_AGGREGATE: readonly string[] = [
 
 export function moduleById(id: string): TaskModule | undefined {
   return MODULES.find((module) => module.id === id);
+}
+
+/** Every suite `test:coverage` runs, among the given repository files. */
+export function coveredSuites(files: readonly string[]): Set<string> {
+  return new Set(
+    COVERAGE_AGGREGATE.flatMap((id) =>
+      expandTests(moduleById(id)?.coverage?.tests ?? [], files)
+    ),
+  );
 }
 
 /** Converts a glob with `*` and `**` segments into an anchored expression. */
