@@ -1,9 +1,9 @@
 # Kinship
 
-**A Monica-compatible, modern relationship management system.** Kinship is a
-self-hosted personal CRM that keeps everything you know about the people in your
-life in one place: who they are, how you know them, what you last talked about,
-and what you promised to do next.
+**A [Monica](https://github.com/monicahq/monica)-compatible, modern relationship
+management system.** Kinship is a self-hosted personal CRM that keeps everything
+you know about the people in your life in one place: who they are, how you know
+them, what you last talked about, and what you promised to do next.
 
 It keeps the breadth Monica users rely on, runs on a current production stack,
 adds an MCP endpoint so an AI agent can work in your workspace, and imports your
