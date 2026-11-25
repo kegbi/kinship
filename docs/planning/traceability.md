@@ -31,12 +31,12 @@ Verified against `docs/architecture/module-boundaries.yaml`,
 `IMPORT-002` and `EXPORT-002`, by GAP-051, which added `PEOPLE-009`, and by
 GAP-053, which added `TODAY-002`, `PEOPLE-010`, and the `notifications` read
 model, and on 2026-11-22 by MCP-C3 and MCP-C4, which added `public.mcp-guide`
-and `API-003`; the earlier count was taken on 2026-08-29 while integrating
-[`ux-design-review-2026-08-29.md`](../validation/ux-design-review-2026-08-29.md)
-§5.3 item 5. `tools/product/flow_traceability_test.ts` keeps the `testRefs` and
-the specs' `flow` annotations in agreement. The five cataloged dynamic routes
-are served by the internal shell and gateway-rewrite pattern rather than by
-separate Astro routes; that is an implementation shape, not a coverage gap.
+and `API-003`; the earlier count was taken on 2026-08-29 while integrating the
+2026-08-29 UX review. `tools/product/flow_traceability_test.ts` keeps the
+`testRefs` and the specs' `flow` annotations in agreement. The five cataloged
+dynamic routes are served by the internal shell and gateway-rewrite pattern
+rather than by separate Astro routes; that is an implementation shape, not a
+coverage gap.
 
 The slice column below is the **accepted slice in which the complete contract is
 accepted**, not necessarily the first slice in which a shell or dependency is
@@ -69,10 +69,9 @@ repository, adapter, or transport implementation.
 
 ### Token API and MCP endpoint
 
-The 2026-11-22 work order ([MCP server plan](mcp-server-plan-2026-11-22.md),
-ADR 0009) added no module. It extended the existing modules' routes to personal
-tokens and added a delivery adapter over them. Each surface maps to its
-evidence:
+The 2026-11-22 MCP work order (ADR 0009) added no module. It extended the
+existing modules' routes to personal tokens and added a delivery adapter over
+them. Each surface maps to its evidence:
 
 | Surface                                                                                                                                    | Evidence                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

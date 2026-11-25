@@ -2,8 +2,7 @@
 
 - Status: accepted; user-directed on 2026-11-22
 - Date: 2026-11-22
-- Implemented by: the
-  [MCP server plan](../../planning/mcp-server-plan-2026-11-22.md)
+- Implemented by: the MCP server work order of 2026-11-22, delivered in full
 
 ## Context
 

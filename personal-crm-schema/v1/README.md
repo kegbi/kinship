@@ -29,7 +29,7 @@ If the SQL, specification, field catalog, or mappings disagree, stop and resolve
 
 ## Live PostgreSQL validation
 
-After the external audit was accepted, the unchanged audited DDL passed the repository's live test harness on PostgreSQL 18.4 and 17.10. The harness verifies audited hashes, atomic apply and rollback, teardown and reapply, live catalog agreement, field-catalog membership, constraints, partial-date shapes, import identity uniqueness, reminder occurrence uniqueness, and missing-file representation. See [../../docs/validation/postgresql-schema-v1.md](../../docs/validation/postgresql-schema-v1.md) and run `deno task test:schema:matrix` from the repository root.
+After the external audit was accepted, the unchanged audited DDL passed the repository's live test harness on PostgreSQL 18.4 and 17.10. The harness verifies audited hashes, atomic apply and rollback, teardown and reapply, live catalog agreement, field-catalog membership, constraints, partial-date shapes, import identity uniqueness, reminder occurrence uniqueness, and missing-file representation. Run `deno task test:schema:matrix` from the repository root.
 
 The historical validation JSON remains unchanged and correctly describes the external audit environment, where PostgreSQL execution was unavailable. Cross-workspace authorization, full importer behavior, time-zone-aware reminder generation, object-store failures, and legacy credential activation are application-level concerns and remain mandatory integration tests once those implementations exist.
 

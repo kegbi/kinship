@@ -11,9 +11,8 @@
  * satisfy takes a hand-written value from `OVERRIDES`, and a sample that still
  * does not parse fails the suite rather than probing with an invalid request.
  *
- * This mirrors the generator of the 2026-11-07 audit
- * (`docs/validation/audit-2026-11-07/03-security-authentication-and-edge.md`,
- * "Reproduction"), which built the same requests from the same registry.
+ * This mirrors the generator of the 2026-11-07 security audit, which built the
+ * same requests from the same registry.
  */
 
 import { z } from "zod";

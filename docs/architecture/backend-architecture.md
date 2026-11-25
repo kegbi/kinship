@@ -518,9 +518,8 @@ same. A write that changes a published row without changing its `updated_at` is
 seen only at the next change or the next day. Responses are
 `private, max-age=300`.
 
-Browser caching follows decision D3 of the
-[audit remediation plan](../planning/audit-remediation-plan-2026-11-07.md):
-avatars only.
+Browser caching follows decision D3 of the 2026-11-07 audit remediation: avatars
+only.
 
 - An avatar's bytes carry `Cache-Control: private, max-age=86400, immutable`.
   They are served by `GET /api/v1/people/{personId}/files/{fileId}/content` for

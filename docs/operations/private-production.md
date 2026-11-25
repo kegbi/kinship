@@ -44,7 +44,7 @@ Use the Dokploy procedure below after the checks above, with API and worker
 writes stopped during migration. Resume writes only after migrate exits zero and
 gateway readiness is healthy.
 
-### Dokploy: kinship.homelaboss.com
+### Dokploy
 
 The GitHub source uses `compose.dokploy.yaml` as a standalone Compose file. It
 extends the six base services and adds a preflight, a private RustFS service,
@@ -59,7 +59,7 @@ storage have no public ports. The inherited gateway TLS listener on loopback
 Traefik address in `GATEWAY_TRUSTED_PROXY` (AUD-G4): the gateway image renders
 its reviewed `gateway/dokploy-proxy.conf` template with that one value, and no
 file mount is involved. Set it in `runtime.env` to the exact address Traefik
-uses on `dokploy-network` (observed as `10.0.1.40`; confirm it with
+uses on `dokploy-network` (for example `10.0.1.40`; confirm it with
 `docker inspect` on the Traefik container), and reverify it whenever the proxy
 is recreated. It has no default: Compose refuses to render without it, and the
 preflight refuses anything but one exact IPv4 or IPv6 address, so a Docker
@@ -76,7 +76,7 @@ verification. Keep private keys and the independently recoverable CA key outside
 source control.
 
 `runtime.env` supplies the generated PostgreSQL/authentication/storage values,
-`APP_ENV=production`, `PUBLIC_WEB_ORIGIN=https://kinship.homelaboss.com`,
+`APP_ENV=production`, `PUBLIC_WEB_ORIGIN=https://<your-domain>`,
 `OBJECT_STORAGE_HOST=kinship-storage`, `OBJECT_STORAGE_PORT=9000`,
 `OBJECT_STORAGE_USE_SSL=true`, the two gateway certificate paths above, and
 `GATEWAY_TRUSTED_PROXY`. Keep the owner's SMTP variables in Dokploy's existing
@@ -116,12 +116,12 @@ rotation procedure, including retirement of the old user.
 After deployment, inspect service exit/health states, then run:
 
 ```text
-deno task ops probe https://kinship.homelaboss.com
+deno task ops probe https://<your-domain>
 ```
 
 Verify HTTPS and that the edge negotiates HTTP/2
-(`curl -sS -o /dev/null -w '%{http_version}' https://kinship.homelaboss.com/`
-prints `2`; see the Gateway Hardening section of the Compose contract), public
+(`curl -sS -o /dev/null -w '%{http_version}' https://<your-domain>/` prints `2`;
+see the Gateway Hardening section of the Compose contract), public
 authentication links, sign-in/MFA, one person read, one attachment
 upload/read/delete, authenticated SMTP delivery, a worker reminder cycle, and
 DAV only if enabled. Verify unauthenticated file access is denied. These are
@@ -142,9 +142,9 @@ Retain the failed revision and safe failure codes in Dokploy release history.
 
 ### Temporary owner-authorized backup exception
 
-The initial deployment to `kinship.homelaboss.com` has an explicit temporary
-owner waiver while an external encrypted recovery destination is unavailable.
-Set `KINSHIP_ALLOW_NO_BACKUP=true` only for that authorized period, and set
+An initial deployment may run under an explicit temporary owner waiver while an
+external encrypted recovery destination is unavailable. Set
+`KINSHIP_ALLOW_NO_BACKUP=true` only for that authorized period, and set
 `PRIVATE_PRODUCTION_SECRET_STORE_READY=true` only after verifying the actual
 Dokploy secret store. Leave both archive attestations false. The deployment
 preflight prints the original `state: blocked` result and a distinct

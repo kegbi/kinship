@@ -8,13 +8,11 @@
 [`AGENTS.md`](../../../AGENTS.md) and
 [`technology-baseline.md`](../technology-baseline.md) name current stable
 shadcn/ui components for interactive UI and confine React to Astro islands. The
-accepted UX review
-([§10.6](../../validation/ux-design-review-2026-08-29.md#106-dead-dependencies--one-direction-remove))
-recommended the opposite: remove the unused React, Tailwind, and shadcn packages
-and keep hand-written vanilla TypeScript plus CSS custom properties. The Phase
-12 ledger in [`active-delivery.md`](../../planning/active-delivery.md) adopted
-that direction as a binding constraint, and `UXD-010` removed the packages and
-amended the component clause of
+accepted UX review of 2026-08-29 (§10.6, "Dead dependencies") recommended the
+opposite: remove the unused React, Tailwind, and shadcn packages and keep
+hand-written vanilla TypeScript plus CSS custom properties. The Phase 12
+delivery ledger adopted that direction as a binding constraint, and `UXD-010`
+removed the packages and amended the component clause of
 [`dashboard-settings-design.md`](../../product/dashboard-settings-design.md).
 The September repair plan and the architecture gap plan both recorded the
 resulting conflict as an open decision.
@@ -104,9 +102,9 @@ Review §10.6 raised four real costs. Each is answered as follows:
 ## Consequences
 
 - This decision supersedes the direction in review §10.6, the Phase 12
-  constraint in `active-delivery.md`, and the `UXD-010` amendment of the
-  component clause in `dashboard-settings-design.md`. Those statements are kept
-  as history and annotated as superseded.
+  constraint in the delivery ledger, and the `UXD-010` amendment of the
+  component clause in `dashboard-settings-design.md`. The review and the ledger
+  entries were later removed from the working tree and remain in git history.
 - Costs: each surface's tests are rewritten when it migrates, every island
   carries a hydration budget that is measured and recorded, and a second styling
   layer (Tailwind beside the remaining component CSS) exists until that CSS is

@@ -10,9 +10,9 @@
 
 Today only application code enforces workspace isolation; see
 [Workspace Isolation](../backend-architecture.md#workspace-isolation). The
-[2026-11-07 audit](../../validation/audit-2026-11-07/04-security-tenant-isolation-and-authorization.md)
-found no cross-workspace path, in 964 attack requests and about 825 SQL
-statements. It also found nothing behind the application (SECT-01, SECT-02):
+2026-11-07 audit found no cross-workspace path, in 964 attack requests and about
+825 SQL statements. It also found nothing behind the application (SECT-01,
+SECT-02):
 
 - Schema v12 has no row-level security, policy, or trigger in schema `crm`.
 - Only 7 of 63 tenant-to-tenant foreign keys include `workspace_id`. If a
@@ -27,10 +27,9 @@ evaluated later as defense in depth".
 
 ## Decision
 
-On 2026-11-07 the product owner accepted decision D2 ("Approve") of the
-[audit remediation plan](../../planning/audit-remediation-plan-2026-11-07.md).
-Schema v14 makes the database enforce the workspace boundary, in three layers
-that ship as one synchronized version.
+On 2026-11-07 the product owner accepted decision D2 ("Approve") of the audit
+remediation plan. Schema v14 makes the database enforce the workspace boundary,
+in three layers that ship as one synchronized version.
 
 1. **Least-privilege roles.**
    - `kinship_migrator` owns schema `crm`, and only the migrate job uses it.

@@ -10,17 +10,15 @@ until their own authorities approve them.
 
 This directory maps the path from the schema-and-contract baseline to the
 Personal CRM. [`active-delivery.md`](active-delivery.md) is the authoritative
-near-term queue. The larger roadmap and operations documents are coverage and
-release references, not a list of prerequisites for starting application code.
-The retired workflow's `tickets/` tree of packets, dispatch files, and evidence
-logs was removed from the working tree by GAP-043; it remains readable at the
-branch `archive/planning-tickets-2026-09-27`. New tickets do not use its
-packets, IDs, dispatch files, or evidence logs.
+near-term queue and lists only open work. The larger roadmap and operations
+documents are coverage and release references, not a list of prerequisites for
+starting application code.
 
-The current user-requested follow-up is the
-[application repair plan](application-repair-plan-2026-09-05.md), covering
-reproduced usability and composition defects after the responsive person-block
-and focus-border repairs. Its ordered checklist owns those repair statuses.
+Finished work orders are not kept in the working tree: the application repair,
+architecture-gap remediation, audit remediation, API integration, and MCP server
+plans, their orchestrator prompts, and the validation reports they answered were
+removed once delivered. Git history holds them. Ticket IDs from those plans
+still appear in code comments and test names.
 
 The plan has two jobs:
 
@@ -50,14 +48,14 @@ flows.
 
 | Inventory                    | Current state                                                                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Canonical PostgreSQL schema  | 91 tables and 868 columns; current v10 passed live validation on PostgreSQL 18.4 and 17.10; immutable v6 also passed PostgreSQL 17.10 compatibility checking |
+| Canonical PostgreSQL schema  | 93 tables and 911 columns; current v16 passed live validation on PostgreSQL 18.4 and 17.10; immutable v6 also passed PostgreSQL 17.10 compatibility checking |
 | Backend modules              | 15 accepted module boundaries with exact table ownership                                                                                                     |
 | Cross-module read models     | 9 accepted, query-only compositions                                                                                                                          |
 | Cataloged pages              | 41                                                                                                                                                           |
 | Cataloged flows              | 43 total: 17 P0, 20 P1, and 6 P2                                                                                                                             |
 | Delivered flows              | 42 of 43; `BILLING-001` alone remains `planned` with empty `testRefs`                                                                                        |
 | Existing executable code     | Runnable Deno API and worker, Astro web app, gateway, shared contracts, and application test suites                                                          |
-| Current application scaffold | API, worker, web app, contracts, main Compose stack, and application tests are present; CI and hooks remain pending                                          |
+| Current application scaffold | API, worker, web app, contracts, main Compose stack, application tests, CI, and Lefthook hooks are present                                                   |
 
 The reproducible baseline commands are:
 
@@ -106,16 +104,6 @@ as authority. Production ready remains independent of feature completion.
   priorities, and delivery slices, and records catalog gaps that must close.
 - [`research.md`](research.md) records current official capability research and
   the implementation consequences of that research.
-- [API integration research](api-integration-research-2026-10-25.md) proposes
-  external API coverage, token permissions, concrete parameters, and delivery
-  priorities. Its [operation inventory](api-operation-inventory-2026-10-25.md)
-  captures the existing browser and token contracts; these proposals do not
-  change the accepted delivery queue.
-- The [audit remediation plan](audit-remediation-plan-2026-11-07.md) turns every
-  finding of the [2026-11-07 audit](../validation/audit-2026-11-07/README.md)
-  into tickets that can run in parallel lanes, with decisions and closure
-  criteria. Its [orchestrator prompt](audit-remediation-orchestrator-prompt.md)
-  runs those tickets through the repository's delivery loop.
 
 The accepted product slice summary remains
 [`docs/product/release-slices.md`](../product/release-slices.md). This directory

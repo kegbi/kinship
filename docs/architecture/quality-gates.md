@@ -24,9 +24,9 @@ missing from the page catalog, and catalog references to unknown pages or
 modules. Today `tools/product/flow_traceability_test.ts` (GAP-036) covers the
 flow half: a required flow's missing or unannotated `testRefs`, a delivered flow
 without a reference, and a spec annotation whose flow omits that spec, and
-`tools/product/PRODUCT-001/release_contract_test.ts` checks the catalogs'
-priorities, slices, and page ownership. No gate yet compares the shipped routes
-with the page catalog.
+`tools/product/release_contract_test.ts` checks the catalogs' priorities,
+slices, and page ownership. No gate yet compares the shipped routes with the
+page catalog.
 
 Coverage is necessary but does not prove test-first development. It cannot
 replace the RED evidence required below.
@@ -385,9 +385,8 @@ substitute for the 80% coverage gate.
 The baseline database harness is
 [`tools/schema/validate_postgres.ts`](../../tools/schema/validate_postgres.ts).
 Run `deno task test:schema:matrix` for the pinned PostgreSQL 18 primary image
-and PostgreSQL 17 compatibility image. Its current verified result is recorded
-in
-[`docs/validation/postgresql-schema-v1.md`](../validation/postgresql-schema-v1.md).
+and PostgreSQL 17 compatibility image. Each schema version's `*_validation.json`
+records its verified result and the PostgreSQL versions it ran on.
 
 Before implementation migrations are accepted, CI must prove all requirements
 already named in `AGENTS.md`, including:

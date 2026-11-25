@@ -8,8 +8,7 @@
 
 ADR 0001 sends five routes to the private Astro renderer: `auth.verify-email`,
 `auth.reset`, `auth.mfa`, `invitation.accept`, and `compliance.accept`. The
-[2026-11-07 audit](../../validation/audit-2026-11-07/05-frontend-rendering-strategy.md)
-(FER-03) found that none of them reads the request:
+2026-11-07 audit (FER-03) found that none of them reads the request:
 
 - Each returns byte-identical HTML for every token, query, and cookie.
 - Their only server work sets `Cache-Control: private, no-store` and
@@ -31,8 +30,8 @@ show nothing.
 
 ## Decision
 
-On 2026-11-07 the product owner accepted option B of decision D1 in the
-[audit remediation plan](../../planning/audit-remediation-plan-2026-11-07.md).
+On 2026-11-07 the product owner accepted option B of decision D1 in the audit
+remediation plan.
 
 - **Only `/privacy` and `/terms` render on demand.** Their first response
   carries request-time public data: the active legal document, read from the
@@ -64,7 +63,7 @@ On 2026-11-07 the product owner accepted option B of decision D1 in the
   - the catalog entries: `legal.privacy` and `legal.terms` become `on-demand`,
     and each of the other five takes the strategy that matches its definition;
   - the Gateway Routing section of `compose-contract.md`;
-  - `tools/architecture/FND-001S/astro_rendering_topology_contract_test.ts`;
+  - `tools/architecture/astro_rendering_topology_contract_test.ts`;
   - `tools/web_build_output_test.ts` and the gateway contract tests.
 
   ADR 0001 now describes the two on-demand routes, and the FND-001S test
