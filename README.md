@@ -236,3 +236,7 @@ worktree of this repository.
   canonical PostgreSQL schema.
 - [docs/operations/private-production.md](docs/operations/private-production.md):
   running a private production deployment.
+
+## License
+
+Kinship is released under the [MIT License](LICENSE).
