@@ -227,15 +227,20 @@
   height: 1.1rem;
 }
 
+/*
+ * The sizes are whole pixels: 11px Inter has a 14px content area, so a 22px
+ * line leaves 4px above and below it. The count's baseline then falls on a
+ * pixel and the digit sits in the middle of its circle.
+ */
 .notification-bell-badge {
-  min-width: 1.35rem;
+  min-width: 1.375rem;
   padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
   color: var(--on-accent);
   background: var(--accent-solid);
-  font-size: .72rem;
+  font-size: .6875rem;
   font-weight: 700;
-  line-height: 1.35rem;
+  line-height: 1.375rem;
   text-align: center;
 }
 

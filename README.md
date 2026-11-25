@@ -9,7 +9,7 @@ It keeps the breadth Monica users rely on, runs on a current production stack,
 adds an MCP endpoint so an AI agent can work in your workspace, and imports your
 existing Monica data with a full, reviewable report.
 
-![The Today page, with overdue tasks, reminders, people to reconnect with, and upcoming dates](docs/screenshots/today.png)
+![The Today page, with an overdue task, the tasks and a reminder due this week, and an upcoming birthday](docs/screenshots/today.png)
 
 ## Highlights
 

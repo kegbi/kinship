@@ -804,4 +804,33 @@ describe("application control presentation", () => {
       .not.toBe("smooth");
     expect(applicationCss).not.toMatch(/scroll-behavior:\s*smooth/);
   });
+
+  it("sizes the notification badge in whole pixels so its count is centered", () => {
+    // A fractional font size or line height leaves the digit's baseline
+    // between two pixels. The browser then draws it on the upper one, and the
+    // count sits a pixel above the middle of its circle.
+    mountStyles();
+    const badge = document.createElement("span");
+    badge.className = "notification-bell-badge";
+    document.body.append(badge);
+    const pixels = (property: string): number => {
+      const value = declaredValues(badge, property).find((found) =>
+        found !== ""
+      );
+      expect(value, property).toMatch(/^\d*\.?\d+rem$/);
+      return Number.parseFloat(value!) * 16;
+    };
+    const fontSize = pixels("font-size");
+    const lineHeight = pixels("line-height");
+    expect(Number.isInteger(fontSize), "font-size").toBe(true);
+    expect(Number.isInteger(lineHeight), "line-height").toBe(true);
+    // One digit sits in a circle: the badge is as wide as its line is tall.
+    expect(pixels("min-width")).toBe(lineHeight);
+    // Inter's ascent and descent are 1984 and 494 of 2048 units, and the
+    // browser rounds each to a pixel. What is left of the line is split above
+    // and below them, so it has to be an even number of pixels.
+    const contentArea = Math.round(fontSize * 1984 / 2048) +
+      Math.round(fontSize * 494 / 2048);
+    expect((lineHeight - contentArea) % 2).toBe(0);
+  });
 });
