@@ -5,7 +5,7 @@ function assert(condition: unknown, message: string): asserts condition {
 Deno.test("[APP-009A] import orchestration mutates domain tables only through owners", async () => {
   const repository = await Deno.readTextFile(
     new URL(
-      "../../../packages/backend/modules/import-export/adapters/postgres/import_repository.ts",
+      "../../packages/backend/modules/import-export/adapters/postgres/import_repository.ts",
       import.meta.url,
     ),
   );
@@ -17,9 +17,9 @@ Deno.test("[APP-009A] import orchestration mutates domain tables only through ow
   }
   for (
     const path of [
-      "../../../packages/backend/modules/people/application/import_people_boundary.ts",
-      "../../../packages/backend/modules/files/application/import_file_boundary.ts",
-      "../../../packages/backend/modules/governance/application/import_audit.ts",
+      "../../packages/backend/modules/people/application/import_people_boundary.ts",
+      "../../packages/backend/modules/files/application/import_file_boundary.ts",
+      "../../packages/backend/modules/governance/application/import_audit.ts",
     ]
   ) {
     const source = await Deno.readTextFile(new URL(path, import.meta.url));

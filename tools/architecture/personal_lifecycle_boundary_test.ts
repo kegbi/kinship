@@ -1,4 +1,4 @@
-const root = new URL("../../../", import.meta.url);
+const root = new URL("../../", import.meta.url);
 const read = (path: string) => Deno.readTextFile(new URL(path, root));
 
 Deno.test("[AUTH-005] personal lifecycle coordinates only owning public boundaries", async () => {
