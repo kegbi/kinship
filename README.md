@@ -1,5 +1,12 @@
 # Kinship
 
+> Kinship is a project for personal use, inspired by
+> [Monica](https://github.com/monicahq/monica). It adds functionality beyond
+> base Monica, whose last stable release, 4.1.2, came out in May 2024.
+>
+> Support is not guaranteed. Feel free to fork it and add your own
+> functionality.
+
 **A [Monica](https://github.com/monicahq/monica)-compatible, modern relationship
 management system.** Kinship is a self-hosted personal CRM that keeps everything
 you know about the people in your life in one place: who they are, how you know
