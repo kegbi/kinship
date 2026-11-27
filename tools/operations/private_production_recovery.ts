@@ -431,9 +431,9 @@ async function runPostgresTool(
   }).output();
   if (
     !version.success ||
-    !new TextDecoder().decode(version.stdout).includes("18.4")
+    !new TextDecoder().decode(version.stdout).includes("18.7")
   ) {
-    throw new Error(`${kind} must use the pinned PostgreSQL 18.4 client.`);
+    throw new Error(`${kind} must use the pinned PostgreSQL 18.7 client.`);
   }
   const child = new Deno.Command(command.executable, {
     args: [

@@ -50,7 +50,7 @@ interface CommandOptions {
 }
 
 // deno-fmt-ignore
-const DEFAULT_POSTGRES_IMAGE = "postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e";
+const DEFAULT_POSTGRES_IMAGE = "postgres:18.7-alpine3.23@sha256:339a86bf416979bb4d3d2e30a1f9e096e7302564faff4151b804cf53463059d5";
 const SCHEMA_DATABASE = "crm_schema_test";
 const ROLLBACK_DATABASE = "crm_rollback_test";
 const UPGRADE_DATABASE = "crm_upgrade_test";

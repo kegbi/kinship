@@ -223,7 +223,7 @@ Deno.test("[OPS-001E1] RustFS owns local and recovery S3 boundaries", async () =
     "base API passes a finite object-store request timeout",
   );
   const rustfsImage =
-    "rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21";
+    "rustfs/rustfs:1.0.7@sha256:69bd3c4d8d79b74723bfd68c9fbd9085155d4d4b44a5a136d87502f3075cc68c";
   for (
     const [name, overlay] of [
       ["development overlay", development],

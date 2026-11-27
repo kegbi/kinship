@@ -22,7 +22,7 @@ services:
     mem_limit: 256m
     pids_limit: 64
   object-store:
-    image: rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21
+    image: rustfs/rustfs:1.0.7@sha256:69bd3c4d8d79b74723bfd68c9fbd9085155d4d4b44a5a136d87502f3075cc68c
     environment:
       RUSTFS_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-kinship}
       RUSTFS_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-kinship-local-secret}

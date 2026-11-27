@@ -195,7 +195,7 @@ Deno.test("OPS-001E Dokploy keeps storage private and gates application startup 
   }
   const storage = services["kinship-storage"];
   assert(
-    storage.image.includes("1.0.0-beta.12@sha256:"),
+    storage.image.includes("1.0.7@sha256:"),
     "RustFS stays pinned",
   );
   assert(

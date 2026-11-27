@@ -18,9 +18,9 @@ import {
 import { loadPrivateProductionProfile } from "./private_production_probe.ts";
 
 const POSTGRES_IMAGE =
-  "postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e";
+  "postgres:18.7-alpine3.23@sha256:339a86bf416979bb4d3d2e30a1f9e096e7302564faff4151b804cf53463059d5";
 const RUSTFS_IMAGE =
-  "rustfs/rustfs:1.0.0-beta.12@sha256:41fe89380f4120a337790c02af192c3fe7bb55c3edc2e6e9357b487b47c6ab21";
+  "rustfs/rustfs:1.0.7@sha256:69bd3c4d8d79b74723bfd68c9fbd9085155d4d4b44a5a136d87502f3075cc68c";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);

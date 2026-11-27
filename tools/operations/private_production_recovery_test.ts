@@ -310,7 +310,7 @@ Deno.test("OPS-001C restores and measures the authoritative database/object stat
       migrationVerificationTask: "deno task test:schema:matrix",
       prerequisites: [
         "Stop API and worker writes, then set PRIVATE_PRODUCTION_WRITES_QUIESCED=true only for the backup invocation.",
-        "Use the pinned PostgreSQL 18.4 pg_dump and pg_restore clients and a reachable S3-compatible endpoint.",
+        "Use the pinned PostgreSQL 18.7 pg_dump and pg_restore clients and a reachable S3-compatible endpoint.",
         "Restore only into an empty isolated database and bucket, then set PRIVATE_PRODUCTION_ISOLATED_TARGET=true only for the restore invocation.",
         "Keep database, object-storage, archive-encryption, and key material outside the archive and provide them through the OPS-001D secret boundary.",
       ],

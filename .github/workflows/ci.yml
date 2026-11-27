@@ -166,7 +166,7 @@ jobs:
           cache: true
       - name: Install Deno dependencies from the lockfile
         run: deno task deps:deno
-      # Each lane provisions its own disposable PostgreSQL 18.4 project through
+      # Each lane provisions its own disposable PostgreSQL 18.7 project through
       # Docker Compose (tools/postgres_gate.ts), applies the versioned
       # migrations, and proves the project leaves nothing behind. A runner
       # services block would be a second, untested database contract.
